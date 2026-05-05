@@ -24,6 +24,7 @@ include(cmake/CompilerWarnings.cmake)
 add_library(hello_lib
     src/hello.cpp
     src/logging.cpp
+    src/session.cpp
 )
 
 target_include_directories(hello_lib
@@ -33,6 +34,7 @@ target_include_directories(hello_lib
 
 target_link_libraries(hello_lib
     PUBLIC
+        project_boost_asio
         fmt::fmt
         spdlog::spdlog
 )
