@@ -18,14 +18,27 @@ TokenValidationResult DevTokenValidator::validate(const std::string& user_id,
         return {};
     }
 
-    if (token != "token:" + user_id && token != "dev") {
+    const auto now = std::chrono::system_clock::now();
+
+    // "dev" token always passes but with short TTL
+    if (token == "dev") {
+        return TokenValidationResult{
+            .ok = true, .expired = false,
+            .user_id = user_id,
+            .display_name = display_name.value_or(user_id),
+            .expires_at = now + std::chrono::hours(1),
+        };
+    }
+
+    if (token != "token:" + user_id) {
         return {};
     }
 
     return TokenValidationResult{
-        .ok = true,
+        .ok = true, .expired = false,
         .user_id = user_id,
         .display_name = display_name.value_or(user_id),
+        .expires_at = now + kDefaultTokenTtl,
     };
 }
 
@@ -78,9 +91,10 @@ TokenValidationResult JsonFileTokenValidator::validate(const std::string& user_i
     }
 
     return TokenValidationResult{
-        .ok = true,
+        .ok = true, .expired = false,
         .user_id = user_id,
         .display_name = display_name.value_or(it->second.display_name),
+        .expires_at = std::chrono::system_clock::now() + kDefaultTokenTtl,
     };
 }
 

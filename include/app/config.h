@@ -1,5 +1,7 @@
 #pragma once
 
+#include "net/tls_config.h"
+
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
@@ -42,6 +44,7 @@ struct GatewayAppConfig {
     std::size_t session_max_pending_write_bytes = 256 * 1024;
     std::chrono::milliseconds session_heartbeat_check_interval{5000};
     std::chrono::milliseconds session_heartbeat_timeout{30000};
+    net::TlsConfig tls;
 };
 
 enum class PressureScenario {

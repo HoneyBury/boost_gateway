@@ -1,5 +1,8 @@
+#include "app/audit_log.h"
 #include "app/config.h"
+#include "app/config_watcher.h"
 #include "app/crash_handler.h"
+#include "app/graceful_shutdown.h"
 #include "app/logging.h"
 #include "game/battle/battle_service.h"
 #include "game/battle/battle_manager.h"
@@ -11,6 +14,7 @@
 #include "game/login/login_service.h"
 #include "game/login/http_token_validator.h"
 #include "game/login/token_validator.h"
+#include "game/persistence/player_store.h"
 #include "game/room/room_manager.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
@@ -20,6 +24,7 @@
 #include <boost/asio/thread_pool.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdlib>
 #include <cstdint>
@@ -147,6 +152,42 @@ int main(int argc, char* argv[]) {
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
+    // Persistence: setup player store for shutdown save
+    game::persistence::JsonFilePlayerStore player_store("runtime/players");
+
+    // Config hot-reload
+    app::config::ConfigWatcher watcher(io_context.get_executor(), config_path,
+        [&](const app::config::GatewayAppConfig& new_cfg) {
+            LOG_INFO("Config hot-reload applied");
+            AUDIT_LOG("config_reload", "Config file changed, reloaded");
+            server.set_connection_limits(new_cfg.max_connections, new_cfg.per_ip_connection_limit);
+        });
+    watcher.start();
+
+    // Graceful shutdown: save player data before exit
+    std::atomic<bool> shutdown{false};
+    app::GracefulShutdown sig_handler(io_context.get_executor(), [&]() {
+        shutdown.store(true);
+        AUDIT_LOG("shutdown", "Graceful shutdown initiated");
+        // Save authenticated player data
+        std::size_t saved = 0;
+        for (const auto& session : session_manager.all_sessions()) {
+            auto uid = session_manager.user_id_of(session);
+            if (uid) {
+                auto ctx = session_manager.login_context_of(session);
+                game::persistence::PlayerRecord rec;
+                rec.user_id = *uid;
+                rec.display_name = ctx ? ctx->display_name : *uid;
+                rec.last_login_ts = std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count();
+                if (player_store.save(rec)) ++saved;
+            }
+        }
+        LOG_INFO("Saved {} player records on shutdown", saved);
+        server.stop();
+    });
+    sig_handler.start();
+
     const auto io_thread_count = config.io_threads;
 
     std::vector<std::thread> io_workers;
@@ -160,5 +201,6 @@ int main(int argc, char* argv[]) {
     }
 
     business_pool.join();
+    watcher.stop();
     return 0;
 }

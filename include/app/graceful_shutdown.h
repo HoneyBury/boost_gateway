@@ -1,5 +1,7 @@
 #pragma once
 
+#include "app/logging.h"
+
 #include <boost/asio/signal_set.hpp>
 
 #include <chrono>

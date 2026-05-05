@@ -1,5 +1,6 @@
 #include "game/login/login_service.h"
 
+#include "app/audit_log.h"
 #include "net/protocol.h"
 
 #include <optional>
@@ -65,8 +66,12 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
             const auto validation_result =
                 token_validator_.validate(request->user_id, request->token, request->display_name);
             if (!validation_result.ok) {
+                AUDIT_LOG("login_failure",
+                          "user=" + request->user_id + " reason=" + (validation_result.expired ? "token_expired" : "invalid_token"));
                 push_service_.send_error(
-                    context.session, context.request_id, net::protocol::ErrorCode::kInvalidToken);
+                    context.session, context.request_id,
+                    validation_result.expired ? net::protocol::ErrorCode::kTokenExpired
+                                              : net::protocol::ErrorCode::kInvalidToken);
                 return;
             }
 
@@ -86,6 +91,7 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
             }
 
             metrics_.on_login_success();
+            AUDIT_LOG("login_success", "user=" + validation_result.user_id);
             auto response_body = "login_ok:" + validation_result.user_id + ":" + validation_result.display_name;
             std::optional<std::string> resumed_body;
             if (const auto room_snapshot = room_manager_.room_snapshot_of(context.session)) {

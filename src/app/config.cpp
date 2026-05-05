@@ -220,8 +220,15 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_milliseconds("session.heartbeat_timeout_ms")) {
         config.session_heartbeat_timeout = *value;
     }
+    if (const auto value = store.get_string("tls.cert_chain_path")) {
+        config.tls.enabled = true;
+        config.tls.cert_chain_path = *value;
+    }
+    if (const auto value = store.get_string("tls.private_key_path")) {
+        config.tls.private_key_path = *value;
+    }
 
-    LOG_INFO("Loaded gateway config from {}", path.string());
+    LOG_INFO("Loaded gateway config from {} (TLS: {})", path.string(), config.tls.enabled ? "on" : "off");
     return config;
 }
 

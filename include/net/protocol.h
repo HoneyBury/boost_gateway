@@ -20,6 +20,7 @@ enum class ErrorCode : std::int32_t {
     kNotEnoughPlayers = 3001,
     kBattleAlreadyStarted = 3002,
     kBattleNotStarted = 3003,
+    kTokenExpired = 1005,
     kRateLimited = 9001,
     kSessionNotFound = 9002,
 };
@@ -71,6 +72,8 @@ constexpr std::uint16_t kAdminResponse = 5005;
             return "invalid_user_id";
         case ErrorCode::kInvalidToken:
             return "invalid_token";
+        case ErrorCode::kTokenExpired:
+            return "token_expired";
         case ErrorCode::kDuplicateLogin:
             return "duplicate_login";
         case ErrorCode::kInvalidRoomId:

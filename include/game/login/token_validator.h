@@ -1,5 +1,7 @@
 #pragma once
 
+#include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -7,10 +9,14 @@
 
 namespace game::login {
 
+constexpr std::chrono::seconds kDefaultTokenTtl{86400};  // 24h
+
 struct TokenValidationResult {
     bool ok = false;
+    bool expired = false;
     std::string user_id;
     std::string display_name;
+    std::chrono::system_clock::time_point expires_at;
 };
 
 class TokenValidator {
