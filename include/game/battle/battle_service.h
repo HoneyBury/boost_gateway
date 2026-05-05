@@ -6,6 +6,8 @@
 #include "game/room/room_manager.h"
 #include "net/message_dispatcher.h"
 
+#include <string>
+
 namespace game::battle {
 
 class BattleService {
@@ -18,6 +20,11 @@ public:
     void register_handlers(net::MessageDispatcher& dispatcher) const;
 
 private:
+    void broadcast_to_room(const std::string& room_id,
+                           std::uint16_t message_id,
+                           std::string body,
+                           const std::shared_ptr<net::Session>& exclude_session = {}) const;
+
     gateway::SessionManager& session_manager_;
     room::RoomManager& room_manager_;
     BattleManager& battle_manager_;

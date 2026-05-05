@@ -6,6 +6,7 @@
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
+#include "game/login/token_validator.h"
 #include "game/room/room_manager.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
@@ -37,6 +38,7 @@ struct GatewayTestRuntime {
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
+    game::login::DevTokenValidator token_validator;
     net::SessionOptions options;
     std::unique_ptr<game::gateway::GatewayServer> server;
     std::unique_ptr<game::gateway::GatewayService> gateway_service;
@@ -47,8 +49,9 @@ struct GatewayTestRuntime {
 
     void start() {
         gateway_service = std::make_unique<game::gateway::GatewayService>(session_manager, metrics);
-        login_service = std::make_unique<game::login::LoginService>(session_manager, metrics);
-        room_service = std::make_unique<game::room::RoomService>(session_manager, room_manager, metrics);
+        login_service = std::make_unique<game::login::LoginService>(session_manager, token_validator, metrics);
+        room_service =
+            std::make_unique<game::room::RoomService>(session_manager, battle_manager, room_manager, metrics);
         battle_service =
             std::make_unique<game::battle::BattleService>(session_manager, room_manager, battle_manager, metrics);
 
@@ -103,9 +106,16 @@ public:
     net::packet::DecodedPacket exchange(std::uint16_t message_id,
                                         std::uint32_t request_id,
                                         const std::string& body) {
+        send(message_id, request_id, body);
+        return read();
+    }
+
+    void send(std::uint16_t message_id, std::uint32_t request_id, const std::string& body) {
         const auto outbound = net::packet::encode(message_id, request_id, 0, body);
         asio::write(socket_, asio::buffer(outbound));
+    }
 
+    net::packet::DecodedPacket read() {
         net::packet::LengthHeader header{};
         asio::read(socket_, asio::buffer(header));
         const auto payload_length = net::packet::decode_length(header);
@@ -113,6 +123,15 @@ public:
         std::vector<char> payload(payload_length);
         asio::read(socket_, asio::buffer(payload));
         return net::packet::decode_payload(payload);
+    }
+
+    net::packet::DecodedPacket expect_message(std::uint16_t message_id) {
+        while (true) {
+            const auto packet = read();
+            if (packet.message_id == message_id) {
+                return packet;
+            }
+        }
     }
 
 private:
@@ -167,21 +186,22 @@ TEST(GatewayIntegrationTest, LoginAndRoomJoinCloseLoopWorks) {
     TestClient client;
     client.connect(runtime.server->local_port());
 
-    const auto login_response = client.exchange(net::protocol::kLoginRequest, 102, "player_01");
+    const auto login_response =
+        client.exchange(net::protocol::kLoginRequest, 102, "player_01|token:player_01|PlayerOne");
     EXPECT_EQ(login_response.message_id, net::protocol::kLoginResponse);
     EXPECT_EQ(login_response.request_id, 102U);
     EXPECT_EQ(login_response.error_code, 0);
-    EXPECT_EQ(login_response.body, "login_ok:player_01");
+    EXPECT_EQ(login_response.body, "login_ok:player_01:PlayerOne");
 
-    const auto room_response = client.exchange(net::protocol::kRoomJoinRequest, 103, "room_alpha");
-    EXPECT_EQ(room_response.message_id, net::protocol::kRoomJoinResponse);
-    EXPECT_EQ(room_response.request_id, 103U);
-    EXPECT_EQ(room_response.error_code, 0);
-    EXPECT_EQ(room_response.body, "room_joined:room_alpha:1");
+    const auto create_response = client.exchange(net::protocol::kRoomCreateRequest, 103, "room_alpha");
+    EXPECT_EQ(create_response.message_id, net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(create_response.request_id, 103U);
+    EXPECT_EQ(create_response.error_code, 0);
+    EXPECT_EQ(create_response.body, "room_created:room_alpha");
 
     const auto metrics_snapshot = runtime.metrics.snapshot();
     EXPECT_EQ(metrics_snapshot.login_successes, 1U);
-    EXPECT_EQ(metrics_snapshot.room_join_successes, 1U);
+    EXPECT_EQ(metrics_snapshot.room_join_successes, 0U);
     EXPECT_EQ(metrics_snapshot.blocked_packets, 0U);
 
     runtime.stop();
@@ -198,24 +218,58 @@ TEST(GatewayIntegrationTest, BattleStartRequiresTwoPlayersInSameRoom) {
     first.connect(runtime.server->local_port());
     second.connect(runtime.server->local_port());
 
-    EXPECT_EQ(first.exchange(net::protocol::kLoginRequest, 104, "player_01").message_id,
+    EXPECT_EQ(first.exchange(net::protocol::kLoginRequest, 104, "player_01|token:player_01").message_id,
               net::protocol::kLoginResponse);
-    EXPECT_EQ(second.exchange(net::protocol::kLoginRequest, 105, "player_02").message_id,
+    EXPECT_EQ(second.exchange(net::protocol::kLoginRequest, 105, "player_02|token:player_02").message_id,
               net::protocol::kLoginResponse);
 
-    EXPECT_EQ(first.exchange(net::protocol::kRoomJoinRequest, 106, "room_beta").message_id,
-              net::protocol::kRoomJoinResponse);
+    EXPECT_EQ(first.exchange(net::protocol::kRoomCreateRequest, 106, "room_beta").message_id,
+              net::protocol::kRoomCreateResponse);
     EXPECT_EQ(second.exchange(net::protocol::kRoomJoinRequest, 107, "room_beta").message_id,
               net::protocol::kRoomJoinResponse);
+    EXPECT_EQ(first.expect_message(net::protocol::kRoomStatePush).message_id, net::protocol::kRoomStatePush);
 
-    const auto battle_response = first.exchange(net::protocol::kBattleStartRequest, 108, "");
+    EXPECT_EQ(first.exchange(net::protocol::kRoomReadyRequest, 108, "true").message_id,
+              net::protocol::kRoomReadyResponse);
+    EXPECT_EQ(second.expect_message(net::protocol::kRoomStatePush).message_id, net::protocol::kRoomStatePush);
+    EXPECT_EQ(second.exchange(net::protocol::kRoomReadyRequest, 109, "true").message_id,
+              net::protocol::kRoomReadyResponse);
+    EXPECT_EQ(first.expect_message(net::protocol::kRoomStatePush).message_id, net::protocol::kRoomStatePush);
+
+    const auto battle_response = first.exchange(net::protocol::kBattleStartRequest, 110, "");
     EXPECT_EQ(battle_response.message_id, net::protocol::kBattleStartResponse);
-    EXPECT_EQ(battle_response.request_id, 108U);
+    EXPECT_EQ(battle_response.request_id, 110U);
     EXPECT_EQ(battle_response.error_code, 0);
     EXPECT_EQ(battle_response.body, "battle_started:room_beta:2");
+    EXPECT_EQ(second.expect_message(net::protocol::kBattleStatePush).message_id,
+              net::protocol::kBattleStatePush);
+
+    const auto input_response = first.exchange(net::protocol::kBattleInputRequest, 111, "move:left");
+    EXPECT_EQ(input_response.message_id, net::protocol::kBattleInputResponse);
+    EXPECT_EQ(input_response.request_id, 111U);
+    EXPECT_EQ(input_response.error_code, 0);
+    EXPECT_EQ(second.expect_message(net::protocol::kBattleInputPush).message_id,
+              net::protocol::kBattleInputPush);
 
     const auto metrics_snapshot = runtime.metrics.snapshot();
     EXPECT_EQ(metrics_snapshot.battle_start_successes, 1U);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, InvalidTokenIsRejected) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.start();
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+
+    const auto response = client.exchange(net::protocol::kLoginRequest, 112, "player_01|wrong_token");
+    EXPECT_EQ(response.message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(response.error_code, static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidToken));
+    EXPECT_EQ(response.body, "invalid_token");
 
     runtime.stop();
 }

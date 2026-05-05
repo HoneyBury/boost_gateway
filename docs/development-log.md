@@ -234,3 +234,51 @@
 - 完整登录链路
 - 房间系统独立化
 - 战斗系统独立化
+
+---
+
+## 2026-05-05 阶段六：P1 业务骨架扩展
+
+### 目标
+
+- 从最小登录闭环升级到 token 登录和登录上下文
+- 补齐房间创建、离开、准备、房间状态广播
+- 补齐战斗输入路由和战斗状态广播
+
+### 完成内容
+
+- 新增 `TokenValidator` 接口和 `DevTokenValidator` 实现
+- `SessionManager` 增加登录上下文存储
+- `RoomManager` 升级为支持房主、准备状态和房间快照
+- `BattleManager` 升级为带 battle context 和输入事件历史
+- `RoomService` 支持创建房间、加入房间、离开房间、准备状态和房间广播
+- `BattleService` 支持房主起战斗、战斗输入响应和输入广播
+- 补齐 token、房间、战斗的单元测试和集成测试
+
+### 影响范围
+
+- `game/login`
+- `game/room`
+- `game/battle`
+- `tests/unit`
+- `tests/integration`
+- `examples/pressure`
+- `docs`
+
+### 问题与风险
+
+- 当前 token 校验仍然是开发态实现，后续需要接真实鉴权服务
+- 房间和战斗目前仍是内存态，没有持久化和重连恢复
+- 房间广播和战斗广播当前只做最小字符串协议，后续应升级为结构化协议体
+
+### 测试结果
+
+- `ctest --preset windows-msvc-debug`
+- `21/21` 测试通过
+- `gateway_pressure.exe 127.0.0.1 9102 10 3` 本地冒烟通过
+
+### 下一步
+
+- 广播与推送链路增强
+- 重连恢复与踢线
+- 配置系统

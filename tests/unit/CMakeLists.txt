@@ -6,6 +6,7 @@ add_executable(project_unit_tests
     battle_manager_test.cpp
     session_manager_test.cpp
     service_registration_test.cpp
+    token_validator_test.cpp
 )
 target_link_libraries(project_unit_tests
     PRIVATE

@@ -26,8 +26,8 @@ void SessionManager::remove_session(const SessionPtr& session) {
     }
 
     const auto& record = it->second;
-    if (!record.user_id.empty()) {
-        const auto user_it = user_index_.find(record.user_id);
+    if (!record.login_context.user_id.empty()) {
+        const auto user_it = user_index_.find(record.login_context.user_id);
         if (user_it != user_index_.end() && user_it->second == key) {
             user_index_.erase(user_it);
         }
@@ -58,7 +58,16 @@ std::optional<std::string> SessionManager::user_id_of(const SessionPtr& session)
     if (it == sessions_.end() || !it->second.authenticated) {
         return std::nullopt;
     }
-    return it->second.user_id;
+    return it->second.login_context.user_id;
+}
+
+std::optional<SessionManager::LoginContext> SessionManager::login_context_of(const SessionPtr& session) const {
+    std::scoped_lock lock(mutex_);
+    const auto it = sessions_.find(session.get());
+    if (it == sessions_.end() || !it->second.authenticated) {
+        return std::nullopt;
+    }
+    return it->second.login_context;
 }
 
 SessionManager::Snapshot SessionManager::snapshot() const {
@@ -76,39 +85,39 @@ SessionManager::Snapshot SessionManager::snapshot() const {
     return snapshot;
 }
 
-SessionManager::SessionPtr SessionManager::authenticate(const SessionPtr& session, std::string user_id) {
+SessionManager::SessionPtr SessionManager::authenticate(const SessionPtr& session, LoginContext context) {
     SessionPtr replaced_session;
 
     std::scoped_lock lock(mutex_);
 
     const auto key = session.get();
     const auto it = sessions_.find(key);
-    if (it == sessions_.end() || user_id.empty()) {
+    if (it == sessions_.end() || context.user_id.empty()) {
         return nullptr;
     }
 
     auto& record = it->second;
 
-    if (!record.user_id.empty()) {
-        const auto user_it = user_index_.find(record.user_id);
+    if (!record.login_context.user_id.empty()) {
+        const auto user_it = user_index_.find(record.login_context.user_id);
         if (user_it != user_index_.end() && user_it->second == key) {
             user_index_.erase(user_it);
         }
     }
 
-    const auto existing_user_it = user_index_.find(user_id);
+    const auto existing_user_it = user_index_.find(context.user_id);
     if (existing_user_it != user_index_.end() && existing_user_it->second != key) {
         const auto old_session_it = sessions_.find(existing_user_it->second);
         if (old_session_it != sessions_.end()) {
             old_session_it->second.authenticated = false;
-            old_session_it->second.user_id.clear();
+            old_session_it->second.login_context = {};
             replaced_session = old_session_it->second.session;
         }
     }
 
     record.authenticated = true;
-    record.user_id = std::move(user_id);
-    user_index_[record.user_id] = key;
+    record.login_context = std::move(context);
+    user_index_[record.login_context.user_id] = key;
     return replaced_session;
 }
 

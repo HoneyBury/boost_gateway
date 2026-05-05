@@ -117,7 +117,7 @@ private:
                     return;
                 }
 
-                self->send_packet(net::protocol::kLoginRequest, self->user_id_);
+                self->send_packet(net::protocol::kLoginRequest, self->user_id_ + "|token:" + self->user_id_);
             });
     }
 

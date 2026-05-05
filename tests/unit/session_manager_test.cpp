@@ -24,11 +24,13 @@ TEST(SessionManagerTest, TracksAuthenticationState) {
 
     EXPECT_FALSE(manager.is_authenticated(first));
 
-    manager.authenticate(first, "player_a");
-    manager.authenticate(second, "player_b");
+    manager.authenticate(first, {.user_id = "player_a", .display_name = "PlayerA"});
+    manager.authenticate(second, {.user_id = "player_b", .display_name = "PlayerB"});
 
     EXPECT_TRUE(manager.is_authenticated(first));
     EXPECT_EQ(manager.user_id_of(first).value_or(""), "player_a");
+    ASSERT_TRUE(manager.login_context_of(first));
+    EXPECT_EQ(manager.login_context_of(first)->display_name, "PlayerA");
 
     const auto snapshot = manager.snapshot();
     EXPECT_EQ(snapshot.active_sessions, 2U);
@@ -45,8 +47,8 @@ TEST(SessionManagerTest, ReplacesPreviousSessionOnDuplicateLogin) {
     manager.add_session(first);
     manager.add_session(second);
 
-    EXPECT_FALSE(manager.authenticate(first, "player_same"));
-    auto replaced = manager.authenticate(second, "player_same");
+    EXPECT_FALSE(manager.authenticate(first, {.user_id = "player_same", .display_name = "Same"}));
+    auto replaced = manager.authenticate(second, {.user_id = "player_same", .display_name = "Same2"});
 
     ASSERT_TRUE(replaced);
     EXPECT_EQ(replaced.get(), first.get());

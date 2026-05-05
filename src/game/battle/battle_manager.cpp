@@ -1,40 +1,88 @@
 #include "game/battle/battle_manager.h"
 
+#include <algorithm>
+#include <utility>
+
 namespace game::battle {
 
 BattleManager::StartBattleOutcome BattleManager::start_battle(const std::string& room_id,
-                                                              std::size_t player_count) {
+                                                              std::vector<std::string> player_ids) {
     std::scoped_lock lock(mutex_);
 
     if (room_id.empty()) {
         return {StartBattleResult::kNotInRoom, "", 0};
     }
 
-    if (player_count < 2) {
-        return {StartBattleResult::kNotEnoughPlayers, room_id, player_count};
+    if (player_ids.size() < 2) {
+        return {StartBattleResult::kNotEnoughPlayers, room_id, player_ids.size()};
     }
 
-    if (active_rooms_.contains(room_id)) {
-        return {StartBattleResult::kAlreadyStarted, room_id, player_count};
+    if (active_battles_.contains(room_id)) {
+        return {StartBattleResult::kAlreadyStarted, room_id, player_ids.size()};
     }
 
-    active_rooms_.insert(room_id);
-    return {StartBattleResult::kOk, room_id, player_count};
+    active_battles_.emplace(room_id,
+                            BattleContext{
+                                .player_ids = std::move(player_ids),
+                                .next_sequence = 1,
+                                .inputs = {},
+                            });
+    return {StartBattleResult::kOk, room_id, active_battles_.at(room_id).player_ids.size()};
+}
+
+BattleManager::SubmitInputOutcome BattleManager::submit_input(const std::string& room_id,
+                                                              const std::string& user_id,
+                                                              std::string payload) {
+    std::scoped_lock lock(mutex_);
+
+    auto battle_it = active_battles_.find(room_id);
+    if (battle_it == active_battles_.end()) {
+        return {};
+    }
+
+    if (std::find(battle_it->second.player_ids.begin(), battle_it->second.player_ids.end(), user_id) ==
+        battle_it->second.player_ids.end()) {
+        return {SubmitInputResult::kPlayerNotInBattle, room_id, {}};
+    }
+
+    InputEvent event{
+        .sequence = battle_it->second.next_sequence++,
+        .user_id = user_id,
+        .payload = std::move(payload),
+    };
+    battle_it->second.inputs.push_back(event);
+    return {SubmitInputResult::kOk, room_id, std::move(event)};
 }
 
 void BattleManager::remove_room(const std::string& room_id) {
     std::scoped_lock lock(mutex_);
-    active_rooms_.erase(room_id);
+    active_battles_.erase(room_id);
 }
 
 bool BattleManager::battle_started(const std::string& room_id) const {
     std::scoped_lock lock(mutex_);
-    return active_rooms_.contains(room_id);
+    return active_battles_.contains(room_id);
 }
 
 std::size_t BattleManager::active_battle_count() const {
     std::scoped_lock lock(mutex_);
-    return active_rooms_.size();
+    return active_battles_.size();
+}
+
+std::optional<BattleManager::BattleSnapshot> BattleManager::snapshot(const std::string& room_id) const {
+    std::scoped_lock lock(mutex_);
+
+    const auto battle_it = active_battles_.find(room_id);
+    if (battle_it == active_battles_.end()) {
+        return std::nullopt;
+    }
+
+    return BattleSnapshot{
+        .room_id = room_id,
+        .player_ids = battle_it->second.player_ids,
+        .next_sequence = battle_it->second.next_sequence,
+        .inputs = battle_it->second.inputs,
+    };
 }
 
 }  // namespace game::battle

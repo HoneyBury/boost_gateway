@@ -6,6 +6,7 @@
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
+#include "game/login/token_validator.h"
 #include "game/room/room_manager.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
@@ -35,10 +36,11 @@ int main(int argc, char* argv[]) {
     game::room::RoomManager room_manager;
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
+    game::login::DevTokenValidator token_validator;
 
     game::gateway::GatewayService gateway_service(session_manager, metrics);
-    game::login::LoginService login_service(session_manager, metrics);
-    game::room::RoomService room_service(session_manager, room_manager, metrics);
+    game::login::LoginService login_service(session_manager, token_validator, metrics);
+    game::room::RoomService room_service(session_manager, battle_manager, room_manager, metrics);
     game::battle::BattleService battle_service(session_manager, room_manager, battle_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
