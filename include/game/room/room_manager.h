@@ -78,6 +78,24 @@ public:
     [[nodiscard]] bool mark_battle_started(const std::string& room_id);
     [[nodiscard]] bool battle_started(const std::string& room_id) const;
 
+    // COW snapshot: snapshot member list under lock, then invoke callback outside lock.
+    template <typename F>
+    void broadcast_to_room(const std::string& room_id, F&& callback) const {
+        std::vector<SessionPtr> members;
+        {
+            std::scoped_lock lock(mutex_);
+            const auto it = rooms_.find(room_id);
+            if (it == rooms_.end()) return;
+            members.reserve(it->second.members.size());
+            for (const auto& [key, member] : it->second.members) {
+                members.push_back(member.session);
+            }
+        }
+        for (const auto& session : members) {
+            callback(session);
+        }
+    }
+
 private:
     using SessionKey = const net::Session*;
 

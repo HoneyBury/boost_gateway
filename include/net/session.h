@@ -91,8 +91,12 @@ private:
     CloseHandler close_handler_;
     PacketObserver receive_observer_;
     PacketObserver send_observer_;
+    void check_backpressure();
+    void resume_if_paused();
+
     std::chrono::steady_clock::time_point last_activity_at_;
     bool stopped_ = false;
+    bool backpressure_active_ = false;
     SessionOptions options_;
 };
 

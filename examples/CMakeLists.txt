@@ -1,3 +1,6 @@
 add_subdirectory(hello)
 add_subdirectory(echo)
 add_subdirectory(pressure)
+add_subdirectory(login)
+add_subdirectory(room)
+add_subdirectory(battle)

@@ -80,6 +80,8 @@ void Session::send_batch(std::vector<PacketMessage> messages) {
             .packet = std::move(combined),
         });
 
+        self->check_backpressure();
+
         if (!write_in_progress) {
             self->do_write();
         }
@@ -235,8 +237,10 @@ void Session::do_read_body() {
                                     BufferPool::instance().release_vector(std::move(self->read_body_));
                                 }
 
-                                if (!self->stopped_) {
+                                if (!self->stopped_ && !self->backpressure_active_) {
                                     self->do_read_header();
+                                } else if (self->backpressure_active_) {
+                                    LOG_DEBUG("Session {} read paused (backpressure)", self->remote_endpoint());
                                 }
                             }));
 }
@@ -287,10 +291,30 @@ void Session::enqueue_write(PacketMessage message) {
             .packet = std::move(packet_bytes),
         });
 
+        self->check_backpressure();
+
         if (!write_in_progress) {
             self->do_write();
         }
     });
+}
+
+void Session::check_backpressure() {
+    const auto high_water = options_.max_pending_write_bytes * 3 / 4;
+    if (queued_write_bytes_ > high_water && !backpressure_active_) {
+        backpressure_active_ = true;
+        LOG_WARN("Session {} backpressure ON: write queue {} bytes", remote_endpoint(), queued_write_bytes_);
+    }
+}
+
+void Session::resume_if_paused() {
+    if (!backpressure_active_) return;
+    const auto low_water = options_.max_pending_write_bytes / 4;
+    if (queued_write_bytes_ <= low_water) {
+        backpressure_active_ = false;
+        LOG_INFO("Session {} backpressure OFF: write queue {} bytes", remote_endpoint(), queued_write_bytes_);
+        if (!stopped_) do_read_header();
+    }
 }
 
 void Session::do_write() {
@@ -320,6 +344,7 @@ void Session::do_write() {
                                 }
 
                                 self->write_queue_.pop_front();
+                                self->resume_if_paused();
 
                                 if (!self->write_queue_.empty()) {
                                     self->do_write();
