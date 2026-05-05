@@ -228,7 +228,10 @@ PressureAppConfig load_pressure_config(const std::filesystem::path& path) {
         config.client_count = std::max<std::size_t>(1, *value);
     }
     if (const auto value = store.get_size("pressure.echo_count_per_client")) {
-        config.echo_count_per_client = std::max<std::size_t>(1, *value);
+        config.messages_per_client = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_size("pressure.messages_per_client")) {
+        config.messages_per_client = std::max<std::size_t>(1, *value);
     }
     if (const auto value = store.get_string("pressure.scenario")) {
         if (const auto scenario = parse_pressure_scenario(*value)) {
@@ -240,6 +243,12 @@ PressureAppConfig load_pressure_config(const std::filesystem::path& path) {
     }
     if (const auto value = store.get_size("pressure.invalid_token_every")) {
         config.invalid_token_every = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_string("pressure.room_name")) {
+        config.room_name = *value;
+    }
+    if (const auto value = store.get_uint32("pressure.malicious_packet_size")) {
+        config.malicious_packet_size = std::max<std::uint32_t>(64, *value);
     }
 
     LOG_INFO("Loaded pressure config from {}", path.string());
@@ -254,6 +263,12 @@ std::string to_string(PressureScenario scenario) {
         return "invalid_token";
     case PressureScenario::kSlowEcho:
         return "slow_echo";
+    case PressureScenario::kBroadcastStorm:
+        return "broadcast_storm";
+    case PressureScenario::kMaliciousPacket:
+        return "malicious_packet";
+    case PressureScenario::kBattleBroadcast:
+        return "battle_broadcast";
     }
 
     return "echo";
@@ -268,6 +283,15 @@ std::optional<PressureScenario> parse_pressure_scenario(const std::string& value
     }
     if (value == "slow_echo") {
         return PressureScenario::kSlowEcho;
+    }
+    if (value == "broadcast_storm") {
+        return PressureScenario::kBroadcastStorm;
+    }
+    if (value == "malicious_packet") {
+        return PressureScenario::kMaliciousPacket;
+    }
+    if (value == "battle_broadcast") {
+        return PressureScenario::kBattleBroadcast;
     }
     return std::nullopt;
 }

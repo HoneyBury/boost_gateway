@@ -3,9 +3,11 @@
     "host": "127.0.0.1",
     "port": 9000,
     "client_count": 20,
-    "echo_count_per_client": 5,
+    "messages_per_client": 5,
     "scenario": "slow_echo",
     "send_interval_ms": 10,
-    "invalid_token_every": 5
+    "invalid_token_every": 5,
+    "room_name": "pressure_room",
+    "malicious_packet_size": 2097152
   }
 }

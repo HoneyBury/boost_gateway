@@ -43,16 +43,21 @@ enum class PressureScenario {
     kEcho,
     kInvalidToken,
     kSlowEcho,
+    kBroadcastStorm,
+    kMaliciousPacket,
+    kBattleBroadcast,
 };
 
 struct PressureAppConfig {
     std::string host = "127.0.0.1";
     std::uint16_t port = 9000;
     std::size_t client_count = 100;
-    std::size_t echo_count_per_client = 10;
+    std::size_t messages_per_client = 10;
     PressureScenario scenario = PressureScenario::kEcho;
     std::chrono::milliseconds send_interval{0};
     std::size_t invalid_token_every = 5;
+    std::string room_name = "pressure_room";
+    std::uint32_t malicious_packet_size = 2 * 1024 * 1024;
 };
 
 [[nodiscard]] GatewayAppConfig load_gateway_config(const std::filesystem::path& path);

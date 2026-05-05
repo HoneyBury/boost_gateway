@@ -106,10 +106,48 @@ TEST(ConfigTest, LoadsPressureConfigFromJsonFile) {
     EXPECT_EQ(config.host, "10.0.0.9");
     EXPECT_EQ(config.port, 9400);
     EXPECT_EQ(config.client_count, 32U);
-    EXPECT_EQ(config.echo_count_per_client, 12U);
+    EXPECT_EQ(config.messages_per_client, 12U);
     EXPECT_EQ(config.scenario, app::config::PressureScenario::kInvalidToken);
     EXPECT_EQ(config.send_interval, std::chrono::milliseconds(25));
     EXPECT_EQ(config.invalid_token_every, 3U);
+
+    std::filesystem::remove(path);
+}
+
+TEST(ConfigTest, ParsesAllPressureScenarios) {
+    EXPECT_EQ(app::config::parse_pressure_scenario("echo"), app::config::PressureScenario::kEcho);
+    EXPECT_EQ(app::config::parse_pressure_scenario("invalid_token"), app::config::PressureScenario::kInvalidToken);
+    EXPECT_EQ(app::config::parse_pressure_scenario("slow_echo"), app::config::PressureScenario::kSlowEcho);
+    EXPECT_EQ(app::config::parse_pressure_scenario("broadcast_storm"), app::config::PressureScenario::kBroadcastStorm);
+    EXPECT_EQ(app::config::parse_pressure_scenario("malicious_packet"), app::config::PressureScenario::kMaliciousPacket);
+    EXPECT_EQ(app::config::parse_pressure_scenario("battle_broadcast"), app::config::PressureScenario::kBattleBroadcast);
+    EXPECT_EQ(app::config::parse_pressure_scenario("unknown"), std::nullopt);
+}
+
+TEST(ConfigTest, LoadsPressureConfigWithRoomAndMaliciousOpts) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "pressure_full_test.json";
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"pressure\": {\n";
+        output << "    \"host\": \"10.0.0.1\",\n";
+        output << "    \"port\": 9500,\n";
+        output << "    \"client_count\": 16,\n";
+        output << "    \"messages_per_client\": 20,\n";
+        output << "    \"scenario\": \"broadcast_storm\",\n";
+        output << "    \"room_name\": \"test_room\",\n";
+        output << "    \"malicious_packet_size\": 5242880\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    const auto config = app::config::load_pressure_config(path);
+    EXPECT_EQ(config.messages_per_client, 20U);
+    EXPECT_EQ(config.scenario, app::config::PressureScenario::kBroadcastStorm);
+    EXPECT_EQ(config.room_name, "test_room");
+    EXPECT_EQ(config.malicious_packet_size, 5242880U);
 
     std::filesystem::remove(path);
 }
