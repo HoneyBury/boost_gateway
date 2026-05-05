@@ -9,9 +9,15 @@
 - `net::MessageDispatcher`
   负责消息号注册、业务线程池投递和中间层执行。
 - `game::gateway::SessionManager`
-  负责在线连接、登录态、房间态、战斗态的最小状态管理。
+  负责在线连接和登录态管理。
+- `game::room::RoomManager`
+  负责房间生命周期、房主、成员和 ready 状态管理。
+- `game::battle::BattleManager`
+  负责战斗上下文、输入序号和输入历史管理。
 - `game::gateway::GatewayMetrics`
   负责会话、包量、字节量、拦截量和业务成功量统计。
+- `game::gateway::GatewayMetricsExporter`
+  负责将当前指标快照导出为 Prometheus 文本和 JSON 文件。
 - `game::gateway::GatewayService`
   负责心跳和登录前白名单拦截。
 - `game::login::LoginService`
@@ -80,13 +86,34 @@
 
 ## 5. 运行方式
 
+### 5.1 常规构建（可访问 GitHub）
+
 启动网关示例：
 
 ```powershell
 cmake --preset windows-msvc-debug
 cmake --build --preset windows-msvc-debug
-D:\Program\boost\build\windows-msvc-debug\examples\echo\Debug\echo_server.exe 9000
+D:\Program\boost\build\windows-msvc-debug\examples\echo\Debug\echo_server.exe config/gateway.json
 ```
+
+### 5.2 内网构建（无法访问 GitHub）
+
+先准备第三方依赖（只需一人执行一次，或从公司内部仓库直接下载 `third_party.zip` 解压到项目根目录）：
+
+```powershell
+# 在外网机器上：
+.\third_party\download_deps.bat
+.\third_party\package.bat
+# 将生成的 third_party.zip 上传到公司内部仓库
+
+# 在内网开发机器上：
+# 1. 下载 third_party.zip 并解压到项目根目录
+# 2. 正常构建：
+cmake --preset windows-msvc-debug
+cmake --build --preset windows-msvc-debug
+```
+
+CMake configure 阶段会输出 `Using local archive: xxx` 表明正在使用本地依赖包。
 
 启动 Echo 客户端：
 
@@ -98,6 +125,12 @@ D:\Program\boost\build\windows-msvc-debug\examples\echo\Debug\echo_client.exe 12
 
 ```powershell
 D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressure.exe 127.0.0.1 9000 100 10
+```
+
+或使用 JSON 场景配置：
+
+```powershell
+D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressure.exe config/pressure.json
 ```
 
 含义：
@@ -136,6 +169,17 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - 登录成功数
 - 房间加入成功数
 - 战斗启动成功数
+- 在线会话数
+- 认证会话数
+- 活跃房间数
+- 活跃战斗数
+
+若在 `config/gateway.json` 里配置了：
+
+- `gateway.metrics_prometheus_path`
+- `gateway.metrics_json_path`
+
+服务端会按 `gateway.metrics_log_interval_ms` 周期把指标导出到对应文件。
 
 ## 8. 当前完成的优先级任务
 
@@ -175,4 +219,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `RoomService` 已支持创建、加入、离开、准备和房间广播
 - `BattleService` 已支持房主起战斗、输入路由和战斗广播
 - 顶号登录现在会给旧连接发送 `kSessionKickedPush`，并把房间状态恢复到新连接
-- 服务端启动已支持从 `config/gateway.conf` 加载关键参数
+- 服务端启动已支持从 `config/gateway.conf` 或 `config/gateway.json` 加载关键参数
+- 当前默认 JSON 配置使用 `dev` 鉴权提供方，也可以切换到 `json_file`
+- `config/auth_users.json` 可作为本地外部鉴权数据源
+- `gateway_pressure` 已支持 `echo`、`invalid_token`、`slow_echo` 三种压测场景

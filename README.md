@@ -23,6 +23,33 @@ This repository provides a minimal modern C++ starter project with:
   [cmake/Dependencies.cmake](/D:/Program/boost/cmake/Dependencies.cmake:1) 中创建一个名为 `project_boost_asio` 的 `INTERFACE`
   target，只导出 Boost 头文件路径和编译宏。
 
+### 内网环境构建
+
+如果开发环境无法直接访问 GitHub，项目支持从本地 `third_party/` 目录加载依赖：
+
+**准备第三方依赖包（只需一人执行一次）：**
+
+```powershell
+# 下载所有第三方库的发布包到 third_party/
+.\third_party\download_deps.bat
+
+# 打包成单个压缩文件（上传到公司内部仓库 / 文件服务器）
+.\third_party\package.bat
+```
+
+**其他内网开发者：**
+
+1. 从公司内部仓库下载 `third_party.zip`
+2. 解压到项目根目录（`third_party/` 文件夹会和 `CMakeLists.txt` 同级）
+3. 正常构建：
+
+```powershell
+cmake --preset windows-msvc-debug
+cmake --build --preset windows-msvc-debug
+```
+
+CMake 在 configure 阶段会自动检测 `third_party/` 下的本地压缩包并优先使用，无需修改任何配置。
+
 这个项目中的依赖作用域如下：
 
 - `hello_lib` links `fmt::fmt` and `spdlog::spdlog` as `PUBLIC`

@@ -1,0 +1,7 @@
+# Ignore extracted source directories (created by FetchContent during build)
+fmt-*/
+googletest-*/
+spdlog-*/
+json-*/
+boost_*/
+
