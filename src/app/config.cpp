@@ -202,6 +202,9 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_size("gateway.max_connections")) {
         config.max_connections = std::max<std::size_t>(1, *value);
     }
+    if (const auto value = store.get_size("gateway.max_guests")) {
+        config.max_guests = *value;
+    }
     if (const auto value = store.get_size("gateway.per_ip_connection_limit")) {
         config.per_ip_connection_limit = *value;
     }
