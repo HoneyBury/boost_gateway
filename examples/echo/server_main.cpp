@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <thread>
 #include <vector>
@@ -49,7 +50,7 @@ bool is_numeric_arg(const char* value) {
 int main(int argc, char* argv[]) {
     app::logging::init("echo_server");
 
-    std::filesystem::path config_path = "config/gateway.conf";
+    std::filesystem::path config_path = "config/gateway.json";
     std::uint16_t port_override = 0;
     if (argc > 1) {
         if (is_numeric_arg(argv[1])) {
@@ -80,10 +81,27 @@ int main(int argc, char* argv[]) {
     game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
     game::gateway::PushService push_service;
-    game::login::DevTokenValidator token_validator;
+    std::unique_ptr<game::login::TokenValidator> token_validator;
+
+    if (config.auth_provider == "json_file") {
+        const auto auth_path = config.auth_users_path.value_or(std::filesystem::path("config/auth_users.json"));
+        const auto file_validator = game::login::JsonFileTokenValidator::load_from_file(auth_path);
+        if (!file_validator) {
+            LOG_ERROR("Failed to load json auth users from {}", auth_path.string());
+            return 1;
+        }
+
+        LOG_INFO("Using json file token validator with {} users from {}",
+                 file_validator->user_count(),
+                 auth_path.string());
+        token_validator = std::make_unique<game::login::JsonFileTokenValidator>(std::move(*file_validator));
+    } else {
+        LOG_INFO("Using development token validator");
+        token_validator = std::make_unique<game::login::DevTokenValidator>();
+    }
 
     game::gateway::GatewayService gateway_service(session_manager, metrics);
-    game::login::LoginService login_service(session_manager, push_service, room_manager, token_validator, metrics);
+    game::login::LoginService login_service(session_manager, push_service, room_manager, *token_validator, metrics);
     game::room::RoomService room_service(session_manager, push_service, battle_manager, room_manager, metrics);
     game::battle::BattleService battle_service(session_manager, push_service, room_manager, battle_manager, metrics);
 
@@ -111,7 +129,11 @@ int main(int argc, char* argv[]) {
         metrics,
         config.port,
         session_options,
-        config.metrics_log_interval);
+        config.metrics_log_interval,
+        {
+            .prometheus_path = config.metrics_prometheus_path,
+            .json_path = config.metrics_json_path,
+        });
     server.start();
 
     const auto io_thread_count = config.io_threads;

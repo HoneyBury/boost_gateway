@@ -1,6 +1,7 @@
 add_executable(project_unit_tests
     hello_test.cpp
     config_test.cpp
+    gateway_metrics_exporter_test.cpp
     packet_codec_test.cpp
     message_dispatcher_test.cpp
     room_manager_test.cpp

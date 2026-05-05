@@ -1,0 +1,24 @@
+{
+  "users": [
+    {
+      "user_id": "player_01",
+      "token": "token:player_01",
+      "display_name": "PlayerOne"
+    },
+    {
+      "user_id": "player_02",
+      "token": "token:player_02",
+      "display_name": "PlayerTwo"
+    },
+    {
+      "user_id": "load_user_0",
+      "token": "token:load_user_0",
+      "display_name": "LoadUser0"
+    },
+    {
+      "user_id": "load_user_1",
+      "token": "token:load_user_1",
+      "display_name": "LoadUser1"
+    }
+  ]
+}

@@ -2,14 +2,19 @@
 
 #include "app/logging.h"
 
+#include <nlohmann/json.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
+#include <filesystem>
 #include <fstream>
 #include <string_view>
 
 namespace app::config {
 namespace {
+
+using json = nlohmann::json;
 
 std::string trim(std::string value) {
     const auto not_space = [](unsigned char ch) { return !std::isspace(ch); };
@@ -31,11 +36,37 @@ std::optional<T> parse_integer(std::string_view value) {
     return parsed;
 }
 
-}  // namespace
+void flatten_json_object(const json& value,
+                         const std::string& prefix,
+                         std::unordered_map<std::string, std::string>& output) {
+    if (value.is_object()) {
+        for (const auto& [key, child] : value.items()) {
+            const auto next_prefix = prefix.empty() ? key : prefix + "." + key;
+            flatten_json_object(child, next_prefix, output);
+        }
+        return;
+    }
 
-bool ConfigStore::load(const std::filesystem::path& path) {
-    values_.clear();
+    if (value.is_array()) {
+        output[prefix] = value.dump();
+        return;
+    }
 
+    if (value.is_string()) {
+        output[prefix] = value.get<std::string>();
+        return;
+    }
+
+    if (value.is_boolean()) {
+        output[prefix] = value.get<bool>() ? "true" : "false";
+        return;
+    }
+
+    output[prefix] = value.dump();
+}
+
+bool load_key_value_file(const std::filesystem::path& path,
+                         std::unordered_map<std::string, std::string>& output) {
     std::ifstream input(path);
     if (!input.is_open()) {
         return false;
@@ -56,11 +87,49 @@ bool ConfigStore::load(const std::filesystem::path& path) {
         auto key = trim(line.substr(0, separator));
         auto value = trim(line.substr(separator + 1));
         if (!key.empty()) {
-            values_[std::move(key)] = std::move(value);
+            output[std::move(key)] = std::move(value);
         }
     }
 
     return true;
+}
+
+bool load_json_file(const std::filesystem::path& path,
+                    std::unordered_map<std::string, std::string>& output) {
+    std::ifstream input(path);
+    if (!input.is_open()) {
+        return false;
+    }
+
+    json document;
+    input >> document;
+    flatten_json_object(document, "", output);
+    return true;
+}
+
+std::optional<std::filesystem::path> get_path_value(const ConfigStore& store, const std::string& key) {
+    const auto value = store.get_string(key);
+    if (!value || value->empty()) {
+        return std::nullopt;
+    }
+    return std::filesystem::path(*value);
+}
+
+}  // namespace
+
+bool ConfigStore::load(const std::filesystem::path& path) {
+    values_.clear();
+
+    try {
+        if (path.extension() == ".json") {
+            return load_json_file(path, values_);
+        }
+        return load_key_value_file(path, values_);
+    } catch (const std::exception& ex) {
+        LOG_WARN("Failed to parse config file {}: {}", path.string(), ex.what());
+        values_.clear();
+        return false;
+    }
 }
 
 std::optional<std::string> ConfigStore::get_string(const std::string& key) const {
@@ -115,6 +184,12 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_milliseconds("gateway.metrics_log_interval_ms")) {
         config.metrics_log_interval = *value;
     }
+    config.metrics_prometheus_path = get_path_value(store, "gateway.metrics_prometheus_path");
+    config.metrics_json_path = get_path_value(store, "gateway.metrics_json_path");
+    if (const auto value = store.get_string("gateway.auth.provider")) {
+        config.auth_provider = *value;
+    }
+    config.auth_users_path = get_path_value(store, "gateway.auth.users_path");
     if (const auto value = store.get_uint32("session.max_packet_size")) {
         config.session_max_packet_size = *value;
     }
@@ -130,6 +205,68 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
 
     LOG_INFO("Loaded gateway config from {}", path.string());
     return config;
+}
+
+PressureAppConfig load_pressure_config(const std::filesystem::path& path) {
+    PressureAppConfig config;
+    ConfigStore store;
+    if (!store.load(path)) {
+        LOG_WARN("Pressure config file {} not found, using defaults", path.string());
+        return config;
+    }
+
+    if (const auto value = store.get_string("pressure.host")) {
+        config.host = *value;
+    }
+    if (const auto value = store.get_uint16("pressure.port")) {
+        config.port = *value;
+    }
+    if (const auto value = store.get_size("pressure.client_count")) {
+        config.client_count = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_size("pressure.echo_count_per_client")) {
+        config.echo_count_per_client = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_string("pressure.scenario")) {
+        if (const auto scenario = parse_pressure_scenario(*value)) {
+            config.scenario = *scenario;
+        }
+    }
+    if (const auto value = store.get_milliseconds("pressure.send_interval_ms")) {
+        config.send_interval = *value;
+    }
+    if (const auto value = store.get_size("pressure.invalid_token_every")) {
+        config.invalid_token_every = std::max<std::size_t>(1, *value);
+    }
+
+    LOG_INFO("Loaded pressure config from {}", path.string());
+    return config;
+}
+
+std::string to_string(PressureScenario scenario) {
+    switch (scenario) {
+    case PressureScenario::kEcho:
+        return "echo";
+    case PressureScenario::kInvalidToken:
+        return "invalid_token";
+    case PressureScenario::kSlowEcho:
+        return "slow_echo";
+    }
+
+    return "echo";
+}
+
+std::optional<PressureScenario> parse_pressure_scenario(const std::string& value) {
+    if (value == "echo") {
+        return PressureScenario::kEcho;
+    }
+    if (value == "invalid_token") {
+        return PressureScenario::kInvalidToken;
+    }
+    if (value == "slow_echo") {
+        return PressureScenario::kSlowEcho;
+    }
+    return std::nullopt;
 }
 
 }  // namespace app::config

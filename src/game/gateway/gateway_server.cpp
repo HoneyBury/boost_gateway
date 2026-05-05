@@ -14,7 +14,8 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
                              GatewayMetrics& metrics,
                              std::uint16_t port,
                              net::SessionOptions session_options,
-                             std::chrono::milliseconds metrics_log_interval)
+                             std::chrono::milliseconds metrics_log_interval,
+                             GatewayMetricsExportOptions metrics_export_options)
     : io_context_(io_context),
       dispatcher_(dispatcher),
       session_manager_(session_manager),
@@ -24,7 +25,8 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
       acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
       metrics_timer_(io_context),
       session_options_(std::move(session_options)),
-      metrics_log_interval_(metrics_log_interval) {}
+      metrics_log_interval_(metrics_log_interval),
+      metrics_export_options_(std::move(metrics_export_options)) {}
 
 void GatewayServer::start() {
     LOG_INFO("Gateway server listening on 0.0.0.0:{}", acceptor_.local_endpoint().port());
@@ -108,13 +110,18 @@ void GatewayServer::arm_metrics_timer() {
             return;
         }
 
-        const auto session_snapshot = session_manager_.snapshot();
+        const auto runtime_snapshot =
+            collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_);
         LOG_INFO("Gateway metrics: {}, active_sessions={}, authenticated_sessions={}, rooms={}, battles={}",
                  metrics_.summary(),
-                 session_snapshot.active_sessions,
-                 session_snapshot.authenticated_sessions,
-                 room_manager_.room_count(),
-                 battle_manager_.active_battle_count());
+                 runtime_snapshot.active_sessions,
+                 runtime_snapshot.authenticated_sessions,
+                 runtime_snapshot.active_rooms,
+                 runtime_snapshot.active_battles);
+
+        if (!write_metrics_files(runtime_snapshot, metrics_export_options_)) {
+            LOG_WARN("Failed to export metrics files");
+        }
 
         arm_metrics_timer();
     });

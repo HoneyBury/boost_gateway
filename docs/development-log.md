@@ -332,3 +332,57 @@
 - 可观测性升级
 - 压测体系扩展
 - 真实鉴权服务与后端集成
+
+---
+
+## 2026-05-05 阶段八：P3 基础观测与外部鉴权接入
+
+### 目标
+
+- 为网关补齐可落地的 Prometheus / JSON 指标导出
+- 把压测工具升级为可配置、多场景的版本
+- 把鉴权从纯开发态实现推进到可切换的外部数据后端
+
+### 完成内容
+
+- 接入 `nlohmann/json`
+- `app::config` 支持同时解析 `key=value` 和 JSON 配置文件
+- 新增 `config/gateway.json`、`config/pressure.json` 和 `config/auth_users.json`
+- 新增 `GatewayMetricsExporter`，支持 Prometheus 文本和 JSON 快照导出
+- `GatewayServer` 已支持按周期把指标写入文件
+- 新增 `JsonFileTokenValidator`，可从外部 JSON 用户数据加载 token 和显示名
+- `echo_server` 已支持按配置切换 `dev` / `json_file` 鉴权提供方
+- `gateway_pressure` 已支持 JSON 压测配置，以及 `echo`、`invalid_token`、`slow_echo` 三种场景
+- 补齐 JSON 配置、JSON 鉴权和 metrics 导出的单元测试
+
+### 影响范围
+
+- `cmake`
+- `app`
+- `game/gateway`
+- `game/login`
+- `examples/echo`
+- `examples/pressure`
+- `config`
+- `tests/unit`
+- `docs`
+
+### 风险与问题
+
+- 当前指标导出仍是文件方式，尚未暴露 HTTP `/metrics`
+- `JsonFileTokenValidator` 适合开发和本地集成，不等同于真实远程账号服务
+- 压测场景已经支持慢客户端和非法 token，但广播风暴场景仍需结合更完整的房间/战斗广播继续扩展
+
+### 测试结果
+
+- `cmake --build --preset windows-msvc-debug --parallel`
+- `ctest --preset windows-msvc-debug --output-on-failure`
+- `28/28` 测试通过
+- `echo_server.exe config/gateway.json 9104` + `gateway_pressure.exe config/pressure.json 9104` 冒烟通过
+- `echo_server.exe config/gateway.json 9105` + `gateway_pressure.exe 127.0.0.1 9105 10 1 invalid_token` 冒烟通过
+
+### 下一步
+
+- 增加 HTTP `/metrics` 或管理端口
+- 增加广播风暴、战斗广播和恶意包压测
+- 把 `JsonFileTokenValidator` 替换为真实远程账号服务客户端

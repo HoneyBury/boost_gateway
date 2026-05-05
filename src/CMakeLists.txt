@@ -6,6 +6,7 @@ target_include_directories(project_app
 target_link_libraries(project_app
     PUBLIC
         fmt::fmt
+        nlohmann_json::nlohmann_json
         spdlog::spdlog
 )
 target_compile_definitions(project_app
@@ -46,6 +47,7 @@ target_include_directories(project_game
 target_link_libraries(project_game
     PUBLIC
         project_net
+        nlohmann_json::nlohmann_json
 )
 apply_project_warnings(project_game)
 

@@ -1,0 +1,11 @@
+{
+  "pressure": {
+    "host": "127.0.0.1",
+    "port": 9000,
+    "client_count": 20,
+    "echo_count_per_client": 5,
+    "scenario": "slow_echo",
+    "send_interval_ms": 10,
+    "invalid_token_every": 5
+  }
+}

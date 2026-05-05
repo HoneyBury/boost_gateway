@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/gateway/gateway_metrics_exporter.h"
 #include "game/gateway/gateway_metrics.h"
 #include "game/gateway/session_manager.h"
 #include "game/room/room_manager.h"
@@ -29,7 +30,8 @@ public:
                   GatewayMetrics& metrics,
                   std::uint16_t port,
                   net::SessionOptions session_options = {},
-                  std::chrono::milliseconds metrics_log_interval = std::chrono::milliseconds(5000));
+                  std::chrono::milliseconds metrics_log_interval = std::chrono::milliseconds(5000),
+                  GatewayMetricsExportOptions metrics_export_options = {});
 
     void start();
     void stop();
@@ -49,6 +51,7 @@ private:
     asio::steady_timer metrics_timer_;
     net::SessionOptions session_options_;
     std::chrono::milliseconds metrics_log_interval_;
+    GatewayMetricsExportOptions metrics_export_options_;
 };
 
 }  // namespace game::gateway

@@ -28,12 +28,35 @@ struct GatewayAppConfig {
     std::size_t io_threads = 2;
     std::size_t business_threads = 2;
     std::chrono::milliseconds metrics_log_interval{5000};
+    std::optional<std::filesystem::path> metrics_prometheus_path;
+    std::optional<std::filesystem::path> metrics_json_path;
+    std::string auth_provider = "dev";
+    std::optional<std::filesystem::path> auth_users_path;
     std::uint32_t session_max_packet_size = 1024 * 1024;
     std::size_t session_max_pending_write_bytes = 256 * 1024;
     std::chrono::milliseconds session_heartbeat_check_interval{5000};
     std::chrono::milliseconds session_heartbeat_timeout{30000};
 };
 
+enum class PressureScenario {
+    kEcho,
+    kInvalidToken,
+    kSlowEcho,
+};
+
+struct PressureAppConfig {
+    std::string host = "127.0.0.1";
+    std::uint16_t port = 9000;
+    std::size_t client_count = 100;
+    std::size_t echo_count_per_client = 10;
+    PressureScenario scenario = PressureScenario::kEcho;
+    std::chrono::milliseconds send_interval{0};
+    std::size_t invalid_token_every = 5;
+};
+
 [[nodiscard]] GatewayAppConfig load_gateway_config(const std::filesystem::path& path);
+[[nodiscard]] PressureAppConfig load_pressure_config(const std::filesystem::path& path);
+[[nodiscard]] std::string to_string(PressureScenario scenario);
+[[nodiscard]] std::optional<PressureScenario> parse_pressure_scenario(const std::string& value);
 
 }  // namespace app::config

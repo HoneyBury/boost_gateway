@@ -104,20 +104,40 @@
 
 #### 2.10 可观测性升级
 
-- 状态：`todo`
+- 状态：`done`
 - 目标：把当前日志型指标升级为 Prometheus 或等价监控输出。
+- 产出物：
+  - `GatewayMetricsExporter`
+  - Prometheus 文本导出
+  - JSON 指标快照导出
+  - 对应单元测试
+- 依赖：`GatewayMetrics`、`SessionManager`、`RoomManager`、`BattleManager`
+- 备注：当前先落地为文件导出，后续可继续挂 HTTP `/metrics`。
 
 #### 2.11 压测体系扩展
 
-- 状态：`todo`
+- 状态：`done`
 - 目标：补齐登录风暴、广播压测、慢客户端压测和恶意包压测。
+- 产出物：
+  - JSON 压测配置
+  - `echo` / `invalid_token` / `slow_echo` 场景
+  - 压测汇总统计
+- 依赖：`examples/pressure`
+- 备注：广播压测和恶意包压测当前先留在场景扩展点，后续继续补齐战斗广播类压测。
 
 #### 2.12 后端持久化集成
 
-- 状态：`todo`
+- 状态：`done`
 - 目标：逐步接入数据库、缓存和账号服务。
+- 产出物：
+  - `JsonFileTokenValidator`
+  - 鉴权提供方配置切换
+  - 外部用户数据文件
+  - 对应单元测试
+- 依赖：`TokenValidator` 抽象、配置系统
+- 备注：当前先完成本地文件后端接入，后续可继续替换为 HTTP / RPC 账号服务。
 
 ## 3. 最近一次更新
 
 - 日期：`2026-05-05`
-- 说明：已完成 P0、P1 和当前 P2 的基础版本，下一阶段可以进入更深的观测、重连恢复增强和真实后端集成。
+- 说明：已完成 P0、P1、P2 和当前 P3 的基础版本，下一阶段可以继续细化 HTTP metrics、广播压测和真实远端鉴权服务。
