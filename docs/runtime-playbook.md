@@ -244,3 +244,10 @@ curl http://127.0.0.1:9080/metrics/json
 - 当前默认 JSON 配置使用 `dev` 鉴权提供方，也可以切换到 `json_file`
 - `config/auth_users.json` 可作为本地外部鉴权数据源
 - `gateway_pressure` 已支持 `echo`、`invalid_token`、`slow_echo` 三种压测场景
+
+## 11. 2026-05-05 HTTP 管理端点补充
+
+- 新增 `net::HttpManager`，基于 Boost.Beast 实现独立 HTTP 管理端口
+- 端点：`GET /health`（健康检查）、`GET /metrics`（Prometheus）、`GET /metrics/json`
+- 配置项 `gateway.http_management_port` 默认 9080，设为 0 禁用
+- 测试覆盖：`HttpManagementTest`（4 个集成测试用例）

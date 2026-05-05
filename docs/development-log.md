@@ -386,3 +386,42 @@
 - 增加 HTTP `/metrics` 或管理端口
 - 增加广播风暴、战斗广播和恶意包压测
 - 把 `JsonFileTokenValidator` 替换为真实远程账号服务客户端
+
+---
+
+## 2026-05-05 阶段九：HTTP 管理端点
+
+### 目标
+
+- 为网关增加 HTTP 管理端口，暴露健康检查和指标查询接口
+
+### 完成内容
+
+- 新增 `net::HttpManager`，基于 Boost.Beast 实现轻量 HTTP 服务
+- 提供 `GET /health`、`GET /metrics`（Prometheus 文本）、`GET /metrics/json` 三个端点
+- `GatewayServer` 集成 `HttpManager` 生命周期管理
+- 新增 `gateway.http_management_port` 配置项（默认 9080，设为 0 禁用）
+- 新增 `HttpManagementTest` 集成测试（4 个用例）
+
+### 影响范围
+
+- `net`
+- `game/gateway`
+- `examples/echo`
+- `config`
+- `tests/integration`
+- `docs`
+
+### 测试结果
+
+- `cmake --build --preset windows-msvc-debug --parallel`
+- `ctest --preset windows-msvc-debug --output-on-failure`
+- `32/32` 测试通过
+- `curl http://127.0.0.1:9080/health` → `{"status":"ok"}`
+- `curl http://127.0.0.1:9080/metrics` → Prometheus 格式指标正常
+
+### 下一步
+
+- 增加广播风暴、战斗广播和恶意包压测
+- 把 `JsonFileTokenValidator` 替换为真实远程账号服务客户端
+- 增加 Docker 部署与 CI 扩展

@@ -140,4 +140,31 @@
 ## 3. 最近一次更新
 
 - 日期：`2026-05-05`
-- 说明：已完成 P0、P1、P2 和当前 P3 的基础版本，下一阶段可以继续细化 HTTP metrics、广播压测和真实远端鉴权服务。
+- 说明：已完成 P0-P3 以及 HTTP 管理端点（P4-1），下一阶段继续推进 P4 剩余项。
+
+### P4
+
+#### 2.13 HTTP 管理端点
+
+- 状态：`done`
+- 目标：为网关增加独立的 HTTP 管理端口，暴露 `/health` 健康检查和 `/metrics` 指标查询接口。
+- 产出物：
+  - `net::HttpManager`
+  - `GET /health`、`GET /metrics`、`GET /metrics/json`
+  - `HttpManagementTest` 集成测试
+- 依赖：`GatewayMetricsExporter`、Boost.Beast
+
+#### 2.14 广播风暴与恶意包压测
+
+- 状态：`todo`
+- 目标：补齐广播风暴、战斗广播和恶意包/大包压测场景。
+
+#### 2.15 真实远程鉴权服务客户端
+
+- 状态：`todo`
+- 目标：把 `JsonFileTokenValidator` 替换为可对接公司账号系统的 HTTP / RPC 客户端。
+
+#### 2.16 Docker 部署与 CI 扩展
+
+- 状态：`todo`
+- 目标：补齐 Docker 镜像构建、多服务编排和 CI 流水线扩展。
