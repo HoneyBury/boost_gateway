@@ -10,6 +10,9 @@ add_executable(project_unit_tests
     service_registration_test.cpp
     token_validator_test.cpp
     packet_fuzz_test.cpp
+    matchmaking_test.cpp
+    compressor_test.cpp
+    admin_service_test.cpp
 )
 target_link_libraries(project_unit_tests
     PRIVATE

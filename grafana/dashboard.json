@@ -1,0 +1,67 @@
+{
+  "title": "Boost Gateway",
+  "uid": "boost-gateway",
+  "panels": [
+    {
+      "title": "Active Sessions",
+      "type": "gauge",
+      "targets": [{ "expr": "gateway_active_sessions" }],
+      "fieldConfig": { "defaults": { "max": 10000 } }
+    },
+    {
+      "title": "Authenticated Sessions",
+      "type": "gauge",
+      "targets": [{ "expr": "gateway_authenticated_sessions" }]
+    },
+    {
+      "title": "Active Rooms",
+      "type": "stat",
+      "targets": [{ "expr": "gateway_active_rooms" }]
+    },
+    {
+      "title": "Active Battles",
+      "type": "stat",
+      "targets": [{ "expr": "gateway_active_battles" }]
+    },
+    {
+      "title": "Packets Received / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_packets_received_total[1m])", "legendFormat": "recv/s" }]
+    },
+    {
+      "title": "Packets Sent / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_packets_sent_total[1m])", "legendFormat": "sent/s" }]
+    },
+    {
+      "title": "Bytes Received / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_bytes_received_total[1m])", "legendFormat": "recv B/s" }]
+    },
+    {
+      "title": "Bytes Sent / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_bytes_sent_total[1m])", "legendFormat": "sent B/s" }]
+    },
+    {
+      "title": "Blocked Packets / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_packets_blocked_total[1m])", "legendFormat": "blocked/s" }]
+    },
+    {
+      "title": "Login Success / sec",
+      "type": "timeseries",
+      "targets": [{ "expr": "rate(gateway_login_success_total[1m])", "legendFormat": "logins/s" }]
+    },
+    {
+      "title": "Sessions Accepted Rate",
+      "type": "timeseries",
+      "targets": [{ "expr": "gateway_sessions_accepted_rate", "legendFormat": "accept/s" }]
+    },
+    {
+      "title": "Health",
+      "type": "stat",
+      "targets": [{ "expr": "up"}]
+    }
+  ]
+}
