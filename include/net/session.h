@@ -18,13 +18,20 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 using error_code = boost::system::error_code;
 
+struct SessionOptions {
+    std::uint32_t max_packet_size = 1024 * 1024;
+    std::size_t max_pending_write_bytes = 256 * 1024;
+    std::chrono::milliseconds heartbeat_check_interval{5000};
+    std::chrono::milliseconds heartbeat_timeout{30000};
+};
+
 class Session : public std::enable_shared_from_this<Session> {
 public:
     using PacketHandler =
         std::function<void(const std::shared_ptr<Session>&, std::uint16_t, std::string)>;
     using CloseHandler = std::function<void(const std::shared_ptr<Session>&, const error_code&)>;
 
-    explicit Session(tcp::socket socket);
+    explicit Session(tcp::socket socket, SessionOptions options = {});
 
     void start();
     void send(std::uint16_t message_id, std::string body);
@@ -44,9 +51,6 @@ private:
     void handle_close(const error_code& ec);
     void arm_heartbeat_timer();
     void touch_activity();
-    std::string encode_packet(std::uint16_t message_id, const std::string& body) const;
-    static std::uint32_t decode_length(const std::array<unsigned char, 4>& header);
-    static std::uint16_t decode_message_id(const std::vector<char>& body);
 
     tcp::socket socket_;
     asio::strand<asio::any_io_executor> strand_;
@@ -60,11 +64,7 @@ private:
     CloseHandler close_handler_;
     std::chrono::steady_clock::time_point last_activity_at_;
     bool stopped_ = false;
-
-    static constexpr std::uint32_t kMaxPacketSize = 1024 * 1024;
-    static constexpr std::size_t kMaxPendingWriteBytes = 256 * 1024;
-    static constexpr std::chrono::seconds kHeartbeatCheckInterval{5};
-    static constexpr std::chrono::seconds kHeartbeatTimeout{30};
+    SessionOptions options_;
 };
 
 }  // namespace net
