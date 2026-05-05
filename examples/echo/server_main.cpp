@@ -144,6 +144,7 @@ int main(int argc, char* argv[]) {
             .prometheus_path = config.metrics_prometheus_path,
             .json_path = config.metrics_json_path,
         });
+    server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
 
     const auto io_thread_count = config.io_threads;

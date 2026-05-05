@@ -36,6 +36,13 @@ public:
     explicit MessageDispatcher(boost::asio::thread_pool& business_pool)
         : business_pool_(business_pool) {}
 
+    // Register a dedicated thread pool for a message ID range [min, max].
+    // Handlers in this range are dispatched to the dedicated pool instead of the default.
+    void set_thread_pool(std::uint16_t min_id, std::uint16_t max_id, boost::asio::thread_pool& pool) {
+        std::unique_lock lock(mutex_);
+        pool_ranges_.push_back({min_id, max_id, &pool});
+    }
+
     bool register_handler(std::uint16_t message_id, Handler handler) {
         std::unique_lock lock(mutex_);
         return handlers_.emplace(message_id, std::move(handler)).second;
@@ -103,7 +110,19 @@ public:
             .body = std::move(body),
         };
 
-        boost::asio::post(business_pool_, [context = std::move(context),
+        // Route to dedicated pool if message falls in a registered range
+        auto* target_pool = &business_pool_;
+        {
+            std::shared_lock lock(mutex_);
+            for (const auto& range : pool_ranges_) {
+                if (context.message_id >= range.min_id && context.message_id <= range.max_id) {
+                    target_pool = range.pool;
+                    break;
+                }
+            }
+        }
+
+        boost::asio::post(*target_pool, [context = std::move(context),
                                            handler = std::move(handler),
                                            middlewares = std::move(middlewares)]() mutable {
             for (const auto& middleware_entry : middlewares) {
@@ -130,10 +149,17 @@ private:
         Middleware middleware;
     };
 
+    struct PoolRange {
+        std::uint16_t min_id;
+        std::uint16_t max_id;
+        boost::asio::thread_pool* pool;
+    };
+
     boost::asio::thread_pool& business_pool_;
     mutable std::shared_mutex mutex_;
     std::unordered_map<std::uint16_t, Handler> handlers_;
     std::vector<MiddlewareEntry> middlewares_;
+    std::vector<PoolRange> pool_ranges_;
 };
 
 }  // namespace net

@@ -199,6 +199,12 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_milliseconds("gateway.auth.http_timeout_ms")) {
         config.auth_http_timeout = *value;
     }
+    if (const auto value = store.get_size("gateway.max_connections")) {
+        config.max_connections = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_size("gateway.per_ip_connection_limit")) {
+        config.per_ip_connection_limit = *value;
+    }
     if (const auto value = store.get_uint32("session.max_packet_size")) {
         config.session_max_packet_size = *value;
     }

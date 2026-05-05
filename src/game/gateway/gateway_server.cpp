@@ -72,6 +72,15 @@ std::uint16_t GatewayServer::local_port() const {
     return acceptor_.local_endpoint().port();
 }
 
+void GatewayServer::set_connection_limits(std::size_t max_total, std::size_t per_ip) {
+    max_connections_ = max_total;
+    per_ip_limit_ = per_ip;
+}
+
+std::size_t GatewayServer::active_connections() const {
+    return active_connection_count_.load(std::memory_order_relaxed);
+}
+
 void GatewayServer::do_accept() {
     acceptor_.async_accept([this](const error_code& ec, tcp::socket socket) {
         if (ec) {
@@ -80,6 +89,33 @@ void GatewayServer::do_accept() {
             }
             return;
         }
+
+        // Connection limiting
+        const auto current = active_connection_count_.load(std::memory_order_relaxed);
+        if (max_connections_ > 0 && current >= max_connections_) {
+            LOG_WARN("Connection rejected: at max capacity ({})", max_connections_);
+            metrics_.on_packet_blocked();
+            error_code ignored;
+            socket.close(ignored);
+            do_accept();
+            return;
+        }
+
+        if (per_ip_limit_ > 0) {
+            const auto ip = socket.remote_endpoint().address().to_string();
+            std::scoped_lock lock(ip_count_mutex_);
+            if (ip_connection_counts_[ip] >= per_ip_limit_) {
+                LOG_WARN("Connection rejected: IP {} at per-IP limit ({})", ip, per_ip_limit_);
+                metrics_.on_packet_blocked();
+                error_code ignored;
+                socket.close(ignored);
+                do_accept();
+                return;
+            }
+            ip_connection_counts_[ip]++;
+        }
+
+        active_connection_count_.fetch_add(1, std::memory_order_relaxed);
 
         auto session = std::make_shared<net::Session>(std::move(socket), session_options_);
         session_manager_.add_session(session);
@@ -117,6 +153,15 @@ void GatewayServer::do_accept() {
                 }
                 session_manager_.remove_session(session_ptr);
                 metrics_.on_session_closed();
+                active_connection_count_.fetch_sub(1, std::memory_order_relaxed);
+                if (per_ip_limit_ > 0) {
+                    const auto ip = session_ptr->remote_endpoint();
+                    const auto colon = ip.find(':');
+                    const auto addr = colon != std::string::npos ? ip.substr(0, colon) : ip;
+                    std::scoped_lock lock(ip_count_mutex_);
+                    auto& count = ip_connection_counts_[addr];
+                    if (count > 0) count--;
+                }
             });
 
         session->start();

@@ -14,6 +14,9 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
 
 namespace game::gateway {
 
@@ -37,6 +40,8 @@ public:
 
     void start();
     void stop();
+    void set_connection_limits(std::size_t max_total, std::size_t per_ip);
+    [[nodiscard]] std::size_t active_connections() const;
     [[nodiscard]] std::uint16_t local_port() const;
 
 private:
@@ -57,6 +62,11 @@ private:
     std::unique_ptr<net::HttpManager> http_manager_;
     GatewayMetricsSnapshot previous_metrics_snapshot_;
     std::chrono::steady_clock::time_point last_metrics_export_time_;
+    std::size_t max_connections_ = 0;
+    std::size_t per_ip_limit_ = 0;
+    std::atomic<std::size_t> active_connection_count_{0};
+    std::mutex ip_count_mutex_;
+    std::unordered_map<std::string, std::size_t> ip_connection_counts_;
 };
 
 }  // namespace game::gateway

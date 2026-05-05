@@ -35,6 +35,8 @@ struct GatewayAppConfig {
     std::optional<std::filesystem::path> auth_users_path;
     std::string auth_http_endpoint = "http://127.0.0.1:8080/auth/validate";
     std::chrono::milliseconds auth_http_timeout{3000};
+    std::size_t max_connections = 10000;
+    std::size_t per_ip_connection_limit = 0;  // 0 = disabled
     std::uint32_t session_max_packet_size = 1024 * 1024;
     std::size_t session_max_pending_write_bytes = 256 * 1024;
     std::chrono::milliseconds session_heartbeat_check_interval{5000};

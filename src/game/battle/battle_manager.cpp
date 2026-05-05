@@ -80,6 +80,46 @@ std::optional<BattleManager::FrameSnapshot> BattleManager::advance_frame(const s
     };
 }
 
+std::optional<BattleManager::BattleResult> BattleManager::end_battle(const std::string& room_id) {
+    std::scoped_lock lock(mutex_);
+    auto battle_it = active_battles_.find(room_id);
+    if (battle_it == active_battles_.end()) {
+        return std::nullopt;
+    }
+
+    auto& ctx = battle_it->second;
+
+    // Compute per-player input counts as scores
+    std::unordered_map<std::string, std::uint64_t> scores;
+    for (const auto& input : ctx.inputs) {
+        scores[input.user_id]++;
+    }
+
+    std::vector<std::pair<std::string, std::uint64_t>> player_scores;
+    std::string winner_id;
+    std::uint64_t max_score = 0;
+
+    for (const auto& pid : ctx.player_ids) {
+        const auto score = scores[pid];
+        player_scores.emplace_back(pid, score);
+        if (score > max_score) {
+            max_score = score;
+            winner_id = pid;
+        }
+    }
+
+    BattleResult result{
+        .room_id = room_id,
+        .winner_id = std::move(winner_id),
+        .total_frames = ctx.current_frame,
+        .total_inputs = ctx.inputs.size(),
+        .player_scores = std::move(player_scores),
+    };
+
+    active_battles_.erase(battle_it);
+    return result;
+}
+
 void BattleManager::remove_room(const std::string& room_id) {
     std::scoped_lock lock(mutex_);
     active_battles_.erase(room_id);

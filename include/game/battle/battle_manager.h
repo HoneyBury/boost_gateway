@@ -25,6 +25,14 @@ public:
         std::vector<InputEvent> inputs;
     };
 
+    struct BattleResult {
+        std::string room_id;
+        std::string winner_id;
+        std::uint32_t total_frames = 0;
+        std::uint64_t total_inputs = 0;
+        std::vector<std::pair<std::string, std::uint64_t>> player_scores;
+    };
+
     struct BattleSnapshot {
         std::string room_id;
         std::vector<std::string> player_ids;
@@ -63,6 +71,7 @@ public:
                                     const std::string& user_id,
                                     std::string payload);
     [[nodiscard]] std::optional<FrameSnapshot> advance_frame(const std::string& room_id);
+    [[nodiscard]] std::optional<BattleResult> end_battle(const std::string& room_id);
     void remove_room(const std::string& room_id);
     [[nodiscard]] bool battle_started(const std::string& room_id) const;
     [[nodiscard]] std::size_t active_battle_count() const;
