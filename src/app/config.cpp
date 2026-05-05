@@ -284,6 +284,10 @@ std::string to_string(PressureScenario scenario) {
         return "malicious_packet";
     case PressureScenario::kBattleBroadcast:
         return "battle_broadcast";
+    case PressureScenario::kChaos:
+        return "chaos";
+    case PressureScenario::kStability:
+        return "stability";
     }
 
     return "echo";
@@ -307,6 +311,12 @@ std::optional<PressureScenario> parse_pressure_scenario(const std::string& value
     }
     if (value == "battle_broadcast") {
         return PressureScenario::kBattleBroadcast;
+    }
+    if (value == "chaos") {
+        return PressureScenario::kChaos;
+    }
+    if (value == "stability") {
+        return PressureScenario::kStability;
     }
     return std::nullopt;
 }

@@ -51,6 +51,8 @@ enum class PressureScenario {
     kBroadcastStorm,
     kMaliciousPacket,
     kBattleBroadcast,
+    kChaos,
+    kStability,
 };
 
 struct PressureAppConfig {

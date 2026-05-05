@@ -40,14 +40,48 @@ std::string timestamp_string() {
     return buf;
 }
 
+constexpr std::size_t kMaxCrashReports = 10;
+
+void rotate_crash_reports() {
+    try {
+        const auto dir = crash_dir();
+        if (!std::filesystem::exists(dir)) return;
+
+        std::vector<std::filesystem::path> reports;
+        for (const auto& entry : std::filesystem::directory_iterator(dir)) {
+            if (entry.path().extension() == ".txt") {
+                reports.push_back(entry.path());
+            }
+        }
+        std::sort(reports.begin(), reports.end());
+        while (reports.size() >= kMaxCrashReports) {
+            std::filesystem::remove(reports.front());
+            reports.erase(reports.begin());
+        }
+    } catch (...) {}
+}
+
 void write_crash_report(const std::string& signal_name) {
     try {
+        rotate_crash_reports();
         std::filesystem::create_directories(crash_dir());
         const auto path = crash_dir() / ("crash_" + timestamp_string() + ".txt");
         std::ofstream output(path);
         if (output.is_open()) {
             output << "crash_signal: " << signal_name << "\n";
             output << "timestamp: " << timestamp_string() << "\n";
+#ifdef _WIN32
+            output << "os: Windows\n";
+            char hostname[256]{};
+            DWORD size = sizeof(hostname);
+            GetComputerNameA(hostname, &size);
+            output << "hostname: " << hostname << "\n";
+#else
+            output << "os: POSIX\n";
+            char hostname[256]{};
+            gethostname(hostname, sizeof(hostname));
+            output << "hostname: " << hostname << "\n";
+#endif
         }
     } catch (...) {
         // Last resort — nothing we can do

@@ -1,0 +1,44 @@
+groups:
+  - name: gateway_alerts
+    rules:
+      - alert: GatewayDown
+        expr: up == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations: { summary: "Gateway server is down" }
+
+      - alert: HighErrorRate
+        expr: rate(gateway_packets_blocked_total[5m]) > 10
+        for: 2m
+        labels: { severity: warning }
+        annotations: { summary: "High packet block rate: {{ $value }}/s" }
+
+      - alert: ConnectionSaturation
+        expr: gateway_active_sessions / 10000 > 0.8
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Connection saturation at {{ $value | humanizePercentage }}" }
+
+      - alert: SlowConnectionCount
+        expr: gateway_active_sessions - gateway_authenticated_sessions > 100
+        for: 5m
+        labels: { severity: info }
+        annotations: { summary: "{{ $value }} unauthenticated sessions" }
+
+      - alert: AuthFailureSpike
+        expr: rate(gateway_login_success_total[5m]) < 0.1
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Login success rate dropped below 0.1/s" }
+
+      - alert: WriteBacklogWarning
+        expr: rate(gateway_bytes_sent_total[5m]) < rate(gateway_bytes_received_total[5m]) * 0.5
+        for: 5m
+        labels: { severity: warning }
+        annotations: { summary: "Send rate significantly below receive rate" }
+
+      - alert: NoMetrics
+        expr: absent(gateway_sessions_accepted_total)
+        for: 2m
+        labels: { severity: critical }
+        annotations: { summary: "Gateway metrics not being exported" }

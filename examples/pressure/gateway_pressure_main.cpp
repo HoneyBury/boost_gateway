@@ -287,6 +287,8 @@ private:
         case kEcho:
         case kInvalidToken:
         case kSlowEcho:
+        case kChaos:
+        case kStability:
             handle_echo_state(packet);
             break;
         case kBroadcastStorm:
@@ -566,8 +568,20 @@ private:
             send_packet(net::protocol::kBattleInputRequest,
                         "input:" + user_id_ + ":" + std::to_string(completed_messages_));
             break;
+        case kChaos:
+        case kStability:
+            send_packet(net::protocol::kEchoRequest,
+                        "load_msg:" + user_id_ + ":" + std::to_string(completed_messages_));
+            break;
         case kMaliciousPacket:
             break;
+        }
+
+        // Chaos: randomly disconnect after some messages
+        if (config_.scenario == app::config::PressureScenario::kChaos &&
+            completed_messages_ > 0 && (client_index_ % 10 == completed_messages_ % 10)) {
+            LOG_INFO("Chaos disconnect for {}", user_id_);
+            fail();
         }
     }
 
