@@ -22,9 +22,17 @@ void Session::start() {
     do_read_header();
 }
 
-void Session::send(std::uint16_t message_id, std::string body) {
+void Session::send(std::uint16_t message_id,
+                   std::uint32_t request_id,
+                   std::int32_t error_code,
+                   std::string body) {
     // 业务层只负责提交逻辑消息，真正的封包和串行发送都在 Session 内部完成。
-    enqueue_write(message_id, std::move(body));
+    enqueue_write(PacketMessage{
+        .message_id = message_id,
+        .request_id = request_id,
+        .error_code = error_code,
+        .body = std::move(body),
+    });
 }
 
 void Session::stop() {
@@ -89,7 +97,7 @@ void Session::do_read_header() {
                                 self->touch_activity();
                                 self->expected_body_length_ = packet::decode_length(self->read_header_);
 
-                                if (self->expected_body_length_ < packet::kMessageIdSize) {
+                                if (self->expected_body_length_ < packet::kFixedMetadataSize) {
                                     LOG_WARN("Session {} invalid packet length {}",
                                              self->remote_endpoint(),
                                              self->expected_body_length_);
@@ -133,14 +141,19 @@ void Session::do_read_body() {
                                              packet.message_id,
                                              packet.body.size());
 
+                                    const PacketMessage message{
+                                        .message_id = packet.message_id,
+                                        .request_id = packet.request_id,
+                                        .error_code = packet.error_code,
+                                        .body = std::move(packet.body),
+                                    };
+
                                     if (self->receive_observer_) {
-                                        self->receive_observer_(
-                                            self, packet.message_id, packet.body.size());
+                                        self->receive_observer_(self, message);
                                     }
 
                                     if (self->packet_handler_) {
-                                        self->packet_handler_(
-                                            self, packet.message_id, std::move(packet.body));
+                                        self->packet_handler_(self, message);
                                     }
                                 } catch (const std::exception& ex) {
                                     LOG_WARN("Session {} decode failed: {}",
@@ -156,14 +169,15 @@ void Session::do_read_body() {
                             }));
 }
 
-void Session::enqueue_write(std::uint16_t message_id, std::string body) {
+void Session::enqueue_write(PacketMessage message) {
     auto self = shared_from_this();
-    asio::post(strand_, [self, message_id, body = std::move(body)]() mutable {
+    asio::post(strand_, [self, message = std::move(message)]() mutable {
         if (self->stopped_) {
             return;
         }
 
-        auto packet_bytes = packet::encode(message_id, body);
+        auto packet_bytes =
+            packet::encode(message.message_id, message.request_id, message.error_code, message.body);
 
         if (packet_bytes.size() > packet::kLengthHeaderSize + self->options_.max_packet_size) {
             LOG_WARN("Session {} outgoing packet too large: {} bytes",
@@ -185,7 +199,7 @@ void Session::enqueue_write(std::uint16_t message_id, std::string body) {
         const bool write_in_progress = !self->write_queue_.empty();
         self->queued_write_bytes_ += packet_bytes.size();
         self->write_queue_.push_back(PendingWrite{
-            .message_id = message_id,
+            .message = std::move(message),
             .packet = std::move(packet_bytes),
         });
 
@@ -210,10 +224,7 @@ void Session::do_write() {
 
                                 self->touch_activity();
 
-                                const auto sent_message_id = self->write_queue_.front().message_id;
-                                const auto sent_body_size =
-                                    self->write_queue_.front().packet.size() -
-                                    packet::kLengthHeaderSize - packet::kMessageIdSize;
+                                const auto sent_message = self->write_queue_.front().message;
                                 self->queued_write_bytes_ -= self->write_queue_.front().packet.size();
 
                                 LOG_DEBUG("Session {} sent {} bytes",
@@ -221,7 +232,7 @@ void Session::do_write() {
                                           bytes_transferred);
 
                                 if (self->send_observer_) {
-                                    self->send_observer_(self, sent_message_id, sent_body_size);
+                                    self->send_observer_(self, sent_message);
                                 }
 
                                 self->write_queue_.pop_front();

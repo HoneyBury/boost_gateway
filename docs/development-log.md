@@ -185,3 +185,52 @@
 - 拆分 `RoomManager` / `BattleManager`
 - 增加请求序号和统一响应结构
 - 增加广播、踢线、重连恢复和限频中间层
+
+---
+
+## 2026-05-05 阶段五：协议与状态层继续收敛
+
+### 目标
+
+- 将房间态和战斗态从 `SessionManager` 中拆出
+- 增加统一 `request_id + error_code` 协议结构
+- 增加网关层限频中间层
+
+### 完成内容
+
+- 新增 `RoomManager` 和 `BattleManager`
+- `SessionManager` 收敛为连接和认证状态管理
+- 网络协议升级为 `[长度][消息号][请求序号][错误码][消息体]`
+- 登录、房间、战斗、Echo 链路全部切到统一响应结构
+- 新增网关限频中间层
+- 新增对应单元测试和限频集成测试
+
+### 影响范围
+
+- `net`
+- `game/gateway`
+- `game/room`
+- `game/battle`
+- `examples/echo`
+- `examples/pressure`
+- `tests/unit`
+- `tests/integration`
+- `docs`
+
+### 问题与风险
+
+- 当前错误码仍是最小集合，后续需要扩展到完整业务错误码体系
+- 房间和战斗管理器已经拆出，但还没有广播、退出和结算能力
+- 限频目前按连接做固定窗口统计，后续需要扩展为按消息号和按用户维度限频
+
+### 测试结果
+
+- `ctest --preset windows-msvc-debug`
+- `18/18` 测试通过
+- `gateway_pressure.exe 127.0.0.1 9101 10 3` 本地冒烟通过
+
+### 下一步
+
+- 完整登录链路
+- 房间系统独立化
+- 战斗系统独立化

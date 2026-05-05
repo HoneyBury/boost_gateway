@@ -9,6 +9,8 @@ namespace game::gateway {
 GatewayServer::GatewayServer(asio::io_context& io_context,
                              net::MessageDispatcher& dispatcher,
                              SessionManager& session_manager,
+                             game::room::RoomManager& room_manager,
+                             game::battle::BattleManager& battle_manager,
                              GatewayMetrics& metrics,
                              std::uint16_t port,
                              net::SessionOptions session_options,
@@ -16,6 +18,8 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
     : io_context_(io_context),
       dispatcher_(dispatcher),
       session_manager_(session_manager),
+      room_manager_(room_manager),
+      battle_manager_(battle_manager),
       metrics_(metrics),
       acceptor_(io_context, tcp::endpoint(tcp::v4(), port)),
       metrics_timer_(io_context),
@@ -58,22 +62,31 @@ void GatewayServer::do_accept() {
         LOG_INFO("Accepted client {}", session->remote_endpoint());
 
         session->set_receive_observer(
-            [this](const std::shared_ptr<net::Session>&,
-                   std::uint16_t,
-                   std::size_t body_size) { metrics_.on_packet_received(body_size); });
+            [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
+                metrics_.on_packet_received(message.body.size());
+            });
 
         session->set_send_observer(
-            [this](const std::shared_ptr<net::Session>&,
-                   std::uint16_t,
-                   std::size_t body_size) { metrics_.on_packet_sent(body_size); });
+            [this](const std::shared_ptr<net::Session>&, const net::Session::PacketMessage& message) {
+                metrics_.on_packet_sent(message.body.size());
+            });
 
         session->set_packet_handler(
-            [this](const std::shared_ptr<net::Session>& session_ptr,
-                   std::uint16_t message_id,
-                   std::string body) { dispatcher_.dispatch(session_ptr, message_id, std::move(body)); });
+            [this](const std::shared_ptr<net::Session>& session_ptr, net::Session::PacketMessage message) {
+                dispatcher_.dispatch(session_ptr,
+                                     message.message_id,
+                                     message.request_id,
+                                     message.error_code,
+                                     std::move(message.body));
+            });
 
         session->set_close_handler(
             [this](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
+                const auto room_id = room_manager_.room_id_of(session_ptr);
+                room_manager_.remove_session(session_ptr);
+                if (room_id && room_manager_.member_count(*room_id) == 0) {
+                    battle_manager_.remove_room(*room_id);
+                }
                 session_manager_.remove_session(session_ptr);
                 metrics_.on_session_closed();
             });
@@ -100,8 +113,8 @@ void GatewayServer::arm_metrics_timer() {
                  metrics_.summary(),
                  session_snapshot.active_sessions,
                  session_snapshot.authenticated_sessions,
-                 session_snapshot.active_rooms,
-                 session_snapshot.active_battles);
+                 room_manager_.room_count(),
+                 battle_manager_.active_battle_count());
 
         arm_metrics_timer();
     });

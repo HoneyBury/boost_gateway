@@ -1,10 +1,12 @@
 #include "app/logging.h"
 #include "game/battle/battle_service.h"
+#include "game/battle/battle_manager.h"
 #include "game/gateway/gateway_metrics.h"
 #include "game/gateway/gateway_server.h"
 #include "game/gateway/gateway_service.h"
 #include "game/gateway/session_manager.h"
 #include "game/login/login_service.h"
+#include "game/room/room_manager.h"
 #include "game/room/room_service.h"
 #include "net/message_dispatcher.h"
 #include "net/protocol.h"
@@ -30,12 +32,14 @@ int main(int argc, char* argv[]) {
     boost::asio::thread_pool business_pool(std::max(2u, std::thread::hardware_concurrency()));
     net::MessageDispatcher dispatcher(business_pool);
     game::gateway::SessionManager session_manager;
+    game::room::RoomManager room_manager;
+    game::battle::BattleManager battle_manager;
     game::gateway::GatewayMetrics metrics;
 
     game::gateway::GatewayService gateway_service(session_manager, metrics);
     game::login::LoginService login_service(session_manager, metrics);
-    game::room::RoomService room_service(session_manager, metrics);
-    game::battle::BattleService battle_service(session_manager, metrics);
+    game::room::RoomService room_service(session_manager, room_manager, metrics);
+    game::battle::BattleService battle_service(session_manager, room_manager, battle_manager, metrics);
 
     gateway_service.register_handlers(dispatcher);
     login_service.register_handlers(dispatcher);
@@ -46,10 +50,14 @@ int main(int argc, char* argv[]) {
         net::protocol::kEchoRequest,
         [](const net::DispatchContext& context) {
             // Echo 示例仍然保留，用于快速验证网络链路是否通畅。
-            context.session->send(net::protocol::kEchoResponse, context.body);
+            context.session->send(net::protocol::kEchoResponse,
+                                  context.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  context.body);
         });
 
-    game::gateway::GatewayServer server(io_context, dispatcher, session_manager, metrics, port);
+    game::gateway::GatewayServer server(
+        io_context, dispatcher, session_manager, room_manager, battle_manager, metrics, port);
     server.start();
 
     const auto io_thread_count =

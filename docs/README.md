@@ -7,6 +7,7 @@
 - [高性能游戏服务器框架规划](./architecture-roadmap.md)
 - [工程开发规范](./engineering-guide.md)
 - [开发日志模板与阶段记录](./development-log.md)
+- [开发优先级看板](./development-priority.md)
 - [当前网关骨架运行说明](./runtime-playbook.md)
 - [Git 工作流与提交规范](./git-workflow.md)
 

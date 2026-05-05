@@ -3,7 +3,7 @@
 #include <gtest/gtest.h>
 
 TEST(PacketCodecTest, EncodeAndDecodeRoundTrip) {
-    const auto encoded = net::packet::encode(1001, "payload");
+    const auto encoded = net::packet::encode(1001, 77, -3, "payload");
 
     net::packet::LengthHeader header{};
     std::copy(encoded.begin(), encoded.begin() + 4, header.begin());
@@ -14,6 +14,8 @@ TEST(PacketCodecTest, EncodeAndDecodeRoundTrip) {
 
     EXPECT_EQ(length, payload.size());
     EXPECT_EQ(decoded.message_id, 1001);
+    EXPECT_EQ(decoded.request_id, 77U);
+    EXPECT_EQ(decoded.error_code, -3);
     EXPECT_EQ(decoded.body, "payload");
 }
 

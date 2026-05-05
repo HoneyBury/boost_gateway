@@ -27,16 +27,26 @@ struct SessionOptions {
 
 class Session : public std::enable_shared_from_this<Session> {
 public:
+    struct PacketMessage {
+        std::uint16_t message_id = 0;
+        std::uint32_t request_id = 0;
+        std::int32_t error_code = 0;
+        std::string body;
+    };
+
     using PacketHandler =
-        std::function<void(const std::shared_ptr<Session>&, std::uint16_t, std::string)>;
+        std::function<void(const std::shared_ptr<Session>&, PacketMessage)>;
     using CloseHandler = std::function<void(const std::shared_ptr<Session>&, const error_code&)>;
     using PacketObserver =
-        std::function<void(const std::shared_ptr<Session>&, std::uint16_t, std::size_t)>;
+        std::function<void(const std::shared_ptr<Session>&, const PacketMessage&)>;
 
     explicit Session(tcp::socket socket, SessionOptions options = {});
 
     void start();
-    void send(std::uint16_t message_id, std::string body);
+    void send(std::uint16_t message_id,
+              std::uint32_t request_id,
+              std::int32_t error_code,
+              std::string body);
     void stop();
 
     void set_packet_handler(PacketHandler handler);
@@ -50,14 +60,14 @@ public:
 private:
     void do_read_header();
     void do_read_body();
-    void enqueue_write(std::uint16_t message_id, std::string body);
+    void enqueue_write(PacketMessage message);
     void do_write();
     void handle_close(const error_code& ec);
     void arm_heartbeat_timer();
     void touch_activity();
 
     struct PendingWrite {
-        std::uint16_t message_id = 0;
+        PacketMessage message;
         std::string packet;
     };
 

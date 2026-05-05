@@ -12,7 +12,7 @@ std::shared_ptr<net::Session> make_session(boost::asio::io_context& io_context) 
 
 }  // namespace
 
-TEST(SessionManagerTest, TracksAuthenticationAndRoomState) {
+TEST(SessionManagerTest, TracksAuthenticationState) {
     boost::asio::io_context io_context;
     game::gateway::SessionManager manager;
 
@@ -30,23 +30,9 @@ TEST(SessionManagerTest, TracksAuthenticationAndRoomState) {
     EXPECT_TRUE(manager.is_authenticated(first));
     EXPECT_EQ(manager.user_id_of(first).value_or(""), "player_a");
 
-    const auto join_outcome = manager.join_room(first, "room_alpha");
-    EXPECT_EQ(join_outcome.result, game::gateway::SessionManager::JoinRoomResult::kOk);
-    EXPECT_EQ(join_outcome.player_count, 1U);
-
-    const auto second_join = manager.join_room(second, "room_alpha");
-    EXPECT_EQ(second_join.result, game::gateway::SessionManager::JoinRoomResult::kOk);
-    EXPECT_EQ(second_join.player_count, 2U);
-
-    const auto battle_outcome = manager.start_battle(first);
-    EXPECT_EQ(battle_outcome.result, game::gateway::SessionManager::StartBattleResult::kOk);
-    EXPECT_EQ(battle_outcome.player_count, 2U);
-
     const auto snapshot = manager.snapshot();
     EXPECT_EQ(snapshot.active_sessions, 2U);
     EXPECT_EQ(snapshot.authenticated_sessions, 2U);
-    EXPECT_EQ(snapshot.active_rooms, 1U);
-    EXPECT_EQ(snapshot.active_battles, 1U);
 }
 
 TEST(SessionManagerTest, ReplacesPreviousSessionOnDuplicateLogin) {

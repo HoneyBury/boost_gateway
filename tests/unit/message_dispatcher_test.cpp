@@ -21,7 +21,7 @@ TEST(MessageDispatcherTest, DispatchesRegisteredHandlerOnBusinessPool) {
         promise->set_value(context.body);
     }));
 
-    EXPECT_TRUE(dispatcher.dispatch(std::shared_ptr<net::Session>{}, 42, "business_payload"));
+    EXPECT_TRUE(dispatcher.dispatch(std::shared_ptr<net::Session>{}, 42, 1, 0, "business_payload"));
 
     pool.join();
     EXPECT_EQ(future.get(), "business_payload");
@@ -55,7 +55,7 @@ TEST(MessageDispatcherTest, MiddlewareCanBlockMessageBeforeHandlerRuns) {
         FAIL() << "Handler should not run when middleware blocks the message.";
     }));
 
-    EXPECT_TRUE(dispatcher.dispatch(std::shared_ptr<net::Session>{}, 99, "blocked_payload"));
+    EXPECT_TRUE(dispatcher.dispatch(std::shared_ptr<net::Session>{}, 99, 2, 0, "blocked_payload"));
 
     pool.join();
     EXPECT_TRUE(future.get());

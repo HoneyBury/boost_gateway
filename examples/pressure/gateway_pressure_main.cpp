@@ -122,7 +122,7 @@ private:
     }
 
     void send_packet(std::uint16_t message_id, const std::string& body) {
-        outbound_packet_ = net::packet::encode(message_id, body);
+        outbound_packet_ = net::packet::encode(message_id, next_request_id_++, 0, body);
         auto self = shared_from_this();
         asio::async_write(
             socket_,
@@ -180,7 +180,6 @@ private:
                 fail();
                 return;
             }
-
             send_next_echo();
             return;
         }
@@ -227,6 +226,7 @@ private:
     std::string user_id_;
     std::size_t total_echo_requests_ = 0;
     std::size_t completed_echo_requests_ = 0;
+    std::uint32_t next_request_id_ = 1;
     std::string outbound_packet_;
     net::packet::LengthHeader read_header_{};
     std::vector<char> read_body_;

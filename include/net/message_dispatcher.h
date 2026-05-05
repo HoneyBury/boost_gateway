@@ -21,6 +21,8 @@ namespace net {
 struct DispatchContext {
     std::shared_ptr<Session> session;
     std::uint16_t message_id = 0;
+    std::uint32_t request_id = 0;
+    std::int32_t error_code = 0;
     std::string body;
 };
 
@@ -64,6 +66,8 @@ public:
 
     bool dispatch(const std::shared_ptr<Session>& session,
                   std::uint16_t message_id,
+                  std::uint32_t request_id,
+                  std::int32_t error_code,
                   std::string body) const {
         Handler handler;
         std::vector<MiddlewareEntry> middlewares;
@@ -88,6 +92,8 @@ public:
         DispatchContext context{
             .session = session,
             .message_id = message_id,
+            .request_id = request_id,
+            .error_code = error_code,
             .body = std::move(body),
         };
 

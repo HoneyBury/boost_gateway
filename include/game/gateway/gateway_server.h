@@ -2,6 +2,8 @@
 
 #include "game/gateway/gateway_metrics.h"
 #include "game/gateway/session_manager.h"
+#include "game/room/room_manager.h"
+#include "game/battle/battle_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/session.h"
 
@@ -22,6 +24,8 @@ public:
     GatewayServer(asio::io_context& io_context,
                   net::MessageDispatcher& dispatcher,
                   SessionManager& session_manager,
+                  game::room::RoomManager& room_manager,
+                  game::battle::BattleManager& battle_manager,
                   GatewayMetrics& metrics,
                   std::uint16_t port,
                   net::SessionOptions session_options = {},
@@ -38,6 +42,8 @@ private:
     asio::io_context& io_context_;
     net::MessageDispatcher& dispatcher_;
     SessionManager& session_manager_;
+    game::room::RoomManager& room_manager_;
+    game::battle::BattleManager& battle_manager_;
     GatewayMetrics& metrics_;
     tcp::acceptor acceptor_;
     asio::steady_timer metrics_timer_;

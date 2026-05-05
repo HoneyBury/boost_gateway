@@ -26,7 +26,7 @@
 当前网络层协议格式：
 
 ```text
-[4字节长度][2字节消息号][消息体]
+[4字节长度][2字节消息号][4字节请求序号][4字节错误码][消息体]
 ```
 
 当前关键消息号：
@@ -58,6 +58,8 @@
   允许 `HeartbeatRequest`、`LoginRequest`、`EchoRequest`
 - 未登录业务拦截
   未登录时访问房间或战斗接口，会返回 `kErrorResponse: auth_required`
+- 基础限频
+  单连接每秒最多通过 32 条非心跳消息，超限会返回 `kErrorResponse: rate_limited`
 
 ## 4. 目录对应关系
 
@@ -135,9 +137,16 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - 房间加入成功数
 - 战斗启动成功数
 
+## 8. 当前完成的优先级任务
+
+当前已经完成：
+
+1. `SessionManager / RoomManager / BattleManager` 状态拆分
+2. `request_id + error_code` 协议升级
+3. 网关限频中间层
 `GatewayServer` 会定时把这些指标和当前在线状态打印到日志里。
 
-## 8. 下一步建议
+## 9. 下一步建议
 
 当前这套骨架可以继续往下演进的方向：
 

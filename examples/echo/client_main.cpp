@@ -65,7 +65,8 @@ private:
         auto self = shared_from_this();
         LOG_INFO("Sending echo request: {}", message_);
 
-        outbound_packet_ = net::packet::encode(net::protocol::kEchoRequest, message_);
+        outbound_packet_ =
+            net::packet::encode(net::protocol::kEchoRequest, request_id_, 0, message_);
 
         asio::async_write(
             socket_,
@@ -111,7 +112,11 @@ private:
                 }
 
                 auto packet = net::packet::decode_payload(self->read_body_);
-                LOG_INFO("Received message {} with body: {}", packet.message_id, packet.body);
+                LOG_INFO("Received message {} request_id={} error_code={} body={}",
+                         packet.message_id,
+                         packet.request_id,
+                         packet.error_code,
+                         packet.body);
 
                 error_code ignored_ec;
                 self->socket_.shutdown(tcp::socket::shutdown_both, ignored_ec);
@@ -124,6 +129,7 @@ private:
     std::string host_;
     std::string port_;
     std::string message_;
+    std::uint32_t request_id_ = 1;
     std::string outbound_packet_;
     net::packet::LengthHeader read_header_{};
     std::vector<char> read_body_;
