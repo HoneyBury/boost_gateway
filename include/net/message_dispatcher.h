@@ -23,6 +23,8 @@ struct DispatchContext {
     std::uint16_t message_id = 0;
     std::uint32_t request_id = 0;
     std::int32_t error_code = 0;
+    std::uint8_t flags = 0;
+    std::uint64_t trace_id = 0;
     std::string body;
 };
 
@@ -68,7 +70,9 @@ public:
                   std::uint16_t message_id,
                   std::uint32_t request_id,
                   std::int32_t error_code,
-                  std::string body) const {
+                  std::string body,
+                  std::uint64_t trace_id = 0,
+                  std::uint8_t flags = 0) const {
         Handler handler;
         std::vector<MiddlewareEntry> middlewares;
         {
@@ -94,6 +98,8 @@ public:
             .message_id = message_id,
             .request_id = request_id,
             .error_code = error_code,
+            .flags = flags,
+            .trace_id = trace_id,
             .body = std::move(body),
         };
 
@@ -102,14 +108,17 @@ public:
                                            middlewares = std::move(middlewares)]() mutable {
             for (const auto& middleware_entry : middlewares) {
                 if (!middleware_entry.middleware(context)) {
-                    LOG_DEBUG("Message {} blocked by middleware {}",
+                    LOG_DEBUG("Message {} blocked by middleware {} [trace={}]",
                               context.message_id,
-                              middleware_entry.name);
+                              middleware_entry.name,
+                              context.trace_id);
                     return;
                 }
             }
 
-            LOG_DEBUG("Dispatch message {} on business thread", context.message_id);
+            LOG_DEBUG("Dispatch message {} on business thread [trace={}]",
+                      context.message_id,
+                      context.trace_id);
             handler(context);
         });
         return true;

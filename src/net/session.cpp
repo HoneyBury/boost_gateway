@@ -3,9 +3,14 @@
 #include "app/logging.h"
 #include "net/packet_codec.h"
 
+#include <atomic>
 #include <utility>
 
 namespace net {
+
+namespace {
+std::atomic<std::uint64_t> g_trace_id_counter{1};
+}  // namespace
 
 Session::Session(tcp::socket socket, SessionOptions options)
     : socket_(std::move(socket)),
@@ -25,13 +30,58 @@ void Session::start() {
 void Session::send(std::uint16_t message_id,
                    std::uint32_t request_id,
                    std::int32_t error_code,
-                   std::string body) {
-    // 业务层只负责提交逻辑消息，真正的封包和串行发送都在 Session 内部完成。
+                   std::string body,
+                   std::uint8_t flags) {
     enqueue_write(PacketMessage{
         .message_id = message_id,
         .request_id = request_id,
         .error_code = error_code,
+        .flags = flags,
         .body = std::move(body),
+    });
+}
+
+void Session::send_batch(std::vector<PacketMessage> messages) {
+    if (messages.empty()) return;
+
+    auto self = shared_from_this();
+    asio::post(strand_, [self, messages = std::move(messages)]() mutable {
+        if (self->stopped_) return;
+
+        // Encode all messages into a single contiguous buffer
+        std::string combined;
+        for (const auto& msg : messages) {
+            auto pkt = packet::encode(msg.message_id, msg.request_id, msg.error_code, msg.body, msg.flags);
+            combined.append(pkt);
+        }
+
+        if (combined.size() > packet::kLengthHeaderSize + self->options_.max_packet_size) {
+            LOG_WARN("Session {} batch too large: {} bytes", self->remote_endpoint(), combined.size());
+            self->handle_close(asio::error::message_size);
+            return;
+        }
+
+        const auto new_total = self->queued_write_bytes_ + combined.size();
+        if (new_total > self->options_.max_pending_write_bytes) {
+            LOG_WARN("Session {} write queue overflow on batch", self->remote_endpoint());
+            self->handle_close(asio::error::no_buffer_space);
+            return;
+        }
+
+        self->queued_write_bytes_ = new_total;
+        if (self->queued_write_bytes_ > self->peak_write_bytes_) {
+            self->peak_write_bytes_ = self->queued_write_bytes_;
+        }
+
+        const bool write_in_progress = !self->write_queue_.empty();
+        self->write_queue_.push_back(PendingWrite{
+            .message = messages.back(),
+            .packet = std::move(combined),
+        });
+
+        if (!write_in_progress) {
+            self->do_write();
+        }
     });
 }
 
@@ -75,6 +125,14 @@ std::string Session::remote_endpoint() const {
     }
 
     return endpoint.address().to_string() + ":" + std::to_string(endpoint.port());
+}
+
+std::size_t Session::pending_write_bytes() const {
+    return queued_write_bytes_;
+}
+
+std::size_t Session::pending_write_count() const {
+    return write_queue_.size();
 }
 
 tcp::socket& Session::socket() {
@@ -136,15 +194,20 @@ void Session::do_read_body() {
                                 try {
                                     auto packet = packet::decode_payload(self->read_body_);
 
-                                    LOG_INFO("Session {} received message {} with {} bytes body",
+                                    const auto trace_id = g_trace_id_counter.fetch_add(1, std::memory_order_relaxed);
+
+                                    LOG_INFO("Session {} received message {} with {} bytes body [trace={}]",
                                              self->remote_endpoint(),
                                              packet.message_id,
-                                             packet.body.size());
+                                             packet.body.size(),
+                                             trace_id);
 
                                     const PacketMessage message{
                                         .message_id = packet.message_id,
                                         .request_id = packet.request_id,
                                         .error_code = packet.error_code,
+                                        .flags = packet.flags,
+                                        .trace_id = trace_id,
                                         .body = std::move(packet.body),
                                     };
 
@@ -177,7 +240,7 @@ void Session::enqueue_write(PacketMessage message) {
         }
 
         auto packet_bytes =
-            packet::encode(message.message_id, message.request_id, message.error_code, message.body);
+            packet::encode(message.message_id, message.request_id, message.error_code, message.body, message.flags);
 
         if (packet_bytes.size() > packet::kLengthHeaderSize + self->options_.max_packet_size) {
             LOG_WARN("Session {} outgoing packet too large: {} bytes",
@@ -187,7 +250,8 @@ void Session::enqueue_write(PacketMessage message) {
             return;
         }
 
-        if (self->queued_write_bytes_ + packet_bytes.size() > self->options_.max_pending_write_bytes) {
+        const auto new_total = self->queued_write_bytes_ + packet_bytes.size();
+        if (new_total > self->options_.max_pending_write_bytes) {
             LOG_WARN("Session {} write queue overflow: pending={}, incoming={}",
                      self->remote_endpoint(),
                      self->queued_write_bytes_,
@@ -196,8 +260,19 @@ void Session::enqueue_write(PacketMessage message) {
             return;
         }
 
+        // Slow connection detection: log warning when backlog exceeds half the limit
+        if (new_total > self->options_.max_pending_write_bytes / 2) {
+            LOG_WARN("Session {} slow connection: write backlog {} bytes (limit={})",
+                     self->remote_endpoint(),
+                     new_total,
+                     self->options_.max_pending_write_bytes);
+        }
+
         const bool write_in_progress = !self->write_queue_.empty();
-        self->queued_write_bytes_ += packet_bytes.size();
+        self->queued_write_bytes_ = new_total;
+        if (self->queued_write_bytes_ > self->peak_write_bytes_) {
+            self->peak_write_bytes_ = self->queued_write_bytes_;
+        }
         self->write_queue_.push_back(PendingWrite{
             .message = std::move(message),
             .packet = std::move(packet_bytes),

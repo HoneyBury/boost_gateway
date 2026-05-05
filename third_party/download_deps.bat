@@ -61,6 +61,16 @@ if exist "boost_1_90_0.zip" (
     if errorlevel 1 exit /b 1
 )
 
+REM --- protobuf v5.29.0 ---
+if exist "protobuf-5.29.0.tar.gz" (
+    echo [skip] protobuf-5.29.0.tar.gz already exists
+) else (
+    echo [fetch] protobuf-5.29.0.tar.gz
+    curl -fSL -o "protobuf-5.29.0.tar.gz" ^
+        "https://github.com/protocolbuffers/protobuf/archive/refs/tags/v5.29.0.tar.gz"
+    if errorlevel 1 exit /b 1
+)
+
 echo.
 echo === All dependencies downloaded to third_party\ ===
 echo Next: run 'third_party\package.bat' to create a distributable archive.

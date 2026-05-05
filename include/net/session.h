@@ -31,6 +31,8 @@ public:
         std::uint16_t message_id = 0;
         std::uint32_t request_id = 0;
         std::int32_t error_code = 0;
+        std::uint8_t flags = 0;
+        std::uint64_t trace_id = 0;
         std::string body;
     };
 
@@ -46,8 +48,13 @@ public:
     void send(std::uint16_t message_id,
               std::uint32_t request_id,
               std::int32_t error_code,
-              std::string body);
+              std::string body,
+              std::uint8_t flags = 0);
+    void send_batch(std::vector<PacketMessage> messages);
     void stop();
+
+    [[nodiscard]] std::size_t pending_write_bytes() const;
+    [[nodiscard]] std::size_t pending_write_count() const;
 
     void set_packet_handler(PacketHandler handler);
     void set_close_handler(CloseHandler handler);
@@ -79,6 +86,7 @@ private:
     std::uint32_t expected_body_length_ = 0;
     std::deque<PendingWrite> write_queue_;
     std::size_t queued_write_bytes_ = 0;
+    std::size_t peak_write_bytes_ = 0;
     PacketHandler packet_handler_;
     CloseHandler close_handler_;
     PacketObserver receive_observer_;

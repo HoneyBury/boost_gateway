@@ -14,12 +14,20 @@ constexpr std::size_t kLengthHeaderSize = 4;
 constexpr std::size_t kMessageIdSize = 2;
 constexpr std::size_t kRequestIdSize = 4;
 constexpr std::size_t kErrorCodeSize = 4;
-constexpr std::size_t kFixedMetadataSize = kMessageIdSize + kRequestIdSize + kErrorCodeSize;
+constexpr std::size_t kFlagsSize = 1;
+constexpr std::size_t kFixedMetadataSize = kMessageIdSize + kRequestIdSize + kErrorCodeSize + kFlagsSize;
+
+namespace flags {
+constexpr std::uint8_t kNone = 0x00;
+constexpr std::uint8_t kCompressed = 0x01;
+constexpr std::uint8_t kEncrypted = 0x02;
+}  // namespace flags
 
 struct DecodedPacket {
     std::uint16_t message_id = 0;
     std::uint32_t request_id = 0;
     std::int32_t error_code = 0;
+    std::uint8_t flags = 0;
     std::string body;
 };
 
@@ -28,7 +36,8 @@ using LengthHeader = std::array<unsigned char, kLengthHeaderSize>;
 inline std::string encode(std::uint16_t message_id,
                           std::uint32_t request_id,
                           std::int32_t error_code,
-                          std::string_view body) {
+                          std::string_view body,
+                          std::uint8_t flags = flags::kNone) {
     const auto body_length = static_cast<std::uint32_t>(kFixedMetadataSize + body.size());
 
     std::string packet;
@@ -48,6 +57,7 @@ inline std::string encode(std::uint16_t message_id,
     packet[11] = static_cast<char>((static_cast<std::uint32_t>(error_code) >> 16U) & 0xFFU);
     packet[12] = static_cast<char>((static_cast<std::uint32_t>(error_code) >> 8U) & 0xFFU);
     packet[13] = static_cast<char>(static_cast<std::uint32_t>(error_code) & 0xFFU);
+    packet[14] = static_cast<char>(flags);
 
     if (!body.empty()) {
         std::copy(body.begin(), body.end(), packet.begin() + static_cast<std::ptrdiff_t>(kLengthHeaderSize + kFixedMetadataSize));
@@ -82,11 +92,13 @@ inline DecodedPacket decode_payload(const std::vector<char>& payload) {
         (static_cast<std::uint32_t>(static_cast<unsigned char>(payload[8])) << 8U) |
         static_cast<std::uint32_t>(static_cast<unsigned char>(payload[9]));
     const auto error_code = static_cast<std::int32_t>(error_code_unsigned);
+    const auto flags = static_cast<std::uint8_t>(payload[10]);
 
     return DecodedPacket{
         message_id,
         request_id,
         error_code,
+        flags,
         std::string(payload.begin() + static_cast<std::ptrdiff_t>(kFixedMetadataSize), payload.end())};
 }
 

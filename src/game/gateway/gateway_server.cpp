@@ -103,7 +103,9 @@ void GatewayServer::do_accept() {
                                      message.message_id,
                                      message.request_id,
                                      message.error_code,
-                                     std::move(message.body));
+                                     std::move(message.body),
+                                     message.trace_id,
+                                     message.flags);
             });
 
         session->set_close_handler(
