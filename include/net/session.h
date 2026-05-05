@@ -49,7 +49,8 @@ public:
               std::uint32_t request_id,
               std::int32_t error_code,
               std::string body,
-              std::uint8_t flags = 0);
+              std::uint8_t flags = 0,
+              bool high_priority = false);
     void send_batch(std::vector<PacketMessage> messages);
     void stop();
 

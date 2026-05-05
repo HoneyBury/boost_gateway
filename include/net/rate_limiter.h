@@ -136,9 +136,49 @@ private:
         std::size_t failures = 0;
     };
 
+    // Check per-message-type rate limit. Returns true if allowed.
+    bool check_message_type(std::uint64_t session_id, std::uint16_t message_id,
+                            std::chrono::steady_clock::duration age) {
+        // System messages (kicks, errors) bypass rate limit
+        if (is_system_message(message_id)) return true;
+
+        std::size_t limit = config_.max_per_second;
+        if (is_login_message(message_id)) limit = std::min<std::size_t>(5, limit);
+        else if (is_battle_message(message_id)) limit = std::max<std::size_t>(limit, 100);
+
+        return check_connection(session_id, age) && check_message_window(session_id, limit);
+    }
+
+private:
+    static bool is_system_message(std::uint16_t msg_id) {
+        return msg_id >= 1003 && msg_id <= 1004;  // kSessionKickedPush, kSessionResumedPush
+    }
+
+    static bool is_login_message(std::uint16_t msg_id) {
+        return msg_id >= 2001 && msg_id <= 2002;
+    }
+
+    static bool is_battle_message(std::uint16_t msg_id) {
+        return msg_id >= 4001 && msg_id <= 4006;
+    }
+
+    bool check_message_window(std::uint64_t session_id, std::size_t limit) {
+        const auto now = std::chrono::steady_clock::now();
+        auto& state = msg_type_states_[session_id];
+        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(now - state.window_start);
+        if (elapsed >= std::chrono::seconds(1)) {
+            state.window_start = now;
+            state.count = 0;
+        }
+        if (state.count >= limit) return false;
+        ++state.count;
+        return true;
+    }
+
     RateLimitConfig config_;
     std::mutex mutex_;
     std::unordered_map<std::uint64_t, WindowState> connection_states_;
+    std::unordered_map<std::uint64_t, WindowState> msg_type_states_;
     std::unordered_map<std::string, WindowState> user_states_;
     std::unordered_map<std::string, LoginState> login_ip_states_;
     std::unordered_map<std::string, LoginState> login_user_states_;

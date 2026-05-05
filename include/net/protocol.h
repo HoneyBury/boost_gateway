@@ -54,6 +54,13 @@ constexpr std::uint16_t kBattleStatePush = 4006;
 
 constexpr std::uint16_t kErrorResponse = 9001;
 
+// Admin/GM commands (5000-5099)
+constexpr std::uint16_t kAdminKickPlayer = 5001;
+constexpr std::uint16_t kAdminBanIp = 5002;
+constexpr std::uint16_t kAdminServerStatus = 5003;
+constexpr std::uint16_t kAdminReloadConfig = 5004;
+constexpr std::uint16_t kAdminResponse = 5005;
+
 [[nodiscard]] constexpr const char* to_string(ErrorCode error_code) {
     switch (error_code) {
         case ErrorCode::kOk:

@@ -32,13 +32,27 @@ void Session::send(std::uint16_t message_id,
                    std::uint32_t request_id,
                    std::int32_t error_code,
                    std::string body,
-                   std::uint8_t flags) {
-    enqueue_write(PacketMessage{
-        .message_id = message_id,
-        .request_id = request_id,
-        .error_code = error_code,
-        .flags = flags,
-        .body = std::move(body),
+                   std::uint8_t flags,
+                   bool high_priority) {
+    auto self = shared_from_this();
+    asio::post(strand_, [self, msg = PacketMessage{message_id, request_id, error_code,
+                                                    flags, 0, std::move(body)},
+                         high_priority]() mutable {
+        if (self->stopped_) return;
+
+        auto pkt = packet::encode(msg.message_id, msg.request_id, msg.error_code, msg.body, msg.flags);
+        self->queued_write_bytes_ += pkt.size();
+
+        if (high_priority && !self->write_queue_.empty()) {
+            self->write_queue_.push_front(PendingWrite{std::move(msg), std::move(pkt)});
+        } else {
+            self->write_queue_.push_back(PendingWrite{std::move(msg), std::move(pkt)});
+        }
+
+        bool was_empty = self->write_queue_.size() == 1;
+        if (was_empty && !self->stopped_) {
+            self->do_write();
+        }
     });
 }
 
