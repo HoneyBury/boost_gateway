@@ -1,5 +1,5 @@
-#include "hello/hello.h"
 #include "app/logging.h"
+#include "hello/hello.h"
 
 int main() {
     app::logging::init("hello_world");

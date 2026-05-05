@@ -1,0 +1,9 @@
+add_executable(example_hello_world
+    main.cpp
+)
+target_link_libraries(example_hello_world
+    PRIVATE
+        project_app
+        project_hello
+)
+apply_project_warnings(example_hello_world)
