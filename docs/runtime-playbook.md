@@ -181,6 +181,27 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 服务端会按 `gateway.metrics_log_interval_ms` 周期把指标导出到对应文件。
 
+### HTTP 管理端点
+
+若在 `config/gateway.json` 里配置了 `gateway.http_management_port`（默认 9080），
+服务端还会启动 HTTP 管理端点，提供以下接口：
+
+| 端点 | 方法 | Content-Type | 说明 |
+|---|---|---|---|
+| `/health` | GET | `application/json` | 健康检查，返回 `{"status":"ok"}` |
+| `/metrics` | GET | `text/plain` | Prometheus 格式指标，可直接被 Prometheus scrape |
+| `/metrics/json` | GET | `application/json` | JSON 格式指标快照 |
+
+验证方式：
+
+```powershell
+curl http://127.0.0.1:9080/health
+curl http://127.0.0.1:9080/metrics
+curl http://127.0.0.1:9080/metrics/json
+```
+
+设置为 `0` 则禁用 HTTP 管理端点。
+
 ## 8. 当前完成的优先级任务
 
 当前已经完成：

@@ -5,6 +5,7 @@
 #include "game/gateway/session_manager.h"
 #include "game/room/room_manager.h"
 #include "game/battle/battle_manager.h"
+#include "net/http_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/session.h"
 
@@ -29,6 +30,7 @@ public:
                   game::battle::BattleManager& battle_manager,
                   GatewayMetrics& metrics,
                   std::uint16_t port,
+                  std::uint16_t http_management_port = 0,
                   net::SessionOptions session_options = {},
                   std::chrono::milliseconds metrics_log_interval = std::chrono::milliseconds(5000),
                   GatewayMetricsExportOptions metrics_export_options = {});
@@ -52,6 +54,7 @@ private:
     net::SessionOptions session_options_;
     std::chrono::milliseconds metrics_log_interval_;
     GatewayMetricsExportOptions metrics_export_options_;
+    std::unique_ptr<net::HttpManager> http_manager_;
 };
 
 }  // namespace game::gateway

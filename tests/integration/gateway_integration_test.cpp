@@ -80,6 +80,7 @@ struct GatewayTestRuntime {
             battle_manager,
             metrics,
             0,
+            0,
             options,
             std::chrono::milliseconds(1000));
         server->start();

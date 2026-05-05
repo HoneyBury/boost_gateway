@@ -13,6 +13,7 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
                              game::battle::BattleManager& battle_manager,
                              GatewayMetrics& metrics,
                              std::uint16_t port,
+                             std::uint16_t http_management_port,
                              net::SessionOptions session_options,
                              std::chrono::milliseconds metrics_log_interval,
                              GatewayMetricsExportOptions metrics_export_options)
@@ -26,10 +27,29 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
       metrics_timer_(io_context),
       session_options_(std::move(session_options)),
       metrics_log_interval_(metrics_log_interval),
-      metrics_export_options_(std::move(metrics_export_options)) {}
+      metrics_export_options_(std::move(metrics_export_options)) {
+    if (http_management_port > 0) {
+        http_manager_ = std::make_unique<net::HttpManager>(
+            acceptor_.get_executor(), http_management_port);
+    }
+}
 
 void GatewayServer::start() {
     LOG_INFO("Gateway server listening on 0.0.0.0:{}", acceptor_.local_endpoint().port());
+
+    if (http_manager_) {
+        http_manager_->set_metrics_provider(
+            [this]() -> net::HttpMetricsSnapshot {
+                const auto snapshot =
+                    collect_runtime_metrics(metrics_, session_manager_, room_manager_, battle_manager_);
+                return {
+                    .prometheus_text = render_prometheus_metrics(snapshot),
+                    .json_text = render_json_metrics(snapshot),
+                };
+            });
+        http_manager_->start();
+    }
+
     arm_metrics_timer();
     do_accept();
 }
@@ -38,6 +58,10 @@ void GatewayServer::stop() {
     error_code ignored_ec;
     acceptor_.close(ignored_ec);
     metrics_timer_.cancel();
+
+    if (http_manager_) {
+        http_manager_->stop();
+    }
 
     for (auto& session : session_manager_.all_sessions()) {
         session->stop();

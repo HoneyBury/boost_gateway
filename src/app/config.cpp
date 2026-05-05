@@ -175,6 +175,9 @@ GatewayAppConfig load_gateway_config(const std::filesystem::path& path) {
     if (const auto value = store.get_uint16("gateway.port")) {
         config.port = *value;
     }
+    if (const auto value = store.get_uint16("gateway.http_management_port")) {
+        config.http_management_port = *value;
+    }
     if (const auto value = store.get_size("gateway.io_threads")) {
         config.io_threads = std::max<std::size_t>(1, *value);
     }

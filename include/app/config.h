@@ -25,6 +25,7 @@ private:
 
 struct GatewayAppConfig {
     std::uint16_t port = 9000;
+    std::uint16_t http_management_port = 9080;
     std::size_t io_threads = 2;
     std::size_t business_threads = 2;
     std::chrono::milliseconds metrics_log_interval{5000};

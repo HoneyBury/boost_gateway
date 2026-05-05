@@ -128,6 +128,7 @@ int main(int argc, char* argv[]) {
         battle_manager,
         metrics,
         config.port,
+        config.http_management_port,
         session_options,
         config.metrics_log_interval,
         {

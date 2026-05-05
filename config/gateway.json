@@ -1,6 +1,7 @@
 {
   "gateway": {
     "port": 9000,
+    "http_management_port": 9080,
     "io_threads": 2,
     "business_threads": 2,
     "metrics_log_interval_ms": 5000,

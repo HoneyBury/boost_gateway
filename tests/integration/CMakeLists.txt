@@ -1,5 +1,6 @@
 add_executable(project_integration_tests
     gateway_integration_test.cpp
+    http_management_test.cpp
 )
 target_link_libraries(project_integration_tests
     PRIVATE
