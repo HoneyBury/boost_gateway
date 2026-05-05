@@ -425,3 +425,125 @@
 - 增加广播风暴、战斗广播和恶意包压测
 - 把 `JsonFileTokenValidator` 替换为真实远程账号服务客户端
 - 增加 Docker 部署与 CI 扩展
+
+---
+
+## 2026-05-05 阶段十：P4 压测场景 + 远程鉴权 + Docker
+
+### 目标
+
+- 补齐压测场景矩阵（广播风暴、恶意包、战斗广播）
+- 实现 HTTP 远程鉴权客户端
+- 完成 Docker 镜像构建与 CI 集成
+
+### 完成内容
+
+- 新增 `broadcast_storm`、`malicious_packet`、`battle_broadcast` 三种压测场景
+- `gateway_pressure` 支持 6 种场景，基于共享计数器协调房间型场景退出
+- 新增 `HttpTokenValidator`，通过 HTTP POST 调用外部鉴权服务
+- `echo_server` 支持 `dev` / `json_file` / `http` 三种鉴权提供方
+- 新增 `Dockerfile`（多阶段构建）、`docker-compose.yml`、`.dockerignore`
+- GitHub Actions CI 扩展 Docker 构建 + 容器冒烟测试 Job
+
+### 测试结果
+
+- `34/34` 测试通过
+
+### 下一步
+
+- 结构化序列化、链路追踪、协议标记位
+- Buffer 池、广播批量发包、慢连接检测
+
+---
+
+## 2026-05-05 阶段十一：P5 基础设施深化
+
+### 目标
+
+- 实现轻量二进制序列化替代裸字符串协议体
+- 补齐请求链路追踪 ID
+- 协议增加 flags 标记位
+- 引入 Buffer 池和批量发送
+- 增加慢连接检测
+
+### 完成内容
+
+- 新增 `net::msg` 命名空间，18 种结构化消息类型 + 二进制序列化
+- 新增 `net::message_serializer.h`，LE 编码的轻量序列化反序列化
+- 协议格式升级为 `[4B长度][2B msg][4B req][4B err][1B flags][body]`
+- `DispatchContext` 增加 `trace_id` → Session → Dispatcher → 日志贯穿
+- 新增 `ObjectPool<T>` + `BufferPool`，Session 读包路径集成复用
+- `Session::send_batch()` 一次 `async_write` 发送多包
+- 写队列积压 > 50% 上限时 WARN 日志
+
+### 测试结果
+
+- `34/34` 测试通过
+
+### 下一步
+
+- per-second 速率指标、零拷贝、崩溃转储
+- 服务拆分路由、战斗帧同步
+
+---
+
+## 2026-05-05 阶段十二：P6 生产加固 + 战斗深化
+
+### 目标
+
+- 补齐 per-second 速率指标
+- 实现零拷贝读包路径
+- 增加崩溃转储处理
+- 建立服务拆分路由基础
+- 实现战斗帧同步
+
+### 完成内容
+
+- `GatewayMetricsRateSnapshot` + `compute_rates()` 计算每秒速率
+- Prometheus 增加 6 种 `_rate` gauge，JSON 增加 `_per_sec` 字段
+- `GatewayServer` 追踪上一快照时间戳，日志输出 `pkts_recv/s`
+- `BufferPool` 集成到 Session 读包路径，`acquire_vector/release_vector`
+- `app::crash::install_crash_handler()` — Windows SEH + POSIX signal
+- 崩溃报告写入 `runtime/crashes/crash_*.txt`
+- `ServiceRouter` + `ServiceId`（Gateway/Login/Room/Battle）
+- `BattleManager::advance_frame()` + 输入按帧分桶
+
+### 测试结果
+
+- `34/34` 测试通过
+
+### 下一步
+
+- 连接限制、线程池拆分、战斗结算、Handler 自动注册
+
+---
+
+## 2026-05-05 阶段十三：P7 生产安全 + 架构收敛
+
+### 目标
+
+- 实现连接数限制和 per-IP 限制
+- 按消息 ID 范围拆分业务线程池
+- 完成战斗结算逻辑
+- 提供 Handler 注册辅助工具
+
+### 完成内容
+
+- `GatewayAppConfig` 增加 `max_connections` / `per_ip_connection_limit`
+- `GatewayServer::set_connection_limits()` + 超限拒绝
+- `MessageDispatcher::set_thread_pool(min, max, pool)` 按 ID 范围路由
+- `BattleManager::end_battle()` → `BattleResult{winner, scores, frames}`
+- `HandlerRegistry` 链式 `.add(id, handler).register_all(dispatcher)`
+
+### 测试结果
+
+- `34/34` 测试通过
+
+### 下一步
+
+- 多进程拆分实战（独立 login/room/battle 可执行文件）
+- 内部消息总线 / RPC 传输层
+- 服务发现与健康检查
+- protobuf/flatbuffers 跨语言协作评估
+- 持久化层（战斗回放落盘、玩家数据）
+

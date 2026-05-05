@@ -202,52 +202,76 @@ curl http://127.0.0.1:9080/metrics/json
 
 设置为 `0` 则禁用 HTTP 管理端点。
 
-## 8. 当前完成的优先级任务
+## 8. 已完成能力清单 (P0–P7)
 
-当前已经完成：
+### 网络层
+- `Session`：长度头协议、异步收发、心跳超时、发包限流、最大包长校验
+- `MessageDispatcher`：消息号注册、业务线程池投递、中间层链
+- `SessionManager`：在线连接管理、登录态跟踪、顶号踢线
+- 协议格式：`[4B长度][2B msg][4B req][4B err][1B flags][body]`
+- 结构化序列化：`net::msg` 18 种消息类型 + binary serializer
+- 链路追踪：`trace_id` 贯穿 Session → Dispatcher → Handler → 日志
 
-1. `SessionManager / RoomManager / BattleManager` 状态拆分
-2. `request_id + error_code` 协议升级
-3. 网关限频中间层
-`GatewayServer` 会定时把这些指标和当前在线状态打印到日志里。
+### 业务层
+- `LoginService`：token 校验、登录上下文、重复登录顶号、dev/json_file/http 三种鉴权
+- `RoomService`：创建/加入/离开/准备、房主机制、房间广播
+- `BattleService`：起战斗、输入路由、输入广播、帧同步 (advance_frame)、战斗结算 (end_battle)
+- `PushService`：统一推送、错误响应、广播推送
 
-## 9. 下一步建议
+### 可观测性
+- `GatewayMetrics`：10 种累计 counter
+- `GatewayMetricsExporter`：Prometheus 文本 + JSON 快照导出，含 6 种 `/sec` rate gauge
+- HTTP 管理端点：`GET /health` `GET /metrics` `GET /metrics/json`
+- 慢连接检测：写队列 > 50% 上限 WARN
+- 崩溃转储：`runtime/crashes/crash_*.txt`
 
-当前这套骨架可以继续往下演进的方向：
+### 工程化
+- CMake + FetchContent + 本地 third_party 内网构建
+- `gateway_pressure` 压测工具：6 种场景 (echo/invalid_token/slow_echo/broadcast_storm/malicious/battle)
+- `Dockerfile` + `docker-compose.yml` + CI Docker 构建
+- `BufferPool` + `ObjectPool` 复用分配
+- `Session::send_batch()` 批量发包
+- `HandlerRegistry` 批量注册
+- `ServiceRouter` 内部服务路由
+- 连接限制：`max_connections` + `per_ip_connection_limit`
+- 线程池拆分：按消息 ID 范围路由到专用池
+- `app::crash::install_crash_handler()` 崩溃处理
 
-1. 增加请求序号、错误码枚举和统一响应包结构。
-2. 把房间和战斗状态从 `SessionManager` 中继续拆分成独立管理器。
-3. 接入配置系统，替代当前硬编码阈值和时间参数。
-4. 增加广播、踢线、重连恢复和限频控制。
-5. 把指标导出到 Prometheus 或类似监控系统。
-## 10. 2026-05-05 补充更新
+## 9. 配置参考
 
-当前协议消息号已经扩展为：
+```json
+{
+  "gateway": {
+    "port": 9000,
+    "http_management_port": 9080,
+    "io_threads": 2,
+    "business_threads": 2,
+    "max_connections": 10000,
+    "per_ip_connection_limit": 0,
+    "metrics_log_interval_ms": 5000,
+    "metrics_prometheus_path": "runtime/metrics/gateway.prom",
+    "metrics_json_path": "runtime/metrics/gateway.json",
+    "auth": {
+      "provider": "dev",
+      "users_path": "config/auth_users.json",
+      "http_endpoint": "http://127.0.0.1:8080/auth/validate",
+      "http_timeout_ms": 3000
+    }
+  },
+  "session": {
+    "max_packet_size": 1048576,
+    "max_pending_write_bytes": 262144,
+    "heartbeat_check_interval_ms": 5000,
+    "heartbeat_timeout_ms": 30000
+  }
+}
+```
 
-- `3001/3002`：创建房间请求/响应
-- `3003/3004`：加入房间请求/响应
-- `3005/3006`：离开房间请求/响应
-- `3007/3008`：准备状态请求/响应
-- `3009`：房间状态广播
-- `4001/4002`：开始战斗请求/响应
-- `4003/4004`：战斗输入请求/响应
-- `4005`：战斗输入广播
-- `4006`：战斗状态广播
+## 10. 下一阶段方向
 
-当前新增能力：
-
-- `LoginService` 已接入 token 校验与登录上下文
-- `RoomService` 已支持创建、加入、离开、准备和房间广播
-- `BattleService` 已支持房主起战斗、输入路由和战斗广播
-- 顶号登录现在会给旧连接发送 `kSessionKickedPush`，并把房间状态恢复到新连接
-- 服务端启动已支持从 `config/gateway.conf` 或 `config/gateway.json` 加载关键参数
-- 当前默认 JSON 配置使用 `dev` 鉴权提供方，也可以切换到 `json_file`
-- `config/auth_users.json` 可作为本地外部鉴权数据源
-- `gateway_pressure` 已支持 `echo`、`invalid_token`、`slow_echo` 三种压测场景
-
-## 11. 2026-05-05 HTTP 管理端点补充
-
-- 新增 `net::HttpManager`，基于 Boost.Beast 实现独立 HTTP 管理端口
-- 端点：`GET /health`（健康检查）、`GET /metrics`（Prometheus）、`GET /metrics/json`
-- 配置项 `gateway.http_management_port` 默认 9080，设为 0 禁用
-- 测试覆盖：`HttpManagementTest`（4 个集成测试用例）
+- 多进程拆分：独立 login_server / room_server / battle_server
+- 内部消息总线：Gateway ↔ Backend 高性能 RPC
+- 服务发现：进程注册 + 健康检查 + 故障转移
+- 广播锁优化：RCU / COW 快照减少竞争
+- 协议压缩：zlib/zstd 大包压缩
+- 持久化层：战斗回放落盘 + 玩家数据存储
