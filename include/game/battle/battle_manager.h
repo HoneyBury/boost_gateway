@@ -73,6 +73,15 @@ public:
     [[nodiscard]] std::optional<FrameSnapshot> advance_frame(const std::string& room_id);
     [[nodiscard]] std::optional<BattleResult> end_battle(const std::string& room_id);
     void remove_room(const std::string& room_id);
+
+    // Spectator support
+    enum class SpectatorResult { kOk, kBattleNotFound, kMaxSpectators };
+    SpectatorResult add_spectator(const std::string& room_id, const std::string& user_id);
+    bool remove_spectator(const std::string& room_id, const std::string& user_id);
+    [[nodiscard]] std::vector<std::string> spectators(const std::string& room_id) const;
+    [[nodiscard]] std::size_t spectator_count(const std::string& room_id) const;
+
+    static constexpr std::size_t kMaxSpectatorsPerBattle = 100;
     [[nodiscard]] bool battle_started(const std::string& room_id) const;
     [[nodiscard]] std::size_t active_battle_count() const;
     [[nodiscard]] std::optional<BattleSnapshot> snapshot(const std::string& room_id) const;
@@ -83,6 +92,7 @@ private:
         std::uint64_t next_sequence = 1;
         std::uint32_t current_frame = 0;
         std::vector<InputEvent> inputs;
+        std::vector<std::string> spectators;
     };
 
     mutable std::mutex mutex_;

@@ -288,6 +288,8 @@ std::string to_string(PressureScenario scenario) {
         return "chaos";
     case PressureScenario::kStability:
         return "stability";
+    case PressureScenario::kBenchmark:
+        return "benchmark";
     }
 
     return "echo";
@@ -317,6 +319,9 @@ std::optional<PressureScenario> parse_pressure_scenario(const std::string& value
     }
     if (value == "stability") {
         return PressureScenario::kStability;
+    }
+    if (value == "benchmark") {
+        return PressureScenario::kBenchmark;
     }
     return std::nullopt;
 }

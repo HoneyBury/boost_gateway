@@ -152,4 +152,39 @@ std::optional<BattleManager::BattleSnapshot> BattleManager::snapshot(const std::
     };
 }
 
+BattleManager::SpectatorResult BattleManager::add_spectator(const std::string& room_id,
+                                                              const std::string& user_id) {
+    std::scoped_lock lock(mutex_);
+    auto it = active_battles_.find(room_id);
+    if (it == active_battles_.end()) return SpectatorResult::kBattleNotFound;
+    if (it->second.spectators.size() >= kMaxSpectatorsPerBattle) return SpectatorResult::kMaxSpectators;
+    it->second.spectators.push_back(user_id);
+    return SpectatorResult::kOk;
+}
+
+bool BattleManager::remove_spectator(const std::string& room_id, const std::string& user_id) {
+    std::scoped_lock lock(mutex_);
+    auto it = active_battles_.find(room_id);
+    if (it == active_battles_.end()) return false;
+    auto& specs = it->second.spectators;
+    auto spec_it = std::find(specs.begin(), specs.end(), user_id);
+    if (spec_it == specs.end()) return false;
+    specs.erase(spec_it);
+    return true;
+}
+
+std::vector<std::string> BattleManager::spectators(const std::string& room_id) const {
+    std::scoped_lock lock(mutex_);
+    auto it = active_battles_.find(room_id);
+    if (it == active_battles_.end()) return {};
+    return it->second.spectators;
+}
+
+std::size_t BattleManager::spectator_count(const std::string& room_id) const {
+    std::scoped_lock lock(mutex_);
+    auto it = active_battles_.find(room_id);
+    if (it == active_battles_.end()) return 0;
+    return it->second.spectators.size();
+}
+
 }  // namespace game::battle

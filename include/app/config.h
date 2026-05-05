@@ -53,6 +53,7 @@ enum class PressureScenario {
     kBattleBroadcast,
     kChaos,
     kStability,
+    kBenchmark,
 };
 
 struct PressureAppConfig {
