@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.1.9 — 治理入口分层（T10）(2026-05-06)
+
+> **范围**：仅文档。**不改变** TCP ingress、`HttpManager`、二进制 `AdminService` 的默认接线或行为。
+
+### 文档
+
+- **`docs/v1-governance-layers.md`**：L0（`GatewayService` ingress）/ L1（业务 handler）/ L2（`HttpManager`）/ L3（`AdminService`）职责与边界；`/health` stub 与 `GatewayServer` 装配说明；与 v1.1.10 / v1.1.11 / v1.2.2（T18）的归属。
+- `docs/README.md`、`v1-maturity-matrix.md` §4、`development-priority.md`（T10 **done**）同步。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.8 — 房间/战斗边界收紧（T09 + T06②）(2026-05-06)
 
 > **范围**：**不改变**对外 body 形状；增强 **Room 侧身份缓存** 与 **房战状态文档**。战斗仍以 `user_id` 为主键（与 `Session` 解耦）。

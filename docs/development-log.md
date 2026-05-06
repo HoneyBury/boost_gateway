@@ -817,6 +817,29 @@
 
 ### 下一步
 
-- **`v1.1.9`**：治理入口分层（T10 后半）。
+- **`v1.1.9`**：治理入口分层（T10）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.9：治理入口分层（T10）
+
+### 目标
+
+落实 **`development-optimization.md` §11 T10** 在 **`v1.1.9`** 的收口：把 **TCP ingress**、**业务 handler**、**HTTP 管理面**、**二进制 admin** 与 **`GatewayServer` 装配**的职责写清，避免「健康检查 / 指标 / 管理命令」混为一谈；**权限与审计仍留给 v1.1.11（T11）**。
+
+### 完成内容
+
+- **`docs/v1-governance-layers.md`**（L0–L3、路径归类、Admin demo-only 定位、版本边界）。
+- `docs/README.md`、`v1-maturity-matrix.md` §4 引言与 `GET /health` 行、`development-priority.md`、`runtime-playbook.md` §10、`v1-string-protocol.md` / `v1-cross-domain-flows.md` 后续版本指针、`CHANGELOG.md`。
+
+### 测试结果
+
+- `ctest`：**66/66**（无代码行为变更）。
+
+### 下一步
+
+- **`v1.1.10`**：治理成熟度冻结（文档与示例用语，不暗示未收口能力已可依赖）。
 
 > **强约束**：未进入 v2。

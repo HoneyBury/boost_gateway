@@ -111,11 +111,13 @@
 
 ## 4. 治理与控制面
 
+> **`v1.1.9` / T10**：多层治理入口的职责划分与健康/观测/二进制 admin 的定位见 **`docs/v1-governance-layers.md`**。下表仍为**子能力成熟度**单一事实源。
+
 ### 4.1 HTTP 管理端点（`net::HttpManager`）
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `GET /health` | `experimental` | 当前固定返回 `{"status":"ok"}`，**不依赖运行时真实健康状态**；`HttpManager::HealthProvider` 仅有声明，主链未使用 |
+| `GET /health` | `experimental`（v1.1.9 分层已述） | **Liveness stub**：固定返回 `{"status":"ok"}`，**不依赖**运行时真实健康；`HealthProvider` 仅有声明，`http_manager.cpp` 未接线 |
 | `GET /metrics` (Prometheus 文本) | `stable` | 主链可用，可被 Prometheus scrape |
 | `GET /metrics/json` | `stable` | 主链可用 |
 | 来源限制 / 鉴权 / 仅监听内网接口 | `reserved` | 当前 HTTP 管理端点**无任何鉴权**，监听全网卡，仅适合内网 / 受信网络 |
@@ -124,7 +126,7 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；当前**没有任何权限校验**——任何已建立连接的客户端只要构造对应消息号即可触发管理动作 |
+| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`docs/v1-governance-layers.md`** §L3；当前**没有任何权限校验**——任何已建立连接的客户端只要构造对应消息号即可触发管理动作 |
 | 权限模型 / 审计字段规范 | `reserved` | 当前 admin 调用只产出自由文本审计，无 `actor` / `target` / `outcome` 字段约定 |
 
 ### 4.3 限频与连接控制
@@ -276,8 +278,8 @@
 | `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`） |
 | `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
 | `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` |
-| `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` — **当前版本** |
-| `v1.1.9` | 治理入口分层 | T10 后半 |
+| `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` |
+| `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` — **当前版本** |
 | `v1.1.10` | 治理成熟度冻结 | （文档） |
 | `v1.1.11` | admin 权限与审计 | T11 |
 | `v1.1.12` | 配置成熟度表 | T12 后半 |

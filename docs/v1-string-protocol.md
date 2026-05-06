@@ -186,4 +186,4 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
 - **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **下一维护版**：`v1.1.9` 治理入口分层（T10 后半）。**房/战边界与 `transfer_session`** 见 `docs/v1-room-battle-boundary.md`（**v1.1.8**）。
+- **下一维护版**：`v1.1.10` 治理成熟度冻结（文档）。**治理入口分层（T10）** 见 `docs/v1-governance-layers.md`（**v1.1.9**）。**房/战边界与 `transfer_session`** 见 `docs/v1-room-battle-boundary.md`（**v1.1.8**）。

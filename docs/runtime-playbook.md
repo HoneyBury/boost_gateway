@@ -299,5 +299,6 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.6` — **业务字符串协议冻结**（`docs/v1-string-protocol.md`）+ **`kPlayerNotInBattle` 错误码语义修正（T02 后半）已完成**
 - `v1.1.7` — **跨域编排收口（T07/T08）**：`docs/v1-cross-domain-flows.md`；`login_recovery`、`clear_battle_if_room_empty` **已完成**
 - `v1.1.8` — **房/战边界**：`RoomMember.member_user_id`、`transfer_session`/战斗中语义、**`docs/v1-room-battle-boundary.md`** **已完成**
-- `v1.1.9+` — 治理入口分层（T10）等
+- `v1.1.9` — **治理入口分层（T10）**：**`docs/v1-governance-layers.md`** **已完成**
+- `v1.1.10` — 治理成熟度冻结（文档）
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

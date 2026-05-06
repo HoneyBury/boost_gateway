@@ -8,6 +8,8 @@
 
 namespace net {
 
+// L2 HTTP 管理面（/health、/metrics*）；与 ingress / 二进制 admin 的分层见 docs/v1-governance-layers.md。
+
 struct HttpMetricsSnapshot {
     std::string prometheus_text;
     std::string json_text;
