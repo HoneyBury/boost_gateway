@@ -195,7 +195,7 @@
 
 ## 6. 持久化与回放
 
-运维向「三类横切能力（player store / replay / audit）接在哪些生命周期节点」优先读 **`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15** / **T14**）；本节仍为 **子能力成熟度** 单一事实源。
+运维向「三类横切能力（player store / replay / audit）**当前接在哪**」读 **`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15** / **T14**）；「**应收口在哪**」读 **`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16** / **T15**）。本节仍为 **子能力成熟度** 单一事实源。
 
 | 项 | 状态 | 说明 |
 |---|---|---|
@@ -273,8 +273,8 @@
 | `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 |
 | `v1.1.13` | 标准启动 / reload / shutdown 顺序 | **T13**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** |
 | `v1.1.14` | 受控生命周期流程 | **T13** 后半：**`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7** |
-| `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** — **当前版本** |
-| `v1.1.16` | 横切动作按生命周期收口 | T15 |
+| `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** |
+| `v1.1.16` | 横切动作按生命周期收口 | **T15**：**`docs/v1-cross-cutting-lifecycle-binding.md`** — **当前版本** |
 | `v1.1.17` | 数据格式冻结 | T16 |
 | `v1.2.0` | 结构升级决策点 | T21（仅在前面收口完成后） |
 | `v1.2.1 - v1.2.4` | 各主线回归面加固 | T17 / T18 / T19 / T20 |

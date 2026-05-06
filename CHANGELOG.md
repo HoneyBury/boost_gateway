@@ -1,5 +1,19 @@
 # 更新日志
 
+## v1.1.16 — 横切动作生命周期绑定规范（T15）(2026-05-06)
+
+> **范围**：**文档**。新增 **`docs/v1-cross-cutting-lifecycle-binding.md`**：节点 **N1–N7** × 审计 / player 持久化 / battle replay **应收口规范矩阵**；showcase 自检清单；与 **T14 事实**文档交叉引用。
+
+### 文档
+
+- **`docs/v1-cross-cutting-lifecycle-binding.md`**；**`docs/v1-cross-cutting-capabilities.md`** §1 / §5；**`docs/v1-runtime-lifecycle.md`** §1 指针；`docs/v1-maturity-matrix.md` §6 引言、§10；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §5、`CHANGELOG.md`、`development-log.md`。
+
+### 测试
+
+- **无代码变更**；`ctest` **68/68**。
+
+---
+
 ## v1.1.15 — 横切能力定位：持久化 / 回放 / 审计（T14）(2026-05-06)
 
 > **范围**：**文档**。新增 **`docs/v1-cross-cutting-capabilities.md`**：三类横切能力与业务生命周期节点的 **当前接线事实矩阵**（不等同于 T15「收口」）；矩阵 **§6**、**§4.4** 增加指针。

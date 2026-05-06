@@ -65,4 +65,5 @@
 - **`v1.1.12` / T12** — **`docs/v1-config-maturity.md`**（`GatewayAppConfig` 启动/热更新/预留；`ConfigWatcher` 现状）
 - **`v1.1.13`–`v1.1.14` / T13** — **`docs/v1-runtime-lifecycle.md`**（启动 / reload / shutdown 清单；showcase **`io.stop()`**；**v1.1.14**：**`try_load_gateway_config`** + shutdown **最小保证 / reserved** 分界 **§6–§7**）
 - **`v1.1.15` / T14** — **`docs/v1-cross-cutting-capabilities.md`**（player store / replay / **`AUDIT_LOG`** 与生命周期节点的当前接线事实）
+- **`v1.1.16` / T15** — **`docs/v1-cross-cutting-lifecycle-binding.md`**（节点 **N1–N7** 横切动作 **应收口** 规范矩阵；与 T14 **事实**区分）
 - **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，再追加专节并指向实现文件。

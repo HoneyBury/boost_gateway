@@ -288,7 +288,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 }
 ```
 
-> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**持久化 / 回放 / 审计与生命周期节点接线事实**：**`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。
+> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**横切接线事实**：**`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。**横切应收口规范**：**`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16**）。
 
 ## 10. v1.x 维护下一阶段方向
 
@@ -308,4 +308,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.13` — **标准启动 / reload / shutdown（T13）**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** **已完成**
 - `v1.1.14` — **受控生命周期（T13 后半）**：**`try_load_gateway_config`** + 同文 **§6–§7** **已完成**
 - `v1.1.15` — **横切能力定位（T14）**：**`docs/v1-cross-cutting-capabilities.md`** **已完成**
+- `v1.1.16` — **横切动作生命周期绑定（T15）**：**`docs/v1-cross-cutting-lifecycle-binding.md`** **已完成**
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

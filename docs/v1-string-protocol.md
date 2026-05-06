@@ -186,4 +186,4 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
 - **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **下一维护版**：`v1.1.16`（T15：按生命周期节点收口横切动作 — 规划文档项）。**横切定位**：`docs/v1-cross-cutting-capabilities.md`（**v1.1.15** / T14）。**装配清单与受控语义**：`docs/v1-runtime-lifecycle.md`（**v1.1.13–v1.1.14** / T13）。**配置字段成熟度**：`docs/v1-config-maturity.md`（**v1.1.12**）。**二进制 admin**：`docs/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`docs/v1-governance-layers.md` **§6**（**v1.1.10**）。
+- **下一维护版**：`v1.1.17`（T16：冻结存储后端与 audit / replay **格式支持级别**）。**横切规范**：`docs/v1-cross-cutting-lifecycle-binding.md`（**v1.1.16** / T15）；**横切事实**：`docs/v1-cross-cutting-capabilities.md`（**v1.1.15** / T14）。**装配清单与受控语义**：`docs/v1-runtime-lifecycle.md`（**v1.1.13–v1.1.14** / T13）。**配置字段成熟度**：`docs/v1-config-maturity.md`（**v1.1.12**）。**二进制 admin**：`docs/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`docs/v1-governance-layers.md` **§6**（**v1.1.10**）。

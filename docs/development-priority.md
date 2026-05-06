@@ -115,7 +115,7 @@
 | T09 收紧房间态与战斗态边界，明确 `transfer_session()` 定位 | `v1.1.8` | **done**（同上 + 代码注释与矩阵 §3.2） |
 | T11 admin **调用前提**与 **`admin_invoke`** **最小审计**（文档 + handler 边界；**无运行时 ACL**） | `v1.1.11` | **done**（见 **`docs/v1-admin-audit-rules.md`**；`admin_service.cpp`） |
 | T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | **done**（**v1.1.13** ✅ 清单 + showcase **`io.stop()`**；**v1.1.14** ✅ **`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7**） |
-| T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | todo |
+| T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | **done**（**`docs/v1-cross-cutting-lifecycle-binding.md`**：规范矩阵 **§3** + showcase **§5**） |
 | T16 冻结存储后端和审计/回放数据格式支持级别 | `v1.1.17` | todo |
 
 ### 批次 C：边界测试与回归面加固
@@ -152,8 +152,8 @@ v1.1.11  admin 权限前提与最小审计（T11） ✅
 v1.1.12  配置字段成熟度（T12） ✅
 v1.1.13  标准启动 / reload / shutdown 顺序（T13） ✅
 v1.1.14  受控生命周期流程（T13 后半） ✅
-v1.1.15  横切能力定位（T14） ✅ 当前
-v1.1.16  横切动作按生命周期收口（T15）
+v1.1.15  横切能力定位（T14） ✅
+v1.1.16  横切动作按生命周期收口（T15） ✅ 当前
 v1.1.17  数据格式冻结（T16）
 ─────────────────────────────────────
 v1.2.0   决策点：是否推进结构升级（T21）
@@ -168,8 +168,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.15` / **T14**：**`docs/v1-cross-cutting-capabilities.md`**（player store / replay / audit × 生命周期节点）；矩阵 §6 引言、§4.4、§10。
+- 版本：`v1.1.16` / **T15**：**`docs/v1-cross-cutting-lifecycle-binding.md`**（节点 **N1–N7** 规范矩阵）；矩阵 §6 引言、§10；T14 文档 **§5** 指针更新。
 - 历次更新：
+  - `2026-05-06` `v1.1.15` — **`v1-cross-cutting-capabilities.md`**（T14 事实矩阵）
   - `2026-05-06` `v1.1.14` — **`try_load_gateway_config`**、`v1-runtime-lifecycle` §6–§7
   - `2026-05-06` `v1.1.13` — 装配清单 + showcase **`io_context.stop()`**
   - `2026-05-06` `v1.1.12` — `v1-config-maturity.md`、`v2-design.md` 入库

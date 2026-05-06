@@ -979,6 +979,28 @@
 
 ### 下一步
 
-- **`v1.1.16`**：**T15** — 按登录 / 结算 / 停服等节点 **定义应收口的横切动作**（规划文档项）。
+- **`v1.1.16`**：**T15** — 横切动作生命周期绑定规范（见后续阶段记录）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.16：横切动作生命周期绑定规范（T15）
+
+### 目标
+
+在 **T14 事实矩阵** 之上，给出维护期 **应收口**：具名节点 **N1–N7** 与 **审计 / player store / replay 产出** 的规范对照，并列出 showcase **收敛自检**，避免「能力与节点」长期仅用示例口口相传。
+
+### 完成内容
+
+- **新增** **`docs/v1-cross-cutting-lifecycle-binding.md`**；更新 **`docs/v1-cross-cutting-capabilities.md`** 与 roadmap 指针；**`docs/v1-runtime-lifecycle.md`** §1；矩阵 §6 引言、§10；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`v1-config-maturity.md` §5、`CHANGELOG.md`。
+
+### 测试结果
+
+- **无代码变更**；`ctest` **68/68**（冒烟）。
+
+### 下一步
+
+- **`v1.1.17`**：**T16** — 冻结存储后端与 audit / replay **格式支持级别**（与 **`development-optimization.md`** Persistence·Audit 路线图第三步对齐）。
 
 > **强约束**：未进入 v2。
