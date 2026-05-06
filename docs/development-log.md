@@ -888,6 +888,29 @@
 
 ### 下一步
 
-- **`v1.1.12`**：配置成熟度表（T12 后半）。
+- **`v1.1.12`**：配置字段成熟度单列文档（T12）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.12：配置字段成熟度（T12）
+
+### 目标
+
+落实 **T12**：把 **`GatewayAppConfig`** 的启动/热更新/预留口径从矩阵 **抽成可读运维文档**，矩阵 §5.1 保留锚点并指向 **`docs/v1-config-maturity.md`**；明确 **`ConfigWatcher`** 当前**不是**完整热更新框架。
+
+### 完成内容
+
+- **`docs/v1-config-maturity.md`**；`docs/v1-maturity-matrix.md` §5.1 / §10；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`CHANGELOG.md`。
+- **`docs/v2-design.md`**：**入库**（v2 草案，决策点前不实施）。
+
+### 测试结果
+
+- `ctest`：**66/66**（文档与仓库整理；无逻辑变更）。
+
+### 下一步
+
+- **`v1.1.13`**：T13 — 标准启动 / reload / shutdown 顺序。
 
 > **强约束**：未进入 v2。

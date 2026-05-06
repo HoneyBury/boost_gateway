@@ -157,31 +157,13 @@
 
 ## 5. 配置与运行时装配
 
+运维向「哪些字段改 JSON 会生效 / 是否要重启」优先读 **`docs/v1-config-maturity.md`**；本节保留 **成熟度等级** 与 **组件（Watcher / Shutdown）** 子表。
+
 ### 5.1 `GatewayAppConfig` 字段成熟度
 
-| 字段 | 启动生效 | 热更新生效 | 主链接入 | 备注 |
-|---|---|---|---|---|
-| `port` | ✅ | ❌（重启） | `stable` | 主监听端口 |
-| `http_management_port` | ✅ | ❌（重启） | `stable` | 0 表示禁用 |
-| `io_threads` | ✅ | ❌（重启） | `stable` | |
-| `business_threads` | ✅ | ❌（重启） | `stable` | |
-| `metrics_log_interval` | ✅ | ❌（重启） | `stable` | |
-| `metrics_prometheus_path` | ✅ | ❌（重启） | `stable` | |
-| `metrics_json_path` | ✅ | ❌（重启） | `stable` | |
-| `auth_provider` | ✅ | ❌（重启） | `stable` | dev / json_file / http |
-| `auth_users_path` | ✅ | ❌（重启） | `stable` | json_file 模式必填 |
-| `auth_http_endpoint` | ✅ | ❌（重启） | `experimental` | http 模式同步阻塞，见 3.1 |
-| `auth_http_timeout` | ✅ | ❌（重启） | `experimental` | 字段被读取，但 http 校验器实际不约束 socket 超时 |
-| `max_connections` | ✅ | ✅ | `stable` | `examples/echo` 等入口 reload 时调用 `set_connection_limits()` |
-| `per_ip_connection_limit` | ✅ | ✅ | `stable` | 同上 |
-| `max_guests` | ✅（解析） | ❌ | `reserved` | 字段被解析但**主链未引用** |
-| `session_max_packet_size` | ✅ | ❌（重启） | `stable` | |
-| `session_max_pending_write_bytes` | ✅ | ❌（重启） | `stable` | |
-| `session_heartbeat_check_interval` | ✅ | ❌（重启） | `stable` | |
-| `session_heartbeat_timeout` | ✅ | ❌（重启） | `stable` | |
-| `tls.*` | ✅（解析） | ❌ | `reserved` | 字段被解析，主链未启用 SSL stream，见 4.5 |
+**字段级表格（启动 / 热更新 / 主链接入）**维护在 **`docs/v1-config-maturity.md` §4**，与本节保持同步；**`v1.1.12` / T12** 起以该文为「可读运维说明」，矩阵本节保留锚点以免外链断裂。
 
-> 说明：`✅(解析)` 表示配置层能读出该字段，但运行时主链未对该字段做出行为响应；`reserved` 字段**不应被运维当作可生效配置**。
+> 说明：`✅(解析)` 表示配置层能读出该字段，但运行时主链未对该字段做出行为响应；`reserved` 字段**不应被运维当作可生效配置**。热更新叙事见 **`docs/v1-config-maturity.md` §3** 与下文 §5.2。
 
 ### 5.2 `ConfigWatcher`
 
@@ -282,8 +264,8 @@
 | `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` |
 | `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` §1–§5 |
 | `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语） |
-| `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计）— **当前版本** |
-| `v1.1.12` | 配置成熟度表 | T12 后半 |
+| `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计） |
+| `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 — **当前版本** |
 | `v1.1.13` | 标准启动 / reload / shutdown 顺序 | T13 |
 | `v1.1.14` | 受控生命周期流程 | T13 后半 |
 | `v1.1.15` | 横切能力定位 | T14 后半 |

@@ -288,7 +288,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 }
 ```
 
-> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）见 `docs/v1-maturity-matrix.md` §5.1。
+> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。
 
 ## 10. v1.x 维护下一阶段方向
 
@@ -304,4 +304,5 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.9` — **治理入口分层（T10）**：**`docs/v1-governance-layers.md`** **已完成**
 - `v1.1.10` — **治理成熟度冻结（文档 + 示例/README/playbook 用语）**：**`docs/v1-governance-layers.md` §6** **已完成**
 - `v1.1.11` — **二进制 Admin 最小规则（T11）**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计 **已完成**
+- `v1.1.12` — **配置字段成熟度（T12）**：**`docs/v1-config-maturity.md`**（矩阵 §5.1 指针）**已完成**
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

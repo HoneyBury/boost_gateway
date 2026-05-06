@@ -1,5 +1,20 @@
 # 更新日志
 
+## v1.1.12 — 配置字段成熟度（T12）+ v2 设计文档入库 (2026-05-06)
+
+> **范围**：**文档**。新增 **`docs/v1-config-maturity.md`**（`GatewayAppConfig` 字段表 + 热更新/`ConfigWatcher` 叙事）；**`docs/v1-maturity-matrix.md` §5.1** 改为指向该文；节拍与 playbook 指针同步。**`docs/v2-design.md`** 纳入仓库（v2 草案，**不**代表已进入 v2 实施）。
+
+### 文档
+
+- **`docs/v1-config-maturity.md`**；矩阵 §5.1 / §10；`docs/README.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`development-log.md`。
+- **`docs/v2-design.md`**（既有草案文本，本次首次跟踪）。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.11 — 二进制 Admin 最小规则（T11）(2026-05-06)
 
 > **范围**：**`docs/v1-admin-audit-rules.md`**（调用前提 / 动作语义 / `admin_invoke` 审计键）；`AdminService::register_handlers` 迁入 **`admin_service.cpp`** 并在每条 admin 请求上写 **`AUDIT_LOG(admin_invoke, …)`**。**不引入**令牌/角色 ACL，**不改变** `kAdminResponse` 成功/失败细分策略。

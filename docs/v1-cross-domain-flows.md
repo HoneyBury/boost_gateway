@@ -62,4 +62,5 @@
 - **`v1.1.9` / T10** — 治理入口分层：**`docs/v1-governance-layers.md`** §1–§5
 - **`v1.1.10`** — 治理成熟度冻结（文档与示例用语）：同文 **§6**
 - **`v1.1.11` / T11** — **`docs/v1-admin-audit-rules.md`**（admin **调用前提** + **`admin_invoke`** 最小审计）；**运行时 ACL**：仍 `reserved`
+- **`v1.1.12` / T12** — **`docs/v1-config-maturity.md`**（`GatewayAppConfig` 启动/热更新/预留；`ConfigWatcher` 现状）
 - **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，再追加专节并指向实现文件。

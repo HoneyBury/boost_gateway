@@ -186,4 +186,4 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
 - **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **下一维护版**：`v1.1.12`（T12 后半：配置字段成熟度）。**二进制 admin 契约与最小审计**：`docs/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`docs/v1-governance-layers.md` **§6**（**v1.1.10**）。其他交叉引用保持不变。
+- **下一维护版**：`v1.1.13`（T13：标准启动 / reload / shutdown 顺序）。**配置字段成熟度**：`docs/v1-config-maturity.md`（**v1.1.12**）。**二进制 admin 契约与最小审计**：`docs/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`docs/v1-governance-layers.md` **§6**（**v1.1.10**）。
