@@ -93,6 +93,7 @@
 
 | 任务 | 版本 | 状态 |
 |---|---|---|
+| （文档）login / room / battle 模块边界与四大验收问答 | `v1.1.5` | **done**（见 `docs/v1-business-fact-source.md`） |
 | T01 校准 `v1.0.0` / `develop` 能力边界与文档表述 | `v1.1.1` | **done** |
 | T02 冻结当前真实协议表，明确 1.x 主协议事实源 | `v1.1.1` / `v1.1.6` | **doing**（v1.1.1 完成"明确字符串 body 是主契约"，错误码语义修正在 v1.1.6） |
 | T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **doing**（v1.1.1 完成成熟度文档校准；分层与权限模型在 v1.1.9 / v1.1.11） |
@@ -139,9 +140,8 @@
 v1.1.1   基线校准                     ✅
 v1.1.2   会话与协议收口（T03 / T04）  ✅
 v1.1.3   入口收敛（T05）              ✅
-v1.1.4   battle_started 事实源（T06 ①） ✅ 当前
-v1.1.5   业务事实源校准
-v1.1.5   业务事实源校准
+v1.1.4   battle_started 事实源（T06 ①） ✅
+v1.1.5   业务事实源校准（叙事文档） ✅ 当前
 v1.1.6   业务协议冻结（T02 后半 / 错误码语义）
 v1.1.7   跨域编排收口（T07 / T08）
 v1.1.8   房间/战斗边界收紧（T09 / T06 第二阶段）
@@ -167,9 +167,10 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.4` `battle_started` 单一事实源（T06 第一阶段）
-- 说明：`RoomManager` 不再维护独立 `battle_started` 布尔；战斗态以 `BattleManager` 为准，房间通过 `set_battle_active_query` 委派。删除 `mark_battle_started` 调用链。示例与集成测试中完成 wiring。`ctest` 63/63 通过。
+- 版本：`v1.1.5` 业务事实源校准（叙事文档）
+- 说明：新增 `docs/v1-business-fact-source.md`，回答登录 vs 恢复、席位建模、battle 与 room 关系、`battle_started` SSOT；`docs/README.md` 与 `docs/v1-maturity-matrix.md` §3 首部交叉引用。**无代码变更**。
 - 历次更新：
+  - `2026-05-06` `v1.1.4` — T06 第一阶段 `battle_started` SSOT、`set_battle_active_query`
   - `2026-05-06` `v1.1.3` — T05 ingress 前置
   - `2026-05-06` `v1.1.2` — T03 / T04
   - `2026-05-06` `v1.1.1` — 文档基线与矩阵

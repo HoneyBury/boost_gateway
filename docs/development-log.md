@@ -722,3 +722,26 @@
 - 战斗中会话迁移、`transfer_session`、空房移除与战斗清理的更严顺序。
 
 > **强约束**：v1.x。
+
+---
+
+## 2026-05-06 阶段 v1.1.5：业务事实源校准（叙事文档）
+
+### 目标
+
+落实 `development-optimization.md`「第一步」中文档层面的验收：**能清楚回答**登录成功是否等于恢复完成、房间成员是按 session 还是身份、battle 是独立实体还是附属、`battle_started` 以何处为准。**不修改代码**，与 **`v1.1.4`**（`battle_started` SSOT）配套成文。
+
+### 完成内容
+
+- 新增 **`docs/v1-business-fact-source.md`**。
+- **`docs/README.md`**、`docs/v1-maturity-matrix.md` §3、`development-priority.md`、`runtime-playbook.md`、`CHANGELOG.md` 同步指针。
+
+### 测试结果
+
+- 纯文档校准，沿用 **`v1.1.4` 代码基线与 ctest（63）**。
+
+### 下一步
+
+- **`v1.1.6`**：`development-optimization.md` 第二步——业务协议表冻结（含错误码语义失真项）。
+
+> **强约束**：未进入 v2；未改 `docs/v2-roadmap.md`。

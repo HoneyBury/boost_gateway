@@ -1,5 +1,21 @@
 # 更新日志
 
+## v1.1.5 — 业务事实源校准（叙事文档）(2026-05-06)
+
+> **范围**：维护期 **`development-optimization.md`**「第一步」的**文档验收**——能明确回答登录 vs 恢复、席位建模、battle 与房间关系、`battle_started` SSOT。**无代码与协议变更**，运行时行为与 **`v1.1.4`** 一致。
+
+### 新增文档
+
+- `docs/v1-business-fact-source.md` — login / room / battle 三条线的职责边界与四个核心问答（与 `docs/v1-maturity-matrix.md` §3 互补）。
+
+### 导航更新
+
+- `docs/README.md`：`v1.x` 维护期文档列表增加本条链接。
+- `docs/v1-maturity-matrix.md` §「业务层」首部增加对本文件的指引。
+- `docs/development-priority.md`、`docs/runtime-playbook.md` §10：`v1.1.5` 收尾表述。
+
+---
+
 ## v1.1.4 — `battle_started` 单一事实源（T06 第一阶段）(2026-05-06)
 
 > **范围**：以 `BattleManager` 为房间内「是否在战斗中」的**唯一持久状态**；移除 `RoomManager` 内部的 `battle_started` 双写及 `BattleService` 成功后对 `RoomManager::mark_battle_started` 的回填。**不改变**对外字符串协议（如 `battle_started:{room}:{n}`、`session_resumed:…:battle=1`）。
