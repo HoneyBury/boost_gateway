@@ -2,6 +2,7 @@
 
 #include "app/audit_log.h"
 #include "app/logging.h"
+#include "game/room/room_battle_lifecycle.h"
 
 #include <utility>
 
@@ -151,8 +152,8 @@ void GatewayServer::do_accept() {
             [this](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
                 const auto room_id = room_manager_.room_id_of(session_ptr);
                 room_manager_.remove_session(session_ptr);
-                if (room_id && room_manager_.member_count(*room_id) == 0) {
-                    battle_manager_.remove_room(*room_id);
+                if (room_id) {
+                    game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);
                 }
                 session_manager_.remove_session(session_ptr);
                 metrics_.on_session_closed();

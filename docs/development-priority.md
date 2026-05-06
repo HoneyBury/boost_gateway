@@ -109,8 +109,8 @@
 | T05 前置 ingress 鉴权白名单与限频，收口入口治理 | `v1.1.3` | **done** |
 | T06 明确 `battle_started` 单一事实源，停止 room/battle 双写（第一阶段） | `v1.1.4` | **done** |
 | T06 后续：`transfer_session` / 空房战场清理等与 T09 | `v1.1.8` | todo |
-| T07 收敛重复登录恢复链 | `v1.1.7` | todo |
-| T08 收敛空房 battle 清理链 | `v1.1.7` | todo |
+| T07 收敛重复登录恢复链 | `v1.1.7` | **done**（`login_recovery.*` + `docs/v1-cross-domain-flows.md` §A） |
+| T08 收敛空房 battle 清理链 | `v1.1.7` | **done**（`room_battle_lifecycle.*` + `docs/v1-cross-domain-flows.md` §B） |
 | T09 收紧房间态与战斗态边界，明确 `transfer_session()` 定位 | `v1.1.8` | todo |
 | T11 明确 admin 权限模型与审计最小规则 | `v1.1.11` | todo |
 | T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | todo |
@@ -142,8 +142,8 @@ v1.1.2   会话与协议收口（T03 / T04）  ✅
 v1.1.3   入口收敛（T05）              ✅
 v1.1.4   battle_started 事实源（T06 ①） ✅
 v1.1.5   业务事实源校准（叙事文档） ✅
-v1.1.6   业务协议冻结（T02 后半 / 错误码语义） ✅ 当前
-v1.1.7   跨域编排收口（T07 / T08）
+v1.1.6   业务协议冻结（T02 后半 / 错误码语义） ✅
+v1.1.7   跨域编排收口（T07 / T08） ✅ 当前
 v1.1.8   房间/战斗边界收紧（T09 / T06 第二阶段）
 v1.1.9   治理入口分层（T10 后半）
 v1.1.10  治理成熟度冻结
@@ -167,9 +167,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.6` 业务协议冻结（T02 后半）：新增 `docs/v1-string-protocol.md`；`ErrorCode::kPlayerNotInBattle`（3004）；`BattleService` 提交输入不在战斗中参与者列表时使用该码而非 `kAuthRequired`；单元测试 `BattleManagerTest.SubmitInputUnknownPlayerReturnsNotInBattle`。
+- 版本：`v1.1.7` 跨域编排收口（T07 / T08）：`login_recovery` 提取顶号房间迁移与登录后 room 推送拼装；`clear_battle_if_room_empty` 统一空房战斗清理（`GatewayServer` + `RoomService`）；`docs/v1-cross-domain-flows.md`；单元测 `RoomBattleLifecycleTest`。
 - 历次更新：
-  - `2026-05-06` `v1.1.5` — 业务事实源叙事（`v1-business-fact-source.md`），无代码变更
+  - `2026-05-06` `v1.1.6` — 协议冻结文档 + `kPlayerNotInBattle`
   - `2026-05-06` `v1.1.4` — T06 第一阶段 `battle_started` SSOT、`set_battle_active_query`
   - `2026-05-06` `v1.1.3` — T05 ingress 前置
   - `2026-05-06` `v1.1.2` — T03 / T04

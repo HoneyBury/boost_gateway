@@ -183,4 +183,4 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
 - **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **下一维护版**：`v1.1.7` 跨域编排收口（T07 / T08），不改变本节已冻结语义的前提下增补流程说明。
+- **下一维护版**：`v1.1.8` 房间/战斗边界收紧（T09）。**`v1.1.7`** 跨域编排收口见 `docs/v1-cross-domain-flows.md`（T07/T08 流程与代码入口；不改变本节协议表）。

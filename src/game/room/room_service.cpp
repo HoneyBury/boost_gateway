@@ -1,5 +1,6 @@
 #include "game/room/room_service.h"
 
+#include "game/room/room_battle_lifecycle.h"
 #include "net/protocol.h"
 
 #include <fmt/format.h>
@@ -115,9 +116,7 @@ void RoomService::register_handlers(net::MessageDispatcher& dispatcher) const {
             const auto [result, outcome] = room_manager_.leave_room(context.session);
             switch (result) {
                 case RoomManager::LeaveRoomResult::kOk:
-                    if (outcome.player_count == 0) {
-                        battle_manager_.remove_room(outcome.room_id);
-                    }
+                    clear_battle_if_room_empty(battle_manager_, room_manager_, outcome.room_id);
                     push_service_.send_ok(
                         context.session, net::protocol::kRoomLeaveResponse, context.request_id, "room_left:" + outcome.room_id);
                     if (current_room_id) {

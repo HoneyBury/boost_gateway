@@ -274,8 +274,8 @@
 | `v1.1.3` | 入口治理前置 | T05 |
 | `v1.1.4` | `battle_started` 单一事实源（T06 第一阶段） | T06 |
 | `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`） |
-| `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** — **当前版本** |
-| `v1.1.7` | 跨域编排收口 | T07 / T08 |
+| `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
+| `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery` + `room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` — **当前版本** |
 | `v1.1.8` | 房间/战斗边界收紧 | T09 |
 | `v1.1.9` | 治理入口分层 | T10 后半 |
 | `v1.1.10` | 治理成熟度冻结 | （文档） |

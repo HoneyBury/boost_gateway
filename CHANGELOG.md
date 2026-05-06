@@ -1,5 +1,30 @@
 # 更新日志
 
+## v1.1.7 — 跨域编排收口（T07 / T08）(2026-05-06)
+
+> **范围**：**不修改**对外冻结的字符串协议（`docs/v1-string-protocol.md`）。将「顶号房间恢复」与「空房即清战斗」收口为**可查文档 + 单一策略函数**，避免 `GatewayServer` 与 `RoomService` 各写一份 battle 清理条件。
+
+### T07 重复登录恢复链
+
+- 新增 `include/game/login/login_recovery.h`、`src/game/login/login_recovery.cpp`：`transfer_room_for_duplicate_login`、`build_login_room_notify_paths`。
+- `LoginService` 仅编排 push/响应，顶号房间迁移与 `login_ok`/`session_resumed` 拼装迁入上述模块。
+
+### T08 空房 battle 清理链
+
+- 新增 `include/game/room/room_battle_lifecycle.h`、`src/game/room/room_battle_lifecycle.cpp`：`clear_battle_if_room_empty`。
+- `GatewayServer` 断线回调与 `RoomService::leave_room` 成功路径均调用该函数（替代分散的 `member_count==0` + `remove_room`）。
+
+### 文档
+
+- `docs/v1-cross-domain-flows.md`，`docs/README.md`、`development-priority.md`、`v1-maturity-matrix.md`、`runtime-playbook.md` 指针更新。
+
+### 测试
+
+- `RoomBattleLifecycleTest.ClearBattleWhenRoomBecomesEmptyAfterLeaves`
+- `ctest`：65/65。
+
+---
+
 ## v1.1.6 — 业务协议冻结（T02 后半）(2026-05-06)
 
 > **范围**：`development-optimization.md`「第二步」——冻结 login / room / battle **字符串 body** 事实源；消除 battle 业务错误误用 **auth** 错误码；**对外 body 文本不变**（仍为 `player_not_in_battle`），**wire 上 `error_code` 变更**（兼容旧客户端需自知）。

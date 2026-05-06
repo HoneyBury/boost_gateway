@@ -5,6 +5,7 @@ add_executable(project_unit_tests
     packet_codec_test.cpp
     message_dispatcher_test.cpp
     room_manager_test.cpp
+    room_battle_lifecycle_test.cpp
     battle_manager_test.cpp
     session_manager_test.cpp
     session_close_test.cpp

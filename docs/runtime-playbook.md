@@ -297,5 +297,6 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - `v1.1.4` — **`battle_started` 单一事实源（第一阶段，`BattleManager` 为准，`RoomManager` 经 `set_battle_active_query` 查询）已完成**
 - `v1.1.5` — **业务事实源叙事校准**（见 `docs/v1-business-fact-source.md`：**无代码变更**）
 - `v1.1.6` — **业务字符串协议冻结**（`docs/v1-string-protocol.md`）+ **`kPlayerNotInBattle` 错误码语义修正（T02 后半）已完成**
-- `v1.1.7+` — 跨域编排收口（T07 / T08）等
+- `v1.1.7` — **跨域编排收口（T07/T08）**：`docs/v1-cross-domain-flows.md`；`login_recovery`、`clear_battle_if_room_empty` **已完成**
+- `v1.1.8+` — 房间/战斗边界收紧（T09）等
 - `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环

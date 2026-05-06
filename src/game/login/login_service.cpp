@@ -1,6 +1,7 @@
 #include "game/login/login_service.h"
 
 #include "app/audit_log.h"
+#include "game/login/login_recovery.h"
 #include "net/protocol.h"
 
 #include <optional>
@@ -82,7 +83,8 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
                     .display_name = validation_result.display_name,
                 });
             if (replaced_session && replaced_session != context.session) {
-                const auto transferred = room_manager_.transfer_session(replaced_session, context.session);
+                const auto transferred =
+                    transfer_room_for_duplicate_login(room_manager_, replaced_session, context.session);
                 push_service_.send_push(replaced_session,
                                         net::protocol::kSessionKickedPush,
                                         transferred ? "session_kicked:duplicate_login:room_transferred"
@@ -93,20 +95,19 @@ void LoginService::register_handlers(net::MessageDispatcher& dispatcher) const {
             metrics_.on_login_success();
             AUDIT_LOG("login_success", "user=" + validation_result.user_id);
             auto response_body = "login_ok:" + validation_result.user_id + ":" + validation_result.display_name;
-            std::optional<std::string> resumed_body;
-            if (const auto room_snapshot = room_manager_.room_snapshot_of(context.session)) {
-                response_body += ":room=" + room_snapshot->room_id;
-                resumed_body = "session_resumed:" + room_snapshot->room_id +
-                               (room_snapshot->battle_started ? ":battle=1" : ":battle=0");
+            const auto room_paths = build_login_room_notify_paths(room_manager_, context.session);
+            if (room_paths.login_ok_room_suffix) {
+                response_body += *room_paths.login_ok_room_suffix;
             }
 
             push_service_.send_ok(context.session,
                                   net::protocol::kLoginResponse,
                                   context.request_id,
                                   std::move(response_body));
-            if (resumed_body) {
-                push_service_.send_push(
-                    context.session, net::protocol::kSessionResumedPush, std::move(*resumed_body));
+            if (room_paths.session_resumed_body) {
+                push_service_.send_push(context.session,
+                                        net::protocol::kSessionResumedPush,
+                                        *room_paths.session_resumed_body);
             }
         });
 }

@@ -770,3 +770,28 @@
 - **`v1.1.7`**：跨域编排收口（T07 / T08）。
 
 > **强约束**：v1.x。
+
+---
+
+## 2026-05-06 阶段 v1.1.7：跨域编排收口（T07 / T08）
+
+### 目标
+
+落实 **`development-optimization.md` §11** 的 **T07 / T08** 与§「第三步」叙述：顶号恢复链、空房 battle 清理链有**统一策略函数**与 **`docs/v1-cross-domain-flows.md`**，避免 `GatewayServer` 与 `RoomService` 各维护一份「空房删战斗」逻辑。
+
+### 完成内容
+
+- `include/game/login/login_recovery.h`、`src/game/login/login_recovery.cpp`；`include/game/room/room_battle_lifecycle.h`、`src/game/room/room_battle_lifecycle.cpp`。
+- `LoginService`、`GatewayServer`、`RoomService` 接线；`src/game/login/CMakeLists.txt`、`src/game/room/CMakeLists.txt`。
+- **`docs/v1-cross-domain-flows.md`**；`docs/README.md`、`v1-string-protocol.md` 尾部、`development-priority.md`、`v1-maturity-matrix.md`、`runtime-playbook.md`、`CHANGELOG.md`。
+- **`tests/unit/room_battle_lifecycle_test.cpp`**。
+
+### 测试结果
+
+- `ctest`：**65/65**。
+
+### 下一步
+
+- **`v1.1.8`**：房间态与战斗态边界收紧（T09 等）。
+
+> **强约束**：未进入 v2。
