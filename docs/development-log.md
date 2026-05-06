@@ -911,6 +911,29 @@
 
 ### 下一步
 
-- **`v1.1.13`**：T13 — 标准启动 / reload / shutdown 顺序。
+- **`v1.1.13`**：T13 — 标准启动 / reload / shutdown 顺序（见后续阶段记录）。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-06 阶段 v1.1.13：标准装配与 shutdown 退出（T13）
+
+### 目标
+
+落实 **T13** 路线图第二步：**统一描述** showcase 入口的 bootstrap / reload / shutdown，并修正此前信号触发后 **`io_context.run()`** 可能**永不返回**的问题（缺 **`io_context.stop()`**）。
+
+### 完成内容
+
+- **`docs/v1-runtime-lifecycle.md`**；矩阵 §5 引言、§5.3、§10；`docs/README.md`、`docs/v1-config-maturity.md` §6、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`CHANGELOG.md`。
+- **`examples/echo/server_main.cpp`**、`login_demo`、`admin_demo`：`GracefulShutdown` 回调内 **`watcher.stop()`**、**`server.stop()`**、**`io_context.stop()`**（或 `io.stop()`）；`login_demo` / `admin_demo` 主线程末尾 **`watcher.stop()`** 幂等收尾。
+
+### 测试结果
+
+- `ctest`：**66/66**。
+
+### 下一步
+
+- **`v1.1.14`**：T13 后半 — 受控 reload / shutdown **语义**（矩阵 §5.2–§5.3）。
 
 > **强约束**：未进入 v2。

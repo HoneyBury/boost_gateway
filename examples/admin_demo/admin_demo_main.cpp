@@ -156,6 +156,7 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> shutdown{false};
     app::GracefulShutdown sig_handler(io.get_executor(), [&] {
         shutdown.store(true);
+        watcher.stop();
         AUDIT_LOG("shutdown", "signal");
         std::size_t saved = 0;
         for (const auto& s : session_mgr.all_sessions()) {
@@ -169,6 +170,7 @@ int main(int argc, char* argv[]) {
         }
         LOG_INFO("关闭时保存 {} 条记录", saved);
         server.stop();
+        io.stop();
     });
     sig_handler.start();
 
@@ -179,5 +181,6 @@ int main(int argc, char* argv[]) {
     for (auto& w : workers) w = std::thread([&] { io.run(); });
     for (auto& w : workers) w.join();
     pool.join();
+    watcher.stop();
     return 0;
 }

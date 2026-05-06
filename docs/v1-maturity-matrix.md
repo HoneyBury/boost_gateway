@@ -157,7 +157,7 @@
 
 ## 5. 配置与运行时装配
 
-运维向「哪些字段改 JSON 会生效 / 是否要重启」优先读 **`docs/v1-config-maturity.md`**；本节保留 **成熟度等级** 与 **组件（Watcher / Shutdown）** 子表。
+运维向「哪些字段改 JSON 会生效 / 是否要重启」优先读 **`docs/v1-config-maturity.md`**；**启动 / reload / shutdown 步骤清单**见 **`docs/v1-runtime-lifecycle.md`**（**v1.1.13**）。本节保留 **成熟度等级** 与 **组件（Watcher / Shutdown）** 子表。
 
 ### 5.1 `GatewayAppConfig` 字段成熟度
 
@@ -177,7 +177,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | `SIGINT` / `SIGTERM` 触发 `on_shutdown` 回调 | `stable` | 主链可用 |
-| 统一 shutdown sequence（监听停 → 会话排干 → metrics flush → persistence flush） | `reserved` | 当前由各 `examples/*main.cpp` 各自手工编排，不同入口语义不一致 |
+| 统一 shutdown sequence（监听停 → 会话排干 → metrics flush → persistence flush） | `reserved` | **框架级**仍无单一编排器；**`v1.1.13`** 起 **`examples/echo`**、`login_demo`、`admin_demo` 信号回调按 **`docs/v1-runtime-lifecycle.md` §4** 对齐 **`watcher.stop()` →（可选持久化）→ `server.stop()` → `io_context.stop()`**，以便 **`io_context.run()`** 退出；其它入口仍可能不一致 |
 
 ### 5.4 `examples/` 入口分类
 
@@ -265,8 +265,8 @@
 | `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` §1–§5 |
 | `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语） |
 | `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计） |
-| `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 — **当前版本** |
-| `v1.1.13` | 标准启动 / reload / shutdown 顺序 | T13 |
+| `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 |
+| `v1.1.13` | 标准启动 / reload / shutdown 顺序 | **T13**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** — **当前版本** |
 | `v1.1.14` | 受控生命周期流程 | T13 后半 |
 | `v1.1.15` | 横切能力定位 | T14 后半 |
 | `v1.1.16` | 横切动作按生命周期收口 | T15 |

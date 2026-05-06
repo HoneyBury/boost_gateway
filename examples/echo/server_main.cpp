@@ -171,6 +171,7 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> shutdown{false};
     app::GracefulShutdown sig_handler(io_context.get_executor(), [&]() {
         shutdown.store(true);
+        watcher.stop();
         AUDIT_LOG("shutdown", "Graceful shutdown initiated");
         // Save authenticated player data
         std::size_t saved = 0;
@@ -188,6 +189,7 @@ int main(int argc, char* argv[]) {
         }
         LOG_INFO("Saved {} player records on shutdown", saved);
         server.stop();
+        io_context.stop();
     });
     sig_handler.start();
 

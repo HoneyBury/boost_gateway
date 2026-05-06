@@ -114,7 +114,7 @@
 | T08 收敛空房 battle 清理链 | `v1.1.7` | **done**（`room_battle_lifecycle.*` + `docs/v1-cross-domain-flows.md` §B） |
 | T09 收紧房间态与战斗态边界，明确 `transfer_session()` 定位 | `v1.1.8` | **done**（同上 + 代码注释与矩阵 §3.2） |
 | T11 admin **调用前提**与 **`admin_invoke`** **最小审计**（文档 + handler 边界；**无运行时 ACL**） | `v1.1.11` | **done**（见 **`docs/v1-admin-audit-rules.md`**；`admin_service.cpp`） |
-| T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | todo |
+| T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | **doing**（**v1.1.13** ✅ **`docs/v1-runtime-lifecycle.md`** + `echo`/`login_demo`/`admin_demo` **`io.stop()`**；**v1.1.14** ⏳ 受控语义） |
 | T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | todo |
 | T16 冻结存储后端和审计/回放数据格式支持级别 | `v1.1.17` | todo |
 
@@ -149,8 +149,8 @@ v1.1.8   房间/战斗边界收紧（T09 / T06 第二阶段） ✅
 v1.1.9   治理入口分层（T10） ✅
 v1.1.10  治理成熟度冻结 ✅
 v1.1.11  admin 权限前提与最小审计（T11） ✅
-v1.1.12  配置字段成熟度（T12） ✅ 当前
-v1.1.13  标准启动 / reload / shutdown 顺序（T13）
+v1.1.12  配置字段成熟度（T12） ✅
+v1.1.13  标准启动 / reload / shutdown 顺序（T13） ✅ 当前
 v1.1.14  受控生命周期流程
 v1.1.15  横切能力定位（T14 后半）
 v1.1.16  横切动作按生命周期收口（T15）
@@ -168,8 +168,9 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-06`
-- 版本：`v1.1.12` / T12：**`docs/v1-config-maturity.md`**（字段表 + 热更新叙事）；矩阵 §5.1 改为指针同步；节拍 / playbook / `v1-string-protocol` 下一版指针刷新；**入库** **`docs/v2-design.md`**（v2 草案，决策点前不实施）。
+- 版本：`v1.1.13` / T13：**`docs/v1-runtime-lifecycle.md`**；`echo_server`、`login_demo`、`admin_demo` shutdown：**`watcher.stop()` + `io_context.stop()`**；矩阵 §5 / §10。
 - 历次更新：
+  - `2026-05-06` `v1.1.12` — `v1-config-maturity.md`、`v2-design.md` 入库
   - `2026-05-06` `v1.1.11` — admin 规则、`admin_invoke`
   - `2026-05-06` `v1.1.10` — 治理成熟度冻结 §6
   - `2026-05-06` `v1.1.9` — 治理入口分层、`v1-governance-layers.md`

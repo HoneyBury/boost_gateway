@@ -1,5 +1,23 @@
 # 更新日志
 
+## v1.1.13 — 标准运行时装配 / shutdown 顺序（T13）(2026-05-06)
+
+> **范围**：**`docs/v1-runtime-lifecycle.md`**（启动 / reload / shutdown 清单）；**`examples/echo`**、`login_demo`、`admin_demo` 在 **`GracefulShutdown`** 回调中 **`watcher.stop()` + `server.stop()` + `io_context.stop()`**，避免信号停服后 IO 线程无法 **`join`**。
+
+### 代码
+
+- `examples/echo/server_main.cpp`、`examples/login_demo/login_demo_main.cpp`、`examples/admin_demo/admin_demo_main.cpp`。
+
+### 文档
+
+- **`docs/v1-runtime-lifecycle.md`**；矩阵 §5 / §10；`docs/README.md`、`v1-config-maturity.md`、`development-priority.md`、`runtime-playbook.md`、`v1-string-protocol.md`、`v1-cross-domain-flows.md`、`development-log.md`。
+
+### 测试
+
+- `ctest`：**66/66**。
+
+---
+
 ## v1.1.12 — 配置字段成熟度（T12）+ v2 设计文档入库 (2026-05-06)
 
 > **范围**：**文档**。新增 **`docs/v1-config-maturity.md`**（`GatewayAppConfig` 字段表 + 热更新/`ConfigWatcher` 叙事）；**`docs/v1-maturity-matrix.md` §5.1** 改为指向该文；节拍与 playbook 指针同步。**`docs/v2-design.md`** 纳入仓库（v2 草案，**不**代表已进入 v2 实施）。
