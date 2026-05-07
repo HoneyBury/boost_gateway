@@ -123,15 +123,15 @@
 | 任务 | 版本 | 状态 |
 |---|---|---|
 | T17 业务边界测试加固 | `v1.2.1` | **done**（**`battle_manager_test`** / **`room_manager_test`** / **`gateway_integration_test`**；集成侧 `read_until_message` 跳过 **`kRoomStatePush`/`kRoomReadyResponse` 交错**） |
-| T18 治理边界测试加固 | `v1.2.2` | todo |
-| T19 生命周期与装配测试加固 | `v1.2.3` | todo |
-| T20 持久化 / 审计 / 回放测试加固 | `v1.2.4` | todo |
+| T18 治理边界测试加固 | `v1.2.2` | **done**（**`admin_service_test`** / **`http_management_test`** / **`gateway_integration_test`**：默认不注册 admin、HTTP 固定行为、`admin_invoke` 最小审计键） |
+| T19 生命周期与装配测试加固 | `v1.2.3` | **done**（**`lifecycle_assembly_test`**：`ConfigWatcher` 成败 reload、`GatewayServer::stop()` 连接/房间态收口） |
+| T20 持久化 / 审计 / 回放测试加固 | `v1.2.4` | **done**（**`persistence_replay_audit_test`**：player store、`.replay` 读写、`ReplayPlayer`、`AUDIT_LOG` 行） |
 
 ### 批次 D：结构升级决策
 
 | 任务 | 版本 | 状态 |
 |---|---|---|
-| T21 评估是否正式推进 typed protocol / internal bus / battle replay 闭环 | `v1.2.0` | todo（决策点，非默认实施项） |
+| T21 评估是否正式推进 typed protocol / internal bus / battle replay 闭环 | `v1.2.0` | **done**（见 **`docs/v1-structure-upgrade-decision.md`**；结论：**当前维护分支不转正，不提前进入 2.0 结构开发**） |
 
 ---
 
@@ -156,11 +156,11 @@ v1.1.15  横切能力定位（T14） ✅
 v1.1.16  横切动作按生命周期收口（T15） ✅
 v1.1.17  数据格式冻结（T16） ✅
 ─────────────────────────────────────
-v1.2.0   决策点：是否推进结构升级（T21）
-v1.2.1   业务边界测试加固（T17） ✅ 当前
-v1.2.2   治理边界测试加固（T18）
-v1.2.3   生命周期与装配测试加固（T19）
-v1.2.4   持久化/审计/回放测试加固（T20）
+v1.2.0   结构升级决策（T21） ✅ 结论：维护分支不转正
+v1.2.1   业务边界测试加固（T17） ✅
+v1.2.2   治理边界测试加固（T18） ✅
+v1.2.3   生命周期与装配测试加固（T19） ✅
+v1.2.4   持久化/审计/回放测试加固（T20） ✅ 当前
 ```
 
 > **强约束**：在 `v1.2.0` 决策点之前**不进入 v2.0.0 范畴**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。
@@ -168,8 +168,12 @@ v1.2.4   持久化/审计/回放测试加固（T20）
 ## 5. 最近一次更新
 
 - 日期：`2026-05-07`
-- 版本：`v1.2.1` / **T17**：业务边界测试（**`BattleManager`** / **`RoomManager`** 单元；**`gateway_integration_test`** 房主 / 全员就绪 / 人数 / 未开战输入）；矩阵 §8 / §10。
+- 版本：`v1.2.4` / **T18–T20 + T21 决策记录**：治理 / 生命周期装配 / 持久化·审计·回放测试已补齐；结构升级决策见 **`docs/v1-structure-upgrade-decision.md`**（维持 `v1.x` 维护边界，不提前进入 `v2`）。
 - 历次更新：
+  - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`docs/v1-structure-upgrade-decision.md`**
+  - `2026-05-07` `v1.2.3` — **`lifecycle_assembly_test.cpp`**：`ConfigWatcher` 与 `GatewayServer::stop()`
+  - `2026-05-07` `v1.2.2` — **`admin_service_test.cpp`**、**`http_management_test.cpp`**、**`gateway_integration_test.cpp`**：治理边界回归
+  - `2026-05-07` `v1.2.1` — **T17**：业务边界测试（**`BattleManager`** / **`RoomManager`** 单元；**`gateway_integration_test`** 房主 / 全员就绪 / 人数 / 未开战输入）；矩阵 §8 / §10。
   - `2026-05-06` `v1.1.17` — **`v1-cross-cutting-data-formats.md`**（T16）
   - `2026-05-06` `v1.1.16` — **`v1-cross-cutting-lifecycle-binding.md`**（T15）
   - `2026-05-06` `v1.1.15` — **`v1-cross-cutting-capabilities.md`**（T14 事实矩阵）

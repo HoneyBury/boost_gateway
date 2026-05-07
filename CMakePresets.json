@@ -50,21 +50,25 @@
   "buildPresets": [
     {
       "name": "default",
-      "configurePreset": "default"
+      "configurePreset": "default",
+      "jobs": 4
     },
     {
       "name": "release",
-      "configurePreset": "release"
+      "configurePreset": "release",
+      "jobs": 4
     },
     {
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug"
+      "configuration": "Debug",
+      "jobs": 4
     },
     {
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc-release",
-      "configuration": "Release"
+      "configuration": "Release",
+      "jobs": 4
     }
   ],
   "testPresets": [
@@ -79,6 +83,21 @@
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc-debug",
       "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc-release",
+      "configurePreset": "windows-msvc-release",
+      "configuration": "Release",
       "output": {
         "outputOnFailure": true
       }

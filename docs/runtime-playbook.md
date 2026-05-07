@@ -184,10 +184,10 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 `tests/` 目录下：
 
-- `tests/unit/`（14 个 `.cpp`）：协议编解码、消息分发、`SessionManager` / `RoomManager` / `BattleManager` 状态、token 校验器、压缩、metrics 导出、admin handler 注册、配置解析、匹配、`packet_fuzz`
-- `tests/integration/`（2 个 `.cpp`）：`gateway_integration_test`（登录 + 房间 + 战斗 + 顶号恢复 + 心跳超时）、`http_management_test`
+- `tests/unit/`（16 个 `.cpp`）：协议编解码、消息分发、`SessionManager` / `RoomManager` / `BattleManager` 状态、token 校验器、压缩、metrics 导出、admin handler、生命周期装配、持久化 / 审计 / 回放、配置解析、匹配、`packet_fuzz`
+- `tests/integration/`（2 个 `.cpp`）：`gateway_integration_test`（登录 + 房间 + 战斗 + 顶号恢复 + 心跳超时 + 默认不注册 admin）、`http_management_test`（`/health` / `/metrics*` / 405 / 404）
 
-实际 ctest 用例数以 `ctest -N` 实际枚举为准（GoogleTest `gtest_discover_tests` 展开后）。
+实际 `ctest` 用例数以 `ctest -N` 实际枚举为准（GoogleTest `gtest_discover_tests` 展开后）；当前 `default` preset 枚举 **93** 项。
 
 > **测试覆盖盲点**（详见 `docs/development-optimization.md` §9 各模块"测试"小节）：
 >
@@ -290,25 +290,10 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 > **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**横切接线事实**：**`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。**横切应收口规范**：**`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16**）。**横切数据格式与支持级别**：**`docs/v1-cross-cutting-data-formats.md`**（**v1.1.17**）。
 
-## 10. v1.x 维护下一阶段方向
+## 10. v1.x 维护收束结论
 
-按 `docs/development-optimization.md` §11 任务表推进，**不进入 v2.0.0 范畴**：
+按 `docs/development-optimization.md` §11 的任务表，`T01`–`T20` 已完成，当前维护分支的结论是：
 
-- `v1.1.2` — `Session` 主动 / 异常关闭路径统一；固定协议增强顺序；明确分片当前未启用；修正无 zlib 时压缩标记位语义
-- `v1.1.3` — 入口治理前置（白名单 / 限频从业务线程池后挪到 ingress 前置）
-- `v1.1.4` — **`battle_started` 单一事实源（第一阶段，`BattleManager` 为准，`RoomManager` 经 `set_battle_active_query` 查询）已完成**
-- `v1.1.5` — **业务事实源叙事校准**（见 `docs/v1-business-fact-source.md`：**无代码变更**）
-- `v1.1.6` — **业务字符串协议冻结**（`docs/v1-string-protocol.md`）+ **`kPlayerNotInBattle` 错误码语义修正（T02 后半）已完成**
-- `v1.1.7` — **跨域编排收口（T07/T08）**：`docs/v1-cross-domain-flows.md`；`login_recovery`、`clear_battle_if_room_empty` **已完成**
-- `v1.1.8` — **房/战边界**：`RoomMember.member_user_id`、`transfer_session`/战斗中语义、**`docs/v1-room-battle-boundary.md`** **已完成**
-- `v1.1.9` — **治理入口分层（T10）**：**`docs/v1-governance-layers.md`** **已完成**
-- `v1.1.10` — **治理成熟度冻结（文档 + 示例/README/playbook 用语）**：**`docs/v1-governance-layers.md` §6** **已完成**
-- `v1.1.11` — **二进制 Admin 最小规则（T11）**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计 **已完成**
-- `v1.1.12` — **配置字段成熟度（T12）**：**`docs/v1-config-maturity.md`**（矩阵 §5.1 指针）**已完成**
-- `v1.1.13` — **标准启动 / reload / shutdown（T13）**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** **已完成**
-- `v1.1.14` — **受控生命周期（T13 后半）**：**`try_load_gateway_config`** + 同文 **§6–§7** **已完成**
-- `v1.1.15` — **横切能力定位（T14）**：**`docs/v1-cross-cutting-capabilities.md`** **已完成**
-- `v1.1.16` — **横切动作生命周期绑定（T15）**：**`docs/v1-cross-cutting-lifecycle-binding.md`** **已完成**
-- `v1.1.17` — **横切数据格式与支持级别（T16）**：**`docs/v1-cross-cutting-data-formats.md`** **已完成**
-- `v1.2.1` — **业务边界测试加固（T17）**：**`battle_manager_test` / `room_manager_test` / `gateway_integration_test`** **已完成**
-- `v1.2.0` — 决策点：是否正式推进 typed protocol / internal bus / battle replay 闭环
+- **2.0 前需要的收束工作已补齐**：事实源、边界、生命周期、横切能力、治理入口和对应回归面均已入库。
+- **`v1.2.0 / T21` 已完成决策**：见 `docs/v1-structure-upgrade-decision.md`，当前分支**不推进** `typed protocol` / `internal bus` / `battle replay` 转正。
+- **后续若进入 `v2.0.0`，必须重新立项**，而不是继续在 `v1.x` 维护分支上渐进混入 2.0 结构开发。

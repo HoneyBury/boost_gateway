@@ -1,9 +1,11 @@
 add_executable(project_unit_tests
     hello_test.cpp
     config_test.cpp
+    lifecycle_assembly_test.cpp
     gateway_metrics_exporter_test.cpp
     packet_codec_test.cpp
     message_dispatcher_test.cpp
+    persistence_replay_audit_test.cpp
     room_manager_test.cpp
     room_battle_lifecycle_test.cpp
     battle_manager_test.cpp

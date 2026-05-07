@@ -1024,7 +1024,7 @@
 ### 下一步
 
 - **`v1.2.0`**：**T21** — 结构升级 **决策点**（是否推进 typed protocol / internal bus / battle replay 闭环等）；**非默认实施**。
-- **`v1.2.1`–`v1.2.4`**：**T17–T20** — 各主线 **边界测试加固**（业务已完成见后续阶段记录；治理 / 生命周期装配 / 持久化·审计·回放仍 todo）。
+- **`v1.2.1`–`v1.2.4`**：**T17–T20** — 各主线 **边界测试加固**（业务 / 治理 / 生命周期装配 / 持久化·审计·回放均已完成，见后续阶段记录）。
 
 > **强约束**：未进入 v2。
 
@@ -1049,5 +1049,42 @@
 ### 下一步
 
 - **`v1.2.2`**：**T18** — 治理边界测试加固。
+
+> **强约束**：未进入 v2。
+
+---
+
+## 2026-05-07 阶段 v1.2.4：治理/生命周期/横切测试收口 + T21 决策记录
+
+### 目标
+
+在 `T17` 之后继续补齐 **治理边界**、**生命周期与装配**、**持久化 / 审计 / 回放** 的回归护栏，并完成 `T21` 决策记录；要求严格停留在 `v1.x` 维护边界内，不把 `typed protocol` / `internal bus` / `battle replay` 提前推进成正式能力。
+
+### 完成内容
+
+- **T18 / 治理边界**
+  - `admin_service_test.cpp`：dispatch callback、`admin_invoke` 最小审计键、payload excerpt 清洗。
+  - `http_management_test.cpp`：`/health` 固定 JSON、未知路径 `404`、非 `GET` 请求 `405`。
+  - `gateway_integration_test.cpp`：默认 runtime 不注册 admin handler。
+- **T19 / 生命周期与装配**
+  - **新增** `lifecycle_assembly_test.cpp`：`ConfigWatcher` 对坏配置不回调、好配置才回调；`watcher.stop()` 后不再 reload；`GatewayServer::stop()` 关闭连接并清空房间态。
+- **T20 / 持久化·审计·回放**
+  - **新增** `persistence_replay_audit_test.cpp`：`JsonFilePlayerStore`、条件 `SqlitePlayerStore`、`JsonFileBattleReplayStore`、`ReplayPlayer`、`AUDIT_LOG` 行。
+- **T21 / 决策记录**
+  - **新增** `docs/v1-structure-upgrade-decision.md`：结论是**当前维护分支不推进** typed protocol / internal bus / battle replay 转正，继续维持 `v1.x` 维护收束边界。
+- 同步 `docs/README.md`、`docs/development-priority.md`、`CHANGELOG.md`。
+
+### 测试结果
+
+- 已完成本地构建与验证：
+  - `cmake --preset default`
+  - `cmake --build --preset default -j 4`
+  - `ctest --preset default`
+- `ctest -N --preset default` 当前枚举 **93** 项。
+- 依赖真实本地监听端口的集成测试在当前受限环境下会 **skip**，其余回归面已通过。
+
+### 下一步
+
+- 若后续继续推进，仅允许在新的明确批次中重新评估结构升级，不在当前维护收束分支内直接落代码。
 
 > **强约束**：未进入 v2。

@@ -17,6 +17,9 @@
 - [v1.x 横切能力定位（持久化 / 回放 / 审计）](./v1-cross-cutting-capabilities.md) — **`v1.1.15` / T14**：生命周期节点接线**事实**
 - [v1.x 横切动作生命周期绑定规范](./v1-cross-cutting-lifecycle-binding.md) — **`v1.1.16` / T15**：节点 **N1–N7** × 审计 / 持久化 / replay **应收口规范**；showcase 自检清单
 - [v1.x 横切数据格式与后端支持级别](./v1-cross-cutting-data-formats.md) — **`v1.1.17` / T16**：player JSON / SQLite / replay 载荷 / **`AUDIT_LOG`** 行格式事实与兼容边界
+- [v1.2.0 结构升级决策](./v1-structure-upgrade-decision.md) — **`T21`**：typed protocol / internal bus / battle replay 是否在维护分支转正的决策记录（结论：**不提前推进**）
+- [发布流程](./release-process.md) — `develop -> main`、CI/CD、tag release 与归档内容
+- [v1.2.4 发布说明](./releases/v1.2.4.md) — 当前维护收束版发布记录
 - [开发优化文档（v1.0.0 维护期）](./development-optimization.md) — 模块级问题分析、整改路线图、版本批次任务表
 - [开发优先级看板](./development-priority.md)
 - [当前网关骨架运行说明](./runtime-playbook.md)

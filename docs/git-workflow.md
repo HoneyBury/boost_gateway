@@ -101,3 +101,21 @@
 - 协议变更已更新文档
 - 新增模块有对应测试
 - 开发日志已补阶段记录
+- GitHub Actions `CI` / `Release` workflow 已同步当前版本口径
+
+## 8. 发布动作
+
+推荐发布顺序：
+
+1. `develop` 完成阶段收束并提交
+2. `git switch main`
+3. `git merge --no-ff develop`
+4. `git tag -a v<version> -m "Release v<version>"`
+5. `git push origin main develop --follow-tags`
+
+tag push 后，由 GitHub Actions `release.yml` 负责：
+
+- Linux / macOS / Windows 构建
+- 自动测试
+- `cmake --install` 归档
+- GitHub Release 产物上传

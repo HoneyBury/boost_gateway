@@ -96,4 +96,4 @@
 | **`v1.1.15`**（T14） | **`v1-cross-cutting-capabilities.md`**：接线事实 |
 | **`v1.1.16`**（T15） | **`v1-cross-cutting-lifecycle-binding.md`**：应收口规范 |
 | **`v1.1.17`**（本文 / T16） | **格式与支持级别冻结（叙述层）** |
-| **`v1.2.4`**（T20） | 格式与行为的 **回归测试** |
+| **`v1.2.4`**（T20） | **已完成**：格式与行为回归测试（`persistence_replay_audit_test`） |

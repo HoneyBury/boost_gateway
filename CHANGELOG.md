@@ -1,5 +1,35 @@
 # 更新日志
 
+## v1.2.4 — 生命周期/横切测试闭环 + T21 决策记录（2026-05-07）
+
+> **范围**：完成 `T18`–`T20` 测试收口，并记录 `T21` 结构升级决策。**不进入 `v2.0.0` 开发**；当前维护分支仅补齐治理、生命周期装配、持久化/审计/回放的回归护栏。
+
+### 代码
+
+- `tests/unit/admin_service_test.cpp`：校验 admin callback 调用与 `admin_invoke` 最小审计键。
+- `tests/integration/http_management_test.cpp`：校验 `/health` 固定返回、未知路径 `404`、非 `GET` 请求 `405`。
+- `tests/integration/gateway_integration_test.cpp`：校验默认装配不注册 admin，以及 `GatewayServer::stop()` 的连接/房间态收口。
+- `tests/unit/lifecycle_assembly_test.cpp`：覆盖 `ConfigWatcher` reload 成败语义与停用后的回调抑制。
+- `tests/unit/persistence_replay_audit_test.cpp`：覆盖 `JsonFilePlayerStore`、`.replay` 读写、`ReplayPlayer` 与 `AUDIT_LOG` 行格式。
+
+### 文档
+
+- **新增** `docs/v1-structure-upgrade-decision.md`：记录 `T21` 决策，明确 `typed protocol` / `internal bus` / `battle replay` **不**在当前维护分支转正。
+- `docs/README.md`、`docs/development-priority.md`：同步 `T18`–`T21` 完成状态与约束。
+- **新增** `docs/release-process.md`、`docs/releases/v1.2.4.md`：固定 `develop -> main` 合并、三平台 CI/CD、tag release 与归档说明。
+
+### 发布工程
+
+- `.github/workflows/ci.yml`：改为 Linux / macOS `default` + Windows `windows-msvc-debug` 的三平台矩阵。
+- `.github/workflows/release.yml`：改为 tag 触发的三平台构建 / 测试 / install / 打包 / GitHub Release 上传流程。
+- `CMakeLists.txt`、`CMakePresets.json`：版本升至 `1.2.4`，补 `install()` 规则与 release test preset。
+
+### 测试
+
+- 新增治理、生命周期装配、持久化/审计/回放回归面。
+
+---
+
 ## v1.2.1 — 业务边界测试加固（T17）(2026-05-07)
 
 > **范围**：**`BattleManager` / `RoomManager` 单元测试** + **`gateway_integration_test`** 集成路径；覆盖房主开战、全员就绪、单人房间 **`not_enough_players`**、未开战 **`battle_input`**；辅助函数 **`read_until_message`** 跳过 **`kRoomStatePush`** 与就绪响应的交错到达。

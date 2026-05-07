@@ -22,7 +22,10 @@ endif()
 # ---------------------------------------------------------------------------
 if(EXISTS "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz")
     message(STATUS "Using local archive: fmt-11.2.0.tar.gz")
-    FetchContent_Declare(fmt URL "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz")
+    FetchContent_Declare(fmt
+        URL "${THIRD_PARTY_DIR}/fmt-11.2.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+    )
 else()
     FetchContent_Declare(fmt
         GIT_REPOSITORY https://github.com/fmtlib/fmt.git
@@ -35,7 +38,10 @@ endif()
 # ---------------------------------------------------------------------------
 if(EXISTS "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz")
     message(STATUS "Using local archive: googletest-1.17.0.tar.gz")
-    FetchContent_Declare(googletest URL "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz")
+    FetchContent_Declare(googletest
+        URL "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+    )
 else()
     FetchContent_Declare(googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
@@ -48,7 +54,10 @@ endif()
 # ---------------------------------------------------------------------------
 if(EXISTS "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz")
     message(STATUS "Using local archive: spdlog-1.15.3.tar.gz")
-    FetchContent_Declare(spdlog URL "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz")
+    FetchContent_Declare(spdlog
+        URL "${THIRD_PARTY_DIR}/spdlog-1.15.3.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+    )
 else()
     FetchContent_Declare(spdlog
         GIT_REPOSITORY https://github.com/gabime/spdlog.git
@@ -61,7 +70,10 @@ endif()
 # ---------------------------------------------------------------------------
 if(EXISTS "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz")
     message(STATUS "Using local archive: nlohmann_json-3.12.0.tar.gz")
-    FetchContent_Declare(nlohmann_json URL "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz")
+    FetchContent_Declare(nlohmann_json
+        URL "${THIRD_PARTY_DIR}/nlohmann_json-3.12.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+    )
 else()
     FetchContent_Declare(nlohmann_json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -121,5 +133,11 @@ target_compile_definitions(project_boost_asio
     INTERFACE
         BOOST_ALL_NO_LIB
         BOOST_ERROR_CODE_HEADER_ONLY
-        _WIN32_WINNT=0x0A00
 )
+
+if(WIN32)
+    target_compile_definitions(project_boost_asio
+        INTERFACE
+            _WIN32_WINNT=0x0A00
+    )
+endif()

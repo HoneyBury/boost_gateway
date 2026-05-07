@@ -67,4 +67,4 @@
 | **`v1.1.15`** | **T14**：player store / replay / audit 与生命周期节点对照 — **`docs/v1-cross-cutting-capabilities.md`** |
 | **`v1.1.16`** | **T15**：横切动作 **应收口** — **`docs/v1-cross-cutting-lifecycle-binding.md`** |
 | **`v1.1.17`** | **T16**：横切 **数据格式与后端支持级别** — **`docs/v1-cross-cutting-data-formats.md`** |
-| **`v1.2.3`（T19）** | 生命周期与装配 **回归测试**加固 |
+| **`v1.2.3`（T19）** | **已完成**：生命周期与装配回归测试（`lifecycle_assembly_test`） |

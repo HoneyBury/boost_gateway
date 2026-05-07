@@ -128,7 +128,7 @@
 |---|---|---|
 | `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`docs/v1-governance-layers.md`** §L3；**无令牌/角色 ACL** — 任意已建立会话只要发对应 **message_id** 即进入 handler（须在**受信链路**使用） |
 | **调用前提 / 审计最小键 / 动作语义（T11）** | `experimental`（v1.1.11） | **`docs/v1-admin-audit-rules.md`**：**进程外信任域** + 注册显式化；handler 入口统一 **`AUDIT_LOG(admin_invoke, …)`**（`layer=L3_admin`、`action`、`actor_endpoint`、`request_id`、`trace_id`、`outcome=accepted`…） |
-| **运行时鉴权（who can call）、失败细分响应、结构化审计后端** | `reserved` | 当前 `kAdminResponse` body 仍为固定 `*__ok`（或回调 JSON），**不因**回调未命中目标而改变；统一 `actor`/`target` JSON 字段与高可靠审计仍为后续项（**T18** 等） |
+| **运行时鉴权（who can call）、失败细分响应、结构化审计后端** | `reserved` | 当前 `kAdminResponse` body 仍为固定 `*__ok`（或回调 JSON），**不因**回调未命中目标而改变；`T18` 已完成对这组边界的测试固化，但统一 `actor`/`target` JSON 字段与高可靠审计后端仍未进入当前维护分支 |
 
 ### 4.3 限频与连接控制
 
@@ -226,7 +226,7 @@
 |---|---|---|
 | CMake + FetchContent + 本地 third_party 内网构建 | `stable` | 主链可用 |
 | Docker / docker-compose / GitHub Actions CI | `stable` | 主链可用 |
-| 测试规模：14 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试 | `stable` | `ctest`（GoogleTest `gtest_discover_tests` 展开）当前 **81** 项；**`v1.2.1` / T17** 起在 **`battle_manager_test`** / **`room_manager_test`** / **`gateway_integration_test`** 加固 room / battle 错误路径与 **`RoomStatePush`** 与响应交错顺序（见 `read_until_message` 辅助函数） |
+| 测试规模：16 个单元测试源文件 + 2 个集成测试源文件 + `packet_fuzz_test.cpp` 模糊测试 | `stable` | `ctest`（GoogleTest `gtest_discover_tests` 展开）当前 **93** 项；`v1.2.1`–`v1.2.4` 已补齐业务 / 治理 / 生命周期装配 / 持久化·审计·回放回归面。受限环境下依赖真实监听端口的集成测试允许 `skip`，不改变主链成熟度口径 |
 | 9 种压测场景（echo / invalid_token / slow_echo / broadcast_storm / malicious_packet / battle_broadcast / chaos / stability / benchmark） | `stable` | `PressureScenario` 枚举共 9 个值，README/CHANGELOG 早期"6 种 / 8 种"表述需以 `PressureScenario` 枚举为准 |
 | `BufferPool` / `ObjectPool` | `stable` | 主链可用 |
 | `Session::send_batch` | `stable` | 主链可用，但批量发送的逐消息观测语义未拆，见 development-optimization §6.A.2 |
@@ -276,10 +276,10 @@
 | `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** |
 | `v1.1.16` | 横切动作按生命周期收口 | **T15**：**`docs/v1-cross-cutting-lifecycle-binding.md`** |
 | `v1.1.17` | 数据格式冻结 | **T16**：**`docs/v1-cross-cutting-data-formats.md`** |
-| `v1.2.0` | 结构升级决策点 | T21（仅在前面收口完成后） |
-| `v1.2.1` | 业务边界测试加固 | **T17**：**`battle_manager_test`** / **`room_manager_test`** / **`gateway_integration_test`** — **当前版本** |
-| `v1.2.2` | 治理边界测试加固 | T18 |
-| `v1.2.3` | 生命周期与装配测试加固 | T19 |
-| `v1.2.4` | 持久化 / 审计 / 回放测试加固 | T20 |
+| `v1.2.0` | 结构升级决策点 | **T21**：见 `docs/v1-structure-upgrade-decision.md`，结论为**当前维护分支不转正结构升级项** |
+| `v1.2.1` | 业务边界测试加固 | **T17**：`battle_manager_test` / `room_manager_test` / `gateway_integration_test` |
+| `v1.2.2` | 治理边界测试加固 | **T18**：`admin_service_test` / `http_management_test` / 默认装配不注册 admin |
+| `v1.2.3` | 生命周期与装配测试加固 | **T19**：`lifecycle_assembly_test`、`ConfigWatcher` / `GatewayServer::stop()` |
+| `v1.2.4` | 持久化 / 审计 / 回放测试加固 | **T20**：`persistence_replay_audit_test` — **当前版本** |
 
 **严格约束**：在 `v1.2.0` 决策点之前，**不进入 v2.0.0 范畴的开发**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。
