@@ -2,6 +2,9 @@
 # Build stage
 FROM ubuntu:24.04 AS builder
 
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     cmake \
@@ -28,6 +31,9 @@ RUN ctest --preset default
 
 # Runtime stage
 FROM ubuntu:24.04 AS runtime
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
