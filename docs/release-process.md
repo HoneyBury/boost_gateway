@@ -23,6 +23,7 @@
 - `cmake --build --preset default`
 - `ctest --preset default`
 - Windows 预设 `windows-msvc-debug` / `windows-msvc-release` 可配置
+- GitHub Windows runner 走 `windows-ninja-debug` / `windows-ninja-release`，避免依赖固定 Visual Studio generator 名称
 - `README.md`、`CHANGELOG.md`、`docs/development-log.md`、`docs/development-priority.md` 已同步
 - `docs/v1-structure-upgrade-decision.md` 仍明确当前分支不进入 `v2.0.0`
 
@@ -33,7 +34,7 @@
 - `develop` / `main` push
 - 所有 PR
 - Linux / macOS：`default` preset
-- Windows：`windows-msvc-debug` preset
+- Windows：`windows-ninja-debug` preset（配合 `msvc-dev-cmd`）
 - Ubuntu 主干 push 后补做 Docker build smoke test
 
 ## Release
@@ -42,7 +43,7 @@
 
 - `v*` tag push 或手工触发
 - Linux / macOS：`release` preset
-- Windows：`windows-msvc-release` preset
+- Windows：`windows-ninja-release` preset（配合 `msvc-dev-cmd`）
 - `ctest` 后执行 `cmake --install`
 - 生成三平台压缩包：
   - `boost-gateway-<tag>-linux-x86_64.tar.gz`

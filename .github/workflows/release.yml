@@ -1,5 +1,8 @@
 name: Release
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     tags:
@@ -34,10 +37,10 @@ jobs:
             archive_flags: cfvz
             artifact_suffix: macos
           - os: windows-latest
-            configure_preset: windows-msvc-release
-            build_preset: windows-msvc-release
-            test_preset: windows-msvc-release
-            install_config: Release
+            configure_preset: windows-ninja-release
+            build_preset: windows-ninja-release
+            test_preset: windows-ninja-release
+            install_config: ""
             archive_ext: zip
             archive_format: zip
             archive_flags: cfv
@@ -53,11 +56,15 @@ jobs:
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
 
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
       - name: Configure
         run: cmake --preset ${{ matrix.configure_preset }}
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.build_preset }}
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
 
       - name: Test
         run: ctest --preset ${{ matrix.test_preset }}

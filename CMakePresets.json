@@ -37,6 +37,26 @@
       }
     },
     {
+      "name": "windows-ninja-debug",
+      "displayName": "Windows Ninja Debug",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-ninja-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTING": "ON"
+      }
+    },
+    {
+      "name": "windows-ninja-release",
+      "displayName": "Windows Ninja Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/windows-ninja-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_TESTING": "ON"
+      }
+    },
+    {
       "name": "release",
       "displayName": "Release",
       "generator": "Ninja",
@@ -50,25 +70,29 @@
   "buildPresets": [
     {
       "name": "default",
-      "configurePreset": "default",
-      "jobs": 4
+      "configurePreset": "default"
     },
     {
       "name": "release",
-      "configurePreset": "release",
-      "jobs": 4
+      "configurePreset": "release"
     },
     {
       "name": "windows-msvc-debug",
       "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug",
-      "jobs": 4
+      "configuration": "Debug"
     },
     {
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc-release",
-      "configuration": "Release",
-      "jobs": 4
+      "configuration": "Release"
+    },
+    {
+      "name": "windows-ninja-debug",
+      "configurePreset": "windows-ninja-debug"
+    },
+    {
+      "name": "windows-ninja-release",
+      "configurePreset": "windows-ninja-release"
     }
   ],
   "testPresets": [
@@ -98,6 +122,20 @@
       "name": "windows-msvc-release",
       "configurePreset": "windows-msvc-release",
       "configuration": "Release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-ninja-debug",
+      "configurePreset": "windows-ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-ninja-release",
+      "configurePreset": "windows-ninja-release",
       "output": {
         "outputOnFailure": true
       }

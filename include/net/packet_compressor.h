@@ -3,6 +3,7 @@
 #include "net/packet_codec.h"
 
 #include <algorithm>
+#include <cstring>
 #include <cstdint>
 #include <string>
 #include <string_view>
