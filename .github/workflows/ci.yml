@@ -26,7 +26,7 @@ jobs:
             configure_preset: default
             build_preset: default
             test_preset: default
-          - os: windows-latest
+          - os: windows-2022
             configure_preset: windows-ninja-debug
             build_preset: windows-ninja-debug
             test_preset: windows-ninja-debug
@@ -62,6 +62,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Prepare third-party archives
+        run: bash third_party/download_deps.sh
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

@@ -36,7 +36,7 @@ jobs:
             archive_format: gnutar
             archive_flags: cfvz
             artifact_suffix: macos
-          - os: windows-latest
+          - os: windows-2022
             configure_preset: windows-ninja-release
             build_preset: windows-ninja-release
             test_preset: windows-ninja-release
