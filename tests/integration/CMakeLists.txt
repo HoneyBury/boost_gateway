@@ -10,4 +10,6 @@ target_link_libraries(project_integration_tests
 apply_project_warnings(project_integration_tests)
 
 include(GoogleTest)
-gtest_discover_tests(project_integration_tests)
+gtest_discover_tests(project_integration_tests
+    DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+)
