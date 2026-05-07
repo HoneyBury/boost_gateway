@@ -9,3 +9,5 @@ runtime/
 *.md
 .clang-format
 .editorconfig
+!third_party/*.tar.gz
+!third_party/*.zip
