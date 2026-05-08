@@ -4,6 +4,8 @@
 #include <string>
 #include <variant>
 
+#include "v2/gateway/message_types.h"
+
 namespace v2::actor {
 
 using ActorId = std::uint64_t;
@@ -15,7 +17,7 @@ enum class MessageKind : std::uint16_t {
     kUser = 1,
 };
 
-using MessagePayload = std::variant<std::monostate, std::string>;
+using MessagePayload = std::variant<std::monostate, std::string, v2::gateway::ClientEnvelope>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;

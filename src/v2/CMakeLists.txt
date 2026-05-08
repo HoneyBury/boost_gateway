@@ -2,6 +2,8 @@ add_library(project_v2 STATIC
     actor/actor.cpp
     actor/actor_ref.cpp
     common/module_marker.cpp
+    gateway/gateway_actor.cpp
+    gateway/session_adapter.cpp
     runtime/actor_system.cpp
 )
 target_include_directories(project_v2
@@ -11,5 +13,6 @@ target_include_directories(project_v2
 target_link_libraries(project_v2
     PUBLIC
         project_app
+        project_net
 )
 apply_project_warnings(project_v2)
