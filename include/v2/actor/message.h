@@ -5,6 +5,7 @@
 #include <variant>
 
 #include "v2/gateway/message_types.h"
+#include "v2/player/message_types.h"
 
 namespace v2::actor {
 
@@ -17,7 +18,13 @@ enum class MessageKind : std::uint16_t {
     kUser = 1,
 };
 
-using MessagePayload = std::variant<std::monostate, std::string, v2::gateway::ClientEnvelope>;
+using MessagePayload = std::variant<std::monostate,
+                                    std::string,
+                                    v2::gateway::ClientEnvelope,
+                                    v2::player::LoginRequestMsg,
+                                    v2::player::BindSessionMsg,
+                                    v2::player::RoomAssignedMsg,
+                                    v2::player::SessionClosedMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;
