@@ -5,6 +5,7 @@ add_library(project_v2 STATIC
     gateway/gateway_actor.cpp
     gateway/session_adapter.cpp
     player/player_actor.cpp
+    room/room_actor.cpp
     runtime/actor_system.cpp
 )
 target_include_directories(project_v2

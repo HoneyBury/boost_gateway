@@ -3,6 +3,7 @@ add_executable(project_v2_unit_tests
     unit/bootstrap_smoke_test.cpp
     unit/gateway_bridge_test.cpp
     unit/player_actor_test.cpp
+    unit/room_actor_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE

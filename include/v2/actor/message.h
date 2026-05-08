@@ -6,6 +6,7 @@
 
 #include "v2/gateway/message_types.h"
 #include "v2/player/message_types.h"
+#include "v2/room/message_types.h"
 
 namespace v2::actor {
 
@@ -24,7 +25,11 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::player::LoginRequestMsg,
                                     v2::player::BindSessionMsg,
                                     v2::player::RoomAssignedMsg,
-                                    v2::player::SessionClosedMsg>;
+                                    v2::player::SessionClosedMsg,
+                                    v2::room::CreateRoomMsg,
+                                    v2::room::JoinRoomMsg,
+                                    v2::room::SetReadyMsg,
+                                    v2::room::StartBattleMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;
