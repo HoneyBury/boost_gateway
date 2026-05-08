@@ -1,5 +1,8 @@
 add_library(project_v2 STATIC
+    actor/actor.cpp
+    actor/actor_ref.cpp
     common/module_marker.cpp
+    runtime/actor_system.cpp
 )
 target_include_directories(project_v2
     PUBLIC

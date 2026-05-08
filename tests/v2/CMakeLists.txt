@@ -1,4 +1,5 @@
 add_executable(project_v2_unit_tests
+    unit/actor_runtime_test.cpp
     unit/bootstrap_smoke_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
