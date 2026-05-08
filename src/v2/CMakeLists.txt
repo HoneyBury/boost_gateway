@@ -1,6 +1,7 @@
 add_library(project_v2 STATIC
     actor/actor.cpp
     actor/actor_ref.cpp
+    battle/battle_actor.cpp
     common/module_marker.cpp
     gateway/gateway_actor.cpp
     gateway/runtime.cpp

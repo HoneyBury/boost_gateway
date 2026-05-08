@@ -4,6 +4,7 @@
 #include <unordered_map>
 
 #include "v2/gateway/gateway_actor.h"
+#include "v2/battle/battle_actor.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
 #include "v2/runtime/actor_system.h"
@@ -11,6 +12,7 @@
 namespace v2::gateway {
 
 class Runtime final : public GatewayCommandSink,
+                      public v2::battle::BattleEventSink,
                       public v2::player::PlayerEventSink,
                       public v2::room::RoomEventSink {
 public:
@@ -21,6 +23,7 @@ public:
     [[nodiscard]] bool is_authenticated(const GatewayCommand& command) const;
 
     bool handle(const GatewayCommand& command) override;
+    void push(v2::battle::BattleEvent event) override;
     void push(v2::player::PlayerEvent event) override;
     void push(v2::room::RoomEvent event) override;
 
@@ -47,11 +50,13 @@ private:
     std::unordered_map<SessionId, std::string> users_by_session_id_;
     std::unordered_map<SessionId, std::string> rooms_by_session_id_;
     std::unordered_map<std::string, v2::actor::ActorRef> rooms_by_room_id_;
+    std::unordered_map<std::string, v2::actor::ActorRef> battles_by_room_id_;
     std::unordered_map<SessionId, PendingResponse> pending_login_;
     std::unordered_map<std::string, PendingResponse> pending_room_create_;
     std::unordered_map<std::string, PendingResponse> pending_room_join_;
     std::unordered_map<std::string, PendingResponse> pending_room_ready_;
     std::unordered_map<std::string, PendingResponse> pending_battle_start_;
+    std::uint64_t next_battle_id_ = 1;
 };
 
 }  // namespace v2::gateway

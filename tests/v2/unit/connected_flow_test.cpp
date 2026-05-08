@@ -72,5 +72,5 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyAndStartBattleFlowsThroughActors) 
     });
     ASSERT_EQ(battle_start.size(), 1U);
     EXPECT_EQ(battle_start.front().envelope.protocol_message_id, net::protocol::kBattleStartResponse);
-    EXPECT_EQ(battle_start.front().envelope.body, "battle_started:room_alpha");
+    EXPECT_EQ(battle_start.front().envelope.body, "battle_started:room_alpha:battle_0001");
 }

@@ -163,6 +163,7 @@ TEST(V2RoomActorTest, StartBattleRequestsBattleWhenRoomIsEligible) {
     const auto* requested = std::get_if<v2::room::BattleStartRequestedMsg>(&sink.events.front());
     ASSERT_NE(requested, nullptr);
     EXPECT_EQ(requested->room_id, "room_delta");
+    EXPECT_EQ(requested->requester_user_id, "owner");
     ASSERT_EQ(requested->player_ids.size(), 2U);
     EXPECT_EQ(requested->player_ids[0], "owner");
     EXPECT_EQ(requested->player_ids[1], "member");

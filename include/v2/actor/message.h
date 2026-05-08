@@ -5,6 +5,7 @@
 #include <variant>
 
 #include "v2/gateway/message_types.h"
+#include "v2/battle/message_types.h"
 #include "v2/player/message_types.h"
 #include "v2/room/message_types.h"
 
@@ -29,7 +30,8 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::room::CreateRoomMsg,
                                     v2::room::JoinRoomMsg,
                                     v2::room::SetReadyMsg,
-                                    v2::room::StartBattleMsg>;
+                                    v2::room::StartBattleMsg,
+                                    v2::battle::CreateBattleMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;

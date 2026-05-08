@@ -2,6 +2,7 @@
 
 #include "net/protocol.h"
 
+#include <fmt/format.h>
 #include <optional>
 #include <sstream>
 #include <utility>
@@ -244,17 +245,35 @@ void Runtime::push(v2::player::PlayerEvent event) {
     }
 }
 
-void Runtime::push(v2::room::RoomEvent event) {
-    if (const auto* requested = std::get_if<v2::room::BattleStartRequestedMsg>(&event)) {
-        auto pending = pending_battle_start_.find(requested->room_id);
+void Runtime::push(v2::battle::BattleEvent event) {
+    if (const auto* created = std::get_if<v2::battle::BattleCreatedMsg>(&event)) {
+        auto pending = pending_battle_start_.find(created->room_id);
         if (pending != pending_battle_start_.end()) {
             emit(net::protocol::kBattleStartResponse,
                  pending->second.session_id,
                  pending->second.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                 "battle_started:" + requested->room_id);
+                 fmt::format("battle_started:{}:{}", created->room_id, created->battle_id));
             pending_battle_start_.erase(pending);
         }
+    }
+}
+
+void Runtime::push(v2::room::RoomEvent event) {
+    if (const auto* requested = std::get_if<v2::room::BattleStartRequestedMsg>(&event)) {
+        const auto battle_id = fmt::format("battle_{:04}", next_battle_id_++);
+        auto battle_actor = actor_system_.create_actor(std::make_unique<v2::battle::BattleActor>(*this));
+        battles_by_room_id_[requested->room_id] = battle_actor;
+
+        v2::actor::Message create;
+        create.header.kind = v2::actor::MessageKind::kUser;
+        create.payload = v2::battle::CreateBattleMsg{
+            .battle_id = battle_id,
+            .room_id = requested->room_id,
+            .player_ids = requested->player_ids,
+        };
+        battle_actor.tell(std::move(create));
+        actor_system_.dispatch_all();
         return;
     }
 

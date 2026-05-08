@@ -87,6 +87,7 @@ void RoomActor::handle_start_battle(const StartBattleMsg& message) {
     sink_.push(BattleStartRequestedMsg{
         .room_id = state_.room_id,
         .player_ids = std::move(player_ids),
+        .requester_user_id = message.requester_user_id,
     });
 }
 

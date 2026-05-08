@@ -42,6 +42,7 @@ struct StartBattleMsg {
 struct BattleStartRequestedMsg {
     std::string room_id;
     std::vector<std::string> player_ids;
+    std::string requester_user_id;
 };
 
 struct BattleStartRejectedMsg {
