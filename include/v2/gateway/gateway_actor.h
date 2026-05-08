@@ -15,17 +15,27 @@ public:
     virtual void push(SessionWrite write) = 0;
 };
 
+class GatewayCommandSink {
+public:
+    virtual ~GatewayCommandSink() = default;
+
+    virtual bool handle(const GatewayCommand& command) = 0;
+};
+
 class GatewayActor final : public v2::actor::Actor {
 public:
     using RateLimitPolicy = std::function<bool(const ClientEnvelope&)>;
+    using AuthorizePolicy = std::function<bool(const GatewayCommand&)>;
 
     GatewayActor(SessionWriteSink& sink,
-                 RateLimitPolicy rate_limit_policy = {});
+                 GatewayCommandSink* command_sink = nullptr,
+                 RateLimitPolicy rate_limit_policy = {},
+                 AuthorizePolicy authorize_policy = {});
 
     void on_message(v2::actor::Message&& message) override;
 
 private:
-    [[nodiscard]] bool is_whitelisted(std::uint16_t protocol_message_id) const;
+    [[nodiscard]] bool is_public_message(std::uint16_t protocol_message_id) const;
     [[nodiscard]] std::optional<GatewayCommand> to_command(const ClientEnvelope& envelope) const;
 
     void emit_error(const ClientEnvelope& envelope,
@@ -37,7 +47,9 @@ private:
                        std::string body);
 
     SessionWriteSink& sink_;
+    GatewayCommandSink* command_sink_ = nullptr;
     RateLimitPolicy rate_limit_policy_;
+    AuthorizePolicy authorize_policy_;
 };
 
 }  // namespace v2::gateway

@@ -19,8 +19,13 @@ std::string parse_login_user_id(const std::string& body) {
 }  // namespace
 
 GatewayActor::GatewayActor(SessionWriteSink& sink,
-                           RateLimitPolicy rate_limit_policy)
-    : sink_(sink), rate_limit_policy_(std::move(rate_limit_policy)) {}
+                           GatewayCommandSink* command_sink,
+                           RateLimitPolicy rate_limit_policy,
+                           AuthorizePolicy authorize_policy)
+    : sink_(sink),
+      command_sink_(command_sink),
+      rate_limit_policy_(std::move(rate_limit_policy)),
+      authorize_policy_(std::move(authorize_policy)) {}
 
 void GatewayActor::on_message(v2::actor::Message&& message) {
     const auto* envelope = std::get_if<ClientEnvelope>(&message.payload);
@@ -35,19 +40,24 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
-    if (!is_whitelisted(envelope->protocol_message_id)) {
-        emit_error(*envelope,
-                   static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
-                   net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
-        return;
-    }
-
     const auto command = to_command(*envelope);
     if (!command.has_value()) {
         emit_error(*envelope,
                    static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
                    "unmodeled_message");
         return;
+    }
+
+    if (!is_public_message(envelope->protocol_message_id)) {
+        const auto authorized = authorize_policy_
+            ? authorize_policy_(*command)
+            : false;
+        if (!authorized) {
+            emit_error(*envelope,
+                       static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                       net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
+            return;
+        }
     }
 
     switch (command->type) {
@@ -63,20 +73,32 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                           static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                           command->body);
             return;
-        case GatewayCommandType::kLogin: {
-            const auto user_id = parse_login_user_id(command->body);
-            if (user_id.empty()) {
-                emit_error(*envelope,
-                           static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
-                           net::protocol::to_string(net::protocol::ErrorCode::kInvalidUserId));
+        case GatewayCommandType::kLogin:
+        case GatewayCommandType::kRoomCreate:
+        case GatewayCommandType::kRoomJoin:
+        case GatewayCommandType::kRoomReady:
+        case GatewayCommandType::kBattleStart:
+            if (command_sink_ != nullptr && command_sink_->handle(*command)) {
                 return;
             }
-            emit_response(*envelope,
-                          net::protocol::kLoginResponse,
-                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                          "login_ok:" + user_id);
+            if (command->type == GatewayCommandType::kLogin) {
+                const auto user_id = parse_login_user_id(command->body);
+                if (user_id.empty()) {
+                    emit_error(*envelope,
+                               static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId),
+                               net::protocol::to_string(net::protocol::ErrorCode::kInvalidUserId));
+                    return;
+                }
+                emit_response(*envelope,
+                              net::protocol::kLoginResponse,
+                              static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                              "login_ok:" + user_id);
+                return;
+            }
+            emit_error(*envelope,
+                       static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                       "unmodeled_message");
             return;
-        }
         case GatewayCommandType::kUnknown:
             break;
     }
@@ -86,7 +108,7 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                "unmodeled_message");
 }
 
-bool GatewayActor::is_whitelisted(std::uint16_t protocol_message_id) const {
+bool GatewayActor::is_public_message(std::uint16_t protocol_message_id) const {
     switch (protocol_message_id) {
         case net::protocol::kHeartbeatRequest:
         case net::protocol::kLoginRequest:
@@ -114,6 +136,18 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
             return command;
         case net::protocol::kLoginRequest:
             command.type = GatewayCommandType::kLogin;
+            return command;
+        case net::protocol::kRoomCreateRequest:
+            command.type = GatewayCommandType::kRoomCreate;
+            return command;
+        case net::protocol::kRoomJoinRequest:
+            command.type = GatewayCommandType::kRoomJoin;
+            return command;
+        case net::protocol::kRoomReadyRequest:
+            command.type = GatewayCommandType::kRoomReady;
+            return command;
+        case net::protocol::kBattleStartRequest:
+            command.type = GatewayCommandType::kBattleStart;
             return command;
         default:
             return std::nullopt;

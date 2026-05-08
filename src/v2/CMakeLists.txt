@@ -3,6 +3,7 @@ add_library(project_v2 STATIC
     actor/actor_ref.cpp
     common/module_marker.cpp
     gateway/gateway_actor.cpp
+    gateway/runtime.cpp
     gateway/session_adapter.cpp
     player/player_actor.cpp
     room/room_actor.cpp

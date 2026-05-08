@@ -74,6 +74,7 @@ TEST(V2GatewayBridgeTest, RateLimitPolicyCanRejectRequest) {
     auto gateway_actor = actor_system.create_actor(
         std::make_unique<v2::gateway::GatewayActor>(
             adapter,
+            nullptr,
             [](const v2::gateway::ClientEnvelope&) { return false; }));
     adapter.bind_gateway(gateway_actor);
 
