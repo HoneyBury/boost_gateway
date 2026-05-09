@@ -5,10 +5,25 @@
 
 namespace v2::battle {
 
+void BattleActor::finish_battle(std::string reason, std::string triggering_user_id) {
+    if (state_.lifecycle == BattleLifecycleState::kFinished) {
+        return;
+    }
+
+    state_.lifecycle = BattleLifecycleState::kFinished;
+    sink_.push(BattleFinishedMsg{
+        .battle_id = state_.battle_id,
+        .room_id = state_.room_id,
+        .reason = std::move(reason),
+        .triggering_user_id = std::move(triggering_user_id),
+    });
+}
+
 void BattleActor::on_message(v2::actor::Message&& message) {
     if (const auto* create = std::get_if<CreateBattleMsg>(&message.payload)) {
         state_.battle_id = create->battle_id;
         state_.room_id = create->room_id;
+        state_.frame_number = 0;
         state_.participants.clear();
         state_.participants.reserve(create->player_ids.size());
         for (const auto& user_id : create->player_ids) {
@@ -37,6 +52,27 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
+    const auto* tick = std::get_if<TickBattleMsg>(&message.payload);
+    if (tick != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
+        ++state_.frame_number;
+        sink_.push(BattleFrameAdvancedMsg{
+            .battle_id = state_.battle_id,
+            .room_id = state_.room_id,
+            .frame_number = state_.frame_number,
+            .trigger = tick->trigger,
+        });
+        if (state_.frame_number >= kFrameLimit) {
+            finish_battle("frame_limit_reached", tick->trigger);
+        }
+        return;
+    }
+
+    const auto* end = std::get_if<EndBattleMsg>(&message.payload);
+    if (end != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
+        finish_battle(end->reason, end->triggering_user_id);
+        return;
+    }
+
     const auto* disconnected = std::get_if<PlayerDisconnectedMsg>(&message.payload);
     if (disconnected == nullptr || state_.lifecycle != BattleLifecycleState::kRunning) {
         return;
@@ -52,13 +88,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
     }
 
     it->online = false;
-    state_.lifecycle = BattleLifecycleState::kFinished;
-    sink_.push(BattleFinishedMsg{
-        .battle_id = state_.battle_id,
-        .room_id = state_.room_id,
-        .reason = "player_disconnected",
-        .triggering_user_id = disconnected->user_id,
-    });
+    finish_battle("player_disconnected", disconnected->user_id);
 }
 
 }  // namespace v2::battle

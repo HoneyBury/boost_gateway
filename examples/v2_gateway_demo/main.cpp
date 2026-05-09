@@ -100,6 +100,18 @@ int main(int argc, char* argv[]) {
                             .request_id = 8,
                             .body = "move:1,2"},
                            "owner battle input");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleInputRequest,
+                            .request_id = 9,
+                            .body = "move:2,2"},
+                           "owner battle input 2");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleInputRequest,
+                            .request_id = 10,
+                            .body = "move:3,2"},
+                           "owner battle input 3");
             return 0;
         }
 

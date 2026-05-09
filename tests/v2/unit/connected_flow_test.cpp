@@ -82,9 +82,33 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .request_id = 8,
         .body = "move:1,2",
     });
-    ASSERT_EQ(battle_input.size(), 2U);
+    ASSERT_EQ(battle_input.size(), 4U);
     EXPECT_EQ(battle_input[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
     EXPECT_EQ(battle_input[0].envelope.body, "input_seq:1");
     EXPECT_EQ(battle_input[1].envelope.protocol_message_id, net::protocol::kBattleInputPush);
     EXPECT_EQ(battle_input[1].envelope.session_id, 200U);
+    EXPECT_EQ(battle_input[2].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(battle_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
+    EXPECT_EQ(battle_input[3].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+
+    auto second_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 9,
+        .body = "move:2,2",
+    });
+    ASSERT_EQ(second_input.size(), 4U);
+    EXPECT_EQ(second_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+
+    auto third_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 10,
+        .body = "move:3,2",
+    });
+    ASSERT_EQ(third_input.size(), 6U);
+    EXPECT_EQ(third_input[2].envelope.body, "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+    EXPECT_EQ(third_input[4].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(third_input[4].envelope.body,
+              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
 }

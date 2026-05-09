@@ -74,6 +74,10 @@ std::uint16_t GatewayServer::local_port() const {
     return acceptor_.local_endpoint().port();
 }
 
+void GatewayServer::set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge) {
+    packet_bridge_ = std::move(packet_bridge);
+}
+
 void GatewayServer::set_connection_limits(std::size_t max_total, std::size_t per_ip) {
     max_connections_ = max_total;
     per_ip_limit_ = per_ip;
@@ -139,6 +143,9 @@ void GatewayServer::do_accept() {
 
         session->set_packet_handler(
             [this](const std::shared_ptr<net::Session>& session_ptr, net::Session::PacketMessage message) {
+                if (packet_bridge_) {
+                    packet_bridge_->on_packet(session_ptr, message);
+                }
                 dispatcher_.dispatch(session_ptr,
                                      message.message_id,
                                      message.request_id,
@@ -151,6 +158,9 @@ void GatewayServer::do_accept() {
         session->set_close_handler(
             [this](const std::shared_ptr<net::Session>& session_ptr, const error_code&) {
                 const auto room_id = room_manager_.room_id_of(session_ptr);
+                if (packet_bridge_) {
+                    packet_bridge_->on_close(session_ptr);
+                }
                 room_manager_.remove_session(session_ptr);
                 if (room_id) {
                     game::room::clear_battle_if_room_empty(battle_manager_, room_manager_, *room_id);

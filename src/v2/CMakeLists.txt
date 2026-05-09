@@ -5,6 +5,7 @@ add_library(project_v2 STATIC
     common/module_marker.cpp
     gateway/demo_server.cpp
     gateway/gateway_actor.cpp
+    gateway/gateway_server_bridge.cpp
     gateway/runtime.cpp
     gateway/session_adapter.cpp
     player/player_actor.cpp

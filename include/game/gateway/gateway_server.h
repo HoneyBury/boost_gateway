@@ -24,6 +24,15 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 using error_code = boost::system::error_code;
 
+class GatewayPacketBridge {
+public:
+    virtual ~GatewayPacketBridge() = default;
+
+    virtual void on_packet(const std::shared_ptr<net::Session>& session,
+                           const net::Session::PacketMessage& message) = 0;
+    virtual void on_close(const std::shared_ptr<net::Session>& session) = 0;
+};
+
 class GatewayServer {
 public:
     GatewayServer(asio::io_context& io_context,
@@ -41,6 +50,7 @@ public:
     void start();
     void stop();
     void set_connection_limits(std::size_t max_total, std::size_t per_ip);
+    void set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge);
     [[nodiscard]] std::size_t active_connections() const;
     [[nodiscard]] std::uint16_t local_port() const;
 
@@ -67,6 +77,7 @@ private:
     std::atomic<std::size_t> active_connection_count_{0};
     std::mutex ip_count_mutex_;
     std::unordered_map<std::string, std::size_t> ip_connection_counts_;
+    std::shared_ptr<GatewayPacketBridge> packet_bridge_;
 };
 
 }  // namespace game::gateway

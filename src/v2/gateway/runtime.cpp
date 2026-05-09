@@ -377,6 +377,34 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      fmt::format("{}:{}:{}", input->user_id, input->input_seq, input->input_data));
             }
         }
+
+        auto battle_it = battles_by_room_id_.find(input->room_id);
+        if (battle_it != battles_by_room_id_.end()) {
+            v2::actor::Message tick;
+            tick.header.kind = v2::actor::MessageKind::kUser;
+            tick.payload = v2::battle::TickBattleMsg{
+                .trigger = fmt::format("input:{}:{}", input->user_id, input->input_seq),
+            };
+            battle_it->second.tell(std::move(tick));
+            actor_system_.dispatch_all();
+        }
+        return;
+    }
+
+    if (const auto* frame = std::get_if<v2::battle::BattleFrameAdvancedMsg>(&event)) {
+        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+            if (room_id == frame->room_id) {
+                emit(net::protocol::kBattleStatePush,
+                     session_id,
+                     0,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     fmt::format("battle_frame:{}:{}:{}:{}",
+                                 frame->room_id,
+                                 frame->battle_id,
+                                 frame->frame_number,
+                                 frame->trigger));
+            }
+        }
         return;
     }
 

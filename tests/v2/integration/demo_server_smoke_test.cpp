@@ -157,14 +157,35 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsBootstrapAndDisconnectCleanup)
     const auto input_push = member.expect_message(net::protocol::kBattleInputPush);
     EXPECT_EQ(input_response.body, "input_seq:1");
     EXPECT_EQ(input_push.body, "owner:1:move:1,2");
+    const auto owner_frame = owner.expect_message(net::protocol::kBattleStatePush);
+    const auto member_frame = member.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_EQ(owner_frame.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
+    EXPECT_EQ(member_frame.body, "battle_frame:room_alpha:battle_0001:1:input:owner:1");
+
+    owner.send(net::protocol::kBattleInputRequest, 9, "move:2,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:2");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "owner:2:move:2,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_frame:room_alpha:battle_0001:2:input:owner:2");
+
+    owner.send(net::protocol::kBattleInputRequest, 10, "move:3,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body, "input_seq:3");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleInputPush).body, "owner:3:move:3,2");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_frame:room_alpha:battle_0001:3:input:owner:3");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
 
     owner.close();
 
-    const auto finish_push = member.expect_message(net::protocol::kBattleStatePush);
-    EXPECT_EQ(finish_push.body, "battle_finished:room_alpha:battle_0001:player_disconnected:owner");
-
     const auto battle_after_finish =
-        member.exchange(net::protocol::kBattleInputRequest, 9, "move:9,9");
+        member.exchange(net::protocol::kBattleInputRequest, 11, "move:9,9");
     EXPECT_EQ(battle_after_finish.message_id, net::protocol::kErrorResponse);
     EXPECT_EQ(battle_after_finish.error_code,
               static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));

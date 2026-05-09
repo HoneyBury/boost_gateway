@@ -281,6 +281,9 @@ examples/v2_gateway_demo/
 - `B4+`：`BattleActor` bootstrap shell、`BattleStartResponse`、`BattleStatePush`、`BattleInputResponse`、`BattleInputPush`
 - `P1`：`examples/v2_gateway_demo` 已支持 `--script` 烟测和基于现有 `net::Session` 的真实监听入口；`tests/v2/integration` 已新增真实 socket smoke test
 - `P2`：已补 battle 最小 lifecycle：`BattleAssigned`、`PlayerDisconnected -> BattleFinished`、`RoomActor` active battle 清理、`PlayerActor` 从 `InBattle` 回切到 `InRoom`
+- `P2+`：已补 battle 最小 frame shell：`TickBattleMsg`、`BattleFrameAdvancedMsg`、基于 frame limit 的正常结束路径
+- `P3`：现有 `GatewayServer` 已新增可关闭的 packet bridge seam，可旁路镜像 traffic，不改变 `v1` 默认分发结果
+- `P4`：已补 `M2-M7` 进入边界文档，明确当前不做项与后续进入条件
 
 当前明确只有原型或占位的部分：
 
@@ -317,6 +320,7 @@ examples/v2_gateway_demo/
 - `docs/v2-player-lifecycle.md`
 - `docs/v2-room-lifecycle.md`
 - `docs/v2-gateway-cutover-criteria.md`
+- `docs/v2-next-phases.md`
 
 ## 9. 测试清单
 

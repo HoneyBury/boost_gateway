@@ -37,6 +37,8 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::room::BattleEndedMsg,
                                     v2::battle::CreateBattleMsg,
                                     v2::battle::SubmitBattleInputMsg,
+                                    v2::battle::TickBattleMsg,
+                                    v2::battle::EndBattleMsg,
                                     v2::battle::PlayerDisconnectedMsg>;
 
 struct MessageHeader {

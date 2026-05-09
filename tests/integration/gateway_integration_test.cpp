@@ -43,6 +43,7 @@ struct GatewayTestRuntime {
     game::gateway::PushService push_service;
     game::login::DevTokenValidator token_validator;
     net::SessionOptions options;
+    std::shared_ptr<game::gateway::GatewayPacketBridge> packet_bridge;
     std::unique_ptr<game::gateway::GatewayServer> server;
     std::unique_ptr<game::gateway::GatewayService> gateway_service;
     std::unique_ptr<game::login::LoginService> login_service;
@@ -90,6 +91,9 @@ struct GatewayTestRuntime {
                 0,
                 options,
                 std::chrono::milliseconds(1000));
+            if (packet_bridge) {
+                server->set_packet_bridge(packet_bridge);
+            }
             server->start();
             io_thread = std::thread([this]() { io_context.run(); });
             return true;
@@ -171,6 +175,23 @@ net::packet::DecodedPacket read_until_message(TestClient& client, std::uint16_t 
     }
 }
 
+class RecordingPacketBridge final : public game::gateway::GatewayPacketBridge {
+public:
+    void on_packet(const std::shared_ptr<net::Session>& session,
+                   const net::Session::PacketMessage& message) override {
+        (void)session;
+        packets.push_back(message);
+    }
+
+    void on_close(const std::shared_ptr<net::Session>& session) override {
+        (void)session;
+        close_count++;
+    }
+
+    std::vector<net::Session::PacketMessage> packets;
+    std::size_t close_count = 0;
+};
+
 }  // namespace
 
 #define SKIP_IF_RUNTIME_UNAVAILABLE(runtime) \
@@ -194,6 +215,38 @@ TEST(GatewayIntegrationTest, EchoRequestRoundTrip) {
     EXPECT_EQ(response.request_id, 100U);
     EXPECT_EQ(response.error_code, 0);
     EXPECT_EQ(response.body, "integration_echo");
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsTrafficWithoutChangingV1Responses) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<RecordingPacketBridge>();
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    {
+        TestClient client;
+        client.connect(runtime.server->local_port());
+
+        const auto response = client.exchange(net::protocol::kEchoRequest, 170, "bridge_echo");
+        EXPECT_EQ(response.message_id, net::protocol::kEchoResponse);
+        EXPECT_EQ(response.body, "bridge_echo");
+    }
+
+    for (int i = 0; i < 50; ++i) {
+        if (bridge->close_count == 1) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    ASSERT_EQ(bridge->packets.size(), 1U);
+    EXPECT_EQ(bridge->packets.front().message_id, net::protocol::kEchoRequest);
+    EXPECT_EQ(bridge->packets.front().request_id, 170U);
+    EXPECT_EQ(bridge->close_count, 1U);
 
     runtime.stop();
 }

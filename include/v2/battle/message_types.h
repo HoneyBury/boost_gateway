@@ -23,6 +23,7 @@ struct BattleRuntimeState {
     std::string room_id;
     BattleLifecycleState lifecycle = BattleLifecycleState::kCreated;
     std::vector<BattleParticipantState> participants;
+    std::uint32_t frame_number = 0;
 };
 
 struct CreateBattleMsg {
@@ -35,6 +36,15 @@ struct SubmitBattleInputMsg {
     std::string user_id;
     std::uint32_t request_id = 0;
     std::string input_data;
+};
+
+struct TickBattleMsg {
+    std::string trigger;
+};
+
+struct EndBattleMsg {
+    std::string reason;
+    std::string triggering_user_id;
 };
 
 struct PlayerDisconnectedMsg {
@@ -56,6 +66,13 @@ struct BattleInputAcceptedMsg {
     std::string input_data;
 };
 
+struct BattleFrameAdvancedMsg {
+    std::string battle_id;
+    std::string room_id;
+    std::uint32_t frame_number = 0;
+    std::string trigger;
+};
+
 struct BattleFinishedMsg {
     std::string battle_id;
     std::string room_id;
@@ -63,6 +80,9 @@ struct BattleFinishedMsg {
     std::string triggering_user_id;
 };
 
-using BattleEvent = std::variant<BattleCreatedMsg, BattleInputAcceptedMsg, BattleFinishedMsg>;
+using BattleEvent = std::variant<BattleCreatedMsg,
+                                 BattleInputAcceptedMsg,
+                                 BattleFrameAdvancedMsg,
+                                 BattleFinishedMsg>;
 
 }  // namespace v2::battle
