@@ -32,6 +32,7 @@ struct ParsedBattleStartCommandBody {
 struct ParsedBattleInputCommandBody {
     bool is_finish_request = false;
     v2::battle::BattleFinishReason finish_reason = v2::battle::BattleFinishReason::kFinished;
+    std::int64_t score = 0;
     std::string input_data;
 };
 

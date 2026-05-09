@@ -1,3 +1,57 @@
+// v2 Inter-Actor Message Catalog — Frozen 2026-05-09
+// =====================================================
+//
+// This file defines the complete typed message interface for v2 M1 actor runtime.
+// All inter-actor communication uses MessagePayload (std::variant of typed structs).
+// String-based parsing exists ONLY at gateway boundaries (wire protocol → typed structs).
+//
+// Message Flow Graph:
+//
+//   Client ──ClientEnvelope──▶ GatewayActor
+//                                  │
+//                    GatewayCommandSink::handle()
+//                                  │
+//                                  ▼
+//   Runtime ─────────────────────────────────────────────────────────────
+//     │                                                                 │
+//     ├─▶ PlayerActor:  BindSessionMsg, LoginRequestMsg,                │
+//     │                 RoomAssignedMsg, BattleAssignedMsg,              │
+//     │                 BattleSettlementMsg, BattleEndedMsg,             │
+//     │                 SessionClosedMsg                                │
+//     │                                                                 │
+//     ├─▶ RoomActor:    CreateRoomMsg, JoinRoomMsg, SetReadyMsg,        │
+//     │                 StartBattleMsg, BattleStartedMsg,               │
+//     │                 BattleSettlementMsg, BattleEndedMsg             │
+//     │                                                                 │
+//     └─▶ BattleActor:  CreateBattleMsg, SubmitBattleInputMsg,          │
+//                       TickBattleMsg, EndBattleMsg,                    │
+//                       PlayerDisconnectedMsg                           │
+//                                                                       │
+//   PlayerActor ──PlayerEvent──▶ Runtime                                │
+//     LoginAcceptedMsg, SessionKickPushMsg, SessionResumePushMsg,       │
+//     BattleSettlementAppliedMsg                                        │
+//                                                                       │
+//   RoomActor ──RoomEvent──▶ Runtime                                    │
+//     BattleStartRequestedMsg, BattleStartRejectedMsg,                  │
+//     BattleSettlementAppliedMsg                                        │
+//                                                                       │
+//   BattleActor ──BattleEvent──▶ Runtime                                │
+//     BattleCreatedMsg, BattleInputAcceptedMsg, BattleFrameAdvancedMsg, │
+//     BattleSettlementPreparedMsg, BattleFinishedMsg                    │
+//
+// Every MessagePayload alternative has a handler in at least one actor:
+//   GatewayActor:     ClientEnvelope
+//   PlayerActor:      BindSessionMsg, LoginRequestMsg, RoomAssignedMsg,
+//                     BattleAssignedMsg, BattleSettlementMsg,
+//                     BattleEndedMsg, SessionClosedMsg
+//   RoomActor:        CreateRoomMsg, JoinRoomMsg, SetReadyMsg,
+//                     StartBattleMsg, BattleStartedMsg,
+//                     BattleSettlementMsg, BattleEndedMsg
+//   BattleActor:      CreateBattleMsg, SubmitBattleInputMsg,
+//                     TickBattleMsg, EndBattleMsg, PlayerDisconnectedMsg
+//
+// std::string is a bootstrap/test payload only — not for production routing.
+
 #pragma once
 
 #include <cstdint>
@@ -21,7 +75,7 @@ enum class MessageKind : std::uint16_t {
 };
 
 using MessagePayload = std::variant<std::monostate,
-                                    std::string,
+                                    std::string,  // bootstrap/test payload only — see catalog above
                                     v2::gateway::ClientEnvelope,
                                     v2::player::LoginRequestMsg,
                                     v2::player::BindSessionMsg,

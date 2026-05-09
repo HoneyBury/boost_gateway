@@ -48,6 +48,7 @@ struct BattleReplayInputRecord {
     std::uint32_t frame_number = 0;
     std::string user_id;
     std::string input_data;
+    std::int64_t score = 0;
     std::string trigger;
 };
 
@@ -64,12 +65,15 @@ struct CreateBattleMsg {
     std::string battle_id;
     std::string room_id;
     std::vector<std::string> player_ids;
+    std::uint32_t max_frames = 0;
 };
 
 struct SubmitBattleInputMsg {
     std::string user_id;
     std::uint32_t request_id = 0;
     std::string input_data;
+    std::int64_t score = 0;
+    std::uint32_t submitted_frame = 0;
 };
 
 struct TickBattleMsg {

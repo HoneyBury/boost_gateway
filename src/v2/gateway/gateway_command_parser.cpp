@@ -2,6 +2,7 @@
 
 #include "v2/gateway/battle_protocol_codec.h"
 
+#include <cstdlib>
 #include <sstream>
 #include <vector>
 
@@ -90,7 +91,18 @@ std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std:
         return parsed;
     }
 
-    parsed.input_data = std::string(body);
+    if (body.starts_with("score=")) {
+        const auto colon_pos = body.find(':');
+        if (colon_pos != std::string_view::npos) {
+            const auto score_str = body.substr(6, colon_pos - 6);
+            parsed.score = std::strtoll(std::string(score_str).c_str(), nullptr, 10);
+            parsed.input_data = std::string(body.substr(colon_pos + 1));
+        } else {
+            parsed.input_data = std::string(body);
+        }
+    } else {
+        parsed.input_data = std::string(body);
+    }
     return parsed;
 }
 

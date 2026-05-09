@@ -48,6 +48,7 @@ public:
     void push(v2::room::RoomEvent event) override;
 
     [[nodiscard]] std::optional<BattleArchive> archived_battle(std::string_view battle_id) const;
+    void set_archive_sink(BattleArchiveSink* sink) noexcept { archive_sink_ = sink; }
 
 private:
     struct PendingResponse {
@@ -55,10 +56,17 @@ private:
         std::uint32_t request_id = 0;
     };
 
+    struct PendingSettlementAck {
+        int expected_acks = 0;
+        int received_acks = 0;
+    };
+
     [[nodiscard]] v2::actor::ActorRef get_or_create_player(const std::string& user_id);
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
     [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
     void archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement);
+    void process_battle_finished(const v2::battle::BattleFinishedMsg& finished);
+    void process_deferred_finished(const std::string& battle_id);
 
     void emit(std::uint16_t message_id,
               SessionId session_id,
@@ -81,6 +89,8 @@ private:
     std::unordered_map<SessionId, PendingResponse> pending_battle_input_;
     std::unordered_map<SessionId, PendingResponse> pending_battle_end_;
     std::unordered_map<std::string, BattleArchive> archived_battles_;
+    std::unordered_map<std::string, PendingSettlementAck> pending_settlement_acks_;
+    std::unordered_map<std::string, v2::battle::BattleFinishedMsg> deferred_finished_events_;
     std::uint64_t next_battle_id_ = 1;
     BattleArchiveSink* archive_sink_ = nullptr;
 };

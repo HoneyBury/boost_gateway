@@ -125,6 +125,7 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
         .battle_id = "battle_0001",
         .room_id = "room_alpha",
         .player_ids = {"owner", "member"},
+        .max_frames = 3,
     };
     actor_ref.tell(std::move(create));
 

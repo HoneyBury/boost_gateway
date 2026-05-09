@@ -1,6 +1,8 @@
 #include "v2/battle/battle_actor.h"
 
 #include <algorithm>
+#include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace v2::battle {
@@ -21,15 +23,17 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
     scores.reserve(state_.participants.size());
     std::optional<std::string> winner_user_id;
     std::int64_t high_score = 0;
+    bool any_score_set = false;
     for (const auto& participant : state_.participants) {
         std::int64_t score = 0;
         for (const auto& input : state_.replay_inputs) {
             if (input.user_id == participant.user_id) {
-                score += static_cast<std::int64_t>(input.input_data.size());
+                score += input.score;
             }
         }
         scores.push_back(BattleScore{.user_id = participant.user_id, .score = score});
-        if (score > high_score) {
+        if (!any_score_set || score > high_score) {
+            any_score_set = true;
             high_score = score;
             winner_user_id = participant.user_id;
         }
@@ -73,6 +77,8 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         for (const auto& user_id : create->player_ids) {
             state_.participants.push_back(BattleParticipantState{.user_id = user_id, .online = true});
         }
+        max_frames_ = create->max_frames;
+        last_submitted_frame_.clear();
         state_.lifecycle = BattleLifecycleState::kRunning;
 
         sink_.push(BattleCreatedMsg{
@@ -85,12 +91,20 @@ void BattleActor::on_message(v2::actor::Message&& message) {
 
     const auto* input = std::get_if<SubmitBattleInputMsg>(&message.payload);
     if (input != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
+        if (input->submitted_frame > 0) {
+            auto it = last_submitted_frame_.find(input->user_id);
+            if (it != last_submitted_frame_.end() && it->second >= input->submitted_frame) {
+                return;
+            }
+            last_submitted_frame_[input->user_id] = input->submitted_frame;
+        }
         const auto input_seq = next_input_seq_++;
         state_.replay_inputs.push_back(BattleReplayInputRecord{
             .input_seq = input_seq,
             .frame_number = state_.frame_number + 1,
             .user_id = input->user_id,
             .input_data = input->input_data,
+            .score = input->score,
             .trigger = {},
         });
         sink_.push(BattleInputAcceptedMsg{
@@ -107,8 +121,10 @@ void BattleActor::on_message(v2::actor::Message&& message) {
     const auto* tick = std::get_if<TickBattleMsg>(&message.payload);
     if (tick != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
         ++state_.frame_number;
-        if (!state_.replay_inputs.empty() && state_.replay_inputs.back().frame_number == state_.frame_number) {
-            state_.replay_inputs.back().trigger = tick->trigger;
+        for (auto& record : state_.replay_inputs) {
+            if (record.frame_number == state_.frame_number) {
+                record.trigger = tick->trigger;
+            }
         }
         sink_.push(BattleFrameAdvancedMsg{
             .battle_id = state_.battle_id,
@@ -116,7 +132,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
             .frame_number = state_.frame_number,
             .trigger = tick->trigger,
         });
-        if (state_.frame_number >= kFrameLimit) {
+        if (max_frames_ > 0 && state_.frame_number >= max_frames_) {
             finish_battle(BattleFinishReason::kFrameLimitReached, tick->trigger);
         }
         return;

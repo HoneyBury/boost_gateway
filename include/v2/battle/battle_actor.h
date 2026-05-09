@@ -1,5 +1,9 @@
 #pragma once
 
+#include <cstdint>
+#include <string>
+#include <unordered_map>
+
 #include "v2/actor/actor.h"
 #include "v2/battle/message_types.h"
 
@@ -24,8 +28,9 @@ public:
 private:
     void finish_battle(BattleFinishReason reason, std::string triggering_user_id);
 
-    static constexpr std::uint32_t kFrameLimit = 3;
     std::uint64_t next_input_seq_ = 1;
+    std::uint32_t max_frames_ = 0;
+    std::unordered_map<std::string, std::uint32_t> last_submitted_frame_;
     BattleEventSink& sink_;
     BattleRuntimeState state_;
 };

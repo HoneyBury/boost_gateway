@@ -62,7 +62,7 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 8,
-        .body = "move:1,1",
+        .body = "score=8:move:1,1",
     });
     (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 100,

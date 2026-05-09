@@ -7,6 +7,7 @@
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include <utility>
 
@@ -357,6 +358,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 .user_id = user_id,
                 .request_id = command.request_id,
                 .input_data = battle_input->input_data,
+                .score = battle_input->score,
             };
             battle_it->second.tell(std::move(input));
             actor_system_.dispatch_all();
@@ -401,6 +403,16 @@ void Runtime::push(v2::player::PlayerEvent event) {
              0,
              static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
              resumed->room_id);
+    }
+
+    if (const auto* applied = std::get_if<v2::player::BattleSettlementAppliedMsg>(&event)) {
+        auto it = pending_settlement_acks_.find(applied->battle_id);
+        if (it != pending_settlement_acks_.end()) {
+            ++it->second.received_acks;
+            if (it->second.received_acks >= it->second.expected_acks) {
+                process_deferred_finished(applied->battle_id);
+            }
+        }
     }
 }
 
@@ -505,6 +517,12 @@ void Runtime::push(v2::battle::BattleEvent event) {
     if (const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&event)) {
         archive_battle(*settlement);
 
+        const int expected_acks = 1 + static_cast<int>(settlement->participant_user_ids.size());
+        pending_settlement_acks_[settlement->battle_id] = PendingSettlementAck{
+            .expected_acks = expected_acks,
+            .received_acks = 0,
+        };
+
         auto room_it = rooms_by_room_id_.find(settlement->room_id);
         if (room_it != rooms_by_room_id_.end()) {
             v2::actor::Message room_settlement;
@@ -528,6 +546,12 @@ void Runtime::push(v2::battle::BattleEvent event) {
         }
         actor_system_.dispatch_all();
 
+        auto ack_it = pending_settlement_acks_.find(settlement->battle_id);
+        if (ack_it != pending_settlement_acks_.end() &&
+            ack_it->second.received_acks >= ack_it->second.expected_acks) {
+            pending_settlement_acks_.erase(ack_it);
+        }
+
         for (const auto& [session_id, room_id] : rooms_by_session_id_) {
             if (room_id == settlement->room_id) {
                 emit(net::protocol::kBattleStatePush,
@@ -541,54 +565,11 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&event)) {
-        battles_by_room_id_.erase(finished->room_id);
-
-        if (!finished->triggering_user_id.empty()) {
-            const auto session_id = session_id_for_user(finished->triggering_user_id);
-            if (session_id.has_value()) {
-                auto pending = pending_battle_end_.find(*session_id);
-                if (pending != pending_battle_end_.end()) {
-                    emit(net::protocol::kBattleInputResponse,
-                         pending->second.session_id,
-                         pending->second.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                         format_battle_end_accepted_body(finished->reason));
-                    pending_battle_end_.erase(pending);
-                }
-            }
+        if (pending_settlement_acks_.contains(finished->battle_id)) {
+            deferred_finished_events_[finished->battle_id] = *finished;
+            return;
         }
-
-        auto room_it = rooms_by_room_id_.find(finished->room_id);
-        if (room_it != rooms_by_room_id_.end()) {
-            v2::actor::Message ended;
-            ended.header.kind = v2::actor::MessageKind::kUser;
-            ended.payload = v2::room::BattleEndedMsg{
-                .battle_id = finished->battle_id,
-                .reason = v2::battle::to_string(finished->reason),
-            };
-            room_it->second.tell(std::move(ended));
-        }
-
-        for (auto& [user_id, player_actor] : players_by_user_id_) {
-            v2::actor::Message ended;
-            ended.header.kind = v2::actor::MessageKind::kUser;
-            ended.payload = v2::player::BattleEndedMsg{
-                .battle_id = finished->battle_id,
-                .reason = v2::battle::to_string(finished->reason),
-            };
-            player_actor.tell(std::move(ended));
-        }
-        actor_system_.dispatch_all();
-
-        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
-            if (room_id == finished->room_id) {
-                emit(net::protocol::kBattleStatePush,
-                     session_id,
-                     0,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     format_battle_finished_body(*finished));
-            }
-        }
+        process_battle_finished(*finished);
         return;
     }
 }
@@ -613,6 +594,7 @@ void Runtime::push(v2::room::RoomEvent event) {
             .battle_id = battle_id,
             .room_id = requested->room_id,
             .player_ids = requested->player_ids,
+            .max_frames = 3,
         };
         battle_actor.tell(std::move(create));
         actor_system_.dispatch_all();
@@ -638,6 +620,17 @@ void Runtime::push(v2::room::RoomEvent event) {
                  static_cast<std::int32_t>(error_code),
                  rejected->reason);
             pending_battle_start_.erase(pending);
+        }
+        return;
+    }
+
+    if (const auto* applied = std::get_if<v2::room::BattleSettlementAppliedMsg>(&event)) {
+        auto it = pending_settlement_acks_.find(applied->battle_id);
+        if (it != pending_settlement_acks_.end()) {
+            ++it->second.received_acks;
+            if (it->second.received_acks >= it->second.expected_acks) {
+                process_deferred_finished(applied->battle_id);
+            }
         }
     }
 }
@@ -669,6 +662,67 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
     return std::nullopt;
 }
 
+void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finished) {
+    battles_by_room_id_.erase(finished.room_id);
+
+    if (!finished.triggering_user_id.empty()) {
+        const auto session_id = session_id_for_user(finished.triggering_user_id);
+        if (session_id.has_value()) {
+            auto pending = pending_battle_end_.find(*session_id);
+            if (pending != pending_battle_end_.end()) {
+                emit(net::protocol::kBattleInputResponse,
+                     pending->second.session_id,
+                     pending->second.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     format_battle_end_accepted_body(finished.reason));
+                pending_battle_end_.erase(pending);
+            }
+        }
+    }
+
+    auto room_it = rooms_by_room_id_.find(finished.room_id);
+    if (room_it != rooms_by_room_id_.end()) {
+        v2::actor::Message ended;
+        ended.header.kind = v2::actor::MessageKind::kUser;
+        ended.payload = v2::room::BattleEndedMsg{
+            .battle_id = finished.battle_id,
+            .reason = v2::battle::to_string(finished.reason),
+        };
+        room_it->second.tell(std::move(ended));
+    }
+
+    for (auto& [user_id, player_actor] : players_by_user_id_) {
+        v2::actor::Message ended;
+        ended.header.kind = v2::actor::MessageKind::kUser;
+        ended.payload = v2::player::BattleEndedMsg{
+            .battle_id = finished.battle_id,
+            .reason = v2::battle::to_string(finished.reason),
+        };
+        player_actor.tell(std::move(ended));
+    }
+    actor_system_.dispatch_all();
+
+    for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+        if (room_id == finished.room_id) {
+            emit(net::protocol::kBattleStatePush,
+                 session_id,
+                 0,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 format_battle_finished_body(finished));
+        }
+    }
+}
+
+void Runtime::process_deferred_finished(const std::string& battle_id) {
+    pending_settlement_acks_.erase(battle_id);
+    auto it = deferred_finished_events_.find(battle_id);
+    if (it != deferred_finished_events_.end()) {
+        auto finished = it->second;
+        deferred_finished_events_.erase(it);
+        process_battle_finished(finished);
+    }
+}
+
 void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement) {
     auto archive = BattleArchive{
         .battle_id = settlement.battle_id,
@@ -682,7 +736,9 @@ void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& sett
     };
     archived_battles_[settlement.battle_id] = archive;
     if (archive_sink_ != nullptr) {
-        (void)archive_sink_->persist(archive);
+        if (!archive_sink_->persist(archive)) {
+            SPDLOG_ERROR("Failed to persist battle archive {}", settlement.battle_id);
+        }
     }
 }
 
