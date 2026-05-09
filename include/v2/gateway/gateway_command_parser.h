@@ -1,5 +1,7 @@
 #pragma once
 
+#include "v2/battle/message_types.h"
+
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,5 +21,20 @@ struct ParsedLoginCommandBody {
 [[nodiscard]] bool validate_room_id_body(std::string_view body) noexcept;
 
 [[nodiscard]] std::optional<bool> parse_room_ready_body(std::string_view body) noexcept;
+
+struct ParsedBattleStartCommandBody {
+    std::optional<std::string> room_id;
+};
+
+[[nodiscard]] std::optional<ParsedBattleStartCommandBody> parse_battle_start_command_body(std::string_view body);
+
+struct ParsedBattleInputCommandBody {
+    bool is_finish_request = false;
+    v2::battle::BattleFinishReason finish_reason = v2::battle::BattleFinishReason::kFinished;
+    std::string input_data;
+};
+
+[[nodiscard]] std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std::string_view body);
+[[nodiscard]] bool validate_battle_input_command_body(const ParsedBattleInputCommandBody& body) noexcept;
 
 }  // namespace v2::gateway

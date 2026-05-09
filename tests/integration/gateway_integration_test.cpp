@@ -555,6 +555,105 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanDisableEchoShadowBridgeResponses
     std::filesystem::remove(path);
 }
 
+TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByKind) {
+    app::logging::init("project_tests");
+
+    const auto path = std::filesystem::temp_directory_path() / "echo_server_battle_shadow_started_only.json";
+    const auto port = reserve_free_port();
+    if (!port.has_value()) {
+        GTEST_SKIP() << "socket bind unavailable in this environment";
+    }
+    {
+        std::ofstream output(path);
+        output << "{\n";
+        output << "  \"gateway\": {\n";
+        output << "    \"port\": " << *port << ",\n";
+        output << "    \"io_threads\": 1,\n";
+        output << "    \"business_threads\": 1,\n";
+        output << "    \"http_management_port\": 0,\n";
+        output << "    \"v2_shadow_bridge_enabled\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": true,\n";
+        output << "    \"v2_shadow_bridge_room\": true,\n";
+        output << "    \"v2_shadow_bridge_battle\": true,\n";
+        output << "    \"v2_shadow_bridge_echo\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_input_push\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_started\": true,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_frame\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_settlement\": false,\n";
+        output << "    \"v2_shadow_bridge_emit_battle_state_finished\": false,\n";
+        output << "    \"auth\": {\n";
+        output << "      \"provider\": \"dev\"\n";
+        output << "    }\n";
+        output << "  }\n";
+        output << "}\n";
+    }
+
+    EchoServerProcess server(path);
+    if (!server.start()) {
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "failed to start echo_server process: " << server.startup_error();
+    }
+    if (!wait_for_tcp_server(*port, std::chrono::milliseconds(1500))) {
+        server.stop();
+        std::filesystem::remove(path);
+        GTEST_SKIP() << "echo_server did not start listening in time";
+    }
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(*port);
+    member.connect(*port);
+
+    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 330, "bridge_owner|token:bridge_owner").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_TRUE(owner.try_read_for(std::chrono::milliseconds(300)).has_value());
+    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 331, "bridge_member|token:bridge_member").message_id,
+              net::protocol::kLoginResponse);
+    ASSERT_TRUE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
+
+    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 332, "bridge_room").message_id,
+              net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 333, "bridge_room").message_id,
+              net::protocol::kRoomJoinResponse);
+    (void)owner.expect_message(net::protocol::kRoomStatePush);
+
+    owner.send(net::protocol::kRoomReadyRequest, 334, "true");
+    EXPECT_EQ(owner.expect_message(net::protocol::kRoomReadyResponse).request_id, 334U);
+    member.send(net::protocol::kRoomReadyRequest, 335, "true");
+    EXPECT_EQ(member.expect_message(net::protocol::kRoomReadyResponse).request_id, 335U);
+
+    owner.send(net::protocol::kBattleStartRequest, 336, "");
+    const auto start_first = owner.expect_message(net::protocol::kBattleStartResponse);
+    const auto start_second = owner.expect_message(net::protocol::kBattleStartResponse);
+    EXPECT_TRUE((start_first.body == "battle_started:bridge_room:2" &&
+                 start_second.body == "battle_started:room_id=bridge_room:battle_id=battle_0001") ||
+                (start_second.body == "battle_started:bridge_room:2" &&
+                 start_first.body == "battle_started:room_id=bridge_room:battle_id=battle_0001"));
+
+    const auto member_started_first = member.expect_message(net::protocol::kBattleStatePush);
+    const auto member_started_second = member.expect_message(net::protocol::kBattleStatePush);
+    EXPECT_TRUE((member_started_first.body == "battle_state:started:bridge_room:2" &&
+                 member_started_second.body == "battle_state:kind=started:room_id=bridge_room:battle_id=battle_0001") ||
+                (member_started_second.body == "battle_state:started:bridge_room:2" &&
+                 member_started_first.body == "battle_state:kind=started:room_id=bridge_room:battle_id=battle_0001"));
+
+    owner.send(net::protocol::kBattleInputRequest, 337, "move:right");
+    const auto input_first = owner.expect_message(net::protocol::kBattleInputResponse);
+    const auto input_second = owner.expect_message(net::protocol::kBattleInputResponse);
+    EXPECT_TRUE((input_first.body == "battle_input_accepted:bridge_room:1" &&
+                 input_second.body == "input_seq:seq=1") ||
+                (input_second.body == "battle_input_accepted:bridge_room:1" &&
+                 input_first.body == "input_seq:seq=1"));
+
+    const auto member_input = member.expect_message(net::protocol::kBattleInputPush);
+    EXPECT_EQ(member_input.body, "battle_input:bridge_room:bridge_owner:1:move:right");
+    EXPECT_FALSE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
+
+    server.stop();
+    std::filesystem::remove(path);
+}
+
 TEST(GatewayIntegrationTest, DefaultRuntimeDoesNotRegisterAdminHandlers) {
     app::logging::init("project_tests");
 

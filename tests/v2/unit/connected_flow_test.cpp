@@ -201,3 +201,57 @@ TEST(V2ConnectedFlowTest, BattleCanFinishByRequestedReason) {
     EXPECT_EQ(after_finish[0].envelope.error_code,
               static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
 }
+
+TEST(V2ConnectedFlowTest, RejectsInvalidBattleStartAndInputBodies) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    v2::gateway::Runtime runtime(actor_system, adapter);
+    const auto gateway_actor = runtime.create_gateway_actor();
+    adapter.bind_gateway(gateway_actor);
+
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 1,
+        .body = "owner|token:owner|Owner",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 2,
+        .body = "member|token:member|Member",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kRoomCreateRequest,
+        .request_id = 3,
+        .body = "room_alpha",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kRoomJoinRequest,
+        .request_id = 4,
+        .body = "room_alpha",
+    });
+
+    const auto invalid_start = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleStartRequest,
+        .request_id = 5,
+        .body = "room_other",
+    });
+    ASSERT_EQ(invalid_start.size(), 1U);
+    EXPECT_EQ(invalid_start[0].envelope.protocol_message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(invalid_start[0].envelope.error_code,
+              static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId));
+
+    const auto invalid_input = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 6,
+        .body = "",
+    });
+    ASSERT_EQ(invalid_input.size(), 1U);
+    EXPECT_EQ(invalid_input[0].envelope.protocol_message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(invalid_input[0].envelope.body, "invalid_battle_input");
+}

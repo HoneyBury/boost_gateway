@@ -5,9 +5,55 @@
 #include "v2/gateway/gateway_command_parser.h"
 
 #include <fmt/format.h>
+#include <nlohmann/json.hpp>
+
 #include <utility>
 
 namespace v2::gateway {
+
+namespace {
+
+std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& settlement) {
+    nlohmann::json doc;
+    doc["battle_id"] = settlement.battle_id;
+    doc["room_id"] = settlement.room_id;
+    doc["total_frames"] = settlement.total_frames;
+    doc["reason"] = v2::battle::to_string(settlement.reason);
+    doc["triggering_user_id"] = settlement.triggering_user_id;
+    doc["participants"] = settlement.participant_user_ids;
+
+    nlohmann::json frames = nlohmann::json::array();
+    std::uint32_t current_frame = 0;
+    nlohmann::json current_inputs = nlohmann::json::array();
+    auto flush_frame = [&]() {
+        if (current_frame == 0) {
+            return;
+        }
+        frames.push_back({
+            {"frame", current_frame},
+            {"inputs", current_inputs},
+        });
+        current_inputs = nlohmann::json::array();
+    };
+
+    for (const auto& input : settlement.replay_inputs) {
+        if (current_frame != input.frame_number) {
+            flush_frame();
+            current_frame = input.frame_number;
+        }
+        current_inputs.push_back({
+            {"seq", input.input_seq},
+            {"user_id", input.user_id},
+            {"payload", input.input_data},
+            {"trigger", input.trigger},
+        });
+    }
+    flush_frame();
+    doc["frames"] = std::move(frames);
+    return doc.dump();
+}
+
+}  // namespace
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
     return actor_system_.create_actor(std::make_unique<GatewayActor>(
@@ -229,6 +275,23 @@ bool Runtime::handle(const GatewayCommand& command) {
             if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
                 return false;
             }
+            const auto battle_start = parse_battle_start_command_body(command.body);
+            if (!battle_start.has_value()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
+                     net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
+                return true;
+            }
+            if (battle_start->room_id.has_value() && *battle_start->room_id != room_name_it->second) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
+                     net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
+                return true;
+            }
             auto room_it = rooms_by_room_id_.find(room_name_it->second);
             if (room_it == rooms_by_room_id_.end()) {
                 return false;
@@ -250,6 +313,15 @@ bool Runtime::handle(const GatewayCommand& command) {
             if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
                 return false;
             }
+            const auto battle_input = parse_battle_input_command_body(command.body);
+            if (!battle_input.has_value() || !validate_battle_input_command_body(*battle_input)) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_battle_input");
+                return true;
+            }
             auto battle_it = battles_by_room_id_.find(room_name_it->second);
             if (battle_it == battles_by_room_id_.end()) {
                 emit(net::protocol::kErrorResponse,
@@ -259,7 +331,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted));
                 return true;
             }
-            if (const auto finish_reason = parse_battle_finish_request(command.body); finish_reason.has_value()) {
+            if (battle_input->is_finish_request) {
                 pending_battle_end_[command.session_id] = PendingResponse{
                     .session_id = command.session_id,
                     .request_id = command.request_id,
@@ -267,7 +339,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 v2::actor::Message end;
                 end.header.kind = v2::actor::MessageKind::kUser;
                 end.payload = v2::battle::EndBattleMsg{
-                    .reason = *finish_reason,
+                    .reason = battle_input->finish_reason,
                     .triggering_user_id = user_id,
                 };
                 battle_it->second.tell(std::move(end));
@@ -283,7 +355,7 @@ bool Runtime::handle(const GatewayCommand& command) {
             input.payload = v2::battle::SubmitBattleInputMsg{
                 .user_id = user_id,
                 .request_id = command.request_id,
-                .input_data = command.body,
+                .input_data = battle_input->input_data,
             };
             battle_it->second.tell(std::move(input));
             actor_system_.dispatch_all();
@@ -430,6 +502,8 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&event)) {
+        archive_battle(*settlement);
+
         auto room_it = rooms_by_room_id_.find(settlement->room_id);
         if (room_it != rooms_by_room_id_.end()) {
             v2::actor::Message room_settlement;
@@ -518,6 +592,14 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 }
 
+std::optional<Runtime::BattleArchive> Runtime::archived_battle(std::string_view battle_id) const {
+    auto it = archived_battles_.find(std::string(battle_id));
+    if (it == archived_battles_.end()) {
+        return std::nullopt;
+    }
+    return it->second;
+}
+
 void Runtime::push(v2::room::RoomEvent event) {
     if (const auto* requested = std::get_if<v2::room::BattleStartRequestedMsg>(&event)) {
         const auto battle_id = fmt::format("battle_{:04}", next_battle_id_++);
@@ -584,6 +666,18 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
         }
     }
     return std::nullopt;
+}
+
+void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement) {
+    archived_battles_[settlement.battle_id] = BattleArchive{
+        .battle_id = settlement.battle_id,
+        .room_id = settlement.room_id,
+        .reason = v2::battle::to_string(settlement.reason),
+        .triggering_user_id = settlement.triggering_user_id,
+        .total_frames = settlement.total_frames,
+        .participant_user_ids = settlement.participant_user_ids,
+        .replay_payload = build_replay_payload(settlement),
+    };
 }
 
 void Runtime::emit(std::uint16_t message_id,

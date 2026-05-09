@@ -104,7 +104,7 @@ GatewayServer
 - 外部仍传字符串 body
 - battle body 的格式化与解析已经集中到单一 codec，避免散落在 runtime / demo / 测试里
 - battle wire body 已新增独立 `battle_wire_parser` / validator，gateway bridge / runtime / test 可以共用同一套字段模型
-- gateway command body 已新增独立 parser，当前至少覆盖 login / room id / ready state
+- gateway command body 已新增独立 parser，当前至少覆盖 login / room id / ready state / battle start / battle input
 - 当前已统一收口 `battle_started / battle_state / input_seq / battle_input_push / battle_end_accepted / battle_frame / battle_finished`
 - 内部已先收紧为最小 finish reason 枚举
 - 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`
@@ -117,5 +117,5 @@ GatewayServer
 - `GatewayActor` 仍只是最小 ingress actor
 - `Runtime` 仍承担了较重的编排职责
 - battle body 仍是冻结中的最小字符串 schema，不是最终 typed external schema
-- login / room parser 当前只做到最小字段校验，还不是最终 external schema
+- gateway parser 当前只做到最小字段校验和 battle request 归一化，还不是最终 external schema
 - 还没有接入现有 `GatewayServer` 主链

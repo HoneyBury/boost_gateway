@@ -11,11 +11,19 @@ void BattleActor::finish_battle(BattleFinishReason reason, std::string triggerin
     }
 
     state_.lifecycle = BattleLifecycleState::kFinished;
+    std::vector<std::string> participant_user_ids;
+    participant_user_ids.reserve(state_.participants.size());
+    for (const auto& participant : state_.participants) {
+        participant_user_ids.push_back(participant.user_id);
+    }
     sink_.push(BattleSettlementPreparedMsg{
         .battle_id = state_.battle_id,
         .room_id = state_.room_id,
         .reason = reason,
         .triggering_user_id = triggering_user_id,
+        .total_frames = state_.frame_number,
+        .participant_user_ids = std::move(participant_user_ids),
+        .replay_inputs = state_.replay_inputs,
     });
     sink_.push(BattleFinishedMsg{
         .battle_id = state_.battle_id,
@@ -30,6 +38,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         state_.battle_id = create->battle_id;
         state_.room_id = create->room_id;
         state_.frame_number = 0;
+        state_.replay_inputs.clear();
         state_.participants.clear();
         state_.participants.reserve(create->player_ids.size());
         for (const auto& user_id : create->player_ids) {
@@ -47,11 +56,19 @@ void BattleActor::on_message(v2::actor::Message&& message) {
 
     const auto* input = std::get_if<SubmitBattleInputMsg>(&message.payload);
     if (input != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
+        const auto input_seq = next_input_seq_++;
+        state_.replay_inputs.push_back(BattleReplayInputRecord{
+            .input_seq = input_seq,
+            .frame_number = state_.frame_number + 1,
+            .user_id = input->user_id,
+            .input_data = input->input_data,
+            .trigger = {},
+        });
         sink_.push(BattleInputAcceptedMsg{
             .battle_id = state_.battle_id,
             .room_id = state_.room_id,
             .user_id = input->user_id,
-            .input_seq = next_input_seq_++,
+            .input_seq = input_seq,
             .request_id = input->request_id,
             .input_data = input->input_data,
         });
@@ -61,6 +78,9 @@ void BattleActor::on_message(v2::actor::Message&& message) {
     const auto* tick = std::get_if<TickBattleMsg>(&message.payload);
     if (tick != nullptr && state_.lifecycle == BattleLifecycleState::kRunning) {
         ++state_.frame_number;
+        if (!state_.replay_inputs.empty() && state_.replay_inputs.back().frame_number == state_.frame_number) {
+            state_.replay_inputs.back().trigger = tick->trigger;
+        }
         sink_.push(BattleFrameAdvancedMsg{
             .battle_id = state_.battle_id,
             .room_id = state_.room_id,

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "v2/gateway/gateway_actor.h"
 #include "v2/battle/battle_actor.h"
@@ -17,6 +20,16 @@ class Runtime final : public GatewayCommandSink,
                       public v2::player::PlayerEventSink,
                       public v2::room::RoomEventSink {
 public:
+    struct BattleArchive {
+        std::string battle_id;
+        std::string room_id;
+        std::string reason;
+        std::string triggering_user_id;
+        std::uint32_t total_frames = 0;
+        std::vector<std::string> participant_user_ids;
+        std::string replay_payload;
+    };
+
     Runtime(v2::runtime::ActorSystem& actor_system, SessionWriteSink& write_sink)
         : actor_system_(actor_system), write_sink_(write_sink) {}
 
@@ -29,6 +42,8 @@ public:
     void push(v2::player::PlayerEvent event) override;
     void push(v2::room::RoomEvent event) override;
 
+    [[nodiscard]] std::optional<BattleArchive> archived_battle(std::string_view battle_id) const;
+
 private:
     struct PendingResponse {
         SessionId session_id = 0;
@@ -38,6 +53,7 @@ private:
     [[nodiscard]] v2::actor::ActorRef get_or_create_player(const std::string& user_id);
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
     [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
+    void archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement);
 
     void emit(std::uint16_t message_id,
               SessionId session_id,
@@ -59,6 +75,7 @@ private:
     std::unordered_map<std::string, PendingResponse> pending_battle_start_;
     std::unordered_map<SessionId, PendingResponse> pending_battle_input_;
     std::unordered_map<SessionId, PendingResponse> pending_battle_end_;
+    std::unordered_map<std::string, BattleArchive> archived_battles_;
     std::uint64_t next_battle_id_ = 1;
 };
 

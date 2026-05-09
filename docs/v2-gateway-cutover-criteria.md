@@ -67,7 +67,7 @@
 - 默认仍应保持关闭
 - 当前仍建议优先镜像 `login / room`，再逐步放开 `battle`
 - response mirror 当前主要细化到 battle 域，还没有推广到全部 v1/v2 response family
-- gateway command parser 当前只覆盖最小 ingress 字段，不应误判为已冻结完整 external schema
+- gateway command parser 当前只覆盖最小 ingress 字段和 battle request 归一化，不应误判为已冻结完整 external schema
 
 ## 4. 推荐接入顺序
 
@@ -82,7 +82,7 @@
 
 在现阶段，主链接入优先级低于：
 
-1. battle finish 后续事件和结算语义继续收口
-2. timer / delayed message 从单次原型推进到可复用调度能力
+1. battle result / replay 入口继续收口
+2. timer / delayed message 从当前 scheduler 原型推进到 actor-owned 调度能力
 3. battle frame loop 与 external schema 继续稳定
 4. v2 文档、配置和测试护栏固定

@@ -43,12 +43,21 @@ struct BattleParticipantState {
     bool online = true;
 };
 
+struct BattleReplayInputRecord {
+    std::uint64_t input_seq = 0;
+    std::uint32_t frame_number = 0;
+    std::string user_id;
+    std::string input_data;
+    std::string trigger;
+};
+
 struct BattleRuntimeState {
     std::string battle_id;
     std::string room_id;
     BattleLifecycleState lifecycle = BattleLifecycleState::kCreated;
     std::vector<BattleParticipantState> participants;
     std::uint32_t frame_number = 0;
+    std::vector<BattleReplayInputRecord> replay_inputs;
 };
 
 struct CreateBattleMsg {
@@ -110,6 +119,9 @@ struct BattleSettlementPreparedMsg {
     std::string room_id;
     BattleFinishReason reason = BattleFinishReason::kFinished;
     std::string triggering_user_id;
+    std::uint32_t total_frames = 0;
+    std::vector<std::string> participant_user_ids;
+    std::vector<BattleReplayInputRecord> replay_inputs;
 };
 
 using BattleEvent = std::variant<BattleCreatedMsg,

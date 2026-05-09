@@ -30,3 +30,27 @@ TEST(V2GatewayCommandParserTest, ParsesAndValidatesRoomIdentifiers) {
     EXPECT_FALSE(v2::gateway::validate_room_id_body(""));
     EXPECT_FALSE(v2::gateway::parse_room_id_body("").has_value());
 }
+
+TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
+    const auto start_empty = v2::gateway::parse_battle_start_command_body("");
+    ASSERT_TRUE(start_empty.has_value());
+    EXPECT_FALSE(start_empty->room_id.has_value());
+
+    const auto start_room = v2::gateway::parse_battle_start_command_body("room_alpha");
+    ASSERT_TRUE(start_room.has_value());
+    ASSERT_TRUE(start_room->room_id.has_value());
+    EXPECT_EQ(*start_room->room_id, "room_alpha");
+
+    const auto finish = v2::gateway::parse_battle_input_command_body("finish:surrender");
+    ASSERT_TRUE(finish.has_value());
+    EXPECT_TRUE(finish->is_finish_request);
+    EXPECT_EQ(finish->finish_reason, v2::battle::BattleFinishReason::kSurrender);
+    EXPECT_TRUE(v2::gateway::validate_battle_input_command_body(*finish));
+
+    const auto input = v2::gateway::parse_battle_input_command_body("move:left");
+    ASSERT_TRUE(input.has_value());
+    EXPECT_FALSE(input->is_finish_request);
+    EXPECT_EQ(input->input_data, "move:left");
+    EXPECT_TRUE(v2::gateway::validate_battle_input_command_body(*input));
+    EXPECT_FALSE(v2::gateway::parse_battle_input_command_body("").has_value());
+}

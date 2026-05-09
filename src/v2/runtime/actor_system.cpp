@@ -1,5 +1,6 @@
 #include "v2/runtime/actor_system.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace v2::runtime {
@@ -68,7 +69,7 @@ void ActorSystem::send_after(v2::actor::Message message, Duration delay) {
         return;
     }
 
-    send_at(std::move(message), Clock::now() + delay);
+    (void)schedule_after(std::move(message), delay);
 }
 
 void ActorSystem::send_at(v2::actor::Message message, TimePoint ready_at) {
@@ -77,10 +78,58 @@ void ActorSystem::send_at(v2::actor::Message message, TimePoint ready_at) {
     }
 
     scheduled_messages_.push_back(ScheduledMessage{
+        .schedule_id = next_schedule_id_++,
         .use_wall_clock = true,
         .ready_at = ready_at,
         .message = std::move(message),
     });
+}
+
+ActorSystem::ScheduleId ActorSystem::schedule_after(v2::actor::Message message, Duration delay) {
+    if (shutting_down_ || message.header.target_actor == 0) {
+        return 0;
+    }
+    if (delay <= Duration::zero()) {
+        send(std::move(message));
+        return 0;
+    }
+
+    const auto schedule_id = next_schedule_id_++;
+    scheduled_messages_.push_back(ScheduledMessage{
+        .schedule_id = schedule_id,
+        .use_wall_clock = true,
+        .ready_at = Clock::now() + delay,
+        .message = std::move(message),
+    });
+    return schedule_id;
+}
+
+ActorSystem::ScheduleId ActorSystem::schedule_every(v2::actor::Message message,
+                                                    Duration initial_delay,
+                                                    Duration interval) {
+    if (shutting_down_ || message.header.target_actor == 0 || interval <= Duration::zero()) {
+        return 0;
+    }
+    const auto schedule_id = next_schedule_id_++;
+    scheduled_messages_.push_back(ScheduledMessage{
+        .schedule_id = schedule_id,
+        .use_wall_clock = true,
+        .ready_at = Clock::now() + (initial_delay <= Duration::zero() ? interval : initial_delay),
+        .repeat_interval = interval,
+        .message = std::move(message),
+    });
+    return schedule_id;
+}
+
+bool ActorSystem::cancel_schedule(ScheduleId schedule_id) noexcept {
+    const auto before = scheduled_messages_.size();
+    scheduled_messages_.erase(
+        std::remove_if(
+            scheduled_messages_.begin(),
+            scheduled_messages_.end(),
+            [schedule_id](const ScheduledMessage& scheduled) { return scheduled.schedule_id == schedule_id; }),
+        scheduled_messages_.end());
+    return before != scheduled_messages_.size();
 }
 
 std::size_t ActorSystem::dispatch_all() {
@@ -147,7 +196,13 @@ void ActorSystem::promote_scheduled_messages() {
     for (auto& scheduled : scheduled_messages_) {
         if (scheduled.use_wall_clock) {
             if (scheduled.ready_at <= Clock::now()) {
-                send(std::move(scheduled.message));
+                if (scheduled.repeat_interval > Duration::zero()) {
+                    send(scheduled.message);
+                    scheduled.ready_at += scheduled.repeat_interval;
+                    pending.push_back(std::move(scheduled));
+                } else {
+                    send(std::move(scheduled.message));
+                }
             } else {
                 pending.push_back(std::move(scheduled));
             }

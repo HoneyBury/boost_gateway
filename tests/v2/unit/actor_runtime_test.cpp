@@ -155,3 +155,52 @@ TEST(V2ActorRuntimeTest, DispatchAllPromotesWallClockDelayedMessagesWhenDue) {
     ASSERT_EQ(received.size(), 1U);
     EXPECT_EQ(received.front(), "timed-v2");
 }
+
+TEST(V2ActorRuntimeTest, CancelSchedulePreventsWallClockDelivery) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("cancelled-v2");
+
+    const auto schedule_id = actor_system.schedule_after(std::move(message), std::chrono::milliseconds(20));
+    ASSERT_NE(schedule_id, 0U);
+    EXPECT_TRUE(actor_system.cancel_schedule(schedule_id));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_TRUE(received.empty());
+}
+
+TEST(V2ActorRuntimeTest, RepeatingScheduleDeliversUntilCancelled) {
+    std::vector<std::string> received;
+
+    v2::runtime::ActorSystem actor_system;
+    auto receiver = actor_system.create_actor(std::make_unique<RecordingActor>(received));
+
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.header.target_actor = receiver.actor_id();
+    message.payload = std::string("repeat-v2");
+
+    const auto schedule_id = actor_system.schedule_every(
+        std::move(message), std::chrono::milliseconds(10), std::chrono::milliseconds(10));
+    ASSERT_NE(schedule_id, 0U);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    std::this_thread::sleep_for(std::chrono::milliseconds(15));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(received.size(), 2U);
+    EXPECT_EQ(received[0], "repeat-v2");
+    EXPECT_EQ(received[1], "repeat-v2");
+
+    EXPECT_TRUE(actor_system.cancel_schedule(schedule_id));
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    ASSERT_EQ(received.size(), 2U);
+}

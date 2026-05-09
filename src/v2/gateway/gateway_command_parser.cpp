@@ -1,5 +1,7 @@
 #include "v2/gateway/gateway_command_parser.h"
 
+#include "v2/gateway/battle_protocol_codec.h"
+
 #include <sstream>
 #include <vector>
 
@@ -59,6 +61,41 @@ std::optional<bool> parse_room_ready_body(std::string_view body) noexcept {
         return false;
     }
     return std::nullopt;
+}
+
+std::optional<ParsedBattleStartCommandBody> parse_battle_start_command_body(std::string_view body) {
+    ParsedBattleStartCommandBody parsed;
+    if (!body.empty()) {
+        if (!validate_room_id_body(body)) {
+            return std::nullopt;
+        }
+        parsed.room_id = std::string(body);
+    }
+    return parsed;
+}
+
+std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std::string_view body) {
+    ParsedBattleInputCommandBody parsed;
+    if (body.empty()) {
+        return std::nullopt;
+    }
+
+    if (const auto finish_reason = parse_battle_finish_request(std::string(body)); finish_reason.has_value()) {
+        parsed.is_finish_request = true;
+        parsed.finish_reason = *finish_reason;
+        parsed.input_data = std::string(body);
+        return parsed;
+    }
+
+    parsed.input_data = std::string(body);
+    return parsed;
+}
+
+bool validate_battle_input_command_body(const ParsedBattleInputCommandBody& body) noexcept {
+    if (body.is_finish_request) {
+        return !body.input_data.empty();
+    }
+    return !body.input_data.empty();
 }
 
 }  // namespace v2::gateway
