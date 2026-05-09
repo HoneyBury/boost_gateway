@@ -37,6 +37,9 @@ bool Runtime::is_authenticated(const GatewayCommand& command) const {
 
 void Runtime::on_session_closed(SessionId session_id) {
     const auto user_id = session_user_id(session_id);
+    const auto room_it = rooms_by_session_id_.find(session_id);
+    const auto room_id = room_it != rooms_by_session_id_.end() ? room_it->second : std::string{};
+
     if (!user_id.empty()) {
         auto player_it = players_by_user_id_.find(user_id);
         if (player_it != players_by_user_id_.end()) {
@@ -44,11 +47,23 @@ void Runtime::on_session_closed(SessionId session_id) {
             closed.header.kind = v2::actor::MessageKind::kUser;
             closed.payload = v2::player::SessionClosedMsg{.session_id = session_id};
             player_it->second.tell(std::move(closed));
-            actor_system_.dispatch_all();
         }
     }
-    users_by_session_id_.erase(session_id);
+    pending_battle_input_.erase(session_id);
     rooms_by_session_id_.erase(session_id);
+    users_by_session_id_.erase(session_id);
+
+    if (!user_id.empty() && !room_id.empty()) {
+        auto battle_it = battles_by_room_id_.find(room_id);
+        if (battle_it != battles_by_room_id_.end()) {
+            v2::actor::Message disconnected;
+            disconnected.header.kind = v2::actor::MessageKind::kUser;
+            disconnected.payload = v2::battle::PlayerDisconnectedMsg{.user_id = user_id};
+            battle_it->second.tell(std::move(disconnected));
+        }
+    }
+
+    actor_system_.dispatch_all();
 }
 
 bool Runtime::handle(const GatewayCommand& command) {
@@ -293,6 +308,32 @@ void Runtime::push(v2::player::PlayerEvent event) {
 
 void Runtime::push(v2::battle::BattleEvent event) {
     if (const auto* created = std::get_if<v2::battle::BattleCreatedMsg>(&event)) {
+        auto room_it = rooms_by_room_id_.find(created->room_id);
+        if (room_it != rooms_by_room_id_.end()) {
+            v2::actor::Message started;
+            started.header.kind = v2::actor::MessageKind::kUser;
+            started.payload = v2::room::BattleStartedMsg{.battle_id = created->battle_id};
+            room_it->second.tell(std::move(started));
+        }
+        for (const auto& user_id : created->player_ids) {
+            auto player_it = players_by_user_id_.find(user_id);
+            if (player_it == players_by_user_id_.end()) {
+                continue;
+            }
+            auto battle_it = battles_by_room_id_.find(created->room_id);
+            if (battle_it == battles_by_room_id_.end()) {
+                continue;
+            }
+            v2::actor::Message assign;
+            assign.header.kind = v2::actor::MessageKind::kUser;
+            assign.payload = v2::player::BattleAssignedMsg{
+                .battle_actor_id = battle_it->second.actor_id(),
+                .battle_id = created->battle_id,
+            };
+            player_it->second.tell(std::move(assign));
+        }
+        actor_system_.dispatch_all();
+
         auto pending = pending_battle_start_.find(created->room_id);
         if (pending != pending_battle_start_.end()) {
             emit(net::protocol::kBattleStartResponse,
@@ -336,6 +377,47 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      fmt::format("{}:{}:{}", input->user_id, input->input_seq, input->input_data));
             }
         }
+        return;
+    }
+
+    if (const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&event)) {
+        battles_by_room_id_.erase(finished->room_id);
+
+        auto room_it = rooms_by_room_id_.find(finished->room_id);
+        if (room_it != rooms_by_room_id_.end()) {
+            v2::actor::Message ended;
+            ended.header.kind = v2::actor::MessageKind::kUser;
+            ended.payload = v2::room::BattleEndedMsg{
+                .battle_id = finished->battle_id,
+                .reason = finished->reason,
+            };
+            room_it->second.tell(std::move(ended));
+        }
+
+        for (auto& [user_id, player_actor] : players_by_user_id_) {
+            v2::actor::Message ended;
+            ended.header.kind = v2::actor::MessageKind::kUser;
+            ended.payload = v2::player::BattleEndedMsg{
+                .battle_id = finished->battle_id,
+                .reason = finished->reason,
+            };
+            player_actor.tell(std::move(ended));
+        }
+        actor_system_.dispatch_all();
+
+        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+            if (room_id == finished->room_id) {
+                emit(net::protocol::kBattleStatePush,
+                     session_id,
+                     0,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                     fmt::format("battle_finished:{}:{}:{}:{}",
+                                 finished->room_id,
+                                 finished->battle_id,
+                                 finished->reason,
+                                 finished->triggering_user_id));
+            }
+        }
     }
 }
 
@@ -367,6 +449,8 @@ void Runtime::push(v2::room::RoomEvent event) {
                 error_code = net::protocol::ErrorCode::kNotEnoughPlayers;
             } else if (rejected->reason == "not_all_ready") {
                 error_code = net::protocol::ErrorCode::kNotAllReady;
+            } else if (rejected->reason == "battle_already_started") {
+                error_code = net::protocol::ErrorCode::kBattleAlreadyStarted;
             }
             emit(net::protocol::kErrorResponse,
                  pending->second.session_id,

@@ -32,6 +32,8 @@ struct PlayerRuntimeState {
     std::optional<PlayerSessionBinding> binding;
     std::optional<std::uint64_t> room_actor_id;
     std::optional<std::string> room_id;
+    std::optional<std::uint64_t> battle_actor_id;
+    std::optional<std::string> battle_id;
 };
 
 struct LoginRequestMsg {
@@ -49,6 +51,16 @@ struct BindSessionMsg {
 struct RoomAssignedMsg {
     std::uint64_t room_actor_id = 0;
     std::string room_id;
+};
+
+struct BattleAssignedMsg {
+    std::uint64_t battle_actor_id = 0;
+    std::string battle_id;
+};
+
+struct BattleEndedMsg {
+    std::string battle_id;
+    std::string reason;
 };
 
 struct SessionClosedMsg {

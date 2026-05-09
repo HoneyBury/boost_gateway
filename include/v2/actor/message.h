@@ -26,13 +26,18 @@ using MessagePayload = std::variant<std::monostate,
                                     v2::player::LoginRequestMsg,
                                     v2::player::BindSessionMsg,
                                     v2::player::RoomAssignedMsg,
+                                    v2::player::BattleAssignedMsg,
+                                    v2::player::BattleEndedMsg,
                                     v2::player::SessionClosedMsg,
                                     v2::room::CreateRoomMsg,
                                     v2::room::JoinRoomMsg,
                                     v2::room::SetReadyMsg,
                                     v2::room::StartBattleMsg,
+                                    v2::room::BattleStartedMsg,
+                                    v2::room::BattleEndedMsg,
                                     v2::battle::CreateBattleMsg,
-                                    v2::battle::SubmitBattleInputMsg>;
+                                    v2::battle::SubmitBattleInputMsg,
+                                    v2::battle::PlayerDisconnectedMsg>;
 
 struct MessageHeader {
     MessageKind kind = MessageKind::kUnknown;

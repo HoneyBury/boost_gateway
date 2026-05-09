@@ -20,6 +20,14 @@ void RoomActor::on_message(v2::actor::Message&& message) {
     }
     if (const auto* start = std::get_if<StartBattleMsg>(&message.payload)) {
         handle_start_battle(*start);
+        return;
+    }
+    if (const auto* started = std::get_if<BattleStartedMsg>(&message.payload)) {
+        handle_battle_started(*started);
+        return;
+    }
+    if (const auto* ended = std::get_if<BattleEndedMsg>(&message.payload)) {
+        handle_battle_ended(*ended);
     }
 }
 
@@ -54,6 +62,14 @@ void RoomActor::handle_set_ready(const SetReadyMsg& message) {
 }
 
 void RoomActor::handle_start_battle(const StartBattleMsg& message) {
+    if (state_.active_battle_id.has_value()) {
+        sink_.push(BattleStartRejectedMsg{
+            .room_id = state_.room_id,
+            .reason = "battle_already_started",
+        });
+        return;
+    }
+
     if (message.requester_user_id != state_.owner_user_id) {
         sink_.push(BattleStartRejectedMsg{
             .room_id = state_.room_id,
@@ -89,6 +105,21 @@ void RoomActor::handle_start_battle(const StartBattleMsg& message) {
         .player_ids = std::move(player_ids),
         .requester_user_id = message.requester_user_id,
     });
+}
+
+void RoomActor::handle_battle_started(const BattleStartedMsg& message) {
+    state_.active_battle_id = message.battle_id;
+}
+
+void RoomActor::handle_battle_ended(const BattleEndedMsg& message) {
+    if (!state_.active_battle_id.has_value() || *state_.active_battle_id != message.battle_id) {
+        return;
+    }
+
+    state_.active_battle_id.reset();
+    for (auto& member : state_.members) {
+        member.ready = false;
+    }
 }
 
 RoomMemberState* RoomActor::find_member(const std::string& user_id) noexcept {

@@ -26,6 +26,8 @@ private:
     void handle_join_room(const JoinRoomMsg& message);
     void handle_set_ready(const SetReadyMsg& message);
     void handle_start_battle(const StartBattleMsg& message);
+    void handle_battle_started(const BattleStartedMsg& message);
+    void handle_battle_ended(const BattleEndedMsg& message);
 
     RoomMemberState* find_member(const std::string& user_id) noexcept;
     [[nodiscard]] bool all_members_ready() const noexcept;

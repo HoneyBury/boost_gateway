@@ -38,6 +38,20 @@ v2::actor::Message make_message(v2::player::RoomAssignedMsg payload) {
     return message;
 }
 
+v2::actor::Message make_message(v2::player::BattleAssignedMsg payload) {
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::move(payload);
+    return message;
+}
+
+v2::actor::Message make_message(v2::player::BattleEndedMsg payload) {
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::move(payload);
+    return message;
+}
+
 v2::actor::Message make_message(v2::player::SessionClosedMsg payload) {
     v2::actor::Message message;
     message.header.kind = v2::actor::MessageKind::kUser;
@@ -144,4 +158,39 @@ TEST(V2PlayerActorTest, SessionCloseAndReloginResumeAssignedRoom) {
     ASSERT_NE(resumed, nullptr);
     EXPECT_EQ(resumed->session_id, 200U);
     EXPECT_EQ(resumed->room_id, "room_resume");
+}
+
+TEST(V2PlayerActorTest, BattleAssignedAndEndedTransitionsBackToRoom) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingPlayerSink sink;
+    auto actor = std::make_unique<v2::player::PlayerActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_message(v2::player::BindSessionMsg{.session_id = 100, .connection_id = 900}));
+    actor_ref.tell(make_message(v2::player::LoginRequestMsg{
+        .session_id = 100,
+        .user_id = "fighter",
+        .token = "token:fighter",
+        .display_name = std::string("Fighter"),
+    }));
+    actor_ref.tell(make_message(v2::player::RoomAssignedMsg{
+        .room_actor_id = 42,
+        .room_id = "room_battle",
+    }));
+    actor_ref.tell(make_message(v2::player::BattleAssignedMsg{
+        .battle_actor_id = 77,
+        .battle_id = "battle_0001",
+    }));
+    actor_ref.tell(make_message(v2::player::BattleEndedMsg{
+        .battle_id = "battle_0001",
+        .reason = "player_disconnected",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 5U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kInRoom);
+    ASSERT_TRUE(actor_ptr->state().room_id.has_value());
+    EXPECT_EQ(*actor_ptr->state().room_id, "room_battle");
+    EXPECT_FALSE(actor_ptr->state().battle_id.has_value());
+    EXPECT_FALSE(actor_ptr->state().battle_actor_id.has_value());
 }

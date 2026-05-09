@@ -7,11 +7,22 @@
 
 namespace v2::battle {
 
+enum class BattleLifecycleState : std::uint8_t {
+    kCreated = 0,
+    kRunning = 1,
+    kFinished = 2,
+};
+
+struct BattleParticipantState {
+    std::string user_id;
+    bool online = true;
+};
+
 struct BattleRuntimeState {
     std::string battle_id;
     std::string room_id;
-    std::vector<std::string> player_ids;
-    bool started = false;
+    BattleLifecycleState lifecycle = BattleLifecycleState::kCreated;
+    std::vector<BattleParticipantState> participants;
 };
 
 struct CreateBattleMsg {
@@ -24,6 +35,10 @@ struct SubmitBattleInputMsg {
     std::string user_id;
     std::uint32_t request_id = 0;
     std::string input_data;
+};
+
+struct PlayerDisconnectedMsg {
+    std::string user_id;
 };
 
 struct BattleCreatedMsg {
@@ -41,6 +56,13 @@ struct BattleInputAcceptedMsg {
     std::string input_data;
 };
 
-using BattleEvent = std::variant<BattleCreatedMsg, BattleInputAcceptedMsg>;
+struct BattleFinishedMsg {
+    std::string battle_id;
+    std::string room_id;
+    std::string reason;
+    std::string triggering_user_id;
+};
+
+using BattleEvent = std::variant<BattleCreatedMsg, BattleInputAcceptedMsg, BattleFinishedMsg>;
 
 }  // namespace v2::battle

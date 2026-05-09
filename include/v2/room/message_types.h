@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -17,6 +18,7 @@ struct RoomRuntimeState {
     std::string room_id;
     std::string owner_user_id;
     std::vector<RoomMemberState> members;
+    std::optional<std::string> active_battle_id;
 };
 
 struct CreateRoomMsg {
@@ -37,6 +39,15 @@ struct SetReadyMsg {
 
 struct StartBattleMsg {
     std::string requester_user_id;
+};
+
+struct BattleStartedMsg {
+    std::string battle_id;
+};
+
+struct BattleEndedMsg {
+    std::string battle_id;
+    std::string reason;
 };
 
 struct BattleStartRequestedMsg {

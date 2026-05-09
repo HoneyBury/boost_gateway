@@ -37,8 +37,10 @@ TEST(V2BattleActorTest, CreateBattleMarksStartedAndEmitsCreatedEvent) {
     actor_ref.tell(std::move(message));
 
     EXPECT_EQ(actor_system.dispatch_all(), 1U);
-    EXPECT_TRUE(actor_ptr->state().started);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kRunning);
     EXPECT_EQ(actor_ptr->state().battle_id, "battle_0001");
+    ASSERT_EQ(actor_ptr->state().participants.size(), 2U);
+    EXPECT_EQ(actor_ptr->state().participants[0].user_id, "owner");
     ASSERT_EQ(sink.events.size(), 1U);
     const auto* created = std::get_if<v2::battle::BattleCreatedMsg>(&sink.events.front());
     ASSERT_NE(created, nullptr);
@@ -75,4 +77,34 @@ TEST(V2BattleActorTest, SubmitInputEmitsAcceptedEvent) {
     ASSERT_NE(accepted, nullptr);
     EXPECT_EQ(accepted->request_id, 77U);
     EXPECT_EQ(accepted->input_seq, 1U);
+}
+
+TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    v2::actor::Message disconnected;
+    disconnected.header.kind = v2::actor::MessageKind::kUser;
+    disconnected.payload = v2::battle::PlayerDisconnectedMsg{.user_id = "owner"};
+    actor_ref.tell(std::move(disconnected));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
+    ASSERT_NE(finished, nullptr);
+    EXPECT_EQ(finished->reason, "player_disconnected");
+    EXPECT_EQ(finished->triggering_user_id, "owner");
 }

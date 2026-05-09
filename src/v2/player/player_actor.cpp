@@ -17,6 +17,14 @@ void PlayerActor::on_message(v2::actor::Message&& message) {
         handle_room_assigned(*room);
         return;
     }
+    if (const auto* battle = std::get_if<BattleAssignedMsg>(&message.payload)) {
+        handle_battle_assigned(*battle);
+        return;
+    }
+    if (const auto* ended = std::get_if<BattleEndedMsg>(&message.payload)) {
+        handle_battle_ended(*ended);
+        return;
+    }
     if (const auto* closed = std::get_if<SessionClosedMsg>(&message.payload)) {
         handle_session_closed(*closed);
     }
@@ -91,6 +99,24 @@ void PlayerActor::handle_room_assigned(const RoomAssignedMsg& message) {
     state_.room_actor_id = message.room_actor_id;
     state_.room_id = message.room_id;
     state_.lifecycle = PlayerLifecycleState::kInRoom;
+}
+
+void PlayerActor::handle_battle_assigned(const BattleAssignedMsg& message) {
+    state_.battle_actor_id = message.battle_actor_id;
+    state_.battle_id = message.battle_id;
+    state_.lifecycle = PlayerLifecycleState::kInBattle;
+}
+
+void PlayerActor::handle_battle_ended(const BattleEndedMsg& message) {
+    if (state_.battle_id.has_value() && *state_.battle_id != message.battle_id) {
+        return;
+    }
+
+    state_.battle_actor_id.reset();
+    state_.battle_id.reset();
+    state_.lifecycle = state_.room_id.has_value()
+        ? PlayerLifecycleState::kInRoom
+        : PlayerLifecycleState::kOnlineIdle;
 }
 
 void PlayerActor::handle_session_closed(const SessionClosedMsg& message) {

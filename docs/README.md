@@ -20,7 +20,12 @@
 - [v1.2.0 结构升级决策](./v1-structure-upgrade-decision.md) — **`T21`**：typed protocol / internal bus / battle replay 是否在维护分支转正的决策记录（结论：**不提前推进**）
 - [发布流程](./release-process.md) — `develop -> main`、CI/CD、tag release 与归档内容
 - [v1.2.5 发布说明](./releases/v1.2.5.md) — 当前维护稳定版发布记录
-- [v2.0 启动清单](./v2-startup-checklist.md) — 从当前 `develop` 启动 `v2.0` 的分支、边界、骨架与验收清单
+- [v2.0 启动清单](./v2-startup-checklist.md) — 从当前 `develop` 启动 `v2.0` 的分支、边界、骨架、验收清单与当前实现状态
+- [v2 runtime 原型说明](./v2-runtime.md) — `ActorSystem`、mailbox、单线程调度模型与当前限制
+- [v2 协议桥接说明](./v2-protocol-bridge.md) — `SessionAdapter` / `GatewayActor` / `Runtime` 的协议入口与路由边界
+- [v2 PlayerActor 生命周期](./v2-player-lifecycle.md) — 登录、顶号、挂起、进房、进战与回切规则
+- [v2 RoomActor 生命周期](./v2-room-lifecycle.md) — 成员、ready、开战资格、battle active 与结束回收
+- [v2 GatewayServer 接入门槛](./v2-gateway-cutover-criteria.md) — 何时允许从 demo 入口推进到现有主链桥接
 - [开发优化文档（v1.0.0 维护期）](./development-optimization.md) — 模块级问题分析、整改路线图、版本批次任务表
 - [开发优先级看板](./development-priority.md)
 - [当前网关骨架运行说明](./runtime-playbook.md)

@@ -27,6 +27,7 @@
 - `SessionAdapter + GatewayActor` 桥接
 - `PlayerActor` 最小状态
 - `RoomActor` 最小闭环
+- `BattleActor` bootstrap shell（仅限创建、输入受理、状态 push 占位）
 
 明确不在启动批次内的模块：
 
@@ -37,6 +38,7 @@
 - `M6 AOI 空间管理`
 - `M7 运维成熟度`
 - `BattleActor + ECS World` 完整仿真链
+- 现有 `GatewayServer` 主链替换
 
 ## 3. 分支策略
 
@@ -118,7 +120,7 @@
 - `GatewayActor`
 - `PlayerActor`
 - `RoomActor`
-- 最小 `BattleActorRef` 占位接口
+- 最小 `BattleActor` shell
 - 对应单元测试与最小桥接集成测试
 
 ### 5.2 不应进入启动批次
@@ -131,6 +133,7 @@
 - replay 生产链
 - ECS world 实体系统
 - OpenTelemetry / K8s / 控制面
+- `GatewayServer` 主入口替换
 
 ## 6. 第一批目录骨架
 
@@ -266,6 +269,38 @@ examples/v2_gateway_demo/
 - `RoomActor` 持有房间状态唯一事实源
 - 不直接跨域改 `PlayerActor` 状态
 
+### 7.5 2026-05-09 当前实现状态
+
+当前仓库已经完成：
+
+- `B0`：`v2/` 目录骨架、`CMake` 接线、`tests/v2` 目标、`examples/v2_gateway_demo/`
+- `B1`：`Actor` / `ActorRef` / `MessageHeader` / `Message` / 单线程 mailbox / `ActorSystem`
+- `B2`：`ClientEnvelope`、`SessionAdapter`、`GatewayActor`、登录前白名单、基础限频钩子、未建模消息拒绝
+- `B3`：`PlayerActor` 最小状态、顶号替换、房间引用、断线挂起与重连恢复最小闭环
+- `B4`：`RoomActor` 成员关系、房主、ready、开战资格判定、向 `BattleActor` 发起启动请求
+- `B4+`：`BattleActor` bootstrap shell、`BattleStartResponse`、`BattleStatePush`、`BattleInputResponse`、`BattleInputPush`
+- `P1`：`examples/v2_gateway_demo` 已支持 `--script` 烟测和基于现有 `net::Session` 的真实监听入口；`tests/v2/integration` 已新增真实 socket smoke test
+- `P2`：已补 battle 最小 lifecycle：`BattleAssigned`、`PlayerDisconnected -> BattleFinished`、`RoomActor` active battle 清理、`PlayerActor` 从 `InBattle` 回切到 `InRoom`
+
+当前明确只有原型或占位的部分：
+
+- `BattleActor` 只处理战斗创建和输入受理，不包含 `ECS World`、帧循环、状态广播聚合、结算、回放
+- `BattleActor` 已有最小结束路径，但结束条件仍只覆盖“玩家断线触发结束”，没有正常结算、超时、投降等分支
+- `SessionAdapter` 已可挂接 demo server，但还没有接入现有 `GatewayServer` 主链
+- runtime 仍是单进程、单线程 bootstrap 编排层，不是多核 actor runtime
+- battle 输入目前只做到“受理 + 转发”，没有 authoritative simulation
+- `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树、timer、`ask()`、延时消息
+
+当前不应误判为已完成的内容：
+
+- `M2` 多核 I/O 引擎
+- `M3` 内存架构重构
+- `M4` 分布式原语
+- `M5` 数据层 v2
+- `M6` AOI / ECS 战斗主链
+- `M7` 运维成熟度
+- `v2` 替换现有 `v1` 默认入口
+
 ## 8. 文档产出清单
 
 每个启动批次至少同步以下文档产物：
@@ -281,6 +316,7 @@ examples/v2_gateway_demo/
 - `docs/v2-protocol-bridge.md`
 - `docs/v2-player-lifecycle.md`
 - `docs/v2-room-lifecycle.md`
+- `docs/v2-gateway-cutover-criteria.md`
 
 ## 9. 测试清单
 
@@ -308,7 +344,7 @@ examples/v2_gateway_demo/
 
 ## 10. 启动检查表
 
-- 已创建独立 `v2` 分支
+- 已创建独立 `v2` 代码目录
 - 已确认协议兼容策略
 - 已确认主链切换策略
 - 已确认 `v1` 回归测试保留范围
@@ -316,13 +352,21 @@ examples/v2_gateway_demo/
 - 已完成 `ActorSystem` 最小原型
 - 已完成 `SessionAdapter` / `GatewayActor` 桥接原型
 - 已完成第一批 `v2` 单元测试
+- 已完成 `PlayerActor` / `RoomActor` 最小闭环
+- 已完成 `BattleActor` bootstrap shell
+- 已完成 `v2_gateway_demo` 真实监听入口
+
+说明：
+
+- 如果分支策略仍采用 `develop` 内联推进，则本检查表中的“独立 `v2` 分支”暂按“独立 `v2` 代码目录 + 独立提交批次”执行
+- 截至 `2026-05-09`，当前实现更接近“`M1` 可运行原型 + demo 入口”，尚未进入 `M2-M7`
 
 ## 11. 推荐下一步
 
-如果正式启动，建议第一提交只做以下内容：
+如果继续沿当前原型推进，建议下一阶段不要再扩散模块面，而是按以下顺序收口：
 
-1. 新增 `v2/` 目录骨架和 `CMake` 接线
-2. 落最小 `Actor` / `ActorRef` / mailbox 原型与测试
-3. 新增 `examples/v2_gateway_demo/` 空入口
+1. 把 `v2_gateway_demo` 的真实收包链路补成可交互 smoke test
+2. 给 `BattleActor` 补最小 battle lifecycle，而不是直接跳到 ECS
+3. 明确 `GatewayServer` 主链接入条件和切换门槛
 
-不要在第一提交里同时迁移 `GatewayServer`、`SessionManager`、房间逻辑和战斗逻辑。
+不要在当前阶段同时推进多核 I/O、分布式、数据层和 ECS World。

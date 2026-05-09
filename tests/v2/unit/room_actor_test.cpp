@@ -168,3 +168,48 @@ TEST(V2RoomActorTest, StartBattleRequestsBattleWhenRoomIsEligible) {
     EXPECT_EQ(requested->player_ids[0], "owner");
     EXPECT_EQ(requested->player_ids[1], "member");
 }
+
+TEST(V2RoomActorTest, BattleStartedBlocksRestartUntilBattleEnded) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_epsilon",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "owner",
+        .ready = true,
+    }));
+    actor_ref.tell(make_room_message(v2::room::SetReadyMsg{
+        .user_id = "member",
+        .ready = true,
+    }));
+    actor_ref.tell(make_room_message(v2::room::BattleStartedMsg{
+        .battle_id = "battle_0001",
+    }));
+    actor_ref.tell(make_room_message(v2::room::StartBattleMsg{
+        .requester_user_id = "owner",
+    }));
+    actor_ref.tell(make_room_message(v2::room::BattleEndedMsg{
+        .battle_id = "battle_0001",
+        .reason = "player_disconnected",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 7U);
+    EXPECT_FALSE(actor_ptr->state().active_battle_id.has_value());
+    EXPECT_FALSE(actor_ptr->state().members[0].ready);
+    EXPECT_FALSE(actor_ptr->state().members[1].ready);
+    ASSERT_EQ(sink.events.size(), 1U);
+    const auto* rejected = std::get_if<v2::room::BattleStartRejectedMsg>(&sink.events.front());
+    ASSERT_NE(rejected, nullptr);
+    EXPECT_EQ(rejected->reason, "battle_already_started");
+}
