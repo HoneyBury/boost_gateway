@@ -193,3 +193,51 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsBootstrapAndDisconnectCleanup)
     member.close();
     runtime.stop();
 }
+
+TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
+    app::logging::init("project_tests");
+
+    V2DemoRuntime runtime;
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(runtime);
+
+    TestClient owner;
+    TestClient member;
+    owner.connect(runtime.server->local_port());
+    member.connect(runtime.server->local_port());
+
+    EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 21, "owner|token:owner|Owner").message_id,
+              net::protocol::kLoginResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 22, "member|token:member|Member").message_id,
+              net::protocol::kLoginResponse);
+    EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 23, "room_beta").message_id,
+              net::protocol::kRoomCreateResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 24, "room_beta").message_id,
+              net::protocol::kRoomJoinResponse);
+    EXPECT_EQ(owner.exchange(net::protocol::kRoomReadyRequest, 25, "true").message_id,
+              net::protocol::kRoomReadyResponse);
+    EXPECT_EQ(member.exchange(net::protocol::kRoomReadyRequest, 26, "true").message_id,
+              net::protocol::kRoomReadyResponse);
+
+    owner.send(net::protocol::kBattleStartRequest, 27, "room_beta");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStartResponse).body,
+              "battle_started:room_beta:battle_0001");
+    (void)owner.expect_message(net::protocol::kBattleStatePush);
+    (void)member.expect_message(net::protocol::kBattleStatePush);
+
+    owner.send(net::protocol::kBattleInputRequest, 28, "finish:surrender");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleInputResponse).body,
+              "battle_end_accepted:surrender");
+    EXPECT_EQ(owner.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_finished:room_beta:battle_0001:surrender:owner");
+    EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).body,
+              "battle_finished:room_beta:battle_0001:surrender:owner");
+
+    const auto after_finish = member.exchange(net::protocol::kBattleInputRequest, 29, "move:9,9");
+    EXPECT_EQ(after_finish.message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(after_finish.error_code,
+              static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+
+    owner.close();
+    member.close();
+    runtime.stop();
+}

@@ -60,6 +60,7 @@ private:
     std::unordered_map<std::string, PendingResponse> pending_room_ready_;
     std::unordered_map<std::string, PendingResponse> pending_battle_start_;
     std::unordered_map<SessionId, PendingResponse> pending_battle_input_;
+    std::unordered_map<SessionId, PendingResponse> pending_battle_end_;
     std::uint64_t next_battle_id_ = 1;
 };
 

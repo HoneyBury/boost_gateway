@@ -71,7 +71,14 @@ net::Session
 - `battle_state:{room_id}:{battle_id}`
 - `input_seq:{seq}`
 - `{user_id}:{seq}:{input_data}`
+- `battle_end_accepted:{reason}`
 - `battle_finished:{room_id}:{battle_id}:{reason}:{user_id}`
+
+当前用于主动结束 battle 的临时约定：
+
+- `finish:surrender`
+- `finish:timeout`
+- `finish:<custom_reason>`
 
 这些格式当前只用于 demo / prototype，不应视为最终 `v2` battle 协议。
 

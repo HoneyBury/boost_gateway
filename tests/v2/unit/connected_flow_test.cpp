@@ -112,3 +112,76 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
     EXPECT_EQ(third_input[4].envelope.body,
               "battle_finished:room_alpha:battle_0001:frame_limit_reached:input:owner:3");
 }
+
+TEST(V2ConnectedFlowTest, BattleCanFinishByRequestedReason) {
+    v2::runtime::ActorSystem actor_system;
+    v2::gateway::SessionAdapter adapter(actor_system);
+    v2::gateway::Runtime runtime(actor_system, adapter);
+    adapter.bind_gateway(runtime.create_gateway_actor());
+
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 1,
+        .body = "owner|token:owner|Owner",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kLoginRequest,
+        .request_id = 2,
+        .body = "member|token:member|Member",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kRoomCreateRequest,
+        .request_id = 3,
+        .body = "room_alpha",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kRoomJoinRequest,
+        .request_id = 4,
+        .body = "room_alpha",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kRoomReadyRequest,
+        .request_id = 5,
+        .body = "true",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kRoomReadyRequest,
+        .request_id = 6,
+        .body = "true",
+    });
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleStartRequest,
+        .request_id = 7,
+        .body = "room_alpha",
+    });
+
+    auto finish = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 100,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 8,
+        .body = "finish:surrender",
+    });
+    ASSERT_EQ(finish.size(), 3U);
+    EXPECT_EQ(finish[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
+    EXPECT_EQ(finish[0].envelope.body, "battle_end_accepted:surrender");
+    EXPECT_EQ(finish[1].envelope.protocol_message_id, net::protocol::kBattleStatePush);
+    EXPECT_EQ(finish[1].envelope.body, "battle_finished:room_alpha:battle_0001:surrender:owner");
+
+    auto after_finish = adapter.handle_incoming(v2::gateway::ClientEnvelope{
+        .session_id = 200,
+        .protocol_message_id = net::protocol::kBattleInputRequest,
+        .request_id = 9,
+        .body = "move:9,9",
+    });
+    ASSERT_EQ(after_finish.size(), 1U);
+    EXPECT_EQ(after_finish[0].envelope.protocol_message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(after_finish[0].envelope.error_code,
+              static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+}

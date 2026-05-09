@@ -143,3 +143,36 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
     ASSERT_NE(finished, nullptr);
     EXPECT_EQ(finished->reason, "frame_limit_reached");
 }
+
+TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    v2::actor::Message end;
+    end.header.kind = v2::actor::MessageKind::kUser;
+    end.payload = v2::battle::EndBattleMsg{
+        .reason = "surrender",
+        .triggering_user_id = "owner",
+    };
+    actor_ref.tell(std::move(end));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
+    ASSERT_EQ(sink.events.size(), 2U);
+    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
+    ASSERT_NE(finished, nullptr);
+    EXPECT_EQ(finished->reason, "surrender");
+    EXPECT_EQ(finished->triggering_user_id, "owner");
+}

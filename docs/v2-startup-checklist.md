@@ -282,13 +282,14 @@ examples/v2_gateway_demo/
 - `P1`：`examples/v2_gateway_demo` 已支持 `--script` 烟测和基于现有 `net::Session` 的真实监听入口；`tests/v2/integration` 已新增真实 socket smoke test
 - `P2`：已补 battle 最小 lifecycle：`BattleAssigned`、`PlayerDisconnected -> BattleFinished`、`RoomActor` active battle 清理、`PlayerActor` 从 `InBattle` 回切到 `InRoom`
 - `P2+`：已补 battle 最小 frame shell：`TickBattleMsg`、`BattleFrameAdvancedMsg`、基于 frame limit 的正常结束路径
+- `P2++`：已补 battle 主动结束分支：当前通过 `kBattleInputRequest` 的 `finish:<reason>` 约定触发 `EndBattleMsg`
 - `P3`：现有 `GatewayServer` 已新增可关闭的 packet bridge seam，可旁路镜像 traffic，不改变 `v1` 默认分发结果
 - `P4`：已补 `M2-M7` 进入边界文档，明确当前不做项与后续进入条件
 
 当前明确只有原型或占位的部分：
 
 - `BattleActor` 只处理战斗创建和输入受理，不包含 `ECS World`、帧循环、状态广播聚合、结算、回放
-- `BattleActor` 已有最小结束路径，但结束条件仍只覆盖“玩家断线触发结束”，没有正常结算、超时、投降等分支
+- `BattleActor` 已有最小结束路径和主动结束，但仍没有正式结算、奖励、战报和 replay 输出
 - `SessionAdapter` 已可挂接 demo server，但还没有接入现有 `GatewayServer` 主链
 - runtime 仍是单进程、单线程 bootstrap 编排层，不是多核 actor runtime
 - battle 输入目前只做到“受理 + 转发”，没有 authoritative simulation

@@ -112,6 +112,36 @@ int main(int argc, char* argv[]) {
                             .request_id = 10,
                             .body = "move:3,2"},
                            "owner battle input 3");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleStartRequest,
+                            .request_id = 11,
+                            .body = "room_alpha"},
+                           "battle restart after finish");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kRoomReadyRequest,
+                            .request_id = 12,
+                            .body = "true"},
+                           "owner ready again");
+            print_exchange(adapter,
+                           {.session_id = 200,
+                            .protocol_message_id = net::protocol::kRoomReadyRequest,
+                            .request_id = 13,
+                            .body = "true"},
+                           "member ready again");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleStartRequest,
+                            .request_id = 14,
+                            .body = "room_alpha"},
+                           "battle restart");
+            print_exchange(adapter,
+                           {.session_id = 100,
+                            .protocol_message_id = net::protocol::kBattleInputRequest,
+                            .request_id = 15,
+                            .body = "finish:surrender"},
+                           "owner finish battle");
             return 0;
         }
 

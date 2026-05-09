@@ -21,6 +21,35 @@ std::vector<std::string> split(const std::string& body, char delimiter) {
     return parts;
 }
 
+std::optional<std::string> parse_battle_end_reason(const std::string& body) {
+    constexpr std::string_view prefix = "finish:";
+    if (!body.starts_with(prefix)) {
+        return std::nullopt;
+    }
+
+    auto reason = body.substr(prefix.size());
+    if (reason.empty()) {
+        return std::string("finished");
+    }
+    return reason;
+}
+
+std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame) {
+    return fmt::format("battle_frame:{}:{}:{}:{}",
+                       frame.room_id,
+                       frame.battle_id,
+                       frame.frame_number,
+                       frame.trigger);
+}
+
+std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished) {
+    return fmt::format("battle_finished:{}:{}:{}:{}",
+                       finished.room_id,
+                       finished.battle_id,
+                       finished.reason,
+                       finished.triggering_user_id);
+}
+
 }  // namespace
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
@@ -50,6 +79,7 @@ void Runtime::on_session_closed(SessionId session_id) {
         }
     }
     pending_battle_input_.erase(session_id);
+    pending_battle_end_.erase(session_id);
     rooms_by_session_id_.erase(session_id);
     users_by_session_id_.erase(session_id);
 
@@ -249,6 +279,21 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted));
                 return true;
             }
+            if (const auto finish_reason = parse_battle_end_reason(command.body); finish_reason.has_value()) {
+                pending_battle_end_[command.session_id] = PendingResponse{
+                    .session_id = command.session_id,
+                    .request_id = command.request_id,
+                };
+                v2::actor::Message end;
+                end.header.kind = v2::actor::MessageKind::kUser;
+                end.payload = v2::battle::EndBattleMsg{
+                    .reason = *finish_reason,
+                    .triggering_user_id = user_id,
+                };
+                battle_it->second.tell(std::move(end));
+                actor_system_.dispatch_all();
+                return true;
+            }
             pending_battle_input_[command.session_id] = PendingResponse{
                 .session_id = command.session_id,
                 .request_id = command.request_id,
@@ -398,11 +443,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      session_id,
                      0,
                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     fmt::format("battle_frame:{}:{}:{}:{}",
-                                 frame->room_id,
-                                 frame->battle_id,
-                                 frame->frame_number,
-                                 frame->trigger));
+                     format_battle_frame_body(*frame));
             }
         }
         return;
@@ -410,6 +451,21 @@ void Runtime::push(v2::battle::BattleEvent event) {
 
     if (const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&event)) {
         battles_by_room_id_.erase(finished->room_id);
+
+        if (!finished->triggering_user_id.empty()) {
+            const auto session_id = session_id_for_user(finished->triggering_user_id);
+            if (session_id.has_value()) {
+                auto pending = pending_battle_end_.find(*session_id);
+                if (pending != pending_battle_end_.end()) {
+                    emit(net::protocol::kBattleInputResponse,
+                         pending->second.session_id,
+                         pending->second.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                         fmt::format("battle_end_accepted:{}", finished->reason));
+                    pending_battle_end_.erase(pending);
+                }
+            }
+        }
 
         auto room_it = rooms_by_room_id_.find(finished->room_id);
         if (room_it != rooms_by_room_id_.end()) {
@@ -439,13 +495,10 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      session_id,
                      0,
                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     fmt::format("battle_finished:{}:{}:{}:{}",
-                                 finished->room_id,
-                                 finished->battle_id,
-                                 finished->reason,
-                                 finished->triggering_user_id));
+                     format_battle_finished_body(*finished));
             }
         }
+        return;
     }
 }
 
