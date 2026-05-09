@@ -18,6 +18,10 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
         output << "gateway.metrics_log_interval_ms=7000\n";
         output << "gateway.v2_shadow_bridge_enabled=true\n";
         output << "gateway.v2_shadow_bridge_emit_responses=false\n";
+        output << "gateway.v2_shadow_bridge_login=true\n";
+        output << "gateway.v2_shadow_bridge_room=false\n";
+        output << "gateway.v2_shadow_bridge_battle=true\n";
+        output << "gateway.v2_shadow_bridge_echo=true\n";
         output << "session.max_packet_size=2048\n";
         output << "session.max_pending_write_bytes=4096\n";
         output << "session.heartbeat_check_interval_ms=150\n";
@@ -35,6 +39,10 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
     EXPECT_EQ(config.session_heartbeat_timeout, std::chrono::milliseconds(600));
     EXPECT_TRUE(config.v2_shadow_bridge_enabled);
     EXPECT_FALSE(config.v2_shadow_bridge_emit_responses);
+    EXPECT_TRUE(config.v2_shadow_bridge_login);
+    EXPECT_FALSE(config.v2_shadow_bridge_room);
+    EXPECT_TRUE(config.v2_shadow_bridge_battle);
+    EXPECT_TRUE(config.v2_shadow_bridge_echo);
 
     std::filesystem::remove(path);
 }
@@ -55,6 +63,10 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
         output << "    \"metrics_json_path\": \"runtime/test.json\",\n";
         output << "    \"v2_shadow_bridge_enabled\": true,\n";
         output << "    \"v2_shadow_bridge_emit_responses\": true,\n";
+        output << "    \"v2_shadow_bridge_login\": true,\n";
+        output << "    \"v2_shadow_bridge_room\": true,\n";
+        output << "    \"v2_shadow_bridge_battle\": false,\n";
+        output << "    \"v2_shadow_bridge_echo\": false,\n";
         output << "    \"auth\": {\n";
         output << "      \"provider\": \"json_file\",\n";
         output << "      \"users_path\": \"config/auth_users.json\"\n";
@@ -87,6 +99,10 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
     EXPECT_EQ(config.session_heartbeat_timeout, std::chrono::milliseconds(900));
     EXPECT_TRUE(config.v2_shadow_bridge_enabled);
     EXPECT_TRUE(config.v2_shadow_bridge_emit_responses);
+    EXPECT_TRUE(config.v2_shadow_bridge_login);
+    EXPECT_TRUE(config.v2_shadow_bridge_room);
+    EXPECT_FALSE(config.v2_shadow_bridge_battle);
+    EXPECT_FALSE(config.v2_shadow_bridge_echo);
 
     std::filesystem::remove(path);
 }

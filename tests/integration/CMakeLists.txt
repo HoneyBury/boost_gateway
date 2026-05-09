@@ -5,6 +5,7 @@ add_executable(project_integration_tests
 target_link_libraries(project_integration_tests
     PRIVATE
         project_game
+        project_v2
         GTest::gtest_main
 )
 apply_project_warnings(project_integration_tests)

@@ -1,11 +1,35 @@
 #include "v2/gateway/gateway_server_bridge.h"
 
+#include "net/protocol.h"
+
 #include <utility>
 
 namespace v2::gateway {
 
+bool GatewayServerShadowBridge::should_forward(std::uint16_t message_id) const noexcept {
+    switch (message_id) {
+        case net::protocol::kLoginRequest:
+            return mirror_policy_.login;
+        case net::protocol::kRoomCreateRequest:
+        case net::protocol::kRoomJoinRequest:
+        case net::protocol::kRoomReadyRequest:
+            return mirror_policy_.room;
+        case net::protocol::kBattleStartRequest:
+        case net::protocol::kBattleInputRequest:
+            return mirror_policy_.battle;
+        case net::protocol::kEchoRequest:
+            return mirror_policy_.echo;
+        default:
+            return false;
+    }
+}
+
 void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& session,
                                           const net::Session::PacketMessage& message) {
+    if (!should_forward(message.message_id)) {
+        return;
+    }
+
     (void)adapter_.handle_incoming(ClientEnvelope{
         .session_id = get_or_create_session_id(session),
         .protocol_message_id = message.message_id,

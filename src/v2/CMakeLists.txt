@@ -3,6 +3,7 @@ add_library(project_v2 STATIC
     actor/actor_ref.cpp
     battle/battle_actor.cpp
     common/module_marker.cpp
+    gateway/battle_protocol_codec.cpp
     gateway/demo_server.cpp
     gateway/gateway_actor.cpp
     gateway/gateway_server_bridge.cpp

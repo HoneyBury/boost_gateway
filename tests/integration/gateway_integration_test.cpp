@@ -14,6 +14,7 @@
 #include "net/packet_codec.h"
 #include "net/packet_compressor.h"
 #include "net/protocol.h"
+#include "v2/gateway/gateway_server_bridge.h"
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -306,6 +307,54 @@ TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsLoginRoomAndBattleTraffi
     ASSERT_GE(bridge->packets.size(), 8U);
     EXPECT_EQ(bridge->packets[7].message_id, net::protocol::kBattleInputRequest);
     EXPECT_GE(bridge->close_count, 2U);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, ShadowBridgePolicyCanDisableRoomAndEchoMirroring) {
+    app::logging::init("project_tests");
+
+    v2::gateway::GatewayServerShadowBridge::MirrorPolicy policy;
+    policy.login = true;
+    policy.room = false;
+    policy.battle = true;
+    policy.echo = false;
+
+    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(policy, false);
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    {
+        TestClient owner;
+        TestClient member;
+        owner.connect(runtime.server->local_port());
+        member.connect(runtime.server->local_port());
+
+        EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 280, "bridge_owner|token:bridge_owner").message_id,
+                  net::protocol::kLoginResponse);
+        EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 281, "bridge_member|token:bridge_member").message_id,
+                  net::protocol::kLoginResponse);
+        EXPECT_EQ(owner.exchange(net::protocol::kEchoRequest, 282, "skip_echo").message_id,
+                  net::protocol::kEchoResponse);
+        EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 283, "bridge_room").message_id,
+                  net::protocol::kRoomCreateResponse);
+        EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 284, "bridge_room").message_id,
+                  net::protocol::kRoomJoinResponse);
+        EXPECT_EQ(owner.expect_message(net::protocol::kRoomStatePush).message_id, net::protocol::kRoomStatePush);
+
+        owner.send(net::protocol::kRoomReadyRequest, 285, "true");
+        EXPECT_EQ(read_until_message(owner, net::protocol::kRoomReadyResponse).request_id, 285U);
+        member.send(net::protocol::kRoomReadyRequest, 286, "true");
+        EXPECT_EQ(read_until_message(member, net::protocol::kRoomReadyResponse).request_id, 286U);
+        owner.send(net::protocol::kBattleStartRequest, 287, "");
+        EXPECT_EQ(read_until_message(owner, net::protocol::kBattleStartResponse).request_id, 287U);
+    }
+
+    EXPECT_TRUE(bridge->should_forward(net::protocol::kLoginRequest));
+    EXPECT_FALSE(bridge->should_forward(net::protocol::kEchoRequest));
+    EXPECT_FALSE(bridge->should_forward(net::protocol::kRoomCreateRequest));
+    EXPECT_TRUE(bridge->should_forward(net::protocol::kBattleStartRequest));
 
     runtime.stop();
 }

@@ -1,11 +1,13 @@
 add_executable(project_v2_unit_tests
     unit/actor_runtime_test.cpp
     unit/battle_actor_test.cpp
+    unit/battle_protocol_codec_test.cpp
     unit/bootstrap_smoke_test.cpp
     unit/connected_flow_test.cpp
     unit/gateway_bridge_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
+    unit/shadow_bridge_policy_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE

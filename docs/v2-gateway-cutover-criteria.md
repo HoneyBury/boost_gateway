@@ -50,12 +50,17 @@
 - `GatewayServer::set_packet_bridge(...)`
 - `gateway.v2_shadow_bridge_enabled`
 - `gateway.v2_shadow_bridge_emit_responses`
+- `gateway.v2_shadow_bridge_login`
+- `gateway.v2_shadow_bridge_room`
+- `gateway.v2_shadow_bridge_battle`
+- `gateway.v2_shadow_bridge_echo`
 
 当前限制：
 
 - 只建议启动时配置
 - 不支持热更新切换
 - 默认仍应保持关闭
+- 当前仍建议优先镜像 `login / room`，再逐步放开 `battle`
 
 ## 4. 推荐接入顺序
 
@@ -63,7 +68,7 @@
 
 1. 保持 `DemoServer` 独立演化
 2. 给现有 `GatewayServer` 增加一个可关闭的 `v2 bridge` 试验缝
-3. 先接 login / room，不接 battle 主链
+3. 先接 login / room，再评估是否打开 battle mirror
 4. 最后再评估 battle 是否可迁移
 
 ## 5. 当前优先级判断

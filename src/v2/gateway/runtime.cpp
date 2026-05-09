@@ -1,9 +1,9 @@
 #include "v2/gateway/runtime.h"
 
 #include "net/protocol.h"
+#include "v2/gateway/battle_protocol_codec.h"
 
 #include <fmt/format.h>
-#include <optional>
 #include <sstream>
 #include <utility>
 
@@ -19,41 +19,6 @@ std::vector<std::string> split(const std::string& body, char delimiter) {
         parts.push_back(item);
     }
     return parts;
-}
-
-std::optional<v2::battle::BattleFinishReason> parse_battle_end_reason(const std::string& body) {
-    constexpr std::string_view prefix = "finish:";
-    if (!body.starts_with(prefix)) {
-        return std::nullopt;
-    }
-
-    auto reason = body.substr(prefix.size());
-    if (reason.empty() || reason == "finished") {
-        return v2::battle::BattleFinishReason::kFinished;
-    }
-    if (reason == "surrender") {
-        return v2::battle::BattleFinishReason::kSurrender;
-    }
-    if (reason == "timeout") {
-        return v2::battle::BattleFinishReason::kTimeout;
-    }
-    return v2::battle::BattleFinishReason::kFinished;
-}
-
-std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame) {
-    return fmt::format("battle_frame:{}:{}:{}:{}",
-                       frame.room_id,
-                       frame.battle_id,
-                       frame.frame_number,
-                       frame.trigger);
-}
-
-std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& finished) {
-    return fmt::format("battle_finished:{}:{}:{}:{}",
-                       finished.room_id,
-                       finished.battle_id,
-                       v2::battle::to_string(finished.reason),
-                       finished.triggering_user_id);
 }
 
 }  // namespace
@@ -285,7 +250,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kBattleNotStarted));
                 return true;
             }
-            if (const auto finish_reason = parse_battle_end_reason(command.body); finish_reason.has_value()) {
+            if (const auto finish_reason = parse_battle_finish_request(command.body); finish_reason.has_value()) {
                 pending_battle_end_[command.session_id] = PendingResponse{
                     .session_id = command.session_id,
                     .request_id = command.request_id,
@@ -400,7 +365,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                      session_id,
                      0,
                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                     fmt::format("battle_state:{}:{}", created->room_id, created->battle_id));
+                     format_battle_state_body(created->room_id, created->battle_id));
             }
         }
         return;
@@ -467,8 +432,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                          pending->second.session_id,
                          pending->second.request_id,
                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                         fmt::format("battle_end_accepted:{}",
-                                     v2::battle::to_string(finished->reason)));
+                         format_battle_end_accepted_body(finished->reason));
                     pending_battle_end_.erase(pending);
                 }
             }

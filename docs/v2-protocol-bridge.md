@@ -53,6 +53,7 @@ GatewayServer
 
 - 这条链路当前用于灰度镜像和试验，不替换 `v1` 默认分发
 - 默认关闭，只建议启动期通过配置打开
+- 当前灰度粒度已经细化到 `login / room / battle / echo` 四个域
 
 ## 3. 当前已建模消息
 
@@ -80,7 +81,7 @@ GatewayServer
 
 ## 4. 当前 battle 相关 body 约定
 
-当前仍使用字符串 body，主要约定如下：
+当前仍使用字符串 body，但已经统一收口到 `v2::gateway::battle_protocol_codec`，主要约定如下：
 
 - `battle_started:{room_id}:{battle_id}`
 - `battle_state:{room_id}:{battle_id}`
@@ -89,7 +90,7 @@ GatewayServer
 - `battle_end_accepted:{reason}`
 - `battle_finished:{room_id}:{battle_id}:{reason}:{user_id}`
 
-当前用于主动结束 battle 的临时约定：
+当前用于主动结束 battle 的请求约定：
 
 - `finish:surrender`
 - `finish:timeout`
@@ -98,6 +99,7 @@ GatewayServer
 当前内部实现说明：
 
 - 外部仍传字符串 body
+- battle body 的格式化与解析已经集中到单一 codec，避免散落在 runtime / demo / 测试里
 - 内部已先收紧为最小 finish reason 枚举
 - 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`
 
@@ -107,5 +109,5 @@ GatewayServer
 
 - `GatewayActor` 仍只是最小 ingress actor
 - `Runtime` 仍承担了较重的编排职责
-- battle body 仍是临时字符串协议，不是最终 typed external schema
+- battle body 仍是冻结中的最小字符串 schema，不是最终 typed external schema
 - 还没有接入现有 `GatewayServer` 主链

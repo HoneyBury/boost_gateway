@@ -155,11 +155,22 @@ int main(int argc, char* argv[]) {
             .json_path = config.metrics_json_path,
         });
     if (config.v2_shadow_bridge_enabled) {
+        v2::gateway::GatewayServerShadowBridge::MirrorPolicy mirror_policy{
+            .login = config.v2_shadow_bridge_login,
+            .room = config.v2_shadow_bridge_room,
+            .battle = config.v2_shadow_bridge_battle,
+            .echo = config.v2_shadow_bridge_echo,
+        };
         shadow_bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+            mirror_policy,
             config.v2_shadow_bridge_emit_responses);
         server.set_packet_bridge(shadow_bridge);
-        LOG_INFO("Enabled v2 shadow bridge (emit_responses={})",
-                 config.v2_shadow_bridge_emit_responses ? "true" : "false");
+        LOG_INFO("Enabled v2 shadow bridge (emit_responses={}, login={}, room={}, battle={}, echo={})",
+                 config.v2_shadow_bridge_emit_responses ? "true" : "false",
+                 config.v2_shadow_bridge_login ? "true" : "false",
+                 config.v2_shadow_bridge_room ? "true" : "false",
+                 config.v2_shadow_bridge_battle ? "true" : "false",
+                 config.v2_shadow_bridge_echo ? "true" : "false");
     }
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();
@@ -174,7 +185,11 @@ int main(int argc, char* argv[]) {
             AUDIT_LOG("config_reload", "Config file changed, reloaded");
             server.set_connection_limits(new_cfg.max_connections, new_cfg.per_ip_connection_limit);
             if (new_cfg.v2_shadow_bridge_enabled != config.v2_shadow_bridge_enabled ||
-                new_cfg.v2_shadow_bridge_emit_responses != config.v2_shadow_bridge_emit_responses) {
+                new_cfg.v2_shadow_bridge_emit_responses != config.v2_shadow_bridge_emit_responses ||
+                new_cfg.v2_shadow_bridge_login != config.v2_shadow_bridge_login ||
+                new_cfg.v2_shadow_bridge_room != config.v2_shadow_bridge_room ||
+                new_cfg.v2_shadow_bridge_battle != config.v2_shadow_bridge_battle ||
+                new_cfg.v2_shadow_bridge_echo != config.v2_shadow_bridge_echo) {
                 LOG_WARN("v2 shadow bridge settings are startup-only and were not hot-reloaded");
             }
         });

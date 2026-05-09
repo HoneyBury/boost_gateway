@@ -169,6 +169,18 @@ void fill_gateway_from_store(const ConfigStore& store, GatewayAppConfig& config)
     if (const auto value = store.get_bool("gateway.v2_shadow_bridge_emit_responses")) {
         config.v2_shadow_bridge_emit_responses = *value;
     }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_login")) {
+        config.v2_shadow_bridge_login = *value;
+    }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_room")) {
+        config.v2_shadow_bridge_room = *value;
+    }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_battle")) {
+        config.v2_shadow_bridge_battle = *value;
+    }
+    if (const auto value = store.get_bool("gateway.v2_shadow_bridge_echo")) {
+        config.v2_shadow_bridge_echo = *value;
+    }
     if (const auto value = store.get_uint32("session.max_packet_size")) {
         config.session_max_packet_size = *value;
     }
