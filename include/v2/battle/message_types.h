@@ -13,6 +13,31 @@ enum class BattleLifecycleState : std::uint8_t {
     kFinished = 2,
 };
 
+enum class BattleFinishReason : std::uint8_t {
+    kFinished = 0,
+    kSurrender = 1,
+    kTimeout = 2,
+    kFrameLimitReached = 3,
+    kPlayerDisconnected = 4,
+};
+
+[[nodiscard]] constexpr const char* to_string(BattleFinishReason reason) {
+    switch (reason) {
+        case BattleFinishReason::kFinished:
+            return "finished";
+        case BattleFinishReason::kSurrender:
+            return "surrender";
+        case BattleFinishReason::kTimeout:
+            return "timeout";
+        case BattleFinishReason::kFrameLimitReached:
+            return "frame_limit_reached";
+        case BattleFinishReason::kPlayerDisconnected:
+            return "player_disconnected";
+    }
+
+    return "finished";
+}
+
 struct BattleParticipantState {
     std::string user_id;
     bool online = true;
@@ -43,7 +68,7 @@ struct TickBattleMsg {
 };
 
 struct EndBattleMsg {
-    std::string reason;
+    BattleFinishReason reason = BattleFinishReason::kFinished;
     std::string triggering_user_id;
 };
 
@@ -76,7 +101,7 @@ struct BattleFrameAdvancedMsg {
 struct BattleFinishedMsg {
     std::string battle_id;
     std::string room_id;
-    std::string reason;
+    BattleFinishReason reason = BattleFinishReason::kFinished;
     std::string triggering_user_id;
 };
 

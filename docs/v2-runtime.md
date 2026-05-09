@@ -49,6 +49,7 @@ SessionAdapter
 - battle frame 推进与基于 frame limit 的正常结束
 - battle 主动结束请求 `finish:<reason>`
 - 玩家断线触发 battle finish 与 room/player 回切
+- battle finish reason 已切到最小枚举语义，但外部协议仍保持字符串兼容层
 
 ## 4. 当前限制
 

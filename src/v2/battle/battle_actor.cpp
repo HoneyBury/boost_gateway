@@ -5,7 +5,7 @@
 
 namespace v2::battle {
 
-void BattleActor::finish_battle(std::string reason, std::string triggering_user_id) {
+void BattleActor::finish_battle(BattleFinishReason reason, std::string triggering_user_id) {
     if (state_.lifecycle == BattleLifecycleState::kFinished) {
         return;
     }
@@ -14,7 +14,7 @@ void BattleActor::finish_battle(std::string reason, std::string triggering_user_
     sink_.push(BattleFinishedMsg{
         .battle_id = state_.battle_id,
         .room_id = state_.room_id,
-        .reason = std::move(reason),
+        .reason = reason,
         .triggering_user_id = std::move(triggering_user_id),
     });
 }
@@ -62,7 +62,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
             .trigger = tick->trigger,
         });
         if (state_.frame_number >= kFrameLimit) {
-            finish_battle("frame_limit_reached", tick->trigger);
+            finish_battle(BattleFinishReason::kFrameLimitReached, tick->trigger);
         }
         return;
     }
@@ -88,7 +88,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
     }
 
     it->online = false;
-    finish_battle("player_disconnected", disconnected->user_id);
+    finish_battle(BattleFinishReason::kPlayerDisconnected, disconnected->user_id);
 }
 
 }  // namespace v2::battle

@@ -22,7 +22,7 @@ public:
     [[nodiscard]] const BattleRuntimeState& state() const noexcept { return state_; }
 
 private:
-    void finish_battle(std::string reason, std::string triggering_user_id);
+    void finish_battle(BattleFinishReason reason, std::string triggering_user_id);
 
     static constexpr std::uint32_t kFrameLimit = 3;
     std::uint64_t next_input_seq_ = 1;

@@ -251,6 +251,65 @@ TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsTrafficWithoutChangingV1
     runtime.stop();
 }
 
+TEST(GatewayIntegrationTest, OptionalPacketBridgeMirrorsLoginRoomAndBattleTraffic) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<RecordingPacketBridge>();
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    {
+        TestClient owner;
+        TestClient member;
+        owner.connect(runtime.server->local_port());
+        member.connect(runtime.server->local_port());
+
+        EXPECT_EQ(owner.exchange(net::protocol::kLoginRequest, 180, "bridge_owner|token:bridge_owner").message_id,
+                  net::protocol::kLoginResponse);
+        EXPECT_EQ(member.exchange(net::protocol::kLoginRequest, 181, "bridge_member|token:bridge_member").message_id,
+                  net::protocol::kLoginResponse);
+        EXPECT_EQ(owner.exchange(net::protocol::kRoomCreateRequest, 182, "bridge_room").message_id,
+                  net::protocol::kRoomCreateResponse);
+        EXPECT_EQ(member.exchange(net::protocol::kRoomJoinRequest, 183, "bridge_room").message_id,
+                  net::protocol::kRoomJoinResponse);
+        EXPECT_EQ(owner.expect_message(net::protocol::kRoomStatePush).message_id, net::protocol::kRoomStatePush);
+
+        owner.send(net::protocol::kRoomReadyRequest, 184, "true");
+        EXPECT_EQ(read_until_message(owner, net::protocol::kRoomReadyResponse).request_id, 184U);
+        member.send(net::protocol::kRoomReadyRequest, 185, "true");
+        EXPECT_EQ(read_until_message(member, net::protocol::kRoomReadyResponse).request_id, 185U);
+
+        owner.send(net::protocol::kBattleStartRequest, 186, "");
+        EXPECT_EQ(read_until_message(owner, net::protocol::kBattleStartResponse).request_id, 186U);
+        EXPECT_EQ(member.expect_message(net::protocol::kBattleStatePush).message_id,
+                  net::protocol::kBattleStatePush);
+        owner.send(net::protocol::kBattleInputRequest, 187, "move:right");
+        EXPECT_EQ(read_until_message(owner, net::protocol::kBattleInputResponse).request_id, 187U);
+    }
+
+    for (int i = 0; i < 50; ++i) {
+        if (bridge->close_count >= 2) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    ASSERT_GE(bridge->packets.size(), 7U);
+    EXPECT_EQ(bridge->packets[0].message_id, net::protocol::kLoginRequest);
+    EXPECT_EQ(bridge->packets[1].message_id, net::protocol::kLoginRequest);
+    EXPECT_EQ(bridge->packets[2].message_id, net::protocol::kRoomCreateRequest);
+    EXPECT_EQ(bridge->packets[3].message_id, net::protocol::kRoomJoinRequest);
+    EXPECT_EQ(bridge->packets[4].message_id, net::protocol::kRoomReadyRequest);
+    EXPECT_EQ(bridge->packets[5].message_id, net::protocol::kRoomReadyRequest);
+    EXPECT_EQ(bridge->packets[6].message_id, net::protocol::kBattleStartRequest);
+    ASSERT_GE(bridge->packets.size(), 8U);
+    EXPECT_EQ(bridge->packets[7].message_id, net::protocol::kBattleInputRequest);
+    EXPECT_GE(bridge->close_count, 2U);
+
+    runtime.stop();
+}
+
 TEST(GatewayIntegrationTest, DefaultRuntimeDoesNotRegisterAdminHandlers) {
     app::logging::init("project_tests");
 

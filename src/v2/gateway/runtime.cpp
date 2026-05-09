@@ -21,17 +21,23 @@ std::vector<std::string> split(const std::string& body, char delimiter) {
     return parts;
 }
 
-std::optional<std::string> parse_battle_end_reason(const std::string& body) {
+std::optional<v2::battle::BattleFinishReason> parse_battle_end_reason(const std::string& body) {
     constexpr std::string_view prefix = "finish:";
     if (!body.starts_with(prefix)) {
         return std::nullopt;
     }
 
     auto reason = body.substr(prefix.size());
-    if (reason.empty()) {
-        return std::string("finished");
+    if (reason.empty() || reason == "finished") {
+        return v2::battle::BattleFinishReason::kFinished;
     }
-    return reason;
+    if (reason == "surrender") {
+        return v2::battle::BattleFinishReason::kSurrender;
+    }
+    if (reason == "timeout") {
+        return v2::battle::BattleFinishReason::kTimeout;
+    }
+    return v2::battle::BattleFinishReason::kFinished;
 }
 
 std::string format_battle_frame_body(const v2::battle::BattleFrameAdvancedMsg& frame) {
@@ -46,7 +52,7 @@ std::string format_battle_finished_body(const v2::battle::BattleFinishedMsg& fin
     return fmt::format("battle_finished:{}:{}:{}:{}",
                        finished.room_id,
                        finished.battle_id,
-                       finished.reason,
+                       v2::battle::to_string(finished.reason),
                        finished.triggering_user_id);
 }
 
@@ -461,7 +467,8 @@ void Runtime::push(v2::battle::BattleEvent event) {
                          pending->second.session_id,
                          pending->second.request_id,
                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                         fmt::format("battle_end_accepted:{}", finished->reason));
+                         fmt::format("battle_end_accepted:{}",
+                                     v2::battle::to_string(finished->reason)));
                     pending_battle_end_.erase(pending);
                 }
             }
@@ -473,7 +480,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
             ended.header.kind = v2::actor::MessageKind::kUser;
             ended.payload = v2::room::BattleEndedMsg{
                 .battle_id = finished->battle_id,
-                .reason = finished->reason,
+                .reason = v2::battle::to_string(finished->reason),
             };
             room_it->second.tell(std::move(ended));
         }
@@ -483,7 +490,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
             ended.header.kind = v2::actor::MessageKind::kUser;
             ended.payload = v2::player::BattleEndedMsg{
                 .battle_id = finished->battle_id,
-                .reason = finished->reason,
+                .reason = v2::battle::to_string(finished->reason),
             };
             player_actor.tell(std::move(ended));
         }

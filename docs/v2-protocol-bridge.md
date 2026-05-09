@@ -80,6 +80,12 @@ net::Session
 - `finish:timeout`
 - `finish:<custom_reason>`
 
+当前内部实现说明：
+
+- 外部仍传字符串 body
+- 内部已先收紧为最小 finish reason 枚举
+- 未识别的 `finish:<custom_reason>` 当前会回落到 `finished`
+
 这些格式当前只用于 demo / prototype，不应视为最终 `v2` battle 协议。
 
 ## 5. 当前限制

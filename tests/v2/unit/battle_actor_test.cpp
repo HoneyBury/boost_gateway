@@ -105,7 +105,7 @@ TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
     ASSERT_EQ(sink.events.size(), 2U);
     const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
     ASSERT_NE(finished, nullptr);
-    EXPECT_EQ(finished->reason, "player_disconnected");
+    EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kPlayerDisconnected);
     EXPECT_EQ(finished->triggering_user_id, "owner");
 }
 
@@ -141,7 +141,7 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
     EXPECT_EQ(frame->frame_number, 1U);
     const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events.back());
     ASSERT_NE(finished, nullptr);
-    EXPECT_EQ(finished->reason, "frame_limit_reached");
+    EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kFrameLimitReached);
 }
 
 TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
@@ -163,7 +163,7 @@ TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
     v2::actor::Message end;
     end.header.kind = v2::actor::MessageKind::kUser;
     end.payload = v2::battle::EndBattleMsg{
-        .reason = "surrender",
+        .reason = v2::battle::BattleFinishReason::kSurrender,
         .triggering_user_id = "owner",
     };
     actor_ref.tell(std::move(end));
@@ -173,6 +173,6 @@ TEST(V2BattleActorTest, EndBattleMessageFinishesWithRequestedReason) {
     ASSERT_EQ(sink.events.size(), 2U);
     const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[1]);
     ASSERT_NE(finished, nullptr);
-    EXPECT_EQ(finished->reason, "surrender");
+    EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kSurrender);
     EXPECT_EQ(finished->triggering_user_id, "owner");
 }
