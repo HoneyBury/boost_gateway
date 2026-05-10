@@ -88,6 +88,24 @@ TEST(V2IoEngineTest, ListenAssignmentsRotateAcrossCores) {
     }
 }
 
+TEST(V2IoEngineTest, ListenCanPinAcceptorToSpecificCore) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(3);
+    try {
+        auto fixed = engine.listen("127.0.0.1", 0, {}, v2::io::IoListenOptions{.fixed_core_id = 2});
+        auto round_robin = engine.listen("127.0.0.1", 0);
+
+        EXPECT_EQ(fixed->owning_core_id(), 2U);
+        EXPECT_EQ(round_robin->owning_core_id(), 0U);
+
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
 TEST(V2IoEngineTest, AcceptsSocketAndDeliversPacketToSessionHandler) {
     app::logging::init("project_tests");
 
@@ -155,6 +173,49 @@ TEST(V2IoEngineTest, AcceptsNativeSessionForGatewayStyleIngress) {
 
         EXPECT_NE(endpoint.get().find("127.0.0.1:"), std::string::npos);
         client.close();
+        engine.stop();
+    } catch (const std::exception& ex) {
+        engine.stop();
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
+TEST(V2IoEngineTest, MultiplePinnedAcceptorsAcceptOnIndependentCores) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(2);
+
+    try {
+        auto first = engine.listen("127.0.0.1", 0, {}, v2::io::IoListenOptions{.fixed_core_id = 0});
+        auto second = engine.listen("127.0.0.1", 0, {}, v2::io::IoListenOptions{.fixed_core_id = 1});
+        std::promise<std::uint32_t> first_core_promise;
+        std::promise<std::uint32_t> second_core_promise;
+        auto first_core = first_core_promise.get_future();
+        auto second_core = second_core_promise.get_future();
+
+        first->async_accept([&](std::unique_ptr<v2::io::IoSession> session) {
+            ASSERT_NE(session, nullptr);
+            first_core_promise.set_value(session->owning_core_id());
+            session->close();
+        });
+        second->async_accept([&](std::unique_ptr<v2::io::IoSession> session) {
+            ASSERT_NE(session, nullptr);
+            second_core_promise.set_value(session->owning_core_id());
+            session->close();
+        });
+
+        engine.run();
+
+        asio::io_context client_io;
+        tcp::socket first_client(client_io);
+        tcp::socket second_client(client_io);
+        first_client.connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), first->local_port()));
+        second_client.connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), second->local_port()));
+
+        EXPECT_EQ(first_core.get(), 0U);
+        EXPECT_EQ(second_core.get(), 1U);
+        first_client.close();
+        second_client.close();
         engine.stop();
     } catch (const std::exception& ex) {
         engine.stop();

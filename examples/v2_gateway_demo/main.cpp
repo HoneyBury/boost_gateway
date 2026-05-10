@@ -4,6 +4,7 @@
 #include <csignal>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -53,6 +54,18 @@ std::uint32_t parse_io_cores(int argc, char* argv[]) {
         }
     }
     return 1U;
+}
+
+std::optional<std::uint32_t> parse_acceptor_core(int argc, char* argv[]) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--acceptor-core") {
+            const auto parsed = std::atoi(argv[i + 1]);
+            if (parsed >= 0) {
+                return static_cast<std::uint32_t>(parsed);
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 }  // namespace
@@ -165,14 +178,28 @@ int main(int argc, char* argv[]) {
         }
 
         const auto io_cores = parse_io_cores(argc, argv);
+        const auto acceptor_core = parse_acceptor_core(argc, argv);
         auto io_engine = std::make_unique<v2::io::AsioIoEngine>(io_cores);
-        v2::gateway::DemoServer server(9201, {}, std::move(io_engine));
+        v2::gateway::DemoServer server(9201,
+                                       {},
+                                       v2::gateway::DemoServerOptions{
+                                           .acceptor_core_id = acceptor_core,
+                                       },
+                                       std::move(io_engine));
         server.start();
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
-        fmt::print("v2 gateway demo listening on port {} with {} io cores\n",
+        fmt::print("v2 gateway demo listening on port {} with {} io cores acceptor_core={}\n",
                    server.local_port(),
-                   server.io_core_count());
+                   server.io_core_count(),
+                   server.acceptor_core_id().value_or(0));
+        for (const auto& snapshot : server.io_core_snapshot()) {
+            fmt::print("  io_core={} active_sessions={} accepted_sessions={} outbound_dispatches={}\n",
+                       snapshot.core_id,
+                       snapshot.active_sessions,
+                       snapshot.accepted_sessions,
+                       snapshot.outbound_dispatches);
+        }
         while (g_keep_running.load(std::memory_order_relaxed)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }

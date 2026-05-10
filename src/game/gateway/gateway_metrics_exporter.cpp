@@ -265,6 +265,73 @@ std::string render_diagnostics_metrics(const GatewayRuntimeMetricsSnapshot& snap
     return text;
 }
 
+std::string render_diagnostics_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
+    json cores = json::array();
+    std::uint64_t total_active_sessions = 0;
+    std::uint64_t total_accepted_sessions = 0;
+    std::uint64_t max_active_sessions = 0;
+    std::uint64_t min_active_sessions = snapshot.io_cores.empty()
+        ? 0
+        : std::numeric_limits<std::uint64_t>::max();
+    std::uint32_t busiest_core = 0;
+    std::uint32_t idle_cores = 0;
+
+    for (const auto& core : snapshot.io_cores) {
+        total_active_sessions += core.active_sessions;
+        total_accepted_sessions += core.accepted_sessions;
+        if (core.active_sessions > max_active_sessions) {
+            max_active_sessions = core.active_sessions;
+            busiest_core = core.core_id;
+        }
+        min_active_sessions = std::min(min_active_sessions, core.active_sessions);
+        if (core.active_sessions == 0) {
+            ++idle_cores;
+        }
+        cores.push_back({
+            {"core_id", core.core_id},
+            {"active_sessions", core.active_sessions},
+            {"accepted_sessions", core.accepted_sessions},
+            {"dispatch_back_tasks", core.dispatch_back_tasks},
+            {"maintenance_probes", core.maintenance_probes},
+            {"active_ratio_pct", total_active_sessions == 0
+                ? 0.0
+                : 0.0},
+        });
+    }
+
+    for (auto& core : cores) {
+        const auto active_sessions = core.at("active_sessions").get<std::uint64_t>();
+        core["active_ratio_pct"] = total_active_sessions == 0
+            ? 0.0
+            : std::round((static_cast<double>(active_sessions) * 10000.0 /
+                          static_cast<double>(total_active_sessions))) / 100.0;
+    }
+
+    json document = {
+        {"summary", {
+            {"active_sessions", snapshot.active_sessions},
+            {"authenticated_sessions", snapshot.authenticated_sessions},
+            {"active_rooms", snapshot.active_rooms},
+            {"active_battles", snapshot.active_battles},
+            {"dispatch_back_tasks", snapshot.dispatch_back_tasks},
+            {"dispatch_inline_fallbacks", snapshot.dispatch_inline_fallbacks},
+            {"maintenance_probe_tasks", snapshot.maintenance_probe_tasks},
+            {"io_core_count", snapshot.io_cores.size()},
+        }},
+        {"io_balance", {
+            {"total_active_sessions", total_active_sessions},
+            {"total_accepted_sessions", total_accepted_sessions},
+            {"busiest_core", busiest_core},
+            {"max_active_sessions", max_active_sessions},
+            {"min_active_sessions", min_active_sessions},
+            {"idle_cores", idle_cores},
+        }},
+        {"io_cores", std::move(cores)},
+    };
+
+    return document.dump(2);
+}
+
 bool write_metrics_files(const GatewayRuntimeMetricsSnapshot& snapshot,
                          const GatewayMetricsExportOptions& options) {
     bool wrote_any_file = false;

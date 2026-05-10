@@ -168,6 +168,11 @@ int main(int argc, char* argv[]) {
             mirror_policy,
             emit_policy,
             config.v2_shadow_bridge_emit_responses);
+        shadow_bridge->set_write_scheduler(
+            [&server](const std::shared_ptr<net::Session>& session,
+                      v2::gateway::GatewayServerShadowBridge::SessionWriteTask task) {
+                return server.dispatch_to_session_core(session, std::move(task));
+            });
         server.set_packet_bridge(shadow_bridge);
         LOG_INFO("Enabled v2 shadow bridge (emit_responses={}, login={}, room={}, battle={}, echo={}, battle_input_push={}, state_started={}, state_frame={}, state_settlement={}, state_finished={})",
                  config.v2_shadow_bridge_emit_responses ? "true" : "false",

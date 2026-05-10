@@ -2,6 +2,7 @@
 
 #include "net/protocol.h"
 
+#include <atomic>
 #include <utility>
 
 namespace v2::gateway {
@@ -78,6 +79,9 @@ void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& s
         return;
     }
 
+    std::scoped_lock lock(state_mutex_);
+    mirrored_packets_.fetch_add(1, std::memory_order_relaxed);
+
     (void)adapter_.handle_incoming(ClientEnvelope{
         .session_id = get_or_create_session_id(session),
         .protocol_message_id = message.message_id,
@@ -89,6 +93,7 @@ void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& s
 }
 
 void GatewayServerShadowBridge::on_close(const std::shared_ptr<net::Session>& session) {
+    std::scoped_lock lock(state_mutex_);
     auto it = session_ids_by_ptr_.find(session.get());
     if (it == session_ids_by_ptr_.end()) {
         return;
@@ -99,6 +104,41 @@ void GatewayServerShadowBridge::on_close(const std::shared_ptr<net::Session>& se
     session_ids_by_ptr_.erase(it);
 }
 
+void GatewayServerShadowBridge::set_write_scheduler(SessionWriteScheduler scheduler) {
+    std::scoped_lock lock(scheduler_mutex_);
+    write_scheduler_ = std::move(scheduler);
+}
+
+GatewayServerShadowBridge::DispatchStats GatewayServerShadowBridge::dispatch_stats() const noexcept {
+    return DispatchStats{
+        .mirrored_packets = mirrored_packets_.load(std::memory_order_relaxed),
+        .emitted_writes = emitted_writes_.load(std::memory_order_relaxed),
+        .scheduled_writes = scheduled_writes_.load(std::memory_order_relaxed),
+        .inline_writes = inline_writes_.load(std::memory_order_relaxed),
+    };
+}
+
+void GatewayServerShadowBridge::dispatch_write(const std::shared_ptr<net::Session>& session,
+                                               SessionWriteTask task) {
+    if (!session || !task) {
+        return;
+    }
+
+    SessionWriteScheduler scheduler;
+    {
+        std::scoped_lock lock(scheduler_mutex_);
+        scheduler = write_scheduler_;
+    }
+
+    if (scheduler && scheduler(session, task)) {
+        scheduled_writes_.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+
+    inline_writes_.fetch_add(1, std::memory_order_relaxed);
+    task();
+}
+
 void GatewayServerShadowBridge::deliver(SessionWrite write) {
     if (!emit_responses_) {
         return;
@@ -107,6 +147,7 @@ void GatewayServerShadowBridge::deliver(SessionWrite write) {
         return;
     }
 
+    std::scoped_lock lock(state_mutex_);
     auto it = sessions_by_id_.find(write.envelope.session_id);
     if (it == sessions_by_id_.end()) {
         return;
@@ -117,11 +158,17 @@ void GatewayServerShadowBridge::deliver(SessionWrite write) {
         return;
     }
 
-    session->send(write.envelope.protocol_message_id,
-                  write.envelope.request_id,
-                  write.envelope.error_code,
-                  std::move(write.envelope.body),
-                  write.envelope.flags);
+    emitted_writes_.fetch_add(1, std::memory_order_relaxed);
+
+    dispatch_write(
+        session,
+        [session, envelope = std::move(write.envelope)]() mutable {
+            session->send(envelope.protocol_message_id,
+                          envelope.request_id,
+                          envelope.error_code,
+                          std::move(envelope.body),
+                          envelope.flags);
+        });
 }
 
 SessionId GatewayServerShadowBridge::get_or_create_session_id(const std::shared_ptr<net::Session>& session) {

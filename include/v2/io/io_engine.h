@@ -16,6 +16,10 @@
 
 namespace v2::io {
 
+struct IoListenOptions {
+    std::optional<std::uint32_t> fixed_core_id;
+};
+
 class IoSession {
 public:
     using PacketMessage = net::Session::PacketMessage;
@@ -63,7 +67,10 @@ public:
 
     // Listen on address, calling on_accept on the accepting core.
     virtual std::unique_ptr<IoAcceptor> listen(
-        const char* address, std::uint16_t port, net::SessionOptions session_options = {}) = 0;
+        const char* address,
+        std::uint16_t port,
+        net::SessionOptions session_options = {},
+        IoListenOptions options = {}) = 0;
 
     // Run all io_contexts on their dedicated threads.
     virtual void run() = 0;
@@ -81,7 +88,10 @@ public:
     void dispatch_to_all_cores(std::function<void(std::uint32_t core_id)> task) override;
     [[nodiscard]] std::optional<std::uint32_t> current_core_id() const noexcept override;
     std::unique_ptr<IoAcceptor> listen(
-        const char* address, std::uint16_t port, net::SessionOptions session_options = {}) override;
+        const char* address,
+        std::uint16_t port,
+        net::SessionOptions session_options = {},
+        IoListenOptions options = {}) override;
     void run() override;
     void stop() override;
 

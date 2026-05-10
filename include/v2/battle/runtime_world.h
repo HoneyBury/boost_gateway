@@ -29,13 +29,18 @@ struct BattleWorldSnapshot {
 };
 
 [[nodiscard]] std::unique_ptr<v2::ecs::World> create_battle_world(
+    const std::string& battle_id,
+    const std::string& room_id,
     const std::vector<std::string>& player_ids,
     std::uint32_t max_frames = 0);
 
 void battle_world_set_lifecycle(v2::ecs::World& world,
                                 BattleLifecycleState lifecycle);
 
+[[nodiscard]] std::string battle_world_battle_id(v2::ecs::World& world);
+[[nodiscard]] std::string battle_world_room_id(v2::ecs::World& world);
 [[nodiscard]] BattleLifecycleState battle_world_lifecycle(v2::ecs::World& world);
+[[nodiscard]] std::uint32_t battle_world_frame_number(v2::ecs::World& world);
 
 [[nodiscard]] std::vector<BattleParticipantState> battle_world_participants(
     v2::ecs::World& world);

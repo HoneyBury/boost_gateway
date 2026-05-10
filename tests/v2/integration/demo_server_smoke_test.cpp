@@ -249,6 +249,38 @@ TEST(V2DemoServerSmokeTest, DemoServerReportsConfiguredIoCoreCount) {
     app::logging::init("project_tests");
 
     auto io_engine = std::make_unique<v2::io::AsioIoEngine>(2);
-    v2::gateway::DemoServer server(0, {}, std::move(io_engine));
+    v2::gateway::DemoServer server(0, {}, {}, std::move(io_engine));
     EXPECT_EQ(server.io_core_count(), 2U);
+}
+
+TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot) {
+    app::logging::init("project_tests");
+
+    try {
+        auto io_engine = std::make_unique<v2::io::AsioIoEngine>(2);
+        v2::gateway::DemoServer server(
+            0,
+            {},
+            v2::gateway::DemoServerOptions{.acceptor_core_id = 1},
+            std::move(io_engine));
+        server.start();
+
+        TestClient client;
+        client.connect(server.local_port());
+        const auto login = client.exchange(net::protocol::kLoginRequest, 31, "core_user|token:core_user|CoreUser");
+        EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
+
+        EXPECT_EQ(server.acceptor_core_id(), 1U);
+        EXPECT_EQ(server.session_io_core(1), 1U);
+        const auto snapshots = server.io_core_snapshot();
+        ASSERT_EQ(snapshots.size(), 2U);
+        EXPECT_EQ(snapshots[1].active_sessions, 1U);
+        EXPECT_EQ(snapshots[1].accepted_sessions, 1U);
+        EXPECT_GE(snapshots[1].outbound_dispatches, 1U);
+
+        client.close();
+        server.stop();
+    } catch (const std::exception& ex) {
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
 }

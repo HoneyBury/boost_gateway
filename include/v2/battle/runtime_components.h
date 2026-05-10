@@ -24,9 +24,12 @@ struct BattleParticipantComponent final : v2::ecs::Component {
 };
 
 struct BattleMetadataComponent final : v2::ecs::Component {
+    std::string battle_id;
+    std::string room_id;
     BattleLifecycleState lifecycle = BattleLifecycleState::kCreated;
     std::uint64_t next_input_seq = 1;
     std::uint32_t max_frames = 0;
+    std::uint32_t current_frame_number = 0;
 };
 
 struct BattleReplayLogComponent final : v2::ecs::Component {

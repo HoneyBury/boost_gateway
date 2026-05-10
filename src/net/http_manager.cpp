@@ -86,6 +86,9 @@ void HttpManager::do_accept() {
                         } else if (req->target() == "/metrics/diagnostics") {
                             auto body = metrics_provider_ ? metrics_provider_().diagnostics_text : "";
                             res = build_response(http::status::ok, "text/plain", std::move(body));
+                        } else if (req->target() == "/metrics/diagnostics/json") {
+                            auto body = metrics_provider_ ? metrics_provider_().diagnostics_json_text : "";
+                            res = build_response(http::status::ok, "application/json", std::move(body));
                         } else {
                             res = build_response(http::status::not_found,
                                                   "text/plain", "Not Found");

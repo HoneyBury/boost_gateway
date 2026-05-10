@@ -14,6 +14,7 @@ struct HttpMetricsSnapshot {
     std::string prometheus_text;
     std::string json_text;
     std::string diagnostics_text;
+    std::string diagnostics_json_text;
 };
 
 class HttpManager {

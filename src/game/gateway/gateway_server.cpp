@@ -55,6 +55,7 @@ void GatewayServer::start() {
                     .prometheus_text = render_prometheus_metrics(snapshot),
                     .json_text = render_json_metrics(snapshot),
                     .diagnostics_text = render_diagnostics_metrics(snapshot),
+                    .diagnostics_json_text = render_diagnostics_json_metrics(snapshot),
                 };
             });
         http_manager_->start();

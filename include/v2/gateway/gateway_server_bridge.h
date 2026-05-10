@@ -6,8 +6,11 @@
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 
+#include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 namespace v2::gateway {
@@ -15,6 +18,15 @@ namespace v2::gateway {
 class GatewayServerShadowBridge final : public game::gateway::GatewayPacketBridge,
                                         public DownstreamSessionWriteSink {
 public:
+    using SessionWriteTask = std::function<void()>;
+    using SessionWriteScheduler = std::function<bool(const std::shared_ptr<net::Session>&, SessionWriteTask)>;
+    struct DispatchStats {
+        std::uint64_t mirrored_packets = 0;
+        std::uint64_t emitted_writes = 0;
+        std::uint64_t scheduled_writes = 0;
+        std::uint64_t inline_writes = 0;
+    };
+
     struct MirrorPolicy {
         constexpr MirrorPolicy(bool login_enabled = true,
                                bool room_enabled = true,
@@ -66,15 +78,18 @@ public:
                    const net::Session::PacketMessage& message) override;
     void on_close(const std::shared_ptr<net::Session>& session) override;
     void deliver(SessionWrite write) override;
+    void set_write_scheduler(SessionWriteScheduler scheduler);
 
     [[nodiscard]] bool emit_responses() const noexcept { return emit_responses_; }
     [[nodiscard]] const MirrorPolicy& mirror_policy() const noexcept { return mirror_policy_; }
     [[nodiscard]] const EmitPolicy& emit_policy() const noexcept { return emit_policy_; }
+    [[nodiscard]] DispatchStats dispatch_stats() const noexcept;
     [[nodiscard]] bool should_forward(std::uint16_t message_id) const noexcept;
     [[nodiscard]] bool should_emit(std::uint16_t message_id, std::string_view body) const noexcept;
 
 private:
     [[nodiscard]] SessionId get_or_create_session_id(const std::shared_ptr<net::Session>& session);
+    void dispatch_write(const std::shared_ptr<net::Session>& session, SessionWriteTask task);
 
     v2::runtime::ActorSystem actor_system_;
     SessionAdapter adapter_;
@@ -83,6 +98,13 @@ private:
     MirrorPolicy mirror_policy_{};
     EmitPolicy emit_policy_{};
     bool emit_responses_ = false;
+    mutable std::mutex scheduler_mutex_;
+    mutable std::recursive_mutex state_mutex_;
+    SessionWriteScheduler write_scheduler_;
+    std::atomic<std::uint64_t> mirrored_packets_{0};
+    std::atomic<std::uint64_t> emitted_writes_{0};
+    std::atomic<std::uint64_t> scheduled_writes_{0};
+    std::atomic<std::uint64_t> inline_writes_{0};
     std::unordered_map<net::Session*, SessionId> session_ids_by_ptr_;
     std::unordered_map<SessionId, std::weak_ptr<net::Session>> sessions_by_id_;
     SessionId next_session_id_ = 1;

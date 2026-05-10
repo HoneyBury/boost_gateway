@@ -134,6 +134,14 @@ struct GatewayTestRuntime {
                         });
                 });
             if (packet_bridge) {
+                if (const auto shadow_bridge =
+                        std::dynamic_pointer_cast<v2::gateway::GatewayServerShadowBridge>(packet_bridge)) {
+                    shadow_bridge->set_write_scheduler(
+                        [server_ptr](const std::shared_ptr<net::Session>& session,
+                                     v2::gateway::GatewayServerShadowBridge::SessionWriteTask task) {
+                            return server_ptr->dispatch_to_session_core(session, std::move(task));
+                        });
+                }
                 server->set_packet_bridge(packet_bridge);
             }
             server->start();
@@ -148,6 +156,10 @@ struct GatewayTestRuntime {
     void stop() {
         push_scheduler_active->store(false, std::memory_order_relaxed);
         push_service.set_write_scheduler({});
+        if (const auto shadow_bridge =
+                std::dynamic_pointer_cast<v2::gateway::GatewayServerShadowBridge>(packet_bridge)) {
+            shadow_bridge->set_write_scheduler({});
+        }
         if (server) {
             server->stop();
         }
@@ -686,6 +698,38 @@ TEST(GatewayIntegrationTest, ShadowBridgePolicyCanDisableRoomAndEchoMirroring) {
     EXPECT_FALSE(bridge->should_forward(net::protocol::kEchoRequest));
     EXPECT_FALSE(bridge->should_forward(net::protocol::kRoomCreateRequest));
     EXPECT_TRUE(bridge->should_forward(net::protocol::kBattleStartRequest));
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, ShadowBridgeTracksMirrorsAndScheduledWrites) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+        v2::gateway::GatewayServerShadowBridge::MirrorPolicy(false, false, false, true),
+        v2::gateway::GatewayServerShadowBridge::EmitPolicy{},
+        true);
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+    const auto first = client.exchange(net::protocol::kEchoRequest, 901, "shadow_stats");
+    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
+    const auto mirrored = client.try_read_for(std::chrono::milliseconds(300));
+    ASSERT_TRUE(mirrored.has_value());
+    EXPECT_EQ(mirrored->message_id, net::protocol::kEchoResponse);
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(300), [&]() {
+        return bridge->dispatch_stats().mirrored_packets >= 1 &&
+               bridge->dispatch_stats().emitted_writes >= 1;
+    }));
+    const auto stats = bridge->dispatch_stats();
+    EXPECT_GE(stats.mirrored_packets, 1U);
+    EXPECT_GE(stats.emitted_writes, 1U);
+    EXPECT_GE(stats.scheduled_writes, 1U);
+    EXPECT_EQ(stats.inline_writes, 0U);
 
     runtime.stop();
 }

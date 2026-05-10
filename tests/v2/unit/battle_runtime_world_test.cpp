@@ -6,8 +6,11 @@
 #include <vector>
 
 TEST(V2BattleRuntimeWorldTest, TracksFrameTriggerAndParticipantState) {
-    auto world = v2::battle::create_battle_world({"alice", "bob"}, 4);
+    auto world = v2::battle::create_battle_world("battle_01", "room_01", {"alice", "bob"}, 4);
     EXPECT_EQ(v2::battle::battle_world_lifecycle(*world), v2::battle::BattleLifecycleState::kRunning);
+    EXPECT_EQ(v2::battle::battle_world_battle_id(*world), "battle_01");
+    EXPECT_EQ(v2::battle::battle_world_room_id(*world), "room_01");
+    EXPECT_EQ(v2::battle::battle_world_frame_number(*world), 0U);
 
     v2::battle::battle_world_apply_input_score(*world, "alice", 7);
     v2::battle::battle_world_apply_input_score(*world, "bob", 3);
@@ -29,6 +32,7 @@ TEST(V2BattleRuntimeWorldTest, TracksFrameTriggerAndParticipantState) {
                                                 .trigger = "scheduler",
                                             }),
               4U);
+    EXPECT_EQ(v2::battle::battle_world_frame_number(*world), 4U);
     v2::battle::battle_world_apply_trigger_to_frame(*world, 4, "scheduler");
 
     const auto snapshot = v2::battle::battle_world_snapshot(*world);

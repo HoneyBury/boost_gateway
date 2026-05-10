@@ -28,14 +28,13 @@ public:
 
 private:
     void finish_battle(BattleFinishReason reason, std::string triggering_user_id);
+    [[nodiscard]] std::string battle_id() const;
+    [[nodiscard]] std::string room_id() const;
     [[nodiscard]] BattleLifecycleState lifecycle() const;
     [[nodiscard]] std::vector<BattleParticipantState> participants() const;
     [[nodiscard]] std::vector<BattleReplayInputRecord> replay_inputs() const;
 
     BattleEventSink& sink_;
-    std::string battle_id_;
-    std::string room_id_;
-    std::uint32_t frame_number_ = 0;
     std::unique_ptr<v2::ecs::World> world_;
 };
 

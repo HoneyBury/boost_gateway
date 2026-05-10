@@ -50,6 +50,7 @@ struct GatewayMetricsExportOptions {
 [[nodiscard]] std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 [[nodiscard]] std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 [[nodiscard]] std::string render_diagnostics_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
+[[nodiscard]] std::string render_diagnostics_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot);
 
 bool write_metrics_files(const GatewayRuntimeMetricsSnapshot& snapshot,
                          const GatewayMetricsExportOptions& options);

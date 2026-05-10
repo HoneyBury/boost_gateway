@@ -15,6 +15,7 @@
 //   curl http://localhost:9080/metrics      → Prometheus 指标
 //   curl http://localhost:9080/metrics/json → JSON 指标
 //   curl http://localhost:9080/metrics/diagnostics → per-core 诊断视图
+//   curl http://localhost:9080/metrics/diagnostics/json → 结构化 per-core 诊断 JSON
 
 #include "app/audit_log.h"
 #include "app/config.h"

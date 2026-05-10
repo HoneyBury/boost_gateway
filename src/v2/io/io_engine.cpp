@@ -169,8 +169,11 @@ std::optional<std::uint32_t> AsioIoEngine::current_core_id() const noexcept {
 std::unique_ptr<IoAcceptor> AsioIoEngine::listen(
     const char* address,
     std::uint16_t port,
-    net::SessionOptions session_options) {
-    const auto index = next_listen_core_.fetch_add(1, std::memory_order_relaxed) % cores_.size();
+    net::SessionOptions session_options,
+    IoListenOptions options) {
+    const auto index = options.fixed_core_id.has_value()
+        ? static_cast<std::size_t>(*options.fixed_core_id) % cores_.size()
+        : next_listen_core_.fetch_add(1, std::memory_order_relaxed) % cores_.size();
     return std::make_unique<AsioIoAcceptor>(
         cores_[index]->io_context,
         static_cast<std::uint32_t>(index),

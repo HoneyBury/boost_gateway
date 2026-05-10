@@ -50,6 +50,11 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     const auto diagnostics = game::gateway::render_diagnostics_metrics(snapshot);
     EXPECT_NE(diagnostics.find("gateway_diagnostics"), std::string::npos);
     EXPECT_NE(diagnostics.find("io_core id=0 active_sessions=4 accepted_sessions=7"), std::string::npos);
+
+    const auto diagnostics_json = game::gateway::render_diagnostics_json_metrics(snapshot);
+    EXPECT_NE(diagnostics_json.find("\"summary\""), std::string::npos);
+    EXPECT_NE(diagnostics_json.find("\"io_balance\""), std::string::npos);
+    EXPECT_NE(diagnostics_json.find("\"maintenance_probes\": 4"), std::string::npos);
 }
 
 TEST(GatewayMetricsExporterTest, WritesMetricsFilesToDisk) {

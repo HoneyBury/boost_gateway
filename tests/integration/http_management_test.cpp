@@ -166,6 +166,13 @@ TEST_F(HttpManagementTest, MetricsDiagnosticsEndpointReturnsReadableCoreSummary)
     EXPECT_NE(body.find("io_core id=0"), std::string::npos);
 }
 
+TEST_F(HttpManagementTest, MetricsDiagnosticsJsonEndpointReturnsStructuredSummary) {
+    const auto body = http_request(http::verb::get, "/metrics/diagnostics/json").body();
+    EXPECT_NE(body.find("\"summary\""), std::string::npos);
+    EXPECT_NE(body.find("\"io_balance\""), std::string::npos);
+    EXPECT_NE(body.find("\"io_cores\""), std::string::npos);
+}
+
 TEST_F(HttpManagementTest, UnknownPathReturnsNotFound) {
     const auto response = http_request(http::verb::get, "/bogus");
     EXPECT_EQ(response.result(), http::status::not_found);

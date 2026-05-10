@@ -29,7 +29,9 @@ void AdvanceFrameSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext&
         });
 }
 
-std::unique_ptr<v2::ecs::World> create_battle_world(const std::vector<std::string>& player_ids,
+std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id,
+                                                    const std::string& room_id,
+                                                    const std::vector<std::string>& player_ids,
                                                     std::uint32_t max_frames) {
     auto world = std::make_unique<v2::ecs::SimpleWorld>();
     world->add_system(std::make_unique<AdvanceFrameSystem>());
@@ -37,8 +39,11 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::vector<std::strin
     const auto clock_entity = world->create_entity();
     world->add_component<BattleClockComponent>(clock_entity);
     auto& metadata = world->add_component<BattleMetadataComponent>(clock_entity);
+    metadata.battle_id = battle_id;
+    metadata.room_id = room_id;
     metadata.lifecycle = BattleLifecycleState::kRunning;
     metadata.max_frames = max_frames;
+    metadata.current_frame_number = 0;
 
     const auto replay_entity = world->create_entity();
     world->add_component<BattleReplayLogComponent>(replay_entity);
@@ -65,6 +70,34 @@ void battle_world_set_lifecycle(v2::ecs::World& world,
         });
 }
 
+std::string battle_world_battle_id(v2::ecs::World& world) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return {};
+    }
+
+    std::string battle_id;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            battle_id = metadata.battle_id;
+        });
+    return battle_id;
+}
+
+std::string battle_world_room_id(v2::ecs::World& world) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return {};
+    }
+
+    std::string room_id;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            room_id = metadata.room_id;
+        });
+    return room_id;
+}
+
 BattleLifecycleState battle_world_lifecycle(v2::ecs::World& world) {
     auto* simple_world = as_simple_world(world);
     if (simple_world == nullptr) {
@@ -77,6 +110,20 @@ BattleLifecycleState battle_world_lifecycle(v2::ecs::World& world) {
             lifecycle = metadata.lifecycle;
         });
     return lifecycle;
+}
+
+std::uint32_t battle_world_frame_number(v2::ecs::World& world) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return 0;
+    }
+
+    std::uint32_t frame_number = 0;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            frame_number = metadata.current_frame_number;
+        });
+    return frame_number;
 }
 
 std::vector<BattleParticipantState> battle_world_participants(v2::ecs::World& world) {
@@ -202,6 +249,10 @@ std::uint32_t battle_world_tick(v2::ecs::World& world,
     }
     world.tick(ctx);
     std::uint32_t frame_number = 0;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            metadata.current_frame_number = ctx.frame_number;
+        });
     simple_world->for_each<BattleClockComponent>(
         [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
             frame_number = clock.frame_number;
