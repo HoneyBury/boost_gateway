@@ -1,6 +1,6 @@
 #include <gtest/gtest.h>
 
-#include "v2/battle/game_systems.h"
+
 #include "v2/battle/runtime_components.h"
 #include "v2/battle/runtime_world.h"
 #include "v2/ecs/world.h"

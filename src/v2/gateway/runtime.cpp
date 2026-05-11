@@ -1054,6 +1054,7 @@ void Runtime::push(v2::room::RoomEvent event) {
         timeout.header.kind = v2::actor::MessageKind::kUser;
         timeout.payload = v2::battle::EndBattleMsg{
             .reason = v2::battle::BattleFinishReason::kTimeout,
+            .triggering_user_id = {},
         };
         const auto schedule_id = battle_actor.schedule_after(std::move(timeout), std::chrono::seconds(120));
         if (schedule_id != 0) {
