@@ -42,6 +42,13 @@
 - [v2.0.0 企业级架构规划](./v2-roadmap.md)
 - [v2.0.0 设计文档](./v2-design.md)
 - [v2 服务拆分规划](./v2-service-split-plan.md)
+- [v2 下一阶段边界](./v2-next-phases.md)
+
+### v2.x 企业级迭代
+
+- [v2.x 企业级迭代路线](./v2-enterprise-roadmap.md) — 从 v2.0.0 到 v3.0.0 的完整版本规划与验收标准
+- [架构验收标准](./architecture-acceptance-criteria.md) — 五维度量化验收标准（性能/可靠性/可观测性/安全性/可运维性）
+- [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
 
 ## 文档使用建议
 

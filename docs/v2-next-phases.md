@@ -14,17 +14,29 @@ v2.0.0 全部七大模块已完成落地，315 单元测试 + 28 集成测试通
 
 ## 2. 当前状态与后续方向
 
-七大模块已全部完成，后续工作重心已从"模块开发"转向"发布与运维成熟度"：
+v2.0.0 七大模块已全部完成，R1-R4 发布基础设施已落地。当前工作重心已从"模块开发"转向"企业级生产加固"。
 
-1. **代码收束** — 更新过期文档引用、统一版本号至 2.0.0
-2. **构建与安装** — `cmake --install` 补全 v2 后端二进制、CPack 打包
-3. **容器化** — Dockerfile 支持 v2 多服务镜像、docker-compose 编排 gateway + 3 后端
-4. **部署运维** — systemd/supervisor 配置、健康检查端点接入、Prometheus/Grafana 面板更新
-5. **CI/CD** — 发布流水线与 Docker 烟测切换至 v2 组件
+后续迭代规划详见 **《v2.x 企业级迭代路线》（`docs/v2-enterprise-roadmap.md`）**，核心路径：
+
+```
+v2.0.1 生产加固  →  v2.0.2 性能基线  →  v2.1.0 多进程验证
+    (当前)              (待启动)            (待启动)
+```
+
+各阶段关键任务：
+
+1. **v2.0.1（生产加固）** — 配置热加载、断路器、优雅降级、背压保护、内存保护
+2. **v2.0.2（性能基线）** — 吞吐/延迟/资源基线、SLO/SLI 定义、容量规划
+3. **v2.1.0（多进程验证）** — 4 进程 E2E 测试、故障注入、浸泡测试、客户端协议规范
+4. **v2.2.0（安全与可观测性）** — JWT 认证、OpenTelemetry、审计日志、K8s 部署
+5. **v2.3.0（高级特性）** — 匹配系统、排行榜、反外挂、帧同步优化
+
+验收标准详见 **《架构验收标准》（`docs/architecture-acceptance-criteria.md`）**，
+覆盖性能、可靠性、可观测性、安全性、可运维性五个维度。
 
 说明：
 
-- 以上方向来自 v2.0.0 完整性审计（2026-05-12），详见 `docs/v2-roadmap.md`
+- R1-R4 发布基础设施（`cmake --install`、Docker、systemd、CI/CD、监控面板）已全部完成
 - `M2` SO_REUSEPORT + actor 核心亲和已完成
 - `M5` LruCache + WriteBehind + Snapshotable 已完成
 - `M3` BumpArena + ObjectPool + CacheLine/HotCold 已完成
