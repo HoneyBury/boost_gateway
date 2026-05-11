@@ -15,3 +15,6 @@
 # Third-party archive files (distributed via NAS, not stored in git)
 third_party/*.tar.gz
 third_party/*.zip
+
+# v2 runtime artifacts
+v2_archive/
