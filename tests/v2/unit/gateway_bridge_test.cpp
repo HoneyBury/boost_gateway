@@ -185,7 +185,7 @@ TEST(V2GatewayBridgeTest, VerifyLoginUsersCanEcho) {
         std::make_unique<v2::gateway::GatewayActor>(adapter));
     adapter.bind_gateway(gateway_actor);
 
-    adapter.handle_incoming(v2::gateway::ClientEnvelope{
+    (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 30,
         .protocol_message_id = net::protocol::kLoginRequest,
         .request_id = 1,
