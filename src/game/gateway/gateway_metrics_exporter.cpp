@@ -188,6 +188,13 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"bytes_sent_per_sec", std::round(snapshot.rates.sent_bytes_per_sec * 100.0) / 100.0},
         {"login_successes_per_sec", std::round(snapshot.rates.login_successes_per_sec * 100.0) / 100.0},
     };
+
+    if (!snapshot.diagnostics_extension_json_text.empty()) {
+        const auto extension = json::parse(snapshot.diagnostics_extension_json_text, nullptr, false);
+        if (!extension.is_discarded()) {
+            document["extensions"] = extension;
+        }
+    }
     return document.dump(2);
 }
 
@@ -262,6 +269,13 @@ std::string render_diagnostics_metrics(const GatewayRuntimeMetricsSnapshot& snap
             active_ratio);
     }
 
+    if (!snapshot.diagnostics_extension_text.empty()) {
+        text += snapshot.diagnostics_extension_text;
+        if (!text.empty() && text.back() != '\n') {
+            text += '\n';
+        }
+    }
+
     return text;
 }
 
@@ -328,6 +342,13 @@ std::string render_diagnostics_json_metrics(const GatewayRuntimeMetricsSnapshot&
         }},
         {"io_cores", std::move(cores)},
     };
+
+    if (!snapshot.diagnostics_extension_json_text.empty()) {
+        const auto extension = json::parse(snapshot.diagnostics_extension_json_text, nullptr, false);
+        if (!extension.is_discarded()) {
+            document["extensions"] = extension;
+        }
+    }
 
     return document.dump(2);
 }

@@ -1,9 +1,15 @@
 #include "app/logging.h"
+#include "net/http_manager.h"
 #include "net/packet_codec.h"
 #include "net/protocol.h"
 #include "v2/gateway/demo_server.h"
 
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/read.hpp>
+#include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/write.hpp>
 #include <nlohmann/json.hpp>
 
 #include <chrono>
@@ -17,6 +23,8 @@
 namespace {
 
 namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 struct V2DemoRuntime {
@@ -90,6 +98,25 @@ private:
     asio::io_context io_context_;
     tcp::socket socket_;
 };
+
+http::response<http::string_body> http_request(std::uint16_t port, std::string_view path) {
+    asio::io_context io_context;
+    tcp::resolver resolver(io_context);
+    const auto endpoints = resolver.resolve("127.0.0.1", std::to_string(port));
+
+    tcp::socket socket(io_context);
+    asio::connect(socket, endpoints);
+
+    http::request<http::string_body> req{http::verb::get, std::string(path), 11};
+    req.set(http::field::host, "127.0.0.1");
+    http::write(socket, req);
+
+    beast::flat_buffer buffer;
+    http::response<http::string_body> res;
+    http::read(socket, buffer, res);
+    socket.close();
+    return res;
+}
 
 }  // namespace
 
@@ -291,6 +318,61 @@ TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot
         EXPECT_GE(diagnostics["io_cores"][1]["outbound_dispatches"].get<std::uint64_t>(), 1U);
 
         client.close();
+        server.stop();
+    } catch (const std::exception& ex) {
+        GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
+    }
+}
+
+TEST(V2DemoServerSmokeTest, DiagnosticsHttpEndpointReturnsStructuredSnapshot) {
+    app::logging::init("project_tests");
+
+    try {
+        auto io_engine = std::make_unique<v2::io::AsioIoEngine>(2);
+        v2::gateway::DemoServer server(
+            0,
+            {},
+            v2::gateway::DemoServerOptions{.acceptor_core_id = 1},
+            std::move(io_engine));
+        server.start();
+
+        asio::io_context management_io;
+        net::HttpManager http_manager(management_io.get_executor(), 0);
+        http_manager.set_metrics_provider([&server]() {
+            const auto diagnostics = server.diagnostics();
+            const auto diagnostics_json = server.diagnostics_json();
+            return net::HttpMetricsSnapshot{
+                .prometheus_text = "",
+                .json_text = diagnostics_json,
+                .diagnostics_text = "",
+                .diagnostics_json_text = diagnostics_json,
+            };
+        });
+        http_manager.start();
+        std::thread http_thread([&management_io]() { management_io.run(); });
+
+        TestClient client;
+        client.connect(server.local_port());
+        const auto login = client.exchange(net::protocol::kLoginRequest, 41, "http_user|token:http_user|HttpUser");
+        EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
+
+        const auto response = http_request(http_manager.local_port(), "/metrics/diagnostics/json");
+        EXPECT_EQ(response.result(), http::status::ok);
+        const auto diagnostics = nlohmann::json::parse(response.body());
+        EXPECT_EQ(diagnostics["io_core_count"], 2);
+        EXPECT_EQ(diagnostics["acceptor_core_id"], 1);
+        EXPECT_EQ(diagnostics["total_active_sessions"], 1);
+        EXPECT_EQ(diagnostics["total_accepted_sessions"], 1);
+        ASSERT_EQ(diagnostics["io_cores"].size(), 2U);
+        EXPECT_EQ(diagnostics["io_cores"][1]["core_id"], 1);
+        EXPECT_EQ(diagnostics["io_cores"][1]["active_sessions"], 1);
+
+        client.close();
+        http_manager.stop();
+        management_io.stop();
+        if (http_thread.joinable()) {
+            http_thread.join();
+        }
         server.stop();
     } catch (const std::exception& ex) {
         GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();

@@ -31,6 +31,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <filesystem>
+#include <fmt/format.h>
 #include <memory>
 #include <string>
 #include <thread>
@@ -185,6 +186,27 @@ int main(int argc, char* argv[]) {
                  config.v2_shadow_bridge_emit_battle_state_frame ? "true" : "false",
                  config.v2_shadow_bridge_emit_battle_state_settlement ? "true" : "false",
                  config.v2_shadow_bridge_emit_battle_state_finished ? "true" : "false");
+        server.set_diagnostics_extension_provider(
+            [shadow_bridge]() -> game::gateway::GatewayServer::DiagnosticsExtensionSnapshot {
+                if (!shadow_bridge) {
+                    return {};
+                }
+                const auto diagnostics = shadow_bridge->diagnostics();
+                const auto text = fmt::format(
+                    "shadow_bridge emit_responses={} tracked_sessions={} active_sessions={} mirrored_packets={} "
+                    "emitted_writes={} scheduled_writes={} inline_writes={}\n",
+                    diagnostics.emit_responses ? "true" : "false",
+                    diagnostics.tracked_sessions,
+                    diagnostics.active_sessions,
+                    diagnostics.dispatch_stats.mirrored_packets,
+                    diagnostics.dispatch_stats.emitted_writes,
+                    diagnostics.dispatch_stats.scheduled_writes,
+                    diagnostics.dispatch_stats.inline_writes);
+                return {
+                    .text = text,
+                    .json_text = fmt::format("{{\"shadow_bridge\":{}}}", shadow_bridge->diagnostics_json()),
+                };
+            });
     }
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
     server.start();

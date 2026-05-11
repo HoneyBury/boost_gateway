@@ -33,7 +33,7 @@ GatewayServer::GatewayServer(asio::io_context& io_context,
       metrics_export_options_(std::move(metrics_export_options)),
       io_engine_(std::move(io_engine)) {
     if (io_engine_ != nullptr) {
-        io_acceptor_ = io_engine_->listen("0.0.0.0", port, session_options_);
+        io_acceptors_.push_back(io_engine_->listen("0.0.0.0", port, session_options_));
     } else {
         acceptor_ = std::make_unique<tcp::acceptor>(io_context, tcp::endpoint(tcp::v4(), port));
     }
@@ -63,8 +63,10 @@ void GatewayServer::start() {
 
     schedule_io_core_probe();
     arm_metrics_timer();
-    if (io_acceptor_ != nullptr) {
-        do_accept_with_io_engine();
+    if (!io_acceptors_.empty()) {
+        for (std::size_t listener_index = 0; listener_index < io_acceptors_.size(); ++listener_index) {
+            do_accept_with_io_engine(listener_index);
+        }
         io_engine_->run();
         return;
     }
@@ -92,7 +94,7 @@ void GatewayServer::stop() {
     if (io_engine_ != nullptr) {
         io_engine_->stop();
     }
-    io_acceptor_.reset();
+    io_acceptors_.clear();
 }
 
 bool GatewayServer::attach_session(const std::shared_ptr<net::Session>& session) {
@@ -120,6 +122,19 @@ bool GatewayServer::dispatch_to_session_core(const std::shared_ptr<net::Session>
         ++snapshot.dispatch_back_tasks;
     }
     io_engine_->dispatch_to_core(*core_id, std::move(task));
+    return true;
+}
+
+void GatewayServer::set_diagnostics_extension_provider(DiagnosticsExtensionProvider provider) {
+    diagnostics_extension_provider_ = std::move(provider);
+}
+
+bool GatewayServer::add_io_listener(std::uint16_t port,
+                                    v2::io::IoListenOptions options) {
+    if (io_engine_ == nullptr) {
+        return false;
+    }
+    io_acceptors_.push_back(io_engine_->listen("0.0.0.0", port, session_options_, options));
     return true;
 }
 
@@ -206,6 +221,11 @@ GatewayRuntimeMetricsSnapshot GatewayServer::collect_runtime_metrics_snapshot(
     snapshot.dispatch_inline_fallbacks = dispatch_inline_fallback_count();
     snapshot.maintenance_probe_tasks = maintenance_probe_task_count();
     snapshot.io_cores = io_core_snapshot();
+    if (diagnostics_extension_provider_) {
+        const auto extension = diagnostics_extension_provider_();
+        snapshot.diagnostics_extension_text = extension.text;
+        snapshot.diagnostics_extension_json_text = extension.json_text;
+    }
     return snapshot;
 }
 
@@ -291,10 +311,26 @@ std::uint16_t GatewayServer::local_port() const {
     if (acceptor_ != nullptr) {
         return acceptor_->local_endpoint().port();
     }
-    if (io_acceptor_ != nullptr) {
-        return io_acceptor_->local_port();
+    if (!io_acceptors_.empty() && io_acceptors_.front() != nullptr) {
+        return io_acceptors_.front()->local_port();
     }
     return 0;
+}
+
+std::vector<std::uint16_t> GatewayServer::local_ports() const {
+    std::vector<std::uint16_t> ports;
+    if (acceptor_ != nullptr) {
+        ports.push_back(acceptor_->local_endpoint().port());
+        return ports;
+    }
+
+    ports.reserve(io_acceptors_.size());
+    for (const auto& acceptor : io_acceptors_) {
+        if (acceptor != nullptr) {
+            ports.push_back(acceptor->local_port());
+        }
+    }
+    return ports;
 }
 
 void GatewayServer::set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge) {
@@ -325,18 +361,19 @@ void GatewayServer::do_accept() {
     });
 }
 
-void GatewayServer::do_accept_with_io_engine() {
-    if (io_acceptor_ == nullptr) {
+void GatewayServer::do_accept_with_io_engine(std::size_t listener_index) {
+    if (listener_index >= io_acceptors_.size() || io_acceptors_[listener_index] == nullptr) {
         return;
     }
 
-    const auto accept_core_id = io_acceptor_->owning_core_id();
-    io_acceptor_->async_accept_native([this, accept_core_id](std::shared_ptr<net::Session> session) {
+    auto* acceptor = io_acceptors_[listener_index].get();
+    const auto accept_core_id = acceptor->owning_core_id();
+    acceptor->async_accept_native([this, accept_core_id, listener_index](std::shared_ptr<net::Session> session) {
         if (session == nullptr) {
             return;
         }
         (void)attach_session_with_core(session, accept_core_id);
-        do_accept_with_io_engine();
+        do_accept_with_io_engine(listener_index);
     });
 }
 

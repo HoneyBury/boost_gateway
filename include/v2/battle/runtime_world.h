@@ -96,5 +96,6 @@ void battle_world_apply_trigger_to_frame(v2::ecs::World& world,
                                                               std::uint32_t frame_number);
 
 [[nodiscard]] BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world);
+[[nodiscard]] BattleRuntimeState battle_world_runtime_state(v2::ecs::World& world);
 
 }  // namespace v2::battle

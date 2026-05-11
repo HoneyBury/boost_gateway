@@ -54,6 +54,12 @@ void HttpManager::stop() {
     acceptor_.close(ec);
 }
 
+std::uint16_t HttpManager::local_port() const {
+    boost::system::error_code ec;
+    const auto endpoint = acceptor_.local_endpoint(ec);
+    return ec ? 0 : endpoint.port();
+}
+
 void HttpManager::do_accept() {
     auto sock = std::make_shared<tcp::socket>(acceptor_.get_executor());
     acceptor_.async_accept(*sock,

@@ -40,6 +40,12 @@ public:
 
 class GatewayServer {
 public:
+    struct DiagnosticsExtensionSnapshot {
+        std::string text;
+        std::string json_text;
+    };
+    using DiagnosticsExtensionProvider = std::function<DiagnosticsExtensionSnapshot()>;
+
     GatewayServer(asio::io_context& io_context,
                   net::MessageDispatcher& dispatcher,
                   SessionManager& session_manager,
@@ -58,10 +64,14 @@ public:
     bool attach_session(const std::shared_ptr<net::Session>& session);
     bool dispatch_to_session_core(const std::shared_ptr<net::Session>& session,
                                   std::function<void()> task);
+    void set_diagnostics_extension_provider(DiagnosticsExtensionProvider provider);
+    bool add_io_listener(std::uint16_t port,
+                         v2::io::IoListenOptions options = {});
     void set_connection_limits(std::size_t max_total, std::size_t per_ip);
     void set_packet_bridge(std::shared_ptr<GatewayPacketBridge> packet_bridge);
     [[nodiscard]] std::size_t active_connections() const;
     [[nodiscard]] std::uint16_t local_port() const;
+    [[nodiscard]] std::vector<std::uint16_t> local_ports() const;
     [[nodiscard]] std::uint32_t io_core_count() const noexcept;
     [[nodiscard]] std::optional<std::uint32_t> current_io_core() const noexcept;
     [[nodiscard]] std::optional<std::uint32_t> session_io_core(
@@ -74,7 +84,7 @@ public:
 
 private:
     void do_accept();
-    void do_accept_with_io_engine();
+    void do_accept_with_io_engine(std::size_t listener_index);
     void arm_metrics_timer();
     void schedule_io_core_probe();
     [[nodiscard]] GatewayRuntimeMetricsSnapshot collect_runtime_metrics_snapshot(
@@ -100,7 +110,7 @@ private:
     GatewayMetricsExportOptions metrics_export_options_;
     std::unique_ptr<net::HttpManager> http_manager_;
     std::unique_ptr<v2::io::IoEngine> io_engine_;
-    std::unique_ptr<v2::io::IoAcceptor> io_acceptor_;
+    std::vector<std::unique_ptr<v2::io::IoAcceptor>> io_acceptors_;
     GatewayMetricsSnapshot previous_metrics_snapshot_;
     std::chrono::steady_clock::time_point last_metrics_export_time_;
     std::size_t max_connections_ = 0;
@@ -115,6 +125,7 @@ private:
     std::atomic<std::uint64_t> dispatch_back_tasks_{0};
     std::atomic<std::uint64_t> dispatch_inline_fallbacks_{0};
     std::atomic<std::uint64_t> maintenance_probe_tasks_{0};
+    DiagnosticsExtensionProvider diagnostics_extension_provider_;
     std::shared_ptr<GatewayPacketBridge> packet_bridge_;
 };
 

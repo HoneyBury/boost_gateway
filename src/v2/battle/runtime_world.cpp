@@ -430,4 +430,15 @@ BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world) {
     return snapshot;
 }
 
+BattleRuntimeState battle_world_runtime_state(v2::ecs::World& world) {
+    return BattleRuntimeState{
+        .battle_id = battle_world_battle_id(world),
+        .room_id = battle_world_room_id(world),
+        .lifecycle = battle_world_lifecycle(world),
+        .participants = battle_world_participants(world),
+        .frame_number = battle_world_frame_number(world),
+        .replay_inputs = battle_world_collect_replay_inputs(world),
+    };
+}
+
 }  // namespace v2::battle

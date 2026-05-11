@@ -31,6 +31,7 @@ public:
     void set_metrics_provider(MetricsProvider provider);
     void start();
     void stop();
+    [[nodiscard]] std::uint16_t local_port() const;
 
 private:
     void do_accept();

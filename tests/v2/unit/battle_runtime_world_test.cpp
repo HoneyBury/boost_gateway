@@ -44,6 +44,14 @@ TEST(V2BattleRuntimeWorldTest, TracksFrameTriggerAndParticipantState) {
     ASSERT_EQ(replay_inputs.size(), 1U);
     EXPECT_EQ(replay_inputs[0].trigger, "scheduler");
 
+    const auto runtime_state = v2::battle::battle_world_runtime_state(*world);
+    EXPECT_EQ(runtime_state.battle_id, "battle_01");
+    EXPECT_EQ(runtime_state.room_id, "room_01");
+    EXPECT_EQ(runtime_state.lifecycle, v2::battle::BattleLifecycleState::kRunning);
+    EXPECT_EQ(runtime_state.frame_number, 4U);
+    ASSERT_EQ(runtime_state.participants.size(), 2U);
+    ASSERT_EQ(runtime_state.replay_inputs.size(), 1U);
+
     const auto result = v2::battle::battle_world_build_result_summary(
         *world,
         "battle_01",

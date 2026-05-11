@@ -20,6 +20,11 @@
 #include <boost/asio.hpp>
 #include <boost/process/v1.hpp>
 #include <boost/asio/thread_pool.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/read.hpp>
+#include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/write.hpp>
 
 #include <array>
 #include <chrono>
@@ -40,6 +45,8 @@ namespace {
 
 namespace asio = boost::asio;
 namespace bp = boost::process::v1;
+namespace beast = boost::beast;
+namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 struct GatewayTestRuntime {
@@ -66,10 +73,12 @@ struct GatewayTestRuntime {
     std::unique_ptr<game::battle::BattleService> battle_service;
     std::thread io_thread;
     std::string startup_error;
+    std::uint16_t http_management_port = 0;
     std::shared_ptr<PushDispatchObservation> push_dispatch_observation =
         std::make_shared<PushDispatchObservation>();
     std::shared_ptr<std::atomic<bool>> push_scheduler_active =
         std::make_shared<std::atomic<bool>>(true);
+    std::vector<std::pair<std::uint16_t, std::optional<std::uint32_t>>> extra_io_listeners;
 
     bool start() {
         try {
@@ -107,7 +116,7 @@ struct GatewayTestRuntime {
                 battle_manager,
                 metrics,
                 0,
-                0,
+                http_management_port,
                 options,
                 std::chrono::milliseconds(1000),
                 game::gateway::GatewayMetricsExportOptions{},
@@ -141,8 +150,22 @@ struct GatewayTestRuntime {
                                      v2::gateway::GatewayServerShadowBridge::SessionWriteTask task) {
                             return server_ptr->dispatch_to_session_core(session, std::move(task));
                         });
+                    server->set_diagnostics_extension_provider(
+                        [shadow_bridge]() -> game::gateway::GatewayServer::DiagnosticsExtensionSnapshot {
+                            const auto diagnostics = shadow_bridge->diagnostics();
+                            return {
+                                .text = "shadow_bridge tracked_sessions=" +
+                                        std::to_string(diagnostics.tracked_sessions),
+                                .json_text = std::string("{\"shadow_bridge\":") +
+                                             shadow_bridge->diagnostics_json() + "}",
+                            };
+                        });
                 }
                 server->set_packet_bridge(packet_bridge);
+            }
+            for (const auto& [port, core_id] : extra_io_listeners) {
+                EXPECT_TRUE(server->add_io_listener(
+                    port, v2::io::IoListenOptions{.fixed_core_id = core_id}));
             }
             server->start();
             io_thread = std::thread([this]() { io_context.run(); });
@@ -325,6 +348,25 @@ bool wait_until(std::chrono::milliseconds timeout, const std::function<bool()>& 
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
     return predicate();
+}
+
+http::response<http::string_body> http_get(std::uint16_t port, std::string_view path) {
+    asio::io_context io_context;
+    tcp::resolver resolver(io_context);
+    const auto endpoints = resolver.resolve("127.0.0.1", std::to_string(port));
+
+    tcp::socket socket(io_context);
+    asio::connect(socket, endpoints);
+
+    http::request<http::string_body> request{http::verb::get, std::string(path), 11};
+    request.set(http::field::host, "127.0.0.1");
+    http::write(socket, request);
+
+    beast::flat_buffer buffer;
+    http::response<http::string_body> response;
+    http::read(socket, buffer, response);
+    socket.close();
+    return response;
 }
 
 class EchoServerProcess {
@@ -730,6 +772,70 @@ TEST(GatewayIntegrationTest, ShadowBridgeTracksMirrorsAndScheduledWrites) {
     EXPECT_GE(stats.emitted_writes, 1U);
     EXPECT_GE(stats.scheduled_writes, 1U);
     EXPECT_EQ(stats.inline_writes, 0U);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, ManagementDiagnosticsJsonIncludesShadowBridgeExtension) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+        v2::gateway::GatewayServerShadowBridge::MirrorPolicy(false, false, false, true),
+        v2::gateway::GatewayServerShadowBridge::EmitPolicy{},
+        true);
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    runtime.http_management_port = 19081;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+    const auto first = client.exchange(net::protocol::kEchoRequest, 951, "shadow_http");
+    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
+    const auto mirrored = client.try_read_for(std::chrono::milliseconds(300));
+    ASSERT_TRUE(mirrored.has_value());
+    EXPECT_EQ(mirrored->message_id, net::protocol::kEchoResponse);
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(300), [&]() {
+        return bridge->dispatch_stats().mirrored_packets >= 1;
+    }));
+
+    const auto response = http_get(runtime.http_management_port, "/metrics/diagnostics/json");
+    EXPECT_EQ(response.result(), http::status::ok);
+    EXPECT_NE(response.body().find("\"extensions\""), std::string::npos);
+    EXPECT_NE(response.body().find("\"shadow_bridge\""), std::string::npos);
+    EXPECT_NE(response.body().find("\"mirrored_packets\""), std::string::npos);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, GatewayServerAcceptsConnectionsAcrossMultipleIoListeners) {
+    app::logging::init("project_tests");
+
+    GatewayTestRuntime runtime;
+    runtime.extra_io_listeners.push_back({0, 1});
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    const auto ports = runtime.server->local_ports();
+    ASSERT_EQ(ports.size(), 2U);
+    EXPECT_NE(ports[0], ports[1]);
+
+    TestClient first;
+    TestClient second;
+    first.connect(ports[0]);
+    second.connect(ports[1]);
+
+    const auto first_login =
+        first.exchange(net::protocol::kLoginRequest, 961, "listener_a|token:listener_a");
+    const auto second_login =
+        second.exchange(net::protocol::kLoginRequest, 962, "listener_b|token:listener_b");
+    EXPECT_EQ(first_login.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(second_login.message_id, net::protocol::kLoginResponse);
+
+    const auto snapshots = runtime.server->io_core_snapshot();
+    ASSERT_EQ(snapshots.size(), runtime.server->io_core_count());
+    EXPECT_GE(snapshots[0].accepted_sessions, 1U);
+    EXPECT_GE(snapshots[1].accepted_sessions, 1U);
 
     runtime.stop();
 }

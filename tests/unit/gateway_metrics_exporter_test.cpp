@@ -25,6 +25,10 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     snapshot.dispatch_back_tasks = 9;
     snapshot.dispatch_inline_fallbacks = 1;
     snapshot.maintenance_probe_tasks = 4;
+    snapshot.diagnostics_extension_text =
+        "shadow_bridge emit_responses=true tracked_sessions=2 active_sessions=1 mirrored_packets=3\n";
+    snapshot.diagnostics_extension_json_text =
+        R"({"shadow_bridge":{"emit_responses":true,"tracked_sessions":2,"active_sessions":1}})";
     snapshot.io_cores.push_back({
         .core_id = 0,
         .active_sessions = 4,
@@ -46,15 +50,20 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     EXPECT_NE(json_text.find("\"core_id\": 0"), std::string::npos);
     EXPECT_NE(json_text.find("\"dispatch_back_tasks\": 9"), std::string::npos);
     EXPECT_NE(json_text.find("\"maintenance_probe_tasks\": 4"), std::string::npos);
+    EXPECT_NE(json_text.find("\"extensions\""), std::string::npos);
+    EXPECT_NE(json_text.find("\"shadow_bridge\""), std::string::npos);
 
     const auto diagnostics = game::gateway::render_diagnostics_metrics(snapshot);
     EXPECT_NE(diagnostics.find("gateway_diagnostics"), std::string::npos);
     EXPECT_NE(diagnostics.find("io_core id=0 active_sessions=4 accepted_sessions=7"), std::string::npos);
+    EXPECT_NE(diagnostics.find("shadow_bridge emit_responses=true tracked_sessions=2"), std::string::npos);
 
     const auto diagnostics_json = game::gateway::render_diagnostics_json_metrics(snapshot);
     EXPECT_NE(diagnostics_json.find("\"summary\""), std::string::npos);
     EXPECT_NE(diagnostics_json.find("\"io_balance\""), std::string::npos);
     EXPECT_NE(diagnostics_json.find("\"maintenance_probes\": 4"), std::string::npos);
+    EXPECT_NE(diagnostics_json.find("\"extensions\""), std::string::npos);
+    EXPECT_NE(diagnostics_json.find("\"shadow_bridge\""), std::string::npos);
 }
 
 TEST(GatewayMetricsExporterTest, WritesMetricsFilesToDisk) {
