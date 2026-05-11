@@ -2,6 +2,8 @@
 
 #include "net/protocol.h"
 
+#include <nlohmann/json.hpp>
+
 #include <atomic>
 #include <utility>
 
@@ -116,6 +118,54 @@ GatewayServerShadowBridge::DispatchStats GatewayServerShadowBridge::dispatch_sta
         .scheduled_writes = scheduled_writes_.load(std::memory_order_relaxed),
         .inline_writes = inline_writes_.load(std::memory_order_relaxed),
     };
+}
+
+GatewayServerShadowBridge::Diagnostics GatewayServerShadowBridge::diagnostics() const noexcept {
+    std::scoped_lock lock(state_mutex_);
+    std::uint64_t active_sessions = 0;
+    for (const auto& [session_id, session] : sessions_by_id_) {
+        (void)session_id;
+        if (!session.expired()) {
+            ++active_sessions;
+        }
+    }
+
+    return Diagnostics{
+        .emit_responses = emit_responses_,
+        .mirror_policy = mirror_policy_,
+        .emit_policy = emit_policy_,
+        .dispatch_stats = dispatch_stats(),
+        .tracked_sessions = static_cast<std::uint64_t>(sessions_by_id_.size()),
+        .active_sessions = active_sessions,
+    };
+}
+
+std::string GatewayServerShadowBridge::diagnostics_json() const {
+    const auto snapshot = diagnostics();
+    nlohmann::json doc;
+    doc["emit_responses"] = snapshot.emit_responses;
+    doc["mirror_policy"] = {
+        {"login", snapshot.mirror_policy.login},
+        {"room", snapshot.mirror_policy.room},
+        {"battle", snapshot.mirror_policy.battle},
+        {"echo", snapshot.mirror_policy.echo},
+    };
+    doc["emit_policy"] = {
+        {"battle_input_push", snapshot.emit_policy.battle_input_push},
+        {"battle_state_started", snapshot.emit_policy.battle_state_started},
+        {"battle_state_frame", snapshot.emit_policy.battle_state_frame},
+        {"battle_state_settlement", snapshot.emit_policy.battle_state_settlement},
+        {"battle_state_finished", snapshot.emit_policy.battle_state_finished},
+    };
+    doc["dispatch_stats"] = {
+        {"mirrored_packets", snapshot.dispatch_stats.mirrored_packets},
+        {"emitted_writes", snapshot.dispatch_stats.emitted_writes},
+        {"scheduled_writes", snapshot.dispatch_stats.scheduled_writes},
+        {"inline_writes", snapshot.dispatch_stats.inline_writes},
+    };
+    doc["tracked_sessions"] = snapshot.tracked_sessions;
+    doc["active_sessions"] = snapshot.active_sessions;
+    return doc.dump();
 }
 
 void GatewayServerShadowBridge::dispatch_write(const std::shared_ptr<net::Session>& session,

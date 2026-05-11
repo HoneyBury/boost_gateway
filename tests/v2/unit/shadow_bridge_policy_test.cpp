@@ -3,6 +3,8 @@
 #include "net/protocol.h"
 #include "v2/gateway/gateway_server_bridge.h"
 
+#include <nlohmann/json.hpp>
+
 #include <filesystem>
 #include <fstream>
 
@@ -159,4 +161,29 @@ TEST(V2ShadowBridgePolicyTest, EmitPolicyAllBitsCanBeToggledIndependently) {
                                     "battle_state:kind=settlement:room_id=r:battle_id=b:reason=surrender:user_id=u"));
     EXPECT_FALSE(bridge.should_emit(net::protocol::kBattleStatePush,
                                     "battle_state:kind=finished:room_id=r:battle_id=b:reason=surrender:user_id=u"));
+}
+
+TEST(V2ShadowBridgePolicyTest, DiagnosticsJsonReportsPoliciesAndDispatchStats) {
+    v2::gateway::GatewayServerShadowBridge bridge(
+        v2::gateway::GatewayServerShadowBridge::MirrorPolicy(false, true, false, true),
+        v2::gateway::GatewayServerShadowBridge::EmitPolicy(true, false, true, false, true),
+        true);
+
+    const auto diagnostics = nlohmann::json::parse(bridge.diagnostics_json());
+    EXPECT_EQ(diagnostics["emit_responses"], true);
+    EXPECT_EQ(diagnostics["mirror_policy"]["login"], false);
+    EXPECT_EQ(diagnostics["mirror_policy"]["room"], true);
+    EXPECT_EQ(diagnostics["mirror_policy"]["battle"], false);
+    EXPECT_EQ(diagnostics["mirror_policy"]["echo"], true);
+    EXPECT_EQ(diagnostics["emit_policy"]["battle_input_push"], true);
+    EXPECT_EQ(diagnostics["emit_policy"]["battle_state_started"], false);
+    EXPECT_EQ(diagnostics["emit_policy"]["battle_state_frame"], true);
+    EXPECT_EQ(diagnostics["emit_policy"]["battle_state_settlement"], false);
+    EXPECT_EQ(diagnostics["emit_policy"]["battle_state_finished"], true);
+    EXPECT_EQ(diagnostics["dispatch_stats"]["mirrored_packets"], 0);
+    EXPECT_EQ(diagnostics["dispatch_stats"]["emitted_writes"], 0);
+    EXPECT_EQ(diagnostics["dispatch_stats"]["scheduled_writes"], 0);
+    EXPECT_EQ(diagnostics["dispatch_stats"]["inline_writes"], 0);
+    EXPECT_EQ(diagnostics["tracked_sessions"], 0);
+    EXPECT_EQ(diagnostics["active_sessions"], 0);
 }

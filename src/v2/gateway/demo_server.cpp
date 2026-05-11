@@ -2,6 +2,8 @@
 
 #include "app/logging.h"
 
+#include <nlohmann/json.hpp>
+
 #include <utility>
 
 namespace v2::gateway {
@@ -164,6 +166,45 @@ std::vector<DemoServerIoCoreSnapshot> DemoServer::io_core_snapshot() const {
         }
     }
     return snapshots;
+}
+
+DemoServerDiagnostics DemoServer::diagnostics() const {
+    DemoServerDiagnostics result;
+    result.local_port = local_port();
+    result.io_core_count = io_core_count();
+    result.acceptor_core_id = acceptor_core_id();
+    result.io_cores = io_core_snapshot();
+    for (const auto& snapshot : result.io_cores) {
+        result.total_active_sessions += snapshot.active_sessions;
+        result.total_accepted_sessions += snapshot.accepted_sessions;
+        result.total_outbound_dispatches += snapshot.outbound_dispatches;
+    }
+    return result;
+}
+
+std::string DemoServer::diagnostics_json() const {
+    const auto snapshot = diagnostics();
+    nlohmann::json doc;
+    doc["local_port"] = snapshot.local_port;
+    doc["io_core_count"] = snapshot.io_core_count;
+    doc["acceptor_core_id"] = snapshot.acceptor_core_id.has_value()
+                                  ? nlohmann::json(*snapshot.acceptor_core_id)
+                                  : nlohmann::json(nullptr);
+    doc["total_active_sessions"] = snapshot.total_active_sessions;
+    doc["total_accepted_sessions"] = snapshot.total_accepted_sessions;
+    doc["total_outbound_dispatches"] = snapshot.total_outbound_dispatches;
+
+    nlohmann::json io_cores = nlohmann::json::array();
+    for (const auto& core : snapshot.io_cores) {
+        io_cores.push_back({
+            {"core_id", core.core_id},
+            {"active_sessions", core.active_sessions},
+            {"accepted_sessions", core.accepted_sessions},
+            {"outbound_dispatches", core.outbound_dispatches},
+        });
+    }
+    doc["io_cores"] = std::move(io_cores);
+    return doc.dump();
 }
 
 void DemoServer::do_accept() {

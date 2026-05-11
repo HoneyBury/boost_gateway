@@ -11,6 +11,7 @@
 #include <functional>
 #include <memory>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 namespace v2::gateway {
@@ -62,6 +63,15 @@ public:
         bool battle_state_finished;
     };
 
+    struct Diagnostics {
+        bool emit_responses = false;
+        MirrorPolicy mirror_policy{};
+        EmitPolicy emit_policy{};
+        DispatchStats dispatch_stats{};
+        std::uint64_t tracked_sessions = 0;
+        std::uint64_t active_sessions = 0;
+    };
+
     explicit GatewayServerShadowBridge(MirrorPolicy mirror_policy = {},
                                        EmitPolicy emit_policy = {},
                                        bool emit_responses = false)
@@ -84,6 +94,8 @@ public:
     [[nodiscard]] const MirrorPolicy& mirror_policy() const noexcept { return mirror_policy_; }
     [[nodiscard]] const EmitPolicy& emit_policy() const noexcept { return emit_policy_; }
     [[nodiscard]] DispatchStats dispatch_stats() const noexcept;
+    [[nodiscard]] Diagnostics diagnostics() const noexcept;
+    [[nodiscard]] std::string diagnostics_json() const;
     [[nodiscard]] bool should_forward(std::uint16_t message_id) const noexcept;
     [[nodiscard]] bool should_emit(std::uint16_t message_id, std::string_view body) const noexcept;
 

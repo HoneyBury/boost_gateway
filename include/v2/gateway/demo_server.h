@@ -27,6 +27,16 @@ struct DemoServerIoCoreSnapshot {
     std::uint64_t outbound_dispatches = 0;
 };
 
+struct DemoServerDiagnostics {
+    std::uint16_t local_port = 0;
+    std::uint32_t io_core_count = 0;
+    std::optional<std::uint32_t> acceptor_core_id;
+    std::uint64_t total_active_sessions = 0;
+    std::uint64_t total_accepted_sessions = 0;
+    std::uint64_t total_outbound_dispatches = 0;
+    std::vector<DemoServerIoCoreSnapshot> io_cores;
+};
+
 class DemoServer final : public DownstreamSessionWriteSink {
 public:
     using SessionWriteTask = std::function<void()>;
@@ -46,6 +56,8 @@ public:
     [[nodiscard]] std::optional<std::uint32_t> acceptor_core_id() const noexcept;
     [[nodiscard]] std::optional<std::uint32_t> session_io_core(SessionId session_id) const;
     [[nodiscard]] std::vector<DemoServerIoCoreSnapshot> io_core_snapshot() const;
+    [[nodiscard]] DemoServerDiagnostics diagnostics() const;
+    [[nodiscard]] std::string diagnostics_json() const;
 
 private:
     void do_accept();

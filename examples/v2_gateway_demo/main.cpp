@@ -68,6 +68,15 @@ std::optional<std::uint32_t> parse_acceptor_core(int argc, char* argv[]) {
     return std::nullopt;
 }
 
+bool has_flag(int argc, char* argv[], const char* flag) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::string(argv[i]) == flag) {
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -189,6 +198,7 @@ int main(int argc, char* argv[]) {
         server.start();
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
+        const auto print_diagnostics_json = has_flag(argc, argv, "--diagnostics-json");
         fmt::print("v2 gateway demo listening on port {} with {} io cores acceptor_core={}\n",
                    server.local_port(),
                    server.io_core_count(),
@@ -199,6 +209,9 @@ int main(int argc, char* argv[]) {
                        snapshot.active_sessions,
                        snapshot.accepted_sessions,
                        snapshot.outbound_dispatches);
+        }
+        if (print_diagnostics_json) {
+            fmt::print("{}\n", server.diagnostics_json());
         }
         while (g_keep_running.load(std::memory_order_relaxed)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));

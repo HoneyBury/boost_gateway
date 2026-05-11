@@ -4,6 +4,7 @@
 #include "v2/gateway/demo_server.h"
 
 #include <boost/asio.hpp>
+#include <nlohmann/json.hpp>
 
 #include <chrono>
 #include <memory>
@@ -277,6 +278,17 @@ TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot
         EXPECT_EQ(snapshots[1].active_sessions, 1U);
         EXPECT_EQ(snapshots[1].accepted_sessions, 1U);
         EXPECT_GE(snapshots[1].outbound_dispatches, 1U);
+        const auto diagnostics = nlohmann::json::parse(server.diagnostics_json());
+        EXPECT_EQ(diagnostics["io_core_count"], 2);
+        EXPECT_EQ(diagnostics["acceptor_core_id"], 1);
+        EXPECT_EQ(diagnostics["total_active_sessions"], 1);
+        EXPECT_EQ(diagnostics["total_accepted_sessions"], 1);
+        EXPECT_GE(diagnostics["total_outbound_dispatches"].get<std::uint64_t>(), 1U);
+        ASSERT_EQ(diagnostics["io_cores"].size(), 2U);
+        EXPECT_EQ(diagnostics["io_cores"][1]["core_id"], 1);
+        EXPECT_EQ(diagnostics["io_cores"][1]["active_sessions"], 1);
+        EXPECT_EQ(diagnostics["io_cores"][1]["accepted_sessions"], 1);
+        EXPECT_GE(diagnostics["io_cores"][1]["outbound_dispatches"].get<std::uint64_t>(), 1U);
 
         client.close();
         server.stop();
