@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <optional>
+#include <sstream>
 #include <string_view>
 
 namespace app::config {
@@ -45,6 +46,47 @@ std::optional<bool> parse_bool(std::string_view value) {
         return false;
     }
     return std::nullopt;
+}
+
+template <typename T>
+std::vector<T> parse_integer_list(std::string_view value) {
+    std::vector<T> parsed_values;
+    if (value.empty()) {
+        return parsed_values;
+    }
+
+    const auto text = trim(std::string(value));
+    if (text.empty()) {
+        return parsed_values;
+    }
+
+    try {
+        if (!text.empty() && text.front() == '[') {
+            const auto doc = json::parse(text);
+            if (doc.is_array()) {
+                for (const auto& item : doc) {
+                    if (item.is_number_unsigned()) {
+                        parsed_values.push_back(item.get<T>());
+                    }
+                }
+                return parsed_values;
+            }
+        }
+    } catch (const std::exception&) {
+    }
+
+    std::stringstream stream(text);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+        token = trim(token);
+        if (token.empty()) {
+            continue;
+        }
+        if (const auto parsed = parse_integer<T>(token)) {
+            parsed_values.push_back(*parsed);
+        }
+    }
+    return parsed_values;
 }
 
 void flatten_json_object(const json& value,
@@ -135,6 +177,12 @@ void fill_gateway_from_store(const ConfigStore& store, GatewayAppConfig& config)
     }
     if (const auto value = store.get_size("gateway.io_threads")) {
         config.io_threads = std::max<std::size_t>(1, *value);
+    }
+    if (const auto value = store.get_string("gateway.io_listener_ports")) {
+        config.io_listener_ports = parse_integer_list<std::uint16_t>(*value);
+    }
+    if (const auto value = store.get_string("gateway.io_listener_core_ids")) {
+        config.io_listener_core_ids = parse_integer_list<std::uint32_t>(*value);
     }
     if (const auto value = store.get_size("gateway.business_threads")) {
         config.business_threads = std::max<std::size_t>(1, *value);

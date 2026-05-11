@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 #include <unordered_map>
 
 namespace app::config {
@@ -30,6 +31,8 @@ struct GatewayAppConfig {
     std::uint16_t port = 9000;
     std::uint16_t http_management_port = 9080;
     std::size_t io_threads = 2;
+    std::vector<std::uint16_t> io_listener_ports;
+    std::vector<std::uint32_t> io_listener_core_ids;
     std::size_t business_threads = 2;
     std::chrono::milliseconds metrics_log_interval{5000};
     std::optional<std::filesystem::path> metrics_prometheus_path;

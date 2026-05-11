@@ -150,12 +150,14 @@ struct GatewayTestRuntime {
                                      v2::gateway::GatewayServerShadowBridge::SessionWriteTask task) {
                             return server_ptr->dispatch_to_session_core(session, std::move(task));
                         });
-                    server->set_diagnostics_extension_provider(
-                        [shadow_bridge]() -> game::gateway::GatewayServer::DiagnosticsExtensionSnapshot {
+                    server->set_metrics_extension_provider(
+                        [shadow_bridge]() -> game::gateway::GatewayServer::MetricsExtensionSnapshot {
                             const auto diagnostics = shadow_bridge->diagnostics();
                             return {
-                                .text = "shadow_bridge tracked_sessions=" +
-                                        std::to_string(diagnostics.tracked_sessions),
+                                .prometheus_text = "gateway_shadow_bridge_tracked_sessions " +
+                                                   std::to_string(diagnostics.tracked_sessions) + "\n",
+                                .diagnostics_text = "shadow_bridge tracked_sessions=" +
+                                                    std::to_string(diagnostics.tracked_sessions),
                                 .json_text = std::string("{\"shadow_bridge\":") +
                                              shadow_bridge->diagnostics_json() + "}",
                             };
@@ -801,6 +803,39 @@ TEST(GatewayIntegrationTest, ManagementDiagnosticsJsonIncludesShadowBridgeExtens
     }));
 
     const auto response = http_get(runtime.http_management_port, "/metrics/diagnostics/json");
+    EXPECT_EQ(response.result(), http::status::ok);
+    EXPECT_NE(response.body().find("\"extensions\""), std::string::npos);
+    EXPECT_NE(response.body().find("\"shadow_bridge\""), std::string::npos);
+    EXPECT_NE(response.body().find("\"mirrored_packets\""), std::string::npos);
+
+    runtime.stop();
+}
+
+TEST(GatewayIntegrationTest, ManagementMetricsJsonIncludesShadowBridgeExtension) {
+    app::logging::init("project_tests");
+
+    auto bridge = std::make_shared<v2::gateway::GatewayServerShadowBridge>(
+        v2::gateway::GatewayServerShadowBridge::MirrorPolicy(false, false, false, true),
+        v2::gateway::GatewayServerShadowBridge::EmitPolicy{},
+        true);
+    GatewayTestRuntime runtime;
+    runtime.packet_bridge = bridge;
+    runtime.http_management_port = 19082;
+    SKIP_IF_RUNTIME_UNAVAILABLE(runtime);
+
+    TestClient client;
+    client.connect(runtime.server->local_port());
+    const auto first = client.exchange(net::protocol::kEchoRequest, 956, "shadow_http_json");
+    EXPECT_EQ(first.message_id, net::protocol::kEchoResponse);
+    const auto mirrored = client.try_read_for(std::chrono::milliseconds(300));
+    ASSERT_TRUE(mirrored.has_value());
+    EXPECT_EQ(mirrored->message_id, net::protocol::kEchoResponse);
+
+    ASSERT_TRUE(wait_until(std::chrono::milliseconds(300), [&]() {
+        return bridge->dispatch_stats().mirrored_packets >= 1;
+    }));
+
+    const auto response = http_get(runtime.http_management_port, "/metrics/json");
     EXPECT_EQ(response.result(), http::status::ok);
     EXPECT_NE(response.body().find("\"extensions\""), std::string::npos);
     EXPECT_NE(response.body().find("\"shadow_bridge\""), std::string::npos);

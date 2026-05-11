@@ -40,11 +40,12 @@ public:
 
 class GatewayServer {
 public:
-    struct DiagnosticsExtensionSnapshot {
-        std::string text;
+    struct MetricsExtensionSnapshot {
+        std::string prometheus_text;
+        std::string diagnostics_text;
         std::string json_text;
     };
-    using DiagnosticsExtensionProvider = std::function<DiagnosticsExtensionSnapshot()>;
+    using MetricsExtensionProvider = std::function<MetricsExtensionSnapshot()>;
 
     GatewayServer(asio::io_context& io_context,
                   net::MessageDispatcher& dispatcher,
@@ -64,7 +65,7 @@ public:
     bool attach_session(const std::shared_ptr<net::Session>& session);
     bool dispatch_to_session_core(const std::shared_ptr<net::Session>& session,
                                   std::function<void()> task);
-    void set_diagnostics_extension_provider(DiagnosticsExtensionProvider provider);
+    void set_metrics_extension_provider(MetricsExtensionProvider provider);
     bool add_io_listener(std::uint16_t port,
                          v2::io::IoListenOptions options = {});
     void set_connection_limits(std::size_t max_total, std::size_t per_ip);
@@ -125,7 +126,7 @@ private:
     std::atomic<std::uint64_t> dispatch_back_tasks_{0};
     std::atomic<std::uint64_t> dispatch_inline_fallbacks_{0};
     std::atomic<std::uint64_t> maintenance_probe_tasks_{0};
-    DiagnosticsExtensionProvider diagnostics_extension_provider_;
+    MetricsExtensionProvider metrics_extension_provider_;
     std::shared_ptr<GatewayPacketBridge> packet_bridge_;
 };
 

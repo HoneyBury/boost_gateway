@@ -9,19 +9,20 @@
 
 ## 1. 启动结论
 
-当前 `develop` 可以作为 `v2.0.0` 的**启动基线**，但不能视为已经进入 `v2.0.0` 开发。
+当前 `develop` 不再只是 `v2.0.0` 的启动基线，而是已经进入 `v2` 实作阶段。
 
 原因：
 
 - `v1.x` 维护收口、测试护栏、发布流程已经成型
 - `v1.2.0 / T21` 已明确：结构升级必须重新立项
-- 当前 `develop` 与 `main` 没有实质功能分叉，不存在可直接“接手维护”的 v2 主线
+- 当前仓库已经具备独立 `v2` 目录、demo 入口、`IoEngine` 主链接入与 battle world 基础实现
+- `v2` 仍与 `v1` 共仓推进，但已经不是“只做骨架不做实装”的状态
 
 ## 2. 规划对齐
 
 `v2.0` 启动阶段不要试图一次吃完 `v2-roadmap` 的全部七大模块。
 
-按规划文档，启动批次只应覆盖：
+启动批次原始目标已经完成：
 
 - `M1 Actor 模型核心`
 - `SessionAdapter + GatewayActor` 桥接
@@ -29,16 +30,19 @@
 - `RoomActor` 最小闭环
 - `BattleActor` bootstrap shell（仅限创建、输入受理、状态 push 占位）
 
-明确不在启动批次内的模块：
+原始启动批次之外，目前已经进入实现的模块：
 
-- `M2 多核 I/O 引擎`
+- `M2` 多核 I/O 引擎基础版
+- `M6` battle runtime → ECS world 基础版
+
+当前仍未进入深水区的模块：
+
 - `M3 内存架构重构`
 - `M4 分布式原语`
 - `M5 数据层 v2`
-- `M6 AOI 空间管理`
+- `M6 AOI / authoritative simulation`
 - `M7 运维成熟度`
-- `BattleActor + ECS World` 完整仿真链
-- 现有 `GatewayServer` 主链替换
+- `SO_REUSEPORT` / actor 亲核调度 / 跨核 mailbox
 
 ## 3. 分支策略
 
@@ -304,24 +308,22 @@ examples/v2_gateway_demo/
 - `B7.1`：gateway response parser 已补 login / room / session push 基础字段模型
 - `B8.1`：真实 bridge 灰度测试已覆盖 started-only 与 finish-only 两组 battle response 配置
 
-当前明确只有原型或占位的部分：
+当前明确仍只有原型或基础版的部分：
 
-- `BattleActor` 只处理战斗创建和输入受理，不包含 `ECS World`、帧循环、状态广播聚合、结算、回放
-- `BattleActor` 已有最小结束路径和主动结束，但仍没有正式结算、奖励、战报和 replay 输出
-- 当前 replay 虽已有 sink/store 入口，但仍不是 battle 主链默认持久化
-- `SessionAdapter` 已可挂接 demo server，但还没有接入现有 `GatewayServer` 主链
-- runtime 仍是单进程、单线程 bootstrap 编排层，不是多核 actor runtime
-- battle 输入目前只做到“受理 + 转发”，没有 authoritative simulation
+- battle world 已承接 metadata / participants / replay inputs / frame / result summary，但还没有真正 gameplay systems
+- replay 虽已有 runtime 事实源，但仍不是 battle 主链默认持久化
+- runtime 仍是单进程实现，没有 remote actor / distributed runtime
+- battle 输入目前已有 world-side score / replay / ack 状态，但没有 authoritative simulation
 - `PlayerActor` / `RoomActor` / `BattleActor` 之间仍以最小 typed message 协作为主，没有 supervisor 树和 `ask()`
-- scheduler 当前虽已有 cancel / repeat 与最小 actor-owned handle，但还不是最终统一调度器
+- scheduler 当前虽已有 actor-owned handle，但还不是最终统一调度器
 
 当前不应误判为已完成的内容：
 
-- `M2` 多核 I/O 引擎
 - `M3` 内存架构重构
 - `M4` 分布式原语
 - `M5` 数据层 v2
-- `M6` AOI / ECS 战斗主链
+- `M2` 深水区能力（`SO_REUSEPORT` / mailbox / actor affinity）
+- `M6` AOI / ECS 战斗完整主链
 - `M7` 运维成熟度
 - `v2` 替换现有 `v1` 默认入口
 
@@ -380,19 +382,22 @@ examples/v2_gateway_demo/
 - 已完成 `PlayerActor` / `RoomActor` 最小闭环
 - 已完成 `BattleActor` bootstrap shell
 - 已完成 `v2_gateway_demo` 真实监听入口
+- 已完成 `DemoServer` / `GatewayServer` 的 `IoEngine` ingress
+- 已完成 core diagnostics 与 session-core aware outbound
+- 已完成 battle runtime 的 world 化基础能力
 
 说明：
 
 - 如果分支策略仍采用 `develop` 内联推进，则本检查表中的“独立 `v2` 分支”暂按“独立 `v2` 代码目录 + 独立提交批次”执行
-- 截至 `2026-05-09`，当前实现更接近“`M1` 可运行原型 + demo 入口”，尚未进入 `M2-M7`
+- 截至 `2026-05-11`，当前实现应视为“`M1` 完成 + `M2/M6` 基础版已落地”，但距离 `M2/M6` 完整目标仍有明显距离
 
 ## 11. 推荐下一步
 
-如果继续沿当前原型推进，建议下一阶段不要再扩散模块面，而是按以下顺序收口：
+如果继续沿当前实现推进，建议下一阶段按以下顺序收口：
 
-1. 把 battle result archive 继续延伸到正式结算、战报和 replay persistence 入口
-2. 把当前 scheduler 收口到 actor-owned handle、统一 tick ownership 和更稳定的周期语义
-3. 继续稳定 external schema，把 parser / validator 从已接入域推广到更多协议域
-4. 扩大 `GatewayServer` bridge 灰度与 response 策略测试矩阵，但保持旁路不替换主链
+1. 把 replay / result / snapshot 正式引入 `M5` 数据层入口
+2. 继续把 battle runtime 事实源下沉到 world/system，缩薄 `BattleActor`
+3. 继续完成 `M2` 的 accept policy、多 acceptor 组装和更深多核能力评估
+4. 保持 `GatewayServer` / `shadow bridge` / `v2 demo` 诊断口径一致
 
-不要在当前阶段同时推进多核 I/O、分布式、数据层和 ECS World。
+不要在当前阶段同时推进分布式、内存架构重构和完整 AOI。

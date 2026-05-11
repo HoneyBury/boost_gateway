@@ -32,6 +32,8 @@ struct GatewayRuntimeMetricsSnapshot {
     std::uint64_t dispatch_inline_fallbacks = 0;
     std::uint64_t maintenance_probe_tasks = 0;
     std::vector<GatewayIoCoreSnapshot> io_cores;
+    std::string prometheus_extension_text;
+    std::string json_extension_text;
     std::string diagnostics_extension_text;
     std::string diagnostics_extension_json_text;
 };

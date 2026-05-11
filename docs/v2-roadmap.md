@@ -34,6 +34,26 @@ v1.0.0 完成了一个**单进程、功能完整**的游戏服务器框架。核
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+## 二点五、当前实现状态（`2026-05-11`）
+
+> 本文档是长期目标，不等于当前代码完成度。下面这段用于避免把 roadmap 误读成“已实现列表”。
+
+| 模块 | 当前状态 | 说明 |
+|---|---|---|
+| `M1 Actor` | `in-place done` | `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小主链已跑通并有回归测试 |
+| `M2 多核 I/O` | `foundation done` | `AsioIoEngine`、pinned listen、multi-listener ingress、session-core outbound、core diagnostics 已落地 |
+| `M3 内存架构` | `not started` | 仍未进入 arena / pool hierarchy / false sharing 专项 |
+| `M4 分布式` | `not started` | 仅保留方向性规划，没有 remote actor / cluster router 实现 |
+| `M5 数据层 v2` | `not started` | replay/result 事实源已具备，但持久化 schema 和写入链未开始 |
+| `M6 battle world` | `foundation done` | ECS world、battle runtime metadata、replay inputs、result summary 已初步 world 化 |
+| `M7 运维成熟度` | `bootstrap only` | 已有 `/metrics*`、diagnostics、shadow bridge 扩展观测，但还不是正式控制面 |
+
+当前最重要的边界：
+
+- `M2` 已进入实现期，但尚未完成 `SO_REUSEPORT`、跨核 mailbox、actor 亲核调度
+- `M6` 已进入实现期，但尚未进入 authoritative simulation / AOI / deterministic replay
+- `M5/M4/M3/M7` 仍以规划为主，不应被文档误判为已落地
+
 ---
 
 ## 三、M1: Actor 模型核心

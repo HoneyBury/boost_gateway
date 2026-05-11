@@ -2,80 +2,109 @@
 
 ## 1. 当前结论
 
-截至 `2026-05-09`，`v2` 已经具备：
+截至 `2026-05-11`，`v2` 已经不再只是 `M1` bootstrap 原型，而是进入了：
 
-- `M1` 可运行原型
-- demo 入口
-- battle bootstrap lifecycle
-- `GatewayServer` 旁路 bridge seam
+- `M1` 收口完成态
+- `M2` 多核 I/O 基础设施首轮落地
+- `M6` battle runtime 向 ECS world 的最小迁移
 
-但这仍然 **不代表** 项目已经进入 `M2-M7` 的实作阶段。
+当前已稳定具备：
+
+- `ActorSystem`、`PlayerActor`、`RoomActor`、`BattleActor` 最小闭环
+- `DemoServer` 与 `GatewayServer` 均可走 `IoEngine` ingress
+- session-core aware outbound、core diagnostics、pinned listen、multi-listener ingress
+- `BattleActor` 主要承担编排，runtime state 已可从 world 构造
+- `v1` 管理口与 `v2_gateway_demo` 已能输出结构化 diagnostics
+
+但这仍然 **不代表** 项目已经完成：
+
+- `SO_REUSEPORT`
+- 跨核 mailbox / actor 亲核调度
+- battle authoritative simulation
+- 数据层 v2 / 分布式 / 内存架构重构 / 运维控制面正式化
 
 ## 2. 下一阶段顺序
 
 后续建议顺序如下：
 
-1. `M1` 收口
-2. `M2` 多核 I/O 引擎
-3. `M6` battle runtime 壳到 ECS world
-4. `M5` 数据层 v2
-5. `M4` 分布式原语
-6. `M3` 内存架构重构
-7. `M7` 运维成熟度
+1. 继续收束 `M2` 的 ingress / accept policy / 观测一致性
+2. 继续压缩 `BattleActor`，把 battle runtime 主事实源下沉到 `world/system`
+3. 进入 `M5` 数据层 v2，先做 replay / result / snapshot 的落盘边界
+4. 再评估 `M4` 分布式原语
+5. 之后再进入 `M3` 内存架构重构
+6. `M7` 运维成熟度放在入口和 battle 主链都稳定之后
 
 说明：
 
-- `M6` 在优先级上高于 `M4/M5/M7`，因为 battle 仍是当前 `v2` 最大空洞
-- `M3` 很重要，但不应在 battle 主链未成型前提前大改分配模型
+- `M2` 还没做完，但“可运行最小版”已经落地，后续应聚焦真正的 listener / accept policy 和更深多核能力，而不是重复做接缝
+- `M6` 已进入 world 化阶段，但 battle 仍未形成完整 authoritative simulation，因此仍高于 `M4/M5/M7`
+- `M5` 的优先级已高于 `M3`，因为 replay/result 已经有 runtime 事实源，开始具备落盘边界
+- `M3` 很重要，但不应在 battle 主链和 ingress 形态尚未最终定型前提前大改分配模型
 
 ## 3. 各模块进入门槛
 
 ### 3.1 `M2` 多核 I/O
 
-进入前至少满足：
+已满足的进入条件：
 
 - battle lifecycle 已稳定
 - `GatewayServer` bridge seam 已有最小灰度方式
 - v1/v2 smoke test 都可持续运行
 
-当前不做：
+当前已完成：
+
+- `AsioIoEngine`
+- `dispatch_to_core()` / `dispatch_to_all_cores()`
+- pinned listen / multi-listener ingress
+- `GatewayServer` / `DemoServer` 的 `IoEngine` 接入
+- session-core aware outbound
+- core diagnostics 与 management snapshot
+
+当前仍未做：
 
 - `SO_REUSEPORT`
 - actor 亲核调度
 - 跨核 mailbox
 
-当前已补的前置接缝：
+下一步应聚焦：
 
-- `DemoServer` 已走 `IoEngine`
-- `GatewayServer` 已支持外部 `accept` 完成后的 `Session` 接入
-- 下一步切 `GatewayServer` 到 `IoEngine` 时，应只替换 ingress/accept 来源，避免重写 session 装配和业务 handler
+- 多 acceptor / accept policy 真正组装
+- `shadow bridge` / `v2 demo` 的 core 观测继续统一
+- 是否值得进入 `SO_REUSEPORT` 试验
 
 ### 3.2 `M6` ECS world / battle runtime
 
-进入前至少满足：
+已满足的进入条件：
 
 - battle start / input / frame / finish 协议已经稳定
 - `PlayerActor` / `RoomActor` / `BattleActor` 边界已经固定
 - frame push 语义不再频繁变化
 
-当前不做：
+当前已完成：
 
-- ECS component/system
+- `SimpleWorld`
+- battle metadata / participant / replay / score / frame runtime component
+- `BattleActor` 按需从 world 构造 runtime state
+- result summary / frame-limit finish / replay input 收口到 world helper
+
+当前仍未做：
+
 - deterministic simulation
-- replay stream
+- 真正的 game system 拆分
+- authoritative simulation / AOI
 
 ### 3.3 `M5` 数据层 v2
 
 进入前至少满足：
 
-- room / battle lifecycle 已固定
-- 需要持久化的状态集合已经冻结
+- room / battle lifecycle 已固定到可落盘边界
+- replay / result / snapshot 的事实源已经能从 runtime state 明确导出
 
-当前不做：
+当前建议先做：
 
-- snapshot schema
-- replay 持久化
-- battle result 持久化
+- replay 持久化 schema
+- battle result archive
+- world snapshot 的最小存储模型
 
 ### 3.4 `M4` 分布式原语
 
@@ -122,15 +151,16 @@
 当前最不值得提前做的是：
 
 1. 直接把 `v2` 切成默认入口
-2. 提前做分布式和多核
+2. 在没有 accept policy 结论前直接冲 `SO_REUSEPORT`
 3. 在 battle 主链没定型前做大规模内存优化
 4. 把 `battle_state` 字符串 body 过早冻结成最终协议
+5. 在 replay/result 还没落盘前就提前做分布式 battle
 
 ## 5. 当前值得继续做的是什么
 
 如果继续沿当前代码推进，最值得继续做的是：
 
-1. battle 正常结束分支扩展
-2. frame push 语义稳定化
-3. `GatewayServer` shadow bridge 的灰度接入测试
-4. battle runtime 壳向 ECS world 过渡前的消息清单冻结
+1. 多 listener / pinned listener 的配置化和运维可见性
+2. battle runtime 剩余镜像状态继续 world 化
+3. replay / result / snapshot 的数据层入口
+4. `GatewayServer` / `shadow bridge` / `v2 demo` 的诊断口径统一

@@ -14,6 +14,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
         std::ofstream output(path);
         output << "gateway.port=9200\n";
         output << "gateway.io_threads=4\n";
+        output << "gateway.io_listener_ports=9201,9202\n";
+        output << "gateway.io_listener_core_ids=1,3\n";
         output << "gateway.business_threads=6\n";
         output << "gateway.metrics_log_interval_ms=7000\n";
         output << "gateway.v2_shadow_bridge_enabled=true\n";
@@ -36,6 +38,12 @@ TEST(ConfigTest, LoadsGatewayConfigFromFile) {
     const auto config = app::config::load_gateway_config(path);
     EXPECT_EQ(config.port, 9200);
     EXPECT_EQ(config.io_threads, 4U);
+    ASSERT_EQ(config.io_listener_ports.size(), 2U);
+    EXPECT_EQ(config.io_listener_ports[0], 9201);
+    EXPECT_EQ(config.io_listener_ports[1], 9202);
+    ASSERT_EQ(config.io_listener_core_ids.size(), 2U);
+    EXPECT_EQ(config.io_listener_core_ids[0], 1U);
+    EXPECT_EQ(config.io_listener_core_ids[1], 3U);
     EXPECT_EQ(config.business_threads, 6U);
     EXPECT_EQ(config.metrics_log_interval, std::chrono::milliseconds(7000));
     EXPECT_EQ(config.session_max_packet_size, 2048U);
@@ -67,6 +75,8 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
         output << "  \"gateway\": {\n";
         output << "    \"port\": 9300,\n";
         output << "    \"io_threads\": 3,\n";
+        output << "    \"io_listener_ports\": [9301, 9302],\n";
+        output << "    \"io_listener_core_ids\": [0, 2],\n";
         output << "    \"business_threads\": 5,\n";
         output << "    \"metrics_log_interval_ms\": 2500,\n";
         output << "    \"metrics_prometheus_path\": \"runtime/test.prom\",\n";
@@ -99,6 +109,12 @@ TEST(ConfigTest, LoadsGatewayConfigFromJsonFile) {
     const auto config = app::config::load_gateway_config(path);
     EXPECT_EQ(config.port, 9300);
     EXPECT_EQ(config.io_threads, 3U);
+    ASSERT_EQ(config.io_listener_ports.size(), 2U);
+    EXPECT_EQ(config.io_listener_ports[0], 9301);
+    EXPECT_EQ(config.io_listener_ports[1], 9302);
+    ASSERT_EQ(config.io_listener_core_ids.size(), 2U);
+    EXPECT_EQ(config.io_listener_core_ids[0], 0U);
+    EXPECT_EQ(config.io_listener_core_ids[1], 2U);
     EXPECT_EQ(config.business_threads, 5U);
     EXPECT_EQ(config.metrics_log_interval, std::chrono::milliseconds(2500));
     ASSERT_TRUE(config.metrics_prometheus_path.has_value());

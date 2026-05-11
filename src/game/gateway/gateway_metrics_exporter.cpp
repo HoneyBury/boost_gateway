@@ -147,6 +147,13 @@ std::string render_prometheus_metrics(const GatewayRuntimeMetricsSnapshot& snaps
         }
     }
 
+    if (!snapshot.prometheus_extension_text.empty()) {
+        text += snapshot.prometheus_extension_text;
+        if (!text.empty() && text.back() != '\n') {
+            text += '\n';
+        }
+    }
+
     return text;
 }
 
@@ -189,8 +196,8 @@ std::string render_json_metrics(const GatewayRuntimeMetricsSnapshot& snapshot) {
         {"login_successes_per_sec", std::round(snapshot.rates.login_successes_per_sec * 100.0) / 100.0},
     };
 
-    if (!snapshot.diagnostics_extension_json_text.empty()) {
-        const auto extension = json::parse(snapshot.diagnostics_extension_json_text, nullptr, false);
+    if (!snapshot.json_extension_text.empty()) {
+        const auto extension = json::parse(snapshot.json_extension_text, nullptr, false);
         if (!extension.is_discarded()) {
             document["extensions"] = extension;
         }

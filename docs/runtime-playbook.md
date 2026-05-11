@@ -217,12 +217,43 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 | 端点 | 方法 | Content-Type | 状态 | 说明 |
 |---|---|---|---|---|
 | `/health` | GET | application/json | experimental | **当前固定返回 `{"status":"ok"}`，不依赖运行时真实健康状态** |
-| `/metrics` | GET | text/plain | stable | Prometheus 格式指标 |
-| `/metrics/json` | GET | application/json | stable | JSON 格式指标快照 |
+| `/metrics` | GET | text/plain | stable | Prometheus 格式指标；若启用 `shadow bridge diagnostics extension`，会附带 bridge counters |
+| `/metrics/json` | GET | application/json | stable | JSON 格式指标快照；可包含 `extensions.shadow_bridge` |
+| `/metrics/diagnostics` | GET | text/plain | stable | 便于人工排查的摘要视图，包含 per-core 统计和可选 extension |
+| `/metrics/diagnostics/json` | GET | application/json | stable | 结构化 diagnostics 视图，包含 `summary / io_balance / io_cores / extensions` |
 
 > **安全提示**：`http_management_port` **当前无任何鉴权**，监听全网卡，**仅适合内网 / 受信网络**（**不是**已认证控制面；见 **`docs/v1-governance-layers.md` §6**）。
 
 设置 `http_management_port = 0` 则禁用 **L2 HTTP** 端点。
+
+### HTTP 观测补充说明（`v1 + v2 bridge`）
+
+- 当 `examples/echo` 启用了 `GatewayServerShadowBridge` 时，`/metrics/json` 与 `/metrics/diagnostics/json` 都会带 `extensions.shadow_bridge`
+- 当前 `shadow_bridge` 主要暴露：
+  - `mirror_policy`
+  - `emit_policy`
+  - `tracked_sessions`
+  - `active_sessions`
+  - `mirrored_packets`
+  - `emitted_writes`
+  - `scheduled_writes`
+  - `inline_writes`
+- 这些字段用于灰度和多核回投排查，不应被视为最终稳定运维协议
+
+### `v2_gateway_demo` 只读管理口
+
+`examples/v2_gateway_demo` 现支持 `--http-port <port>`，启动后提供：
+
+- `/health`
+- `/metrics`
+- `/metrics/json`
+- `/metrics/diagnostics`
+- `/metrics/diagnostics/json`
+
+用途：
+
+- 验证 `DemoServer` 的 `IoEngine` / pinned acceptor / per-core session 分布
+- 验证 `v2` diagnostics schema，而不需要接入 `echo_server`
 
 ## 8. 当前主链已闭环的能力清单
 

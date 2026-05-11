@@ -25,6 +25,10 @@ TEST(GatewayMetricsExporterTest, RendersPrometheusAndJsonOutputs) {
     snapshot.dispatch_back_tasks = 9;
     snapshot.dispatch_inline_fallbacks = 1;
     snapshot.maintenance_probe_tasks = 4;
+    snapshot.prometheus_extension_text =
+        "gateway_shadow_bridge_tracked_sessions 2\n";
+    snapshot.json_extension_text =
+        R"({"shadow_bridge":{"tracked_sessions":2,"active_sessions":1}})";
     snapshot.diagnostics_extension_text =
         "shadow_bridge emit_responses=true tracked_sessions=2 active_sessions=1 mirrored_packets=3\n";
     snapshot.diagnostics_extension_json_text =

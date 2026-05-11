@@ -186,12 +186,31 @@ int main(int argc, char* argv[]) {
                  config.v2_shadow_bridge_emit_battle_state_frame ? "true" : "false",
                  config.v2_shadow_bridge_emit_battle_state_settlement ? "true" : "false",
                  config.v2_shadow_bridge_emit_battle_state_finished ? "true" : "false");
-        server.set_diagnostics_extension_provider(
-            [shadow_bridge]() -> game::gateway::GatewayServer::DiagnosticsExtensionSnapshot {
+        server.set_metrics_extension_provider(
+            [shadow_bridge]() -> game::gateway::GatewayServer::MetricsExtensionSnapshot {
                 if (!shadow_bridge) {
                     return {};
                 }
                 const auto diagnostics = shadow_bridge->diagnostics();
+                const auto prometheus = fmt::format(
+                    "# TYPE gateway_shadow_bridge_mirrored_packets_total counter\n"
+                    "gateway_shadow_bridge_mirrored_packets_total {}\n"
+                    "# TYPE gateway_shadow_bridge_emitted_writes_total counter\n"
+                    "gateway_shadow_bridge_emitted_writes_total {}\n"
+                    "# TYPE gateway_shadow_bridge_scheduled_writes_total counter\n"
+                    "gateway_shadow_bridge_scheduled_writes_total {}\n"
+                    "# TYPE gateway_shadow_bridge_inline_writes_total counter\n"
+                    "gateway_shadow_bridge_inline_writes_total {}\n"
+                    "# TYPE gateway_shadow_bridge_tracked_sessions gauge\n"
+                    "gateway_shadow_bridge_tracked_sessions {}\n"
+                    "# TYPE gateway_shadow_bridge_active_sessions gauge\n"
+                    "gateway_shadow_bridge_active_sessions {}\n",
+                    diagnostics.dispatch_stats.mirrored_packets,
+                    diagnostics.dispatch_stats.emitted_writes,
+                    diagnostics.dispatch_stats.scheduled_writes,
+                    diagnostics.dispatch_stats.inline_writes,
+                    diagnostics.tracked_sessions,
+                    diagnostics.active_sessions);
                 const auto text = fmt::format(
                     "shadow_bridge emit_responses={} tracked_sessions={} active_sessions={} mirrored_packets={} "
                     "emitted_writes={} scheduled_writes={} inline_writes={}\n",
@@ -203,12 +222,22 @@ int main(int argc, char* argv[]) {
                     diagnostics.dispatch_stats.scheduled_writes,
                     diagnostics.dispatch_stats.inline_writes);
                 return {
-                    .text = text,
+                    .prometheus_text = prometheus,
+                    .diagnostics_text = text,
                     .json_text = fmt::format("{{\"shadow_bridge\":{}}}", shadow_bridge->diagnostics_json()),
                 };
             });
     }
     server.set_connection_limits(config.max_connections, config.per_ip_connection_limit);
+    for (std::size_t index = 0; index < config.io_listener_ports.size(); ++index) {
+        const auto port = config.io_listener_ports[index];
+        const auto core_id = index < config.io_listener_core_ids.size()
+            ? std::optional<std::uint32_t>(config.io_listener_core_ids[index])
+            : std::nullopt;
+        if (!server.add_io_listener(port, v2::io::IoListenOptions{.fixed_core_id = core_id})) {
+            LOG_WARN("Ignored extra io listener port={} because io engine ingress is unavailable", port);
+        }
+    }
     server.start();
 
     // Persistence: setup player store for shutdown save

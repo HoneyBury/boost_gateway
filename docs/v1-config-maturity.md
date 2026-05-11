@@ -35,6 +35,8 @@
 |---|---|---|---|---|
 | `port` | ✅ | ❌（重启） | `stable` | 主监听端口 |
 | `http_management_port` | ✅ | ❌（重启） | `stable` | 0 表示禁用 |
+| `io_listener_ports` | ✅ | ❌（重启） | `experimental` | 多 listener 入口；当前主要由 `examples/echo` 的 `IoEngine` ingress 消费 |
+| `io_listener_core_ids` | ✅ | ❌（重启） | `experimental` | 与 `io_listener_ports` 按索引对齐；缺项时退回默认分配策略 |
 | `io_threads` | ✅ | ❌（重启） | `stable` | |
 | `business_threads` | ✅ | ❌（重启） | `stable` | |
 | `metrics_log_interval` | ✅ | ❌（重启） | `stable` | |
@@ -54,6 +56,16 @@
 | `tls.*` | ✅（解析） | ❌ | `reserved` | 字段被解析，主链未启用 SSL stream，见矩阵 §4.5 |
 
 > **`✅（解析）`**：配置层能读出该字段，但运行时主链未对该字段做出行为响应；**`reserved`** 字段不应被运维当作可生效配置。
+
+### 4.1 `io_listener_*` 使用边界
+
+- 该组字段属于 **startup-only experimental** 能力
+- 当前价值在于验证 `GatewayServer + IoEngine` 的多 listener ingress，而不是承诺正式多端口部署策略
+- `io_listener_ports` 支持：
+  - JSON 数组：`[9201, 9202]`
+  - 逗号分隔字符串：`9201,9202`
+- `io_listener_core_ids` 支持相同两种格式；若数量少于 listener 数量，未覆盖的 listener 走默认 core 分配
+- 当前 watcher reload 不会重绑 listener，也不会重建 `IoEngine`
 
 ---
 

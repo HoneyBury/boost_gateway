@@ -125,8 +125,8 @@ bool GatewayServer::dispatch_to_session_core(const std::shared_ptr<net::Session>
     return true;
 }
 
-void GatewayServer::set_diagnostics_extension_provider(DiagnosticsExtensionProvider provider) {
-    diagnostics_extension_provider_ = std::move(provider);
+void GatewayServer::set_metrics_extension_provider(MetricsExtensionProvider provider) {
+    metrics_extension_provider_ = std::move(provider);
 }
 
 bool GatewayServer::add_io_listener(std::uint16_t port,
@@ -221,9 +221,11 @@ GatewayRuntimeMetricsSnapshot GatewayServer::collect_runtime_metrics_snapshot(
     snapshot.dispatch_inline_fallbacks = dispatch_inline_fallback_count();
     snapshot.maintenance_probe_tasks = maintenance_probe_task_count();
     snapshot.io_cores = io_core_snapshot();
-    if (diagnostics_extension_provider_) {
-        const auto extension = diagnostics_extension_provider_();
-        snapshot.diagnostics_extension_text = extension.text;
+    if (metrics_extension_provider_) {
+        const auto extension = metrics_extension_provider_();
+        snapshot.prometheus_extension_text = extension.prometheus_text;
+        snapshot.json_extension_text = extension.json_text;
+        snapshot.diagnostics_extension_text = extension.diagnostics_text;
         snapshot.diagnostics_extension_json_text = extension.json_text;
     }
     return snapshot;
