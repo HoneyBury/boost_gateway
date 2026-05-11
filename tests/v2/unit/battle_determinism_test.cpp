@@ -14,7 +14,7 @@ TEST(V2BattleDeterminismTest, IdenticalInputsProduceIdenticalSnapshots) {
     auto feed_input = [](v2::ecs::World& w, const std::string& user,
                           const std::string& data, std::int64_t score,
                           std::uint32_t frame) {
-        v2::battle::battle_world_process_input(w, user, data, score, frame);
+        (void)v2::battle::battle_world_process_input(w, user, data, score, frame);
     };
 
     feed_input(*w1, "alice", "move:10,20", 5, 1);
@@ -22,8 +22,8 @@ TEST(V2BattleDeterminismTest, IdenticalInputsProduceIdenticalSnapshots) {
     feed_input(*w2, "alice", "move:10,20", 5, 1);
     feed_input(*w2, "bob", "attack:alice", 3, 1);
 
-    v2::battle::battle_world_advance_frame(*w1, 1, "input:alice");
-    v2::battle::battle_world_advance_frame(*w2, 1, "input:alice");
+    (void)v2::battle::battle_world_advance_frame(*w1, 1, "input:alice");
+    (void)v2::battle::battle_world_advance_frame(*w2, 1, "input:alice");
 
     auto s1 = v2::battle::battle_world_snapshot(*w1);
     auto s2 = v2::battle::battle_world_snapshot(*w2);
@@ -50,10 +50,10 @@ TEST(V2BattleDeterminismTest, IdenticalInputSequencesProduceIdenticalReplayLogs)
     auto w2 = v2::battle::create_battle_world("det_02", "r2", {"alice"}, 3);
 
     for (int frame = 1; frame <= 3; ++frame) {
-        v2::battle::battle_world_process_input(*w1, "alice", "move:1,2", 10, frame);
-        v2::battle::battle_world_process_input(*w2, "alice", "move:1,2", 10, frame);
-        v2::battle::battle_world_advance_frame(*w1, frame, "tick");
-        v2::battle::battle_world_advance_frame(*w2, frame, "tick");
+        (void)v2::battle::battle_world_process_input(*w1, "alice", "move:1,2", 10, frame);
+        (void)v2::battle::battle_world_process_input(*w2, "alice", "move:1,2", 10, frame);
+        (void)v2::battle::battle_world_advance_frame(*w1, frame, "tick");
+        (void)v2::battle::battle_world_advance_frame(*w2, frame, "tick");
     }
 
     auto r1 = v2::battle::battle_world_collect_replay_inputs(*w1);
@@ -76,7 +76,7 @@ TEST(V2BattleDeterminismTest, MovementSystemAppliesMoveAuthoritatively) {
         *world, "alice", "move:42,77", 0, 1);
     EXPECT_TRUE(input_result.accepted);
 
-    v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
+    (void)v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
 
     auto snapshot = v2::battle::battle_world_snapshot(*world);
     ASSERT_GE(snapshot.participants.size(), 1U);
@@ -105,8 +105,8 @@ TEST(V2BattleDeterminismTest, CombatSystemAppliesDamageInRange) {
         });
 
     // Process alice's attack on bob
-    v2::battle::battle_world_process_input(*world, "alice", "attack:bob", 0, 1);
-    v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
+    (void)v2::battle::battle_world_process_input(*world, "alice", "attack:bob", 0, 1);
+    (void)v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
 
     auto snapshot = v2::battle::battle_world_snapshot(*world);
     ASSERT_GE(snapshot.participants.size(), 2U);
