@@ -43,6 +43,10 @@ add_executable(project_v2_unit_tests
     unit/schema_validator_test.cpp
     unit/matchmaking_test.cpp
     unit/leaderboard_test.cpp
+    unit/battle_systems_test.cpp
+    unit/broadcast_test.cpp
+    unit/battle_replay_test.cpp
+    unit/reconnect_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
