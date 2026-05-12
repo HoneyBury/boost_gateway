@@ -1,0 +1,165 @@
+# Boost Gateway v2.6.0 — Gateway Deployment + Service
+#
+# The gateway is the single client-facing TCP ingress point.
+# It exposes port 9201 for game traffic and port 9080 for HTTP management.
+#
+# Usage:
+#   kubectl apply -f env/k8s/gateway-deployment.yaml
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gateway-config
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: gateway
+data:
+  gateway.json: |
+    {
+      "gateway": {
+        "port": 9201,
+        "http_management_port": 9080,
+        "io_threads": 2,
+        "business_threads": 2,
+        "metrics_log_interval_ms": 5000,
+        "metrics_prometheus_path": "runtime/metrics/gateway.prom",
+        "metrics_json_path": "runtime/metrics/gateway.json",
+        "auth": {
+          "provider": "dev",
+          "users_path": "config/auth_users.json"
+        },
+        "v2_shadow_bridge_enabled": true,
+        "v2_shadow_bridge_login": true,
+        "v2_shadow_bridge_room": true,
+        "v2_shadow_bridge_battle": true
+      },
+      "session": {
+        "max_packet_size": 1048576,
+        "max_pending_write_bytes": 262144,
+        "heartbeat_check_interval_ms": 5000,
+        "heartbeat_timeout_ms": 30000
+      },
+      "backends": {
+        "login": { "host": "login-backend.boost-gateway.svc.cluster.local", "port": 9202 },
+        "room": { "host": "room-backend.boost-gateway.svc.cluster.local", "port": 9302 },
+        "battle": { "host": "battle-backend.boost-gateway.svc.cluster.local", "port": 9303 },
+        "matchmaking": { "host": "matchmaking-backend.boost-gateway.svc.cluster.local", "port": 9304 },
+        "leaderboard": { "host": "leaderboard-backend.boost-gateway.svc.cluster.local", "port": 9305 }
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gateway
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: gateway
+    app.kubernetes.io/version: "2.6.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boost-gateway
+      app.kubernetes.io/component: gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: boost-gateway
+        app.kubernetes.io/component: gateway
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: gateway
+          image: ghcr.io/boost-gateway/gateway:latest
+          imagePullPolicy: Always
+          args:
+            - "--http-port"
+            - "9080"
+            - "--login-host"
+            - "login-backend.boost-gateway.svc.cluster.local"
+            - "--login-port"
+            - "9202"
+            - "--room-host"
+            - "room-backend.boost-gateway.svc.cluster.local"
+            - "--room-port"
+            - "9302"
+            - "--battle-host"
+            - "battle-backend.boost-gateway.svc.cluster.local"
+            - "--battle-port"
+            - "9303"
+          ports:
+            - containerPort: 9201
+              name: game
+              protocol: TCP
+            - containerPort: 9080
+              name: mgmt
+              protocol: TCP
+          env:
+            - name: MANAGEMENT_PORT
+              value: "9080"
+            - name: BOOST_LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "128Mi"
+            limits:
+              cpu: "2000m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9080
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 9080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+      volumes:
+        - name: config
+          configMap:
+            name: gateway-config
+        - name: logs
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gateway
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: gateway
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: gateway
+  ports:
+    - name: game
+      port: 9201
+      targetPort: 9201
+      protocol: TCP
+    - name: mgmt
+      port: 9080
+      targetPort: 9080
+      protocol: TCP

@@ -67,7 +67,7 @@
 
 ### 阶段 2：模块拆分
 
-1. 识别受影响模块，例如 `app`、`net`、`game/gateway`、`game/login`、`game/room`、`game/battle`、`v2/actor`、`v2/runtime`、`v2/gateway`、`v2/player`、`v2/room`、`v2/battle`、`tests`、`docs`。
+1. 识别受影响模块，例如 `app`、`net`、`game/gateway`、`game/login`、`game/room`、`game/battle`、`v2/actor`、`v2/runtime`、`v2/gateway`、`v2/player`、`v2/room`、`v2/battle`、`v2/match`、`v2/leaderboard`、`v2/auth`、`v2/tracing`、`sdk/`、`env/`、`tests`、`docs`。
 2. 按模块边界拆分子任务，避免一个子 Agent 横跨多个高耦合模块随意改动。
 3. 为每个子任务定义：
    - 目标
