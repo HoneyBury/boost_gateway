@@ -22,11 +22,14 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
         return;
     }
 
-    if (rate_limit_policy_ && !rate_limit_policy_(*envelope)) {
-        emit_error(*envelope,
-                   static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
-                   net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
-        return;
+    if (rate_limit_policy_) {
+        const auto limit_result = rate_limit_policy_(*envelope, envelope->session_id);
+        if (!limit_result.allowed) {
+            emit_error(*envelope,
+                       static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
+                       "rate_limited,retry_after_ms=" + std::to_string(limit_result.retry_after_ms));
+            return;
+        }
     }
 
     const auto command = to_command(*envelope);
@@ -142,6 +145,9 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
             return command;
         case net::protocol::kRoomReadyRequest:
             command.type = GatewayCommandType::kRoomReady;
+            return command;
+        case net::protocol::kRoomLeaveRequest:
+            command.type = GatewayCommandType::kRoomLeave;
             return command;
         case net::protocol::kBattleStartRequest:
             command.type = GatewayCommandType::kBattleStart;

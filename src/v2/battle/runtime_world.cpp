@@ -254,6 +254,20 @@ bool battle_world_mark_offline(v2::ecs::World& world,
     return changed;
 }
 
+void battle_world_set_online(v2::ecs::World& world,
+                             const std::string& user_id) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return;
+    }
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
+            if (participant.user_id == user_id) {
+                participant.online = true;
+            }
+        });
+}
+
 bool battle_world_should_accept_input(v2::ecs::World& world,
                                       const std::string& user_id,
                                       std::uint32_t submitted_frame) {

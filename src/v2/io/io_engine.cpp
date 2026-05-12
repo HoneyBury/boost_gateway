@@ -1,7 +1,9 @@
 #include "v2/io/io_engine.h"
 #include "v2/runtime/actor_system.h"
 
+#ifdef __unix__
 #include <sys/socket.h>
+#endif
 #include <utility>
 
 namespace v2::io {
@@ -101,9 +103,11 @@ public:
         acceptor_.open(endpoint.protocol());
         acceptor_.set_option(tcp::acceptor::reuse_address(true));
         if (reuse_port) {
+#ifdef SO_REUSEPORT
             using reuse_port_opt = boost::asio::detail::socket_option::boolean<
                 SOL_SOCKET, SO_REUSEPORT>;
             acceptor_.set_option(reuse_port_opt(true));
+#endif
         }
         acceptor_.bind(endpoint);
         acceptor_.listen();

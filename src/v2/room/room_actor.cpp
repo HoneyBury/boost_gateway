@@ -32,6 +32,18 @@ void RoomActor::on_message(v2::actor::Message&& message) {
     }
     if (const auto* ended = std::get_if<BattleEndedMsg>(&message.payload)) {
         handle_battle_ended(*ended);
+        return;
+    }
+    if (const auto* leave = std::get_if<LeaveRoomMsg>(&message.payload)) {
+        handle_leave_room(*leave);
+        return;
+    }
+    if (const auto* kick = std::get_if<KickMemberMsg>(&message.payload)) {
+        handle_kick_member(*kick);
+        return;
+    }
+    if (const auto* transfer = std::get_if<TransferOwnerMsg>(&message.payload)) {
+        handle_transfer_owner(*transfer);
     }
 }
 
@@ -138,6 +150,85 @@ void RoomActor::handle_battle_ended(const BattleEndedMsg& message) {
     state_.pending_battle_settlement_reason.reset();
     for (auto& member : state_.members) {
         member.ready = false;
+    }
+}
+
+void RoomActor::handle_leave_room(const LeaveRoomMsg& message) {
+    auto* member = find_member(message.user_id);
+    if (member == nullptr) {
+        return;
+    }
+
+    const bool was_owner = (state_.owner_user_id == message.user_id);
+    state_.members.erase(
+        std::remove_if(state_.members.begin(), state_.members.end(),
+                       [&](const RoomMemberState& m) { return m.user_id == message.user_id; }),
+        state_.members.end());
+
+    sink_.push(RoomLeaveAppliedMsg{
+        .room_id = state_.room_id,
+        .user_id = message.user_id,
+    });
+
+    if (was_owner) {
+        reassign_owner_if_needed();
+    }
+}
+
+void RoomActor::handle_kick_member(const KickMemberMsg& message) {
+    if (message.requester_user_id != state_.owner_user_id) {
+        return;
+    }
+    if (message.target_user_id == state_.owner_user_id) {
+        return;
+    }
+
+    auto* target = find_member(message.target_user_id);
+    if (target == nullptr) {
+        return;
+    }
+
+    state_.members.erase(
+        std::remove_if(state_.members.begin(), state_.members.end(),
+                       [&](const RoomMemberState& m) { return m.user_id == message.target_user_id; }),
+        state_.members.end());
+
+    sink_.push(RoomKickAppliedMsg{
+        .room_id = state_.room_id,
+        .target_user_id = message.target_user_id,
+    });
+}
+
+void RoomActor::handle_transfer_owner(const TransferOwnerMsg& message) {
+    if (message.requester_user_id != state_.owner_user_id) {
+        return;
+    }
+    if (message.new_owner_user_id == state_.owner_user_id) {
+        return;
+    }
+    auto* new_owner = find_member(message.new_owner_user_id);
+    if (new_owner == nullptr) {
+        return;
+    }
+
+    const auto old_owner = state_.owner_user_id;
+    state_.owner_user_id = message.new_owner_user_id;
+
+    sink_.push(RoomOwnerTransferredMsg{
+        .room_id = state_.room_id,
+        .old_owner_user_id = old_owner,
+        .new_owner_user_id = message.new_owner_user_id,
+    });
+}
+
+void RoomActor::reassign_owner_if_needed() {
+    if (!state_.members.empty()) {
+        state_.owner_user_id = state_.members.front().user_id;
+        sink_.push(RoomOwnerTransferredMsg{
+            .room_id = state_.room_id,
+            .old_owner_user_id = {},
+            .new_owner_user_id = state_.owner_user_id,
+        });
     }
 }
 

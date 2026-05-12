@@ -45,6 +45,9 @@ DemoServer::DemoServer(std::uint16_t port,
     backend_metrics_ = std::make_shared<BackendMetrics>();
     service_registry_ = std::make_shared<v2::service::ServiceRegistry>();
 
+    health_check_.set_backend_metrics(backend_metrics_);
+    health_check_.set_service_registry(service_registry_);
+
     if (options_.login_backend_config.has_value() ||
         options_.room_backend_config.has_value() ||
         options_.battle_backend_config.has_value()) {
@@ -69,16 +72,9 @@ void DemoServer::start() {
         management_io_ = std::make_unique<boost::asio::io_context>();
         http_manager_ = std::make_unique<net::HttpManager>(
             management_io_->get_executor(), *options_.http_management_port);
-        http_manager_->set_health_provider([this]() { return diagnostics_json(); });
-        http_manager_->set_metrics_provider([this]() {
-            const auto json = diagnostics_json();
-            return net::HttpMetricsSnapshot{
-                .prometheus_text = json,
-                .json_text = json,
-                .diagnostics_text = json,
-                .diagnostics_json_text = json,
-            };
-        });
+        http_manager_->set_health_provider([this]() { return health_json(); });
+        http_manager_->set_ready_provider([this]() { return ready_json(); });
+        http_manager_->set_metrics_provider([this]() { return metrics_snapshot(); });
         http_manager_->start();
         management_thread_ = std::make_unique<std::thread>([this]() { management_io_->run(); });
         LOG_INFO("v2 demo server HTTP management listening on :{}", *options_.http_management_port);
@@ -299,6 +295,65 @@ std::string DemoServer::diagnostics_json() const {
     doc["backend_instances"] = std::move(backend_instances);
 
     return doc.dump();
+}
+
+std::string DemoServer::health_json() const {
+    auto status = health_check_.check();
+    return v2::diagnostics::HealthCheck::to_json(status);
+}
+
+std::string DemoServer::ready_json() const {
+    auto status = health_check_.check();
+    nlohmann::json doc;
+    doc["status"] = status.status;
+    doc["ready"] = status.is_healthy();
+    // Include backend reachability details
+    nlohmann::json checks = nlohmann::json::array();
+    for (const auto& check : status.checks) {
+        checks.push_back({
+            {"name", check.name},
+            {"status", check.status},
+            {"message", check.message},
+        });
+    }
+    doc["checks"] = std::move(checks);
+    return doc.dump();
+}
+
+net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
+    const auto diag = diagnostics();
+    net::HttpMetricsSnapshot snap;
+
+    // Build Prometheus text format
+    std::string prom;
+    auto add_counter = [&](const char* name, const char* help, uint64_t val) {
+        prom += "# HELP " + std::string(name) + " " + std::string(help) + "\n";
+        prom += "# TYPE " + std::string(name) + " counter\n";
+        prom += std::string(name) + " " + std::to_string(val) + "\n";
+    };
+    auto add_gauge = [&](const char* name, const char* help, uint64_t val) {
+        prom += "# HELP " + std::string(name) + " " + std::string(help) + "\n";
+        prom += "# TYPE " + std::string(name) + " gauge\n";
+        prom += std::string(name) + " " + std::to_string(val) + "\n";
+    };
+
+    add_gauge("gateway_active_sessions", "Active sessions", diag.total_active_sessions);
+    add_counter("gateway_accepted_sessions_total", "Total accepted sessions", diag.total_accepted_sessions);
+    add_counter("gateway_outbound_dispatches_total", "Total outbound dispatches", diag.total_outbound_dispatches);
+
+    for (const auto& [svc, metrics] : diag.backend_metrics) {
+        std::string prefix = "gateway_backend_" + svc + "_";
+        add_counter((prefix + "requests_total").c_str(), "Backend requests", metrics.total_requests);
+        add_counter((prefix + "successes_total").c_str(), "Backend successes", metrics.total_successes);
+        add_counter((prefix + "errors_total").c_str(), "Backend errors", metrics.total_errors);
+        add_counter((prefix + "timeouts_total").c_str(), "Backend timeouts", metrics.total_timeouts);
+    }
+
+    snap.prometheus_text = prom;
+    snap.json_text = diagnostics_json();
+    snap.diagnostics_text = diagnostics_json();
+    snap.diagnostics_json_text = diagnostics_json();
+    return snap;
 }
 
 void DemoServer::do_accept() {

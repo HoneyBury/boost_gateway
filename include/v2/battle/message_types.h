@@ -93,6 +93,14 @@ struct PlayerDisconnectedMsg {
     std::string user_id;
 };
 
+struct PlayerReconnectedMsg {
+    std::string user_id;
+};
+
+struct DisconnectGraceTimerExpiredMsg {
+    std::string user_id;
+};
+
 struct BattleCreatedMsg {
     std::string battle_id;
     std::string room_id;

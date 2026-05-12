@@ -131,7 +131,7 @@ TEST(V2BattleActorTest, DuplicateSubmittedFrameIsIgnoredAndAckStillEmitsEvent) {
     EXPECT_TRUE(std::holds_alternative<v2::battle::FrameAckMsg>(sink.events[2]));
 }
 
-TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
+TEST(V2BattleActorTest, PlayerDisconnectMarksOfflineButBattleContinues) {
     v2::runtime::ActorSystem actor_system;
     RecordingBattleSink sink;
     auto actor = std::make_unique<v2::battle::BattleActor>(sink);
@@ -153,15 +153,79 @@ TEST(V2BattleActorTest, PlayerDisconnectFinishesBattle) {
     actor_ref.tell(std::move(disconnected));
 
     EXPECT_EQ(actor_system.dispatch_all(), 2U);
-    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kFinished);
-    ASSERT_EQ(sink.events.size(), 3U);
-    const auto* settlement = std::get_if<v2::battle::BattleSettlementPreparedMsg>(&sink.events[1]);
-    ASSERT_NE(settlement, nullptr);
-    EXPECT_EQ(settlement->reason, v2::battle::BattleFinishReason::kPlayerDisconnected);
-    const auto* finished = std::get_if<v2::battle::BattleFinishedMsg>(&sink.events[2]);
-    ASSERT_NE(finished, nullptr);
-    EXPECT_EQ(finished->reason, v2::battle::BattleFinishReason::kPlayerDisconnected);
-    EXPECT_EQ(finished->triggering_user_id, "owner");
+    // Battle should still be running during grace period
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kRunning);
+    // Only Created event emitted (no finish events during grace period)
+    ASSERT_EQ(sink.events.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<v2::battle::BattleCreatedMsg>(sink.events[0]));
+}
+
+TEST(V2BattleActorTest, PlayerReconnectWithinGracePeriodRestoresOnline) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    // Disconnect
+    v2::actor::Message disconnected;
+    disconnected.header.kind = v2::actor::MessageKind::kUser;
+    disconnected.payload = v2::battle::PlayerDisconnectedMsg{.user_id = "owner"};
+    actor_ref.tell(std::move(disconnected));
+
+    // Reconnect within grace period
+    v2::actor::Message reconnected;
+    reconnected.header.kind = v2::actor::MessageKind::kUser;
+    reconnected.payload = v2::battle::PlayerReconnectedMsg{.user_id = "owner"};
+    actor_ref.tell(std::move(reconnected));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kRunning);
+    EXPECT_EQ(sink.events.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<v2::battle::BattleCreatedMsg>(sink.events[0]));
+}
+
+TEST(V2BattleActorTest, MultipleDisconnectsDoNotStackGraceTimers) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingBattleSink sink;
+    auto actor = std::make_unique<v2::battle::BattleActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    v2::actor::Message create;
+    create.header.kind = v2::actor::MessageKind::kUser;
+    create.payload = v2::battle::CreateBattleMsg{
+        .battle_id = "battle_0001",
+        .room_id = "room_alpha",
+        .player_ids = {"owner", "member"},
+    };
+    actor_ref.tell(std::move(create));
+
+    // First disconnect
+    v2::actor::Message d1;
+    d1.header.kind = v2::actor::MessageKind::kUser;
+    d1.payload = v2::battle::PlayerDisconnectedMsg{.user_id = "owner"};
+    actor_ref.tell(std::move(d1));
+
+    // Second disconnect for same user (should not start another timer)
+    v2::actor::Message d2;
+    d2.header.kind = v2::actor::MessageKind::kUser;
+    d2.payload = v2::battle::PlayerDisconnectedMsg{.user_id = "owner"};
+    actor_ref.tell(std::move(d2));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::battle::BattleLifecycleState::kRunning);
+    EXPECT_EQ(sink.events.size(), 1U);
+    EXPECT_TRUE(std::holds_alternative<v2::battle::BattleCreatedMsg>(sink.events[0]));
 }
 
 TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {

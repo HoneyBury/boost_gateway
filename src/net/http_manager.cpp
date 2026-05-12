@@ -47,6 +47,10 @@ void HttpManager::set_health_provider(HealthProvider provider) {
     health_provider_ = std::move(provider);
 }
 
+void HttpManager::set_ready_provider(ReadyProvider provider) {
+    ready_provider_ = std::move(provider);
+}
+
 void HttpManager::start() {
     do_accept();
     LOG_INFO("HTTP management endpoint listening on port {}",
@@ -88,6 +92,12 @@ void HttpManager::do_accept() {
                             auto body = health_provider_
                                             ? health_provider_()
                                             : R"({"status":"ok"})";
+                            res = build_response(http::status::ok,
+                                                  "application/json", std::move(body));
+                        } else if (req->target() == "/ready") {
+                            auto body = ready_provider_
+                                            ? ready_provider_()
+                                            : R"({"status":"ok","ready":true})";
                             res = build_response(http::status::ok,
                                                   "application/json", std::move(body));
                         } else if (req->target() == "/metrics") {

@@ -22,6 +22,8 @@ std::string to_json(const BackendEnvelope& envelope) {
         {"error_code", envelope.error_code},
         {"payload", envelope.payload},
         {"message_type", envelope.message_type},
+        {"trace_id", envelope.trace_id},
+        {"span_id", envelope.span_id},
     };
     return doc.dump();
 }
@@ -90,6 +92,8 @@ std::optional<BackendEnvelope> from_json(std::string_view json) {
     envelope.error_code = doc.value("error_code", 0);
     envelope.payload = doc["payload"].get<std::string>();
     envelope.message_type = doc.value("message_type", std::string{});
+    envelope.trace_id = doc.value("trace_id", 0ULL);
+    envelope.span_id = doc.value("span_id", 0ULL);
 
     return envelope;
 }

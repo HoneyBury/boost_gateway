@@ -168,6 +168,32 @@ struct TraceContext {
         s.start_time = std::chrono::steady_clock::now();
         return s;
     }
+
+    // ── W3C TraceContext (traceparent header) ──────────
+    // Format: "00-{trace_id_hex(32)}-{span_id_hex(16)}-{trace_flags(2)}"
+    // trace_flags: "01" = sampled
+
+    [[nodiscard]] std::string to_w3c_traceparent() const {
+        char buf[56];
+        std::snprintf(buf, sizeof(buf), "00-%016llx%016llx-%016llx-01",
+                      static_cast<unsigned long long>(trace_id),
+                      static_cast<unsigned long long>(0),
+                      static_cast<unsigned long long>(current_span_id));
+        return buf;
+    }
+
+    static TraceContext from_w3c_traceparent(const std::string& header) {
+        TraceContext ctx{0, 0};
+        if (header.size() < 55 || header[0] != '0' || header[1] != '0' || header[2] != '-') {
+            return ctx;
+        }
+        // Parse trace_id (32 hex chars)
+        ctx.trace_id = std::strtoull(header.substr(3, 16).c_str(), nullptr, 16);
+        // Skip parent_span_id (16 hex chars at position 36)
+        // Parse span_id at position 36
+        ctx.current_span_id = std::strtoull(header.substr(36, 16).c_str(), nullptr, 16);
+        return ctx;
+    }
 };
 
 }  // namespace v2::tracing

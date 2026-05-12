@@ -335,3 +335,91 @@ TEST(V2PlayerActorTest, BattleEndedTransitionsToOnlineIdleWhenNoRoom) {
     EXPECT_FALSE(actor_ptr->state().room_id.has_value());
     EXPECT_FALSE(actor_ptr->state().pending_battle_settlement_reason.has_value());
 }
+
+TEST(V2PlayerActorTest, SessionCloseWithoutRoomTransitionsToOffline) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingPlayerSink sink;
+    auto actor = std::make_unique<v2::player::PlayerActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_message(v2::player::BindSessionMsg{.session_id = 100, .connection_id = 900}));
+    actor_ref.tell(make_message(v2::player::LoginRequestMsg{
+        .session_id = 100,
+        .user_id = "no_room_user",
+        .token = "token:no_room_user",
+        .display_name = std::string("NoRoomUser"),
+    }));
+    actor_ref.tell(make_message(v2::player::SessionClosedMsg{.session_id = 100}));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kOffline);
+    EXPECT_FALSE(actor_ptr->state().binding.has_value());
+    EXPECT_FALSE(actor_ptr->state().room_id.has_value());
+}
+
+TEST(V2PlayerActorTest, ReconnectWithinWindowRestoresRoomState) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingPlayerSink sink;
+    auto actor = std::make_unique<v2::player::PlayerActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    // Initial login
+    actor_ref.tell(make_message(v2::player::BindSessionMsg{.session_id = 100, .connection_id = 900}));
+    actor_ref.tell(make_message(v2::player::LoginRequestMsg{
+        .session_id = 100,
+        .user_id = "reconnect_me",
+        .token = "token:reconnect_me",
+        .display_name = std::string("ReconnectMe"),
+    }));
+    actor_ref.tell(make_message(v2::player::RoomAssignedMsg{
+        .room_actor_id = 42,
+        .room_id = "room_reconnect",
+    }));
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kInRoom);
+
+    // Session closes → suspended
+    actor_ref.tell(make_message(v2::player::SessionClosedMsg{.session_id = 100}));
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kSuspended);
+
+    // Reconnect before timer expires
+    actor_ref.tell(make_message(v2::player::BindSessionMsg{.session_id = 200, .connection_id = 901}));
+    actor_ref.tell(make_message(v2::player::LoginRequestMsg{
+        .session_id = 200,
+        .user_id = "reconnect_me",
+        .token = "token:reconnect_me",
+        .display_name = std::string("ReconnectMe"),
+    }));
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kInRoom);
+    ASSERT_TRUE(actor_ptr->state().room_id.has_value());
+    EXPECT_EQ(*actor_ptr->state().room_id, "room_reconnect");
+    ASSERT_TRUE(actor_ptr->state().binding.has_value());
+    EXPECT_EQ(actor_ptr->state().binding->session_id, 200U);
+}
+
+TEST(V2PlayerActorTest, LoginPopulatesTokenMetaAndClearsResumeMeta) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingPlayerSink sink;
+    auto actor = std::make_unique<v2::player::PlayerActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_message(v2::player::BindSessionMsg{.session_id = 100, .connection_id = 900}));
+    actor_ref.tell(make_message(v2::player::LoginRequestMsg{
+        .session_id = 100,
+        .user_id = "token_user",
+        .token = "token:token_user",
+        .display_name = std::string("TokenUser"),
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().lifecycle, v2::player::PlayerLifecycleState::kOnlineIdle);
+    EXPECT_EQ(sink.events.size(), 1U);
+    const auto* accepted = std::get_if<v2::player::LoginAcceptedMsg>(&sink.events.front());
+    ASSERT_NE(accepted, nullptr);
+    EXPECT_EQ(accepted->user_id, "token_user");
+}

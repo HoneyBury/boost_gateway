@@ -77,6 +77,9 @@ void battle_world_apply_input_score(v2::ecs::World& world,
 [[nodiscard]] bool battle_world_mark_offline(v2::ecs::World& world,
                                              const std::string& user_id);
 
+void battle_world_set_online(v2::ecs::World& world,
+                             const std::string& user_id);
+
 [[nodiscard]] bool battle_world_should_accept_input(v2::ecs::World& world,
                                                     const std::string& user_id,
                                                     std::uint32_t submitted_frame);

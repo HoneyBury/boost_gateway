@@ -1,5 +1,6 @@
 #include "v2/battle/battle_actor.h"
 
+#include <chrono>
 #include <utility>
 
 #include "v2/battle/battle_snapshot.h"
@@ -158,9 +159,43 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         if (world_ == nullptr) {
             return;
         }
-        const auto result = battle_world_handle_disconnect(*world_, disconnected->user_id);
-        if (result.battle_should_finish) {
-            finish_battle(BattleFinishReason::kPlayerDisconnected, disconnected->user_id);
+        battle_world_handle_disconnect(*world_, disconnected->user_id);
+
+        if (disconnect_grace_timers_.count(disconnected->user_id) > 0) {
+            return;
+        }
+
+        v2::actor::Message grace_msg;
+        grace_msg.header.kind = v2::actor::MessageKind::kUser;
+        grace_msg.payload = DisconnectGraceTimerExpiredMsg{
+            .user_id = disconnected->user_id,
+        };
+        auto schedule_id = schedule_after(self(), std::move(grace_msg), kDisconnectGracePeriod);
+        disconnect_grace_timers_[disconnected->user_id] = schedule_id;
+        return;
+    }
+
+    // ── Reconnect ─────────────────────────────────────────────
+    const auto* reconnected = std::get_if<PlayerReconnectedMsg>(&message.payload);
+    if (reconnected != nullptr) {
+        if (world_ == nullptr) {
+            return;
+        }
+        auto it = disconnect_grace_timers_.find(reconnected->user_id);
+        if (it != disconnect_grace_timers_.end()) {
+            cancel_schedule(it->second);
+            disconnect_grace_timers_.erase(it);
+        }
+        battle_world_set_online(*world_, reconnected->user_id);
+        return;
+    }
+
+    // ── Grace timer expired ────────────────────────────────────
+    const auto* grace_expired = std::get_if<DisconnectGraceTimerExpiredMsg>(&message.payload);
+    if (grace_expired != nullptr) {
+        disconnect_grace_timers_.erase(grace_expired->user_id);
+        if (world_ != nullptr && runtime_state().lifecycle == BattleLifecycleState::kRunning) {
+            finish_battle(BattleFinishReason::kPlayerDisconnected, grace_expired->user_id);
         }
         return;
     }

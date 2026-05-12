@@ -29,9 +29,13 @@ private:
     void handle_battle_started(const BattleStartedMsg& message);
     void handle_battle_settlement(const BattleSettlementMsg& message);
     void handle_battle_ended(const BattleEndedMsg& message);
+    void handle_leave_room(const LeaveRoomMsg& message);
+    void handle_kick_member(const KickMemberMsg& message);
+    void handle_transfer_owner(const TransferOwnerMsg& message);
 
     RoomMemberState* find_member(const std::string& user_id) noexcept;
     [[nodiscard]] bool all_members_ready() const noexcept;
+    void reassign_owner_if_needed();
 
     RoomEventSink& sink_;
     RoomRuntimeState state_;

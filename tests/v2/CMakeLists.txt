@@ -17,6 +17,7 @@ add_executable(project_v2_unit_tests
     unit/battle_determinism_test.cpp
     unit/battle_authoritative_test.cpp
     unit/ecs_world_test.cpp
+    unit/fault_injector_test.cpp
     unit/feature_flags_test.cpp
     unit/gateway_command_parser_test.cpp
     unit/gateway_bridge_test.cpp
@@ -36,6 +37,8 @@ add_executable(project_v2_unit_tests
     unit/diagnostics_manager_test.cpp
     unit/health_check_test.cpp
     unit/object_pool_test.cpp
+    unit/rate_limiter_test.cpp
+    unit/jwt_validator_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
@@ -54,6 +57,7 @@ add_executable(project_v2_integration_tests
     integration/demo_server_smoke_test.cpp
     integration/backend_health_test.cpp
     integration/data_layer_test.cpp
+    integration/service_bus_integrity_test.cpp
 )
 target_link_libraries(project_v2_integration_tests
     PRIVATE
@@ -63,5 +67,37 @@ target_link_libraries(project_v2_integration_tests
 apply_project_warnings(project_v2_integration_tests)
 
 gtest_discover_tests(project_v2_integration_tests
+    DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
+)
+
+# ─── Multi-process E2E tests (real OS processes) ────────────────────
+# Uses native OS process APIs (no boost::filesystem dependency).
+# Tests skip gracefully at runtime if service binaries are unavailable.
+
+add_executable(project_v2_multi_process_tests
+    integration/multi_process_test.cpp
+    integration/business_flow_test.cpp
+    integration/settlement_replay_test.cpp
+)
+add_dependencies(project_v2_multi_process_tests
+    v2_gateway_demo
+    v2_login_backend
+    v2_room_backend
+    v2_battle_backend
+)
+target_compile_definitions(project_v2_multi_process_tests
+    PRIVATE
+        V2_GATEWAY_BINARY="$<TARGET_FILE:v2_gateway_demo>"
+        V2_LOGIN_BINARY="$<TARGET_FILE:v2_login_backend>"
+        V2_ROOM_BINARY="$<TARGET_FILE:v2_room_backend>"
+        V2_BATTLE_BINARY="$<TARGET_FILE:v2_battle_backend>"
+)
+target_link_libraries(project_v2_multi_process_tests
+    PRIVATE
+        project_v2
+        GTest::gtest_main
+)
+apply_project_warnings(project_v2_multi_process_tests)
+gtest_discover_tests(project_v2_multi_process_tests
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
 )

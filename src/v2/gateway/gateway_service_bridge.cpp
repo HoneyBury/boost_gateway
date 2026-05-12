@@ -159,6 +159,8 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
         .kind = v2::service::MessageKind::kRequest,
         .payload = payload,
         .message_type = message_type,
+        .trace_id = current_trace_id_,
+        .span_id = current_span_id_,
     };
 
     const auto send_start = std::chrono::steady_clock::now();
