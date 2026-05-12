@@ -1,0 +1,5 @@
+add_executable(sdk_tests sdk_test.cpp)
+target_link_libraries(sdk_tests PRIVATE boost_gateway_sdk GTest::gtest_main)
+apply_project_warnings(sdk_tests)
+include(GoogleTest)
+gtest_discover_tests(sdk_tests DISCOVERY_TIMEOUT 10)

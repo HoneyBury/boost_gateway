@@ -1,0 +1,3 @@
+add_executable(sdk_echo_client echo_client/main.cpp)
+target_link_libraries(sdk_echo_client PRIVATE boost_gateway_sdk)
+apply_project_warnings(sdk_echo_client)
