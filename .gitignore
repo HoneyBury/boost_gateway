@@ -18,3 +18,4 @@ third_party/*.zip
 
 # v2 runtime artifacts
 v2_archive/
+sdk/python/__pycache__/

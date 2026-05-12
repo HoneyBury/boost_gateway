@@ -81,7 +81,7 @@ jobs:
 
       - name: Smoke test container
         run: |
-          docker run -d --name boost-gateway-test -p 9001:9000 -p 9081:9080 boost-gateway:latest --management-port 9080
-          sleep 3
+          docker run -d --name boost-gateway-test -p 9201:9201 -p 9081:9080 boost-gateway:latest --io-cores 1 --management-port 9080
+          sleep 5
           curl -f http://localhost:9081/health || (docker logs boost-gateway-test && exit 1)
           docker stop boost-gateway-test
