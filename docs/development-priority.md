@@ -164,12 +164,12 @@ v1.2.5   CI / Docker / 发布链路稳定性修复 ✅
 v2.0.0   七大模块全部落地 ✅ 2026-05-12
 ```
 
-> **v1.2.0 决策已执行**：`v1.x` 维护期结束，`v2.0.0` 七大模块（M1-M7）全部落地，315 单元测试 + 28 集成测试通过。
+> **v1.2.0 决策已执行**：`v1.x` 维护期结束，`v2.0.0` 七大模块（M1-M7）全部落地，473 测试全部通过。
 
 ## 5. 最近一次更新
 
 - 日期：`2026-05-12`
-- 版本：`v2.0.0` — `v1.x` 维护期结束。七大模块（M1-M7）全部落地：Actor 模型、多核 I/O（含 SO_REUSEPORT + 核心亲和）、内存架构（BumpArena + ObjectPool + CacheLine）、分布式 S0-S4 服务拆分、数据层 v2（LruCache + WriteBehind + Snapshotable + CachedBattleDataStore）、AOI/ECS battle world、运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）。315 单元测试 + 28 集成测试。
+- 版本：`v2.0.0` — `v1.x` 维护期结束。七大模块（M1-M7）全部落地：Actor 模型、多核 I/O（含 SO_REUSEPORT + 核心亲和）、内存架构（BumpArena + ObjectPool + CacheLine）、分布式 S0-S4 服务拆分、数据层 v2（LruCache + WriteBehind + Snapshotable + CachedBattleDataStore）、AOI/ECS battle world、运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）。473 测试。
 - 历次更新：
   - `2026-05-08` `v1.2.5` — Windows CI 稳定性、Docker 依赖获取与 `gtest_discover_tests` timeout 修复
   - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`docs/v1-structure-upgrade-decision.md`**

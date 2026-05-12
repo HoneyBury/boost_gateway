@@ -32,16 +32,15 @@
 
 当前无未进入深水区的模块。
 
-## 3. 分支策略
+## 3. 分支策略（已执行）
 
-建议不要直接在当前 `develop` 上展开 `Actor + ECS` 重构。
+v2.0.0 开发已在 `develop` 分支上完成（注：启动时未另建 feature 分支，而是在 `develop` 上直接推进 v2 实作）。
 
-建议流程：
+当前分支布局：
 
-1. 保持 `main` 继续承接 `v1.x` 稳定发布
-2. 保持 `develop` 继续承接 `v1.x` 日常修复与收尾
-3. 从当前 `develop` 拉出 `feature/v2-bootstrap` 或 `v2/develop`
-4. 后续所有 `v2` 结构开发先进入该分支，不回写 `v1.x develop`
+1. `main` — 承接稳定发布（当前为 v2.0.0）
+2. `develop` — v2.0.0+ 日常迭代（当前阶段：生产加固 v2.0.1）
+3. v2 与 v1 在 `develop` 上共仓推进，v2 目录独立、不破坏 v1 主链
 
 ## 4. 启动前置决策
 
@@ -57,11 +56,11 @@
 - `ClientEnvelope` 是否继续保留 `message_id + request_id + error_code + flags + body`
 - `Actor` 内部 typed message 与外部字符串协议如何桥接
 
-建议结论：
+结论（已执行）：
 
-- 外部入口继续兼容 `v1`
-- 内部主消息模型切换为 typed payload
-- 第一批不改客户端包格式
+- 外部入口通过 `SessionAdapter` 桥接继续兼容 v1 字符串协议
+- 内部 Actor 消息使用 typed payload（`std::variant` 消息类型）
+- 客户端包格式未改变
 
 ### 4.2 主链切换策略
 
@@ -73,11 +72,11 @@
 - `SessionAdapter` 是否只挂在新 demo 入口
 - 何时允许把 `GatewayActor` 接入现有主链
 
-建议结论：
+结论（已执行）：
 
-- 第一阶段采用“并存入口”
-- 只新增 `examples/v2_gateway_demo/`
-- 不改现有 `echo_server` / `GatewayServer` 主展示入口
+- v2 采用”并存入口”策略
+- 已新增 `examples/v2_gateway_demo/` 及三个 backend 入口
+- v1 `echo_server` / `GatewayServer` 主展示入口继续保留，未替换
 
 ### 4.3 回归测试保留范围
 
@@ -310,7 +309,7 @@ v2.0.0 全部七大模块已完成落地：
 - `M6` AOI/ECS battle world（7-system pipeline + authoritative simulation + deterministic replay）
 - `M7` 运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）
 
-315 单元测试 + 28 集成测试全部通过。
+473 测试全部通过。
 
 仍以规划/原型为主的部分：
 - K8s Operator / 服务网格集成（需真实 K8s 集群）
@@ -378,7 +377,7 @@ v2.0.0 全部七大模块已完成落地：
 
 说明：
 
-- 截至 `2026-05-12`，v2.0.0 全部七大模块（M1-M7）已完成落地，315 单元测试 + 28 集成测试通过
+- 截至 `2026-05-12`，v2.0.0 全部七大模块（M1-M7）已完成落地，473 测试通过
 
 ## 11. 当前状态
 

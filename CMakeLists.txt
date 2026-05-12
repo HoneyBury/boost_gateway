@@ -78,6 +78,8 @@ install(FILES
     docs/v2-room-lifecycle.md
     docs/v2-gateway-cutover-criteria.md
     docs/v2-service-split-plan.md
+    docs/v2-enterprise-roadmap.md
+    docs/architecture-acceptance-criteria.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 

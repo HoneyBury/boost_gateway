@@ -19,15 +19,15 @@
 - [v1.x 横切数据格式与后端支持级别](./v1-cross-cutting-data-formats.md) — **`v1.1.17` / T16**：player JSON / SQLite / replay 载荷 / **`AUDIT_LOG`** 行格式事实与兼容边界
 - [v1.2.0 结构升级决策](./v1-structure-upgrade-decision.md) — **`T21`**：typed protocol / internal bus / battle replay 是否在维护分支转正的决策记录（结论：**不提前推进**）
 - [发布流程](./release-process.md) — `develop -> main`、CI/CD、tag release 与归档内容
-- [v1.2.5 发布说明](./releases/v1.2.5.md) — 当前维护稳定版发布记录
-- [v2.0 启动清单](./v2-startup-checklist.md) — 从当前 `develop` 启动 `v2.0` 的分支、边界、骨架、验收清单与当前实现状态
+- [v1.2.5 发布说明](./releases/v1.2.5.md) — v1.x 维护期最终稳定版发布记录
+- [v2.0 启动清单](./v2-startup-checklist.md) — v2.0.0 启动基线、分支策略、分批清单与最终实现状态（七大模块全部落地）
 - [v2 runtime 原型说明](./v2-runtime.md) — `ActorSystem`、mailbox、单线程调度模型与当前限制
 - [v2 协议桥接说明](./v2-protocol-bridge.md) — `SessionAdapter` / `GatewayActor` / `Runtime` 的协议入口与路由边界
 - [v2 PlayerActor 生命周期](./v2-player-lifecycle.md) — 登录、顶号、挂起、进房、进战与回切规则
 - [v2 RoomActor 生命周期](./v2-room-lifecycle.md) — 成员、ready、开战资格、battle active 与结束回收
 - [v2 GatewayServer 接入门槛](./v2-gateway-cutover-criteria.md) — 何时允许从 demo 入口推进到现有主链桥接
-- [v2 下一阶段边界](./v2-next-phases.md) — `M2-M7` 的进入门槛、先后顺序与当前不做项
-- [v2 服务拆分规划](./v2-service-split-plan.md) — `M4` 下服务拆分 / 多进程后端的专项规划、当前缺口与阶段验收标准
+- [v2 下一阶段边界](./v2-next-phases.md) — M1-M7 完成状态、各模块进入门槛、远期目标
+- [v2 服务拆分规划](./v2-service-split-plan.md) — `M4` 下服务拆分 / 多进程后端的专项规划
 - [开发优化文档（v1.0.0 维护期）](./development-optimization.md) — 模块级问题分析、整改路线图、版本批次任务表
 - [开发优先级看板](./development-priority.md)
 - [当前网关骨架运行说明](./runtime-playbook.md)
@@ -39,10 +39,11 @@
 
 ### v2.0.0（已完成，2026-05-12）
 
-- [v2.0.0 企业级架构规划](./v2-roadmap.md)
-- [v2.0.0 设计文档](./v2-design.md)
-- [v2 服务拆分规划](./v2-service-split-plan.md)
-- [v2 下一阶段边界](./v2-next-phases.md)
+- [v2.0.0 启动清单与最终实现状态](./v2-startup-checklist.md) — 全部 B0-B8 批次和七大模块（M1-M7）完成记录
+- [v2.0.0 企业级架构规划](./v2-roadmap.md) — 七大模块设计目标与实现路线
+- [v2.0.0 设计文档](./v2-design.md) — Actor + ECS 混合架构最小设计草案
+- [v2 服务拆分规划](./v2-service-split-plan.md) — M4 分布式原语与服务拆分设计
+- [v2 下一阶段边界](./v2-next-phases.md) — 各模块进入门槛与完成状态
 
 ### v2.x 企业级迭代
 

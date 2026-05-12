@@ -100,7 +100,7 @@ session->set_packet_handler([this](shared_ptr<Session> s, PacketMessage msg) {
 └─────────────────────────────────────────┘
 ```
 
-**核心接口**：
+**核心接口（设计目标，实际实现见 `include/v2/actor/actor.h`）**：
 
 ```cpp
 // Actor 基类
@@ -189,7 +189,7 @@ for (int i = 0; i < n_threads; ++i)
 └──────────────────────────────────────────────┘
 ```
 
-**核心实现**：
+**核心实现（概念设计，实际接口见 `include/v2/io/io_engine.h`）**：
 
 ```cpp
 class IoEngine {
@@ -352,7 +352,7 @@ struct alignas(64) SessionColdData {
 └─────────────────────────────────────────────────┘
 ```
 
-### 6.2 一致性哈希分片
+### 6.2 一致性哈希分片（远期设计目标，当前未实现）
 
 ```cpp
 // Room 分片: room_id → 虚拟节点 → 物理节点
@@ -372,7 +372,7 @@ class ConsistentHashRing {
 // 保证同一房间的所有操作在同一进程内完成
 ```
 
-### 6.3 领导者选举 (Bully/Raft)
+### 6.3 领导者选举（远期设计目标，当前未实现）
 
 ```cpp
 // 用于 Matchmaking 等单例服务
@@ -504,7 +504,7 @@ class AoiSystem {
 
 ## 九、M7: 运维成熟度
 
-### 9.1 Kubernetes Operator
+### 9.1 Kubernetes Operator（远期设计目标，当前未实现，需真实 K8s 集群）
 
 ```yaml
 # Gateway 自动伸缩配置
@@ -552,7 +552,7 @@ class FeatureFlags {
 };
 ```
 
-### 9.3 OpenTelemetry 分布式追踪
+### 9.3 OpenTelemetry 分布式追踪（远期设计目标，当前为自研 TraceContext）
 
 ```cpp
 // 跨服务追踪: Gateway → Login → Room → Battle
@@ -610,11 +610,11 @@ V2.0.0 总工期预估: 按建议顺序执行
 
 | 阶段 | 主要交付 | 测试标准 |
 |---|---|---|
-| A | ActorSystem, IoEngine, FrameArena | 单进程 Actor 吞吐 > 100K msg/s |
-| B | ConsistentHashRing, LeaderElection, ServiceDiscovery | 3 节点集群故障转移 < 5s |
-| C | LruCache, WriteBehindDataStore, Snapshotable, CachedBattleDataStore | 31 单元测试 + 6 集成测试 |
-| D | AoiSystem, SpatialGrid | 10K 实体 AOI 查询 < 1ms |
-| E | GameServerOperator, Tracer, FeatureFlags | 金丝雀发布零停机 |
+| A | ActorSystem, IoEngine, FrameArena | ✅ 已完成 |
+| B | ConsistentHashRing, LeaderElection, ServiceDiscovery | 远期目标 — 未实现 |
+| C | LruCache, WriteBehindDataStore, Snapshotable, CachedBattleDataStore | ✅ 已完成 |
+| D | AoiSystem, SpatialGrid | ✅ 已完成 |
+| E | GameServerOperator, Tracer, FeatureFlags | FeatureFlags ✅ 已完成；K8s Operator/OpenTelemetry 远期目标 |
 
 ### 技术选型参考
 
@@ -632,9 +632,9 @@ V2.0.0 总工期预估: 按建议顺序执行
 
 v2.0.0 不会破坏 v1.0.0 的 API 兼容性：
 
-1. **协议格式兼容**：v2.0.0 的服务端可接受 v1.0.0 客户端连接
-2. **渐进式迁移**：Actor 模型通过 `ActorAdapter` 包装现有 `Session` 实现平滑过渡
-3. **配置向后兼容**：v1.0.0 的 `gateway.json` 可直接在 v2.0.0 使用
+1. **协议格式桥接**：v2 通过 `SessionAdapter` → `GatewayActor` → `Runtime` 桥接链兼容 v1 字符串协议，外部客户端无需感知内部 Actor 模型
+2. **渐进式迁移**：v1 `GatewayServer` 与 v2 `DemoServer` 并存，v1 主链未替换
+3. **配置向后兼容**：v1 的 `gateway.json` 继续用于 v1 入口；v2 新增独立 backend 配置
 4. **构建系统保持不变**：CMake + FetchContent 继续使用
 
 ---
@@ -652,7 +652,7 @@ v2.0.0 不会破坏 v1.0.0 的 API 兼容性：
 可观测性:   Prometheus + 审计日志      OpenTelemetry 分布式追踪 + 火焰图
 部署:       Docker + Compose           Kubernetes Operator + 灰度发布
 
-测试:       54 个 (单进程)              100+ 个 (含集群集成测试)
-吞吐:       ~10K msg/s (单核)           ~100K msg/s (8 核)
-延迟:       p99 < 5ms (单机)            p99 < 2ms (同核心 Actor)
+测试:       54 个 (单进程)              473 个 (含 v2 单元+集成测试)
+吞吐:       ~10K msg/s (单核)           目标 ~100K msg/s (8 核) — 待基准测定
+延迟:       p99 < 5ms (单机)            目标 p99 < 2ms (同核心 Actor) — 待基准测定
 ```
