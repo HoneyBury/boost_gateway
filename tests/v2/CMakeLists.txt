@@ -53,10 +53,14 @@ add_executable(project_v2_unit_tests
     unit/raft_test.cpp
     unit/otel_persistence_test.cpp
     unit/k8s_operator_test.cpp
+    unit/v3_integration_test.cpp
+    unit/sdk_protocol_test.cpp
+    unit/error_paths_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
         project_v2
+        boost_gateway_sdk
         GTest::gtest_main
 )
 target_compile_definitions(project_v2_unit_tests
