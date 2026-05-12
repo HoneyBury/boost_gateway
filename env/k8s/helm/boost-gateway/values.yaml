@@ -1,0 +1,82 @@
+# BoostGateway Helm Chart - Default Values
+
+global:
+  imageRegistry: ghcr.io/honeybury
+  imageTag: v3.0.0
+  pullPolicy: IfNotPresent
+
+# ── Gateway ──────────────────────────────────────────────────────────
+gateway:
+  enabled: true
+  replicas: 2
+  image: boost-gateway
+  port: 9201
+  mgmtPort: 9080
+  resources:
+    requests: {cpu: "500m", memory: "256Mi"}
+    limits: {cpu: "2", memory: "1Gi"}
+  config:
+    max_connections: 10000
+    backpressure_high_watermark: 262144
+    metrics_log_interval_ms: 5000
+
+# ── Login Backend ────────────────────────────────────────────────────
+login:
+  enabled: true
+  replicas: 2
+  image: boost-backend
+  port: 9202
+  jwt_secret: ""  # set via Secret
+  jwt_issuer: boost-gateway
+
+# ── Room Backend ─────────────────────────────────────────────────────
+room:
+  enabled: true
+  replicas: 3
+  image: boost-backend
+  port: 9302
+
+# ── Battle Backend ───────────────────────────────────────────────────
+battle:
+  enabled: true
+  replicas: 3
+  image: boost-backend
+  port: 9303
+
+# ── Match Backend ────────────────────────────────────────────────────
+match:
+  enabled: true
+  replicas: 1
+  image: boost-backend
+  port: 9304
+
+# ── Leaderboard Backend ──────────────────────────────────────────────
+leaderboard:
+  enabled: true
+  replicas: 1
+  image: boost-backend
+  port: 9305
+
+# ── Redis ────────────────────────────────────────────────────────────
+redis:
+  enabled: true
+  image: redis:7-alpine
+  port: 6379
+  maxmemory: 256mb
+  maxmemoryPolicy: allkeys-lru
+
+# ── Monitoring ───────────────────────────────────────────────────────
+monitoring:
+  prometheus:
+    enabled: true
+    port: 9090
+  grafana:
+    enabled: true
+    port: 3000
+
+# ── TLS ─────────────────────────────────────────────────────────────
+tls:
+  enabled: false
+  certManager:
+    issuer: letsencrypt-prod
+    secretName: gateway-tls

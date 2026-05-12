@@ -1,0 +1,13 @@
+apiVersion: v2
+name: boost-gateway
+description: BoostGateway - High-Performance Game Server Framework
+type: application
+version: 3.0.0
+appVersion: "3.0.0"
+keywords:
+  - game-server
+  - boost-asio
+  - cpp
+  - multiplayer
+maintainers:
+  - name: BoostGateway Team

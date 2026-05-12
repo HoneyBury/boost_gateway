@@ -1,0 +1,90 @@
+# v3.0.0: GameServer Custom Resource Definition
+# Enables K8s-native management of BoostGateway game servers.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gameservers.gateway.boost.io
+spec:
+  group: gateway.boost.io
+  names:
+    kind: GameServer
+    listKind: GameServerList
+    plural: gameservers
+    singular: gameserver
+    shortNames: [gs]
+  scope: Namespaced
+  versions:
+    - name: v1
+      served: true
+      storage: true
+      schema:
+        openAPIV3Schema:
+          type: object
+          properties:
+            spec:
+              type: object
+              properties:
+                serviceType:
+                  type: string
+                  enum: [gateway, login, room, battle, match, leaderboard]
+                replicas:
+                  type: integer
+                  minimum: 1
+                  default: 1
+                image:
+                  type: string
+                port:
+                  type: integer
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu: {type: string}
+                        memory: {type: string}
+                    limits:
+                      type: object
+                      properties:
+                        cpu: {type: string}
+                        memory: {type: string}
+                config:
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                tls:
+                  type: object
+                  properties:
+                    enabled: {type: boolean}
+                    secretName: {type: string}
+            status:
+              type: object
+              properties:
+                phase:
+                  type: string
+                  enum: [Pending, Running, Draining, Stopped]
+                readyReplicas: {type: integer}
+                healthyNodes: {type: integer}
+                leaderNode: {type: string}
+                conditions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      type: {type: string}
+                      status: {type: string}
+                      lastTransitionTime: {type: string, format: date-time}
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Service
+          type: string
+          jsonPath: .spec.serviceType
+        - name: Replicas
+          type: integer
+          jsonPath: .spec.replicas
+        - name: Phase
+          type: string
+          jsonPath: .status.phase
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp

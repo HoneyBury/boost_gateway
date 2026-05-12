@@ -52,6 +52,7 @@ add_executable(project_v2_unit_tests
     unit/remote_actor_test.cpp
     unit/raft_test.cpp
     unit/otel_persistence_test.cpp
+    unit/k8s_operator_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
