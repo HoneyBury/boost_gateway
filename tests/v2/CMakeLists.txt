@@ -48,6 +48,7 @@ add_executable(project_v2_unit_tests
     unit/battle_replay_test.cpp
     unit/reconnect_test.cpp
     unit/proto_schema_test.cpp
+    unit/cluster_router_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
