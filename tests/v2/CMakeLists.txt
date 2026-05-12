@@ -50,6 +50,7 @@ add_executable(project_v2_unit_tests
     unit/proto_schema_test.cpp
     unit/cluster_router_test.cpp
     unit/remote_actor_test.cpp
+    unit/raft_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
