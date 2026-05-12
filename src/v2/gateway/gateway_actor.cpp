@@ -69,6 +69,7 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
         case GatewayCommandType::kRoomCreate:
         case GatewayCommandType::kRoomJoin:
         case GatewayCommandType::kRoomReady:
+        case GatewayCommandType::kRoomLeave:
         case GatewayCommandType::kBattleStart:
             if (command_sink_ != nullptr && command_sink_->handle(*command)) {
                 return;

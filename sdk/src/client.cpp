@@ -98,7 +98,9 @@ public:
     LoginResult login(const std::string& user_id, const std::string& token,
                       std::chrono::milliseconds timeout) {
         std::string body = user_id + "|token:" + token + "|" + user_id;
-        auto resp = send_and_read(net::protocol::kLoginRequest, body, timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kLoginRequest, body, timeout,
+            net::protocol::kLoginResponse);
         LoginResult result;
         if (resp.message_id == net::protocol::kLoginResponse) {
             result.ok = true;
@@ -127,7 +129,9 @@ public:
 
     RoomResult join_room(const std::string& room_id,
                          std::chrono::milliseconds timeout) {
-        auto resp = send_and_read(net::protocol::kRoomJoinRequest, room_id, timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kRoomJoinRequest, room_id, timeout,
+            net::protocol::kRoomJoinResponse);
         RoomResult result;
         result.room_id = room_id;
         result.ok = (resp.message_id == net::protocol::kRoomJoinResponse);
@@ -137,7 +141,9 @@ public:
 
     RoomResult leave_room(const std::string& room_id,
                           std::chrono::milliseconds timeout) {
-        auto resp = send_and_read(net::protocol::kRoomLeaveRequest, room_id, timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kRoomLeaveRequest, room_id, timeout,
+            net::protocol::kRoomLeaveResponse);
         RoomResult result;
         result.room_id = room_id;
         result.ok = (resp.message_id == net::protocol::kRoomLeaveResponse);
@@ -146,8 +152,10 @@ public:
     }
 
     RoomResult set_ready(bool ready, std::chrono::milliseconds timeout) {
-        auto resp = send_and_read(net::protocol::kRoomReadyRequest,
-                                   ready ? "true" : "false", timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kRoomReadyRequest,
+            ready ? "true" : "false", timeout,
+            net::protocol::kRoomReadyResponse);
         RoomResult result;
         result.ok = (resp.message_id == net::protocol::kRoomReadyResponse);
         if (!result.ok) result.error_code = resp.error_code;
@@ -156,7 +164,9 @@ public:
 
     BattleStartResult start_battle(const std::string& room_id,
                                     std::chrono::milliseconds timeout) {
-        auto resp = send_and_read(net::protocol::kBattleStartRequest, room_id, timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kBattleStartRequest, room_id, timeout,
+            net::protocol::kBattleStartResponse);
         BattleStartResult result;
         result.ok = (resp.message_id == net::protocol::kBattleStartResponse);
         if (!result.ok) result.error_code = resp.error_code;
@@ -165,8 +175,9 @@ public:
 
     BattleInputResult send_battle_input(const std::string& input_data,
                                          std::chrono::milliseconds timeout) {
-        auto resp = send_and_read(net::protocol::kBattleInputRequest,
-                                   input_data, timeout);
+        auto resp = send_and_read_expect(
+            net::protocol::kBattleInputRequest, input_data, timeout,
+            net::protocol::kBattleInputResponse);
         BattleInputResult result;
         result.ok = (resp.message_id == net::protocol::kBattleInputResponse);
         if (!result.ok) result.error_code = resp.error_code;
@@ -204,12 +215,60 @@ private:
     TcpConnection conn_;
     std::atomic<std::uint32_t> next_request_id_{1};
 
+    bool is_push_message(std::uint16_t msg_id) {
+        return msg_id == net::protocol::kSessionKickedPush ||
+               msg_id == net::protocol::kSessionResumedPush ||
+               msg_id == net::protocol::kRoomStatePush ||
+               msg_id == net::protocol::kBattleStatePush ||
+               msg_id == net::protocol::kBattleInputPush;
+    }
+
     net::packet::DecodedPacket send_and_read(
         std::uint16_t msg_id, const std::string& body,
         std::chrono::milliseconds timeout) {
         auto req_id = next_request_id_++;
         if (!conn_.send(msg_id, req_id, body)) return {};
         return conn_.read(timeout);
+    }
+
+    /// Send and read with push draining: keeps reading until getting a non-push response.
+    net::packet::DecodedPacket send_and_read_expect(
+        std::uint16_t msg_id, const std::string& body,
+        std::chrono::milliseconds timeout,
+        std::uint16_t expected_response_id,
+        PushCallback* push_cb = nullptr) {
+        auto req_id = next_request_id_++;
+        if (!conn_.send(msg_id, req_id, body)) return {};
+
+        auto deadline = std::chrono::steady_clock::now() + timeout;
+        while (std::chrono::steady_clock::now() < deadline) {
+            auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+                deadline - std::chrono::steady_clock::now());
+            if (remaining.count() <= 0) break;
+
+            auto packet = conn_.read(remaining);
+            if (packet.message_id == 0) continue;
+
+            // If it's a push, invoke callback and keep reading
+            if (is_push_message(packet.message_id)) {
+                if (push_cb) (*push_cb)(PushMessage{packet.message_id, packet.body});
+                continue;
+            }
+
+            // If it's the expected response, return it
+            if (packet.message_id == expected_response_id) {
+                return packet;
+            }
+
+            // Error response — return as-is
+            if (packet.message_id == net::protocol::kErrorResponse) {
+                return packet;
+            }
+
+            // Unexpected response — return for caller to handle
+            return packet;
+        }
+        return {}; // timeout
     }
 };
 
