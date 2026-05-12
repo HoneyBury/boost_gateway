@@ -16,10 +16,11 @@ configure_file(
 )
 
 # ── Library (standalone — no server deps) ────────────────────────────
-add_library(boost_gateway_sdk STATIC
+add_library(boost_gateway_sdk SHARED
     src/client.cpp
     src/c_api.cpp
 )
+target_compile_definitions(boost_gateway_sdk PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
 
 target_include_directories(boost_gateway_sdk
     PUBLIC

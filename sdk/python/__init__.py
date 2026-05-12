@@ -1,6 +1,6 @@
 # SDK v4.1.0: Thin Python wrapper via C API (ctypes, zero deps).
 import ctypes, os
-from ctypes import c_int32, c_uint16, c_uint64, c_char, c_int, c_void_p, CFUNCTYPE
+from ctypes import c_int32, c_uint16, c_uint64, c_char, c_char_p, c_int, c_void_p, CFUNCTYPE
 
 _dll = None
 for p in ["boost_gateway_sdk.dll","libboost_gateway_sdk.so","libboost_gateway_sdk.dylib"]:
