@@ -96,6 +96,7 @@ public:
     virtual void register_session(std::uint32_t core_id) = 0;
     virtual void unregister_session(std::uint32_t core_id) = 0;
     [[nodiscard]] virtual std::uint32_t session_count(std::uint32_t core_id) const noexcept = 0;
+    [[nodiscard]] virtual std::uint32_t total_session_count() const noexcept = 0;
 
     // Cross-core actor message mailbox.
     virtual bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) = 0;
@@ -127,6 +128,7 @@ public:
     void register_session(std::uint32_t core_id) override;
     void unregister_session(std::uint32_t core_id) override;
     [[nodiscard]] std::uint32_t session_count(std::uint32_t core_id) const noexcept override;
+    [[nodiscard]] std::uint32_t total_session_count() const noexcept override;
 
     // Cross-core mailbox.
     bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override;

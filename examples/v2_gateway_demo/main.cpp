@@ -242,6 +242,7 @@ int main(int argc, char* argv[]) {
                                        v2::gateway::DemoServerOptions{
                                            .acceptor_core_id = acceptor_core,
                                            .http_management_port = http_port,
+                                           .max_connections = std::nullopt,
                                            .login_backend_config = login_backend_config,
                                            .room_backend_config = room_backend_config,
                                            .battle_backend_config = battle_backend_config,

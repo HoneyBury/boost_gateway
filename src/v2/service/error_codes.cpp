@@ -18,6 +18,8 @@ std::int32_t to_client_error(ServiceErrorCode code) {
             return -2005;  // internal server error
         case ServiceErrorCode::kNotImplemented:
             return -2006;  // not implemented
+        case ServiceErrorCode::kCircuitOpen:
+            return -2007;  // circuit breaker open
     }
     return -2005;  // default to internal error
 }
@@ -31,6 +33,7 @@ const char* to_string(ServiceErrorCode code) {
         case ServiceErrorCode::kInvalidRequest:  return "invalid_request";
         case ServiceErrorCode::kInternalError:   return "internal_error";
         case ServiceErrorCode::kNotImplemented:  return "not_implemented";
+        case ServiceErrorCode::kCircuitOpen:    return "circuit_open";
     }
     return "unknown";
 }

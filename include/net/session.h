@@ -21,6 +21,8 @@ using error_code = boost::system::error_code;
 struct SessionOptions {
     std::uint32_t max_packet_size = 1024 * 1024;
     std::size_t max_pending_write_bytes = 256 * 1024;
+    double backpressure_high_watermark = 0.75;
+    double backpressure_low_watermark = 0.25;
     std::chrono::milliseconds heartbeat_check_interval{5000};
     std::chrono::milliseconds heartbeat_timeout{30000};
 };
@@ -56,6 +58,8 @@ public:
 
     [[nodiscard]] std::size_t pending_write_bytes() const;
     [[nodiscard]] std::size_t pending_write_count() const;
+    [[nodiscard]] std::size_t backpressure_activate_count() const { return backpressure_activate_count_; }
+    [[nodiscard]] bool backpressure_active() const { return backpressure_active_; }
 
     void set_packet_handler(PacketHandler handler);
     void set_close_handler(CloseHandler handler);
@@ -98,6 +102,7 @@ private:
     std::chrono::steady_clock::time_point last_activity_at_;
     bool stopped_ = false;
     bool backpressure_active_ = false;
+    std::size_t backpressure_activate_count_ = 0;
     SessionOptions options_;
 };
 

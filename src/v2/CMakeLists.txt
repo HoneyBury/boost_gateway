@@ -17,6 +17,7 @@ add_library(project_v2 STATIC
     gateway/battle_data_store.cpp
     service/backend_envelope.cpp
     service/backend_connection.cpp
+    service/circuit_breaker.cpp
     service/backend_frame_codec.cpp
     service/backend_server.cpp
     service/error_codes.cpp
@@ -26,6 +27,7 @@ add_library(project_v2 STATIC
     gateway/battle_protocol_codec.cpp
     gateway/battle_wire_parser.cpp
     gateway/gateway_command_parser.cpp
+    config/config_watcher.cpp
     gateway/demo_server.cpp
     gateway/gateway_actor.cpp
     gateway/gateway_response_parser.cpp

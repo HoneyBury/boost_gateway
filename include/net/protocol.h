@@ -22,6 +22,9 @@ enum class ErrorCode : std::int32_t {
     kBattleNotStarted = 3003,
     kPlayerNotInBattle = 3004,
     kTokenExpired = 1005,
+    kLoginBackendUnavailable = 2008,
+    kRoomBackendUnavailable = 2009,
+    kBattleBackendUnavailable = 3010,
     kRateLimited = 9001,
     kSessionNotFound = 9002,
 };
@@ -99,6 +102,12 @@ constexpr std::uint16_t kAdminResponse = 5005;
             return "battle_not_started";
         case ErrorCode::kPlayerNotInBattle:
             return "player_not_in_battle";
+        case ErrorCode::kLoginBackendUnavailable:
+            return "login_backend_unavailable";
+        case ErrorCode::kRoomBackendUnavailable:
+            return "room_backend_unavailable";
+        case ErrorCode::kBattleBackendUnavailable:
+            return "battle_backend_unavailable";
         case ErrorCode::kRateLimited:
             return "rate_limited";
         case ErrorCode::kSessionNotFound:

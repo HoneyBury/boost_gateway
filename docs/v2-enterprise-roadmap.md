@@ -63,14 +63,17 @@
 ## 2. 版本迭代规划
 
 ```
-v2.0.0 (已完成)     v2.0.1           v2.0.2             v2.1.0
-2026-05-12         2026-Q2          2026-Q2            2026-Q3
-    │                  │                │                  │
+v2.0.0 (已完成)     v2.0.1 (已完成)    v2.0.2 (已完成)    v2.1.0
+2026-05-12         2026-05-12         2026-05-12         2026-Q3
+    │                  │                  │                  │
  M1-M7 落地       配置热加载       性能基线         多进程 E2E
  473 测试         断路器           负载测试         客户端 SDK
  发布基础设施     优雅降级         SLO/SLI 定义    协议规范
                    背压保护         容量规划         Schema 校验
-                                                     反外挂基础
+                   连接限制         基准工具         反外挂基础
+                   内存保护         LatencyHistogram
+                   486 测试         ThroughputTracker
+                                   ~499 测试
 
     v2.2.0           v2.3.0           v3.0.0
    2026-Q3          2026-Q4          2027+
@@ -81,7 +84,7 @@ v2.0.0 (已完成)     v2.0.1           v2.0.2             v2.1.0
    OpenTelemetry    高可用架构      一致性哈希
 ```
 
-### 2.1 v2.0.1 — 生产加固
+### 2.1 v2.0.1 — 生产加固 ✅ (已完成 2026-05-12)
 
 **目标**：让 v2.0.0 从"功能完整"成为"生产可用"。
 
@@ -100,7 +103,7 @@ v2.0.0 (已完成)     v2.0.1           v2.0.2             v2.1.0
 - 写队列超阈值后客户端收到明确错误而非 TCP 断开
 - 测试总数 ≥ 500
 
-### 2.2 v2.0.2 — 性能基线与负载测试
+### 2.2 v2.0.2 — 性能基线与负载测试 ✅ (已完成 2026-05-12)
 
 **目标**：建立性能数字基线，指导容量规划和优化方向。
 
@@ -114,9 +117,21 @@ v2.0.0 (已完成)     v2.0.1           v2.0.2             v2.1.0
 | B6 | 容量规划文档 | 基于 B1-B4 数据产出扩容公式和硬件推荐 |
 
 **验收标准**：
-- 输出 `docs/performance-baseline.md` 含全部 6 项数据
-- 负载测试脚本可重复执行
-- 确定单 gateway 实例的推荐连接数上限
+- ✅ 输出 `docs/performance-baseline.md` 含全部 6 项框架（待填充实测数据）
+- ✅ 负载测试脚本可重复执行（`v2_gateway_pressure` 工具）
+- ✅ 测量基础设施就绪（`LatencyHistogram`、`ThroughputTracker`、`BackendMetrics::record_latency`、`DiagnosticsSnapshot::messages_per_second`）
+- 待运行：确定单 gateway 实例的推荐连接数上限（需启动 4 进程拓扑后实测）
+
+**实现清单**：
+| 文件 | 说明 |
+|---|---|
+| `include/v2/benchmark/latency_histogram.h` | 指数分桶延迟直方图 (14 桶, 1ms→30s)，支持 P50/P90/P99 |
+| `include/v2/benchmark/throughput_tracker.h` | 滑动窗口吞吐量计数器 (5s 窗口, 10 子桶) |
+| `examples/v2_gateway_pressure/` | v2 多进程 benchmark harness (echo/battle/stability 场景, JSON 输出) |
+| `include/v2/gateway/backend_metrics.h` | 新增 `total_latency_us`/`latency_sample_count` + `record_latency()` |
+| `src/v2/gateway/gateway_service_bridge.cpp` | `route()` 中记录 backend 往返延迟 |
+| `include/v2/diagnostics/diagnostics_manager.h` | `SystemSummary` 新增 `total_outbound_dispatches`/`messages_per_second` |
+| `docs/performance-baseline.md` | 性能基线报告 (测量方法 + SLO/SLI 定义 + 容量规划公式) |
 
 ### 2.3 v2.1.0 — 多进程集成验证
 

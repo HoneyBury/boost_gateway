@@ -2,11 +2,13 @@
 
 #include "v2/gateway/backend_metrics.h"
 #include "v2/service/backend_connection.h"
+#include "v2/service/circuit_breaker.h"
 #include "v2/service/error_codes.h"
 #include "v2/service/service_registry.h"
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -50,12 +52,16 @@ public:
     [[nodiscard]] std::shared_ptr<BackendMetrics> get_metrics() const;
     [[nodiscard]] std::shared_ptr<v2::service::ServiceRegistry> get_registry() const;
 
+    void update_backend_config(v2::service::ServiceId service,
+                                std::optional<BackendConfig> config);
+
     void shutdown();
 
 private:
     struct BackendSlot {
         std::optional<BackendConfig> config;
         std::unique_ptr<v2::service::BackendConnection> connection;
+        v2::service::CircuitBreaker breaker;
     };
 
     v2::service::BackendConnection* ensure_connection(v2::service::ServiceId service);
@@ -69,6 +75,7 @@ private:
     BackendSlot battle_slot_;
     std::shared_ptr<BackendMetrics> metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> registry_;
+    mutable std::mutex mutex_;
 };
 
 }  // namespace v2::gateway

@@ -28,5 +28,19 @@
     "max_pending_write_bytes": 262144,
     "heartbeat_check_interval_ms": 5000,
     "heartbeat_timeout_ms": 30000
+  },
+  "backends": {
+    "login": {
+      "host": "127.0.0.1",
+      "port": 9202
+    },
+    "room": {
+      "host": "127.0.0.1",
+      "port": 9302
+    },
+    "battle": {
+      "host": "127.0.0.1",
+      "port": 9303
+    }
   }
 }

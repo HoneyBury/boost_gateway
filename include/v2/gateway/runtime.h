@@ -51,6 +51,7 @@ public:
     [[nodiscard]] std::optional<BattleArchive> archived_battle(std::string_view battle_id) const;
     void set_archive_sink(BattleArchiveSink* sink) noexcept { archive_sink_ = sink; }
     void set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge);
+    [[nodiscard]] GatewayServiceBridge* service_bridge() const noexcept { return bridge_.get(); }
 
 private:
     struct PendingResponse {

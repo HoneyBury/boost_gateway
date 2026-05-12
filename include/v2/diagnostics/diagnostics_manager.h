@@ -20,9 +20,11 @@ struct SystemSummary {
     bool overall_healthy = true;
     std::uint64_t total_active_sessions = 0;
     std::uint64_t total_accepted_sessions = 0;
+    std::uint64_t total_outbound_dispatches = 0;
     std::uint32_t io_core_count = 0;
     std::size_t registered_backend_count = 0;
     std::size_t healthy_backend_count = 0;
+    double messages_per_second = 0.0;
     std::chrono::steady_clock::time_point snapshot_at;
 };
 

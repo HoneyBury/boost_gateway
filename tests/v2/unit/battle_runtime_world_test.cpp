@@ -190,9 +190,9 @@ TEST(V2BattleRuntimeWorldTest, SystemsAreCreatedAndTickable) {
 TEST(V2BattleRuntimeWorldTest, ProcessInputAccumulatesScore) {
     auto world = v2::battle::create_battle_world("b_01", "r_01", {"alice", "bob"}, 100);
 
-    v2::battle::battle_world_process_input(*world, "alice", "a1", 10, 1);
-    v2::battle::battle_world_process_input(*world, "bob", "b1", 7, 1);
-    v2::battle::battle_world_process_input(*world, "alice", "a2", 5, 2);
+    (void)v2::battle::battle_world_process_input(*world, "alice", "a1", 10, 1);
+    (void)v2::battle::battle_world_process_input(*world, "bob", "b1", 7, 1);
+    (void)v2::battle::battle_world_process_input(*world, "alice", "a2", 5, 2);
 
     const auto snapshot = v2::battle::battle_world_snapshot(*world);
     ASSERT_EQ(snapshot.participants.size(), 2U);

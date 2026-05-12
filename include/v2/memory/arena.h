@@ -20,12 +20,14 @@ public:
     [[nodiscard]] std::size_t remaining() const noexcept;
     [[nodiscard]] std::size_t allocated() const noexcept;
     [[nodiscard]] std::size_t capacity() const noexcept;
+    [[nodiscard]] std::size_t exhausted_count() const noexcept { return exhausted_count_; }
 
 private:
     unsigned char* base_ = nullptr;
     unsigned char* current_ = nullptr;
     unsigned char* end_ = nullptr;
     bool owns_buffer_ = true;
+    std::size_t exhausted_count_ = 0;
 };
 
 }  // namespace v2::memory

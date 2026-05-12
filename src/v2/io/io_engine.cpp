@@ -370,6 +370,15 @@ std::uint32_t AsioIoEngine::session_count(std::uint32_t core_id) const noexcept 
     return session_counts_[core_id].load(std::memory_order_relaxed);
 }
 
+std::uint32_t AsioIoEngine::total_session_count() const noexcept {
+    std::uint32_t total = 0;
+    const auto n = num_io_cores();
+    for (std::uint32_t i = 0; i < n; ++i) {
+        total += session_counts_[i].load(std::memory_order_relaxed);
+    }
+    return total;
+}
+
 bool AsioIoEngine::post_mailbox(std::uint32_t core_id, v2::actor::Message message) {
     if (core_id >= cores_.size()) {
         return false;

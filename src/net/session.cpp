@@ -327,16 +327,19 @@ void Session::enqueue_write(PacketMessage message, bool high_priority) {
 }
 
 void Session::check_backpressure() {
-    const auto high_water = options_.max_pending_write_bytes * 3 / 4;
+    const auto high_water = static_cast<std::size_t>(
+        options_.max_pending_write_bytes * options_.backpressure_high_watermark);
     if (queued_write_bytes_ > high_water && !backpressure_active_) {
         backpressure_active_ = true;
+        ++backpressure_activate_count_;
         LOG_WARN("Session {} backpressure ON: write queue {} bytes", remote_endpoint(), queued_write_bytes_);
     }
 }
 
 void Session::resume_if_paused() {
     if (!backpressure_active_) return;
-    const auto low_water = options_.max_pending_write_bytes / 4;
+    const auto low_water = static_cast<std::size_t>(
+        options_.max_pending_write_bytes * options_.backpressure_low_watermark);
     if (queued_write_bytes_ <= low_water) {
         backpressure_active_ = false;
         LOG_INFO("Session {} backpressure OFF: write queue {} bytes", remote_endpoint(), queued_write_bytes_);

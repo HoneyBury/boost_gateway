@@ -49,6 +49,7 @@ install(TARGETS
     v2_battle_backend
     v2_room_backend
     v2_login_backend
+    v2_gateway_pressure
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -78,6 +79,9 @@ install(FILES
     docs/v2-room-lifecycle.md
     docs/v2-gateway-cutover-criteria.md
     docs/v2-service-split-plan.md
+    docs/v2-enterprise-roadmap.md
+    docs/architecture-acceptance-criteria.md
+    docs/performance-baseline.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 

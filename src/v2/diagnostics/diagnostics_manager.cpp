@@ -78,7 +78,15 @@ std::string metrics_to_json(const v2::gateway::BackendMetricsSnapshot& m) {
            ",\"total_successes\":" + json_uint64(m.total_successes) +
            ",\"total_timeouts\":" + json_uint64(m.total_timeouts) +
            ",\"total_unavailable\":" + json_uint64(m.total_unavailable) +
-           ",\"total_errors\":" + json_uint64(m.total_errors) + "}";
+           ",\"total_errors\":" + json_uint64(m.total_errors) +
+           ",\"total_degraded\":" + json_uint64(m.total_degraded) +
+           ",\"total_latency_us\":" + json_uint64(m.total_latency_us) +
+           ",\"latency_sample_count\":" + json_uint64(m.latency_sample_count) +
+           ",\"avg_latency_us\":" +
+           json_uint64(m.latency_sample_count > 0
+                           ? m.total_latency_us / m.latency_sample_count
+                           : 0) +
+           "}";
 }
 
 std::string dispatch_stats_to_json(
@@ -165,6 +173,7 @@ DiagnosticsSnapshot DiagnosticsManager::collect() const {
     for (const auto& core : snap.io_cores) {
         snap.summary.total_active_sessions += core.active_sessions;
         snap.summary.total_accepted_sessions += core.accepted_sessions;
+        snap.summary.total_outbound_dispatches += core.outbound_dispatches;
     }
 
     // ── Collect backend metrics ──
@@ -236,10 +245,13 @@ std::string DiagnosticsManager::to_text(const DiagnosticsSnapshot& snap) const {
     os << "total_active_sessions: " << snap.summary.total_active_sessions << "\n";
     os << "total_accepted_sessions: " << snap.summary.total_accepted_sessions
        << "\n";
+    os << "total_outbound_dispatches: " << snap.summary.total_outbound_dispatches
+       << "\n";
     os << "io_core_count: " << snap.summary.io_core_count << "\n";
     os << "registered_backend_count: " << snap.summary.registered_backend_count
        << "\n";
     os << "healthy_backend_count: " << snap.summary.healthy_backend_count << "\n";
+    os << "messages_per_second: " << snap.summary.messages_per_second << "\n";
 
     os << "\n--- Backends ---\n";
     if (snap.backends.empty()) {
@@ -259,6 +271,15 @@ std::string DiagnosticsManager::to_text(const DiagnosticsSnapshot& snap) const {
             os << "  metrics(total_unavailable): " << b.metrics.total_unavailable
                << "\n";
             os << "  metrics(total_errors): " << b.metrics.total_errors << "\n";
+            os << "  metrics(total_degraded): " << b.metrics.total_degraded << "\n";
+            os << "  metrics(total_latency_us): " << b.metrics.total_latency_us << "\n";
+            os << "  metrics(latency_sample_count): "
+               << b.metrics.latency_sample_count << "\n";
+            if (b.metrics.latency_sample_count > 0) {
+                os << "  metrics(avg_latency_us): "
+                   << (b.metrics.total_latency_us / b.metrics.latency_sample_count)
+                   << "\n";
+            }
         }
     }
 
@@ -309,6 +330,9 @@ std::string DiagnosticsManager::to_json(const DiagnosticsSnapshot& snap) const {
             "\"total_accepted_sessions\":" +
             json_uint64(snap.summary.total_accepted_sessions) +
             ","
+            "\"total_outbound_dispatches\":" +
+            json_uint64(snap.summary.total_outbound_dispatches) +
+            ","
             "\"io_core_count\":" +
             json_uint64(snap.summary.io_core_count) +
             ","
@@ -316,7 +340,9 @@ std::string DiagnosticsManager::to_json(const DiagnosticsSnapshot& snap) const {
             json_size_t(snap.summary.registered_backend_count) +
             ","
             "\"healthy_backend_count\":" +
-            json_size_t(snap.summary.healthy_backend_count) + "}";
+            json_size_t(snap.summary.healthy_backend_count) +
+            ",\"messages_per_second\":" +
+            std::to_string(snap.summary.messages_per_second) + "}";
 
     // backends
     json += ",\n  \"backends\":[";

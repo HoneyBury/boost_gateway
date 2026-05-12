@@ -10,7 +10,7 @@ namespace v2::memory {
 template <typename T, std::size_t BlockSize = 256>
 class ObjectPool {
 public:
-    ObjectPool() = default;
+    explicit ObjectPool(std::size_t max_blocks = 0) : max_blocks_(max_blocks) {}
     ~ObjectPool();
 
     ObjectPool(const ObjectPool&) = delete;
@@ -28,6 +28,10 @@ public:
 
     [[nodiscard]] std::size_t total_allocated() const noexcept;
 
+    [[nodiscard]] std::size_t exhausted_count() const noexcept { return exhausted_count_; }
+
+    [[nodiscard]] std::size_t max_blocks() const noexcept { return max_blocks_; }
+
 private:
     struct Node {
         Node* next;
@@ -41,6 +45,8 @@ private:
     Node* free_list_ = nullptr;
     std::size_t available_ = 0;
     std::size_t total_allocated_ = 0;
+    std::size_t max_blocks_ = 0;
+    std::size_t exhausted_count_ = 0;
     std::vector<T*> blocks_;
     mutable std::mutex mutex_;
 };
@@ -60,6 +66,10 @@ template <typename T, std::size_t BlockSize>
 T* ObjectPool<T, BlockSize>::acquire() {
     std::lock_guard<std::mutex> lock(mutex_);
     if (!free_list_) {
+        if (max_blocks_ > 0 && blocks_.size() >= max_blocks_) {
+            ++exhausted_count_;
+            return nullptr;
+        }
         allocate_block();
     }
     auto* node = free_list_;

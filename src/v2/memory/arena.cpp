@@ -29,6 +29,7 @@ void* BumpArena::alloc(std::size_t n) noexcept {
 
     auto const next = reinterpret_cast<unsigned char*>(aligned + aligned_n);
     if (next > end_) {
+        ++exhausted_count_;
         return nullptr;
     }
 

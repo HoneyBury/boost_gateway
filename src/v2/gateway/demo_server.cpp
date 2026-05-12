@@ -1,11 +1,14 @@
 #include "v2/gateway/demo_server.h"
 
 #include "app/logging.h"
+#include "net/protocol.h"
 
 #include <boost/asio.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <filesystem>
+#include <fstream>
 #include <utility>
 
 namespace v2::gateway {
@@ -52,6 +55,7 @@ DemoServer::DemoServer(std::uint16_t port,
             backend_metrics_);
         bridge->set_service_registry(service_registry_);
         runtime_.set_service_bridge(std::move(bridge));
+        load_gateway_config();
     }
 
     archive_store_ = std::make_unique<JsonFileBattleDataStore>("v2_archive");
@@ -85,6 +89,7 @@ void DemoServer::start() {
                                    v2::io::IoListenOptions{.fixed_core_id = options_.acceptor_core_id});
     LOG_INFO("v2 demo server listening on 127.0.0.1:{}", acceptor_->local_port());
     do_accept();
+    start_config_watcher();
     io_engine_->run();
 }
 
@@ -277,6 +282,7 @@ std::string DemoServer::diagnostics_json() const {
             {"total_timeouts", snap.total_timeouts},
             {"total_unavailable", snap.total_unavailable},
             {"total_errors", snap.total_errors},
+            {"total_degraded", snap.total_degraded},
         };
     }
     doc["backend_metrics"] = std::move(backend_metrics);
@@ -301,6 +307,22 @@ void DemoServer::do_accept() {
     }
     acceptor_->async_accept([this](std::unique_ptr<v2::io::IoSession> session) {
         if (!session) {
+            return;
+        }
+
+        // Check connection limit before accepting
+        if (options_.max_connections.has_value() &&
+            io_engine_->total_session_count() >= *options_.max_connections) {
+            // Accept but immediately close with error
+            const auto core_id = session->owning_core_id();
+            session->start();
+            session->send(net::protocol::kErrorResponse, 0,
+                          static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited),
+                          "connection_limit_reached", 0);
+            session->close();
+            io_engine_->register_session(core_id);
+            io_engine_->unregister_session(core_id);
+            do_accept();
             return;
         }
 
@@ -355,6 +377,65 @@ void DemoServer::do_accept() {
 
         do_accept();
     });
+}
+
+void DemoServer::load_gateway_config() {
+    const std::filesystem::path config_path("config/gateway.json");
+    std::ifstream file(config_path);
+    if (!file.is_open()) {
+        LOG_WARN("DemoServer: cannot open gateway config {}", config_path.string());
+        return;
+    }
+
+    nlohmann::json doc;
+    try {
+        file >> doc;
+    } catch (const std::exception& e) {
+        LOG_WARN("DemoServer: failed to parse gateway config: {}", e.what());
+        return;
+    }
+
+    auto* bridge = runtime_.service_bridge();
+    if (!bridge) return;
+
+    const auto& backends = doc.value("backends", nlohmann::json::object());
+    for (const auto& [key, entry] : backends.items()) {
+        v2::service::ServiceId service_id;
+        if (key == "login") {
+            service_id = v2::service::ServiceId::kLogin;
+        } else if (key == "room") {
+            service_id = v2::service::ServiceId::kRoom;
+        } else if (key == "battle") {
+            service_id = v2::service::ServiceId::kBattle;
+        } else {
+            continue;
+        }
+
+        GatewayServiceBridge::BackendConfig cfg;
+        cfg.host = entry.value("host", "127.0.0.1");
+        cfg.port = static_cast<std::uint16_t>(entry.value("port", 0));
+        bridge->update_backend_config(service_id, std::move(cfg));
+        LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg.host, cfg.port);
+    }
+}
+
+void DemoServer::start_config_watcher() {
+    const std::filesystem::path config_path("config/gateway.json");
+    if (!std::filesystem::exists(config_path)) {
+        LOG_INFO("DemoServer: no gateway config at {}, skipping config watcher",
+                 config_path.string());
+        return;
+    }
+
+    config_watcher_ = std::make_unique<v2::config::ConfigWatcher>(
+        config_path,
+        [this]() { load_gateway_config(); });
+    config_watcher_->start();
+    LOG_INFO("DemoServer: config watcher started for {}", config_path.string());
+}
+
+void DemoServer::reload_backend_configs() {
+    load_gateway_config();
 }
 
 }  // namespace v2::gateway

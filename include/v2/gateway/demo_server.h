@@ -2,6 +2,7 @@
 
 #include "net/session.h"
 #include "net/http_manager.h"
+#include "v2/config/config_watcher.h"
 #include "v2/io/io_engine.h"
 #include "v2/gateway/backend_metrics.h"
 #include "v2/gateway/battle_data_store.h"
@@ -24,6 +25,7 @@ namespace v2::gateway {
 struct DemoServerOptions {
     std::optional<std::uint32_t> acceptor_core_id;
     std::optional<std::uint16_t> http_management_port;
+    std::optional<std::uint32_t> max_connections;
     std::optional<GatewayServiceBridge::BackendConfig> login_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> room_backend_config;
     std::optional<GatewayServiceBridge::BackendConfig> battle_backend_config;
@@ -74,6 +76,9 @@ public:
 private:
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
+    void load_gateway_config();
+    void start_config_watcher();
+    void reload_backend_configs();
 
     std::uint16_t port_ = 0;
     net::SessionOptions session_options_;
@@ -95,6 +100,9 @@ private:
     mutable std::mutex scheduler_mutex_;
     SessionWriteScheduler write_scheduler_;
     SessionId next_session_id_ = 1;
+
+    // Config hot-reload
+    std::unique_ptr<v2::config::ConfigWatcher> config_watcher_;
 
     // HTTP management (optional, created when http_management_port is set)
     std::unique_ptr<boost::asio::io_context> management_io_;

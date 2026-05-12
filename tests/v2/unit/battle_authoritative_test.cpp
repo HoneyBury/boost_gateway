@@ -40,14 +40,14 @@ TEST(V2BattleAuthoritativeTest, ProcessInputAcceptsNewerFrame) {
 TEST(V2BattleAuthoritativeTest, FrameLimitTriggersBattleFinish) {
     auto world = v2::battle::create_battle_world("auth_04", "r4", {"alice", "bob"}, 3);
 
-    v2::battle::battle_world_process_input(*world, "alice", "move:1,2", 10, 1);
-    v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
+    (void)v2::battle::battle_world_process_input(*world, "alice", "move:1,2", 10, 1);
+    (void)v2::battle::battle_world_advance_frame(*world, 1, "input:alice");
 
-    v2::battle::battle_world_process_input(*world, "alice", "move:3,4", 5, 2);
+    (void)v2::battle::battle_world_process_input(*world, "alice", "move:3,4", 5, 2);
     auto result = v2::battle::battle_world_advance_frame(*world, 2, "input:alice");
     EXPECT_FALSE(result.should_finish);
 
-    v2::battle::battle_world_process_input(*world, "alice", "move:5,6", 0, 3);
+    (void)v2::battle::battle_world_process_input(*world, "alice", "move:5,6", 0, 3);
     auto final_result = v2::battle::battle_world_advance_frame(*world, 3, "input:alice");
     EXPECT_TRUE(final_result.should_finish);
     EXPECT_EQ(final_result.finish_reason, v2::battle::BattleFinishReason::kFrameLimitReached);
@@ -100,13 +100,13 @@ TEST(V2BattleAuthoritativeTest, HandleDisconnectMarksOfflineAndSuggestsFinish) {
 TEST(V2BattleAuthoritativeTest, InputFromOfflinePlayerNotProcessed) {
     auto world = v2::battle::create_battle_world("auth_08", "r8", {"alice"}, 5);
 
-    v2::battle::battle_world_mark_offline(*world, "alice");
+    (void)v2::battle::battle_world_mark_offline(*world, "alice");
 
     auto result = v2::battle::battle_world_process_input(
         *world, "alice", "move:1,2", 0, 1);
     EXPECT_TRUE(result.accepted);  // frame validation passes
 
-    v2::battle::battle_world_advance_frame(*world, 1, "tick");
+    (void)v2::battle::battle_world_advance_frame(*world, 1, "tick");
 
     // Offline player's pending input is not applied during tick
     auto snapshot = v2::battle::battle_world_snapshot(*world);

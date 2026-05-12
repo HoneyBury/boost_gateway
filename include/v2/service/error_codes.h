@@ -10,6 +10,7 @@ enum class ServiceErrorCode : std::int32_t {
     kUnavailable = -1002,
     kRejected = -1003,
     kInvalidRequest = -1004,
+    kCircuitOpen = -1007,
     kInternalError = -1005,
     kNotImplemented = -1006,
 };

@@ -192,7 +192,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 }
 
                 // Bridge routing failure (timeout, unavailable, etc.)
-                auto net_error = net::protocol::ErrorCode::kSessionNotFound;
+                auto net_error = net::protocol::ErrorCode::kLoginBackendUnavailable;
                 if (result.error == v2::service::ServiceErrorCode::kRejected) {
                     net_error = net::protocol::ErrorCode::kInvalidToken;
                 }
@@ -278,7 +278,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -364,7 +364,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -455,7 +455,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -524,7 +524,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                     emit(net::protocol::kErrorResponse,
                          command.session_id,
                          command.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
                          "backend_error");
                     return true;
                 }
@@ -767,7 +767,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
                      "backend_error");
                 return true;
             }
@@ -915,9 +915,9 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* input = std::get_if<v2::battle::BattleInputAcceptedMsg>(&event)) {
-        const auto session_id = session_id_for_user(input->user_id);
-        if (session_id.has_value()) {
-            auto pending = pending_battle_input_.find(*session_id);
+        const auto sid = session_id_for_user(input->user_id);
+        if (sid.has_value()) {
+            auto pending = pending_battle_input_.find(*sid);
             if (pending != pending_battle_input_.end()) {
                 emit(net::protocol::kBattleInputResponse,
                      pending->second.session_id,
@@ -1054,6 +1054,7 @@ void Runtime::push(v2::room::RoomEvent event) {
         timeout.header.kind = v2::actor::MessageKind::kUser;
         timeout.payload = v2::battle::EndBattleMsg{
             .reason = v2::battle::BattleFinishReason::kTimeout,
+            .triggering_user_id = {},
         };
         const auto schedule_id = battle_actor.schedule_after(std::move(timeout), std::chrono::seconds(120));
         if (schedule_id != 0) {
@@ -1129,9 +1130,9 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
     battles_by_room_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {
-        const auto session_id = session_id_for_user(finished.triggering_user_id);
-        if (session_id.has_value()) {
-            auto pending = pending_battle_end_.find(*session_id);
+        const auto sid = session_id_for_user(finished.triggering_user_id);
+        if (sid.has_value()) {
+            auto pending = pending_battle_end_.find(*sid);
             if (pending != pending_battle_end_.end()) {
                 emit(net::protocol::kBattleInputResponse,
                      pending->second.session_id,
