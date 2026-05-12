@@ -39,6 +39,7 @@ add_executable(project_v2_unit_tests
     unit/object_pool_test.cpp
     unit/rate_limiter_test.cpp
     unit/jwt_validator_test.cpp
+    unit/anti_cheat_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE

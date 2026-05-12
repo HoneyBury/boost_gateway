@@ -119,6 +119,7 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
         world->add_component<PositionComponent>(entity);
         world->add_component<HealthComponent>(entity);
         world->add_component<AttackStateComponent>(entity);
+        world->add_component<AttackCooldownComponent>(entity);
     }
 
     return world;
