@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <memory>
 #include <string>
 #include "v2/actor/actor.h"
@@ -35,6 +36,9 @@ private:
 
     BattleEventSink& sink_;
     std::unique_ptr<v2::ecs::World> world_;
+    std::map<std::string, v2::actor::ScheduleId> disconnect_grace_timers_;
+
+    static constexpr std::chrono::seconds kDisconnectGracePeriod{15};
 };
 
 }  // namespace v2::battle

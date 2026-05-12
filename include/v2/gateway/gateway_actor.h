@@ -5,6 +5,7 @@
 #include <string>
 
 #include "v2/actor/actor.h"
+#include "v2/gateway/rate_limiter.h"
 
 namespace v2::gateway {
 
@@ -24,7 +25,7 @@ public:
 
 class GatewayActor final : public v2::actor::Actor {
 public:
-    using RateLimitPolicy = std::function<bool(const ClientEnvelope&)>;
+    using RateLimitPolicy = std::function<RateLimitResult(const ClientEnvelope&, SessionId)>;
     using AuthorizePolicy = std::function<bool(const GatewayCommand&)>;
 
     GatewayActor(SessionWriteSink& sink,

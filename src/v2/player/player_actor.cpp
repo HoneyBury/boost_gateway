@@ -1,5 +1,6 @@
 #include "v2/player/player_actor.h"
 
+#include <chrono>
 #include <utility>
 
 namespace v2::player {
@@ -31,6 +32,10 @@ void PlayerActor::on_message(v2::actor::Message&& message) {
     }
     if (const auto* closed = std::get_if<SessionClosedMsg>(&message.payload)) {
         handle_session_closed(*closed);
+        return;
+    }
+    if (const auto* reconnect = std::get_if<ReconnectTimerExpiredMsg>(&message.payload)) {
+        handle_reconnect_timeout(*reconnect);
     }
 }
 
@@ -69,6 +74,12 @@ void PlayerActor::handle_login_request(const LoginRequestMsg& message) {
         });
     }
 
+    // Cancel reconnect timer if one is active (player reconnected in window)
+    if (reconnect_timer_id_.has_value()) {
+        cancel_schedule(*reconnect_timer_id_);
+        reconnect_timer_id_.reset();
+    }
+
     state_.user_id = message.user_id;
     state_.display_name = message.display_name.value_or(message.user_id);
     state_.binding = PlayerSessionBinding{
@@ -79,6 +90,15 @@ void PlayerActor::handle_login_request(const LoginRequestMsg& message) {
         .bound_at = message.session_id,
     };
     pending_binding_.reset();
+
+    token_meta_ = TokenMeta{
+        .token_type = "bearer",
+        .issuer = "gateway",
+        .issued_at = 0,
+        .expires_at = 0,
+    };
+    resume_meta_.reset();
+
     state_.lifecycle = state_.room_id.has_value()
         ? PlayerLifecycleState::kInRoom
         : PlayerLifecycleState::kOnlineIdle;
@@ -144,9 +164,31 @@ void PlayerActor::handle_session_closed(const SessionClosedMsg& message) {
 
     state_.binding.reset();
     pending_binding_.reset();
-    state_.lifecycle = state_.room_id.has_value()
-        ? PlayerLifecycleState::kSuspended
-        : PlayerLifecycleState::kOffline;
+
+    if (state_.room_id.has_value()) {
+        state_.lifecycle = PlayerLifecycleState::kSuspended;
+        schedule_reconnect_timeout();
+    } else {
+        state_.lifecycle = PlayerLifecycleState::kOffline;
+    }
+}
+
+void PlayerActor::handle_reconnect_timeout(const ReconnectTimerExpiredMsg& /*message*/) {
+    reconnect_timer_id_.reset();
+    resume_meta_.reset();
+    if (state_.lifecycle == PlayerLifecycleState::kSuspended) {
+        state_.lifecycle = PlayerLifecycleState::kOffline;
+    }
+}
+
+void PlayerActor::schedule_reconnect_timeout() {
+    const auto now = std::chrono::steady_clock::now();
+    v2::actor::Message timeout_msg;
+    timeout_msg.header.kind = v2::actor::MessageKind::kUser;
+    timeout_msg.payload = ReconnectTimerExpiredMsg{
+        .user_id = state_.user_id,
+    };
+    reconnect_timer_id_ = schedule_after(self(), std::move(timeout_msg), kReconnectWindow);
 }
 
 }  // namespace v2::player

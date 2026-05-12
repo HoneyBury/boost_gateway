@@ -9,6 +9,7 @@
 
 #include "v2/gateway/gateway_actor.h"
 #include "v2/gateway/gateway_service_bridge.h"
+#include "v2/gateway/runtime_helpers.h"
 #include "v2/battle/battle_actor.h"
 #include "v2/player/player_actor.h"
 #include "v2/room/room_actor.h"
@@ -54,11 +55,6 @@ public:
     [[nodiscard]] GatewayServiceBridge* service_bridge() const noexcept { return bridge_.get(); }
 
 private:
-    struct PendingResponse {
-        SessionId session_id = 0;
-        std::uint32_t request_id = 0;
-    };
-
     struct PendingSettlementAck {
         int expected_acks = 0;
         int received_acks = 0;
@@ -79,10 +75,7 @@ private:
 
     v2::runtime::ActorSystem& actor_system_;
     SessionWriteSink& write_sink_;
-    std::unordered_map<std::string, v2::actor::ActorRef> players_by_user_id_;
-    std::unordered_map<SessionId, std::string> users_by_session_id_;
-    std::unordered_map<SessionId, std::string> rooms_by_session_id_;
-    std::unordered_map<std::string, v2::actor::ActorRef> rooms_by_room_id_;
+    SessionLookup lookup_;
     std::unordered_map<std::string, v2::actor::ActorRef> battles_by_room_id_;
     std::unordered_map<SessionId, PendingResponse> pending_login_;
     std::unordered_map<std::string, PendingResponse> pending_room_create_;

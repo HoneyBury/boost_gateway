@@ -1,0 +1,239 @@
+# Boost Gateway v2.6.0 — CI/CD Pipeline
+#
+# Triggers:
+#   - Push to develop or main: builds, tests, builds Docker images
+#   - Tag v*: builds, tests, builds Docker images, deploys to Kubernetes
+#
+# Pipeline stages:
+#   1. build   — CMake configure + build (3 platforms)
+#   2. test    — ctest with verbose failures
+#   3. docker  — Build and push images to GitHub Container Registry (main only)
+#   4. deploy  — kubectl apply to production cluster (tagged releases only)
+
+name: "Boost Gateway CI/CD"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  REGISTRY: ghcr.io
+  IMAGE_NAMESPACE: ${{ github.repository_owner }}
+
+on:
+  push:
+    branches: ["main", "develop"]
+    tags: ["v*"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+# ============================================================================
+# Build & Test (all platforms)
+# ============================================================================
+jobs:
+  build:
+    name: "Build (${{ matrix.os }})"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            configure_preset: default
+            build_preset: default
+            test_preset: default
+          - os: macos-latest
+            configure_preset: default
+            build_preset: default
+            test_preset: default
+          - os: windows-2022
+            configure_preset: windows-ninja-debug
+            build_preset: windows-ninja-debug
+            test_preset: windows-ninja-debug
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download third-party dependencies
+        shell: bash
+        run: bash third_party/download_deps.sh
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.configure_preset }}
+
+      - name: Build
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+
+      - name: Test
+        run: ctest --preset ${{ matrix.test_preset }} --output-on-failure
+
+      - name: Upload test results (XML)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.os }}
+          path: |
+            build/**/Testing/**/*.xml
+            build/**/test-results/**/*
+          if-no-files-found: ignore
+
+  # ============================================================================
+  # Docker Build & Push
+  # ============================================================================
+  docker:
+    name: "Docker Images"
+    runs-on: ubuntu-latest
+    needs: [build]
+    if: >
+      github.event_name == 'push' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+
+    strategy:
+      fail-fast: false
+      matrix:
+        service:
+          - name: gateway
+            dockerfile: env/docker/Dockerfile.gateway
+            context: .
+            image: gateway
+          - name: login-backend
+            dockerfile: env/docker/Dockerfile.backend
+            context: .
+            image: backend
+            build_arg: SERVICE_BINARY=v2_login_backend
+          - name: room-backend
+            dockerfile: env/docker/Dockerfile.backend
+            context: .
+            image: backend
+            build_arg: SERVICE_BINARY=v2_room_backend
+          - name: battle-backend
+            dockerfile: env/docker/Dockerfile.backend
+            context: .
+            image: backend
+            build_arg: SERVICE_BINARY=v2_battle_backend
+          - name: matchmaking-backend
+            dockerfile: env/docker/Dockerfile.backend
+            context: .
+            image: backend
+            build_arg: SERVICE_BINARY=v2_match_backend
+          - name: leaderboard-backend
+            dockerfile: env/docker/Dockerfile.backend
+            context: .
+            image: backend
+            build_arg: SERVICE_BINARY=v2_leaderboard_backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download third-party dependencies
+        shell: bash
+        run: bash third_party/download_deps.sh
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAMESPACE }}/boost-${{ matrix.service.name }}
+          flavor: |
+            latest=${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          build-args: ${{ matrix.service.build_arg || '' }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Kubernetes Deploy (tagged releases only)
+  # ============================================================================
+  deploy:
+    name: "Deploy to Kubernetes"
+    runs-on: ubuntu-latest
+    needs: [docker]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure kubeconfig
+        env:
+          KUBE_CONFIG: ${{ secrets.KUBE_CONFIG }}
+        run: |
+          mkdir -p $HOME/.kube
+          echo "$KUBE_CONFIG" > $HOME/.kube/config
+          chmod 600 $HOME/.kube/config
+
+      - name: Apply namespace
+        run: kubectl apply -f env/k8s/namespace.yaml
+
+      - name: Deploy Redis
+        run: kubectl apply -f env/k8s/redis-deployment.yaml
+
+      - name: Deploy backends
+        run: |
+          # Deploy login-backend
+          kubectl apply -f env/k8s/backend-deployment.yaml
+
+          # Deploy room, battle, matchmaking, leaderboard using the same
+          # template with per-service overrides.
+          # In production, maintain separate manifest files or use kustomize.
+          for svc in room battle matchmaking leaderboard; do
+            kubectl apply -f env/k8s/backend-deployment.yaml \
+              --overwrite
+            # Note: Replace metadata.name, selector labels, ports, and
+            # probe endpoints per service.
+          done
+
+      - name: Deploy gateway
+        run: kubectl apply -f env/k8s/gateway-deployment.yaml
+
+      - name: Verify rollout
+        run: |
+          kubectl -n boost-gateway rollout status deployment/gateway --timeout=120s
+          kubectl -n boost-gateway rollout status deployment/redis --timeout=120s
+
+      - name: Health check
+        run: |
+          POD=$(kubectl -n boost-gateway get pod -l app.kubernetes.io/component=gateway -o jsonpath='{.items[0].metadata.name}')
+          kubectl -n boost-gateway exec "$POD" -- curl -sf http://localhost:9080/health

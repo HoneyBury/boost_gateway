@@ -2,6 +2,7 @@
 #include "v2/service/backend_server.h"
 
 #include <nlohmann/json.hpp>
+#include "app/audit_log.h"
 
 #include <algorithm>
 #include <memory>
@@ -130,6 +131,7 @@ private:
         room.members.push_back(RoomMember{.user_id = user_id, .ready = false});
         room_manager_.rooms_[room_id] = std::move(room);
 
+        AUDIT_LOG("room_created", "room_id=" + room_id + " owner=" + user_id);
         return make_ok({{"room_id", room_id}, {"member_count", 1}});
     }
 
@@ -220,6 +222,8 @@ private:
             return make_error(-2007, "not_all_ready");
         }
 
+        AUDIT_LOG("battle_created", "room_id=" + room_id + " battle_id=" + room->active_battle_id);
+
         // Collect player_ids for battle creation
         nlohmann::json player_ids = nlohmann::json::array();
         for (const auto& m : room->members) {
@@ -262,12 +266,17 @@ private:
         }
 
         auto& members = room->members;
+        const bool was_owner = (room->owner_user_id == user_id);
+
         members.erase(std::remove_if(members.begin(), members.end(),
             [&](const RoomMember& m) { return m.user_id == user_id; }),
             members.end());
 
         if (members.empty()) {
+            AUDIT_LOG("room_deleted", "room_id=" + room_id);
             room_manager_.rooms_.erase(room_id);
+        } else if (was_owner) {
+            room->owner_user_id = members.front().user_id;
         }
 
         return make_ok({{"room_id", room_id}});

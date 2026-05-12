@@ -35,6 +35,9 @@ struct BackendEnvelope {
     std::int32_t error_code = 0;
     std::string payload;
     std::string message_type;
+    // v2.2.0: W3C trace context for distributed tracing
+    std::uint64_t trace_id = 0;
+    std::uint64_t span_id = 0;
 };
 
 [[nodiscard]] std::string to_json(const BackendEnvelope& envelope);

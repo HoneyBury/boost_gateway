@@ -1,0 +1,3 @@
+add_executable(v2_leaderboard_backend main.cpp)
+target_link_libraries(v2_leaderboard_backend PRIVATE project_v2)
+apply_project_warnings(v2_leaderboard_backend)

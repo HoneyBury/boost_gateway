@@ -1,0 +1,16 @@
+# Boost Gateway v2.6.0 — Kubernetes Namespace
+#
+# All gateway resources live in the 'boost-gateway' namespace.
+#
+# Usage:
+#   kubectl apply -f env/k8s/namespace.yaml
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/version: "2.6.0"
+    app.kubernetes.io/component: infrastructure
+    app.kubernetes.io/part-of: boost-gateway

@@ -241,6 +241,20 @@ cmake --preset release && cmake --build --preset release
 
 以下命令需要在 Release 构建下运行，结果填入上表：
 
+### 7.1 基础设施验证状态 (2026-05-12)
+
+| 组件 | 状态 | 说明 |
+|------|------|------|
+| v2_gateway_pressure | ✅ 可用 | Debug/Release 均编译通过，echo/battle/stability 场景就绪 |
+| LatencyHistogram | ✅ 可用 | 14 桶指数分桶，P50/P90/P99 计算正确，7 单元测试通过 |
+| ThroughputTracker | ✅ 可用 | 5s 滑动窗口，rate_per_second 正确，6 单元测试通过 |
+| BackendMetrics | ✅ 可用 | per-service 请求/成功/超时/错误/延迟计数 |
+| DiagnosticsSnapshot | ✅ 可用 | JSON 格式，含 messages_per_second |
+| gateway 独立启动 | ✅ 可用 | `v2_gateway_demo --io-cores N --management-port 9080` |
+| 4 进程拓扑 | ⚠️ 待验证 | backend 服务需独立启动并按顺序编排 |
+
+> **注意**: 性能数据采集需要在受控环境下进行（独占机器、关闭无关进程、预热后采集）。以下命令已验证可执行，但实际数据待填入上表。
+
 ```bash
 # —— Echo 吞吐量 vs 核心数 ——
 for cores in 1 2 4; do

@@ -5,7 +5,10 @@
 #include "v2/gateway/battle_protocol_codec.h"
 #include "v2/gateway/gateway_command_parser.h"
 #include "v2/gateway/gateway_service_bridge.h"
+#include "v2/gateway/rate_limiter.h"
 #include "v2/service/error_codes.h"
+#include "v2/tracing/trace_context.h"
+#include "app/audit_log.h"
 
 #include <fmt/format.h>
 #include <nlohmann/json.hpp>
@@ -61,35 +64,52 @@ std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& 
 }  // namespace
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
+    auto rate_limiter = std::make_shared<RateLimiter>();
     return actor_system_.create_actor(std::make_unique<GatewayActor>(
         write_sink_,
         this,
-        GatewayActor::RateLimitPolicy{},
+        [rate_limiter, this](const ClientEnvelope& envelope,
+                             SessionId session_id) -> RateLimitResult {
+            // IP hint is not yet available in this context; pass empty.
+            const std::string ip_hint;
+            const auto user_id = lookup_.user_id_for(session_id);
+            return rate_limiter->check(envelope, session_id, ip_hint, user_id);
+        },
         [this](const GatewayCommand& command) { return is_authenticated(command); }));
 }
 
 bool Runtime::is_authenticated(const GatewayCommand& command) const {
-    return users_by_session_id_.contains(command.session_id);
+    return !lookup_.user_id_for(command.session_id).empty();
 }
 
 void Runtime::on_session_closed(SessionId session_id) {
-    const auto user_id = session_user_id(session_id);
-    const auto room_it = rooms_by_session_id_.find(session_id);
-    const auto room_id = room_it != rooms_by_session_id_.end() ? room_it->second : std::string{};
+    const auto user_id = lookup_.user_id_for(session_id);
+    const auto room_id = lookup_.room_id_for(session_id);
 
     if (!user_id.empty()) {
-        auto player_it = players_by_user_id_.find(user_id);
-        if (player_it != players_by_user_id_.end()) {
+        auto* player_ref = lookup_.player(user_id);
+        if (player_ref != nullptr) {
             v2::actor::Message closed;
             closed.header.kind = v2::actor::MessageKind::kUser;
             closed.payload = v2::player::SessionClosedMsg{.session_id = session_id};
-            player_it->second.tell(std::move(closed));
+            player_ref->tell(std::move(closed));
         }
     }
+
+    // Notify RoomActor that the player disconnected (leave room)
+    if (!user_id.empty() && !room_id.empty()) {
+        auto* room_ref = lookup_.room(room_id);
+        if (room_ref != nullptr) {
+            v2::actor::Message leave;
+            leave.header.kind = v2::actor::MessageKind::kUser;
+            leave.payload = v2::room::LeaveRoomMsg{.user_id = user_id};
+            room_ref->tell(std::move(leave));
+        }
+    }
+
     pending_battle_input_.erase(session_id);
     pending_battle_end_.erase(session_id);
-    rooms_by_session_id_.erase(session_id);
-    users_by_session_id_.erase(session_id);
+    lookup_.erase_session(session_id);
 
     if (!user_id.empty() && !room_id.empty()) {
         auto battle_it = battles_by_room_id_.find(room_id);
@@ -102,6 +122,8 @@ void Runtime::on_session_closed(SessionId session_id) {
     }
 
     actor_system_.dispatch_all();
+
+    AUDIT_LOG("session_closed", "session_id=" + std::to_string(session_id) + " user_id=" + user_id);
 }
 
 void Runtime::set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge) {
@@ -109,6 +131,12 @@ void Runtime::set_service_bridge(std::unique_ptr<GatewayServiceBridge> bridge) {
 }
 
 bool Runtime::handle(const GatewayCommand& command) {
+    // v2.2.0: Setup cross-service trace context for distributed tracing
+    if (bridge_) {
+        auto trace_ctx = v2::tracing::TraceContext::create_root();
+        bridge_->set_trace_context(trace_ctx.trace_id, trace_ctx.current_span_id);
+    }
+
     switch (command.type) {
         case GatewayCommandType::kLogin: {
             const auto login_body = parse_login_command_body(command.body);
@@ -140,21 +168,21 @@ bool Runtime::handle(const GatewayCommand& command) {
 
                         // Kick old session on duplicate login
                         if (is_duplicate) {
-                            auto old_session = session_id_for_user(login_body->user_id);
+                            auto old_session = lookup_.session_for_user(login_body->user_id);
                             if (old_session.has_value()) {
                                 emit(net::protocol::kSessionKickedPush,
                                      *old_session,
                                      0,
                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kDuplicateLogin),
                                      "duplicate_login");
-                                users_by_session_id_.erase(*old_session);
+                                lookup_.erase_session_user(*old_session);
 
-                                auto player_it = players_by_user_id_.find(login_body->user_id);
-                                if (player_it != players_by_user_id_.end()) {
+                                auto* player_ref = lookup_.player(login_body->user_id);
+                                if (player_ref != nullptr) {
                                     v2::actor::Message closed;
                                     closed.header.kind = v2::actor::MessageKind::kUser;
                                     closed.payload = v2::player::SessionClosedMsg{.session_id = *old_session};
-                                    player_it->second.tell(std::move(closed));
+                                    player_ref->tell(std::move(closed));
                                     actor_system_.dispatch_all();
                                 }
                             }
@@ -171,12 +199,13 @@ bool Runtime::handle(const GatewayCommand& command) {
                         player.tell(std::move(bind));
                         actor_system_.dispatch_all();
 
-                        users_by_session_id_[command.session_id] = login_body->user_id;
+                        lookup_.set_session_user(command.session_id, login_body->user_id);
                         emit(net::protocol::kLoginResponse,
                              command.session_id,
                              command.request_id,
                              static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                              "login_ok:" + login_body->user_id);
+                        AUDIT_LOG("login_success", "user_id=" + login_body->user_id + " session_id=" + std::to_string(command.session_id));
                         return true;
                     }
 
@@ -188,6 +217,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                          command.request_id,
                          static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidToken),
                          reason);
+                    AUDIT_LOG("login_failure", "user_id=" + login_body->user_id + " reason=invalid_token");
                     return true;
                 }
 
@@ -251,52 +281,44 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"room_id", *room_id},
                 };
 
-                auto result = bridge_->route(v2::service::ServiceId::kRoom,
-                                             "room_create",
-                                             room_payload.dump());
-
-                if (result.success) {
-                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
-                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
-                        rooms_by_session_id_[command.session_id] = *room_id;
-                        emit(net::protocol::kRoomCreateResponse,
-                             command.session_id,
-                             command.request_id,
-                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                             *room_id);
-                        return true;
-                    }
-                    std::string reason = resp.is_discarded() ? "room_create_failed"
-                        : resp.value("reason", "room_create_failed");
-                    emit(net::protocol::kErrorResponse,
-                         command.session_id,
-                         command.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId),
-                         reason);
-                    return true;
-                }
-                emit(net::protocol::kErrorResponse,
-                     command.session_id,
-                     command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
-                     "backend_error");
+                bridge_route(bridge_.get(),
+                             v2::service::ServiceId::kRoom,
+                             "room_create",
+                             room_payload.dump(),
+                             [&](const nlohmann::json&) {
+                                 lookup_.set_session_room(command.session_id, *room_id);
+                                 emit(net::protocol::kRoomCreateResponse,
+                                      command.session_id,
+                                      command.request_id,
+                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                      *room_id);
+                                 AUDIT_LOG("room_created", "room_id=" + *room_id + " user_id=" + user_id);
+                             },
+                             [&](const std::string& reason) {
+                                 auto error_code = net::protocol::ErrorCode::kInvalidRoomId;
+                                 if (reason == "backend_error") {
+                                     error_code = net::protocol::ErrorCode::kRoomBackendUnavailable;
+                                 }
+                                 emit(net::protocol::kErrorResponse,
+                                      command.session_id,
+                                      command.request_id,
+                                      static_cast<std::int32_t>(error_code),
+                                      reason);
+                             });
                 return true;
             }
 
             // Local path: create RoomActor
             auto room_actor = actor_system_.create_actor(std::make_unique<v2::room::RoomActor>(*this));
-            rooms_by_room_id_[*room_id] = room_actor;
-            pending_room_create_[*room_id] = PendingResponse{
-                .session_id = command.session_id,
-                .request_id = command.request_id,
-            };
+            lookup_.set_room(*room_id, room_actor);
+            auto pending_guard = PendingResponseGuard(pending_room_create_, *room_id, nullptr);
 
             v2::actor::Message create;
             create.header.kind = v2::actor::MessageKind::kUser;
             create.payload = v2::room::CreateRoomMsg{
                 .room_id = *room_id,
                 .owner_user_id = user_id,
-                .owner_actor_id = players_by_user_id_.at(user_id).actor_id(),
+                .owner_actor_id = lookup_.player(user_id)->actor_id(),
             };
             room_actor.tell(std::move(create));
 
@@ -306,16 +328,17 @@ bool Runtime::handle(const GatewayCommand& command) {
                 .room_actor_id = room_actor.actor_id(),
                 .room_id = *room_id,
             };
-            players_by_user_id_.at(user_id).tell(std::move(assign));
+            lookup_.player(user_id)->tell(std::move(assign));
 
             actor_system_.dispatch_all();
-            rooms_by_session_id_[command.session_id] = *room_id;
+            lookup_.set_session_room(command.session_id, *room_id);
             emit(net::protocol::kRoomCreateResponse,
                  command.session_id,
                  command.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  *room_id);
-            pending_room_create_.erase(*room_id);
+            AUDIT_LOG("room_created", "room_id=" + *room_id + " user_id=" + user_id);
+            pending_guard.release();
             return true;
         }
         case GatewayCommandType::kRoomJoin: {
@@ -344,7 +367,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 if (result.success) {
                     auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
                     if (!resp.is_discarded() && resp.value("status", "") == "ok") {
-                        rooms_by_session_id_[command.session_id] = *room_id;
+                        lookup_.set_session_room(command.session_id, *room_id);
                         emit(net::protocol::kRoomJoinResponse,
                              command.session_id,
                              command.request_id,
@@ -370,45 +393,42 @@ bool Runtime::handle(const GatewayCommand& command) {
             }
 
             // Local path
-            auto room_it = rooms_by_room_id_.find(*room_id);
-            if (room_it == rooms_by_room_id_.end()) {
+            auto* room_ref = lookup_.room(*room_id);
+            if (room_ref == nullptr) {
                 return false;
             }
-            pending_room_join_[*room_id + ":" + user_id] = PendingResponse{
-                .session_id = command.session_id,
-                .request_id = command.request_id,
-            };
+            auto pending_guard = PendingResponseGuard(pending_room_join_, *room_id + ":" + user_id, nullptr);
 
             v2::actor::Message join;
             join.header.kind = v2::actor::MessageKind::kUser;
             join.payload = v2::room::JoinRoomMsg{
                 .user_id = user_id,
-                .player_actor_id = players_by_user_id_.at(user_id).actor_id(),
+                .player_actor_id = lookup_.player(user_id)->actor_id(),
             };
-            room_it->second.tell(std::move(join));
+            room_ref->tell(std::move(join));
 
             v2::actor::Message assign;
             assign.header.kind = v2::actor::MessageKind::kUser;
             assign.payload = v2::player::RoomAssignedMsg{
-                .room_actor_id = room_it->second.actor_id(),
+                .room_actor_id = room_ref->actor_id(),
                 .room_id = *room_id,
             };
-            players_by_user_id_.at(user_id).tell(std::move(assign));
+            lookup_.player(user_id)->tell(std::move(assign));
 
             actor_system_.dispatch_all();
-            rooms_by_session_id_[command.session_id] = *room_id;
+            lookup_.set_session_room(command.session_id, *room_id);
             emit(net::protocol::kRoomJoinResponse,
                  command.session_id,
                  command.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  *room_id);
-            pending_room_join_.erase(*room_id + ":" + user_id);
+            pending_guard.release();
             return true;
         }
         case GatewayCommandType::kRoomReady: {
-            const auto user_id = session_user_id(command.session_id);
-            auto room_name_it = rooms_by_session_id_.find(command.session_id);
-            if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto session_room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || session_room_id.empty()) {
                 return false;
             }
             const auto ready = parse_room_ready_body(command.body);
@@ -425,7 +445,7 @@ bool Runtime::handle(const GatewayCommand& command) {
             if (bridge_) {
                 nlohmann::json room_payload{
                     {"user_id", user_id},
-                    {"room_id", room_name_it->second},
+                    {"room_id", session_room_id},
                     {"ready", *ready},
                 };
 
@@ -441,6 +461,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                              command.request_id,
                              static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                              *ready ? "true" : "false");
+                        AUDIT_LOG("room_ready", "room_id=" + session_room_id + " user_id=" + user_id + " ready=" + (*ready ? "true" : "false"));
                         return true;
                     }
                     std::string reason = resp.is_discarded() ? "ready_failed"
@@ -461,11 +482,11 @@ bool Runtime::handle(const GatewayCommand& command) {
             }
 
             // Local path
-            auto room_it = rooms_by_room_id_.find(room_name_it->second);
-            if (room_it == rooms_by_room_id_.end()) {
+            auto* room_ref = lookup_.room(session_room_id);
+            if (room_ref == nullptr) {
                 return false;
             }
-            pending_room_ready_[room_name_it->second + ":" + user_id] = PendingResponse{
+            pending_room_ready_[session_room_id + ":" + user_id] = PendingResponse{
                 .session_id = command.session_id,
                 .request_id = command.request_id,
             };
@@ -475,20 +496,88 @@ bool Runtime::handle(const GatewayCommand& command) {
                 .user_id = user_id,
                 .ready = *ready,
             };
-            room_it->second.tell(std::move(set_ready));
+            room_ref->tell(std::move(set_ready));
             actor_system_.dispatch_all();
             emit(net::protocol::kRoomReadyResponse,
                  command.session_id,
                  command.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  *ready ? "true" : "false");
-            pending_room_ready_.erase(room_name_it->second + ":" + user_id);
+            AUDIT_LOG("room_ready", "room_id=" + session_room_id + " user_id=" + user_id + " ready=" + (*ready ? "true" : "false"));
+            pending_room_ready_.erase(session_room_id + ":" + user_id);
+            return true;
+        }
+        case GatewayCommandType::kRoomLeave: {
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto session_room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || session_room_id.empty()) {
+                return false;
+            }
+
+            // Bridge path: delegate to room_backend
+            if (bridge_) {
+                nlohmann::json room_payload{
+                    {"user_id", user_id},
+                    {"room_id", session_room_id},
+                };
+
+                auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                             "room_leave",
+                                             room_payload.dump());
+
+                if (result.success) {
+                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
+                        lookup_.erase_session_room(command.session_id);
+                        emit(net::protocol::kRoomLeaveResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                             session_room_id);
+                        AUDIT_LOG("room_left", "room_id=" + session_room_id + " user_id=" + user_id);
+                        return true;
+                    }
+                    std::string reason = resp.is_discarded() ? "leave_failed"
+                        : resp.value("reason", "leave_failed");
+                    emit(net::protocol::kErrorResponse,
+                         command.session_id,
+                         command.request_id,
+                         static_cast<std::int32_t>(net::protocol::ErrorCode::kNotInRoom),
+                         reason);
+                    return true;
+                }
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kRoomBackendUnavailable),
+                     "backend_error");
+                return true;
+            }
+
+            // Local path: notify RoomActor
+            auto* room_ref = lookup_.room(session_room_id);
+            if (room_ref == nullptr) {
+                return false;
+            }
+            v2::actor::Message leave;
+            leave.header.kind = v2::actor::MessageKind::kUser;
+            leave.payload = v2::room::LeaveRoomMsg{.user_id = user_id};
+            room_ref->tell(std::move(leave));
+            actor_system_.dispatch_all();
+
+            lookup_.erase_session_room(command.session_id);
+            emit(net::protocol::kRoomLeaveResponse,
+                 command.session_id,
+                 command.request_id,
+                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                 session_room_id);
+            AUDIT_LOG("room_left", "room_id=" + session_room_id + " user_id=" + user_id);
             return true;
         }
         case GatewayCommandType::kBattleStart: {
-            const auto user_id = session_user_id(command.session_id);
-            auto room_name_it = rooms_by_session_id_.find(command.session_id);
-            if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto session_room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || session_room_id.empty()) {
                 return false;
             }
             const auto battle_start = parse_battle_start_command_body(command.body);
@@ -500,7 +589,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                      net::protocol::to_string(net::protocol::ErrorCode::kInvalidRoomId));
                 return true;
             }
-            if (battle_start->room_id.has_value() && *battle_start->room_id != room_name_it->second) {
+            if (battle_start->room_id.has_value() && *battle_start->room_id != session_room_id) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
                      command.request_id,
@@ -513,7 +602,7 @@ bool Runtime::handle(const GatewayCommand& command) {
             if (bridge_) {
                 nlohmann::json room_payload{
                     {"user_id", user_id},
-                    {"room_id", room_name_it->second},
+                    {"room_id", session_room_id},
                 };
 
                 auto room_result = bridge_->route(v2::service::ServiceId::kRoom,
@@ -565,7 +654,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 // Track battle by room_id for push broadcasting
                                 std::string battle_id = battle_resp.value("battle_id", "");
                                 if (!battle_id.empty()) {
-                                    battles_by_room_id_[room_name_it->second] =
+                                    battles_by_room_id_[session_room_id] =
                                         v2::actor::ActorRef{};  // placeholder for bridge mode
                                 }
 
@@ -575,19 +664,20 @@ bool Runtime::handle(const GatewayCommand& command) {
                                      command.request_id,
                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                                      format_battle_started_body(
-                                         room_name_it->second, battle_id));
+                                         session_room_id, battle_id));
+                                AUDIT_LOG("battle_started", "room_id=" + session_room_id + " user_id=" + user_id);
 
                                 // Broadcast push_to_sessions events
                                 if (battle_resp.contains("push_to_sessions")) {
                                     for (const auto& push : battle_resp["push_to_sessions"]) {
                                         std::string kind = push.value("kind", "");
                                         if (kind == "battle_started") {
-                                            for (const auto& [sid, rid] : rooms_by_session_id_) {
-                                                if (rid == room_name_it->second) {
+                                            for (const auto& [sid, rid] : lookup_.session_rooms()) {
+                                                if (rid == session_room_id) {
                                                     emit(net::protocol::kBattleStatePush,
                                                          sid, 0,
                                                          static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                         format_battle_state_body(room_name_it->second, battle_id));
+                                                         format_battle_state_body(session_room_id, battle_id));
                                                 }
                                             }
                                         }
@@ -615,25 +705,25 @@ bool Runtime::handle(const GatewayCommand& command) {
             }
 
             // Local path
-            auto room_it = rooms_by_room_id_.find(room_name_it->second);
-            if (room_it == rooms_by_room_id_.end()) {
+            auto* room_ref = lookup_.room(session_room_id);
+            if (room_ref == nullptr) {
                 return false;
             }
-            pending_battle_start_[room_name_it->second] = PendingResponse{
+            pending_battle_start_[session_room_id] = PendingResponse{
                 .session_id = command.session_id,
                 .request_id = command.request_id,
             };
             v2::actor::Message start;
             start.header.kind = v2::actor::MessageKind::kUser;
             start.payload = v2::room::StartBattleMsg{.requester_user_id = user_id};
-            room_it->second.tell(std::move(start));
+            room_ref->tell(std::move(start));
             actor_system_.dispatch_all();
             return true;
         }
         case GatewayCommandType::kBattleInput: {
-            const auto user_id = session_user_id(command.session_id);
-            auto room_name_it = rooms_by_session_id_.find(command.session_id);
-            if (user_id.empty() || room_name_it == rooms_by_session_id_.end()) {
+            const auto user_id = lookup_.user_id_for(command.session_id);
+            const auto session_room_id = lookup_.room_id_for(command.session_id);
+            if (user_id.empty() || session_room_id.empty()) {
                 return false;
             }
             const auto battle_input = parse_battle_input_command_body(command.body);
@@ -648,7 +738,7 @@ bool Runtime::handle(const GatewayCommand& command) {
 
             // Bridge path: route to battle_backend
             if (bridge_) {
-                auto battle_it = battles_by_room_id_.find(room_name_it->second);
+                auto battle_it = battles_by_room_id_.find(session_room_id);
                 if (battle_it == battles_by_room_id_.end()) {
                     emit(net::protocol::kErrorResponse,
                          command.session_id,
@@ -682,8 +772,8 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 for (const auto& push : resp["push_to_sessions"]) {
                                     std::string kind = push.value("kind", "");
                                     if (kind == "battle_finished") {
-                                        for (const auto& [sid, rid] : rooms_by_session_id_) {
-                                            if (rid == room_name_it->second) {
+                                        for (const auto& [sid, rid] : lookup_.session_rooms()) {
+                                            if (rid == session_room_id) {
                                                 emit(net::protocol::kBattleStatePush,
                                                      sid, 0,
                                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -693,7 +783,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                     }
                                 }
                             }
-                            battles_by_room_id_.erase(room_name_it->second);
+                            battles_by_room_id_.erase(session_room_id);
                             return true;
                         }
                     }
@@ -732,8 +822,8 @@ bool Runtime::handle(const GatewayCommand& command) {
                             for (const auto& push : resp["push_to_sessions"]) {
                                 std::string kind = push.value("kind", "");
                                 if (kind == "frame_advanced") {
-                                    for (const auto& [sid, rid] : rooms_by_session_id_) {
-                                        if (rid == room_name_it->second) {
+                                    for (const auto& [sid, rid] : lookup_.session_rooms()) {
+                                        if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -741,15 +831,15 @@ bool Runtime::handle(const GatewayCommand& command) {
                                         }
                                     }
                                 } else if (kind == "battle_finished") {
-                                    for (const auto& [sid, rid] : rooms_by_session_id_) {
-                                        if (rid == room_name_it->second) {
+                                    for (const auto& [sid, rid] : lookup_.session_rooms()) {
+                                        if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                                                  push.dump());
                                         }
                                     }
-                                    battles_by_room_id_.erase(room_name_it->second);
+                                    battles_by_room_id_.erase(session_room_id);
                                 }
                             }
                         }
@@ -773,7 +863,7 @@ bool Runtime::handle(const GatewayCommand& command) {
             }
 
             // Local path
-            auto battle_it = battles_by_room_id_.find(room_name_it->second);
+            auto battle_it = battles_by_room_id_.find(session_room_id);
             if (battle_it == battles_by_room_id_.end()) {
                 emit(net::protocol::kErrorResponse,
                      command.session_id,
@@ -824,7 +914,7 @@ bool Runtime::handle(const GatewayCommand& command) {
 
 void Runtime::push(v2::player::PlayerEvent event) {
     if (const auto* accepted = std::get_if<v2::player::LoginAcceptedMsg>(&event)) {
-        users_by_session_id_[accepted->session_id] = accepted->user_id;
+        lookup_.set_session_user(accepted->session_id, accepted->user_id);
         auto pending = pending_login_.find(accepted->session_id);
         if (pending != pending_login_.end()) {
             emit(net::protocol::kLoginResponse,
@@ -867,16 +957,16 @@ void Runtime::push(v2::player::PlayerEvent event) {
 
 void Runtime::push(v2::battle::BattleEvent event) {
     if (const auto* created = std::get_if<v2::battle::BattleCreatedMsg>(&event)) {
-        auto room_it = rooms_by_room_id_.find(created->room_id);
-        if (room_it != rooms_by_room_id_.end()) {
+        auto* room_ref = lookup_.room(created->room_id);
+        if (room_ref != nullptr) {
             v2::actor::Message started;
             started.header.kind = v2::actor::MessageKind::kUser;
             started.payload = v2::room::BattleStartedMsg{.battle_id = created->battle_id};
-            room_it->second.tell(std::move(started));
+            room_ref->tell(std::move(started));
         }
         for (const auto& user_id : created->player_ids) {
-            auto player_it = players_by_user_id_.find(user_id);
-            if (player_it == players_by_user_id_.end()) {
+            auto* player_ref = lookup_.player(user_id);
+            if (player_ref == nullptr) {
                 continue;
             }
             auto battle_it = battles_by_room_id_.find(created->room_id);
@@ -889,7 +979,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                 .battle_actor_id = battle_it->second.actor_id(),
                 .battle_id = created->battle_id,
             };
-            player_it->second.tell(std::move(assign));
+            player_ref->tell(std::move(assign));
         }
         actor_system_.dispatch_all();
 
@@ -900,9 +990,10 @@ void Runtime::push(v2::battle::BattleEvent event) {
                  pending->second.request_id,
                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                  format_battle_started_body(created->room_id, created->battle_id));
+            AUDIT_LOG("battle_started", "room_id=" + created->room_id + " user_id=" + (created->player_ids.empty() ? "N/A" : created->player_ids[0]));
             pending_battle_start_.erase(pending);
         }
-        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+        for (const auto& [session_id, room_id] : lookup_.session_rooms()) {
             if (room_id == created->room_id) {
                 emit(net::protocol::kBattleStatePush,
                      session_id,
@@ -915,7 +1006,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* input = std::get_if<v2::battle::BattleInputAcceptedMsg>(&event)) {
-        const auto sid = session_id_for_user(input->user_id);
+        const auto sid = lookup_.session_for_user(input->user_id);
         if (sid.has_value()) {
             auto pending = pending_battle_input_.find(*sid);
             if (pending != pending_battle_input_.end()) {
@@ -927,8 +1018,8 @@ void Runtime::push(v2::battle::BattleEvent event) {
                 pending_battle_input_.erase(pending);
             }
         }
-        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
-            if (room_id == input->room_id && session_user_id(session_id) != input->user_id) {
+        for (const auto& [session_id, room_id] : lookup_.session_rooms()) {
+            if (room_id == input->room_id && lookup_.user_id_for(session_id) != input->user_id) {
                 emit(net::protocol::kBattleInputPush,
                      session_id,
                      0,
@@ -950,7 +1041,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
     }
 
     if (const auto* frame = std::get_if<v2::battle::BattleFrameAdvancedMsg>(&event)) {
-        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+        for (const auto& [session_id, room_id] : lookup_.session_rooms()) {
             if (room_id == frame->room_id) {
                 emit(net::protocol::kBattleStatePush,
                      session_id,
@@ -971,20 +1062,20 @@ void Runtime::push(v2::battle::BattleEvent event) {
             .received_acks = 0,
         };
 
-        auto room_it = rooms_by_room_id_.find(settlement->room_id);
-        if (room_it != rooms_by_room_id_.end()) {
+        auto* room_ref = lookup_.room(settlement->room_id);
+        if (room_ref != nullptr) {
             v2::actor::Message room_settlement;
             room_settlement.header.kind = v2::actor::MessageKind::kUser;
             room_settlement.payload = v2::room::BattleSettlementMsg{
                 .battle_id = settlement->battle_id,
                 .reason = v2::battle::to_string(settlement->reason),
             };
-            room_it->second.tell(std::move(room_settlement));
+            room_ref->tell(std::move(room_settlement));
         }
 
         for (const auto& user_id : settlement->participant_user_ids) {
-            auto player_it = players_by_user_id_.find(user_id);
-            if (player_it == players_by_user_id_.end()) {
+            auto* player_ref = lookup_.player(user_id);
+            if (player_ref == nullptr) {
                 continue;
             }
             v2::actor::Message player_settlement;
@@ -993,7 +1084,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
                 .battle_id = settlement->battle_id,
                 .reason = v2::battle::to_string(settlement->reason),
             };
-            player_it->second.tell(std::move(player_settlement));
+            player_ref->tell(std::move(player_settlement));
         }
         actor_system_.dispatch_all();
 
@@ -1003,7 +1094,7 @@ void Runtime::push(v2::battle::BattleEvent event) {
             pending_settlement_acks_.erase(ack_it);
         }
 
-        for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+        for (const auto& [session_id, room_id] : lookup_.session_rooms()) {
             if (room_id == settlement->room_id) {
                 emit(net::protocol::kBattleStatePush,
                      session_id,
@@ -1099,30 +1190,21 @@ void Runtime::push(v2::room::RoomEvent event) {
 }
 
 v2::actor::ActorRef Runtime::get_or_create_player(const std::string& user_id) {
-    auto it = players_by_user_id_.find(user_id);
-    if (it != players_by_user_id_.end()) {
-        return it->second;
+    auto* existing = lookup_.player(user_id);
+    if (existing != nullptr) {
+        return *existing;
     }
     auto actor = actor_system_.create_actor(std::make_unique<v2::player::PlayerActor>(*this));
-    players_by_user_id_.emplace(user_id, actor);
+    lookup_.set_player(user_id, actor);
     return actor;
 }
 
 std::string Runtime::session_user_id(SessionId session_id) const {
-    auto it = users_by_session_id_.find(session_id);
-    if (it == users_by_session_id_.end()) {
-        return {};
-    }
-    return it->second;
+    return lookup_.user_id_for(session_id);
 }
 
 std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id) const {
-    for (const auto& [session_id, mapped_user_id] : users_by_session_id_) {
-        if (mapped_user_id == user_id) {
-            return session_id;
-        }
-    }
-    return std::nullopt;
+    return lookup_.session_for_user(user_id);
 }
 
 void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finished) {
@@ -1130,7 +1212,7 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
     battles_by_room_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {
-        const auto sid = session_id_for_user(finished.triggering_user_id);
+        const auto sid = lookup_.session_for_user(finished.triggering_user_id);
         if (sid.has_value()) {
             auto pending = pending_battle_end_.find(*sid);
             if (pending != pending_battle_end_.end()) {
@@ -1144,18 +1226,18 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
         }
     }
 
-    auto room_it = rooms_by_room_id_.find(finished.room_id);
-    if (room_it != rooms_by_room_id_.end()) {
+    auto* room_ref = lookup_.room(finished.room_id);
+    if (room_ref != nullptr) {
         v2::actor::Message ended;
         ended.header.kind = v2::actor::MessageKind::kUser;
         ended.payload = v2::room::BattleEndedMsg{
             .battle_id = finished.battle_id,
             .reason = v2::battle::to_string(finished.reason),
         };
-        room_it->second.tell(std::move(ended));
+        room_ref->tell(std::move(ended));
     }
 
-    for (auto& [user_id, player_actor] : players_by_user_id_) {
+    for (const auto& [user_id, player_actor] : lookup_.players()) {
         v2::actor::Message ended;
         ended.header.kind = v2::actor::MessageKind::kUser;
         ended.payload = v2::player::BattleEndedMsg{
@@ -1166,7 +1248,7 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
     }
     actor_system_.dispatch_all();
 
-    for (const auto& [session_id, room_id] : rooms_by_session_id_) {
+    for (const auto& [session_id, room_id] : lookup_.session_rooms()) {
         if (room_id == finished.room_id) {
             emit(net::protocol::kBattleStatePush,
                  session_id,

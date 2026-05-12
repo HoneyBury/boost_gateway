@@ -57,6 +57,14 @@ struct AttackStateComponent final : v2::ecs::Component {
     std::string last_target_user_id;
 };
 
+// v2.3.0: Anti-cheat attack cooldown tracking
+struct AttackCooldownComponent final : v2::ecs::Component {
+    std::uint32_t last_attack_frame = 0;
+    std::uint32_t cooldown_frames = 3;  // min frames between attacks
+    std::uint32_t attacks_this_frame = 0;
+    static constexpr std::uint32_t kMaxAttacksPerFrame = 1;
+};
+
 class BattleClockSystem final : public v2::ecs::System {
 public:
     void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;

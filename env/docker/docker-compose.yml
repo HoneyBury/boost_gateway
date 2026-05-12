@@ -1,0 +1,274 @@
+# Boost Gateway v2.6.0 — Full Stack Docker Compose
+#
+# Spins up all 6 services + Redis + Prometheus + Grafana.
+# Usage:
+#   docker compose -f env/docker/docker-compose.yml up -d
+#   docker compose -f env/docker/docker-compose.yml down -v
+
+name: boost-gateway-v26
+
+networks:
+  boost-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  redis-data:
+  gateway-logs:
+  login-logs:
+  room-logs:
+  battle-logs:
+  match-logs:
+  leaderboard-logs:
+
+services:
+
+  # ==========================================================================
+  # Gateway — client-facing TCP ingress, HTTP management on 9080
+  # ==========================================================================
+  gateway:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.gateway
+    container_name: boost-gateway
+    networks:
+      - boost-net
+    ports:
+      - "9201:9201"
+      - "9080:9080"
+    environment:
+      MANAGEMENT_PORT: "9080"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - gateway-logs:/app/logs
+    restart: unless-stopped
+    depends_on:
+      login-backend:
+        condition: service_healthy
+      room-backend:
+        condition: service_healthy
+      battle-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  # ==========================================================================
+  # Login Backend — token validation, session management
+  # ==========================================================================
+  login-backend:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_login_backend
+    container_name: boost-login-backend
+    networks:
+      - boost-net
+    ports:
+      - "9202:9202"
+    environment:
+      SERVICE_PORT: "9202"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - login-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9202/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Room Backend — room lifecycle, member management
+  # ==========================================================================
+  room-backend:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_room_backend
+    container_name: boost-room-backend
+    networks:
+      - boost-net
+    ports:
+      - "9302:9302"
+    environment:
+      SERVICE_PORT: "9302"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - room-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9302/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Battle Backend — ECS tick, replay/archive
+  # ==========================================================================
+  battle-backend:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_battle_backend
+    container_name: boost-battle-backend
+    networks:
+      - boost-net
+    ports:
+      - "9303:9303"
+    environment:
+      SERVICE_PORT: "9303"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - battle-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9303/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Matchmaking Backend — MMR-based player matching
+  # ==========================================================================
+  matchmaking-backend:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_match_backend
+    container_name: boost-matchmaking-backend
+    networks:
+      - boost-net
+    ports:
+      - "9304:9304"
+    environment:
+      MATCH_PORT: "9304"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - match-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9304/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Leaderboard Backend — ranked leaderboard queries
+  # ==========================================================================
+  leaderboard-backend:
+    build:
+      context: ../..
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_leaderboard_backend
+    container_name: boost-leaderboard-backend
+    networks:
+      - boost-net
+    ports:
+      - "9305:9305"
+    environment:
+      LEADERBOARD_PORT: "9305"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ../../config:/app/config:ro
+      - leaderboard-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9305/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Redis — caching, leaderboard data store
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: boost-redis
+    networks:
+      - boost-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - ../redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    restart: unless-stopped
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Prometheus — metrics collection
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: boost-prometheus
+    networks:
+      - boost-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+      - --web.console.libraries=/usr/share/prometheus/console_libraries
+      - --web.console.templates=/usr/share/prometheus/consoles
+    depends_on:
+      - gateway
+      - login-backend
+      - room-backend
+      - battle-backend
+      - matchmaking-backend
+      - leaderboard-backend
+
+  # ==========================================================================
+  # Grafana — dashboard visualization
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: boost-grafana
+    networks:
+      - boost-net
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus

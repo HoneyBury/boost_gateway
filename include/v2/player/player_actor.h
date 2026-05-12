@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include "v2/actor/actor.h"
 #include "v2/player/message_types.h"
 
@@ -29,10 +30,18 @@ private:
     void handle_battle_settlement(const BattleSettlementMsg& message);
     void handle_battle_ended(const BattleEndedMsg& message);
     void handle_session_closed(const SessionClosedMsg& message);
+    void handle_reconnect_timeout(const ReconnectTimerExpiredMsg& message);
+
+    void schedule_reconnect_timeout();
+
+    static constexpr std::chrono::seconds kReconnectWindow{30};
 
     PlayerEventSink& sink_;
     PlayerRuntimeState state_;
     std::optional<PlayerSessionBinding> pending_binding_;
+    std::optional<TokenMeta> token_meta_;
+    std::optional<ResumeMeta> resume_meta_;
+    std::optional<v2::actor::ScheduleId> reconnect_timer_id_;
 };
 
 }  // namespace v2::player

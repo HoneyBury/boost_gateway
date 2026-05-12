@@ -55,6 +55,12 @@ public:
     void update_backend_config(v2::service::ServiceId service,
                                 std::optional<BackendConfig> config);
 
+    // v2.2.0: Set trace context for cross-service distributed tracing.
+    void set_trace_context(std::uint64_t trace_id, std::uint64_t span_id) {
+        current_trace_id_ = trace_id;
+        current_span_id_ = span_id;
+    }
+
     void shutdown();
 
 private:
@@ -76,6 +82,8 @@ private:
     std::shared_ptr<BackendMetrics> metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> registry_;
     mutable std::mutex mutex_;
+    std::uint64_t current_trace_id_ = 0;
+    std::uint64_t current_span_id_ = 0;
 };
 
 }  // namespace v2::gateway

@@ -73,8 +73,41 @@ struct BattleSettlementAppliedMsg {
     std::string reason;
 };
 
+struct LeaveRoomMsg {
+    std::string user_id;
+};
+
+struct KickMemberMsg {
+    std::string requester_user_id;
+    std::string target_user_id;
+};
+
+struct TransferOwnerMsg {
+    std::string requester_user_id;
+    std::string new_owner_user_id;
+};
+
+struct RoomLeaveAppliedMsg {
+    std::string room_id;
+    std::string user_id;
+};
+
+struct RoomKickAppliedMsg {
+    std::string room_id;
+    std::string target_user_id;
+};
+
+struct RoomOwnerTransferredMsg {
+    std::string room_id;
+    std::string old_owner_user_id;
+    std::string new_owner_user_id;
+};
+
 using RoomEvent = std::variant<BattleStartRequestedMsg,
                                BattleStartRejectedMsg,
-                               BattleSettlementAppliedMsg>;
+                               BattleSettlementAppliedMsg,
+                               RoomLeaveAppliedMsg,
+                               RoomKickAppliedMsg,
+                               RoomOwnerTransferredMsg>;
 
 }  // namespace v2::room

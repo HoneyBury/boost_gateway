@@ -352,3 +352,221 @@ TEST(V2RoomActorTest, MemberReadyStateTogglesOnOff) {
     ASSERT_EQ(actor_ptr->state().members.size(), 1U);
     EXPECT_FALSE(actor_ptr->state().members[0].ready);
 }
+
+TEST(V2RoomActorTest, LeaveRoomRemovesMemberAndEmitsEvent) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_leave",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::LeaveRoomMsg{
+        .user_id = "member",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_EQ(actor_ptr->state().members[0].user_id, "owner");
+    ASSERT_EQ(sink.events.size(), 1U);
+    const auto* leave_event = std::get_if<v2::room::RoomLeaveAppliedMsg>(&sink.events.front());
+    ASSERT_NE(leave_event, nullptr);
+    EXPECT_EQ(leave_event->user_id, "member");
+    EXPECT_EQ(leave_event->room_id, "room_leave");
+}
+
+TEST(V2RoomActorTest, OwnerLeavingTransfersOwnershipToNextMember) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_owner_leave",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::LeaveRoomMsg{
+        .user_id = "owner",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_EQ(actor_ptr->state().members[0].user_id, "member");
+    EXPECT_EQ(actor_ptr->state().owner_user_id, "member");
+    ASSERT_GE(sink.events.size(), 2U);
+    const auto* leave_event = std::get_if<v2::room::RoomLeaveAppliedMsg>(&sink.events[0]);
+    ASSERT_NE(leave_event, nullptr);
+    EXPECT_EQ(leave_event->user_id, "owner");
+    const auto* transfer_event = std::get_if<v2::room::RoomOwnerTransferredMsg>(&sink.events[1]);
+    ASSERT_NE(transfer_event, nullptr);
+    EXPECT_EQ(transfer_event->new_owner_user_id, "member");
+}
+
+TEST(V2RoomActorTest, OwnerKicksMemberSuccessfully) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_kick",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::KickMemberMsg{
+        .requester_user_id = "owner",
+        .target_user_id = "member",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_EQ(actor_ptr->state().members[0].user_id, "owner");
+    ASSERT_EQ(sink.events.size(), 1U);
+    const auto* kick_event = std::get_if<v2::room::RoomKickAppliedMsg>(&sink.events.front());
+    ASSERT_NE(kick_event, nullptr);
+    EXPECT_EQ(kick_event->target_user_id, "member");
+}
+
+TEST(V2RoomActorTest, NonOwnerCannotKickMember) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_nokick",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "third",
+        .player_actor_id = 1003,
+    }));
+    actor_ref.tell(make_room_message(v2::room::KickMemberMsg{
+        .requester_user_id = "member",
+        .target_user_id = "third",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 4U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 3U);
+    EXPECT_EQ(sink.events.size(), 0U);
+}
+
+TEST(V2RoomActorTest, OwnerCannotKickSelf) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_selfkick",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::KickMemberMsg{
+        .requester_user_id = "owner",
+        .target_user_id = "owner",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_EQ(sink.events.size(), 0U);
+}
+
+TEST(V2RoomActorTest, TransferOwnerToValidMember) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_transfer",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::JoinRoomMsg{
+        .user_id = "member",
+        .player_actor_id = 1002,
+    }));
+    actor_ref.tell(make_room_message(v2::room::TransferOwnerMsg{
+        .requester_user_id = "owner",
+        .new_owner_user_id = "member",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 3U);
+    EXPECT_EQ(actor_ptr->state().owner_user_id, "member");
+    ASSERT_EQ(sink.events.size(), 1U);
+    const auto* transfer_event = std::get_if<v2::room::RoomOwnerTransferredMsg>(&sink.events.front());
+    ASSERT_NE(transfer_event, nullptr);
+    EXPECT_EQ(transfer_event->old_owner_user_id, "owner");
+    EXPECT_EQ(transfer_event->new_owner_user_id, "member");
+}
+
+TEST(V2RoomActorTest, TransferOwnerToNonMemberIsRejected) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_badtransfer",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::TransferOwnerMsg{
+        .requester_user_id = "owner",
+        .new_owner_user_id = "ghost",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    EXPECT_EQ(actor_ptr->state().owner_user_id, "owner");
+    EXPECT_EQ(sink.events.size(), 0U);
+}
+
+TEST(V2RoomActorTest, LeaveRoomWithUnknownUserIsIgnored) {
+    v2::runtime::ActorSystem actor_system;
+    RecordingRoomSink sink;
+    auto actor = std::make_unique<v2::room::RoomActor>(sink);
+    auto* actor_ptr = actor.get();
+    auto actor_ref = actor_system.create_actor(std::move(actor));
+
+    actor_ref.tell(make_room_message(v2::room::CreateRoomMsg{
+        .room_id = "room_ghost",
+        .owner_user_id = "owner",
+        .owner_actor_id = 1001,
+    }));
+    actor_ref.tell(make_room_message(v2::room::LeaveRoomMsg{
+        .user_id = "ghost",
+    }));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 2U);
+    ASSERT_EQ(actor_ptr->state().members.size(), 1U);
+    EXPECT_EQ(actor_ptr->state().members[0].user_id, "owner");
+}

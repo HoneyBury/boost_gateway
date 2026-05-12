@@ -21,6 +21,7 @@ class HttpManager {
 public:
     using MetricsProvider = std::function<HttpMetricsSnapshot()>;
     using HealthProvider = std::function<std::string()>;
+    using ReadyProvider = std::function<std::string()>;
 
     HttpManager(boost::asio::any_io_executor ex, std::uint16_t port);
     ~HttpManager();
@@ -30,6 +31,7 @@ public:
 
     void set_metrics_provider(MetricsProvider provider);
     void set_health_provider(HealthProvider provider);
+    void set_ready_provider(ReadyProvider provider);
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
@@ -40,6 +42,7 @@ private:
     boost::asio::ip::tcp::acceptor acceptor_;
     MetricsProvider metrics_provider_;
     HealthProvider health_provider_;
+    ReadyProvider ready_provider_;
 };
 
 }  // namespace net

@@ -39,7 +39,11 @@ add_library(project_v2 STATIC
     player/player_actor.cpp
     room/room_actor.cpp
     room/room_backend_service.cpp
+    login/login_backend_service.cpp
     battle/battle_backend_service.cpp
+    leaderboard/leaderboard_service.cpp
+    match/matchmaking_service.cpp
+    test/fault_injector.cpp
     runtime/actor_system.cpp
 )
 target_include_directories(project_v2

@@ -96,7 +96,9 @@ TEST(V2GatewayBridgeTest, RateLimitPolicyCanRejectRequest) {
         std::make_unique<v2::gateway::GatewayActor>(
             adapter,
             nullptr,
-            [](const v2::gateway::ClientEnvelope&) { return false; }));
+            [](const v2::gateway::ClientEnvelope&, v2::gateway::SessionId) {
+                return v2::gateway::RateLimitResult{false, "test_block", 1000};
+            }));
     adapter.bind_gateway(gateway_actor);
 
     v2::gateway::ClientEnvelope envelope;
@@ -111,7 +113,7 @@ TEST(V2GatewayBridgeTest, RateLimitPolicyCanRejectRequest) {
     EXPECT_EQ(writes.front().envelope.error_code,
               static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited));
     EXPECT_EQ(writes.front().envelope.body,
-              net::protocol::to_string(net::protocol::ErrorCode::kRateLimited));
+              "rate_limited,retry_after_ms=1000");
 }
 
 TEST(V2GatewayBridgeTest, EchoWithEmptyBodyReturnsEmptyEcho) {

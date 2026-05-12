@@ -4,6 +4,7 @@
 #include "net/http_manager.h"
 #include "v2/config/config_watcher.h"
 #include "v2/io/io_engine.h"
+#include "v2/diagnostics/health_check.h"
 #include "v2/gateway/backend_metrics.h"
 #include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/gateway_service_bridge.h"
@@ -73,6 +74,11 @@ public:
     [[nodiscard]] DemoServerDiagnostics diagnostics() const;
     [[nodiscard]] std::string diagnostics_json() const;
 
+    // Health check (v2.2.0: wiring HealthCheck to HTTP endpoints)
+    [[nodiscard]] std::string health_json() const;
+    [[nodiscard]] std::string ready_json() const;
+    [[nodiscard]] net::HttpMetricsSnapshot metrics_snapshot() const;
+
 private:
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
@@ -91,6 +97,7 @@ private:
     std::unique_ptr<JsonFileBattleDataStore> archive_store_;
     std::shared_ptr<BackendMetrics> backend_metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> service_registry_;
+    v2::diagnostics::HealthCheck health_check_;
     v2::actor::ActorRef gateway_actor_;
     std::unordered_map<SessionId, std::shared_ptr<v2::io::IoSession>> sessions_;
     mutable std::mutex sessions_mutex_;

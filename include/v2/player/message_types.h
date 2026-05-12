@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <variant>
@@ -35,6 +36,21 @@ struct PlayerRuntimeState {
     std::optional<std::uint64_t> battle_actor_id;
     std::optional<std::string> battle_id;
     std::optional<std::string> pending_battle_settlement_reason;
+};
+
+struct TokenMeta {
+    std::string token_type;
+    std::string issuer;
+    std::uint64_t issued_at = 0;
+    std::uint64_t expires_at = 0;
+    std::map<std::string, std::string> claims;
+};
+
+struct ResumeMeta {
+    std::string reconnect_token;
+    std::string room_id;
+    std::optional<std::string> battle_id;
+    std::uint64_t expiry = 0;
 };
 
 struct LoginRequestMsg {
@@ -94,6 +110,10 @@ struct SessionResumePushMsg {
 struct BattleSettlementAppliedMsg {
     std::string battle_id;
     std::string reason;
+};
+
+struct ReconnectTimerExpiredMsg {
+    std::string user_id;
 };
 
 using PlayerEvent = std::variant<LoginAcceptedMsg,

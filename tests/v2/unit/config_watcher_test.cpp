@@ -122,3 +122,52 @@ TEST_F(V2ConfigWatcherTest, MissingFileDoesNotCrash) {
     // Should not crash — callback silently skips when file can't be read
     SUCCEED();
 }
+
+// ─── Stop without start is safe no-op ─────────────────────────────────
+
+TEST_F(V2ConfigWatcherTest, StopWithoutStartIsSafeNoOp) {
+    touch_file();
+    v2::config::ConfigWatcher watcher(config_path_, []() {});
+    watcher.stop();  // Should not crash or hang
+    SUCCEED();
+}
+
+// ─── Double start is safe ─────────────────────────────────────────────
+
+TEST_F(V2ConfigWatcherTest, DoubleStartIsSafe) {
+    touch_file();
+    std::atomic<int> call_count{0};
+    v2::config::ConfigWatcher watcher(config_path_,
+                                       [&]() { ++call_count; });
+    watcher.start(std::chrono::milliseconds(50));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    watcher.start(std::chrono::milliseconds(50));  // Second start
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    write_json("{\"value\": 3}");
+    for (int i = 0; i < 50 && call_count.load() < 1; ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    EXPECT_GE(call_count.load(), 1);
+}
+
+// ─── Rapid file changes within single poll interval ───────────────────
+
+TEST_F(V2ConfigWatcherTest, RapidFileChangesDetected) {
+    touch_file();
+    std::atomic<int> call_count{0};
+
+    v2::config::ConfigWatcher watcher(config_path_,
+                                       [&]() { ++call_count; });
+    // Use longer poll interval so we can fit multiple writes in one cycle
+    watcher.start(std::chrono::milliseconds(800));
+
+    // First write
+    write_json("{\"value\": 10}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    // Second write before poll fires
+    write_json("{\"value\": 20}");
+    std::this_thread::sleep_for(std::chrono::milliseconds(900));
+
+    // At least one change should be detected (last_write_time updated)
+    EXPECT_GE(call_count.load(), 1);
+}
