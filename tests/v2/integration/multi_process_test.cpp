@@ -18,6 +18,7 @@
 #include <windows.h>
 #include <process.h>
 #else
+#include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -96,23 +97,23 @@ ProcessGuard::ProcessGuard(const std::string& binary,
     child_->pi.hThread = nullptr;
     started_ = true;
 #else
-    pid_t pid = fork();
-    if (pid < 0) {
-        startup_error_ = "fork failed";
+    // Build argv array for posix_spawn
+    std::vector<char*> spawn_argv;
+    spawn_argv.push_back(const_cast<char*>(binary.c_str()));
+    for (const auto& arg : args) {
+        spawn_argv.push_back(const_cast<char*>(arg.c_str()));
+    }
+    spawn_argv.push_back(nullptr);
+
+    pid_t spawn_pid;
+    int spawn_ret = posix_spawn(&spawn_pid, binary.c_str(),
+                                nullptr, nullptr,
+                                spawn_argv.data(), environ);
+    if (spawn_ret != 0) {
+        startup_error_ = "posix_spawn failed: errno=" + std::to_string(spawn_ret);
         return;
     }
-    if (pid == 0) {
-        // Child: build argv and exec
-        std::vector<const char*> argv;
-        argv.push_back(binary.c_str());
-        for (const auto& arg : args) {
-            argv.push_back(arg.c_str());
-        }
-        argv.push_back(nullptr);
-        execvp(binary.c_str(), const_cast<char* const*>(argv.data()));
-        _exit(127);  // exec failed
-    }
-    child_->pid = pid;
+    child_->pid = spawn_pid;
     started_ = true;
 #endif
 }

@@ -44,6 +44,7 @@
 #endif
 #include <windows.h>
 #else
+#include <spawn.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -427,16 +428,22 @@ public:
         started_ = true;
         return true;
 #else
-        pid_t pid = fork();
-        if (pid < 0) {
-            startup_error_ = "fork failed";
+        // Use posix_spawn to avoid fork() deadlock in multi-threaded programs.
+        // fork() duplicates only the calling thread; if another thread held a
+        // lock at fork-time (e.g. malloc), the child may deadlock before execve.
+        char* const spawn_argv[] = {
+            const_cast<char*>(exe_path.c_str()),
+            const_cast<char*>(arg.c_str()),
+            nullptr
+        };
+        pid_t spawn_pid;
+        int spawn_ret = posix_spawn(&spawn_pid, exe_path.c_str(),
+                                    nullptr, nullptr, spawn_argv, environ);
+        if (spawn_ret != 0) {
+            startup_error_ = "posix_spawn failed: errno=" + std::to_string(spawn_ret);
             return false;
         }
-        if (pid == 0) {
-            execlp(exe_path.c_str(), exe_path.c_str(), arg.c_str(), nullptr);
-            _exit(127);
-        }
-        pid_ = pid;
+        pid_ = spawn_pid;
         started_ = true;
         return true;
 #endif

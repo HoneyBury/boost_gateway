@@ -656,6 +656,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 if (!battle_id.empty()) {
                                     battles_by_room_id_[session_room_id] =
                                         v2::actor::ActorRef{};  // placeholder for bridge mode
+                                    battle_ids_by_room_id_[session_room_id] = battle_id;
                                 }
 
                                 // Emit kBattleStartResponse to requester
@@ -749,9 +750,16 @@ bool Runtime::handle(const GatewayCommand& command) {
                 }
 
                 if (battle_input->is_finish_request) {
+                    // Look up the actual battle_id for the room
+                    std::string actual_battle_id;
+                    auto bid_it = battle_ids_by_room_id_.find(session_room_id);
+                    if (bid_it != battle_ids_by_room_id_.end()) {
+                        actual_battle_id = bid_it->second;
+                    }
+
                     nlohmann::json finish_payload{
                         {"user_id", user_id},
-                        {"battle_id", ""},  // backend resolves by room
+                        {"battle_id", actual_battle_id},
                         {"reason", v2::battle::to_string(battle_input->finish_reason)},
                     };
 
@@ -784,6 +792,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 }
                             }
                             battles_by_room_id_.erase(session_room_id);
+                            battle_ids_by_room_id_.erase(session_room_id);
                             return true;
                         }
                     }
@@ -795,10 +804,16 @@ bool Runtime::handle(const GatewayCommand& command) {
                     return true;
                 }
 
-                // Normal input
+                // Normal input: look up the actual battle_id for the room
+                std::string actual_battle_id;
+                auto bid_it = battle_ids_by_room_id_.find(session_room_id);
+                if (bid_it != battle_ids_by_room_id_.end()) {
+                    actual_battle_id = bid_it->second;
+                }
+
                 nlohmann::json input_payload{
                     {"user_id", user_id},
-                    {"battle_id", ""},  // backend resolves by room
+                    {"battle_id", actual_battle_id},
                     {"input_data", battle_input->input_data},
                     {"score", battle_input->score},
                     {"submitted_frame", battle_input->score},  // approximate
@@ -840,6 +855,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                         }
                                     }
                                     battles_by_room_id_.erase(session_room_id);
+                                    battle_ids_by_room_id_.erase(session_room_id);
                                 }
                             }
                         }

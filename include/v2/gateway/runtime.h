@@ -77,6 +77,7 @@ private:
     SessionWriteSink& write_sink_;
     SessionLookup lookup_;
     std::unordered_map<std::string, v2::actor::ActorRef> battles_by_room_id_;
+    std::unordered_map<std::string, std::string> battle_ids_by_room_id_;  // bridge mode: room_id → battle_id
     std::unordered_map<SessionId, PendingResponse> pending_login_;
     std::unordered_map<std::string, PendingResponse> pending_room_create_;
     std::unordered_map<std::string, PendingResponse> pending_room_join_;
