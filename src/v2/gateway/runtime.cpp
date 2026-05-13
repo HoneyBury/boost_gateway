@@ -656,6 +656,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 if (!battle_id.empty()) {
                                     battles_by_room_id_[session_room_id] =
                                         v2::actor::ActorRef{};  // placeholder for bridge mode
+                                    room_to_battle_id_[session_room_id] = battle_id;
                                 }
 
                                 // Emit kBattleStartResponse to requester
@@ -748,10 +749,14 @@ bool Runtime::handle(const GatewayCommand& command) {
                     return true;
                 }
 
+                auto battle_id_it = room_to_battle_id_.find(session_room_id);
+                std::string bridge_battle_id = battle_id_it != room_to_battle_id_.end()
+                    ? battle_id_it->second : "";
+
                 if (battle_input->is_finish_request) {
                     nlohmann::json finish_payload{
                         {"user_id", user_id},
-                        {"battle_id", ""},  // backend resolves by room
+                        {"battle_id", bridge_battle_id},
                         {"reason", v2::battle::to_string(battle_input->finish_reason)},
                     };
 
@@ -784,6 +789,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 }
                             }
                             battles_by_room_id_.erase(session_room_id);
+                            room_to_battle_id_.erase(session_room_id);
                             return true;
                         }
                     }
@@ -798,7 +804,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 // Normal input
                 nlohmann::json input_payload{
                     {"user_id", user_id},
-                    {"battle_id", ""},  // backend resolves by room
+                    {"battle_id", bridge_battle_id},
                     {"input_data", battle_input->input_data},
                     {"score", battle_input->score},
                     {"submitted_frame", battle_input->score},  // approximate
@@ -840,6 +846,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                                         }
                                     }
                                     battles_by_room_id_.erase(session_room_id);
+                                    room_to_battle_id_.erase(session_room_id);
                                 }
                             }
                         }
@@ -1210,6 +1217,7 @@ std::optional<SessionId> Runtime::session_id_for_user(const std::string& user_id
 void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finished) {
     pending_battle_timeout_.erase(finished.battle_id);
     battles_by_room_id_.erase(finished.room_id);
+    room_to_battle_id_.erase(finished.room_id);
 
     if (!finished.triggering_user_id.empty()) {
         const auto sid = lookup_.session_for_user(finished.triggering_user_id);

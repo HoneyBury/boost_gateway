@@ -22,6 +22,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <unistd.h>
+#include <spawn.h>
+
+extern "C" char **environ;
 #endif
 
 namespace v2_test {
@@ -96,22 +99,30 @@ ProcessGuard::ProcessGuard(const std::string& binary,
     child_->pi.hThread = nullptr;
     started_ = true;
 #else
+    // Use fork+exec instead of posix_spawnp because on macOS 14+,
+    // posix_spawnp returns EBADF when closing kernel-managed fds.
+    std::vector<const char*> argv;
+    argv.push_back(binary.c_str());
+    for (const auto& arg : args) {
+        argv.push_back(arg.c_str());
+    }
+    argv.push_back(nullptr);
+
     pid_t pid = fork();
+    if (pid == 0) {
+        // Child: set own process group, close all non-stdio fds, then exec
+        setpgid(0, 0);
+        for (int fd = 3; fd < 1024; ++fd) {
+            ::close(fd);
+        }
+        execvp(binary.c_str(), const_cast<char* const*>(argv.data()));
+        _exit(127);
+    }
     if (pid < 0) {
-        startup_error_ = "fork failed";
+        startup_error_ = std::string("fork failed: ") + strerror(errno);
         return;
     }
-    if (pid == 0) {
-        // Child: build argv and exec
-        std::vector<const char*> argv;
-        argv.push_back(binary.c_str());
-        for (const auto& arg : args) {
-            argv.push_back(arg.c_str());
-        }
-        argv.push_back(nullptr);
-        execvp(binary.c_str(), const_cast<char* const*>(argv.data()));
-        _exit(127);  // exec failed
-    }
+
     child_->pid = pid;
     started_ = true;
 #endif

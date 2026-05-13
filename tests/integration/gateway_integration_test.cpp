@@ -48,6 +48,9 @@
 #include <sys/wait.h>
 #include <signal.h>
 #include <unistd.h>
+#include <spawn.h>
+
+extern "C" char **environ;
 #endif
 
 #include <gtest/gtest.h>
@@ -427,31 +430,29 @@ public:
         started_ = true;
         return true;
 #else
-        pid_t pid = fork();
-        if (pid < 0) {
-            startup_error_ = "fork failed";
+        posix_spawnattr_t attr;
+        posix_spawnattr_init(&attr);
+        posix_spawnattr_setpgroup(&attr, 0);
+
+        posix_spawn_file_actions_t actions;
+        posix_spawn_file_actions_init(&actions);
+        for (int fd = 3; fd < 1024; ++fd) {
+            posix_spawn_file_actions_addclose(&actions, fd);
+        }
+
+        const char* argv[] = {exe_path.c_str(), arg.c_str(), nullptr};
+        pid_t pid;
+        int ret = posix_spawn(&pid, exe_path.c_str(), &actions, &attr,
+                              const_cast<char* const*>(argv), environ);
+
+        posix_spawn_file_actions_destroy(&actions);
+        posix_spawnattr_destroy(&attr);
+
+        if (ret != 0) {
+            startup_error_ = std::string("posix_spawn failed: ") + strerror(ret);
             return false;
         }
-        if (pid == 0) {
-            // Isolate child in its own process group so that signals sent to the
-            // parent test process (e.g. Ctrl-C / SIGTERM from ctest) do not
-            // propagate to the child and prematurely kill it before the test
-            // can verify its behaviour.
-            ::setpgid(0, 0);
 
-            // Close inherited file descriptors (everything except 0/1/2) to
-            // prevent the child from accidentally holding sockets that would
-            // block port reuse by the echo_server.
-            long max_fd = sysconf(_SC_OPEN_MAX);
-            if (max_fd <= 0) max_fd = 1024;
-            for (int fd = 3; fd < max_fd; ++fd) {
-                ::close(fd);
-            }
-
-            const char* argv[] = {exe_path.c_str(), arg.c_str(), nullptr};
-            ::execv(exe_path.c_str(), const_cast<char* const*>(argv));
-            _exit(127);
-        }
         pid_ = pid;
         started_ = true;
         return true;

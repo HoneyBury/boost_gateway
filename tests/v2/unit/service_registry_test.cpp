@@ -20,14 +20,14 @@ TEST(V2ServiceRegistryTest, RegisterAndQueryHealthy) {
 }
 
 TEST(V2ServiceRegistryTest, HeartbeatRefreshesTTL) {
-    ServiceRegistry registry(std::chrono::milliseconds(50));
+    ServiceRegistry registry(std::chrono::milliseconds(200));
 
     registry.register_instance(ServiceId::kLogin, "127.0.0.1", 9001);
 
     // Sleep past TTL, but heartbeat midway
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     registry.heartbeat(ServiceId::kLogin, "127.0.0.1", 9001);
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
     // Instance should still exist because heartbeat refreshed TTL
     auto purged = registry.purge_expired();

@@ -79,7 +79,8 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
         // ── 8. Alice starts battle (full ready, owner) ─────────────
         resp = alice->exchange(net::protocol::kBattleStartRequest, rid++,
                               "e2e_room", kDefaultTimeout);
-        EXPECT_EQ(resp.message_id, net::protocol::kBattleStartResponse);
+        EXPECT_EQ(resp.message_id, net::protocol::kBattleStartResponse)
+            << "body=" << resp.body << " error_code=" << resp.error_code;
 
         // Drain initial battle-state pushes.
         auto push_a = alice->expect_message(net::protocol::kBattleStatePush,
@@ -92,7 +93,8 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
         // ── 10. Battle input accepted ──────────────────────────────
         resp = alice->exchange(net::protocol::kBattleInputRequest, rid++,
                               "move:1,2", kDefaultTimeout);
-        EXPECT_EQ(resp.message_id, net::protocol::kBattleInputResponse);
+        EXPECT_EQ(resp.message_id, net::protocol::kBattleInputResponse)
+            << "body=" << resp.body << " error_code=" << resp.error_code;
 
         // ── 11. Battle frame advances ──────────────────────────────
         push_a = alice->expect_message(net::protocol::kBattleStatePush,
@@ -231,7 +233,6 @@ TEST_F(MultiProcessFixture, BattleInputAfterFinishRejected) {
     alice->expect_message(net::protocol::kBattleStatePush, kTimeout);
     bob->expect_message(net::protocol::kBattleStatePush, kTimeout);
 
-    // Finish via surrender
     alice->exchange(net::protocol::kBattleInputRequest, rid++,
                    "finish:surrender", kTimeout);
     // Wait for finish pushes

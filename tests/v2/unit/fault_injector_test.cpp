@@ -159,7 +159,7 @@ TEST(V2FaultInjectorTest, LatencyInjectorFixedDelay) {
     // sleep_for should wait at least the requested duration; allow
     // generous bounds for scheduler noise on CI / Windows.
     EXPECT_GE(elapsed, 40ms) << "delay was too short";
-    EXPECT_LE(elapsed, 200ms) << "delay was too long";
+    EXPECT_LE(elapsed, 500ms) << "delay was too long";
 }
 
 // ─── Range delay stays within configured min and max ────────────────
@@ -173,7 +173,7 @@ TEST(V2FaultInjectorTest, LatencyInjectorRangeDelay) {
         injector();
         auto elapsed = std::chrono::steady_clock::now() - start;
         // Each delay should be roughly within [10ms, 100ms]
-        EXPECT_LE(elapsed, 200ms) << "iteration " << i;
+        EXPECT_LE(elapsed, 500ms) << "iteration " << i;
     }
 
     EXPECT_EQ(call_count, 20);

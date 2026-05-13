@@ -70,7 +70,8 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
     // ── Submit an input to advance a frame ─────────────────────────
     resp = alice->exchange(net::protocol::kBattleInputRequest, rid++,
                            "move:10,20", kDefaultTimeout);
-    EXPECT_EQ(resp.message_id, net::protocol::kBattleInputResponse);
+    EXPECT_EQ(resp.message_id, net::protocol::kBattleInputResponse)
+        << "body=" << resp.body << " error_code=" << resp.error_code;
 
     // Drain frame-advance pushes.
     push_a = alice->expect_message(net::protocol::kBattleStatePush,
@@ -192,8 +193,9 @@ TEST_F(MultiProcessFixture, FrameLimitSettlementDelivered) {
 
     // Submit inputs until we observe settlement or reach iteration limit.
     bool got_settlement = false;
+    net::packet::DecodedPacket input_resp;
     for (int i = 0; i < 10; ++i) {
-        auto input_resp = p1->exchange(
+        input_resp = p1->exchange(
             net::protocol::kBattleInputRequest, rid++,
             "move:" + std::to_string(i) + ",0", kDefaultTimeout);
 
@@ -224,7 +226,9 @@ TEST_F(MultiProcessFixture, FrameLimitSettlementDelivered) {
     }
 
     EXPECT_TRUE(got_settlement)
-        << "Did not observe settlement within 10 input rounds";
+        << "Did not observe settlement within 10 input rounds. Last input msg_id="
+        << input_resp.message_id << " body=" << input_resp.body
+        << " error_code=" << input_resp.error_code;
 
     p1->close();
     p2->close();

@@ -38,12 +38,12 @@ TEST(TokenBucketTest, RefillsOverTime) {
     EXPECT_TRUE(bucket.try_consume(100));
     EXPECT_DOUBLE_EQ(bucket.current, 0.0);
 
-    // Wait ~150 ms → should accumulate ~15 tokens
-    std::this_thread::sleep_for(std::chrono::milliseconds(150));
+    // Wait ~500 ms → should accumulate ~50 tokens
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
     bucket.refill();
 
-    // Allow generous tolerance (5) to avoid flakiness on busy CI runners
-    EXPECT_NEAR(bucket.current, 15.0, 5.0);
+    // Allow generous tolerance (15) to avoid flakiness on busy CI runners
+    EXPECT_NEAR(bucket.current, 50.0, 15.0);
 }
 
 TEST(TokenBucketTest, NeverExceedsCapacity) {
