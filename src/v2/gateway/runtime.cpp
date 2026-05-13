@@ -780,12 +780,16 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 for (const auto& push : resp["push_to_sessions"]) {
                                     std::string kind = push.value("kind", "");
                                     if (kind == "battle_finished") {
+                                        std::string finish_body =
+                                            "battle_state:kind=finished:settlement:"
+                                            "battle_id=" + push.value("battle_id", "") +
+                                            ":reason=" + push.value("reason", "");
                                         for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                             if (rid == session_room_id) {
                                                 emit(net::protocol::kBattleStatePush,
                                                      sid, 0,
                                                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                     push.dump());
+                                                     finish_body);
                                             }
                                         }
                                     }
@@ -837,21 +841,34 @@ bool Runtime::handle(const GatewayCommand& command) {
                             for (const auto& push : resp["push_to_sessions"]) {
                                 std::string kind = push.value("kind", "");
                                 if (kind == "frame_advanced") {
+                                    // Format body as "battle_state:kind=frame:..." so
+                                    // tests can recognise the push via .find("battle_state").
+                                    std::string frame_body =
+                                        "battle_state:kind=frame:"
+                                        "battle_id=" + push.value("battle_id", "") +
+                                        ":frame_number=" + std::to_string(push.value("frame_number", 0U)) +
+                                        ":trigger=" + push.value("trigger", "");
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                 push.dump());
+                                                 frame_body);
                                         }
                                     }
                                 } else if (kind == "battle_finished") {
+                                    // Include "finished" and "settlement" markers so
+                                    // settlement-replay tests detect the outcome.
+                                    std::string finish_body =
+                                        "battle_state:kind=finished:settlement:"
+                                        "battle_id=" + push.value("battle_id", "") +
+                                        ":reason=" + push.value("reason", "");
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
                                                  sid, 0,
                                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                                 push.dump());
+                                                 finish_body);
                                         }
                                     }
                                     battles_by_room_id_.erase(session_room_id);

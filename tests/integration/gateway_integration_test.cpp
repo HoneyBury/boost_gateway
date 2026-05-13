@@ -48,6 +48,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 extern "C" char **environ;
@@ -230,6 +231,16 @@ public:
     }
 
     net::packet::DecodedPacket read() {
+        // 10 s default timeout prevents tests from hanging indefinitely
+        // when a server process fails to respond.
+        return read(std::chrono::milliseconds(10'000));
+    }
+
+    net::packet::DecodedPacket read(std::chrono::milliseconds timeout) {
+        if (timeout.count() > 0) {
+            // Prevent hanging if the server never sends a response.
+            set_socket_recv_timeout(timeout);
+        }
         net::packet::LengthHeader header{};
         asio::read(socket_, asio::buffer(header));
         const auto payload_length = net::packet::decode_length(header);
@@ -238,6 +249,32 @@ public:
         asio::read(socket_, asio::buffer(payload));
         return net::packet::decode_payload(payload);
     }
+
+    net::packet::DecodedPacket exchange(std::uint16_t message_id,
+                                        std::uint32_t request_id,
+                                        const std::string& body,
+                                        std::chrono::milliseconds timeout) {
+        send(message_id, request_id, body);
+        return read(timeout);
+    }
+
+private:
+    void set_socket_recv_timeout(std::chrono::milliseconds timeout) {
+        const auto ms = static_cast<int>(timeout.count());
+#ifdef _WIN32
+        const DWORD tv = static_cast<DWORD>(ms);
+        setsockopt(socket_.native_handle(), SOL_SOCKET, SO_RCVTIMEO,
+                   reinterpret_cast<const char*>(&tv), sizeof(tv));
+#else
+        struct timeval tv;
+        tv.tv_sec = ms / 1000;
+        tv.tv_usec = (ms % 1000) * 1000;
+        setsockopt(socket_.native_handle(), SOL_SOCKET, SO_RCVTIMEO,
+                   &tv, sizeof(tv));
+#endif
+    }
+
+public:
 
     net::packet::DecodedPacket expect_message(std::uint16_t message_id) {
         while (true) {
