@@ -1,39 +1,52 @@
-version: "3.8"
+name: boost-gateway
+
+networks:
+  boost-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  redis-data:
+  gateway-logs:
+  login-logs:
+  room-logs:
+  battle-logs:
+  match-logs:
+  leaderboard-logs:
+  battle-archive:
 
 services:
-  # === v2 Gateway (client entry point) ===
+
+  # ==========================================================================
+  # Gateway — client-facing TCP ingress (9201), HTTP management on 9080
+  # ==========================================================================
   gateway:
-    build: .
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.gateway
     container_name: boost-gateway
+    networks:
+      - boost-net
     ports:
-      - "9000:9000"
+      - "9201:9201"
       - "9080:9080"
+    environment:
+      MANAGEMENT_PORT: "9080"
+      BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
-      - gateway_logs:/app/logs
-      - gateway_runtime:/app/runtime
+      - gateway-logs:/app/logs
     restart: unless-stopped
-    command:
-      - "--management-port"
-      - "9080"
-      - "--login-host"
-      - "login-backend"
-      - "--login-port"
-      - "9202"
-      - "--room-host"
-      - "room-backend"
-      - "--room-port"
-      - "9302"
-      - "--battle-host"
-      - "battle-backend"
-      - "--battle-port"
-      - "9303"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/health"]
       interval: 10s
       timeout: 3s
       retries: 3
-      start_period: 5s
+      start_period: 10s
     depends_on:
       login-backend:
         condition: service_healthy
@@ -42,65 +55,219 @@ services:
       battle-backend:
         condition: service_healthy
 
-  # === v2 Login Backend ===
+  # ==========================================================================
+  # Login Backend — token validation, session management (port 9202)
+  # ==========================================================================
   login-backend:
-    build: .
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_login_backend
     container_name: boost-login-backend
+    networks:
+      - boost-net
     ports:
       - "9202:9202"
+    environment:
+      SERVICE_PORT: "9202"
+      BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
-      - login_logs:/app/logs
+      - login-logs:/app/logs
     restart: unless-stopped
-    entrypoint: ["/app/bin/v2_login_backend"]
-    command: ["9202"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9202/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9202/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 5s
 
-  # === v2 Room Backend ===
+  # ==========================================================================
+  # Room Backend — room lifecycle, member management (port 9302)
+  # ==========================================================================
   room-backend:
-    build: .
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_room_backend
     container_name: boost-room-backend
+    networks:
+      - boost-net
     ports:
       - "9302:9302"
+    environment:
+      SERVICE_PORT: "9302"
+      BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
-      - room_logs:/app/logs
+      - room-logs:/app/logs
     restart: unless-stopped
-    entrypoint: ["/app/bin/v2_room_backend"]
-    command: ["9302"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9302/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9302/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 5s
 
-  # === v2 Battle Backend ===
+  # ==========================================================================
+  # Battle Backend — ECS tick, replay/archive (port 9303)
+  # ==========================================================================
   battle-backend:
-    build: .
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_battle_backend
     container_name: boost-battle-backend
+    networks:
+      - boost-net
     ports:
       - "9303:9303"
+    environment:
+      SERVICE_PORT: "9303"
+      BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
-      - battle_logs:/app/logs
-      - battle_archive:/app/v2_archive
+      - battle-logs:/app/logs
+      - battle-archive:/app/v2_archive
     restart: unless-stopped
-    entrypoint: ["/app/bin/v2_battle_backend"]
-    command: ["9303"]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9303/health"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9303/health || exit 1"]
       interval: 10s
       timeout: 3s
       retries: 3
       start_period: 5s
 
-  # === Mock Auth (optional, for token validation testing) ===
+  # ==========================================================================
+  # Matchmaking Backend — MMR-based player matching (port 9304)
+  # ==========================================================================
+  matchmaking-backend:
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_match_backend
+    container_name: boost-matchmaking-backend
+    networks:
+      - boost-net
+    ports:
+      - "9304:9304"
+    environment:
+      SERVICE_PORT: "9304"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ./config:/app/config:ro
+      - match-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9304/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Leaderboard Backend — ranked leaderboard queries (port 9305)
+  # ==========================================================================
+  leaderboard-backend:
+    build:
+      context: .
+      dockerfile: env/docker/Dockerfile.backend
+      args:
+        SERVICE_BINARY: v2_leaderboard_backend
+    container_name: boost-leaderboard-backend
+    networks:
+      - boost-net
+    ports:
+      - "9305:9305"
+    environment:
+      SERVICE_PORT: "9305"
+      BOOST_LOG_LEVEL: "info"
+    volumes:
+      - ./config:/app/config:ro
+      - leaderboard-logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9305/health || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Redis 7 — caching, leaderboard data, event store (port 6379)
+  # ==========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: boost-redis
+    networks:
+      - boost-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./env/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+      - redis-data:/data
+    restart: unless-stopped
+    command:
+      - redis-server
+      - /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # ==========================================================================
+  # Prometheus — metrics collection (port 9090)
+  # ==========================================================================
+  prometheus:
+    image: prom/prometheus:v2.53.0
+    container_name: boost-prometheus
+    networks:
+      - boost-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./env/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    depends_on:
+      - gateway
+      - login-backend
+      - room-backend
+      - battle-backend
+      - matchmaking-backend
+      - leaderboard-backend
+
+  # ==========================================================================
+  # Grafana — dashboard visualization (port 3000)
+  # ==========================================================================
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: boost-grafana
+    networks:
+      - boost-net
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+  # ==========================================================================
+  # Mock Auth (optional, for token validation testing — use with --profile full)
+  # ==========================================================================
   mock-auth:
     image: nginx:alpine
     container_name: boost-mock-auth
@@ -110,11 +277,3 @@ services:
       - ./config/nginx-auth.conf:/etc/nginx/conf.d/default.conf:ro
     profiles:
       - full
-
-volumes:
-  gateway_logs:
-  gateway_runtime:
-  login_logs:
-  room_logs:
-  battle_logs:
-  battle_archive:

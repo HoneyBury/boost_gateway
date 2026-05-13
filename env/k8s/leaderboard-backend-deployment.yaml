@@ -1,0 +1,184 @@
+# Boost Gateway v3.1.0 — Leaderboard Backend Deployment + Service + HPA
+#
+# Usage:
+#   kubectl apply -f env/k8s/leaderboard-backend-deployment.yaml
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: leaderboard-backend-config
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: leaderboard
+data:
+  leaderboard_backend.json: |
+    {
+      "leaderboard_backend": {
+        "port": 9305,
+        "io_threads": 2,
+        "metrics_log_interval_ms": 5000,
+        "metrics_prometheus_path": "runtime/metrics/leaderboard_backend.prom",
+        "metrics_json_path": "runtime/metrics/leaderboard_backend.json"
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: leaderboard-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/version: "3.1.0"
+    boost-gateway.io/backend: leaderboard
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boost-gateway
+      app.kubernetes.io/component: backend
+      boost-gateway.io/backend: leaderboard
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: boost-gateway
+        app.kubernetes.io/component: backend
+        boost-gateway.io/backend: leaderboard
+    spec:
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: boost-gateway
+                    app.kubernetes.io/component: backend
+                    boost-gateway.io/backend: leaderboard
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: ghcr.io/boost-gateway/leaderboard-backend:latest
+          imagePullPolicy: Always
+          args:
+            - "9305"
+          ports:
+            - containerPort: 9305
+              name: backend
+              protocol: TCP
+          env:
+            - name: SERVICE_PORT
+              value: "9305"
+            - name: BOOST_LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "64Mi"
+            limits:
+              cpu: "1000m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9305
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9305
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+      volumes:
+        - name: config
+          configMap:
+            name: leaderboard-backend-config
+        - name: logs
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: leaderboard-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: leaderboard
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: leaderboard
+  ports:
+    - name: backend
+      port: 9305
+      targetPort: 9305
+      protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: leaderboard-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: leaderboard
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: leaderboard-backend
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: leaderboard-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: leaderboard
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boost-gateway
+      app.kubernetes.io/component: backend
+      boost-gateway.io/backend: leaderboard

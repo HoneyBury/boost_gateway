@@ -1,9 +1,10 @@
 // v2.3.0 G1: MMR-based matchmaking backend service.
-// Manages match queues per mode, periodically checks for eligible matches,
-// and creates rooms when matches are found.
+// v3.0.0 B4: Integrated Raft consensus for leader election.
+// Only the Raft leader performs matchmaking to prevent duplicate matches.
 
 #include "v2/match/matchmaking_service.h"
 #include "v2/service/backend_server.h"
+#include "v3/cluster/raft.h"
 
 #include <nlohmann/json.hpp>
 
@@ -191,17 +192,16 @@ public:
     explicit Impl(std::uint16_t port) : port_(port) {}
 
     void start() {
-        // Initialize matchmaker for each mode
+        // Initialize matchmaker for each mode.
+        // v3.0.0: Only the Raft leader processes matches.
         matchmaker_.set_match_callback([this](MatchResult result) {
-            // When a match is found, broadcast to all matched players
+            if (raft_node_ && !raft_node_->is_leader()) return;
             for (const auto& user_id : result.player_ids) {
                 nlohmann::json push{
                     {"match_id", result.match_id},
                     {"mode", to_string(result.mode)},
                     {"avg_mmr", result.avg_mmr},
                 };
-                // Push notification would be sent via GatewayServiceBridge
-                // For now, store for polling
                 std::lock_guard lock(matches_mutex_);
                 pending_matches_[result.match_id] = result;
             }
@@ -218,18 +218,53 @@ public:
             return handle_match_status(req);
         };
 
+        // v3.0.0: Raft RPC handlers for inter-node consensus.
+        handlers["raft_request_vote"] = [this](const v2::service::BackendEnvelope& req) {
+            return handle_raft_request_vote(req);
+        };
+        handlers["raft_append_entries"] = [this](const v2::service::BackendEnvelope& req) {
+            return handle_raft_append_entries(req);
+        };
+
         server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
         server_->start();
+
+        // v3.0.0: Start Raft consensus if configured.
+        if (!raft_config_.node_id.empty()) {
+            raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
+            raft_node_->on_become_leader([this]() {
+                leader_.store(true);
+            });
+            raft_node_->on_step_down([this]() {
+                leader_.store(false);
+            });
+            raft_node_->start();
+        }
+
         matchmaker_.start();
     }
 
     void stop() {
         matchmaker_.stop();
+        if (raft_node_) raft_node_->stop();
         if (server_) server_->stop();
     }
 
     std::uint16_t local_port() const {
         return server_ ? server_->local_port() : port_;
+    }
+
+    // v3.0.0: Configure Raft consensus.
+    void set_raft_config(v3::cluster::RaftConfig config) {
+        raft_config_ = std::move(config);
+    }
+
+    [[nodiscard]] bool is_raft_leader() const {
+        return raft_node_ && raft_node_->is_leader();
+    }
+
+    [[nodiscard]] const v3::cluster::RaftConfig& raft_config() const {
+        return raft_config_;
     }
 
 private:
@@ -238,6 +273,11 @@ private:
     Matchmaker matchmaker_{{}};
     std::mutex matches_mutex_;
     std::unordered_map<std::string, MatchResult> pending_matches_;
+
+    // v3.0.0: Raft consensus members
+    v3::cluster::RaftConfig raft_config_;
+    std::unique_ptr<v3::cluster::RaftNode> raft_node_;
+    std::atomic<bool> leader_{false};
 
     v2::service::BackendEnvelope make_ok(nlohmann::json extra = {}) {
         v2::service::BackendEnvelope resp;
@@ -253,6 +293,59 @@ private:
         resp.kind = v2::service::MessageKind::kError;
         resp.error_code = code;
         resp.payload = R"({"status":"error","reason":")" + reason + "\"}";
+        return resp;
+    }
+
+    // v3.0.0: Raft RPC handlers for inter-node consensus.
+    v2::service::BackendEnvelope handle_raft_request_vote(
+        const v2::service::BackendEnvelope& req) {
+        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
+
+        v3::cluster::RequestVoteArgs args;
+        args.term = doc.value("term", 0ULL);
+        args.candidate_id = doc.value("candidate_id", "");
+        args.last_log_term = doc.value("last_log_term", 0ULL);
+        args.last_log_index = doc.value("last_log_index", 0ULL);
+
+        if (!raft_node_) {
+            return make_error(-1003, "raft_not_initialized");
+        }
+
+        auto reply = raft_node_->handle_request_vote(args);
+
+        nlohmann::json body{
+            {"term", reply.term},
+            {"vote_granted", reply.vote_granted},
+        };
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = body.dump();
+        return resp;
+    }
+
+    v2::service::BackendEnvelope handle_raft_append_entries(
+        const v2::service::BackendEnvelope& req) {
+        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
+        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
+
+        v3::cluster::AppendEntriesArgs args;
+        args.term = doc.value("term", 0ULL);
+        args.leader_id = doc.value("leader_id", "");
+
+        if (!raft_node_) {
+            return make_error(-1003, "raft_not_initialized");
+        }
+
+        auto reply = raft_node_->handle_append_entries(args);
+
+        nlohmann::json body{
+            {"term", reply.term},
+            {"success", reply.success},
+        };
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = body.dump();
         return resp;
     }
 
@@ -342,5 +435,7 @@ MatchmakingService::~MatchmakingService() = default;
 void MatchmakingService::start() { impl_->start(); }
 void MatchmakingService::stop() { impl_->stop(); }
 std::uint16_t MatchmakingService::local_port() const { return impl_->local_port(); }
+void MatchmakingService::set_raft_config(v3::cluster::RaftConfig config) { impl_->set_raft_config(std::move(config)); }
+bool MatchmakingService::is_raft_leader() const { return impl_->is_raft_leader(); }
 
 }  // namespace v2::match

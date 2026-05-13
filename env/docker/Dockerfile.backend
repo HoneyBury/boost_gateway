@@ -17,7 +17,7 @@
 # ============================================================================
 # Stage 1: Build
 # ============================================================================
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 ARG SERVICE_BINARY
 ENV LANG=C.UTF-8
@@ -54,14 +54,12 @@ RUN cmake --build --preset default --parallel --target ${SERVICE_BINARY}
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ARG SERVICE_BINARY
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV SERVICE_PORT=9202
-ENV MATCH_PORT=9304
-ENV LEADERBOARD_PORT=9305
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -74,13 +72,13 @@ RUN mkdir -p /app/bin /app/logs /app/config
 COPY --from=builder /src/build/default/examples/${SERVICE_BINARY}/${SERVICE_BINARY} /app/bin/
 COPY config/ /app/config/
 
-# Determine the port to health-check based on the service binary
-# (Each backend exposes a different default port; the SERVICE_PORT / MATCH_PORT
-#  / LEADERBOARD_PORT env vars take precedence.)
+# Symlink so ENTRYPOINT works generically for any SERVICE_BINARY
+RUN ln -s /app/bin/${SERVICE_BINARY} /app/bin/backend
+
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=5s \
     CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
 
 EXPOSE ${SERVICE_PORT}
 
-ENTRYPOINT ["/app/bin/v2_login_backend"]
+ENTRYPOINT ["/app/bin/backend"]
 CMD []

@@ -1,10 +1,15 @@
 #pragma once
 // v2.3.0 G1: MMR-based matchmaking service
+// v3.0.0 B4: Raft consensus for leader election
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
+
+namespace v3::cluster {
+struct RaftConfig;
+}
 
 namespace v2::match {
 
@@ -62,6 +67,10 @@ public:
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
+
+    // v3.0.0: Raft consensus configuration
+    void set_raft_config(v3::cluster::RaftConfig config);
+    [[nodiscard]] bool is_raft_leader() const;
 
 private:
     class Impl;

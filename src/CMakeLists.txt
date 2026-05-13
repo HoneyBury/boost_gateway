@@ -55,6 +55,7 @@ add_subdirectory(app)
 add_subdirectory(hello)
 add_subdirectory(net)
 add_subdirectory(game)
+add_subdirectory(v3)
 add_subdirectory(v2)
 
 target_link_libraries(project_game

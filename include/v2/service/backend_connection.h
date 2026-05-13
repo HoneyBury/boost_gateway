@@ -1,8 +1,10 @@
 #pragma once
 
 #include "v2/service/backend_envelope.h"
+#include "v3/cluster/tls_config.h"
 
 #include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 
 #include <chrono>
 #include <cstdint>
@@ -17,6 +19,10 @@ struct BackendConnectionOptions {
     std::uint16_t port = 0;
     std::chrono::milliseconds timeout = std::chrono::milliseconds(5000);
     std::chrono::milliseconds connect_timeout = std::chrono::milliseconds(1000);
+
+    // v3.0.0: Optional TLS config for encrypted inter-service communication.
+    // When set, BackendConnection performs a TLS handshake after TCP connect.
+    std::optional<v3::cluster::TlsSessionConfig> tls_config;
 };
 
 class BackendConnection {
@@ -38,10 +44,17 @@ public:
 
     [[nodiscard]] bool is_connected() const;
 
+    /// Returns true if the connection is secured with TLS.
+    [[nodiscard]] bool is_tls_enabled() const { return options_.tls_config.has_value(); }
+
 private:
+    bool tls_handshake();
+
     BackendConnectionOptions options_;
     boost::asio::io_context io_context_;
     std::unique_ptr<boost::asio::ip::tcp::socket> socket_;
+    std::unique_ptr<boost::asio::ssl::context> ssl_context_;
+    std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>> ssl_stream_;
 };
 
 }  // namespace v2::service

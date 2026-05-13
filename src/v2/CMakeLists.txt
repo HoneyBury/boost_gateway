@@ -54,5 +54,8 @@ target_link_libraries(project_v2
     PUBLIC
         project_app
         project_net
+        project_v3
+        OpenSSL::SSL
+        OpenSSL::Crypto
 )
 apply_project_warnings(project_v2)

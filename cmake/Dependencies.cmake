@@ -82,6 +82,15 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# OpenSSL (v3.0+ required for TLS/mTLS)
+# ---------------------------------------------------------------------------
+find_package(OpenSSL REQUIRED)
+message(STATUS "OpenSSL found: ${OPENSSL_VERSION}")
+message(STATUS "  include: ${OPENSSL_INCLUDE_DIR}")
+message(STATUS "  ssl:     ${OPENSSL_SSL_LIBRARY}")
+message(STATUS "  crypto:  ${OPENSSL_CRYPTO_LIBRARY}")
+
+# ---------------------------------------------------------------------------
 # Boost 1.90.0
 # ---------------------------------------------------------------------------
 if(EXISTS "${THIRD_PARTY_DIR}/boost_1_90_0.zip")
@@ -100,6 +109,29 @@ else()
 endif()
 
 # ---------------------------------------------------------------------------
+# hiredis v1.2.0 (Redis C client)
+# ---------------------------------------------------------------------------
+if(EXISTS "${THIRD_PARTY_DIR}/hiredis-1.2.0.tar.gz")
+    message(STATUS "Using local archive: hiredis-1.2.0.tar.gz")
+    FetchContent_Declare(hiredis
+        URL "${THIRD_PARTY_DIR}/hiredis-1.2.0.tar.gz"
+        DOWNLOAD_EXTRACT_TIMESTAMP ON
+    )
+else()
+    FetchContent_Declare(hiredis
+        GIT_REPOSITORY https://github.com/redis/hiredis.git
+        GIT_TAG v1.2.0
+    )
+endif()
+
+set(HIREDIS_SSL OFF CACHE BOOL "" FORCE)
+set(HIREDIS_TEST OFF CACHE BOOL "" FORCE)
+set(DISABLE_TESTS ON CACHE BOOL "" FORCE)
+
+# hiredis requires CMake >= 3.5 policy compatibility
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
+
+# ---------------------------------------------------------------------------
 # Make targets available
 # ---------------------------------------------------------------------------
 set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
@@ -108,6 +140,7 @@ set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(fmt)
 FetchContent_MakeAvailable(spdlog)
 FetchContent_MakeAvailable(nlohmann_json)
+FetchContent_MakeAvailable(hiredis)
 
 if(ENABLE_TESTING)
     FetchContent_MakeAvailable(googletest)

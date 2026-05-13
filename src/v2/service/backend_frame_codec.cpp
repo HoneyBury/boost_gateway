@@ -100,4 +100,43 @@ bool write_frame(asio::ip::tcp::socket& socket, const BackendEnvelope& envelope)
     return !ec;
 }
 
+// ── SSL stream overloads ──────────────────────────────────────────────
+
+std::optional<BackendEnvelope> read_frame(
+    asio::ssl::stream<asio::ip::tcp::socket&>& stream,
+    std::chrono::milliseconds timeout) {
+    auto& socket = stream.next_layer();
+    const int fd = socket.native_handle();
+
+    if (!wait_for_data(fd, timeout)) return std::nullopt;
+
+    boost::system::error_code ec;
+
+    std::array<std::byte, kFrameLengthHeaderSize> header{};
+    asio::read(stream, asio::buffer(header.data(), kFrameLengthHeaderSize),
+               asio::transfer_exactly(kFrameLengthHeaderSize), ec);
+    if (ec) return std::nullopt;
+
+    const auto payload_length = decode_length(header);
+    if (payload_length == 0 || payload_length > 1024 * 1024) return std::nullopt;
+
+    if (!wait_for_data(fd, timeout)) return std::nullopt;
+
+    std::string json_bytes(payload_length, '\0');
+    asio::read(stream, asio::buffer(json_bytes.data(), payload_length),
+               asio::transfer_exactly(payload_length), ec);
+    if (ec) return std::nullopt;
+
+    return from_json(json_bytes);
+}
+
+bool write_frame(asio::ssl::stream<asio::ip::tcp::socket&>& stream,
+                 const BackendEnvelope& envelope) {
+    const auto frame = encode_frame(envelope);
+    boost::system::error_code ec;
+    asio::write(stream, asio::buffer(frame.data(), frame.size()),
+                asio::transfer_exactly(frame.size()), ec);
+    return !ec;
+}
+
 }  // namespace v2::service

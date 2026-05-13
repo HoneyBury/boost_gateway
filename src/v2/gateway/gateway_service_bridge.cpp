@@ -1,9 +1,40 @@
 #include "v2/gateway/gateway_service_bridge.h"
 
+#include "v2/service/service_id.h"
+#include "v2/tracing/trace_context.h"
+#include "v3/cluster/cluster_router.h"
+#include "v3/cluster/consistent_hash.h"
+
 #include <chrono>
 #include <mutex>
 
 namespace v2::gateway {
+
+namespace {
+
+// v3.0.0 B5: RAII guard that auto-exports a span via OtlpExporter on scope exit.
+struct SpanExportGuard {
+    v2::tracing::Span span;
+    v3::tracing::OtlpExporter* exporter = nullptr;
+    std::string service_name;
+
+    void mark_ok() { span.finish(); }
+
+    ~SpanExportGuard() {
+        span.finish();
+        if (exporter) {
+            exporter->export_span(span, service_name);
+        }
+    }
+
+    SpanExportGuard(const SpanExportGuard&) = delete;
+    SpanExportGuard& operator=(const SpanExportGuard&) = delete;
+    SpanExportGuard(SpanExportGuard&&) = default;
+    SpanExportGuard& operator=(SpanExportGuard&&) = default;
+    SpanExportGuard() = default;
+};
+
+}  // namespace
 
 namespace {
 
@@ -67,9 +98,115 @@ void GatewayServiceBridge::update_backend_config(
     slot.breaker.reset();
 }
 
+namespace {
+
+std::string service_name_for(v2::service::ServiceId service) {
+    switch (service) {
+        case v2::service::ServiceId::kLogin: return "login";
+        case v2::service::ServiceId::kRoom: return "room";
+        case v2::service::ServiceId::kBattle: return "battle";
+        default: return "login";
+    }
+}
+
+}  // namespace
+
+namespace {
+
+/// Build a temporary ConsistentHashRing from a set of instances and
+/// look up which node owns the shard key. Returns node_name.
+std::string hash_to_node(const std::vector<v3::cluster::ServiceInstance>& instances,
+                         const std::string& shard_key,
+                         std::uint32_t virtual_nodes) {
+    if (instances.empty()) return {};
+    if (instances.size() == 1) return instances[0].node.node_name;
+
+    v3::cluster::ConsistentHashRing ring(
+        v3::cluster::ConsistentHashRing::Config{.virtual_nodes = virtual_nodes});
+    for (const auto& inst : instances) {
+        ring.add_node(inst.node.node_name);
+    }
+    return ring.lookup(shard_key);
+}
+
+/// Find an instance by node_name in the discovered list.
+const v3::cluster::ServiceInstance* find_by_node(
+    const std::vector<v3::cluster::ServiceInstance>& instances,
+    const std::string& node_name) {
+    for (const auto& inst : instances) {
+        if (inst.node.node_name == node_name) return &inst;
+    }
+    return nullptr;
+}
+
+}  // namespace
+
 v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
-    v2::service::ServiceId service) {
-    // Read config under lock; exit early if no config or healthy connection exists.
+    v2::service::ServiceId service,
+    const std::string& shard_key) {
+    // ── Cluster router path with optional consistent hashing ──────────
+    if (cluster_router_) {
+        const auto svc_name = service_name_for(service);
+
+        // Resolve the target host:port — optionally via consistent hashing.
+        v3::cluster::NodeId chosen_node;
+        if (!shard_key.empty() && shard_router_) {
+            auto all_healthy = cluster_router_->discover_all(svc_name);
+            if (all_healthy.empty()) return nullptr;
+
+            std::string node_name;
+            if (service == v2::service::ServiceId::kRoom) {
+                node_name = shard_router_->route_room(shard_key);
+            } else if (service == v2::service::ServiceId::kBattle) {
+                node_name = shard_router_->route_battle(shard_key);
+            } else {
+                node_name = hash_to_node(all_healthy, shard_key, 150);
+            }
+
+            const auto* chosen = find_by_node(all_healthy, node_name);
+            if (!chosen) {
+                node_name = hash_to_node(all_healthy, shard_key, 150);
+                chosen = find_by_node(all_healthy, node_name);
+            }
+            if (!chosen) chosen = &all_healthy[0];
+            chosen_node = chosen->node;
+        } else {
+            auto discovered = cluster_router_->discover(svc_name);
+            if (!discovered) return nullptr;
+            chosen_node = discovered->node;
+        }
+
+        std::scoped_lock lock(mutex_);
+        auto& slot = slot_for(service);
+        if (slot.connection && slot.connection->is_connected()) {
+            if (registry_) {
+                registry_->heartbeat(service,
+                    chosen_node.host, chosen_node.port);
+            }
+            return slot.connection.get();
+        }
+
+        BackendConfig cfg{chosen_node.host, chosen_node.port};
+        slot.config = cfg;
+
+        auto conn = std::make_unique<v2::service::BackendConnection>(
+            make_options(cfg));
+        if (!conn->connect()) {
+            cluster_router_->mark_unhealthy(svc_name, chosen_node);
+            if (registry_) {
+                registry_->mark_unhealthy(service, cfg.host, cfg.port);
+            }
+            return nullptr;
+        }
+
+        slot.connection = std::move(conn);
+        if (registry_) {
+            registry_->heartbeat(service, cfg.host, cfg.port);
+        }
+        return slot.connection.get();
+    }
+
+    // ── Fallback: static BackendConfig path ──────────────────────────
     std::optional<BackendConfig> cfg;
     v2::service::BackendConnection* existing = nullptr;
     {
@@ -85,7 +222,6 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         cfg = slot.config;
         existing = slot.connection.get();
     }
-    // IO outside lock
     (void)existing;
 
     auto conn = std::make_unique<v2::service::BackendConnection>(
@@ -97,7 +233,6 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         return nullptr;
     }
 
-    // Install under lock
     {
         std::scoped_lock lock(mutex_);
         auto& slot = slot_for(service);
@@ -131,8 +266,26 @@ void GatewayServiceBridge::record_route_result(
 GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
     v2::service::ServiceId target,
     const std::string& message_type,
-    const std::string& payload) {
+    const std::string& payload,
+    const std::string& shard_key) {
     BackendRoutingResult result;
+
+    // v3.0.0 B5: Create span for distributed tracing, auto-export on return.
+    SpanExportGuard span_guard;
+    if (otel_exporter_) {
+        if (current_trace_id_ != 0) {
+            span_guard.span = v2::tracing::Span::from_trace(
+                current_trace_id_, current_span_id_,
+                "route." + message_type);
+        } else {
+            span_guard.span = v2::tracing::Span::root("route." + message_type);
+        }
+        span_guard.exporter = otel_exporter_.get();
+        span_guard.service_name = v2::service::to_string(target);
+        // Propagate span IDs into the backend request envelope.
+        current_trace_id_ = span_guard.span.trace_id;
+        current_span_id_ = span_guard.span.span_id;
+    }
 
     if (metrics_) {
         metrics_->record_request(target);
@@ -146,7 +299,7 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
         return result;
     }
 
-    auto* conn = ensure_connection(target);
+    auto* conn = ensure_connection(target, shard_key);
     if (!conn) {
         slot.breaker.on_failure();
         result.error = v2::service::ServiceErrorCode::kUnavailable;
@@ -193,6 +346,7 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
     if (metrics_) {
         metrics_->record_latency(target, latency_us);
     }
+    span_guard.mark_ok();
     return result;
 }
 
@@ -214,6 +368,36 @@ bool GatewayServiceBridge::is_backend_available(
     // Attempt lazy connect first
     auto* conn = const_cast<GatewayServiceBridge*>(this)->ensure_connection(service);
     return conn != nullptr;
+}
+
+void GatewayServiceBridge::set_cluster_router(
+    std::shared_ptr<v3::cluster::ClusterRouter> router) {
+    cluster_router_ = std::move(router);
+}
+
+std::shared_ptr<v3::cluster::ClusterRouter>
+GatewayServiceBridge::get_cluster_router() const {
+    return cluster_router_;
+}
+
+void GatewayServiceBridge::set_shard_router(
+    std::shared_ptr<v3::cluster::ShardRouter> router) {
+    shard_router_ = std::move(router);
+}
+
+std::shared_ptr<v3::cluster::ShardRouter>
+GatewayServiceBridge::get_shard_router() const {
+    return shard_router_;
+}
+
+void GatewayServiceBridge::set_otel_exporter(
+    std::shared_ptr<v3::tracing::OtlpExporter> exporter) {
+    otel_exporter_ = std::move(exporter);
+}
+
+std::shared_ptr<v3::tracing::OtlpExporter>
+GatewayServiceBridge::get_otel_exporter() const {
+    return otel_exporter_;
 }
 
 void GatewayServiceBridge::shutdown() {

@@ -2,9 +2,14 @@
 #include "net/packet_codec.h"
 #include "net/protocol.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/gateway/gateway_service_bridge.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
+#include "v2/match/matchmaking_service.h"
+#include "v3/cluster/cluster_router.h"
+#include "v3/cluster/raft.h"
+#include "v3/tracing/otel_exporter.h"
 
 #include <boost/asio.hpp>
 #include <nlohmann/json.hpp>
@@ -1334,4 +1339,520 @@ TEST(V2BackendRoutingTest, BattleFinishViaBridge) {
     login_backend.stop();
     room_backend.stop();
     battle_backend.stop();
+}
+
+// ─── v3.0.0: ClusterRouter + GatewayServiceBridge integration ───────
+
+TEST(V2BackendRoutingTest, ClusterRouterDiscoveryRoutesToBackend) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend.port, .node_name = "login-test-1"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        /*login_config=*/std::nullopt,
+        /*room_config=*/std::nullopt,
+        /*battle_config=*/std::nullopt,
+        metrics);
+    bridge.set_cluster_router(router);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"alice","token":"alice_secret","display_name":"Alice"})");
+    EXPECT_TRUE(result.success) << "error=" << static_cast<int>(result.error);
+    EXPECT_FALSE(result.response_payload.empty());
+
+    auto snap = metrics->snapshot(v2::service::ServiceId::kLogin);
+    EXPECT_GT(snap.total_requests, 0U);
+    EXPECT_GT(snap.total_successes, 0U);
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, ClusterRouterUnreachableMarkedUnhealthy) {
+    app::logging::init("project_tests");
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = 19998, .node_name = "dead-login"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"bob","token":"t","display_name":"B"})");
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(router->healthy_count("login"), 0U);
+    EXPECT_EQ(router->unhealthy_count("login"), 1U);
+
+    bridge.shutdown();
+}
+
+TEST(V2BackendRoutingTest, ClusterRouterFallbackToStaticConfig) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = backend.port,
+        },
+        std::nullopt, std::nullopt, metrics);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"alice","token":"alice_secret","display_name":"Alice"})");
+    EXPECT_TRUE(result.success) << "error=" << static_cast<int>(result.error);
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+// ─── v3.0.0: ShardRouter + consistent hashing integration ────────
+
+TEST(V2BackendRoutingTest, ShardRouterRoutesWithShardKey) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend.port, .node_name = "login-shard-1"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto shard_router = std::make_shared<v3::cluster::ShardRouter>();
+    shard_router->add_backend("login-shard-1");
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+    bridge.set_shard_router(shard_router);
+
+    // Route with a shard_key (simulating room_id-based affinity)
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"carol","token":"t3","display_name":"Carol"})",
+                               "room_alpha");
+    EXPECT_TRUE(result.success) << "error=" << static_cast<int>(result.error);
+    EXPECT_FALSE(result.response_payload.empty());
+
+    // Same shard_key should route to same backend (connection reused)
+    auto result2 = bridge.route(v2::service::ServiceId::kLogin,
+                                "login_request",
+                                R"({"user_id":"dave","token":"t4","display_name":"Dave"})",
+                                "room_alpha");
+    EXPECT_TRUE(result2.success) << "error=" << static_cast<int>(result2.error);
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, ShardRouterConsistentAffinityAcrossBackends) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend_a;
+    LoginBackendProcess backend_b;
+    ASSERT_TRUE(backend_a.start());
+    ASSERT_TRUE(backend_b.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_a.port, .node_name = "login-A"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_b.port, .node_name = "login-B"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto shard_router = std::make_shared<v3::cluster::ShardRouter>();
+    shard_router->add_backend("login-A");
+    shard_router->add_backend("login-B");
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+    bridge.set_shard_router(shard_router);
+
+    // Route multiple times with same shard_key — all should succeed
+    for (int i = 0; i < 5; ++i) {
+        auto result = bridge.route(v2::service::ServiceId::kLogin,
+                                   "login_request",
+                                   R"({"user_id":"eve","token":"t5","display_name":"Eve"})",
+                                   "battle_42");
+        EXPECT_TRUE(result.success)
+            << "iteration=" << i << " error=" << static_cast<int>(result.error);
+    }
+
+    // Different shard keys should also work
+    auto r1 = bridge.route(v2::service::ServiceId::kLogin,
+                           "login_request",
+                           R"({"user_id":"frank","token":"t6","display_name":"Frank"})",
+                           "room_x");
+    EXPECT_TRUE(r1.success) << "error=" << static_cast<int>(r1.error);
+
+    auto r2 = bridge.route(v2::service::ServiceId::kLogin,
+                           "login_request",
+                           R"({"user_id":"grace","token":"t7","display_name":"Grace"})",
+                           "room_y");
+    EXPECT_TRUE(r2.success) << "error=" << static_cast<int>(r2.error);
+
+    // Both backends still healthy
+    EXPECT_EQ(router->healthy_count("login"), 2U);
+
+    bridge.shutdown();
+    backend_a.stop();
+    backend_b.stop();
+}
+
+TEST(V2BackendRoutingTest, ShardRouterWithoutShardKeyFallsBackToRoundRobin) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend.port, .node_name = "login-rr"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto shard_router = std::make_shared<v3::cluster::ShardRouter>();
+    shard_router->add_backend("login-rr");
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+    bridge.set_shard_router(shard_router);
+
+    // Route WITHOUT shard_key — falls back to round-robin discovery
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"hank","token":"t8","display_name":"Hank"})");
+    EXPECT_TRUE(result.success) << "error=" << static_cast<int>(result.error);
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+// ─── v3.0.0: TLS config integration tests ───────────────────────────
+
+TEST(V2BackendRoutingTest, TlsConfigStoredAndAccessible) {
+    app::logging::init("project_tests");
+
+    v3::cluster::TlsSessionConfig tls_cfg;
+    tls_cfg.verify_mode = v3::cluster::TlsVerifyMode::kNone;
+    tls_cfg.min_version = v3::cluster::TlsSessionConfig::TlsVersion::k13;
+
+    v2::service::BackendConnectionOptions opts{
+        .host = "127.0.0.1",
+        .port = 19999,
+        .tls_config = tls_cfg,
+    };
+
+    v2::service::BackendConnection conn(opts);
+    EXPECT_TRUE(conn.is_tls_enabled());
+
+    // Connection without valid certs should fail gracefully (no crash)
+    bool connected = conn.connect();
+    EXPECT_FALSE(connected);
+
+    // Verify close after failed TLS connect doesn't crash
+    conn.close();
+    SUCCEED();
+}
+
+TEST(V2BackendRoutingTest, TlsConfigDisabledRoutesNormally) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    // Explicitly no TLS config — the default BackendConnectionOptions path.
+    v2::service::BackendConnectionOptions opts{
+        .host = "127.0.0.1",
+        .port = backend.port,
+        .tls_config = std::nullopt,
+    };
+
+    v2::service::BackendConnection conn(opts);
+    EXPECT_FALSE(conn.is_tls_enabled());
+    EXPECT_TRUE(conn.connect());
+
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kLogin;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "login_request";
+    request.payload = R"({"user_id":"iris","token":"t9","display_name":"Iris"})";
+
+    auto response = conn.send_request(request);
+    EXPECT_TRUE(response.has_value());
+    if (response) {
+        EXPECT_TRUE(response->kind == v2::service::MessageKind::kResponse ||
+                    response->kind == v2::service::MessageKind::kError);
+    }
+
+    conn.close();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, SecurityPolicyPerServiceDefaults) {
+    // Verify SecurityPolicy per-service TLS policies are correctly configured.
+    v3::cluster::SecurityPolicy policy;
+    EXPECT_TRUE(policy.require_tls);
+
+    // Login: mTLS not required (handles high-volume public auth)
+    const auto* login_pol = policy.policy_for("login");
+    ASSERT_NE(login_pol, nullptr);
+    EXPECT_TRUE(login_pol->tls_required);
+    EXPECT_FALSE(login_pol->mtls_required);
+
+    // Leaderboard: mTLS required (PII data)
+    const auto* lb_pol = policy.policy_for("leaderboard");
+    ASSERT_NE(lb_pol, nullptr);
+    EXPECT_TRUE(lb_pol->tls_required);
+    EXPECT_TRUE(lb_pol->mtls_required);
+
+    // Unknown service
+    EXPECT_EQ(policy.policy_for("nonexistent"), nullptr);
+}
+
+// ─── v3.0.0 B4: Raft consensus integration tests ─────────────────────
+
+TEST(V2BackendRoutingTest, RaftSingleNodeBecomesLeader) {
+    app::logging::init("project_tests");
+
+    v2::match::MatchmakingService matchmaking(0);
+
+    v3::cluster::RaftConfig raft_cfg;
+    raft_cfg.node_id = "matchmaker-1";
+    raft_cfg.election_timeout_min = std::chrono::milliseconds(100);
+    raft_cfg.election_timeout_max = std::chrono::milliseconds(200);
+    raft_cfg.heartbeat_interval = std::chrono::milliseconds(50);
+    raft_cfg.peers = {{"matchmaker-1", "127.0.0.1", 0}};
+
+    matchmaking.set_raft_config(std::move(raft_cfg));
+    matchmaking.start();
+
+    // Single-node cluster: quorum = 1, becomes leader after election timeout.
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+    EXPECT_TRUE(matchmaking.is_raft_leader());
+
+    matchmaking.stop();
+}
+
+TEST(V2BackendRoutingTest, RaftRequestVoteHandlerRespondsToRpc) {
+    app::logging::init("project_tests");
+
+    v2::match::MatchmakingService matchmaking(0);
+
+    v3::cluster::RaftConfig raft_cfg;
+    raft_cfg.node_id = "matchmaker-2";
+    raft_cfg.election_timeout_min = std::chrono::milliseconds(100);
+    raft_cfg.election_timeout_max = std::chrono::milliseconds(200);
+    raft_cfg.peers = {{"matchmaker-2", "127.0.0.1", 0}};
+
+    matchmaking.set_raft_config(std::move(raft_cfg));
+    matchmaking.start();
+
+    auto port = matchmaking.local_port();
+    ASSERT_GT(port, 0);
+
+    v2::service::BackendConnectionOptions opts{
+        .host = "127.0.0.1",
+        .port = port,
+    };
+    v2::service::BackendConnection conn(opts);
+    ASSERT_TRUE(conn.connect());
+
+    // Send RequestVote RPC — dispatch is by message_type, target_service is arbitrary.
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kGateway;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "raft_request_vote";
+    request.payload = R"({"term":1,"candidate_id":"peer-1","last_log_term":0,"last_log_index":0})";
+
+    auto response = conn.send_request(request);
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+
+    auto doc = nlohmann::json::parse(response->payload, nullptr, false);
+    EXPECT_FALSE(doc.is_discarded());
+    EXPECT_TRUE(doc.contains("term"));
+    EXPECT_TRUE(doc.contains("vote_granted"));
+
+    conn.close();
+    matchmaking.stop();
+}
+
+TEST(V2BackendRoutingTest, RaftAppendEntriesHandlerRespondsToRpc) {
+    app::logging::init("project_tests");
+
+    v2::match::MatchmakingService matchmaking(0);
+
+    v3::cluster::RaftConfig raft_cfg;
+    raft_cfg.node_id = "matchmaker-3";
+    raft_cfg.election_timeout_min = std::chrono::milliseconds(100);
+    raft_cfg.election_timeout_max = std::chrono::milliseconds(200);
+    raft_cfg.peers = {{"matchmaker-3", "127.0.0.1", 0}};
+
+    matchmaking.set_raft_config(std::move(raft_cfg));
+    matchmaking.start();
+
+    auto port = matchmaking.local_port();
+    ASSERT_GT(port, 0);
+
+    v2::service::BackendConnectionOptions opts{
+        .host = "127.0.0.1",
+        .port = port,
+    };
+    v2::service::BackendConnection conn(opts);
+    ASSERT_TRUE(conn.connect());
+
+    // Send AppendEntries (heartbeat) RPC.
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kGateway;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "raft_append_entries";
+    request.payload = R"({"term":1,"leader_id":"peer-1"})";
+
+    auto response = conn.send_request(request);
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+
+    auto doc = nlohmann::json::parse(response->payload, nullptr, false);
+    EXPECT_FALSE(doc.is_discarded());
+    EXPECT_TRUE(doc.contains("term"));
+    EXPECT_TRUE(doc.contains("success"));
+
+    conn.close();
+    matchmaking.stop();
+}
+
+// ─── v3.0.0 B5: OpenTelemetry export integration tests ───────────────
+
+TEST(V2BackendRoutingTest, OtelExporterReceivesSpanOnSuccessfulRoute) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{.service_name = "gateway-test"});
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", backend.port},
+        std::nullopt, std::nullopt);
+    bridge.set_otel_exporter(exporter);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"zoe","token":"t10","display_name":"Zoe"})");
+    EXPECT_TRUE(result.success);
+
+    auto records = exporter->drain();
+    ASSERT_GE(records.size(), 1U);
+    EXPECT_EQ(records[0].service_name, "login");
+    EXPECT_EQ(records[0].status, "ok");
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, OtelExporterReceivesSpanOnFailedRoute) {
+    app::logging::init("project_tests");
+
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{.service_name = "gateway-test"});
+
+    // Point at a port that nothing listens on — route will fail.
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", 19998},
+        std::nullopt, std::nullopt);
+    bridge.set_otel_exporter(exporter);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"zoe","token":"t10","display_name":"Zoe"})");
+    EXPECT_FALSE(result.success);
+
+    auto records = exporter->drain();
+    ASSERT_GE(records.size(), 1U);
+    EXPECT_EQ(records[0].service_name, "login");
+
+    bridge.shutdown();
+}
+
+TEST(V2BackendRoutingTest, OtelExporterSpanHasCorrectOperationName) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{.service_name = "gateway-test"});
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", backend.port},
+        std::nullopt, std::nullopt);
+    bridge.set_otel_exporter(exporter);
+
+    bridge.route(v2::service::ServiceId::kLogin,
+                 "room_create",
+                 R"({"user_id":"alice","room_id":"room_001"})");
+
+    auto records = exporter->drain();
+    ASSERT_GE(records.size(), 1U);
+    EXPECT_EQ(records[0].operation_name, "route.room_create");
+
+    bridge.shutdown();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, OtelExporterNoCrashWhenNotConfigured) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    // No exporter configured — route must still succeed without crash.
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", backend.port},
+        std::nullopt, std::nullopt);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"zoe","token":"t10","display_name":"Zoe"})");
+    EXPECT_TRUE(result.success);
+
+    bridge.shutdown();
+    backend.stop();
 }

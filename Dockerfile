@@ -47,6 +47,8 @@ COPY --from=builder /src/build/default/examples/v2_gateway_demo/v2_gateway_demo 
 COPY --from=builder /src/build/default/examples/v2_login_backend/v2_login_backend /app/bin/
 COPY --from=builder /src/build/default/examples/v2_room_backend/v2_room_backend /app/bin/
 COPY --from=builder /src/build/default/examples/v2_battle_backend/v2_battle_backend /app/bin/
+COPY --from=builder /src/build/default/examples/v2_match_backend/v2_match_backend /app/bin/
+COPY --from=builder /src/build/default/examples/v2_leaderboard_backend/v2_leaderboard_backend /app/bin/
 
 # v1 binaries (reference / legacy)
 COPY --from=builder /src/build/default/examples/echo/echo_server /app/bin/

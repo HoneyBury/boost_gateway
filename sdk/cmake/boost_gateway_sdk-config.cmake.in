@@ -1,5 +1,13 @@
 @PACKAGE_INIT@
 
+include(CMakeFindDependencyMacro)
+find_dependency(nlohmann_json)
+
 include("${CMAKE_CURRENT_LIST_DIR}/boost_gateway_sdk-targets.cmake")
+
+# Re-create the build-tree ALIAS for consumer convenience.
+if(NOT TARGET boost_gateway::sdk)
+    add_library(boost_gateway::sdk ALIAS boost_gateway::boost_gateway_sdk)
+endif()
 
 check_required_components(boost_gateway_sdk)

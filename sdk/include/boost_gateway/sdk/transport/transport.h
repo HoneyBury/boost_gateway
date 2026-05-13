@@ -71,6 +71,11 @@ private:
     std::unique_ptr<Impl> impl_;
 };
 
+// ── Factory functions ─────────────────────────────────────────────────
+
+/// Create a TCP transport backed by Boost.Asio.
+std::unique_ptr<ITransport> make_tcp_transport();
+
 }  // namespace transport
 }  // namespace sdk
 }  // namespace boost_gateway

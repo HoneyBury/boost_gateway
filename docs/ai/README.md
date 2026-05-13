@@ -4,24 +4,27 @@
 
 ## 当前阶段说明
 
-当前项目 `develop` 分支已进入 **v2.0.0 完成后阶段**，七大模块（M1-M7）已全部落地，R1-R4 发布基础设施（cmake --install、Docker、systemd、CI/CD、监控面板）已完成。473 测试通过。
+当前项目 `develop` 分支已进入 **v3.0.0+ 生产就绪化阶段**。七大模块（M1-M7）已全部落地，分布式运行时原型（D1-D10）已以 header-only 形式实现，R1-R4 发布基础设施（cmake --install、Docker、systemd、CI/CD、监控面板）已完成。SDK 已演进至 v4.1.0（C API + Python/C# 绑定）。702 测试通过。
 
 当前判断依据：
 
 - `docs/v2-startup-checklist.md` §7.5 和 §11：全部七大模块完成
 - `docs/v2-roadmap.md`：M1-M7 状态全部为 `done`
 - `docs/v2-enterprise-roadmap.md`：v2.0.1 → v3.0.0 完整版本规划
+- `docs/v3-environment-roadmap.md`：v3.1.0-v3.3.0 环境依赖与生产就绪规划
+- `sdk/docs/roadmap.md`：SDK v4.0.0 企业级重构规划
 - `docs/architecture-acceptance-criteria.md`：10 个维度的量化验收标准
 
 因此，本目录中的 Agent 提示词默认应按以下方式理解项目状态：
 
-1. `develop` 主线当前为 **v2.6.0**（文档收束 + 环境配置），576 测试通过。
-2. 下一阶段为 **v3.0.0**（分布式运行时：Cluster Router、Remote Actor、一致性哈希）。
-3. `v1` 文档仍然是兼容链路、桥接边界、历史回归和现网语义的重要事实源。
-4. 任何新任务都必须参照 `v2-enterprise-roadmap.md` 确定所属版本和验收标准。
-5. 当前整体评级为 **”生产”阶段**，v3.0.0 目标为 **”企业”阶段**。
-6. SDK (`sdk/`) 是独立可编译库，Agent 修改 SDK 时必须同步更新 `sdk/docs/`。
-7. 环境配置 (`env/`) 是运维参考，Agent 修改服务配置时必须同步更新 `env/` 对应文件。
+1. `develop` 主线当前为 **v3.0.0+**（分布式运行时原型已落地 + 环境就绪化推进中），702 测试通过。
+2. 当前阶段为 **v3.1.0 生产就绪化**：将 v3.0.0 header-only 原型（Cluster Router、Remote Actor、Consistent Hash、Raft、TLS、OpenTelemetry）集成到真实运行时；详细规划见 `docs/v3-environment-roadmap.md`。
+3. SDK 当前为 **v4.1.0**（C API + Python/C# 绑定），正在进行 v4.0.0 企业级重构（独立编解码、传输层抽象、CMake 导出），规划见 `sdk/docs/roadmap.md`。
+4. `v1` 文档仍然是兼容链路、桥接边界、历史回归和现网语义的重要事实源。
+5. 任何新任务都必须参照 `v2-enterprise-roadmap.md` 与 `docs/v3-environment-roadmap.md` 确定所属版本和验收标准。
+6. 当前整体评级为 **”生产”阶段**，v3.3.0 目标为 **”企业”阶段**。
+7. SDK (`sdk/`) 是独立可编译库，Agent 修改 SDK 时必须同步更新 `sdk/docs/`。
+8. 环境配置 (`env/`) 是运维参考，Agent 修改服务配置时必须同步更新 `env/` 对应文件。
 
 ## 文档列表
 

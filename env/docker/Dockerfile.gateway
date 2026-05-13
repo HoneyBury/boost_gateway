@@ -10,7 +10,7 @@
 # ============================================================================
 # Stage 1: Build
 # ============================================================================
-FROM ubuntu:22.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
@@ -46,7 +46,7 @@ RUN cmake --build --preset default --parallel --target v2_gateway_demo
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
-FROM ubuntu:22.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8

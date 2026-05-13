@@ -1,0 +1,184 @@
+# Boost Gateway v3.1.0 — Matchmaking Backend Deployment + Service + HPA
+#
+# Usage:
+#   kubectl apply -f env/k8s/matchmaking-backend-deployment.yaml
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: matchmaking-backend-config
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: matchmaking
+data:
+  matchmaking_backend.json: |
+    {
+      "matchmaking_backend": {
+        "port": 9304,
+        "io_threads": 2,
+        "metrics_log_interval_ms": 5000,
+        "metrics_prometheus_path": "runtime/metrics/matchmaking_backend.prom",
+        "metrics_json_path": "runtime/metrics/matchmaking_backend.json"
+      }
+    }
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: matchmaking-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/version: "3.1.0"
+    boost-gateway.io/backend: matchmaking
+spec:
+  replicas: 1
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boost-gateway
+      app.kubernetes.io/component: backend
+      boost-gateway.io/backend: matchmaking
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: boost-gateway
+        app.kubernetes.io/component: backend
+        boost-gateway.io/backend: matchmaking
+    spec:
+      terminationGracePeriodSeconds: 30
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: boost-gateway
+                    app.kubernetes.io/component: backend
+                    boost-gateway.io/backend: matchmaking
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: backend
+          image: ghcr.io/boost-gateway/matchmaking-backend:latest
+          imagePullPolicy: Always
+          args:
+            - "9304"
+          ports:
+            - containerPort: 9304
+              name: backend
+              protocol: TCP
+          env:
+            - name: SERVICE_PORT
+              value: "9304"
+            - name: BOOST_LOG_LEVEL
+              value: "info"
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+              readOnly: true
+            - name: logs
+              mountPath: /app/logs
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "64Mi"
+            limits:
+              cpu: "1000m"
+              memory: "256Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9304
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9304
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+      volumes:
+        - name: config
+          configMap:
+            name: matchmaking-backend-config
+        - name: logs
+          emptyDir: {}
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: matchmaking-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: matchmaking
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: matchmaking
+  ports:
+    - name: backend
+      port: 9304
+      targetPort: 9304
+      protocol: TCP
+
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: matchmaking-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: matchmaking
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: matchmaking-backend
+  minReplicas: 1
+  maxReplicas: 4
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: matchmaking-backend
+  namespace: boost-gateway
+  labels:
+    app.kubernetes.io/name: boost-gateway
+    app.kubernetes.io/component: backend
+    boost-gateway.io/backend: matchmaking
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: boost-gateway
+      app.kubernetes.io/component: backend
+      boost-gateway.io/backend: matchmaking

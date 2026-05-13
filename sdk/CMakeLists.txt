@@ -1,12 +1,26 @@
 # BoostGateway Client SDK v4.0.0 — standalone or subdirectory
 option(BOOST_GATEWAY_SDK_STANDALONE "Build as standalone project" OFF)
 
+# SDK version — set explicitly so version.h.in populates correctly even in
+# subdirectory mode (where project() is skipped and @BoostGatewaySdk_VERSION_*@
+# generator variables don't exist).
+set(BOOST_GATEWAY_SDK_VERSION "4.0.0")
+set(BOOST_GATEWAY_SDK_VERSION_MAJOR 4)
+set(BOOST_GATEWAY_SDK_VERSION_MINOR 0)
+set(BOOST_GATEWAY_SDK_VERSION_PATCH 0)
+
 if(BOOST_GATEWAY_SDK_STANDALONE)
     cmake_minimum_required(VERSION 3.21)
     project(boost_gateway_sdk VERSION 4.0.0 LANGUAGES CXX)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)
+else()
+    # Mirror the project()-level generator variables for configure_file().
+    set(BoostGatewaySdk_VERSION_MAJOR ${BOOST_GATEWAY_SDK_VERSION_MAJOR})
+    set(BoostGatewaySdk_VERSION_MINOR ${BOOST_GATEWAY_SDK_VERSION_MINOR})
+    set(BoostGatewaySdk_VERSION_PATCH ${BOOST_GATEWAY_SDK_VERSION_PATCH})
+    set(BoostGatewaySdk_VERSION "${BOOST_GATEWAY_SDK_VERSION}")
 endif()
 
 # ── Version header ───────────────────────────────────────────────────
@@ -18,6 +32,8 @@ configure_file(
 # ── Core library (static, linked by C++ clients) ─────────────────────
 add_library(boost_gateway_sdk STATIC
     src/client.cpp
+    src/transport/tcp_transport.cpp
+    src/transport/connection_pool.cpp
 )
 
 # ── C API shared library (for Python/C# via ctypes/DllImport) ────────
@@ -43,6 +59,8 @@ target_include_directories(boost_gateway_sdk
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway>
 )
 
 # nlohmann_json
@@ -70,7 +88,8 @@ if(NOT DEFINED boost_SOURCE_DIR)
     endif()
 endif()
 
-target_include_directories(boost_gateway_sdk PUBLIC ${boost_SOURCE_DIR})
+target_include_directories(boost_gateway_sdk PUBLIC
+    $<BUILD_INTERFACE:${boost_SOURCE_DIR}>)
 target_compile_definitions(boost_gateway_sdk PUBLIC
     BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
 if(WIN32)
@@ -79,26 +98,44 @@ endif()
 
 add_library(boost_gateway::sdk ALIAS boost_gateway_sdk)
 
-# ── Install (standalone mode only) ────────────────────────────────────
-if(BOOST_GATEWAY_SDK_STANDALONE)
-    include(CMakePackageConfigHelpers)
-    include(GNUInstallDirs)
-    install(TARGETS boost_gateway_sdk EXPORT boost_gateway_sdk-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
-    install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/boost_gateway/sdk/version.h
-        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway/sdk)
-    install(EXPORT boost_gateway_sdk-targets
-        FILE boost_gateway_sdk-targets.cmake
-        NAMESPACE boost_gateway::
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
-    configure_package_config_file(
-        ${CMAKE_CURRENT_SOURCE_DIR}/cmake/boost_gateway_sdk-config.cmake.in
-        ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config.cmake
-        INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
-    install(FILES ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
-endif()
+# ── Install ──────────────────────────────────────────────────────────
+include(CMakePackageConfigHelpers)
+include(GNUInstallDirs)
+
+# nlohmann_json — header-only dependency, co-installed so the export set is self-contained.
+install(TARGETS nlohmann_json EXPORT boost_gateway_sdk-targets)
+install(DIRECTORY "${nlohmann_json_SOURCE_DIR}/include/nlohmann"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
+
+# Library
+install(TARGETS boost_gateway_sdk EXPORT boost_gateway_sdk-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
+# Headers
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/boost_gateway/sdk/version.h
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway/sdk)
+
+# CMake package config
+install(EXPORT boost_gateway_sdk-targets
+    FILE boost_gateway_sdk-targets.cmake
+    NAMESPACE boost_gateway::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
+
+configure_package_config_file(
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake/boost_gateway_sdk-config.cmake.in
+    ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
+
+write_basic_package_version_file(
+    ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config-version.cmake
+    VERSION ${BOOST_GATEWAY_SDK_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+install(FILES
+    ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/boost_gateway_sdk-config-version.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
 
 # ── Tests ────────────────────────────────────────────────────────────
 add_subdirectory(tests)

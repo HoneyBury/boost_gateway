@@ -160,7 +160,7 @@ services:
     ports:
       - "9304:9304"
     environment:
-      MATCH_PORT: "9304"
+      SERVICE_PORT: "9304"
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro
@@ -188,7 +188,7 @@ services:
     ports:
       - "9305:9305"
     environment:
-      LEADERBOARD_PORT: "9305"
+      SERVICE_PORT: "9305"
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ../../config:/app/config:ro

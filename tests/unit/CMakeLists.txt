@@ -17,12 +17,14 @@ add_executable(project_unit_tests
     matchmaking_test.cpp
     compressor_test.cpp
     admin_service_test.cpp
+    redis_event_store_test.cpp
 )
 target_link_libraries(project_unit_tests
     PRIVATE
         project_game
         project_hello
         GTest::gtest_main
+        hiredis
 )
 apply_project_warnings(project_unit_tests)
 
