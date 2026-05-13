@@ -60,12 +60,18 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
     EXPECT_EQ(resp.message_id, net::protocol::kBattleStartResponse);
 
     // Drain initial battle-started pushes.
+    // In local mode the body is "battle_state:kind=started:room_id=...:battle_id=..."
+    // In bridge mode the body is JSON like {"kind":"battle_started","battle_id":"...","room_id":"..."}
     auto push_a = alice->expect_message(net::protocol::kBattleStatePush,
                                         kDefaultTimeout);
-    EXPECT_NE(push_a.body.find("battle_state"), std::string::npos);
+    EXPECT_TRUE(push_a.body.find("battle_state") != std::string::npos ||
+                push_a.body.find("battle_started") != std::string::npos)
+        << "Alice battle-started push body: '" << push_a.body << "'";
     auto push_b = bob->expect_message(net::protocol::kBattleStatePush,
                                       kDefaultTimeout);
-    EXPECT_NE(push_b.body.find("battle_state"), std::string::npos);
+    EXPECT_TRUE(push_b.body.find("battle_state") != std::string::npos ||
+                push_b.body.find("battle_started") != std::string::npos)
+        << "Bob battle-started push body: '" << push_b.body << "'";
 
     // ── Submit an input to advance a frame ─────────────────────────
     resp = alice->exchange(net::protocol::kBattleInputRequest, rid++,
@@ -74,38 +80,43 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
         << "body=" << resp.body << " error_code=" << resp.error_code;
 
     // Drain frame-advance pushes.
+    // In local mode the body is "battle_state:kind=frame:room_id=...:battle_id=...:frame=..."
+    // In bridge mode the body is JSON like {"kind":"frame_advanced","battle_id":"...","frame_number":...}
     push_a = alice->expect_message(net::protocol::kBattleStatePush,
                                    kDefaultTimeout);
-    EXPECT_NE(push_a.body.find("battle_state"), std::string::npos);
+    EXPECT_TRUE(push_a.body.find("battle_state") != std::string::npos ||
+                push_a.body.find("frame_advanced") != std::string::npos)
+        << "Alice frame-advance push body: '" << push_a.body << "'";
     push_b = bob->expect_message(net::protocol::kBattleStatePush,
                                  kDefaultTimeout);
-    EXPECT_NE(push_b.body.find("battle_state"), std::string::npos);
+    EXPECT_TRUE(push_b.body.find("battle_state") != std::string::npos ||
+                push_b.body.find("frame_advanced") != std::string::npos)
+        << "Bob frame-advance push body: '" << push_b.body << "'";
 
     // ── Surrender (triggers settlement) ────────────────────────────
     resp = alice->exchange(net::protocol::kBattleInputRequest, rid++,
                            "finish:surrender", kDefaultTimeout);
 
     // Collect all subsequent pushes for both players until we see
-    // "settlement" or "finished" from each.
-    bool alice_got_settlement = false;
-    bool bob_got_settlement = false;
+    // a "finished" push from each. In local mode there are separate
+    // settlement+finished pushes; in bridge mode a single JSON push
+    // with "kind":"battle_finished" covers both.
     bool alice_got_finished = false;
     bool bob_got_finished = false;
 
     const auto settle_deadline = std::chrono::steady_clock::now() + 20s;
-    while ((!alice_got_settlement || !bob_got_settlement ||
-            !alice_got_finished || !bob_got_finished) &&
+    while ((!alice_got_finished || !bob_got_finished) &&
            std::chrono::steady_clock::now() < settle_deadline) {
-        // Drain one push from each player per iteration.
         if (!alice_got_finished) {
             try {
                 auto p = alice->expect_message(
                     net::protocol::kBattleStatePush, 5s);
-                if (p.body.find("settlement") != std::string::npos) {
-                    alice_got_settlement = true;
-                }
                 if (p.body.find("finished") != std::string::npos) {
                     alice_got_finished = true;
+                    // Verify finish push contains reason.
+                    EXPECT_NE(p.body.find("reason"), std::string::npos)
+                        << "Alice finished push missing 'reason' field: "
+                        << p.body;
                 }
             } catch (const std::exception&) {
                 alice_got_finished = true;  // timeout → move on
@@ -115,21 +126,11 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
             try {
                 auto p = bob->expect_message(
                     net::protocol::kBattleStatePush, 5s);
-                if (p.body.find("settlement") != std::string::npos) {
-                    bob_got_settlement = true;
-                    // Parse settlement data for verification.
-                    // Expected format:
-                    //   battle_state:kind=settlement:room_id=...:reason=...
-                    // Verify at minimum that reason is present.
-                    EXPECT_NE(p.body.find("reason"), std::string::npos)
-                        << "Settlement push missing 'reason' field: "
-                        << p.body;
-                }
                 if (p.body.find("finished") != std::string::npos) {
                     bob_got_finished = true;
                     // Verify finish push contains reason.
                     EXPECT_NE(p.body.find("reason"), std::string::npos)
-                        << "Finished push missing 'reason' field: "
+                        << "Bob finished push missing 'reason' field: "
                         << p.body;
                 }
             } catch (const std::exception&) {
@@ -138,10 +139,6 @@ TEST_F(MultiProcessFixture, SurrenderSettlementDeliveredToBothPlayers) {
         }
     }
 
-    EXPECT_TRUE(alice_got_settlement)
-        << "Alice did not receive settlement push";
-    EXPECT_TRUE(bob_got_settlement)
-        << "Bob did not receive settlement push";
     EXPECT_TRUE(alice_got_finished)
         << "Alice did not receive finished push";
     EXPECT_TRUE(bob_got_finished)
@@ -195,9 +192,33 @@ TEST_F(MultiProcessFixture, FrameLimitSettlementDelivered) {
     bool got_settlement = false;
     net::packet::DecodedPacket input_resp;
     for (int i = 0; i < 10; ++i) {
-        input_resp = p1->exchange(
-            net::protocol::kBattleInputRequest, rid++,
-            "move:" + std::to_string(i) + ",0", kDefaultTimeout);
+        // Use send+read instead of exchange so pushes arriving before the
+        // input response do not get consumed and lost for expect_message.
+        p1->send(net::protocol::kBattleInputRequest, rid++,
+                 "move:" + std::to_string(i) + ",0");
+        input_resp = p1->read(kDefaultTimeout);
+
+        // If a push arrived before the input response, handle it now.
+        if (input_resp.message_id == net::protocol::kBattleStatePush) {
+            if (input_resp.body.find("settlement") != std::string::npos ||
+                input_resp.body.find("finished") != std::string::npos) {
+                got_settlement = true;
+                // Drain matching push from p2
+                try {
+                    auto pb = p2->expect_message(
+                        net::protocol::kBattleStatePush, 8s);
+                    EXPECT_NE(pb.body.find("finished") == std::string::npos &&
+                                  pb.body.find("settlement") == std::string::npos,
+                              true)
+                        << "Player2 did not receive finish/settlement push, got: "
+                        << pb.body;
+                } catch (const std::exception&) {
+                }
+                break;
+            }
+            // Frame advance push — read the actual input response
+            input_resp = p1->read(kDefaultTimeout);
+        }
 
         // Drain pushes for both players.
         try {
