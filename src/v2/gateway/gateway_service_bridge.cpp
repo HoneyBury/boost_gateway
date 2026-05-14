@@ -1,5 +1,6 @@
 #include "v2/gateway/gateway_service_bridge.h"
 
+#include "v2/config/feature_flags.h"
 #include "v2/service/service_id.h"
 #include "v2/tracing/trace_context.h"
 #include "v3/cluster/cluster_router.h"
@@ -38,12 +39,35 @@ struct SpanExportGuard {
 
 namespace {
 
+std::string service_name_for(v2::service::ServiceId service) {
+    switch (service) {
+        case v2::service::ServiceId::kLogin: return "login";
+        case v2::service::ServiceId::kRoom: return "room";
+        case v2::service::ServiceId::kBattle: return "battle";
+        default: return "login";
+    }
+}
+
 v2::service::BackendConnectionOptions make_options(
-    const GatewayServiceBridge::BackendConfig& config) {
-    return v2::service::BackendConnectionOptions{
+    const GatewayServiceBridge::BackendConfig& config,
+    const std::optional<v3::cluster::SecurityPolicy>& security_policy,
+    v2::service::ServiceId service) {
+    v2::service::BackendConnectionOptions opts{
         .host = config.host,
         .port = config.port,
     };
+    if (security_policy.has_value() && security_policy->require_tls) {
+        auto tls = security_policy->tls_config;
+        // Apply per-service mTLS override if policy exists for this service.
+        auto svc_name = service_name_for(service);
+        if (auto* pol = security_policy->policy_for(svc_name)) {
+            if (pol->mtls_required) {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kMutual;
+            }
+        }
+        opts.tls_config = std::move(tls);
+    }
+    return opts;
 }
 
 }  // namespace
@@ -100,19 +124,6 @@ void GatewayServiceBridge::update_backend_config(
 
 namespace {
 
-std::string service_name_for(v2::service::ServiceId service) {
-    switch (service) {
-        case v2::service::ServiceId::kLogin: return "login";
-        case v2::service::ServiceId::kRoom: return "room";
-        case v2::service::ServiceId::kBattle: return "battle";
-        default: return "login";
-    }
-}
-
-}  // namespace
-
-namespace {
-
 /// Build a temporary ConsistentHashRing from a set of instances and
 /// look up which node owns the shard key. Returns node_name.
 std::string hash_to_node(const std::vector<v3::cluster::ServiceInstance>& instances,
@@ -144,6 +155,17 @@ const v3::cluster::ServiceInstance* find_by_node(
 v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
     v2::service::ServiceId service,
     const std::string& shard_key) {
+    // v3.1.0: If security policy requires TLS but feature flag is off, refuse.
+    if (security_policy_.has_value() && feature_flags_) {
+        auto svc_name = service_name_for(service);
+        if (auto* pol = security_policy_->policy_for(svc_name)) {
+            if (pol->tls_required &&
+                !feature_flags_->is_enabled("v3_tls_enabled", svc_name)) {
+                return nullptr;
+            }
+        }
+    }
+
     // ── Cluster router path with optional consistent hashing ──────────
     if (cluster_router_) {
         const auto svc_name = service_name_for(service);
@@ -190,7 +212,7 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         slot.config = cfg;
 
         auto conn = std::make_unique<v2::service::BackendConnection>(
-            make_options(cfg));
+            make_options(cfg, security_policy_, service));
         if (!conn->connect()) {
             cluster_router_->mark_unhealthy(svc_name, chosen_node);
             if (registry_) {
@@ -225,7 +247,7 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
     (void)existing;
 
     auto conn = std::make_unique<v2::service::BackendConnection>(
-        make_options(*cfg));
+        make_options(*cfg, security_policy_, service));
     if (!conn->connect()) {
         if (registry_) {
             registry_->mark_unhealthy(service, cfg->host, cfg->port);
@@ -398,6 +420,26 @@ void GatewayServiceBridge::set_otel_exporter(
 std::shared_ptr<v3::tracing::OtlpExporter>
 GatewayServiceBridge::get_otel_exporter() const {
     return otel_exporter_;
+}
+
+void GatewayServiceBridge::set_security_policy(
+    v3::cluster::SecurityPolicy policy) {
+    security_policy_ = std::move(policy);
+}
+
+const std::optional<v3::cluster::SecurityPolicy>&
+GatewayServiceBridge::get_security_policy() const {
+    return security_policy_;
+}
+
+void GatewayServiceBridge::set_feature_flags(
+    std::shared_ptr<v2::config::FeatureFlags> flags) {
+    feature_flags_ = std::move(flags);
+}
+
+std::shared_ptr<v2::config::FeatureFlags>
+GatewayServiceBridge::get_feature_flags() const {
+    return feature_flags_;
 }
 
 void GatewayServiceBridge::shutdown() {

@@ -1112,3 +1112,328 @@
 - 如进入 `v2.0`，需以新的明确批次启动，不直接复用 `v1.x` 维护任务表
 
 > **强约束**：未进入 v2。
+
+---
+
+## 2026-05-12 阶段 v2.0.0：七大模块架构升级 (M1-M7)
+
+### 目标
+
+将项目从 v1.x 单进程原型演进为多进程、Actor 模型、企业级游戏服务器框架。参考明星开源游戏服务器设计，按 v2.0.0 七大模块系统性落地。
+
+### 完成内容
+
+- **M1 — Actor 模型基础设施**：`ActorSystem`、`ActorRef`、`Actor` 基类、`tell()` 消息传递、Actor 生命周期管理、快照序列化
+- **M2 — 多进程服务拓扑**：`login_backend` / `room_backend` / `battle_backend` 独立可执行文件、gateway 作为 TCP ingress、服务间通过 `BackendConnection` TCP 通信、`GatewayServiceBridge` 路由层
+- **M3 — 网关会话与协议适配**：`SessionAdapter` 连接 actor 系统与网络层、`Runtime` 编排 gateway/battle/room actor、`ClientEnvelope` → `actor::tell()` 转换、`DownstreamSessionWriteSink` 异步写回
+- **M4 — 房间与战斗生命周期**：`RoomActor`（创建/加入/离开/准备/广播）、`BattleActor`（ECS 帧同步/输入处理/结算）、`BattleRuntimeWorld`（ECS 世界管理）
+- **M5 — WriteBehind 持久化**：`CachedDataStore` + `WriteBehindStore`、`JsonFileBattleDataStore`、战斗回放持久化、`ReplayPlayer`
+- **M6 — 服务发现与注册**：`ServiceRegistry` TTL 心跳/健康检查、`BackendMetrics` 四维度（success/timeout/unavailable/error）、`CircuitBreaker` 熔断器
+- **M7 — IO 引擎抽象**：`IoEngine` 接口、`AsioIoEngine` 实现、`IoAcceptor` / `IoSession` / `IoListener`、per-core 事件循环
+
+### 测试结果
+
+- 473 tests 通过
+
+### 下一步
+
+- v2.0.1 生产加固（配置热加载、断路器完善、Builder 模式、优雅关闭、SessionManager 隔离、连接生命周期归档）
+
+---
+
+## 2026-05-12 阶段 v2.0.1：生产加固 (H1-H6)
+
+### 目标
+
+在 v2.0.0 基础上补齐生产环境必需的安全性和可靠性能力。
+
+### 完成内容
+
+- **H1 — 配置热加载**：`ConfigWatcher` 基于 `std::filesystem::file_time_type` 监听配置文件变更，自动触发 `load_gateway_config()` 回调；`update_backend_config()` 自动断开旧连接重建
+- **H2 — Per-service 断路器**：`CircuitBreaker` 集成到每个 `BackendSlot`，连续失败 ≥ 3 次熔断 30s，半开状态探测
+- **H3 — DemoServer Builder 模式**：简化构造参数，`DemoServerOptions` 结构体封装可选配置
+- **H4 — 优雅关闭增强**：`terminationGracePeriodSeconds`、session 排空、`shutdown()` 关闭全部后端连接
+- **H5 — SessionManager 隔离**：网关不再直接持有 `SessionManager`，通过 `IoEngine` 间接管理
+- **H6 — 连接生命周期归档**：`session_close_test.cpp` 覆盖关闭幂等、回调触发、错误码链路
+
+### 测试结果
+
+- 556 tests 通过
+
+### 下一步
+
+- v2.0.2 性能基线（延迟直方图、吞吐量跟踪、benchmark harness、容量规划文档）
+
+---
+
+## 2026-05-12 阶段 v2.0.2：性能基线与负载测试 (B1-B6)
+
+### 目标
+
+建立性能数字基线，指导容量规划和优化方向。
+
+### 完成内容
+
+- **B1 — 性能基准测试套件**：`v2_gateway_pressure` 工具支持 9 种场景（echo/battle/stability/concurrent/large_payload/rate_limit/connect_storm/disconnect_storm/latency_profile）
+- **B2 — 延迟直方图**：`LatencyHistogram` 14 个指数分桶（1ms → 30s），P50/P90/P99 延迟统计
+- **B3 — 吞吐量跟踪**：`ThroughputTracker` 滑动窗口计数器（5s 窗口，10 个子桶）
+- **B4 — Backend 延迟测量**：`GatewayServiceBridge::route()` 中记录 backend 往返延迟到 `BackendMetrics`
+- **B5 — SLO/SLI 定义**：`docs/performance-baseline.md` 含可用性目标（99.9%）、延迟目标（P99 ≤ 50ms）
+- **B6 — 容量规划文档**：`docs/performance-baseline.md` 含扩容公式和硬件推荐
+
+### 测试结果
+
+- 556 tests 通过
+
+### 下一步
+
+- v2.1.0 多进程集成验证（E2E 业务流程测试、故障注入、长时间浸泡）
+
+---
+
+## 2026-05-12 阶段 v2.1.0：多进程集成验证 (E1-E6)
+
+### 目标
+
+4 个服务以真实 TCP 连接协作，覆盖完整生命周期和异常场景。
+
+### 完成内容
+
+- **E1 — 多进程集成测试框架**：`multi_process_test.cpp` 通过 fork + exec 启动 gateway/login/room/battle 4 个进程，通过 socket 通信
+- **E2 — 完整业务流程测试**：`business_flow_test.cpp` 覆盖 login → create_room → join → ready → start_battle → frame_sync → settlement → replay
+- **E3 — 故障注入**：`FaultInjector` 支持丢包、延迟注入、连接重置；`backend_routing_test.cpp` 覆盖后端宕机、超时、不可用
+- **E4 — 服务发现演练**：ServiceRegistry TTL 过期自动摘除、心跳恢复自动上线
+- **E5 — 重连与结算测试**：`settlement_replay_test.cpp` 覆盖战斗结算数据一致性
+- **E6 — 客户端协议规范**：输出 `docs/v2-protocol-spec.md`
+
+### 测试结果
+
+- 576 tests 通过
+
+### 下一步
+
+- v2.2.0 安全加固（JWT 认证、消息级授权、多级速率限制、OpenTelemetry trace、结构化审计日志）
+
+---
+
+## 2026-05-12 阶段 v2.2.0：安全与可观测性 (S1-S7)
+
+### 目标
+
+达到企业级安全基线，可观测性满足生产运维需求。
+
+### 完成内容
+
+- **S1 — JWT 认证**：`JwtValidator` 支持 HS256/RS256，token 过期和刷新，`DevTokenValidator` 向后兼容
+- **S2 — 消息级授权**：基于用户角色的消息类型访问控制，`SchemaValidator` 请求/响应格式校验
+- **S3 — 多级速率限制**：`RateLimiter` 支持全局 + 每 IP + 每用户 + 每消息类型，令牌桶算法
+- **S4 — 分布式追踪**：`TraceContext` 跨服务 trace_id/span_id 传播，W3C TraceContext 兼容格式
+- **S5 — 结构化审计日志**：`AUDIT_LOG` JSON 格式输出，含必备键（action/user_id/session_id/timestamp）
+- **S6 — 标准化健康检查**：`HealthCheck` 组件化，`/health`（存活）/ `/ready`（就绪）/ `/metrics`（Prometheus）
+- **S7 — 服务总线完整性测试**：`service_bus_integrity_test.cpp` 跨服务消息完整性验证
+
+### 测试结果
+
+- 全部测试通过
+
+### 下一步
+
+- v2.3.0 高级游戏特性（MMR 匹配、排行榜、反外挂、帧同步优化、消息 Schema 校验）
+
+---
+
+## 2026-05-12 阶段 v2.3.0：高级游戏特性 (G1-G5)
+
+### 目标
+
+补充游戏服务器核心业务特性，达到生产可用水平。
+
+### 完成内容
+
+- **G1 — MMR 匹配系统**：`MatchmakingService` 基于 MMR 的匹配队列，支持 1v1/2v2/4v4，可配置匹配超时，`MatchmakingQueue` 评分分桶
+- **G2 — 排行榜服务**：`LeaderboardService` 支持 Redis 风格 Sorted Set 操作（ZADD/ZRANGE/ZRANK），全局/好友/赛季排行榜
+- **G3 — 反外挂基础**：`AntiCheatService` 服务端输入校验（移动距离/速度/冷却时间），异常行为检测和日志
+- **G4 — 战斗系统增强**：`BattleSystems`（移动/技能/伤害/Buff）、`AOISpatialGrid` 空间兴趣管理、`BroadcastService` 广播优化
+- **G5 — 消息 Schema 校验**：`SchemaValidator` 基于 JSON Schema 的请求/响应格式校验，拒绝畸形消息
+
+### 测试结果
+
+- 全部测试通过
+
+### 下一步
+
+- v2.4.0 客户端 SDK 封装
+
+---
+
+## 2026-05-13 阶段 v2.4.0：客户端 SDK 封装
+
+### 目标
+
+为游戏客户端提供开箱即用的 C++ SDK，降低接入门槛。
+
+### 完成内容
+
+- `boost_gateway_sdk` 共享库：`BoostClient`（connect/login/echo/room_ops/battle_ops）、异步回调 API
+- 基准示例程序：`sdk_echo_client`、`sdk_battle_client`
+- SDK 全流集成测试：`sdk_protocol_test.cpp` 覆盖 V4 协议编解码、请求/响应匹配
+- 共享库符号导出（`BOOST_GATEWAY_SDK_EXPORT`）
+
+### 测试结果
+
+- 556 tests 通过（SDK 集成测试 + 原有测试）
+
+### 下一步
+
+- v2.5.0 全方位客户端集成测试
+
+---
+
+## 2026-05-13 阶段 v2.5.0：全方位集成测试
+
+### 目标
+
+补齐 v2 架构下的全方位测试覆盖。
+
+### 完成内容
+
+- `tests/v2/unit/` 扩展到 57 个测试文件（actor_runtime / battle_archive / lru_cache / battle_actor / ecs_world / cluster_router / remote_actor / raft / otel_persistence / k8s_operator 等）
+- `tests/v2/integration/` 扩展（backend_routing / demo_server_smoke / backend_health / data_layer / service_bus / multi_process / business_flow / settlement_replay）
+- 多进程 E2E 测试框架完善（进程生命周期管理、端口分配、超时控制）
+- SDK Python 轻量封装验证
+
+### 测试结果
+
+- 全部测试通过
+
+### 下一步
+
+- v2.6.0 文档整合 + 环境基础设施
+
+---
+
+## 2026-05-13 阶段 v2.6.0：文档整合与环境基础设施
+
+### 目标
+
+整合所有文档产出，搭建环境基础设施（Docker Compose、K8s 骨架、Prometheus/Grafana、Redis 配置）。
+
+### 完成内容
+
+- 文档整合：`docs/v2-design.md`、`docs/v3-environment-roadmap.md`、`docs/v2-enterprise-roadmap.md` 等
+- 环境基础设施：`env/docker/Dockerfile.gateway` + `Dockerfile.backend`、`env/docker/docker-compose.yml`（9 服务栈，初始版）
+- 监控配置：`env/monitoring/prometheus.yml`（17 条告警规则）、`env/monitoring/grafana-dashboard.json`
+- K8s 骨架：`env/k8s/backend-deployment.yaml`、`env/k8s/gateway-deployment.yaml`、`env/k8s/gameserver-crd.yaml`
+- Helm Chart 骨架：`env/helm/boost-gateway/Chart.yaml` + values
+- `env/redis/redis.conf`（maxmemory 256mb、allkeys-lru、appendonly yes）
+- `scripts/build_docker.sh`
+
+### 测试结果
+
+- 576 tests 通过
+
+### 下一步
+
+- v3.0.0 分布式运行时（Cluster Router、Remote Actor、Consistent Hash、Raft、OTel、K8s Operator）
+
+---
+
+## 2026-05-13 阶段 v3.0.0：分布式运行时 (D1-D8)
+
+### 目标
+
+将项目从单机多进程架构升级为分布式运行时，支持跨节点服务发现、远程 Actor 调用、一致性哈希分片、Raft 领导者选举。
+
+### 完成内容
+
+- **D1 — Cluster Router**：`ClusterRouter` 服务发现 + 健康检查 + mark_unhealthy，`ServiceInstance` 注册/发现，支持静态配置和动态注册
+- **D2 — Remote Actor Transport**：`RemoteActor` 跨进程 `actor::tell()`，`RemoteActorProxy` 透明序列化/反序列化，`MessageWireSerializer` 二进制编解码
+- **D3 — 一致性哈希分片**：`ConsistentHashRing` 虚拟节点实现，`ShardRouter` 基于 room_id/battle_id 路由到固定节点，会话亲和性
+- **D4 — Raft 领导者选举**：`RaftNode`（Follower/Candidate/Leader 状态机）、`RaftLog` 持久化、`RaftRpcClient` 节点间通信
+- **D5 — gRPC Proto 定义**：`proto/gateway.proto`、`proto/battle.proto`、`proto/match.proto`、`proto/leaderboard.proto`
+- **D6 — K8s Operator**：`k8s_operator_test.cpp` 基础框架，`GameServer` CRD controller 逻辑（创建/更新 Deployment + Service）
+- **D7 — TLS 配置类型**：`TlsSessionConfig`、`TlsCertificateConfig`、`SecurityPolicy`（per-service TLS/mTLS 策略）、`TlsVerifyMode` 枚举
+- **D8 — OpenTelemetry 集成**：`OtlpExporter` OTLP/gRPC span 导出、`TraceContext` W3C 格式传播、`GatewayServiceBridge::route()` 中创建/导出 span
+- **D9 — 跨模块集成验证**：`v3_integration_test.cpp`（Cluster Router + Remote Actor + Consistent Hash 联合验证）、错误路径测试
+- **D10 — Event Persistence**：`IEventStore` 接口定义（append/read/latest_sequence/total_events）、`FileEventStore` 实现
+
+### 测试结果
+
+- 655 tests 通过（含 v2 单元测试 57 文件 + v2 集成测试 + v2 多进程测试 + v3 集成 + Redis 测试）
+
+### 下一步
+
+- v3.1.0 生产基础设施（Redis 集成、Docker 生产构建、K8s 部署验证、TLS/mTLS 安全传输 + FeatureFlag 灰度控制）
+
+---
+
+## 2026-05-14 阶段 v3.1.0：生产基础设施 (E1-E4)
+
+### 目标
+
+将 v3.0.0 分布式运行时的基础设施提升到生产就绪水平：Redis 持久化、Docker 生产构建、K8s 部署验证、TLS/mTLS 安全传输与 FeatureFlag 灰度控制。
+
+### 完成内容
+
+#### E1 — Redis 集成
+
+- **hiredis 接入**：通过 CMake `FetchContent` 拉取 hiredis C 客户端，添加 `CMAKE_POLICY_VERSION_MINIMUM 3.5` 兼容 CMake ≥ 4.0
+- **`RedisClient`**（PIMPL/RAII C++ 包装）：`connect`/`reconnect`/`get`/`set`/`del`/`exists`/`incr`/`lpush`/`lrange`/`llen`/`zadd`/`zrange_with_scores`/`zcard`，自动重连模式
+- **`RedisEventStore`**：实现 `IEventStore` 接口，事件以 JSON 字符串 LPUSH 到 `{prefix}:{aggregate_id}` 和 `{prefix}:by_type:{type}`，`{prefix}:next_seq` 单调序列号
+- **16 项测试**：`RedisClientTest`（连接失败优雅降级、断开操作返回空、SetGetDel、Exists、Incr、List、SortedSet、MoveSemantics）+ `RedisEventStoreTest`（AppendAndRead、LatestSequence、ReadByType、TotalEvents、FromSequenceFilter），Redis 不可用时 GTEST_SKIP
+- **`project_v3` 链接 hiredis**：`target_include_directories(project_v3 PRIVATE "${hiredis_SOURCE_DIR}")` + `target_link_libraries(project_v3 PRIVATE hiredis)`
+
+#### E2 — Docker 生产构建
+
+- **Dockerfile 修复**：`Dockerfile.backend` 修复致命 bug — ENTRYPOINT 曾硬编码 `/app/bin/v2_login_backend` 导致所有 5 个后端服务都运行 login 二进制；通过 `SERVICE_BINARY` build-arg + `ln -s /app/bin/${SERVICE_BINARY} /app/bin/backend` + `ENTRYPOINT ["/app/bin/backend"]` 修复
+- **Ubuntu 升级**：`Dockerfile.gateway` 和 `Dockerfile.backend` 升级 ubuntu:22.04 → ubuntu:24.04
+- **docker-compose 完整栈**：`env/docker/docker-compose.yml` 9 服务编排（gateway、login、room、battle、matchmaking、leaderboard、redis、prometheus、grafana），所有服务 healthcheck + depends_on service_healthy
+- **`scripts/build_docker.sh`**：支持全量构建、per-service 构建、`--no-cache` 选项
+
+#### E3 — K8s 部署验证
+
+- **5 个独立 Deployment 文件**：`login-backend-deployment.yaml` / `room-backend-deployment.yaml` / `battle-backend-deployment.yaml` / `matchmaking-backend-deployment.yaml` / `leaderboard-backend-deployment.yaml`，替代旧 `backend-deployment.yaml`
+- **Production 级别配置**：每个 Deployment 含 ConfigMap + RollingUpdate（maxUnavailable: 0, maxSurge: 1）+ podAntiAffinity + HPA（autoscaling/v2, CPU 70%, memory 80%）+ PDB（minAvailable: 1）
+- **Gateway K8s 完善**：增加 matchmaking/leaderboard 后端 host/port args、livenessProbe + readinessProbe（/health:9080）
+- **Battle 特殊配置**：更高资源配额（500m/128Mi requests, 2/512Mi limits）、archive volume（emptyDir）
+- **`scripts/deploy_k8s.sh`**：一键部署全部 6 服务
+
+#### E4 — TLS/mTLS 安全传输 + FeatureFlag 灰度控制
+
+- **Phase 1 — FeatureFlags 可运维化**：新增 `include/v2/config/env_util.h`（首个 `std::getenv` 使用）；`FeatureFlags` 新增 `load_from_json()` 和 `apply_env_overrides()`；9 项新测试
+- **Phase 2 — GatewayServiceBridge 安全策略接入**：`set_security_policy()` / `set_feature_flags()` setters；`make_options()` 签名升级接受 `SecurityPolicy` + `ServiceId`；TLS FeatureFlag 门控
+- **Phase 3 — 证书生成与配置**：`scripts/gen_certs.sh`；`.gitignore` 新增 `/certs/`；`config/gateway.json` 新增 `feature_flags` / `tls` / `security_policy` 三段配置
+- **Phase 4 — DemoServer 装配**：`DemoServer` 新增 `feature_flags_` + `security_policy_` 成员；`load_gateway_config()` 解析新配置段
+
+### 安全默认值
+
+所有默认值设计为**不改变现有行为**：
+- `v3_tls_enabled: false` — 需显式开启
+- `security_policy.require_tls: false` — 全局关闭
+- 各 service `tls_required: true` 但受 FeatureFlag 门控保护
+
+### 测试结果
+
+- **751 tests 通过，0 failures**（v3.0.0 基线 655 + 新增 Redis 测试 16 + feature_flags 9 项 + 其他）
+
+### 影响范围
+
+- `cmake/Dependencies.cmake`（hiredis FetchContent）
+- `include/v2/config/env_util.h`（新）、`include/v2/config/feature_flags.h`
+- `include/v2/gateway/gateway_service_bridge.h`、`include/v2/gateway/demo_server.h`
+- `src/v2/gateway/gateway_service_bridge.cpp`、`src/v2/gateway/demo_server.cpp`
+- `src/v3/persistence/redis_client.cpp`（新）、`redis_event_store.cpp`（新）
+- `include/v3/persistence/redis_client.h`（新）、`redis_event_store.h`（新）
+- `env/docker/Dockerfile.gateway`、`env/docker/Dockerfile.backend`、`env/docker/docker-compose.yml`
+- `env/k8s/gateway-deployment.yaml`、`env/k8s/*-backend-deployment.yaml`（5 个）
+- `scripts/gen_certs.sh`（新）、`scripts/build_docker.sh`（新）、`scripts/deploy_k8s.sh`（新）
+- `config/gateway.json`、`.gitignore`
+- `tests/v2/unit/feature_flags_test.cpp`、`tests/unit/redis_event_store_test.cpp`
+
+### 下一步
+
+- **E5**：K8s Operator 实现（Go + controller-runtime 或 Python + kopf）
+- **RedisLeaderboard**：基于 `RedisEventStore` 实现排行榜存储
+- **Raft 集成测试**：多节点集群验证
+- **gRPC 服务端**：基于 proto 定义实现
+- **生产环境部署与压测**

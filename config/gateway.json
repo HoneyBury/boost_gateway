@@ -42,5 +42,22 @@
       "host": "127.0.0.1",
       "port": 9303
     }
+  },
+  "feature_flags": {
+    "v3_tls_enabled": { "enabled": false, "rollout_percentage": 0 }
+  },
+  "tls": {
+    "cert_chain_path": "certs/server.crt",
+    "private_key_path": "certs/server.key",
+    "ca_cert_path": "certs/ca.crt",
+    "verify_mode": "mutual"
+  },
+  "security_policy": {
+    "require_tls": false,
+    "login": { "tls_required": true, "mtls_required": false },
+    "room": { "tls_required": true, "mtls_required": false },
+    "battle": { "tls_required": true, "mtls_required": false },
+    "match": { "tls_required": true, "mtls_required": false },
+    "leaderboard": { "tls_required": true, "mtls_required": true }
   }
 }

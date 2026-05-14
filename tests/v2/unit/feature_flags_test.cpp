@@ -2,6 +2,8 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdlib>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <thread>
 #include <vector>
@@ -203,4 +205,127 @@ TEST(V2FeatureFlagsTest, ThreadSafetySmoke) {
     // 运行后状态应仍一致
     EXPECT_TRUE(flags.is_enabled("thread_flag_c", "final_check"));
     EXPECT_FALSE(flags.is_enabled("thread_flag_d", "final_check"));
+}
+
+// ─── Load From JSON ───────────────────────────────────────────────
+
+TEST(V2FeatureFlagsTest, LoadFromJsonPopulatesFlags) {
+    v2::config::FeatureFlags flags;
+
+    nlohmann::json cfg;
+    cfg["v3_tls_enabled"] = {{"enabled", true}, {"rollout_percentage", 50}};
+    cfg["v3_new_auth"] = {{"enabled", false}, {"rollout_percentage", 0}};
+
+    flags.load_from_json(cfg);
+
+    EXPECT_EQ(flags.flag_count(), 2U);
+
+    auto tls = flags.get_flag("v3_tls_enabled");
+    ASSERT_TRUE(tls.has_value());
+    EXPECT_TRUE(tls->enabled);
+    EXPECT_EQ(tls->rollout_percentage, 50U);
+
+    auto auth = flags.get_flag("v3_new_auth");
+    ASSERT_TRUE(auth.has_value());
+    EXPECT_FALSE(auth->enabled);
+    EXPECT_EQ(auth->rollout_percentage, 0U);
+}
+
+TEST(V2FeatureFlagsTest, LoadFromJsonEmptyObjectIsNoop) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("existing", 50, true);
+
+    flags.load_from_json(nlohmann::json::object());
+
+    EXPECT_EQ(flags.flag_count(), 1U);
+    auto flag = flags.get_flag("existing");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_TRUE(flag->enabled);
+    EXPECT_EQ(flag->rollout_percentage, 50U);
+}
+
+TEST(V2FeatureFlagsTest, LoadFromJsonNonNullIsNoop) {
+    v2::config::FeatureFlags flags;
+    flags.load_from_json(nlohmann::json("not_an_object"));
+    EXPECT_EQ(flags.flag_count(), 0U);
+}
+
+TEST(V2FeatureFlagsTest, LoadFromJsonClampsRolloutTo100) {
+    v2::config::FeatureFlags flags;
+
+    nlohmann::json cfg;
+    cfg["over"] = {{"enabled", true}, {"rollout_percentage", 150}};
+    flags.load_from_json(cfg);
+
+    auto flag = flags.get_flag("over");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_EQ(flag->rollout_percentage, 100U);
+}
+
+// ─── Env Override ──────────────────────────────────────────────────
+
+TEST(V2FeatureFlagsTest, EnvOverrideEnabledTrue) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("test_env", 0, false);
+
+    setenv("BOOST_TEST_ENV", "1", 1);
+    flags.apply_env_overrides();
+    unsetenv("BOOST_TEST_ENV");
+
+    auto flag = flags.get_flag("test_env");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_TRUE(flag->enabled);
+}
+
+TEST(V2FeatureFlagsTest, EnvOverrideEnabledFalse) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("test_env2", 100, true);
+
+    setenv("BOOST_TEST_ENV2", "0", 1);
+    flags.apply_env_overrides();
+    unsetenv("BOOST_TEST_ENV2");
+
+    auto flag = flags.get_flag("test_env2");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_FALSE(flag->enabled);
+}
+
+TEST(V2FeatureFlagsTest, EnvOverrideRolloutPercentage) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("test_env3", 10, true);
+
+    setenv("BOOST_TEST_ENV3_ROLLOUT", "75", 1);
+    flags.apply_env_overrides();
+    unsetenv("BOOST_TEST_ENV3_ROLLOUT");
+
+    auto flag = flags.get_flag("test_env3");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_EQ(flag->rollout_percentage, 75U);
+}
+
+TEST(V2FeatureFlagsTest, EnvOverrideMissingVarLeavesFlagUnchanged) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("test_env4", 50, true);
+
+    // Ensure no env var is set
+    unsetenv("BOOST_TEST_ENV4");
+    flags.apply_env_overrides();
+
+    auto flag = flags.get_flag("test_env4");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_TRUE(flag->enabled);
+    EXPECT_EQ(flag->rollout_percentage, 50U);
+}
+
+TEST(V2FeatureFlagsTest, EnvOverrideInvalidRolloutIgnored) {
+    v2::config::FeatureFlags flags;
+    flags.register_flag("test_env5", 20, true);
+
+    setenv("BOOST_TEST_ENV5_ROLLOUT", "not_a_number", 1);
+    flags.apply_env_overrides();
+    unsetenv("BOOST_TEST_ENV5_ROLLOUT");
+
+    auto flag = flags.get_flag("test_env5");
+    ASSERT_TRUE(flag.has_value());
+    EXPECT_EQ(flag->rollout_percentage, 20U);
 }

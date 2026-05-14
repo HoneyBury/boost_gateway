@@ -3,6 +3,7 @@
 #include "net/session.h"
 #include "net/http_manager.h"
 #include "v2/config/config_watcher.h"
+#include "v2/config/feature_flags.h"
 #include "v2/io/io_engine.h"
 #include "v2/diagnostics/health_check.h"
 #include "v2/gateway/backend_metrics.h"
@@ -11,6 +12,7 @@
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
 #include "v2/service/service_registry.h"
+#include "v3/cluster/tls_config.h"
 
 #include <cstdint>
 #include <optional>
@@ -115,6 +117,10 @@ private:
     std::unique_ptr<boost::asio::io_context> management_io_;
     std::unique_ptr<net::HttpManager> http_manager_;
     std::unique_ptr<std::thread> management_thread_;
+
+    // v3.1.0: Feature flags and security policy
+    std::shared_ptr<v2::config::FeatureFlags> feature_flags_;
+    std::optional<v3::cluster::SecurityPolicy> security_policy_;
 };
 
 }  // namespace v2::gateway

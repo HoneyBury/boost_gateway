@@ -1,6 +1,9 @@
 #pragma once
 
+#include "v2/config/env_util.h"
+
 #include <cstdint>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <shared_mutex>
 #include <string>
@@ -34,6 +37,48 @@ public:
     void unregister_flag(const std::string& name) {
         std::unique_lock lock(mutex_);
         flags_.erase(name);
+    }
+
+    // ── 批量加载与环境覆盖 ───────────────────
+
+    /// Load flags from a JSON object.
+    /// Each key is a flag name; value is an object with:
+    ///   "enabled": bool (default false)
+    ///   "rollout_percentage": uint32_t 0-100 (default 0)
+    void load_from_json(const nlohmann::json& json) {
+        if (!json.is_object()) return;
+        std::unique_lock lock(mutex_);
+        for (auto it = json.begin(); it != json.end(); ++it) {
+            const auto& name = it.key();
+            const auto& entry = it.value();
+            bool enabled = entry.value("enabled", false);
+            std::uint32_t pct = entry.value("rollout_percentage", 0U);
+            if (pct > 100) pct = 100;
+            flags_[name] = FeatureFlag{name, pct, enabled};
+        }
+    }
+
+    /// Apply environment variable overrides for all registered flags.
+    /// BOOST_<UPPER_NAME>="1"/"0" overrides enabled.
+    /// BOOST_<UPPER_NAME>_ROLLOUT=<N> overrides rollout_percentage.
+    /// Env vars take priority over values set via register_flag / load_from_json.
+    void apply_env_overrides() {
+        std::unique_lock lock(mutex_);
+        for (auto& [name, flag] : flags_) {
+            auto key = flag_to_env_name(name);
+            auto val = get_env(key);
+            if (val.has_value()) {
+                if (*val == "1") flag.enabled = true;
+                else if (*val == "0") flag.enabled = false;
+            }
+            auto rollout = get_env(key + "_ROLLOUT");
+            if (rollout.has_value()) {
+                try {
+                    auto pct = static_cast<std::uint32_t>(std::stoul(*rollout));
+                    if (pct <= 100) flag.rollout_percentage = pct;
+                } catch (...) {}
+            }
+        }
     }
 
     // 更新灰度百分比（0-100）

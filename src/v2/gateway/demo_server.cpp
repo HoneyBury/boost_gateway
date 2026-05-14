@@ -472,6 +472,59 @@ void DemoServer::load_gateway_config() {
         bridge->update_backend_config(service_id, std::move(cfg));
         LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg.host, cfg.port);
     }
+
+    // v3.1.0: Feature flags
+    if (doc.contains("feature_flags")) {
+        feature_flags_ = std::make_shared<v2::config::FeatureFlags>();
+        feature_flags_->load_from_json(doc["feature_flags"]);
+        feature_flags_->apply_env_overrides();
+        bridge->set_feature_flags(feature_flags_);
+    }
+
+    // v3.1.0: TLS config + security policy
+    if (doc.contains("tls") || doc.contains("security_policy")) {
+        v3::cluster::SecurityPolicy policy;
+
+        if (doc.contains("tls")) {
+            const auto& tls = doc["tls"];
+            policy.tls_config.cert.cert_chain_path =
+                tls.value("cert_chain_path", "certs/server.crt");
+            policy.tls_config.cert.private_key_path =
+                tls.value("private_key_path", "certs/server.key");
+            policy.tls_config.cert.ca_cert_path =
+                tls.value("ca_cert_path", "certs/ca.crt");
+            auto mode = tls.value("verify_mode", "mutual");
+            if (mode == "mutual") {
+                policy.tls_config.verify_mode =
+                    v3::cluster::TlsVerifyMode::kMutual;
+            } else if (mode == "server") {
+                policy.tls_config.verify_mode =
+                    v3::cluster::TlsVerifyMode::kServer;
+            }
+        }
+
+        if (doc.contains("security_policy")) {
+            const auto& sp = doc["security_policy"];
+            policy.require_tls = sp.value("require_tls", false);
+
+            auto load_svc = [&](const char* key,
+                                v3::cluster::SecurityPolicy::ServiceTlsPolicy& out) {
+                if (sp.contains(key)) {
+                    const auto& svc = sp[key];
+                    out.tls_required = svc.value("tls_required", true);
+                    out.mtls_required = svc.value("mtls_required", false);
+                }
+            };
+            load_svc("login", policy.login_policy);
+            load_svc("room", policy.room_policy);
+            load_svc("battle", policy.battle_policy);
+            load_svc("match", policy.match_policy);
+            load_svc("leaderboard", policy.leaderboard_policy);
+        }
+
+        security_policy_ = std::move(policy);
+        bridge->set_security_policy(*security_policy_);
+    }
 }
 
 void DemoServer::start_config_watcher() {
