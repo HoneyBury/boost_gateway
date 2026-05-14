@@ -1,8 +1,10 @@
 // v2.3.0 G2: In-memory sorted-set leaderboard backend service.
+// v3.2.0: Optional Redis backend via RedisLeaderboard.
 // Supports score submission, Top-K queries, and rank lookup.
 
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/service/backend_server.h"
+#include "v3/persistence/redis_leaderboard.h"
 
 #include <nlohmann/json.hpp>
 
@@ -123,10 +125,16 @@ public:
     void stop() { if (server_) server_->stop(); }
     std::uint16_t local_port() const { return server_ ? server_->local_port() : port_; }
 
+    void set_redis_leaderboard(
+        std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
+        redis_lb_ = std::move(redis_lb);
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
     SortedSet leaderboard_;
+    std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb_;
 
     v2::service::BackendEnvelope make_response(nlohmann::json body) {
         v2::service::BackendEnvelope resp;
@@ -154,11 +162,18 @@ private:
 
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
-        leaderboard_.submit(user_id, display_name, score);
-        auto entry = leaderboard_.rank_of(user_id);
+        std::optional<std::int64_t> new_rank;
+
+        if (redis_lb_ && redis_lb_->available()) {
+            new_rank = redis_lb_->submit(user_id, display_name, score);
+        } else {
+            leaderboard_.submit(user_id, display_name, score);
+            auto entry = leaderboard_.rank_of(user_id);
+            if (entry.has_value()) new_rank = entry->rank;
+        }
 
         nlohmann::json body{{"status", "ok"}, {"user_id", user_id}};
-        if (entry.has_value()) body["rank"] = entry->rank;
+        if (new_rank.has_value()) body["rank"] = *new_rank;
         return make_response(body);
     }
 
@@ -168,15 +183,28 @@ private:
         std::size_t k = doc.value("k", 10);
         if (k > 100) k = 100;  // cap
 
-        auto entries = leaderboard_.top_k(k);
         nlohmann::json arr = nlohmann::json::array();
-        for (const auto& e : entries) {
-            arr.push_back({
-                {"rank", e.rank},
-                {"user_id", e.user_id},
-                {"display_name", e.display_name},
-                {"score", e.score},
-            });
+
+        if (redis_lb_ && redis_lb_->available()) {
+            auto entries = redis_lb_->top_k(k);
+            for (const auto& e : entries) {
+                arr.push_back({
+                    {"rank", e.rank},
+                    {"user_id", e.user_id},
+                    {"display_name", e.display_name},
+                    {"score", e.score},
+                });
+            }
+        } else {
+            auto entries = leaderboard_.top_k(k);
+            for (const auto& e : entries) {
+                arr.push_back({
+                    {"rank", e.rank},
+                    {"user_id", e.user_id},
+                    {"display_name", e.display_name},
+                    {"score", e.score},
+                });
+            }
         }
         return make_response({{"status", "ok"}, {"entries", std::move(arr)}});
     }
@@ -187,7 +215,22 @@ private:
         std::string user_id = doc.value("user_id", "");
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
-        auto entry = leaderboard_.rank_of(user_id);
+        std::optional<v3::persistence::LeaderboardEntry> entry;
+
+        if (redis_lb_ && redis_lb_->available()) {
+            entry = redis_lb_->rank_of(user_id);
+        } else {
+            auto mem_entry = leaderboard_.rank_of(user_id);
+            if (mem_entry.has_value()) {
+                entry = v3::persistence::LeaderboardEntry{
+                    .user_id = mem_entry->user_id,
+                    .display_name = mem_entry->display_name,
+                    .score = mem_entry->score,
+                    .rank = mem_entry->rank,
+                };
+            }
+        }
+
         if (!entry.has_value()) {
             return make_error(-1, "user_not_found");
         }
@@ -206,5 +249,10 @@ LeaderboardService::~LeaderboardService() = default;
 void LeaderboardService::start() { impl_->start(); }
 void LeaderboardService::stop() { impl_->stop(); }
 std::uint16_t LeaderboardService::local_port() const { return impl_->local_port(); }
+
+void LeaderboardService::set_redis_leaderboard(
+    std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
+    impl_->set_redis_leaderboard(std::move(redis_lb));
+}
 
 }  // namespace v2::leaderboard

@@ -1,11 +1,16 @@
 #pragma once
-// v2.3.0 G2: In-memory sorted-set leaderboard service
+// v2.3.0 G2: In-memory sorted-set leaderboard service.
+// v3.2.0: Optional Redis backend via set_redis_leaderboard().
 
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
 #include <utility>
+
+namespace v3::persistence {
+class RedisLeaderboard;
+}  // namespace v3::persistence
 
 namespace v2::leaderboard {
 
@@ -24,6 +29,10 @@ public:
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
+
+    // v3.2.0: Set Redis-backed leaderboard. Falls back to in-memory if unset.
+    void set_redis_leaderboard(
+        std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb);
 
 private:
     class Impl;

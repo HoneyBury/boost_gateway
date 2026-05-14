@@ -7,6 +7,7 @@
 #include <shared_mutex>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 namespace v2::data {
 
@@ -27,24 +28,28 @@ public:
         return std::make_shared<const V>(it->second->second);
     }
 
-    void put(const K& key, const V& value) {
+    /// Put a key-value pair. Returns the evicted entry if any.
+    std::optional<std::pair<K, V>> put(const K& key, const V& value) {
         std::unique_lock lock(mutex_);
+        std::optional<std::pair<K, V>> evicted;
         auto it = map_.find(key);
         if (it != map_.end()) {
             // Key exists: update value and move to front
             it->second->second = value;
             list_.splice(list_.begin(), list_, it->second);
-            return;
+            return evicted;
         }
         // Evict if at capacity
         if (map_.size() >= max_size_) {
             auto lru = list_.back();
-            map_.erase(lru.first);
+            evicted = std::move(lru);
+            map_.erase(evicted->first);
             list_.pop_back();
         }
         // Insert at front
         list_.emplace_front(key, value);
         map_[key] = list_.begin();
+        return evicted;
     }
 
     void remove(const K& key) {
@@ -81,6 +86,28 @@ public:
         // Move to front on access (LRU ordering)
         list_.splice(list_.begin(), list_, it->second);
         return true;
+    }
+
+    /// Iterate over all entries (read-only).
+    template <typename F>
+    void for_each(F&& func) const {
+        std::shared_lock lock(mutex_);
+        for (const auto& [key, value] : list_) {
+            func(key, value);
+        }
+    }
+
+    /// Drain all entries into a vector and clear the cache.
+    [[nodiscard]] std::vector<std::pair<K, V>> drain() {
+        std::unique_lock lock(mutex_);
+        std::vector<std::pair<K, V>> result;
+        result.reserve(list_.size());
+        for (auto& [key, value] : list_) {
+            result.emplace_back(std::move(key), std::move(value));
+        }
+        list_.clear();
+        map_.clear();
+        return result;
     }
 
 private:

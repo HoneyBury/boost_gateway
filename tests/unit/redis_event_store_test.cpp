@@ -135,6 +135,101 @@ TEST(RedisClientTest, SortedSetOperations) {
     client.del("test:zset");
 }
 
+TEST(RedisClientTest, HashSetGet) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisClient::Config cfg;
+    cfg.timeout = std::chrono::milliseconds(500);
+    RedisClient client(cfg);
+    ASSERT_TRUE(client.reconnect());
+
+    client.del("test:hash");
+    EXPECT_TRUE(client.hset("test:hash", "name", "alice"));
+    auto val = client.hget("test:hash", "name");
+    ASSERT_TRUE(val.has_value());
+    EXPECT_EQ(*val, "alice");
+    client.del("test:hash");
+}
+
+TEST(RedisClientTest, HashGetNonexistent) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisClient::Config cfg;
+    cfg.timeout = std::chrono::milliseconds(500);
+    RedisClient client(cfg);
+    ASSERT_TRUE(client.reconnect());
+
+    client.del("test:hash2");
+    EXPECT_EQ(client.hget("test:hash2", "no_such_field"), std::nullopt);
+}
+
+TEST(RedisClientTest, ZRevRangeWithScores) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisClient::Config cfg;
+    cfg.timeout = std::chrono::milliseconds(500);
+    RedisClient client(cfg);
+    ASSERT_TRUE(client.reconnect());
+
+    client.del("test:zrev");
+    client.zadd("test:zrev", 10.0, "alice");
+    client.zadd("test:zrev", 30.0, "bob");
+    client.zadd("test:zrev", 20.0, "carol");
+
+    auto scores = client.zrevrange_with_scores("test:zrev", 0, -1);
+    ASSERT_EQ(scores.size(), 3U);
+    EXPECT_EQ(scores[0].first, "bob");
+    EXPECT_DOUBLE_EQ(scores[0].second, 30.0);
+    EXPECT_EQ(scores[1].first, "carol");
+    EXPECT_DOUBLE_EQ(scores[1].second, 20.0);
+    EXPECT_EQ(scores[2].first, "alice");
+    EXPECT_DOUBLE_EQ(scores[2].second, 10.0);
+    client.del("test:zrev");
+}
+
+TEST(RedisClientTest, ZRevRank) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisClient::Config cfg;
+    cfg.timeout = std::chrono::milliseconds(500);
+    RedisClient client(cfg);
+    ASSERT_TRUE(client.reconnect());
+
+    client.del("test:zrank");
+    client.zadd("test:zrank", 10.0, "alice");
+    client.zadd("test:zrank", 100.0, "bob");
+    client.zadd("test:zrank", 50.0, "carol");
+
+    auto r0 = client.zrevrank("test:zrank", "bob");
+    ASSERT_TRUE(r0.has_value());
+    EXPECT_EQ(*r0, 0);
+
+    auto r1 = client.zrevrank("test:zrank", "carol");
+    ASSERT_TRUE(r1.has_value());
+    EXPECT_EQ(*r1, 1);
+
+    auto r2 = client.zrevrank("test:zrank", "alice");
+    ASSERT_TRUE(r2.has_value());
+    EXPECT_EQ(*r2, 2);
+
+    EXPECT_EQ(client.zrevrank("test:zrank", "nobody"), std::nullopt);
+    client.del("test:zrank");
+}
+
+TEST(RedisClientTest, ZScore) {
+    if (!redis_available) GTEST_SKIP() << "Redis not running";
+    RedisClient::Config cfg;
+    cfg.timeout = std::chrono::milliseconds(500);
+    RedisClient client(cfg);
+    ASSERT_TRUE(client.reconnect());
+
+    client.del("test:zsc");
+    client.zadd("test:zsc", 42.5, "player1");
+
+    auto s = client.zscore("test:zsc", "player1");
+    ASSERT_TRUE(s.has_value());
+    EXPECT_DOUBLE_EQ(*s, 42.5);
+
+    EXPECT_EQ(client.zscore("test:zsc", "nobody"), std::nullopt);
+    client.del("test:zsc");
+}
+
 TEST(RedisClientTest, MoveSemantics) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisClient::Config cfg;

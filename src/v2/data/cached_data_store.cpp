@@ -23,8 +23,11 @@ bool CachedBattleDataStore::persist(const v2::gateway::Runtime::BattleArchive& a
 
 bool CachedBattleDataStore::save_replay(const std::string& battle_id,
                                         std::string_view replay_json) {
-    replay_cache_.put(battle_id, std::string(replay_json));
-    return write_behind_->save_replay(battle_id, replay_json);
+    auto evicted = replay_cache_.put(battle_id, std::string(replay_json));
+    if (evicted.has_value()) {
+        write_behind_->save_replay(evicted->first, evicted->second);
+    }
+    return true;
 }
 
 std::optional<std::string> CachedBattleDataStore::load_replay(
@@ -44,8 +47,11 @@ std::optional<std::string> CachedBattleDataStore::load_replay(
 
 bool CachedBattleDataStore::save_result(const std::string& battle_id,
                                         std::string_view result_json) {
-    result_cache_.put(battle_id, std::string(result_json));
-    return write_behind_->save_result(battle_id, result_json);
+    auto evicted = result_cache_.put(battle_id, std::string(result_json));
+    if (evicted.has_value()) {
+        write_behind_->save_result(evicted->first, evicted->second);
+    }
+    return true;
 }
 
 std::optional<std::string> CachedBattleDataStore::load_result(
@@ -65,8 +71,11 @@ std::optional<std::string> CachedBattleDataStore::load_result(
 
 bool CachedBattleDataStore::save_snapshot(const std::string& battle_id,
                                           std::string_view snapshot_json) {
-    snapshot_cache_.put(battle_id, std::string(snapshot_json));
-    return write_behind_->save_snapshot(battle_id, snapshot_json);
+    auto evicted = snapshot_cache_.put(battle_id, std::string(snapshot_json));
+    if (evicted.has_value()) {
+        write_behind_->save_snapshot(evicted->first, evicted->second);
+    }
+    return true;
 }
 
 std::optional<std::string> CachedBattleDataStore::load_snapshot(
@@ -83,6 +92,15 @@ std::optional<std::string> CachedBattleDataStore::load_snapshot(
 }
 
 void CachedBattleDataStore::flush() {
+    replay_cache_.for_each([this](const std::string& id, const std::string& json) {
+        write_behind_->save_replay(id, json);
+    });
+    result_cache_.for_each([this](const std::string& id, const std::string& json) {
+        write_behind_->save_result(id, json);
+    });
+    snapshot_cache_.for_each([this](const std::string& id, const std::string& json) {
+        write_behind_->save_snapshot(id, json);
+    });
     write_behind_->flush();
 }
 

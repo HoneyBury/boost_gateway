@@ -143,6 +143,35 @@ public:
         return val;
     }
 
+    bool hset(const std::string& key, const std::string& field,
+              const std::string& value) {
+        if (!ensure_connected()) return false;
+        auto* reply = cmd("HSET %s %b %b", key.c_str(),
+                          field.data(), field.size(),
+                          value.data(), value.size());
+        bool ok = reply && reply->type == REDIS_REPLY_INTEGER;
+        free_if(reply);
+        return ok;
+    }
+
+    std::optional<std::string> hget(const std::string& key,
+                                    const std::string& field) {
+        if (!ensure_connected()) return std::nullopt;
+        auto* reply = cmd("HGET %s %b", key.c_str(),
+                          field.data(), field.size());
+        if (!reply || reply->type == REDIS_REPLY_NIL) {
+            free_if(reply);
+            return std::nullopt;
+        }
+        if (reply->type != REDIS_REPLY_STRING) {
+            freeReplyObject(reply);
+            return std::nullopt;
+        }
+        std::string result(reply->str, reply->len);
+        freeReplyObject(reply);
+        return result;
+    }
+
     bool zadd(const std::string& key, double score, const std::string& member) {
         if (!ensure_connected()) return false;
         auto* reply = cmd("ZADD %s %f %b", key.c_str(),
@@ -186,6 +215,57 @@ public:
         std::int64_t val = reply->integer;
         freeReplyObject(reply);
         return val;
+    }
+
+    std::vector<std::pair<std::string, double>>
+    zrevrange_with_scores(const std::string& key,
+                          std::int64_t start, std::int64_t stop) {
+        std::vector<std::pair<std::string, double>> result;
+        if (!ensure_connected()) return result;
+        auto* reply = cmd("ZREVRANGE %s %lld %lld WITHSCORES",
+                          key.c_str(),
+                          static_cast<long long>(start),
+                          static_cast<long long>(stop));
+        if (!reply || reply->type != REDIS_REPLY_ARRAY) {
+            free_if(reply);
+            return result;
+        }
+        for (std::size_t i = 0; i + 1 < reply->elements; i += 2) {
+            std::string member(reply->element[i]->str,
+                               reply->element[i]->len);
+            double score = std::strtod(reply->element[i + 1]->str, nullptr);
+            result.emplace_back(std::move(member), score);
+        }
+        freeReplyObject(reply);
+        return result;
+    }
+
+    std::optional<std::int64_t> zrevrank(const std::string& key,
+                                         const std::string& member) {
+        if (!ensure_connected()) return std::nullopt;
+        auto* reply = cmd("ZREVRANK %s %b", key.c_str(),
+                          member.data(), member.size());
+        if (!reply || reply->type != REDIS_REPLY_INTEGER) {
+            free_if(reply);
+            return std::nullopt;
+        }
+        std::int64_t rank = reply->integer;
+        freeReplyObject(reply);
+        return rank;
+    }
+
+    std::optional<double> zscore(const std::string& key,
+                                 const std::string& member) {
+        if (!ensure_connected()) return std::nullopt;
+        auto* reply = cmd("ZSCORE %s %b", key.c_str(),
+                          member.data(), member.size());
+        if (!reply || reply->type == REDIS_REPLY_STRING) {
+            free_if(reply);
+            return std::nullopt;
+        }
+        double score = std::strtod(reply->str, nullptr);
+        freeReplyObject(reply);
+        return score;
     }
 
 private:
@@ -263,6 +343,32 @@ RedisClient::zrange_with_scores(const std::string& key,
 
 std::int64_t RedisClient::zcard(const std::string& key) {
     return impl_->zcard(key);
+}
+
+bool RedisClient::hset(const std::string& key, const std::string& field,
+                        const std::string& value) {
+    return impl_->hset(key, field, value);
+}
+
+std::optional<std::string> RedisClient::hget(const std::string& key,
+                                              const std::string& field) {
+    return impl_->hget(key, field);
+}
+
+std::vector<std::pair<std::string, double>>
+RedisClient::zrevrange_with_scores(const std::string& key,
+                                   std::int64_t start, std::int64_t stop) {
+    return impl_->zrevrange_with_scores(key, start, stop);
+}
+
+std::optional<std::int64_t> RedisClient::zrevrank(const std::string& key,
+                                                   const std::string& member) {
+    return impl_->zrevrank(key, member);
+}
+
+std::optional<double> RedisClient::zscore(const std::string& key,
+                                           const std::string& member) {
+    return impl_->zscore(key, member);
 }
 
 }  // namespace v3::persistence

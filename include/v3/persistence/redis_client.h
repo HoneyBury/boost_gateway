@@ -44,11 +44,24 @@ public:
                                      std::int64_t start, std::int64_t stop);
     std::int64_t llen(const std::string& key);
 
+    // Hash operations
+    bool hset(const std::string& key, const std::string& field,
+              const std::string& value);
+    std::optional<std::string> hget(const std::string& key,
+                                    const std::string& field);
+
     // Sorted set operations
     bool zadd(const std::string& key, double score, const std::string& member);
     std::vector<std::pair<std::string, double>>
         zrange_with_scores(const std::string& key,
                            std::int64_t start, std::int64_t stop);
+    std::vector<std::pair<std::string, double>>
+        zrevrange_with_scores(const std::string& key,
+                              std::int64_t start, std::int64_t stop);
+    std::optional<std::int64_t> zrevrank(const std::string& key,
+                                         const std::string& member);
+    std::optional<double> zscore(const std::string& key,
+                                 const std::string& member);
     std::int64_t zcard(const std::string& key);
 
 private:
