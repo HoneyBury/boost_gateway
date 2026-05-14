@@ -185,61 +185,64 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         const auto svc_name = service_name_for(service);
 
         // Resolve the target host:port — optionally via consistent hashing.
-        v3::cluster::NodeId chosen_node;
+        std::optional<v3::cluster::NodeId> chosen_node;
         if (!shard_key.empty() && shard_router_) {
             auto all_healthy = cluster_router_->discover_all(svc_name);
-            if (all_healthy.empty()) return nullptr;
+            if (!all_healthy.empty()) {
+                std::string node_name;
+                if (service == v2::service::ServiceId::kRoom) {
+                    node_name = shard_router_->route_room(shard_key);
+                } else if (service == v2::service::ServiceId::kBattle) {
+                    node_name = shard_router_->route_battle(shard_key);
+                } else {
+                    node_name = hash_to_node(all_healthy, shard_key, 150);
+                }
 
-            std::string node_name;
-            if (service == v2::service::ServiceId::kRoom) {
-                node_name = shard_router_->route_room(shard_key);
-            } else if (service == v2::service::ServiceId::kBattle) {
-                node_name = shard_router_->route_battle(shard_key);
-            } else {
-                node_name = hash_to_node(all_healthy, shard_key, 150);
+                const auto* chosen = find_by_node(all_healthy, node_name);
+                if (!chosen) {
+                    node_name = hash_to_node(all_healthy, shard_key, 150);
+                    chosen = find_by_node(all_healthy, node_name);
+                }
+                if (!chosen) chosen = &all_healthy[0];
+                chosen_node = chosen->node;
             }
-
-            const auto* chosen = find_by_node(all_healthy, node_name);
-            if (!chosen) {
-                node_name = hash_to_node(all_healthy, shard_key, 150);
-                chosen = find_by_node(all_healthy, node_name);
-            }
-            if (!chosen) chosen = &all_healthy[0];
-            chosen_node = chosen->node;
         } else {
             auto discovered = cluster_router_->discover(svc_name);
-            if (!discovered) return nullptr;
-            chosen_node = discovered->node;
+            if (discovered) chosen_node = discovered->node;
         }
 
-        std::scoped_lock lock(mutex_);
-        auto& slot = slot_for(service);
-        if (slot.connection && slot.connection->is_connected()) {
+        // Only use cluster-discovered address when the router had an entry;
+        // otherwise fall through to the static BackendConfig below.
+        if (chosen_node.has_value()) {
+            std::scoped_lock lock(mutex_);
+            auto& slot = slot_for(service);
+            if (slot.connection && slot.connection->is_connected()) {
+                if (registry_) {
+                    registry_->heartbeat(service,
+                        chosen_node->host, chosen_node->port);
+                }
+                return slot.connection.get();
+            }
+
+            BackendConfig cfg{chosen_node->host, chosen_node->port};
+            slot.config = cfg;
+
+            auto conn = std::make_unique<v2::service::BackendConnection>(
+                make_options(cfg, security_policy_, service));
+            if (!conn->connect()) {
+                cluster_router_->mark_unhealthy(svc_name, *chosen_node);
+                if (registry_) {
+                    registry_->mark_unhealthy(service, cfg.host, cfg.port);
+                }
+                return nullptr;
+            }
+
+            slot.connection = std::move(conn);
             if (registry_) {
-                registry_->heartbeat(service,
-                    chosen_node.host, chosen_node.port);
+                registry_->heartbeat(service, cfg.host, cfg.port);
             }
             return slot.connection.get();
         }
-
-        BackendConfig cfg{chosen_node.host, chosen_node.port};
-        slot.config = cfg;
-
-        auto conn = std::make_unique<v2::service::BackendConnection>(
-            make_options(cfg, security_policy_, service));
-        if (!conn->connect()) {
-            cluster_router_->mark_unhealthy(svc_name, chosen_node);
-            if (registry_) {
-                registry_->mark_unhealthy(service, cfg.host, cfg.port);
-            }
-            return nullptr;
-        }
-
-        slot.connection = std::move(conn);
-        if (registry_) {
-            registry_->heartbeat(service, cfg.host, cfg.port);
-        }
-        return slot.connection.get();
     }
 
     // ── Fallback: static BackendConfig path ──────────────────────────

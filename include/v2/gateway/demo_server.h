@@ -4,6 +4,7 @@
 #include "net/http_manager.h"
 #include "v2/config/config_watcher.h"
 #include "v2/config/feature_flags.h"
+#include "v2/data/cached_data_store.h"
 #include "v2/io/io_engine.h"
 #include "v2/diagnostics/health_check.h"
 #include "v2/gateway/backend_metrics.h"
@@ -98,7 +99,7 @@ private:
     v2::runtime::ActorSystem actor_system_;
     SessionAdapter adapter_;
     Runtime runtime_;
-    std::unique_ptr<JsonFileBattleDataStore> archive_store_;
+    std::unique_ptr<v2::data::CachedBattleDataStore> archive_store_;
     std::shared_ptr<BackendMetrics> backend_metrics_;
     std::shared_ptr<v2::service::ServiceRegistry> service_registry_;
     v2::diagnostics::HealthCheck health_check_;

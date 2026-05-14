@@ -2,11 +2,14 @@
 
 #include "app/logging.h"
 #include "net/protocol.h"
+#include "v3/cluster/cluster_router.h"
+#include "v3/tracing/otel_exporter.h"
 
 #include <boost/asio.hpp>
 
 #include <nlohmann/json.hpp>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <utility>
@@ -62,10 +65,30 @@ DemoServer::DemoServer(std::uint16_t port,
             backend_metrics_);
         bridge->set_service_registry(service_registry_);
         runtime_.set_service_bridge(std::move(bridge));
+
+        // P1a: Wire ClusterRouter for dynamic service discovery.
+        // Instances are registered in load_gateway_config() as backends
+        // are loaded, so the router is seeded with real host:port pairs.
+        runtime_.service_bridge()->set_cluster_router(
+            std::make_shared<v3::cluster::ClusterRouter>());
+
+        // P1b: Wire OtlpExporter for distributed tracing (env-opt-in)
+        const char* otel_endpoint = std::getenv("OTEL_EXPORT_ENDPOINT");
+        if (otel_endpoint && otel_endpoint[0] != '\0') {
+            v3::tracing::OtlpExporter::Config otel_cfg;
+            otel_cfg.service_name = "boost-gateway";
+            otel_cfg.export_endpoint = otel_endpoint;
+            runtime_.service_bridge()->set_otel_exporter(
+                std::make_shared<v3::tracing::OtlpExporter>(std::move(otel_cfg)));
+            LOG_INFO("DemoServer: OTLP export enabled → {}", otel_endpoint);
+        }
+
         load_gateway_config();
     }
 
-    archive_store_ = std::make_unique<JsonFileBattleDataStore>("v2_archive");
+    auto archive_delegate = std::make_shared<JsonFileBattleDataStore>("v2_archive");
+    archive_store_ = std::make_unique<v2::data::CachedBattleDataStore>(
+        std::move(archive_delegate), 1000);
     runtime_.set_archive_sink(archive_store_.get());
 }
 
@@ -477,8 +500,23 @@ void DemoServer::load_gateway_config() {
         GatewayServiceBridge::BackendConfig cfg;
         cfg.host = entry.value("host", "127.0.0.1");
         cfg.port = static_cast<std::uint16_t>(entry.value("port", 0));
+        auto cfg_host = cfg.host;
+        auto cfg_port = cfg.port;
         bridge->update_backend_config(service_id, std::move(cfg));
-        LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg.host, cfg.port);
+
+        // P1a: Register instance in cluster router for service discovery
+        if (auto* cr = bridge->get_cluster_router().get()) {
+            v3::cluster::ServiceInstance inst;
+            inst.node.host = cfg_host;
+            inst.node.port = cfg_port;
+            inst.service_name = key;
+            inst.state = v3::cluster::ServiceState::kHealthy;
+            inst.registered_at = std::chrono::steady_clock::now();
+            inst.last_heartbeat = inst.registered_at;
+            cr->register_service(std::move(inst));
+        }
+
+        LOG_INFO("DemoServer: reloaded {} backend -> {}:{}", key, cfg_host, cfg_port);
     }
 
     // v3.1.0: Feature flags
