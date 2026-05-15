@@ -39,7 +39,18 @@ type BoostGatewayClusterStatus struct {
     Phase         string             `json:"phase,omitempty"`
     ReadyReplicas int32              `json:"readyReplicas,omitempty"`
     DesiredReplicas int32            `json:"desiredReplicas,omitempty"`
+    Components    []ComponentStatus  `json:"components,omitempty"`
     Conditions    []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type ComponentStatus struct {
+    Name             string `json:"name,omitempty"`
+    Kind             string `json:"kind,omitempty"`
+    DesiredReplicas  int32  `json:"desiredReplicas,omitempty"`
+    ReadyReplicas    int32  `json:"readyReplicas,omitempty"`
+    UpdatedReplicas  int32  `json:"updatedReplicas,omitempty"`
+    AvailableReplicas int32 `json:"availableReplicas,omitempty"`
+    ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 }
 
 type BoostGatewayCluster struct {
@@ -85,6 +96,10 @@ func (in *BoostGatewayClusterSpec) DeepCopyInto(out *BoostGatewayClusterSpec) {
 
 func (in *BoostGatewayClusterStatus) DeepCopyInto(out *BoostGatewayClusterStatus) {
     *out = *in
+    if in.Components != nil {
+        out.Components = make([]ComponentStatus, len(in.Components))
+        copy(out.Components, in.Components)
+    }
     if in.Conditions != nil {
         out.Conditions = make([]metav1.Condition, len(in.Conditions))
         for i := range in.Conditions {

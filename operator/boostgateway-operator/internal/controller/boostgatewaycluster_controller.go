@@ -35,6 +35,13 @@ type managedComponent struct {
     Spec gatewayv1alpha1.ComponentSpec
 }
 
+type componentRolloutStatus struct {
+    status gatewayv1alpha1.ComponentStatus
+    ready  bool
+    degraded bool
+    degradedReason string
+}
+
 func (m managedComponent) usesStatefulSet() bool {
     return m.Name == "match" || m.Name == "leaderboard"
 }
@@ -58,6 +65,9 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
 
     var totalReady int32
     var totalDesired int32
+    componentStatuses := make([]gatewayv1alpha1.ComponentStatus, 0, len(components))
+    allRolloutsReady := true
+    degradedReasons := make([]string, 0)
     if err := r.reconcileClusterTLSSecret(ctx, &cluster); err != nil {
         return ctrl.Result{}, err
     }
@@ -95,7 +105,15 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
                 Namespace: cluster.Namespace,
                 Name:      componentResourceName(cluster.Name, component.Name),
             }, &statefulSet); err == nil {
-                totalReady += statefulSet.Status.ReadyReplicas
+                rollout := summarizeStatefulSet(component.Name, &statefulSet)
+                componentStatuses = append(componentStatuses, rollout.status)
+                totalReady += rollout.status.ReadyReplicas
+                if !rollout.ready {
+                    allRolloutsReady = false
+                }
+                if rollout.degraded {
+                    degradedReasons = append(degradedReasons, rollout.degradedReason)
+                }
             } else if !apierrors.IsNotFound(err) {
                 return ctrl.Result{}, err
             }
@@ -105,7 +123,15 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
                 Namespace: cluster.Namespace,
                 Name:      componentResourceName(cluster.Name, component.Name),
             }, &deployment); err == nil {
-                totalReady += deployment.Status.ReadyReplicas
+                rollout := summarizeDeployment(component.Name, &deployment)
+                componentStatuses = append(componentStatuses, rollout.status)
+                totalReady += rollout.status.ReadyReplicas
+                if !rollout.ready {
+                    allRolloutsReady = false
+                }
+                if rollout.degraded {
+                    degradedReasons = append(degradedReasons, rollout.degradedReason)
+                }
             } else if !apierrors.IsNotFound(err) {
                 return ctrl.Result{}, err
             }
@@ -113,26 +139,59 @@ func (r *BoostGatewayClusterReconciler) Reconcile(ctx context.Context, req ctrl.
     }
 
     readyStatus := metav1.ConditionFalse
+    progressingStatus := metav1.ConditionTrue
+    degradedStatus := metav1.ConditionFalse
     phase := "Progressing"
     readyReason := "WaitingForReplicas"
     readyMessage := fmt.Sprintf("Ready replicas %d/%d", totalReady, totalDesired)
-    if totalDesired == 0 || totalReady >= totalDesired {
+    progressingReason := "RolloutInProgress"
+    progressingMessage := fmt.Sprintf("Rollout progressing: ready replicas %d/%d.", totalReady, totalDesired)
+    degradedReason := "NoIssuesDetected"
+    degradedMessage := "No degraded components detected."
+
+    if totalDesired == 0 || (totalReady >= totalDesired && allRolloutsReady) {
         readyStatus = metav1.ConditionTrue
+        progressingStatus = metav1.ConditionFalse
         phase = "Running"
         readyReason = "ComponentsReady"
         readyMessage = "All enabled components are ready."
+        progressingReason = "RolloutComplete"
+        progressingMessage = "No rollout in progress."
+    } else if len(degradedReasons) > 0 {
+        degradedStatus = metav1.ConditionTrue
+        degradedReason = "RolloutHealthIssue"
+        degradedMessage = strings.Join(degradedReasons, "; ")
+    } else if totalReady == 0 && totalDesired > 0 {
+        degradedStatus = metav1.ConditionTrue
+        degradedReason = "NoReadyReplicas"
+        degradedMessage = "No enabled component currently reports ready replicas."
     }
 
     desiredStatus := gatewayv1alpha1.BoostGatewayClusterStatus{
         Phase:           phase,
         ReadyReplicas:   totalReady,
         DesiredReplicas: totalDesired,
+        Components:      componentStatuses,
         Conditions: []metav1.Condition{
             {
                 Type:               "Ready",
                 Status:             readyStatus,
                 Reason:             readyReason,
                 Message:            readyMessage,
+                LastTransitionTime: metav1.Now(),
+            },
+            {
+                Type:               "Progressing",
+                Status:             progressingStatus,
+                Reason:             progressingReason,
+                Message:            progressingMessage,
+                LastTransitionTime: metav1.Now(),
+            },
+            {
+                Type:               "Degraded",
+                Status:             degradedStatus,
+                Reason:             degradedReason,
+                Message:            degradedMessage,
                 LastTransitionTime: metav1.Now(),
             },
             {
@@ -683,5 +742,71 @@ func raftEnv(cluster *gatewayv1alpha1.BoostGatewayCluster, component managedComp
         {Name: "RAFT_ELECTION_TIMEOUT_MIN_MS", Value: "150"},
         {Name: "RAFT_ELECTION_TIMEOUT_MAX_MS", Value: "300"},
         {Name: "RAFT_HEARTBEAT_INTERVAL_MS", Value: "50"},
+    }
+}
+
+func summarizeDeployment(name string, deployment *appsv1.Deployment) componentRolloutStatus {
+    desired := int32(0)
+    if deployment.Spec.Replicas != nil {
+        desired = *deployment.Spec.Replicas
+    }
+    status := gatewayv1alpha1.ComponentStatus{
+        Name:               name,
+        Kind:               "Deployment",
+        DesiredReplicas:    desired,
+        ReadyReplicas:      deployment.Status.ReadyReplicas,
+        UpdatedReplicas:    deployment.Status.UpdatedReplicas,
+        AvailableReplicas:  deployment.Status.AvailableReplicas,
+        ObservedGeneration: deployment.Status.ObservedGeneration,
+    }
+    ready := deployment.Status.ObservedGeneration >= deployment.Generation &&
+        deployment.Status.ReadyReplicas >= desired &&
+        deployment.Status.UpdatedReplicas >= desired &&
+        deployment.Status.AvailableReplicas >= desired
+    degraded := false
+    degradedReason := ""
+    if deployment.Status.ObservedGeneration < deployment.Generation {
+        degraded = true
+        degradedReason = fmt.Sprintf("%s deployment has stale observedGeneration", name)
+    } else if deployment.Status.UpdatedReplicas < desired {
+        degraded = true
+        degradedReason = fmt.Sprintf("%s deployment has insufficient updated replicas", name)
+    } else if deployment.Status.AvailableReplicas < deployment.Status.ReadyReplicas {
+        degraded = true
+        degradedReason = fmt.Sprintf("%s deployment has fewer available than ready replicas", name)
+    }
+    return componentRolloutStatus{
+        status: status, ready: ready, degraded: degraded, degradedReason: degradedReason,
+    }
+}
+
+func summarizeStatefulSet(name string, statefulSet *appsv1.StatefulSet) componentRolloutStatus {
+    desired := int32(0)
+    if statefulSet.Spec.Replicas != nil {
+        desired = *statefulSet.Spec.Replicas
+    }
+    status := gatewayv1alpha1.ComponentStatus{
+        Name:               name,
+        Kind:               "StatefulSet",
+        DesiredReplicas:    desired,
+        ReadyReplicas:      statefulSet.Status.ReadyReplicas,
+        UpdatedReplicas:    statefulSet.Status.UpdatedReplicas,
+        AvailableReplicas:  statefulSet.Status.AvailableReplicas,
+        ObservedGeneration: statefulSet.Status.ObservedGeneration,
+    }
+    ready := statefulSet.Status.ObservedGeneration >= statefulSet.Generation &&
+        statefulSet.Status.ReadyReplicas >= desired &&
+        statefulSet.Status.UpdatedReplicas >= desired
+    degraded := false
+    degradedReason := ""
+    if statefulSet.Status.ObservedGeneration < statefulSet.Generation {
+        degraded = true
+        degradedReason = fmt.Sprintf("%s statefulset has stale observedGeneration", name)
+    } else if statefulSet.Status.UpdatedReplicas < desired {
+        degraded = true
+        degradedReason = fmt.Sprintf("%s statefulset has insufficient updated replicas", name)
+    }
+    return componentRolloutStatus{
+        status: status, ready: ready, degraded: degraded, degradedReason: degradedReason,
     }
 }

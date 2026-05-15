@@ -476,7 +476,7 @@ private:
 
     v2::service::BackendEnvelope handle_match_join(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -509,14 +509,16 @@ private:
 
         auto response_body = nlohmann::json{{"status", "ok"}, {"queued", true}, {"mode", mode_str}};
         v2::service::BackendEnvelope resp = make_ok({{"queued", true}, {"mode", mode_str}});
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "match", "match_join_response", response_body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kMatchJoinResponse,
+            response_body);
         return resp;
     }
 
     v2::service::BackendEnvelope handle_match_leave(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -539,14 +541,16 @@ private:
         }
         auto response_body = nlohmann::json{{"status", "ok"}, {"left", true}};
         v2::service::BackendEnvelope resp = make_ok({{"left", true}});
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "match", "match_leave_response", response_body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kMatchLeaveResponse,
+            response_body);
         return resp;
     }
 
     v2::service::BackendEnvelope handle_match_status(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -569,8 +573,10 @@ private:
                         {"avg_mmr", result.avg_mmr},
                     };
                     auto resp = make_ok(body);
-                    resp.payload = v3::proto::maybe_wrap_response(
-                        decoded_envelope, "match", "match_status_response", body);
+                    resp.payload = v3::proto::maybe_wrap_typed_response(
+                        decoded_envelope,
+                        v3::proto::EnvelopeMessageKind::kMatchStatusResponse,
+                        body);
                     return resp;
                 }
             }
@@ -583,8 +589,10 @@ private:
             {"mode", mode_str},
         };
         auto resp = make_ok(body);
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "match", "match_status_response", body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kMatchStatusResponse,
+            body);
         return resp;
     }
 

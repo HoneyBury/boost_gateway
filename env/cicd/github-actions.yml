@@ -171,6 +171,12 @@ jobs:
         shell: bash
         run: bash scripts/operator_kind_smoke.sh
 
+      - name: Assert operator status conditions
+        shell: bash
+        run: |
+          kubectl -n boost-gateway get boostgatewaycluster demo-cluster -o jsonpath='{.status.conditions}' | tee /tmp/operator-conditions.json
+          kubectl -n boost-gateway get boostgatewaycluster demo-cluster -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' | grep -x True
+
   # ============================================================================
   # Docker Build & Push
   # ============================================================================

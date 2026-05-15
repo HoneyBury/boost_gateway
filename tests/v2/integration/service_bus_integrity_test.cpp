@@ -7,8 +7,10 @@
 #include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
 #include "v2/leaderboard/leaderboard_service.h"
+#include "v2/battle/battle_backend_service.h"
 #include "v2/login/login_backend_service.h"
 #include "v2/match/matchmaking_service.h"
+#include "v2/room/room_backend_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
@@ -537,11 +539,13 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughMatchBackend) {
     meta.correlation_id = 100;
     meta.source_service = "gateway";
     meta.target_service = "match";
-    auto encoded = v3::proto::encode_envelope(
+    auto encoded = v3::proto::encode_match_join_request(
         meta,
-        "match",
-        "match_join",
-        {{"user_id", "alice"}, {"mmr", 1000}, {"mode", "1v1"}});
+        v3::proto::MatchJoinRequestPayload{
+            .user_id = "alice",
+            .mmr = 1000,
+            .mode = "1v1",
+        });
 
     auto req = payload_envelope(encoded);
     req.message_type = "match_join";
@@ -549,8 +553,8 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughMatchBackend) {
     ASSERT_TRUE(resp.has_value());
     auto decoded = v3::proto::decode_envelope(resp->payload);
     ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(decoded->domain, "match");
-    EXPECT_EQ(decoded->message_name, "match_join_response");
+    EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kMatch);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
     EXPECT_TRUE(decoded->payload.value("queued", false));
 
     service.stop();
@@ -568,11 +572,13 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLeaderboardBackend) {
     meta.correlation_id = 200;
     meta.source_service = "gateway";
     meta.target_service = "leaderboard";
-    auto encoded = v3::proto::encode_envelope(
+    auto encoded = v3::proto::encode_leaderboard_submit_request(
         meta,
-        "leaderboard",
-        "submit",
-        {{"user_id", "alice"}, {"display_name", "Alice"}, {"score", 1200}});
+        v3::proto::LeaderboardSubmitRequestPayload{
+            .user_id = "alice",
+            .display_name = "Alice",
+            .score = 1200,
+        });
 
     auto req = payload_envelope(encoded);
     req.message_type = "leaderboard_submit";
@@ -580,9 +586,101 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLeaderboardBackend) {
     ASSERT_TRUE(resp.has_value());
     auto decoded = v3::proto::decode_envelope(resp->payload);
     ASSERT_TRUE(decoded.has_value());
-    EXPECT_EQ(decoded->domain, "leaderboard");
-    EXPECT_EQ(decoded->message_name, "submit_response");
+    EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kLeaderboard);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
     EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginBackend) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 300;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kLoginRequest,
+        {{"user_id", "alice"}, {"token", "token:alice"}, {"display_name", "Alice"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "login_request";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kLoginResponse);
+    EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomBackend) {
+    v2::room::RoomBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 400;
+    meta.source_service = "gateway";
+    meta.target_service = "room";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
+        {{"user_id", "alice"}, {"room_id", "room_42"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "room_create";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateResponse);
+    EXPECT_EQ(decoded->payload.value("room_id", ""), "room_42");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleBackend) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v2::service::BackendEnvelope create_req = payload_envelope(R"({"battle_id":"battle_1","room_id":"room_1","player_ids":["alice","bob"],"max_frames":3})");
+    create_req.message_type = "battle_create";
+    auto create_resp = conn.send_request(create_req);
+    ASSERT_TRUE(create_resp.has_value());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 500;
+    meta.source_service = "gateway";
+    meta.target_service = "battle";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kBattleInputRequest,
+        {{"user_id", "alice"}, {"battle_id", "battle_1"}, {"input_data", "move:1,2"}, {"submitted_frame", 1}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "battle_input";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputResponse);
+    EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_1");
 
     service.stop();
 }

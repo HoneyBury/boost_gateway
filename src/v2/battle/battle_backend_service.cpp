@@ -4,6 +4,7 @@
 #include "v2/ecs/world.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -139,7 +140,9 @@ private:
 
     v2::service::BackendEnvelope handle_battle_input(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(request.payload);
+        auto raw_payload = decoded_envelope.has_value() ? decoded_envelope->payload.dump() : request.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("battle_id") ||
             !doc.contains("input_data")) {
             return make_error(-1004, "invalid_json");
@@ -228,13 +231,18 @@ private:
             pushes.push_back(std::move(finish_push));
         }
 
-        return make_ok({
+        auto resp = make_ok({
             {"battle_id", battle_id},
             {"input_seq", input_result.input_seq},
             {"frame_number", frame_result.frame_number},
             {"should_finish", frame_result.should_finish},
             {"push_to_sessions", std::move(pushes)},
         });
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kBattleInputResponse,
+            nlohmann::json::parse(resp.payload, nullptr, false));
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_battle_finish(

@@ -41,4 +41,12 @@ kubectl -n "$NAMESPACE" wait \
     boostgatewaycluster/demo-cluster \
     --timeout=180s
 
+kubectl -n "$NAMESPACE" wait \
+    --for=jsonpath='{.status.conditions[?(@.type=="Ready")].status}'=True \
+    boostgatewaycluster/demo-cluster \
+    --timeout=180s
+
+kubectl -n "$NAMESPACE" get boostgatewaycluster/demo-cluster -o jsonpath='{.status.conditions}'
+echo
+
 kubectl -n "$NAMESPACE" get deploy,statefulset,svc

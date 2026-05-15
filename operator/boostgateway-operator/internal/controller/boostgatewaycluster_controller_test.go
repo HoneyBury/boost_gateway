@@ -189,8 +189,62 @@ func TestReconcileCreatesManagedResources(t *testing.T) {
     if refreshed.Status.Phase != "Progressing" {
         t.Fatalf("unexpected phase: %q", refreshed.Status.Phase)
     }
-    if len(refreshed.Status.Conditions) < 2 {
-        t.Fatalf("expected at least 2 status conditions, got %d", len(refreshed.Status.Conditions))
+    if len(refreshed.Status.Components) != 2 {
+        t.Fatalf("expected 2 component statuses, got %d", len(refreshed.Status.Components))
+    }
+    foundGateway := false
+    foundMatch := false
+    for _, component := range refreshed.Status.Components {
+        if component.Name == "gateway" {
+            foundGateway = true
+            if component.Kind != "Deployment" {
+                t.Fatalf("unexpected gateway kind: %q", component.Kind)
+            }
+            if component.DesiredReplicas != 1 {
+                t.Fatalf("unexpected gateway desired replicas: %d", component.DesiredReplicas)
+            }
+        }
+        if component.Name == "match" {
+            foundMatch = true
+            if component.Kind != "StatefulSet" {
+                t.Fatalf("unexpected match kind: %q", component.Kind)
+            }
+            if component.DesiredReplicas != 3 {
+                t.Fatalf("unexpected match desired replicas: %d", component.DesiredReplicas)
+            }
+        }
+    }
+    if !foundGateway || !foundMatch {
+        t.Fatalf("missing expected component statuses: gateway=%v match=%v", foundGateway, foundMatch)
+    }
+    if len(refreshed.Status.Conditions) < 4 {
+        t.Fatalf("expected at least 4 status conditions, got %d", len(refreshed.Status.Conditions))
+    }
+    foundReady := false
+    foundProgressing := false
+    foundDegraded := false
+    foundTLSReady := false
+    for _, condition := range refreshed.Status.Conditions {
+        switch condition.Type {
+        case "Ready":
+            foundReady = true
+            if condition.Status != metav1.ConditionFalse {
+                t.Fatalf("expected Ready=False during rollout, got %s", condition.Status)
+            }
+        case "Progressing":
+            foundProgressing = true
+            if condition.Status != metav1.ConditionTrue {
+                t.Fatalf("expected Progressing=True during rollout, got %s", condition.Status)
+            }
+        case "Degraded":
+            foundDegraded = true
+        case "TLSReady":
+            foundTLSReady = true
+        }
+    }
+    if !foundReady || !foundProgressing || !foundDegraded || !foundTLSReady {
+        t.Fatalf("missing expected conditions: ready=%v progressing=%v degraded=%v tls=%v",
+            foundReady, foundProgressing, foundDegraded, foundTLSReady)
     }
 }
 
@@ -260,6 +314,36 @@ func TestReconcileDeletesDisabledComponentResources(t *testing.T) {
         Name:      "demo-login-config",
     }, &corev1.ConfigMap{}); !apierrors.IsNotFound(err) {
         t.Fatalf("expected login configmap deleted, got err=%v", err)
+    }
+}
+
+func TestSummarizeDeploymentMarksDegradedWhenRolloutLags(t *testing.T) {
+    replicas := int32(3)
+    deployment := &appsv1.Deployment{
+        ObjectMeta: metav1.ObjectMeta{
+            Name:       "demo-gateway",
+            Generation: 5,
+        },
+        Spec: appsv1.DeploymentSpec{
+            Replicas: &replicas,
+        },
+        Status: appsv1.DeploymentStatus{
+            ObservedGeneration: 4,
+            ReadyReplicas:      1,
+            UpdatedReplicas:    1,
+            AvailableReplicas:  1,
+        },
+    }
+
+    rollout := summarizeDeployment("gateway", deployment)
+    if rollout.ready {
+        t.Fatalf("expected rollout not ready")
+    }
+    if !rollout.degraded {
+        t.Fatalf("expected rollout degraded")
+    }
+    if rollout.degradedReason == "" {
+        t.Fatalf("expected degraded reason")
     }
 }
 

@@ -251,7 +251,7 @@ private:
 
     v2::service::BackendEnvelope handle_submit(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -281,14 +281,16 @@ private:
             body["rank"] = *new_rank;
         }
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "leaderboard", "submit_response", body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse,
+            body);
         return resp;
     }
 
     v2::service::BackendEnvelope handle_top(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -321,14 +323,16 @@ private:
         }
         auto body = nlohmann::json{{"status", "ok"}, {"entries", std::move(arr)}};
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "leaderboard", "top_response", body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kLeaderboardTopResponse,
+            body);
         return resp;
     }
 
     v2::service::BackendEnvelope handle_rank(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_envelope(req.payload);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
         auto raw_payload = decoded_envelope.has_value()
             ? decoded_envelope->payload.dump()
             : req.payload;
@@ -362,8 +366,10 @@ private:
             {"score", entry->score},
         };
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_response(
-            decoded_envelope, "leaderboard", "rank_response", body);
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse,
+            body);
         return resp;
     }
 

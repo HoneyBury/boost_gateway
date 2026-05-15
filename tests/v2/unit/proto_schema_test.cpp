@@ -153,15 +153,15 @@ TEST(ProtoSchemaTest, EnvelopeCodecRoundTripsMatchPayload) {
 
     const auto encoded = v3::proto::encode_envelope(
         meta,
-        "match",
-        "match_join",
+        v3::proto::EnvelopeDomain::kMatch,
+        v3::proto::EnvelopeMessageKind::kMatchJoinRequest,
         {{"user_id", "alice"}, {"mmr", 1000}, {"mode", "1v1"}});
 
     const auto decoded = v3::proto::decode_envelope(encoded);
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->meta.correlation_id, 7U);
-    EXPECT_EQ(decoded->domain, "match");
-    EXPECT_EQ(decoded->message_name, "match_join");
+    EXPECT_EQ(decoded->domain, v3::proto::EnvelopeDomain::kMatch);
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kMatchJoinRequest);
     EXPECT_EQ(decoded->payload.value("user_id", ""), "alice");
     EXPECT_EQ(decoded->payload.value("mmr", 0), 1000);
 }
@@ -169,4 +169,34 @@ TEST(ProtoSchemaTest, EnvelopeCodecRoundTripsMatchPayload) {
 TEST(ProtoSchemaTest, EnvelopeCodecRejectsMalformedPayload) {
     EXPECT_FALSE(v3::proto::decode_envelope("{bad json").has_value());
     EXPECT_FALSE(v3::proto::decode_envelope(R"({"payload":{}})").has_value());
+}
+
+TEST(ProtoSchemaTest, EnvelopeCodecSupportsLoginRoomAndBattleKinds) {
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 9;
+    meta.source_service = "gateway";
+
+    const auto login = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kLoginRequest,
+        {{"user_id", "alice"}, {"token", "t1"}, {"display_name", "Alice"}});
+    const auto room = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
+        {{"user_id", "alice"}, {"room_id", "room_01"}});
+    const auto battle = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kBattleInputRequest,
+        {{"user_id", "alice"}, {"input_data", "move:1,2"}, {"submitted_frame", 1}});
+
+    auto login_decoded = v3::proto::decode_typed_envelope(login);
+    auto room_decoded = v3::proto::decode_typed_envelope(room);
+    auto battle_decoded = v3::proto::decode_typed_envelope(battle);
+
+    ASSERT_TRUE(login_decoded.has_value());
+    ASSERT_TRUE(room_decoded.has_value());
+    ASSERT_TRUE(battle_decoded.has_value());
+    EXPECT_EQ(login_decoded->message_kind, v3::proto::EnvelopeMessageKind::kLoginRequest);
+    EXPECT_EQ(room_decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateRequest);
+    EXPECT_EQ(battle_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputRequest);
 }

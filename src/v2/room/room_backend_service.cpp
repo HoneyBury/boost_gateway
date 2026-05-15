@@ -1,5 +1,6 @@
 #include "v2/room/room_backend_service.h"
 #include "v2/service/backend_server.h"
+#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
@@ -108,7 +109,9 @@ private:
 
     v2::service::BackendEnvelope handle_room_create(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(request.payload);
+        auto raw_payload = decoded_envelope.has_value() ? decoded_envelope->payload.dump() : request.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
             return make_error(-1004, "invalid_json");
         }
@@ -133,12 +136,19 @@ private:
         room_manager_.rooms_[room_id] = std::move(room);
 
         AUDIT_LOG("room_created", "room_id=" + room_id + " owner=" + user_id);
-        return make_ok({{"room_id", room_id}, {"member_count", 1}});
+        auto resp = make_ok({{"room_id", room_id}, {"member_count", 1}});
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kRoomCreateResponse,
+            nlohmann::json::parse(resp.payload, nullptr, false));
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_room_join(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(request.payload);
+        auto raw_payload = decoded_envelope.has_value() ? decoded_envelope->payload.dump() : request.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
             return make_error(-1004, "invalid_json");
         }
@@ -154,17 +164,29 @@ private:
         }
 
         if (room_manager_.find_member(*room, user_id) != nullptr) {
-            return make_ok({{"room_id", room_id}, {"member_count", room->members.size()}});
+            auto resp = make_ok({{"room_id", room_id}, {"member_count", room->members.size()}});
+            resp.payload = v3::proto::maybe_wrap_typed_response(
+                decoded_envelope,
+                v3::proto::EnvelopeMessageKind::kRoomJoinResponse,
+                nlohmann::json::parse(resp.payload, nullptr, false));
+            return resp;
         }
 
         room->members.push_back(RoomMember{.user_id = user_id, .ready = false});
 
-        return make_ok({{"room_id", room_id}, {"member_count", room->members.size()}});
+        auto resp = make_ok({{"room_id", room_id}, {"member_count", room->members.size()}});
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kRoomJoinResponse,
+            nlohmann::json::parse(resp.payload, nullptr, false));
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_room_ready(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        auto decoded_envelope = v3::proto::decode_typed_envelope(request.payload);
+        auto raw_payload = decoded_envelope.has_value() ? decoded_envelope->payload.dump() : request.payload;
+        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
         if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("room_id")) {
             return make_error(-1004, "invalid_json");
         }
@@ -187,7 +209,12 @@ private:
 
         member->ready = ready;
 
-        return make_ok({{"room_id", room_id}, {"all_ready", room_manager_.all_members_ready(*room)}});
+        auto resp = make_ok({{"room_id", room_id}, {"all_ready", room_manager_.all_members_ready(*room)}});
+        resp.payload = v3::proto::maybe_wrap_typed_response(
+            decoded_envelope,
+            v3::proto::EnvelopeMessageKind::kRoomReadyResponse,
+            nlohmann::json::parse(resp.payload, nullptr, false));
+        return resp;
     }
 
     v2::service::BackendEnvelope handle_room_start_battle(
