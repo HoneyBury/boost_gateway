@@ -1,20 +1,25 @@
 #pragma once
-// v2.2.0 HS256 JWT Validator — self-contained, no external crypto dependencies.
-// Uses nlohmann_json for payload parsing (already a project dependency).
-// For RS256/ES256 upgrade path, add OpenSSL and swap the verifier.
+// v2.2.0 JWT Validator.
+// Supports HS256 and RS256 verification, plus optional token generation
+// for tests and local setup flows.
 
 #include <nlohmann/json.hpp>
+#include <openssl/bio.h>
+#include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace v2::auth {
 
-// ── SHA-256 (FIPS 180-4) ────────────────────────────────────────────────
 namespace detail {
 
 inline constexpr std::array<std::uint32_t, 64> kSha256K = {
@@ -54,12 +59,12 @@ inline void sha256_transform(std::array<std::uint32_t, 8>& h,
     auto e = h[4], f = h[5], g = h[6], hh = h[7];
 
     for (int i = 0; i < 64; ++i) {
-        auto S1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+        auto s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
         auto ch = (e & f) ^ ((~e) & g);
-        auto temp1 = hh + S1 + ch + kSha256K[i] + w[i];
-        auto S0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+        auto temp1 = hh + s1 + ch + kSha256K[i] + w[i];
+        auto s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
         auto maj = (a & b) ^ (a & c) ^ (b & c);
-        auto temp2 = S0 + maj;
+        auto temp2 = s0 + maj;
         hh = g; g = f; f = e; e = d + temp1;
         d = c; c = b; b = a; a = temp1 + temp2;
     }
@@ -75,23 +80,23 @@ inline auto sha256(const std::string& input) -> std::array<std::uint8_t, 32> {
     std::uint64_t bit_len = padded.size() * 8;
     padded.push_back(0x80);
     while ((padded.size() + 8) % 64 != 0) padded.push_back(0);
-    for (int i = 7; i >= 0; --i)
+    for (int i = 7; i >= 0; --i) {
         padded.push_back(static_cast<std::uint8_t>(bit_len >> (i * 8)));
+    }
 
-    for (std::size_t i = 0; i < padded.size(); i += 64)
+    for (std::size_t i = 0; i < padded.size(); i += 64) {
         sha256_transform(h, padded.data() + i);
+    }
 
     std::array<std::uint8_t, 32> out;
     for (int i = 0; i < 8; ++i) {
-        out[i * 4]     = static_cast<std::uint8_t>(h[i] >> 24);
+        out[i * 4] = static_cast<std::uint8_t>(h[i] >> 24);
         out[i * 4 + 1] = static_cast<std::uint8_t>(h[i] >> 16);
         out[i * 4 + 2] = static_cast<std::uint8_t>(h[i] >> 8);
         out[i * 4 + 3] = static_cast<std::uint8_t>(h[i]);
     }
     return out;
 }
-
-// ── HMAC-SHA256 (RFC 2104) ───────────────────────────────────────────────
 
 inline auto hmac_sha256(const std::string& key, const std::string& message)
     -> std::array<std::uint8_t, 32> {
@@ -118,13 +123,12 @@ inline auto hmac_sha256(const std::string& key, const std::string& message)
     return sha256(outer);
 }
 
-// ── Base64url (RFC 4648 §5) ──────────────────────────────────────────────
-
 inline auto base64url_decode(const std::string& input) -> std::string {
     static const std::string kTable =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
     std::string out;
-    int bits = 0, val = 0;
+    int bits = 0;
+    int val = 0;
     for (auto c : input) {
         if (c == '=') break;
         auto pos = kTable.find(c);
@@ -157,32 +161,129 @@ inline auto base64url_encode(const std::string& input) -> std::string {
     return out;
 }
 
+using BioPtr = std::unique_ptr<BIO, decltype(&BIO_free)>;
+using MdCtxPtr = std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)>;
+using PKeyPtr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
+
+inline auto load_public_key(const std::string& pem) -> PKeyPtr {
+    if (pem.empty()) return {nullptr, EVP_PKEY_free};
+    BioPtr bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())), BIO_free);
+    if (!bio) return {nullptr, EVP_PKEY_free};
+    return PKeyPtr(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr),
+                   EVP_PKEY_free);
+}
+
+inline auto load_private_key(const std::string& pem) -> PKeyPtr {
+    if (pem.empty()) return {nullptr, EVP_PKEY_free};
+    BioPtr bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())), BIO_free);
+    if (!bio) return {nullptr, EVP_PKEY_free};
+    return PKeyPtr(
+        PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr),
+        EVP_PKEY_free);
+}
+
+inline bool verify_rs256(const std::string& public_key_pem,
+                         const std::string& signing_input,
+                         const std::string& signature) {
+    auto pkey = load_public_key(public_key_pem);
+    if (!pkey) return false;
+
+    MdCtxPtr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx) return false;
+    if (EVP_DigestVerifyInit(ctx.get(), nullptr, EVP_sha256(), nullptr,
+                             pkey.get()) != 1) {
+        return false;
+    }
+    if (EVP_DigestVerifyUpdate(ctx.get(), signing_input.data(),
+                               signing_input.size()) != 1) {
+        return false;
+    }
+    return EVP_DigestVerifyFinal(
+               ctx.get(),
+               reinterpret_cast<const unsigned char*>(signature.data()),
+               signature.size()) == 1;
+}
+
+inline auto sign_rs256(const std::string& private_key_pem,
+                       const std::string& signing_input) -> std::string {
+    auto pkey = load_private_key(private_key_pem);
+    if (!pkey) return {};
+
+    MdCtxPtr ctx(EVP_MD_CTX_new(), EVP_MD_CTX_free);
+    if (!ctx) return {};
+    if (EVP_DigestSignInit(ctx.get(), nullptr, EVP_sha256(), nullptr,
+                           pkey.get()) != 1) {
+        return {};
+    }
+    if (EVP_DigestSignUpdate(ctx.get(), signing_input.data(),
+                             signing_input.size()) != 1) {
+        return {};
+    }
+
+    std::size_t sig_len = 0;
+    if (EVP_DigestSignFinal(ctx.get(), nullptr, &sig_len) != 1) return {};
+    std::string signature(sig_len, '\0');
+    if (EVP_DigestSignFinal(
+            ctx.get(),
+            reinterpret_cast<unsigned char*>(signature.data()),
+            &sig_len) != 1) {
+        return {};
+    }
+    signature.resize(sig_len);
+    return signature;
+}
+
+inline bool constant_time_equal(const std::string& lhs, const std::string& rhs) {
+    if (lhs.size() != rhs.size()) return false;
+    return CRYPTO_memcmp(lhs.data(), rhs.data(), lhs.size()) == 0;
+}
+
+inline bool audience_matches(const nlohmann::json& payload_doc,
+                             const std::string& expected_audience) {
+    if (expected_audience.empty()) return true;
+    auto it = payload_doc.find("aud");
+    if (it == payload_doc.end()) return false;
+    if (it->is_string()) {
+        return it->get<std::string>() == expected_audience;
+    }
+    if (it->is_array()) {
+        for (const auto& entry : *it) {
+            if (entry.is_string() &&
+                entry.get<std::string>() == expected_audience) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 }  // namespace detail
 
-// ── JWT Token ────────────────────────────────────────────────────────────
-
 struct JwtHeader {
-    std::string alg;  // "HS256"
-    std::string typ;  // "JWT"
+    std::string alg;
+    std::string typ;
+    std::string kid;
 };
 
 struct JwtPayload {
-    std::string sub;        // subject (user_id)
-    std::string iss;        // issuer
-    std::string role;       // "player", "admin", "observer"
+    std::string sub;
+    std::string iss;
+    std::string aud;
+    std::string role;
     std::string display_name;
-    std::uint64_t iat = 0;  // issued at (unix timestamp)
-    std::uint64_t exp = 0;  // expiration (unix timestamp)
-    nlohmann::json extra;   // additional claims
+    std::uint64_t iat = 0;
+    std::uint64_t exp = 0;
+    nlohmann::json extra;
 };
-
-// ── JWT Validator ────────────────────────────────────────────────────────
 
 class JwtValidator {
 public:
     struct Config {
         std::string secret;
+        std::string public_key_pem;
+        std::string private_key_pem;
         std::string issuer = "boost-gateway";
+        std::string audience;
         bool require_expiration = false;
     };
 
@@ -195,37 +296,46 @@ public:
     explicit JwtValidator(Config config) : config_(std::move(config)) {}
 
     [[nodiscard]] Result validate(const std::string& token) const {
-        // Split: header.payload.signature
         auto dot1 = token.find('.');
-        auto dot2 = token.find('.', dot1 + 1);
+        auto dot2 = token.find('.', dot1 == std::string::npos ? dot1 : dot1 + 1);
         if (dot1 == std::string::npos || dot2 == std::string::npos) {
             return {false, "malformed_token", {}};
         }
 
-        auto header_b64 = token.substr(0, dot1);
-        auto payload_b64 = token.substr(dot1 + 1, dot2 - dot1 - 1);
-        auto sig_b64 = token.substr(dot2 + 1);
-        auto signing_input = header_b64 + "." + payload_b64;
+        const auto header_b64 = token.substr(0, dot1);
+        const auto payload_b64 = token.substr(dot1 + 1, dot2 - dot1 - 1);
+        const auto sig_b64 = token.substr(dot2 + 1);
+        const auto signing_input = header_b64 + "." + payload_b64;
 
-        // Decode
-        auto header_json = detail::base64url_decode(header_b64);
-        auto payload_json = detail::base64url_decode(payload_b64);
-        auto sig_bytes = detail::base64url_decode(sig_b64);
+        const auto header_json = detail::base64url_decode(header_b64);
+        const auto payload_json = detail::base64url_decode(payload_b64);
+        const auto sig_bytes = detail::base64url_decode(sig_b64);
 
-        // Verify signature
-        auto expected = detail::hmac_sha256(config_.secret, signing_input);
-        if (sig_bytes.size() != 32 ||
-            std::memcmp(sig_bytes.data(), expected.data(), 32) != 0) {
-            return {false, "invalid_signature", {}};
-        }
-
-        // Parse header
         auto header_doc = nlohmann::json::parse(header_json, nullptr, false);
         if (header_doc.is_discarded()) return {false, "invalid_header_json", {}};
-        auto alg = header_doc.value("alg", "");
-        if (alg != "HS256") return {false, "unsupported_algorithm:" + alg, {}};
 
-        // Parse payload
+        const auto alg = header_doc.value("alg", "");
+        if (alg == "HS256") {
+            if (config_.secret.empty()) {
+                return {false, "missing_hs256_secret", {}};
+            }
+            const auto expected = detail::hmac_sha256(config_.secret, signing_input);
+            const std::string expected_sig(
+                reinterpret_cast<const char*>(expected.data()), expected.size());
+            if (!detail::constant_time_equal(sig_bytes, expected_sig)) {
+                return {false, "invalid_signature", {}};
+            }
+        } else if (alg == "RS256") {
+            if (config_.public_key_pem.empty()) {
+                return {false, "missing_rs256_public_key", {}};
+            }
+            if (!detail::verify_rs256(config_.public_key_pem, signing_input, sig_bytes)) {
+                return {false, "invalid_signature", {}};
+            }
+        } else {
+            return {false, "unsupported_algorithm:" + alg, {}};
+        }
+
         auto payload_doc = nlohmann::json::parse(payload_json, nullptr, false);
         if (payload_doc.is_discarded()) return {false, "invalid_payload_json", {}};
 
@@ -236,40 +346,70 @@ public:
         payload.display_name = payload_doc.value("name", "");
         payload.iat = payload_doc.value("iat", 0ULL);
         payload.exp = payload_doc.value("exp", 0ULL);
+        if (payload_doc.contains("aud") && payload_doc["aud"].is_string()) {
+            payload.aud = payload_doc["aud"].get<std::string>();
+        }
         payload.extra = payload_doc;
 
-        // Validate claims
         if (payload.sub.empty()) return {false, "missing_subject", {}};
-        if (!config_.issuer.empty() && payload.iss != config_.issuer)
+        if (!config_.issuer.empty() && payload.iss != config_.issuer) {
             return {false, "invalid_issuer", {}};
+        }
+        if (!detail::audience_matches(payload_doc, config_.audience)) {
+            return {false, "invalid_audience", {}};
+        }
 
         if (config_.require_expiration || payload.exp != 0) {
-            auto now = std::chrono::duration_cast<std::chrono::seconds>(
-                std::chrono::system_clock::now().time_since_epoch()).count();
-            if (payload.exp != 0 && now > static_cast<std::int64_t>(payload.exp))
+            const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+                                 std::chrono::system_clock::now().time_since_epoch())
+                                 .count();
+            if (payload.exp == 0) {
+                return {false, "missing_expiration", {}};
+            }
+            if (now > static_cast<std::int64_t>(payload.exp)) {
                 return {false, "token_expired", {}};
+            }
         }
 
         return {true, "", std::move(payload)};
     }
 
-    /// Generate a token for testing/setup purposes.
     [[nodiscard]] std::string generate(const JwtPayload& payload) const {
-        nlohmann::json header{{"alg", "HS256"}, {"typ", "JWT"}};
+        const auto use_rs256 = !config_.private_key_pem.empty();
+        if (use_rs256 && config_.public_key_pem.empty()) {
+            return {};
+        }
+        if (!use_rs256 && config_.secret.empty()) {
+            return {};
+        }
+
+        nlohmann::json header{
+            {"alg", use_rs256 ? "RS256" : "HS256"},
+            {"typ", "JWT"},
+        };
         nlohmann::json body;
         body["sub"] = payload.sub;
         body["iss"] = config_.issuer;
         body["role"] = payload.role;
         body["name"] = payload.display_name;
         body["iat"] = payload.iat;
+        if (!payload.aud.empty()) body["aud"] = payload.aud;
         if (payload.exp != 0) body["exp"] = payload.exp;
         for (auto& [k, v] : payload.extra.items()) body[k] = v;
 
-        auto h = detail::base64url_encode(header.dump());
-        auto p = detail::base64url_encode(body.dump());
-        auto sig = detail::hmac_sha256(config_.secret, h + "." + p);
-        return h + "." + p + "." + detail::base64url_encode(
-            std::string(reinterpret_cast<const char*>(sig.data()), 32));
+        const auto h = detail::base64url_encode(header.dump());
+        const auto p = detail::base64url_encode(body.dump());
+        const auto signing_input = h + "." + p;
+
+        std::string signature;
+        if (use_rs256) {
+            signature = detail::sign_rs256(config_.private_key_pem, signing_input);
+        } else {
+            const auto sig = detail::hmac_sha256(config_.secret, signing_input);
+            signature.assign(reinterpret_cast<const char*>(sig.data()), sig.size());
+        }
+        if (signature.empty()) return {};
+        return h + "." + p + "." + detail::base64url_encode(signature);
     }
 
 private:

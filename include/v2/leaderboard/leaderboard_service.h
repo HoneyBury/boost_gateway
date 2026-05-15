@@ -8,6 +8,10 @@
 #include <vector>
 #include <utility>
 
+namespace v3::cluster {
+struct RaftConfig;
+}
+
 namespace v3::persistence {
 class RedisLeaderboard;
 }  // namespace v3::persistence
@@ -33,6 +37,10 @@ public:
     // v3.2.0: Set Redis-backed leaderboard. Falls back to in-memory if unset.
     void set_redis_leaderboard(
         std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb);
+
+    // v3.4.0: Optional Raft configuration for singleton/leadered deployments.
+    void set_raft_config(v3::cluster::RaftConfig config);
+    [[nodiscard]] bool is_raft_leader() const;
 
 private:
     class Impl;

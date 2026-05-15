@@ -66,7 +66,13 @@ std::vector<ServiceInstance> ClusterRouter::discover_all(
     std::lock_guard lock(mutex_);
     auto it = routes_.find(service_name);
     if (it == routes_.end()) return {};
-    return it->second.instances;
+    std::vector<ServiceInstance> healthy;
+    for (const auto& inst : it->second.instances) {
+        if (inst.state == ServiceState::kHealthy) {
+            healthy.push_back(inst);
+        }
+    }
+    return healthy;
 }
 
 std::unordered_map<std::string, RouteEntry> ClusterRouter::route_table() const {

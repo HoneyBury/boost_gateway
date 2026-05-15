@@ -55,10 +55,13 @@ class LoginBackendService::Impl {
 public:
     explicit Impl(std::uint16_t port) : port_(port) {}
     explicit Impl(LoginBackendOptions options) : port_(options.port) {
-        if (!options.jwt_secret.empty()) {
+        if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty()) {
             jwt_validator_.emplace(v2::auth::JwtValidator::Config{
                 .secret = options.jwt_secret,
+                .public_key_pem = options.jwt_public_key_pem,
+                .private_key_pem = options.jwt_private_key_pem,
                 .issuer = options.jwt_issuer,
+                .audience = options.jwt_audience,
             });
         }
     }
@@ -120,7 +123,6 @@ private:
         std::string token_role = "player";
 
         if (jwt_validator_.has_value()) {
-            // JWT validation (HS256)
             auto result = jwt_validator_->validate(token);
             if (result.valid) {
                 if (result.payload.sub != user_id) {
@@ -171,6 +173,9 @@ private:
 
         std::string token = doc["token"].get<std::string>();
         bool valid = !token.empty();
+        if (jwt_validator_.has_value() && valid) {
+            valid = jwt_validator_->validate(token).valid;
+        }
 
         v2::service::BackendEnvelope response;
         response.kind = v2::service::MessageKind::kResponse;

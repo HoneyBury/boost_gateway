@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 namespace v2::config {
 class FeatureFlags;
@@ -110,14 +111,26 @@ public:
     void shutdown();
 
 private:
+    struct ResolvedBackend {
+        BackendConfig config;
+        std::string connection_key;
+        std::optional<v3::cluster::NodeId> node;
+        bool from_cluster = false;
+    };
+
     struct BackendSlot {
         std::optional<BackendConfig> config;
         std::unique_ptr<v2::service::BackendConnection> connection;
+        std::unordered_map<std::string, std::unique_ptr<v2::service::BackendConnection>>
+            cluster_connections;
         v2::service::CircuitBreaker breaker;
     };
 
     v2::service::BackendConnection* ensure_connection(v2::service::ServiceId service,
                                                        const std::string& shard_key = "");
+    [[nodiscard]] std::optional<ResolvedBackend> resolve_backend(
+        v2::service::ServiceId service,
+        const std::string& shard_key = "") const;
     BackendSlot& slot_for(v2::service::ServiceId service);
 
     void record_route_result(v2::service::ServiceId target,

@@ -3,12 +3,15 @@
 // Supports score submission, Top-K queries, and rank lookup.
 
 #include "v2/leaderboard/leaderboard_service.h"
+#include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
+#include "v3/cluster/raft.h"
 #include "v3/persistence/redis_leaderboard.h"
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -98,6 +101,52 @@ private:
     std::map<std::string, std::string> display_names_;
 };
 
+auto make_raft_rpc_sender() {
+    return [](const v3::cluster::RaftNodeId& target,
+              const std::string& data) -> std::string {
+        if (target.host.empty() || target.port == 0) {
+            return {};
+        }
+
+        auto doc = nlohmann::json::parse(data, nullptr, false);
+        if (doc.is_discarded()) {
+            return {};
+        }
+
+        const auto rpc_type = doc.value("type", "");
+        std::string message_type;
+        if (rpc_type == "request_vote") {
+            message_type = "raft_request_vote";
+        } else if (rpc_type == "append_entries") {
+            message_type = "raft_append_entries";
+        } else {
+            return {};
+        }
+
+        v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+            .host = target.host,
+            .port = target.port,
+            .timeout = std::chrono::milliseconds(1000),
+            .connect_timeout = std::chrono::milliseconds(500),
+        });
+        if (!conn.connect()) {
+            return {};
+        }
+
+        v2::service::BackendEnvelope request;
+        request.target_service = v2::service::ServiceId::kGateway;
+        request.kind = v2::service::MessageKind::kRequest;
+        request.message_type = message_type;
+        request.payload = data;
+
+        auto response = conn.send_request(std::move(request));
+        if (!response || response->kind != v2::service::MessageKind::kResponse) {
+            return {};
+        }
+        return response->payload;
+    };
+}
+
 }  // namespace
 
 // ── Implementation ──────────────────────────────────────────────────────
@@ -117,12 +166,33 @@ public:
         handlers["leaderboard_rank"] = [this](const auto& req) {
             return handle_rank(req);
         };
+        handlers["raft_request_vote"] = [this](const auto& req) {
+            return handle_raft_request_vote(req);
+        };
+        handlers["raft_append_entries"] = [this](const auto& req) {
+            return handle_raft_append_entries(req);
+        };
 
         server_ = std::make_unique<v2::service::BackendServer>(port_, std::move(handlers));
         server_->start();
+
+        if (!raft_config_.node_id.empty()) {
+            raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
+            raft_node_->set_rpc_sender(make_raft_rpc_sender());
+            raft_node_->on_become_leader([this]() {
+                leader_.store(true);
+            });
+            raft_node_->on_step_down([this]() {
+                leader_.store(false);
+            });
+            raft_node_->start();
+        }
     }
 
-    void stop() { if (server_) server_->stop(); }
+    void stop() {
+        if (raft_node_) raft_node_->stop();
+        if (server_) server_->stop();
+    }
     std::uint16_t local_port() const { return server_ ? server_->local_port() : port_; }
 
     void set_redis_leaderboard(
@@ -130,11 +200,22 @@ public:
         redis_lb_ = std::move(redis_lb);
     }
 
+    void set_raft_config(v3::cluster::RaftConfig config) {
+        raft_config_ = std::move(config);
+    }
+
+    [[nodiscard]] bool is_raft_leader() const {
+        return raft_node_ && raft_node_->is_leader();
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
     SortedSet leaderboard_;
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb_;
+    v3::cluster::RaftConfig raft_config_;
+    std::unique_ptr<v3::cluster::RaftNode> raft_node_;
+    std::atomic<bool> leader_{false};
 
     v2::service::BackendEnvelope make_response(nlohmann::json body) {
         v2::service::BackendEnvelope resp;
@@ -153,6 +234,10 @@ private:
 
     v2::service::BackendEnvelope handle_submit(
         const v2::service::BackendEnvelope& req) {
+        if (raft_node_ && !raft_node_->is_leader()) {
+            return make_error(-1003, "not_raft_leader");
+        }
+
         auto doc = nlohmann::json::parse(req.payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
@@ -241,6 +326,46 @@ private:
             {"score", entry->score},
         });
     }
+
+    v2::service::BackendEnvelope handle_raft_request_vote(
+        const v2::service::BackendEnvelope& req) {
+        if (!raft_node_) {
+            return make_error(-1003, "raft_not_initialized");
+        }
+
+        v3::cluster::RequestVoteArgs args;
+        try {
+            args = v3::cluster::parse_request_vote(req.payload);
+        } catch (const std::exception&) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        auto reply = raft_node_->handle_request_vote(args);
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = v3::cluster::serialize_request_vote_reply(reply);
+        return resp;
+    }
+
+    v2::service::BackendEnvelope handle_raft_append_entries(
+        const v2::service::BackendEnvelope& req) {
+        if (!raft_node_) {
+            return make_error(-1003, "raft_not_initialized");
+        }
+
+        v3::cluster::AppendEntriesArgs args;
+        try {
+            args = v3::cluster::parse_append_entries(req.payload);
+        } catch (const std::exception&) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        auto reply = raft_node_->handle_append_entries(args);
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = v3::cluster::serialize_append_entries_reply(reply);
+        return resp;
+    }
 };
 
 LeaderboardService::LeaderboardService(std::uint16_t port)
@@ -253,6 +378,14 @@ std::uint16_t LeaderboardService::local_port() const { return impl_->local_port(
 void LeaderboardService::set_redis_leaderboard(
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
     impl_->set_redis_leaderboard(std::move(redis_lb));
+}
+
+void LeaderboardService::set_raft_config(v3::cluster::RaftConfig config) {
+    impl_->set_raft_config(std::move(config));
+}
+
+bool LeaderboardService::is_raft_leader() const {
+    return impl_->is_raft_leader();
 }
 
 }  // namespace v2::leaderboard

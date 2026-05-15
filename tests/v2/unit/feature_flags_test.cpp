@@ -10,6 +10,26 @@
 
 #include "v2/config/feature_flags.h"
 
+namespace {
+
+void set_test_env(const char* name, const char* value) {
+#ifdef _WIN32
+    _putenv_s(name, value);
+#else
+    setenv(name, value, 1);
+#endif
+}
+
+void unset_test_env(const char* name) {
+#ifdef _WIN32
+    _putenv_s(name, "");
+#else
+    unsetenv(name);
+#endif
+}
+
+}  // namespace
+
 // ─── Unregistered Flag Returns False ─────────────────────────────
 
 TEST(V2FeatureFlagsTest, UnregisteredFlagReturnsFalse) {
@@ -268,9 +288,9 @@ TEST(V2FeatureFlagsTest, EnvOverrideEnabledTrue) {
     v2::config::FeatureFlags flags;
     flags.register_flag("test_env", 0, false);
 
-    setenv("BOOST_TEST_ENV", "1", 1);
+    set_test_env("BOOST_TEST_ENV", "1");
     flags.apply_env_overrides();
-    unsetenv("BOOST_TEST_ENV");
+    unset_test_env("BOOST_TEST_ENV");
 
     auto flag = flags.get_flag("test_env");
     ASSERT_TRUE(flag.has_value());
@@ -281,9 +301,9 @@ TEST(V2FeatureFlagsTest, EnvOverrideEnabledFalse) {
     v2::config::FeatureFlags flags;
     flags.register_flag("test_env2", 100, true);
 
-    setenv("BOOST_TEST_ENV2", "0", 1);
+    set_test_env("BOOST_TEST_ENV2", "0");
     flags.apply_env_overrides();
-    unsetenv("BOOST_TEST_ENV2");
+    unset_test_env("BOOST_TEST_ENV2");
 
     auto flag = flags.get_flag("test_env2");
     ASSERT_TRUE(flag.has_value());
@@ -294,9 +314,9 @@ TEST(V2FeatureFlagsTest, EnvOverrideRolloutPercentage) {
     v2::config::FeatureFlags flags;
     flags.register_flag("test_env3", 10, true);
 
-    setenv("BOOST_TEST_ENV3_ROLLOUT", "75", 1);
+    set_test_env("BOOST_TEST_ENV3_ROLLOUT", "75");
     flags.apply_env_overrides();
-    unsetenv("BOOST_TEST_ENV3_ROLLOUT");
+    unset_test_env("BOOST_TEST_ENV3_ROLLOUT");
 
     auto flag = flags.get_flag("test_env3");
     ASSERT_TRUE(flag.has_value());
@@ -308,7 +328,7 @@ TEST(V2FeatureFlagsTest, EnvOverrideMissingVarLeavesFlagUnchanged) {
     flags.register_flag("test_env4", 50, true);
 
     // Ensure no env var is set
-    unsetenv("BOOST_TEST_ENV4");
+    unset_test_env("BOOST_TEST_ENV4");
     flags.apply_env_overrides();
 
     auto flag = flags.get_flag("test_env4");
@@ -321,9 +341,9 @@ TEST(V2FeatureFlagsTest, EnvOverrideInvalidRolloutIgnored) {
     v2::config::FeatureFlags flags;
     flags.register_flag("test_env5", 20, true);
 
-    setenv("BOOST_TEST_ENV5_ROLLOUT", "not_a_number", 1);
+    set_test_env("BOOST_TEST_ENV5_ROLLOUT", "not_a_number");
     flags.apply_env_overrides();
-    unsetenv("BOOST_TEST_ENV5_ROLLOUT");
+    unset_test_env("BOOST_TEST_ENV5_ROLLOUT");
 
     auto flag = flags.get_flag("test_env5");
     ASSERT_TRUE(flag.has_value());

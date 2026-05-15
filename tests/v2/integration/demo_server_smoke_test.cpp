@@ -378,3 +378,31 @@ TEST(V2DemoServerSmokeTest, DiagnosticsHttpEndpointReturnsStructuredSnapshot) {
         GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
     }
 }
+
+TEST(V2DemoServerSmokeTest, ReadyJsonFailsWhenConfiguredBackendUnavailable) {
+    app::logging::init("project_tests");
+
+    v2::gateway::DemoServer server(
+        0,
+        {},
+        v2::gateway::DemoServerOptions{
+            .login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+                .host = "127.0.0.1",
+                .port = 19999,
+            },
+        });
+
+    const auto ready = nlohmann::json::parse(server.ready_json());
+    EXPECT_FALSE(ready["ready"].get<bool>());
+    EXPECT_EQ(ready["status"], "fail");
+
+    bool found_bridge_check = false;
+    for (const auto& check : ready["checks"]) {
+        if (check["name"] == "bridge:login") {
+            found_bridge_check = true;
+            EXPECT_EQ(check["status"], "fail");
+            EXPECT_EQ(check["message"], "backend unavailable");
+        }
+    }
+    EXPECT_TRUE(found_bridge_check);
+}

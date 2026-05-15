@@ -8,10 +8,15 @@ namespace v2::login {
 
 struct LoginBackendOptions {
     std::uint16_t port = 9202;
-    // JWT config: if secret is non-empty, HS256 JWT validation is enabled.
-    // If empty, falls back to dev-mode "token:user_id" format.
+    // JWT config:
+    // - if jwt_secret is set, HS256 validation is enabled
+    // - if jwt_public_key_pem is set, RS256 validation is enabled
+    // - if neither is set, falls back to dev-mode "token:user_id" format
     std::string jwt_secret;
+    std::string jwt_public_key_pem;
+    std::string jwt_private_key_pem;
     std::string jwt_issuer = "boost-gateway";
+    std::string jwt_audience;
 };
 
 class LoginBackendService {

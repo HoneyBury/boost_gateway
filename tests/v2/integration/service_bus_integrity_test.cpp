@@ -4,7 +4,9 @@
 //   correlation_id matching, error propagation, trace context propagation.
 
 #include "app/logging.h"
+#include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/login/login_backend_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
 #include "v2/service/backend_server.h"
@@ -29,6 +31,45 @@ namespace {
 
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
+
+constexpr const char* kRs256PrivateKey = R"(-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdKPKcv8FJB88T
+/tAjorWED7EQ/q5cXWlXcBWV5csqFalnD1OClbLf1I+vJYVIqgfGPpRZxRiVNLR6
+oFwUykUNzPbbm9YMNPgcpQZIJPXHIEMpzbq4IovS8ZEHGyJGyNOo5OH1G1ZVkRtu
+r9b4yySfufsOQkteTnsOKweumKPNjH0VvFOHhyJ3KNKfbn5cEJ4JfI5WQnGSas7I
+JX9oOP4c/hA5ml32RIR1dklq3sgDTgKFjBoJOL5qfcBIya/Y8tGisvuo6at3tbcS
+zNXSR0oo0FSSc1et4U6/5n+MLOTicU27481rblrYz6p1XqY4sSUezsMdxYWxBD35
+enwHzFFbAgMBAAECggEADbHvvO6QHAmGDiFtDYyrIkEZTTADZ3tui56u7E522b80
+ppahRiImzP7r+0Pe1vFi50JQMnNNKRqPg7mmNuPECe1waruU/vWEWO9ZJ7xUlR7P
+OemTXFXht0+d+pHFRufZv4j8FKihz7OoJLila1hwOkBGJr7KzWcdVKYsGBvVc0o+
+o7Qu7Ixd21DVgEurADa3dogVC1znpzQ7zV/VTxV8LO2kYLwn2ch2eWxHKZwUqdZm
+8FiknokgQ3GwSqGHy4T6FbjI9HzyX9+4WOjI7rAqpJS0kyqMZWjvjrpvlhaBeGFc
+hHkYP4aDDFLbQc2iNtZP43HEPz4l5B9mJ9oU2A/kJQKBgQD47o1ZkGBoeUeKU8te
+jTbF5Jjv2LwMEdkSFnkuSfRNQ8rPgugiWZ9oSo4RLZcqr/wu0GZnevI0kKfKATHb
+ieuU/n4Q5kRBHjGOvVtDKXaBgIWC2kz4vvWecgLJ8uJG0Rz70drPCysxRcfRVyyY
+T8/PyY+4Ru2yYiG+1jvmgr/BDwKBgQDjcIagCsN84V5AFJuOB6doEnKkrPo3v9Iv
+ptCQZK+B/Con+y/gsP5w76vO7VXAqxrSexUsK5IKKkEDjPLlq/EDaJJ8Zwv0jtav
+P6qLbp4SRPs+7r0FtVnuLqo99WiYkwIrlZHGuzojIa5LNuEqPBaSXcCap/Y9oeFp
+uzDQVvKS9QKBgAIBagIet6gf0gO7SRgp6xcNEG5eQKWYPzd2FuPYlK9KrIefdl9Q
+eYhNkXdx9pXRdSarZyfORcVGpRNrjwtFwTAiHMHmGQatR5juzZ1s6BeDAZBcUeJv
+J2tvX7ZgzpHjfWhJ+IlSfbaX6VQ2b5WKjxINfaruZ1vYjo0LDNB+nSzhAoGAW0As
+Y02uPQ5WuDMMbiGYAuNT58oW4gMuGzw8dZJP8EDx0PSwst+QVlNyhSUnwJNlwYjs
+Z7pbb4SgbQJB+e/QVOPB0fOuEkK0078hd6u78+yFOSyj3gRyvmMunok1m/Fvb3kk
+8azwmGPNABRWppFRJQxEWEiHPRcTz03xOcWIsXkCgYEAitzP/18TLvA+RMZ0AFEg
+VyAcc44fyCbjipJJayeJMI+mxhvSjMsWNqP/cUzwxNn8dm9BZxKC1VOWnYBe6kSo
+/J2podgtAsNK938995tD2ELPwB7XhSPm4fC2AHEewMH3xOD1yxOEouuhyDK7bKBu
+lZ538VHoMkT6G7FCjou+F5s=
+-----END PRIVATE KEY-----)";
+
+constexpr const char* kRs256PublicKey = R"(-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3SjynL/BSQfPE/7QI6K1
+hA+xEP6uXF1pV3AVleXLKhWpZw9TgpWy39SPryWFSKoHxj6UWcUYlTS0eqBcFMpF
+Dcz225vWDDT4HKUGSCT1xyBDKc26uCKL0vGRBxsiRsjTqOTh9RtWVZEbbq/W+Msk
+n7n7DkJLXk57DisHrpijzYx9FbxTh4cidyjSn25+XBCeCXyOVkJxkmrOyCV/aDj+
+HP4QOZpd9kSEdXZJat7IA04ChYwaCTi+an3ASMmv2PLRorL7qOmrd7W3EszV0kdK
+KNBUknNXreFOv+Z/jCzk4nFNu+PNa25a2M+qdV6mOLElHs7DHcWFsQQ9+Xp8B8xR
+WwIDAQAB
+-----END PUBLIC KEY-----)";
 
 // ── Helpers ────────────────────────────────────────────────────────────
 
@@ -176,6 +217,70 @@ TEST(ServiceBusIntegrity, LoginBackendErrorPropagation) {
                 resp->error_code != 0);
 
     server.stop();
+}
+
+TEST(ServiceBusIntegrity, LoginBackendAcceptsRs256JwtAndValidatesToken) {
+    v2::login::LoginBackendService service(v2::login::LoginBackendOptions{
+        .port = 0,
+        .jwt_public_key_pem = kRs256PublicKey,
+        .jwt_issuer = "boost-gateway",
+        .jwt_audience = "game-client",
+    });
+    service.start();
+
+    v2::auth::JwtValidator signer({
+        .public_key_pem = kRs256PublicKey,
+        .private_key_pem = kRs256PrivateKey,
+        .issuer = "boost-gateway",
+        .audience = "game-client",
+    });
+    v2::auth::JwtPayload payload;
+    payload.sub = "alice";
+    payload.role = "player";
+    payload.display_name = "Alice";
+    payload.aud = "game-client";
+    auto token = signer.generate(payload);
+    ASSERT_FALSE(token.empty());
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto login_req = payload_envelope(nlohmann::json{
+        {"user_id", "alice"},
+        {"token", token},
+        {"display_name", "Alice"},
+    }.dump());
+    login_req.message_type = "login_request";
+    login_req.target_service = v2::service::ServiceId::kLogin;
+
+    auto login_resp = conn.send_request(login_req);
+    ASSERT_TRUE(login_resp.has_value());
+    EXPECT_EQ(login_resp->kind, v2::service::MessageKind::kResponse);
+    auto login_doc = nlohmann::json::parse(login_resp->payload, nullptr, false);
+    ASSERT_FALSE(login_doc.is_discarded());
+    EXPECT_EQ(login_doc.value("status", ""), "ok");
+    EXPECT_EQ(login_doc.value("role", ""), "player");
+
+    auto validate_req = payload_envelope(nlohmann::json{{"token", token}}.dump());
+    validate_req.message_type = "token_validate";
+    validate_req.target_service = v2::service::ServiceId::kLogin;
+    auto validate_resp = conn.send_request(validate_req);
+    ASSERT_TRUE(validate_resp.has_value());
+    auto validate_doc = nlohmann::json::parse(validate_resp->payload, nullptr, false);
+    ASSERT_FALSE(validate_doc.is_discarded());
+    EXPECT_TRUE(validate_doc.value("valid", false));
+
+    auto bad_validate_req = payload_envelope(nlohmann::json{{"token", token + "x"}}.dump());
+    bad_validate_req.message_type = "token_validate";
+    bad_validate_req.target_service = v2::service::ServiceId::kLogin;
+    auto bad_validate_resp = conn.send_request(bad_validate_req);
+    ASSERT_TRUE(bad_validate_resp.has_value());
+    auto bad_validate_doc = nlohmann::json::parse(bad_validate_resp->payload, nullptr, false);
+    ASSERT_FALSE(bad_validate_doc.is_discarded());
+    EXPECT_FALSE(bad_validate_doc.value("valid", true));
+
+    service.stop();
 }
 
 // ─── Room backend data chain ────────────────────────────────────────────

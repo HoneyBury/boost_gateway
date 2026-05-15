@@ -12,6 +12,11 @@
 #include "v3/tracing/otel_exporter.h"
 
 #include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/read.hpp>
+#include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/write.hpp>
 #include <nlohmann/json.hpp>
 
 #include <atomic>
@@ -20,15 +25,89 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 
 #include <gtest/gtest.h>
 
 namespace {
 
 namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 constexpr const char* kGatewayHost = "127.0.0.1";
+
+struct FakeOtlpCollector {
+    asio::io_context io_context;
+    tcp::acceptor acceptor{io_context};
+    std::thread thread;
+    std::mutex mutex;
+    std::string last_target;
+    std::string last_body;
+    std::size_t request_count = 0;
+    std::atomic<bool> running{false};
+
+    bool start() {
+        try {
+            acceptor.open(tcp::v4());
+            acceptor.set_option(asio::socket_base::reuse_address(true));
+            acceptor.bind({tcp::v4(), 0});
+            acceptor.listen();
+            running = true;
+            thread = std::thread([this]() { run(); });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    void stop() {
+        running = false;
+        boost::system::error_code ec;
+        acceptor.close(ec);
+        io_context.stop();
+        if (thread.joinable()) {
+            thread.join();
+        }
+    }
+
+    std::uint16_t port() const {
+        return acceptor.local_endpoint().port();
+    }
+
+private:
+    void run() {
+        while (running) {
+            boost::system::error_code ec;
+            tcp::socket socket(io_context);
+            acceptor.accept(socket, ec);
+            if (ec) {
+                if (!running) {
+                    return;
+                }
+                continue;
+            }
+
+            beast::flat_buffer buffer;
+            http::request<http::string_body> request;
+            http::read(socket, buffer, request, ec);
+            if (!ec) {
+                std::lock_guard lock(mutex);
+                last_target = std::string(request.target());
+                last_body = request.body();
+                ++request_count;
+            }
+
+            http::response<http::string_body> response{http::status::ok, 11};
+            response.set(http::field::content_type, "application/json");
+            response.body() = R"({"ok":true})";
+            response.prepare_payload();
+            http::write(socket, response, ec);
+            socket.shutdown(tcp::socket::shutdown_both, ec);
+        }
+    }
+};
 
 // ─── Backend helpers ──────────────────────────────────────────────
 
@@ -287,6 +366,7 @@ private:
 struct LoginBackendProcess {
     std::unique_ptr<v2::service::BackendServer> server;
     std::uint16_t port = 0;
+    std::string backend_id = "login-backend";
 
     std::unordered_map<std::string, std::string> active_sessions_;
     std::mutex mutex_;
@@ -335,6 +415,7 @@ struct LoginBackendProcess {
                 {"user_id", user_id},
                 {"display_name", display_name},
                 {"is_duplicate", is_duplicate},
+                {"backend_id", backend_id},
             };
             response.payload = body.dump();
             return response;
@@ -1477,6 +1558,8 @@ TEST(V2BackendRoutingTest, ShardRouterConsistentAffinityAcrossBackends) {
 
     LoginBackendProcess backend_a;
     LoginBackendProcess backend_b;
+    backend_a.backend_id = "login-A";
+    backend_b.backend_id = "login-B";
     ASSERT_TRUE(backend_a.start());
     ASSERT_TRUE(backend_b.start());
 
@@ -1567,6 +1650,118 @@ TEST(V2BackendRoutingTest, ShardRouterWithoutShardKeyFallsBackToRoundRobin) {
 
 // ─── v3.0.0: TLS config integration tests ───────────────────────────
 
+TEST(V2BackendRoutingTest, ClusterRouterKeepsShardAffinityPerBackendNode) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend_a;
+    LoginBackendProcess backend_b;
+    backend_a.backend_id = "login-A";
+    backend_b.backend_id = "login-B";
+    ASSERT_TRUE(backend_a.start());
+    ASSERT_TRUE(backend_b.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_a.port, .node_name = "login-A"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_b.port, .node_name = "login-B"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto shard_router = std::make_shared<v3::cluster::ShardRouter>();
+    shard_router->add_backend("login-A");
+    shard_router->add_backend("login-B");
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+    bridge.set_shard_router(shard_router);
+
+    std::optional<std::string> sticky_backend_id;
+    for (int i = 0; i < 5; ++i) {
+        auto result = bridge.route(v2::service::ServiceId::kLogin,
+                                   "login_request",
+                                   R"({"user_id":"eve","token":"t5","display_name":"Eve"})",
+                                   "battle_42");
+        ASSERT_TRUE(result.success) << "iteration=" << i;
+        auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+        ASSERT_FALSE(doc.is_discarded());
+        ASSERT_TRUE(doc.contains("backend_id"));
+        const auto current_backend_id = doc["backend_id"].get<std::string>();
+        if (!sticky_backend_id.has_value()) {
+            sticky_backend_id = current_backend_id;
+        } else {
+            EXPECT_EQ(current_backend_id, *sticky_backend_id);
+        }
+    }
+
+    std::unordered_set<std::string> seen_backends;
+    for (int i = 0; i < 256 && seen_backends.size() < 2U; ++i) {
+        auto result = bridge.route(v2::service::ServiceId::kLogin,
+                                   "login_request",
+                                   R"({"user_id":"frank","token":"t6","display_name":"Frank"})",
+                                   "room_" + std::to_string(i) + "_" + std::to_string(i * 17 + 3));
+        ASSERT_TRUE(result.success) << "shard=" << i;
+        auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+        ASSERT_FALSE(doc.is_discarded());
+        seen_backends.insert(doc.value("backend_id", ""));
+    }
+    EXPECT_EQ(seen_backends.size(), 2U);
+
+    bridge.shutdown();
+    backend_a.stop();
+    backend_b.stop();
+}
+
+TEST(V2BackendRoutingTest, ClusterRouterRoundRobinUsesMultipleBackendNodes) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend_a;
+    LoginBackendProcess backend_b;
+    backend_a.backend_id = "login-rr-a";
+    backend_b.backend_id = "login-rr-b";
+    ASSERT_TRUE(backend_a.start());
+    ASSERT_TRUE(backend_b.start());
+
+    auto router = std::make_shared<v3::cluster::ClusterRouter>();
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_a.port, .node_name = "login-rr-a"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+    router->register_service(v3::cluster::ServiceInstance{
+        .node = {.host = "127.0.0.1", .port = backend_b.port, .node_name = "login-rr-b"},
+        .service_name = "login",
+        .state = v3::cluster::ServiceState::kHealthy,
+    });
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
+    bridge.set_cluster_router(router);
+
+    std::unordered_set<std::string> seen_backends;
+    for (int i = 0; i < 6; ++i) {
+        auto result = bridge.route(v2::service::ServiceId::kLogin,
+                                   "login_request",
+                                   R"({"user_id":"hank","token":"t8","display_name":"Hank"})");
+        ASSERT_TRUE(result.success) << "iteration=" << i;
+        auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+        ASSERT_FALSE(doc.is_discarded());
+        seen_backends.insert(doc.value("backend_id", ""));
+    }
+    EXPECT_EQ(seen_backends.size(), 2U);
+
+    bridge.shutdown();
+    backend_a.stop();
+    backend_b.stop();
+}
+
 TEST(V2BackendRoutingTest, TlsConfigStoredAndAccessible) {
     app::logging::init("project_tests");
 
@@ -1645,6 +1840,33 @@ TEST(V2BackendRoutingTest, SecurityPolicyPerServiceDefaults) {
 
     // Unknown service
     EXPECT_EQ(policy.policy_for("nonexistent"), nullptr);
+}
+
+TEST(V2BackendRoutingTest, SecurityPolicyAllowsPlaintextWhenGlobalTlsDisabled) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    auto flags = std::make_shared<v2::config::FeatureFlags>();
+    flags->register_flag("v3_tls_enabled", 0, false);
+
+    v3::cluster::SecurityPolicy policy;
+    policy.require_tls = false;
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", backend.port},
+        std::nullopt, std::nullopt);
+    bridge.set_feature_flags(flags);
+    bridge.set_security_policy(policy);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"tls_fallback","token":"token:tls_fallback","display_name":"TLS Fallback"})");
+    EXPECT_TRUE(result.success);
+
+    bridge.shutdown();
+    backend.stop();
 }
 
 // ─── v3.0.0 B4: Raft consensus integration tests ─────────────────────
@@ -1760,6 +1982,59 @@ TEST(V2BackendRoutingTest, RaftAppendEntriesHandlerRespondsToRpc) {
     matchmaking.stop();
 }
 
+TEST(V2BackendRoutingTest, MatchmakingServicesElectSingleLeaderOverBackendRpc) {
+    app::logging::init("project_tests");
+
+    constexpr std::uint16_t kPort1 = 19431;
+    constexpr std::uint16_t kPort2 = 19432;
+    constexpr std::uint16_t kPort3 = 19433;
+
+    const std::vector<v3::cluster::RaftNodeId> peers = {
+        {"match-1", "127.0.0.1", kPort1},
+        {"match-2", "127.0.0.1", kPort2},
+        {"match-3", "127.0.0.1", kPort3},
+    };
+
+    v2::match::MatchmakingService node1(kPort1);
+    v2::match::MatchmakingService node2(kPort2);
+    v2::match::MatchmakingService node3(kPort3);
+
+    auto make_cfg = [&](const std::string& node_id) {
+        v3::cluster::RaftConfig cfg;
+        cfg.node_id = node_id;
+        cfg.peers = peers;
+        cfg.election_timeout_min = std::chrono::milliseconds(150);
+        cfg.election_timeout_max = std::chrono::milliseconds(300);
+        cfg.heartbeat_interval = std::chrono::milliseconds(50);
+        return cfg;
+    };
+
+    node1.set_raft_config(make_cfg("match-1"));
+    node2.set_raft_config(make_cfg("match-2"));
+    node3.set_raft_config(make_cfg("match-3"));
+
+    node1.start();
+    node2.start();
+    node3.start();
+
+    int leaders = 0;
+    for (int i = 0; i < 80; ++i) {
+        leaders = static_cast<int>(node1.is_raft_leader()) +
+                  static_cast<int>(node2.is_raft_leader()) +
+                  static_cast<int>(node3.is_raft_leader());
+        if (leaders == 1) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+
+    EXPECT_EQ(leaders, 1);
+
+    node1.stop();
+    node2.stop();
+    node3.stop();
+}
+
 // ─── v3.0.0 B5: OpenTelemetry export integration tests ───────────────
 
 TEST(V2BackendRoutingTest, OtelExporterReceivesSpanOnSuccessfulRoute) {
@@ -1828,15 +2103,67 @@ TEST(V2BackendRoutingTest, OtelExporterSpanHasCorrectOperationName) {
         std::nullopt, std::nullopt);
     bridge.set_otel_exporter(exporter);
 
-    bridge.route(v2::service::ServiceId::kLogin,
-                 "room_create",
-                 R"({"user_id":"alice","room_id":"room_001"})");
+    auto route_result = bridge.route(v2::service::ServiceId::kLogin,
+                                     "room_create",
+                                     R"({"user_id":"alice","room_id":"room_001"})");
+    EXPECT_FALSE(route_result.success);
 
     auto records = exporter->drain();
     ASSERT_GE(records.size(), 1U);
     EXPECT_EQ(records[0].operation_name, "route.room_create");
 
     bridge.shutdown();
+    backend.stop();
+}
+
+TEST(V2BackendRoutingTest, OtelExporterPostsSpanToCollectorEndpoint) {
+    app::logging::init("project_tests");
+
+    LoginBackendProcess backend;
+    ASSERT_TRUE(backend.start());
+
+    FakeOtlpCollector collector;
+    ASSERT_TRUE(collector.start());
+
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{
+            .service_name = "gateway-test",
+            .export_endpoint =
+                "http://127.0.0.1:" + std::to_string(collector.port()) + "/v1/traces",
+            .max_batch_size = 1,
+        });
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{"127.0.0.1", backend.port},
+        std::nullopt, std::nullopt);
+    bridge.set_otel_exporter(exporter);
+
+    auto result = bridge.route(v2::service::ServiceId::kLogin,
+                               "login_request",
+                               R"({"user_id":"zoe","token":"t10","display_name":"Zoe"})");
+    EXPECT_TRUE(result.success);
+
+    for (int i = 0; i < 50; ++i) {
+        {
+            std::lock_guard lock(collector.mutex);
+            if (collector.request_count > 0) {
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+
+    {
+        std::lock_guard lock(collector.mutex);
+        EXPECT_EQ(collector.request_count, 1U);
+        EXPECT_EQ(collector.last_target, "/v1/traces");
+        EXPECT_NE(collector.last_body.find("\"serviceName\":\"login\""), std::string::npos);
+        EXPECT_NE(collector.last_body.find("\"operationName\":\"route.login_request\""),
+                  std::string::npos);
+    }
+
+    bridge.shutdown();
+    collector.stop();
     backend.stop();
 }
 

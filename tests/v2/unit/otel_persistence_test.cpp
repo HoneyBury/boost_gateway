@@ -44,20 +44,36 @@ TEST(OtelExporterTest, ExportMultipleSpans) {
 }
 
 TEST(OtelExporterTest, CustomExportFunction) {
-    OtlpExporter exporter({"fn-test"});
+    OtlpExporter exporter({
+        .service_name = "fn-test",
+        .max_batch_size = 1,
+    });
     int export_count = 0;
     exporter.set_export_fn([&](const std::string&) {
         ++export_count;
         return true;
     });
 
-    // Fill buffer to trigger batch export (max_batch_size=256 default, won't trigger)
     auto span = v2::tracing::Span::root("export_test");
     span.finish();
     exporter.export_span(span);
 
-    auto json = exporter.flush_json();
-    EXPECT_FALSE(json.empty());
+    EXPECT_EQ(export_count, 1);
+    EXPECT_EQ(exporter.buffer_size(), 0U);
+}
+
+TEST(OtelExporterTest, FlushRequeuesWhenExportFails) {
+    OtlpExporter exporter({"flush-test"});
+    exporter.set_export_fn([](const std::string&) {
+        return false;
+    });
+
+    auto span = v2::tracing::Span::root("flush_retry");
+    span.finish();
+    exporter.export_span(span);
+
+    EXPECT_FALSE(exporter.flush());
+    EXPECT_EQ(exporter.buffer_size(), 1U);
 }
 
 TEST(OtelExporterTest, SpanRecordFields) {

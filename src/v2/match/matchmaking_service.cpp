@@ -3,6 +3,7 @@
 // Only the Raft leader performs matchmaking to prevent duplicate matches.
 
 #include "v2/match/matchmaking_service.h"
+#include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
 #include "v3/cluster/raft.h"
 
@@ -28,6 +29,52 @@ std::uint64_t now_ms() {
 }
 
 std::atomic<std::uint64_t> g_next_match_id{1};
+
+auto make_raft_rpc_sender() {
+    return [](const v3::cluster::RaftNodeId& target,
+              const std::string& data) -> std::string {
+        if (target.host.empty() || target.port == 0) {
+            return {};
+        }
+
+        auto doc = nlohmann::json::parse(data, nullptr, false);
+        if (doc.is_discarded()) {
+            return {};
+        }
+
+        const auto rpc_type = doc.value("type", "");
+        std::string message_type;
+        if (rpc_type == "request_vote") {
+            message_type = "raft_request_vote";
+        } else if (rpc_type == "append_entries") {
+            message_type = "raft_append_entries";
+        } else {
+            return {};
+        }
+
+        v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+            .host = target.host,
+            .port = target.port,
+            .timeout = std::chrono::milliseconds(1000),
+            .connect_timeout = std::chrono::milliseconds(500),
+        });
+        if (!conn.connect()) {
+            return {};
+        }
+
+        v2::service::BackendEnvelope request;
+        request.target_service = v2::service::ServiceId::kGateway;
+        request.kind = v2::service::MessageKind::kRequest;
+        request.message_type = message_type;
+        request.payload = data;
+
+        auto response = conn.send_request(std::move(request));
+        if (!response || response->kind != v2::service::MessageKind::kResponse) {
+            return {};
+        }
+        return response->payload;
+    };
+}
 
 // ── MatchQueue ─────────────────────────────────────────────────────────
 
@@ -232,6 +279,7 @@ public:
         // v3.0.0: Start Raft consensus if configured.
         if (!raft_config_.node_id.empty()) {
             raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
+            raft_node_->set_rpc_sender(make_raft_rpc_sender());
             raft_node_->on_become_leader([this]() {
                 leader_.store(true);
             });
@@ -299,53 +347,41 @@ private:
     // v3.0.0: Raft RPC handlers for inter-node consensus.
     v2::service::BackendEnvelope handle_raft_request_vote(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
-        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
-
-        v3::cluster::RequestVoteArgs args;
-        args.term = doc.value("term", 0ULL);
-        args.candidate_id = doc.value("candidate_id", "");
-        args.last_log_term = doc.value("last_log_term", 0ULL);
-        args.last_log_index = doc.value("last_log_index", 0ULL);
-
         if (!raft_node_) {
             return make_error(-1003, "raft_not_initialized");
         }
 
-        auto reply = raft_node_->handle_request_vote(args);
+        v3::cluster::RequestVoteArgs args;
+        try {
+            args = v3::cluster::parse_request_vote(req.payload);
+        } catch (const std::exception&) {
+            return make_error(-1004, "invalid_json");
+        }
 
-        nlohmann::json body{
-            {"term", reply.term},
-            {"vote_granted", reply.vote_granted},
-        };
+        auto reply = raft_node_->handle_request_vote(args);
         v2::service::BackendEnvelope resp;
         resp.kind = v2::service::MessageKind::kResponse;
-        resp.payload = body.dump();
+        resp.payload = v3::cluster::serialize_request_vote_reply(reply);
         return resp;
     }
 
     v2::service::BackendEnvelope handle_raft_append_entries(
         const v2::service::BackendEnvelope& req) {
-        auto doc = nlohmann::json::parse(req.payload, nullptr, false);
-        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
-
-        v3::cluster::AppendEntriesArgs args;
-        args.term = doc.value("term", 0ULL);
-        args.leader_id = doc.value("leader_id", "");
-
         if (!raft_node_) {
             return make_error(-1003, "raft_not_initialized");
         }
 
-        auto reply = raft_node_->handle_append_entries(args);
+        v3::cluster::AppendEntriesArgs args;
+        try {
+            args = v3::cluster::parse_append_entries(req.payload);
+        } catch (const std::exception&) {
+            return make_error(-1004, "invalid_json");
+        }
 
-        nlohmann::json body{
-            {"term", reply.term},
-            {"success", reply.success},
-        };
+        auto reply = raft_node_->handle_append_entries(args);
         v2::service::BackendEnvelope resp;
         resp.kind = v2::service::MessageKind::kResponse;
-        resp.payload = body.dump();
+        resp.payload = v3::cluster::serialize_append_entries_reply(reply);
         return resp;
     }
 

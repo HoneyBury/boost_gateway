@@ -332,8 +332,7 @@ std::string DemoServer::health_json() const {
 std::string DemoServer::ready_json() const {
     auto status = health_check_.check();
     nlohmann::json doc;
-    doc["status"] = status.status;
-    doc["ready"] = status.is_healthy();
+    bool ready = status.is_healthy();
     // Include backend reachability details
     nlohmann::json checks = nlohmann::json::array();
     for (const auto& check : status.checks) {
@@ -343,6 +342,38 @@ std::string DemoServer::ready_json() const {
             {"message", check.message},
         });
     }
+
+    if (const auto* bridge = runtime_.service_bridge()) {
+        const struct {
+            std::optional<GatewayServiceBridge::BackendConfig> DemoServerOptions::*config;
+            v2::service::ServiceId service_id;
+            const char* service_name;
+        } kConfiguredServices[] = {
+            {&DemoServerOptions::login_backend_config, v2::service::ServiceId::kLogin, "login"},
+            {&DemoServerOptions::room_backend_config, v2::service::ServiceId::kRoom, "room"},
+            {&DemoServerOptions::battle_backend_config, v2::service::ServiceId::kBattle, "battle"},
+            {&DemoServerOptions::matchmaking_backend_config, v2::service::ServiceId::kMatchmaking, "matchmaking"},
+            {&DemoServerOptions::leaderboard_backend_config, v2::service::ServiceId::kLeaderboard, "leaderboard"},
+        };
+
+        for (const auto& configured : kConfiguredServices) {
+            if (!(options_.*(configured.config)).has_value()) {
+                continue;
+            }
+            const bool available = bridge->is_backend_available(configured.service_id);
+            if (!available) {
+                ready = false;
+            }
+            checks.push_back({
+                {"name", std::string("bridge:") + configured.service_name},
+                {"status", available ? "pass" : "fail"},
+                {"message", available ? "backend reachable" : "backend unavailable"},
+            });
+        }
+    }
+
+    doc["status"] = ready ? status.status : "fail";
+    doc["ready"] = ready;
     doc["checks"] = std::move(checks);
     return doc.dump();
 }

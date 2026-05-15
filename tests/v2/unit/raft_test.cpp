@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -127,6 +128,30 @@ TEST(RaftTest, HigherTermForcesStepDown) {
     EXPECT_TRUE(stepped_down);
 
     node.stop();
+}
+
+TEST(RaftTest, AppendEntriesSerializationRoundTripCarriesLogFields) {
+    AppendEntriesArgs args;
+    args.term = 7;
+    args.leader_id = "leader-1";
+    args.prev_log_index = 3;
+    args.prev_log_term = 6;
+    args.leader_commit = 2;
+    args.entries = {
+        LogEntry{.term = 7, .command = R"({"op":"join"})"},
+        LogEntry{.term = 7, .command = R"({"op":"match"})"},
+    };
+
+    auto encoded = serialize_append_entries(args);
+    auto decoded = parse_append_entries(encoded);
+    EXPECT_EQ(decoded.term, 7U);
+    EXPECT_EQ(decoded.leader_id, "leader-1");
+    EXPECT_EQ(decoded.prev_log_index, 3U);
+    EXPECT_EQ(decoded.prev_log_term, 6U);
+    EXPECT_EQ(decoded.leader_commit, 2U);
+    ASSERT_EQ(decoded.entries.size(), 2U);
+    EXPECT_EQ(decoded.entries[0].command, R"({"op":"join"})");
+    EXPECT_EQ(decoded.entries[1].term, 7U);
 }
 
 TEST(RaftTest, TwoNodesWithThreePeersElectLeader) {
@@ -309,4 +334,137 @@ TEST(RaftClusterTest, LeaderStepDownOnHigherTerm) {
         << "Leader should step down on higher term";
 
     for (auto& [_, node] : node_store) node->stop();
+}
+
+TEST(RaftClusterTest, LeaderReplicatesCommittedLogToFollowers) {
+    std::unordered_map<std::string, std::unique_ptr<RaftNode>> node_store;
+    std::unordered_map<std::string, RaftNode*> registry;
+    std::mutex registry_mutex;
+
+    for (int i = 1; i <= 3; ++i) {
+        auto id = "n" + std::to_string(i);
+        RaftConfig cfg{
+            .node_id = id,
+            .election_timeout_min = std::chrono::milliseconds(120),
+            .election_timeout_max = std::chrono::milliseconds(240),
+            .heartbeat_interval = std::chrono::milliseconds(40),
+            .peers = {{"n1", "", 0}, {"n2", "", 0}, {"n3", "", 0}},
+        };
+        auto node = std::make_unique<RaftNode>(std::move(cfg));
+        registry[id] = node.get();
+        node->set_rpc_sender(make_rpc_sender(registry, registry_mutex));
+        node_store[id] = std::move(node);
+    }
+
+    for (auto& [_, node] : node_store) {
+        node->start();
+    }
+
+    RaftNode* leader = nullptr;
+    for (int i = 0; i < 80 && !leader; ++i) {
+        for (auto& [_, node] : node_store) {
+            if (node->is_leader()) {
+                leader = node.get();
+                break;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    ASSERT_NE(leader, nullptr);
+
+    EXPECT_TRUE(leader->append_command(R"({"op":"promote_match","id":"m-1"})"));
+
+    for (int i = 0; i < 40; ++i) {
+        bool replicated = true;
+        for (auto& [_, node] : node_store) {
+            if (node->log_size() != 1U || node->commit_index() != 1U) {
+                replicated = false;
+                break;
+            }
+        }
+        if (replicated) {
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(25));
+    }
+
+    for (auto& [id, node] : node_store) {
+        EXPECT_EQ(node->log_size(), 1U) << id;
+        EXPECT_EQ(node->commit_index(), 1U) << id;
+        EXPECT_EQ(node->log_command(1), R"({"op":"promote_match","id":"m-1"})") << id;
+    }
+
+    for (auto& [_, node] : node_store) {
+        node->stop();
+    }
+}
+
+TEST(RaftTest, RequestVoteRejectsOutdatedCandidateLog) {
+    RaftNode node(RaftConfig{
+        .node_id = "leader-like",
+        .election_timeout_min = std::chrono::milliseconds(50),
+        .election_timeout_max = std::chrono::milliseconds(100),
+        .peers = {{"leader-like", "", 0}},
+    });
+    node.start();
+    for (int i = 0; i < 30 && !node.is_leader(); ++i) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    ASSERT_TRUE(node.is_leader());
+    ASSERT_TRUE(node.append_command("cmd-1"));
+
+    RequestVoteArgs stale_candidate{
+        .term = node.current_term() + 1,
+        .candidate_id = "candidate-x",
+        .last_log_term = 0,
+        .last_log_index = 0,
+    };
+    auto reply = node.handle_request_vote(stale_candidate);
+    EXPECT_FALSE(reply.vote_granted);
+    EXPECT_EQ(reply.term, node.current_term());
+
+    node.stop();
+}
+
+TEST(RaftTest, PersistentLogAndCommitStateRestoreAfterRestart) {
+    const auto storage_root =
+        std::filesystem::temp_directory_path() / "boost_raft_persist_test";
+    std::error_code ec;
+    std::filesystem::remove_all(storage_root, ec);
+    std::filesystem::create_directories(storage_root, ec);
+
+    {
+        RaftNode node(RaftConfig{
+            .node_id = "persist-node",
+            .storage_dir = storage_root.string(),
+            .election_timeout_min = std::chrono::milliseconds(50),
+            .election_timeout_max = std::chrono::milliseconds(100),
+            .peers = {{"persist-node", "", 0}},
+        });
+        node.start();
+        for (int i = 0; i < 30 && !node.is_leader(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        ASSERT_TRUE(node.is_leader());
+        ASSERT_TRUE(node.append_command(R"({"op":"persist","id":"cmd-1"})"));
+        ASSERT_EQ(node.commit_index(), 1U);
+        ASSERT_EQ(node.last_applied(), 1U);
+        node.stop();
+    }
+
+    {
+        RaftNode recovered(RaftConfig{
+            .node_id = "persist-node",
+            .storage_dir = storage_root.string(),
+            .peers = {{"persist-node", "", 0}},
+        });
+        EXPECT_EQ(recovered.current_term(), 1U);
+        EXPECT_EQ(recovered.log_size(), 1U);
+        EXPECT_EQ(recovered.commit_index(), 1U);
+        EXPECT_EQ(recovered.last_applied(), 1U);
+        EXPECT_EQ(recovered.log_command(1), R"({"op":"persist","id":"cmd-1"})");
+        EXPECT_EQ(recovered.state(), RaftState::kFollower);
+    }
+
+    std::filesystem::remove_all(storage_root, ec);
 }
