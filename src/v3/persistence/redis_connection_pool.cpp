@@ -2,6 +2,8 @@
 
 #include "v3/persistence/redis_connection_pool.h"
 
+#include <utility>
+
 namespace v3::persistence {
 
 // ── PooledConnection ──────────────────────────────────────────────────
