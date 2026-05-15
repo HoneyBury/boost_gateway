@@ -127,12 +127,14 @@ Why:
 
 ## Next Implementation Steps
 
-1. Add `envtest` controller tests for reconcile behavior.
-2. Replace the current fake-client controller tests with `envtest`.
-3. Add cert-manager integration for TLS secrets.
-4. Inject Raft peer membership into `match` and `leaderboard` pods from stable DNS.
-5. Rework Helm so Helm installs the operator and a sample `BoostGatewayCluster`,
+1. Keep both fake-client and `envtest` reconcile tests:
+   fake-client stays as the fast edit loop, `envtest` becomes the API-accurate gate.
+2. Add cert-manager integration for TLS secrets.
+3. Inject Raft peer membership into `match` and `leaderboard` pods from stable DNS.
+4. Rework Helm so Helm installs the operator and a sample `BoostGatewayCluster`,
    instead of trying to template every runtime object directly.
+5. Add a CI `kind` smoke test that runs `make install`, `make install-sample`,
+   and validates generated Deployments / StatefulSets.
 
 ## Notes About Existing Assets
 

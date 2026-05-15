@@ -468,3 +468,47 @@ TEST(RaftTest, PersistentLogAndCommitStateRestoreAfterRestart) {
 
     std::filesystem::remove_all(storage_root, ec);
 }
+
+TEST(RaftTest, ApplyCallbackReplaysCommittedEntriesAfterRestart) {
+    const auto storage_root =
+        std::filesystem::temp_directory_path() / "boost_raft_apply_replay_test";
+    std::error_code ec;
+    std::filesystem::remove_all(storage_root, ec);
+    std::filesystem::create_directories(storage_root, ec);
+
+    {
+        RaftNode node(RaftConfig{
+            .node_id = "apply-replay-node",
+            .storage_dir = storage_root.string(),
+            .election_timeout_min = std::chrono::milliseconds(50),
+            .election_timeout_max = std::chrono::milliseconds(100),
+            .peers = {{"apply-replay-node", "", 0}},
+        });
+        node.start();
+        for (int i = 0; i < 30 && !node.is_leader(); ++i) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        ASSERT_TRUE(node.is_leader());
+        ASSERT_TRUE(node.append_command(R"({"op":"persist","id":"cmd-1"})"));
+        ASSERT_TRUE(node.append_command(R"({"op":"persist","id":"cmd-2"})"));
+        node.stop();
+    }
+
+    {
+        RaftNode recovered(RaftConfig{
+            .node_id = "apply-replay-node",
+            .storage_dir = storage_root.string(),
+            .peers = {{"apply-replay-node", "", 0}},
+        });
+        std::vector<std::string> replayed;
+        recovered.on_apply([&replayed](std::uint64_t /*index*/, const LogEntry& entry) {
+            replayed.push_back(entry.command);
+        });
+
+        ASSERT_EQ(replayed.size(), 2U);
+        EXPECT_EQ(replayed[0], R"({"op":"persist","id":"cmd-1"})");
+        EXPECT_EQ(replayed[1], R"({"op":"persist","id":"cmd-2"})");
+    }
+
+    std::filesystem::remove_all(storage_root, ec);
+}

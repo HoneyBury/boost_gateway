@@ -147,6 +147,18 @@ auto make_raft_rpc_sender() {
     };
 }
 
+std::string make_submit_command(const std::string& user_id,
+                                const std::string& display_name,
+                                std::int64_t score) {
+    return nlohmann::json{
+        {"v", 1},
+        {"op", "leaderboard_submit"},
+        {"user_id", user_id},
+        {"display_name", display_name},
+        {"score", score},
+    }.dump();
+}
+
 }  // namespace
 
 // ── Implementation ──────────────────────────────────────────────────────
@@ -184,6 +196,10 @@ public:
             });
             raft_node_->on_step_down([this]() {
                 leader_.store(false);
+            });
+            raft_node_->on_apply([this](std::uint64_t /*index*/,
+                                        const v3::cluster::LogEntry& entry) {
+                apply_raft_entry(entry.command);
             });
             raft_node_->start();
         }
@@ -234,31 +250,31 @@ private:
 
     v2::service::BackendEnvelope handle_submit(
         const v2::service::BackendEnvelope& req) {
-        if (raft_node_ && !raft_node_->is_leader()) {
-            return make_error(-1003, "not_raft_leader");
-        }
-
         auto doc = nlohmann::json::parse(req.payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
-        std::string user_id = doc.value("user_id", "");
-        std::string display_name = doc.value("display_name", "");
-        std::int64_t score = doc.value("score", 0);
+        const std::string user_id = doc.value("user_id", "");
+        const std::string display_name = doc.value("display_name", "");
+        const std::int64_t score = doc.value("score", 0);
 
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
-        std::optional<std::int64_t> new_rank;
-
-        if (redis_lb_ && redis_lb_->available()) {
-            new_rank = redis_lb_->submit(user_id, display_name, score);
+        if (raft_node_) {
+            if (!raft_node_->is_leader()) {
+                return make_error(-1003, "not_raft_leader");
+            }
+            if (!raft_node_->append_command(
+                    make_submit_command(user_id, display_name, score))) {
+                return make_error(-1005, "raft_commit_failed");
+            }
         } else {
-            leaderboard_.submit(user_id, display_name, score);
-            auto entry = leaderboard_.rank_of(user_id);
-            if (entry.has_value()) new_rank = entry->rank;
+            apply_submit(user_id, display_name, score);
         }
 
         nlohmann::json body{{"status", "ok"}, {"user_id", user_id}};
-        if (new_rank.has_value()) body["rank"] = *new_rank;
+        if (auto new_rank = rank_of(user_id); new_rank.has_value()) {
+            body["rank"] = *new_rank;
+        }
         return make_response(body);
     }
 
@@ -365,6 +381,49 @@ private:
         resp.kind = v2::service::MessageKind::kResponse;
         resp.payload = v3::cluster::serialize_append_entries_reply(reply);
         return resp;
+    }
+
+    void apply_submit(const std::string& user_id,
+                      const std::string& display_name,
+                      std::int64_t score) {
+        if (redis_lb_ && redis_lb_->available()) {
+            redis_lb_->submit(user_id, display_name, score);
+            return;
+        }
+        leaderboard_.submit(user_id, display_name, score);
+    }
+
+    std::optional<std::int64_t> rank_of(const std::string& user_id) const {
+        if (redis_lb_ && redis_lb_->available()) {
+            if (auto entry = redis_lb_->rank_of(user_id); entry.has_value()) {
+                return entry->rank;
+            }
+            return std::nullopt;
+        }
+        if (auto entry = leaderboard_.rank_of(user_id); entry.has_value()) {
+            return entry->rank;
+        }
+        return std::nullopt;
+    }
+
+    void apply_raft_entry(const std::string& command) {
+        auto doc = nlohmann::json::parse(command, nullptr, false);
+        if (doc.is_discarded()) {
+            return;
+        }
+        if (doc.value("v", 0) != 1) {
+            return;
+        }
+        if (doc.value("op", "") != "leaderboard_submit") {
+            return;
+        }
+        const auto user_id = doc.value("user_id", "");
+        if (user_id.empty()) {
+            return;
+        }
+        apply_submit(user_id,
+                     doc.value("display_name", ""),
+                     doc.value("score", std::int64_t{0}));
     }
 };
 

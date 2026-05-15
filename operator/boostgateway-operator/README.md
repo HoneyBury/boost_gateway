@@ -37,13 +37,32 @@ operator built with `controller-runtime`.
 ```bash
 kind create cluster --config hack/kind-config.yaml
 kubectl create namespace boost-gateway
-kubectl apply -f config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml
-kubectl apply -k config/default
-kubectl apply -f config/samples/gateway_v1alpha1_boostgatewaycluster.yaml
+make install
+make install-sample
+```
+
+## Test workflow
+
+```bash
+make test
+```
+
+`envtest` is also wired for reconcile-level validation. It requires
+`KUBEBUILDER_ASSETS` to point at the local API server / etcd binaries.
+
+```bash
+set KUBEBUILDER_ASSETS=C:\path\to\kubebuilder\bin
+make test-envtest
+```
+
+For a full local install smoke path on `kind`:
+
+```bash
+make kind-smoke
 ```
 
 ## Next steps
 
-- Replace fake-client controller tests with `envtest`
 - Wire TLS and cert-manager objects
 - Reconcile `status.conditions` from actual pod readiness and rollout state
+- Turn the sample install flow into a CI `kind` smoke test

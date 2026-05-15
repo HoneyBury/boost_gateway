@@ -33,9 +33,26 @@ permissions:
 # Build & Test (all platforms)
 # ============================================================================
 jobs:
+  dependency-audit:
+    name: "Dependency Audit"
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download third-party dependencies
+        shell: bash
+        run: bash third_party/download_deps.sh
+
+      - name: Inspect dependency layout
+        shell: bash
+        run: bash scripts/inspect_dependency_layout.sh
+
   build:
     name: "Build (${{ matrix.os }})"
     runs-on: ${{ matrix.os }}
+    needs: [dependency-audit]
     strategy:
       fail-fast: false
       matrix:
@@ -80,6 +97,12 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.test_preset }} --output-on-failure
 
+      - name: Raft-backed service regression
+        if: runner.os == 'Windows'
+        run: >
+          build\windows-ninja-debug\tests\v2\project_v2_integration_tests.exe
+          --gtest_filter="V2BackendRoutingTest.LeaderboardReplicatesCommittedScoresAcrossRaftFollowers:V2BackendRoutingTest.MatchmakingReplicatesQueuedPlayersAndMatchesAcrossFollowers:V2BackendRoutingTest.MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers"
+
       - name: Upload test results (XML)
         if: always()
         uses: actions/upload-artifact@v4
@@ -91,12 +114,70 @@ jobs:
           if-no-files-found: ignore
 
   # ============================================================================
+  # Operator Tests & Smoke
+  # ============================================================================
+  operator:
+    name: "Operator Tests"
+    runs-on: ubuntu-latest
+    needs: [dependency-audit]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/boostgateway-operator/go.mod
+
+      - name: Setup envtest
+        shell: bash
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          echo "$HOME/go/bin" >> "$GITHUB_PATH"
+
+      - name: Go test
+        working-directory: operator/boostgateway-operator
+        run: go test ./...
+
+      - name: Envtest reconcile
+        shell: bash
+        working-directory: operator/boostgateway-operator
+        run: |
+          export KUBEBUILDER_ASSETS="$(setup-envtest use -p path)"
+          go test ./internal/controller -run TestEnvtest
+
+  operator-kind-smoke:
+    name: "Operator Kind Smoke"
+    runs-on: ubuntu-latest
+    needs: [operator]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/boostgateway-operator/go.mod
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: boostgateway-operator-smoke
+          config: operator/boostgateway-operator/hack/kind-config.yaml
+
+      - name: Operator kind smoke
+        shell: bash
+        run: bash scripts/operator_kind_smoke.sh
+
+  # ============================================================================
   # Docker Build & Push
   # ============================================================================
   docker:
     name: "Docker Images"
     runs-on: ubuntu-latest
-    needs: [build]
+    needs: [build, operator, operator-kind-smoke]
     if: >
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))

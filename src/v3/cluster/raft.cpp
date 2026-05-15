@@ -92,6 +92,24 @@ std::string RaftNode::log_command(std::uint64_t index) const {
     return log_[static_cast<std::size_t>(index - 1)].command;
 }
 
+void RaftNode::on_apply(ApplyCallback cb) {
+    std::vector<std::pair<std::uint64_t, LogEntry>> applied;
+    {
+        std::lock_guard lock(mutex_);
+        apply_cb_ = std::move(cb);
+        if (!apply_cb_) {
+            return;
+        }
+        for (std::uint64_t index = 1; index <= last_applied_ && index <= log_.size(); ++index) {
+            applied.push_back({
+                index,
+                log_[static_cast<std::size_t>(index - 1)],
+            });
+        }
+    }
+    deliver_applied_entries(applied);
+}
+
 void RaftNode::run() {
     while (running_) {
         const auto now = std::chrono::steady_clock::now();
@@ -304,7 +322,28 @@ void RaftNode::update_commit_index_locked() {
         candidate <= log_.size() &&
         log_[static_cast<std::size_t>(candidate - 1)].term == current_term_) {
         commit_index_ = candidate;
-        last_applied_ = std::max(last_applied_, commit_index_);
+    }
+}
+
+void RaftNode::drain_committed_entries_locked(
+    std::vector<std::pair<std::uint64_t, LogEntry>>& applied) {
+    while (last_applied_ < commit_index_ &&
+           last_applied_ < log_.size()) {
+        ++last_applied_;
+        applied.push_back({
+            last_applied_,
+            log_[static_cast<std::size_t>(last_applied_ - 1)],
+        });
+    }
+}
+
+void RaftNode::deliver_applied_entries(
+    const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) const {
+    if (!apply_cb_) {
+        return;
+    }
+    for (const auto& [index, entry] : applied) {
+        apply_cb_(index, entry);
     }
 }
 
@@ -332,70 +371,75 @@ RequestVoteReply RaftNode::handle_request_vote(const RequestVoteArgs& args) {
 }
 
 AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args) {
-    std::lock_guard lock(mutex_);
-    AppendEntriesReply reply{
-        .term = current_term_,
-        .success = false,
-        .match_index = static_cast<std::uint64_t>(log_.size()),
-    };
+    std::vector<std::pair<std::uint64_t, LogEntry>> applied;
+    AppendEntriesReply reply{};
+    {
+        std::lock_guard lock(mutex_);
+        reply = AppendEntriesReply{
+            .term = current_term_,
+            .success = false,
+            .match_index = static_cast<std::uint64_t>(log_.size()),
+        };
 
-    if (args.term < current_term_) {
-        return reply;
-    }
-    if (args.term > current_term_) {
-        become_follower(args.term);
-    } else if (state_ == RaftState::kCandidate) {
-        become_follower(args.term);
-    }
-
-    leader_id_ = args.leader_id;
-    reset_election_timeout();
-
-    if (args.prev_log_index > log_.size()) {
-        reply.term = current_term_;
-        return reply;
-    }
-    if (args.prev_log_index > 0) {
-        const auto local_prev_term =
-            log_[static_cast<std::size_t>(args.prev_log_index - 1)].term;
-        if (local_prev_term != args.prev_log_term) {
-            log_.resize(static_cast<std::size_t>(args.prev_log_index - 1));
-            if (commit_index_ > log_.size()) {
-                commit_index_ = log_.size();
-            }
-            if (last_applied_ > commit_index_) {
-                last_applied_ = commit_index_;
-            }
-            reply.term = current_term_;
-            reply.match_index = static_cast<std::uint64_t>(log_.size());
-            persist_state_locked();
+        if (args.term < current_term_) {
             return reply;
         }
-    }
+        if (args.term > current_term_) {
+            become_follower(args.term);
+        } else if (state_ == RaftState::kCandidate) {
+            become_follower(args.term);
+        }
 
-    std::size_t local_index = static_cast<std::size_t>(args.prev_log_index);
-    for (const auto& entry : args.entries) {
-        if (local_index < log_.size()) {
-            if (log_[local_index].term != entry.term ||
-                log_[local_index].command != entry.command) {
-                log_.resize(local_index);
+        leader_id_ = args.leader_id;
+        reset_election_timeout();
+
+        if (args.prev_log_index > log_.size()) {
+            reply.term = current_term_;
+            return reply;
+        }
+        if (args.prev_log_index > 0) {
+            const auto local_prev_term =
+                log_[static_cast<std::size_t>(args.prev_log_index - 1)].term;
+            if (local_prev_term != args.prev_log_term) {
+                log_.resize(static_cast<std::size_t>(args.prev_log_index - 1));
+                if (commit_index_ > log_.size()) {
+                    commit_index_ = log_.size();
+                }
+                if (last_applied_ > commit_index_) {
+                    last_applied_ = commit_index_;
+                }
+                reply.term = current_term_;
+                reply.match_index = static_cast<std::uint64_t>(log_.size());
+                persist_state_locked();
+                return reply;
             }
         }
-        if (local_index >= log_.size()) {
-            log_.push_back(entry);
+
+        std::size_t local_index = static_cast<std::size_t>(args.prev_log_index);
+        for (const auto& entry : args.entries) {
+            if (local_index < log_.size()) {
+                if (log_[local_index].term != entry.term ||
+                    log_[local_index].command != entry.command) {
+                    log_.resize(local_index);
+                }
+            }
+            if (local_index >= log_.size()) {
+                log_.push_back(entry);
+            }
+            ++local_index;
         }
-        ++local_index;
-    }
 
-    if (args.leader_commit > commit_index_) {
-        commit_index_ = std::min<std::uint64_t>(args.leader_commit, log_.size());
-        last_applied_ = std::max(last_applied_, commit_index_);
-    }
+        if (args.leader_commit > commit_index_) {
+            commit_index_ = std::min<std::uint64_t>(args.leader_commit, log_.size());
+        }
+        drain_committed_entries_locked(applied);
 
-    persist_state_locked();
-    reply.term = current_term_;
-    reply.success = true;
-    reply.match_index = static_cast<std::uint64_t>(log_.size());
+        persist_state_locked();
+        reply.term = current_term_;
+        reply.success = true;
+        reply.match_index = static_cast<std::uint64_t>(log_.size());
+    }
+    deliver_applied_entries(applied);
     return reply;
 }
 
@@ -457,15 +501,18 @@ bool RaftNode::append_command(const std::string& command) {
         ++successes;
     }
 
+    std::vector<std::pair<std::uint64_t, LogEntry>> applied;
     {
         std::lock_guard lock(mutex_);
         if (successes < quorum_size()) {
             return false;
         }
         update_commit_index_locked();
+        drain_committed_entries_locked(applied);
         persist_state_locked();
     }
 
+    deliver_applied_entries(applied);
     send_heartbeat();
     return true;
 }

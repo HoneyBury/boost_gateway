@@ -76,6 +76,57 @@ auto make_raft_rpc_sender() {
     };
 }
 
+MatchMode parse_mode(const std::string& mode_str) {
+    if (mode_str == "2v2") {
+        return MatchMode::k2v2;
+    }
+    if (mode_str == "4v4") {
+        return MatchMode::k4v4;
+    }
+    return MatchMode::k1v1;
+}
+
+std::string make_join_command(const MatchPlayer& player) {
+    return nlohmann::json{
+        {"v", 1},
+        {"op", "match_join"},
+        {"user_id", player.user_id},
+        {"mmr", player.mmr},
+        {"queued_at_ms", player.queued_at_ms},
+        {"mode", to_string(player.mode)},
+    }.dump();
+}
+
+std::string make_leave_command(const std::string& user_id, MatchMode mode) {
+    return nlohmann::json{
+        {"v", 1},
+        {"op", "match_leave"},
+        {"user_id", user_id},
+        {"mode", to_string(mode)},
+    }.dump();
+}
+
+std::string make_match_found_command(const MatchResult& result) {
+    return nlohmann::json{
+        {"v", 1},
+        {"op", "match_found"},
+        {"match_id", result.match_id},
+        {"mode", to_string(result.mode)},
+        {"avg_mmr", result.avg_mmr},
+        {"player_ids", result.player_ids},
+    }.dump();
+}
+
+std::string make_purge_command(MatchMode mode,
+                               const std::vector<std::string>& user_ids) {
+    return nlohmann::json{
+        {"v", 1},
+        {"op", "match_purge"},
+        {"mode", to_string(mode)},
+        {"user_ids", user_ids},
+    }.dump();
+}
+
 // ── MatchQueue ─────────────────────────────────────────────────────────
 
 class MatchQueue {
@@ -132,18 +183,16 @@ public:
         return players_.size();
     }
 
-    // Remove timed-out players, return removed count
-    std::size_t purge_expired(std::uint64_t max_wait_ms) {
+    std::vector<std::string> expired_players(std::uint64_t max_wait_ms) const {
         std::lock_guard lock(mutex_);
-        auto now = now_ms();
-        auto before = players_.size();
-        players_.erase(
-            std::remove_if(players_.begin(), players_.end(),
-                           [&](const MatchPlayer& p) {
-                               return (now - p.queued_at_ms) > max_wait_ms;
-                           }),
-            players_.end());
-        return before - players_.size();
+        const auto now = now_ms();
+        std::vector<std::string> expired;
+        for (const auto& player : players_) {
+            if ((now - player.queued_at_ms) > max_wait_ms) {
+                expired.push_back(player.user_id);
+            }
+        }
+        return expired;
     }
 
 private:
@@ -176,6 +225,14 @@ public:
         return queues_[static_cast<int>(mode)].remove(user_id);
     }
 
+    void commit_match(const MatchResult& result) {
+        queues_[static_cast<int>(result.mode)].remove_players(result.player_ids);
+    }
+
+    void remove_players(MatchMode mode, const std::vector<std::string>& user_ids) {
+        queues_[static_cast<int>(mode)].remove_players(user_ids);
+    }
+
     [[nodiscard]] std::size_t queue_size(MatchMode mode) const {
         return queues_[static_cast<int>(mode)].size();
     }
@@ -183,6 +240,8 @@ public:
     // Callback when a match is found: (MatchResult) -> void
     using MatchCallback = std::function<void(MatchResult)>;
     void set_match_callback(MatchCallback cb) { on_match_ = std::move(cb); }
+    using PurgeCallback = std::function<void(MatchMode, std::vector<std::string>)>;
+    void set_purge_callback(PurgeCallback cb) { on_purge_ = std::move(cb); }
 
 private:
     void run() {
@@ -195,7 +254,6 @@ private:
                 auto& queue = queues_[m];
                 auto required = players_for_mode(mode);
 
-                if (queue.size() < static_cast<std::size_t>(required)) continue;
 
                 // Try matching with expanding MMR range
                 auto eligible = queue.get_eligible(1000, config_.mmr_range_initial);
@@ -211,14 +269,19 @@ private:
                     }
                     result.avg_mmr = total_mmr / required;
 
-                    // Remove matched players from queue
-                    queue.remove_players(result.player_ids);
-
                     if (on_match_) on_match_(result);
                 }
 
-                // Purge expired players
-                queue.purge_expired(config_.max_wait_ms);
+                auto expired = queue.expired_players(config_.max_wait_ms);
+                if (!expired.empty()) {
+                    if (on_purge_) {
+                        on_purge_(mode, std::move(expired));
+                    } else {
+                        queue.remove_players(expired);
+                    }
+                }
+
+                if (queue.size() < static_cast<std::size_t>(required)) continue;
             }
         }
     }
@@ -228,6 +291,7 @@ private:
     std::thread thread_;
     MatchQueue queues_[3];  // indexed by MatchMode
     MatchCallback on_match_;
+    PurgeCallback on_purge_;
 };
 
 }  // namespace
@@ -236,22 +300,36 @@ private:
 
 class MatchmakingService::Impl {
 public:
-    explicit Impl(std::uint16_t port) : port_(port) {}
+    explicit Impl(std::uint16_t port)
+        : port_(port),
+          matchmaker_(std::make_unique<Matchmaker>(matchmaker_config_)) {}
 
     void start() {
         // Initialize matchmaker for each mode.
-        // v3.0.0: Only the Raft leader processes matches.
-        matchmaker_.set_match_callback([this](MatchResult result) {
-            if (raft_node_ && !raft_node_->is_leader()) return;
-            for (const auto& user_id : result.player_ids) {
-                nlohmann::json push{
-                    {"match_id", result.match_id},
-                    {"mode", to_string(result.mode)},
-                    {"avg_mmr", result.avg_mmr},
-                };
-                std::lock_guard lock(matches_mutex_);
-                pending_matches_[result.match_id] = result;
+        matchmaker_->set_match_callback([this](MatchResult result) {
+            if (raft_node_) {
+                if (!raft_node_->is_leader()) {
+                    return;
+                }
+                const auto appended =
+                    raft_node_->append_command(make_match_found_command(result));
+                (void)appended;
+                return;
             }
+            apply_match_found(result);
+        });
+        matchmaker_->set_purge_callback([this](MatchMode mode,
+                                               std::vector<std::string> user_ids) {
+            if (raft_node_) {
+                if (!raft_node_->is_leader() || user_ids.empty()) {
+                    return;
+                }
+                const auto appended =
+                    raft_node_->append_command(make_purge_command(mode, user_ids));
+                (void)appended;
+                return;
+            }
+            apply_match_purge(mode, user_ids);
         });
 
         v2::service::BackendServer::HandlerMap handlers;
@@ -286,14 +364,18 @@ public:
             raft_node_->on_step_down([this]() {
                 leader_.store(false);
             });
+            raft_node_->on_apply([this](std::uint64_t /*index*/,
+                                        const v3::cluster::LogEntry& entry) {
+                apply_raft_entry(entry.command);
+            });
             raft_node_->start();
         }
 
-        matchmaker_.start();
+        matchmaker_->start();
     }
 
     void stop() {
-        matchmaker_.stop();
+        matchmaker_->stop();
         if (raft_node_) raft_node_->stop();
         if (server_) server_->stop();
     }
@@ -303,6 +385,11 @@ public:
     }
 
     // v3.0.0: Configure Raft consensus.
+    void set_matchmaking_config(MatchmakingConfig config) {
+        matchmaker_config_ = std::move(config);
+        matchmaker_ = std::make_unique<Matchmaker>(matchmaker_config_);
+    }
+
     void set_raft_config(v3::cluster::RaftConfig config) {
         raft_config_ = std::move(config);
     }
@@ -318,7 +405,8 @@ public:
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
-    Matchmaker matchmaker_{{}};
+    MatchmakingConfig matchmaker_config_{};
+    std::unique_ptr<Matchmaker> matchmaker_;
     std::mutex matches_mutex_;
     std::unordered_map<std::string, MatchResult> pending_matches_;
 
@@ -390,22 +478,29 @@ private:
         auto doc = nlohmann::json::parse(req.payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
-        std::string user_id = doc.value("user_id", "");
-        std::int64_t mmr = doc.value("mmr", 1000);
-        std::string mode_str = doc.value("mode", "1v1");
+        const std::string user_id = doc.value("user_id", "");
+        const std::int64_t mmr = doc.value("mmr", 1000);
+        const std::string mode_str = doc.value("mode", "1v1");
 
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
-        MatchMode mode = MatchMode::k1v1;
-        if (mode_str == "2v2") mode = MatchMode::k2v2;
-        else if (mode_str == "4v4") mode = MatchMode::k4v4;
-
-        matchmaker_.join_queue(MatchPlayer{
+        MatchPlayer player{
             .user_id = user_id,
             .mmr = mmr,
-            .queued_at_ms = now_ms(),
-            .mode = mode,
-        });
+            .queued_at_ms = doc.value("queued_at_ms", now_ms()),
+            .mode = parse_mode(mode_str),
+        };
+
+        if (raft_node_) {
+            if (!raft_node_->is_leader()) {
+                return make_error(-1003, "not_raft_leader");
+            }
+            if (!raft_node_->append_command(make_join_command(player))) {
+                return make_error(-1005, "raft_commit_failed");
+            }
+        } else {
+            apply_match_join(player);
+        }
 
         return make_ok({{"queued", true}, {"mode", mode_str}});
     }
@@ -415,13 +510,20 @@ private:
         auto doc = nlohmann::json::parse(req.payload, nullptr, false);
         if (doc.is_discarded()) return make_error(-1004, "invalid_json");
 
-        std::string user_id = doc.value("user_id", "");
-        std::string mode_str = doc.value("mode", "1v1");
-        MatchMode mode = MatchMode::k1v1;
-        if (mode_str == "2v2") mode = MatchMode::k2v2;
-        else if (mode_str == "4v4") mode = MatchMode::k4v4;
+        const std::string user_id = doc.value("user_id", "");
+        const std::string mode_str = doc.value("mode", "1v1");
+        const auto mode = parse_mode(mode_str);
 
-        matchmaker_.leave_queue(mode, user_id);
+        if (raft_node_) {
+            if (!raft_node_->is_leader()) {
+                return make_error(-1003, "not_raft_leader");
+            }
+            if (!raft_node_->append_command(make_leave_command(user_id, mode))) {
+                return make_error(-1005, "raft_commit_failed");
+            }
+        } else {
+            apply_match_leave(mode, user_id);
+        }
         return make_ok({{"left", true}});
     }
 
@@ -431,17 +533,14 @@ private:
         std::string user_id = doc.value("user_id", "");
         std::string mode_str = doc.value("mode", "1v1");
 
-        MatchMode mode = MatchMode::k1v1;
-        if (mode_str == "2v2") mode = MatchMode::k2v2;
-        else if (mode_str == "4v4") mode = MatchMode::k4v4;
+        const auto mode = parse_mode(mode_str);
 
         // Check for pending match
         std::lock_guard lock(matches_mutex_);
         for (auto it = pending_matches_.begin(); it != pending_matches_.end(); ++it) {
             for (const auto& pid : it->second.player_ids) {
                 if (pid == user_id) {
-                    auto result = it->second;
-                    pending_matches_.erase(it);
+                    const auto result = it->second;
                     return make_ok({
                         {"matched", true},
                         {"match_id", result.match_id},
@@ -452,12 +551,85 @@ private:
             }
         }
 
-        auto qsize = matchmaker_.queue_size(mode);
+        auto qsize = matchmaker_->queue_size(mode);
         return make_ok({
             {"matched", false},
             {"queue_size", qsize},
             {"mode", mode_str},
         });
+    }
+
+    void apply_match_join(const MatchPlayer& player) {
+        matchmaker_->join_queue(player);
+    }
+
+    void apply_match_leave(MatchMode mode, const std::string& user_id) {
+        matchmaker_->leave_queue(mode, user_id);
+    }
+
+    void apply_match_found(const MatchResult& result) {
+        matchmaker_->commit_match(result);
+        std::lock_guard lock(matches_mutex_);
+        pending_matches_[result.match_id] = result;
+    }
+
+    void apply_match_purge(MatchMode mode, const std::vector<std::string>& user_ids) {
+        if (!user_ids.empty()) {
+            matchmaker_->remove_players(mode, user_ids);
+        }
+    }
+
+    void apply_raft_entry(const std::string& command) {
+        auto doc = nlohmann::json::parse(command, nullptr, false);
+        if (doc.is_discarded()) {
+            return;
+        }
+        if (doc.value("v", 0) != 1) {
+            return;
+        }
+
+        const auto op = doc.value("op", "");
+        if (op == "match_join") {
+            const auto user_id = doc.value("user_id", "");
+            if (user_id.empty()) {
+                return;
+            }
+            apply_match_join(MatchPlayer{
+                .user_id = user_id,
+                .mmr = doc.value("mmr", std::int64_t{1000}),
+                .queued_at_ms = doc.value("queued_at_ms", std::uint64_t{0}),
+                .mode = parse_mode(doc.value("mode", "1v1")),
+            });
+            return;
+        }
+        if (op == "match_leave") {
+            const auto user_id = doc.value("user_id", "");
+            if (user_id.empty()) {
+                return;
+            }
+            apply_match_leave(parse_mode(doc.value("mode", "1v1")), user_id);
+            return;
+        }
+        if (op == "match_found") {
+            MatchResult result;
+            result.match_id = doc.value("match_id", "");
+            result.mode = parse_mode(doc.value("mode", "1v1"));
+            result.avg_mmr = doc.value("avg_mmr", std::int64_t{0});
+            if (doc.contains("player_ids") && doc["player_ids"].is_array()) {
+                result.player_ids = doc["player_ids"].get<std::vector<std::string>>();
+            }
+            if (!result.match_id.empty() && !result.player_ids.empty()) {
+                apply_match_found(result);
+            }
+            return;
+        }
+        if (op == "match_purge") {
+            if (!doc.contains("user_ids") || !doc["user_ids"].is_array()) {
+                return;
+            }
+            const auto user_ids = doc["user_ids"].get<std::vector<std::string>>();
+            apply_match_purge(parse_mode(doc.value("mode", "1v1")), user_ids);
+        }
     }
 };
 
@@ -471,6 +643,7 @@ MatchmakingService::~MatchmakingService() = default;
 void MatchmakingService::start() { impl_->start(); }
 void MatchmakingService::stop() { impl_->stop(); }
 std::uint16_t MatchmakingService::local_port() const { return impl_->local_port(); }
+void MatchmakingService::set_matchmaking_config(MatchmakingConfig config) { impl_->set_matchmaking_config(std::move(config)); }
 void MatchmakingService::set_raft_config(v3::cluster::RaftConfig config) { impl_->set_raft_config(std::move(config)); }
 bool MatchmakingService::is_raft_leader() const { return impl_->is_raft_leader(); }
 

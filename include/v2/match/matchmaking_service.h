@@ -68,6 +68,8 @@ public:
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
 
+    void set_matchmaking_config(MatchmakingConfig config);
+
     // v3.0.0: Raft consensus configuration
     void set_raft_config(v3::cluster::RaftConfig config);
     [[nodiscard]] bool is_raft_leader() const;

@@ -175,6 +175,8 @@ class RaftNode {
 public:
     using LeaderCallback = std::function<void()>;
     using StepDownCallback = std::function<void()>;
+    using ApplyCallback = std::function<void(std::uint64_t index,
+                                             const LogEntry& entry)>;
     using RpcSender = std::function<std::string(const RaftNodeId& target,
                                                 const std::string& rpc_data)>;
 
@@ -200,6 +202,7 @@ public:
 
     void on_become_leader(LeaderCallback cb) { leader_cb_ = std::move(cb); }
     void on_step_down(StepDownCallback cb) { step_down_cb_ = std::move(cb); }
+    void on_apply(ApplyCallback cb);
 
     RequestVoteReply handle_request_vote(const RequestVoteArgs& args);
     AppendEntriesReply handle_append_entries(const AppendEntriesArgs& args);
@@ -222,6 +225,10 @@ private:
     [[nodiscard]] AppendEntriesArgs make_append_entries_for(
         const std::string& peer_id) const;
     void update_commit_index_locked();
+    void drain_committed_entries_locked(
+        std::vector<std::pair<std::uint64_t, LogEntry>>& applied);
+    void deliver_applied_entries(
+        const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) const;
     void load_persistent_state();
     void persist_state_locked() const;
     [[nodiscard]] std::filesystem::path state_path() const;
@@ -249,6 +256,7 @@ private:
     RpcSender rpc_sender_;
     LeaderCallback leader_cb_;
     StepDownCallback step_down_cb_;
+    ApplyCallback apply_cb_;
 };
 
 }  // namespace v3::cluster
