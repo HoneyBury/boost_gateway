@@ -3,8 +3,8 @@
 > 日期：`2026-05-16`
 > 构建目录：`build/windows-msvc-debug`
 > 提交：`6a440b4b31948c92ff7018ac4579f9786df1947b`
-> 结果来源：`runtime/perf/r1-baseline-long-battle/summary.json`
-> 范围：R1 Windows 基线修复后验证，包含长时间 battle workload
+> 结果来源：`runtime/perf/r1-baseline-rep3-gated/summary.json`
+> 范围：R1 Windows 基线修复后验证，包含 3 次重复采样和加严 gate
 
 ## 1. 执行内容
 
@@ -14,8 +14,8 @@
 python ./scripts/collect_v2_perf_baseline.py \
   --build-dir build/windows-msvc-debug \
   --run-preset baseline \
-  --repetitions 1 \
-  --output-root runtime/perf/r1-baseline-long-battle
+  --repetitions 3 \
+  --output-root runtime/perf/r1-baseline-rep3-gated
 ```
 
 场景：
@@ -39,21 +39,22 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 场景 | 吞吐 msg/s | P50 ms | P90 ms | P99 ms | 连接数 | 拒绝数 | 总消息数 | 结果 |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| `echo-100-30s` | 1545.14 | 2.0 | 5.0 | 5.0 | 100 | 0 | 46815 | 通过 |
-| `echo-1000-30s` | 12265.32 | 20.0 | 50.0 | 50.0 | 1000 | 0 | 371293 | 通过 |
+| `echo-100-30s` | 1545.04 median | 2.0 | 5.0 | 5.0 | 100 | 0 | 46815 median | 通过 |
+| `echo-1000-30s` | 12270.46 median | 20.0 | 50.0 | 50.0 | 1000 | 0 | 371520 median | 通过 |
 
 ### 2.2 Battle
 
 | 场景 | 吞吐 msg/s | P50 ms | P90 ms | P99 ms | 连接数 | 拒绝数 | 总消息数 | 结果 |
 |---|---:|---:|---:|---:|---:|---:|---:|---|
-| `battle-20-30s` | 512.25 | 10.0 | 10.0 | 10.0 | 20 | 0 | 8851 | 通过 |
-| `battle-100-30s` | 1979.57 | 50.0 | 50.0 | 100.0 | 100 | 0 | 42237 | 通过 |
+| `battle-20-30s` | 513.06 median | 10.0 | 10.0 | 10.0 | 20 | 0 | 8851 median | 通过 |
+| `battle-100-30s` | 2019.14 median | 50.0 | 50.0 | 100.0 | 100 | 0 | 42191 median | 通过 |
 
 解释：
 
 - Echo 已不再被 ingress rate limit 污染。
 - Battle 已不再卡住，也不会再产生 `forced_timeout=true` 的结果。
 - 当前 battle 数据已经从 3 帧生命周期样本扩展为 300 帧长时间 workload，可用于观察持续战斗流量。后续仍可继续增加 repetitions、房间数和更长 soak。
+- 本次 `repetitions=3` 已验证 battle room 会按 run 生成唯一名称，避免同一拓扑内复用旧房间导致后续 run 被拒绝。
 
 ## 3. Release Gate
 
@@ -65,6 +66,19 @@ python ./scripts/collect_v2_perf_baseline.py \
 - `battle-100-30s`：通过
 
 整体 gate：**通过**
+
+Gate 加严项：
+
+- `forced_timeout=true` 必失败。
+- `total_messages=0` 必失败。
+- `battle-20-30s` 要求每次 run 至少 `1000` 条消息。
+- `battle-100-30s` 要求每次 run 至少 `5000` 条消息。
+- P99 距离门槛 10% 以内会进入 `warnings`。
+
+本次 warnings：
+
+- `echo-1000-30s`：P99 `50.0ms`，已贴近 echo gate。
+- `battle-100-30s`：P99 `100.0ms`，已贴近 battle gate。
 
 ## 4. R1 状态
 
@@ -79,4 +93,4 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 后续跟进：
 
-- 增加 repetitions 和长时间 soak，观察更稳定的 median / max，以及 battle-100 在 P99=100ms 门槛附近的波动。
+- 增加更长 soak，观察 `echo-1000-30s` 与 `battle-100-30s` 在 P99 门槛附近的波动。

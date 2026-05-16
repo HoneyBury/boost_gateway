@@ -166,7 +166,11 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     if case.get("interval_ms") is not None:
         args.extend(["--interval", str(case["interval_ms"])])
     if case.get("room"):
-        args.extend(["--room", str(case["room"])])
+        room_name = str(case["room"])
+        if case.get("scenario") == "battle":
+            safe_case_name = str(case["name"]).replace(".", "_").replace("-", "_")
+            room_name = f"{room_name}_{safe_case_name}"
+        args.extend(["--room", room_name])
     if case.get("room_group_size"):
         args.extend(["--room-group-size", str(case["room_group_size"])])
 
@@ -310,8 +314,18 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def minimum_battle_messages(case_name: str) -> int:
+    if case_name.startswith("battle-100"):
+        return 5_000
+    if case_name.startswith("battle-20"):
+        return 1_000
+    if case_name.startswith("battle-2"):
+        return 50
+    return 1
+
+
 def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
-    gates: dict[str, Any] = {"overall_pass": True, "checks": []}
+    gates: dict[str, Any] = {"overall_pass": True, "checks": [], "warnings": []}
     for aggregate in aggregates:
         case_name = aggregate["case_name"]
         p99 = aggregate["latency_p99_ms"]["median"]
@@ -323,6 +337,12 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
 
         if case_name.startswith("echo"):
             passed = rejected == 0 and failed == 0 and not forced_timeout and total_messages > 0 and p99 <= 50.0
+            if p99 >= 45.0:
+                gates["warnings"].append({
+                    "case": case_name,
+                    "warning": "echo p99 is within 10% of the 50ms gate",
+                    "p99_ms": p99,
+                })
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
@@ -337,11 +357,22 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                 },
             })
         elif case_name.startswith("battle"):
-            passed = rejected == 0 and failed == 0 and not forced_timeout and total_messages > 0 and p99 <= 100.0
+            min_messages = minimum_battle_messages(case_name)
+            min_observed_messages = aggregate["total_messages"]["min"]
+            passed = (
+                rejected == 0 and failed == 0 and not forced_timeout and
+                min_observed_messages >= min_messages and p99 <= 100.0
+            )
+            if p99 >= 90.0:
+                gates["warnings"].append({
+                    "case": case_name,
+                    "warning": "battle p99 is within 10% of the 100ms gate",
+                    "p99_ms": p99,
+                })
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": "battle: rejected=0, failed=0, p99<=100ms",
+                "criteria": f"battle: rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, p99<=100ms",
                 "observed": {
                     "p99_ms": p99,
                     "throughput_msg_per_sec": throughput,
@@ -349,6 +380,8 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "failed_clients": failed,
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
+                    "min_total_messages": min_observed_messages,
+                    "required_min_total_messages": min_messages,
                 },
             })
 
