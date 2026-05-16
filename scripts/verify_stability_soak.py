@@ -35,6 +35,27 @@ DATA_FILTER = (
     "V2WriteBehindStoreTest.WriteBehindDestructorDrainsLargePendingQueue"
 )
 
+SOAK_PROFILES = {
+    "smoke": {
+        "iterations": "2000",
+        "actors": "2000",
+        "actor_limit": "10000",
+        "battles": "100",
+    },
+    "short": {
+        "iterations": "5000",
+        "actors": "5000",
+        "actor_limit": "50000",
+        "battles": "250",
+    },
+    "medium": {
+        "iterations": "10000",
+        "actors": "10000",
+        "actor_limit": "100000",
+        "battles": "500",
+    },
+}
+
 
 def exe_name(base: str) -> str:
     return f"{base}.exe" if os.name == "nt" else base
@@ -120,6 +141,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--test-timeout-seconds", type=int, default=60)
     parser.add_argument("--baseline-timeout-seconds", type=int, default=45)
     parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
+    parser.add_argument("--soak-profile", choices=sorted(SOAK_PROFILES), default="smoke")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/stability-soak-summary.json"))
     return parser.parse_args()
 
@@ -134,11 +156,13 @@ def main() -> int:
         "build_dir": str(build_dir),
         "configuration": args.configuration,
         "baseline_profile": args.baseline_profile,
+        "soak_profile": args.soak_profile,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
     }
+    soak_profile = SOAK_PROFILES[args.soak_profile]
 
     try:
         if not args.skip_build:
@@ -170,13 +194,13 @@ def main() -> int:
                     "--output-root",
                     str(root / "runtime" / "perf" / "v2-stability-soak"),
                     "--iterations",
-                    "2000",
+                    soak_profile["iterations"],
                     "--actors",
-                    "2000",
+                    soak_profile["actors"],
                     "--actor-limit",
-                    "10000",
+                    soak_profile["actor_limit"],
                     "--battles",
-                    "100",
+                    soak_profile["battles"],
                     "--timeout-seconds",
                     str(args.baseline_timeout_seconds),
                     "--gate-profile",

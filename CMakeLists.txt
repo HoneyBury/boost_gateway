@@ -83,6 +83,8 @@ install(FILES
 
 install(FILES
     docs/README.md
+    docs/current-state.md
+    docs/reliability-matrix.md
     docs/runtime-playbook.md
     docs/development-priority.md
     docs/v1-structure-upgrade-decision.md

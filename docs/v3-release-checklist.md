@@ -1,5 +1,7 @@
 # v3 发布检查清单
 
+> 当前发布门禁入口：`scripts/verify_release_candidate.py`。完整 Release 性能基线入口：`scripts/collect_release_baseline.py`。可靠性证据以 `docs/reliability-matrix.md` 为准。
+
 > 目标：在发布前确认 v3/R4 通信契约、typed envelope 迁移、恢复路径和短性能基线都有可重复验证入口。
 
 ## 1. 必跑门禁

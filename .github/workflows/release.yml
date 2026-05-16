@@ -70,7 +70,10 @@ jobs:
         run: ctest --preset ${{ matrix.test_preset }} --timeout 300
 
       - name: R4 release contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Release
+        run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
+
+      - name: Release candidate bounded gate
+        run: python scripts/verify_release_candidate.py --build-dir build/${{ matrix.configure_preset }} --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
       - name: Install
         shell: bash
