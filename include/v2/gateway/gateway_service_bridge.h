@@ -11,6 +11,7 @@
 #include "v3/tracing/otel_exporter.h"
 
 #include <cstdint>
+#include <chrono>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -35,6 +36,8 @@ public:
     struct BackendConfig {
         std::string host = "127.0.0.1";
         std::uint16_t port = 0;
+        std::chrono::milliseconds timeout{5000};
+        std::chrono::milliseconds connect_timeout{1000};
     };
 
     explicit GatewayServiceBridge(
@@ -85,6 +88,8 @@ public:
 
     void update_backend_config(v2::service::ServiceId service,
                                 std::optional<BackendConfig> config);
+    void configure_circuit_breaker(v2::service::ServiceId service,
+                                   v2::service::CircuitBreakerOptions options);
 
     // v2.2.0: Set trace context for cross-service distributed tracing.
     void set_trace_context(std::uint64_t trace_id, std::uint64_t span_id) {

@@ -13,6 +13,7 @@ BackendConnection::BackendConnection(BackendConnectionOptions options)
 BackendConnection::~BackendConnection() { close(); }
 
 bool BackendConnection::connect() {
+    io_context_.restart();
     socket_ = std::make_unique<tcp::socket>(io_context_);
 
     tcp::resolver resolver(io_context_);
@@ -21,8 +22,33 @@ bool BackendConnection::connect() {
                                       std::to_string(options_.port), ec);
     if (ec) return false;
 
-    asio::connect(*socket_, endpoints, ec);
-    if (ec) return false;
+    bool completed = false;
+    bool timed_out = false;
+    asio::steady_timer timer(io_context_);
+    timer.expires_after(options_.connect_timeout);
+    timer.async_wait([this, &timed_out](const boost::system::error_code& timer_ec) {
+        if (!timer_ec && socket_) {
+            timed_out = true;
+            boost::system::error_code ignored;
+            socket_->close(ignored);
+        }
+    });
+
+    asio::async_connect(
+        *socket_,
+        endpoints,
+        [&completed, &ec, &timer](const boost::system::error_code& connect_ec,
+                                  const tcp::endpoint&) {
+            completed = true;
+            ec = connect_ec;
+            timer.cancel();
+        });
+
+    io_context_.run();
+    if (!completed || timed_out || ec) {
+        close();
+        return false;
+    }
 
     // v3.0.0: Perform TLS handshake if TLS config is set.
     if (options_.tls_config.has_value()) {
@@ -100,16 +126,28 @@ std::optional<BackendEnvelope> BackendConnection::send_request(
     request.source_service = ServiceId::kGateway;
 
     if (ssl_stream_) {
-        if (!write_frame(*ssl_stream_, request)) return std::nullopt;
+        if (!write_frame(*ssl_stream_, request)) {
+            close();
+            return std::nullopt;
+        }
         auto response = read_frame(*ssl_stream_, options_.timeout);
-        if (!response) return std::nullopt;
+        if (!response) {
+            close();
+            return std::nullopt;
+        }
         return response;
     }
 
-    if (!write_frame(*socket_, request)) return std::nullopt;
+    if (!write_frame(*socket_, request)) {
+        close();
+        return std::nullopt;
+    }
 
     auto response = read_frame(*socket_, options_.timeout);
-    if (!response) return std::nullopt;
+    if (!response) {
+        close();
+        return std::nullopt;
+    }
 
     return response;
 }

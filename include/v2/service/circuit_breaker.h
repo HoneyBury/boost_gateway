@@ -35,6 +35,7 @@ public:
     [[nodiscard]] std::uint32_t failure_count() const noexcept { return failure_count_; }
     [[nodiscard]] std::uint32_t half_open_requests() const noexcept { return half_open_requests_; }
 
+    void configure(CircuitBreakerOptions options);
     void reset();
 
 private:

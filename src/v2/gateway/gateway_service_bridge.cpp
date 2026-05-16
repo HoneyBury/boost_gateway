@@ -56,6 +56,8 @@ v2::service::BackendConnectionOptions make_options(
     v2::service::BackendConnectionOptions opts{
         .host = config.host,
         .port = config.port,
+        .timeout = config.timeout,
+        .connect_timeout = config.connect_timeout,
     };
     if (security_policy.has_value() && security_policy->require_tls) {
         auto tls = security_policy->tls_config;
@@ -170,6 +172,13 @@ void GatewayServiceBridge::update_backend_config(
     slot.breaker.reset();
 }
 
+void GatewayServiceBridge::configure_circuit_breaker(
+    v2::service::ServiceId service,
+    v2::service::CircuitBreakerOptions options) {
+    std::scoped_lock lock(mutex_);
+    slot_for(service).breaker.configure(options);
+}
+
 std::optional<GatewayServiceBridge::ResolvedBackend>
 GatewayServiceBridge::resolve_backend(
     v2::service::ServiceId service,
@@ -219,7 +228,7 @@ GatewayServiceBridge::resolve_backend(
 
         if (chosen_node.has_value()) {
             return ResolvedBackend{
-                .config = BackendConfig{chosen_node->host, chosen_node->port},
+                .config = BackendConfig{.host = chosen_node->host, .port = chosen_node->port},
                 .connection_key = connection_key_for(*chosen_node),
                 .node = chosen_node,
                 .from_cluster = true,

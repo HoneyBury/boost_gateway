@@ -12,7 +12,7 @@
 | Actor shutdown 竞态 | dispatch 中触发 shutdown 后不会继续投递其他 ready actor | `V2ActorRuntimeTest.ShutdownDuringFairDispatchStopsOtherReadyActors` |
 | R4 typed envelope | login/room/battle/match/leaderboard 主 handler 已经通过统一 adapter 解析 typed envelope，并保留 legacy raw JSON 兼容 | `V2ServiceBoundaryTest.*Envelope*`、`ServiceBusIntegrity.ProtoEnvelopeRoundTripsThrough*Backend` |
 | trace/error 传播 | raw BackendEnvelope 与 typed envelope 桥接路径均有 trace/span/error 验证 | `ServiceBusIntegrity.GatewayBridgeRoutePropagatesTraceAndErrorCode`、`ServiceBusIntegrity.GatewayBridgeTypedEnvelopePreservesTraceAndError` |
-| 恢复路径 | backend 配置更新后路由可恢复，heartbeat 可恢复 readiness | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`HealthCheckTest.BackendHeartbeatRestoresReadinessAfterUnhealthyMark` |
+| 恢复路径 | backend 配置更新后路由可恢复，超时后旧连接关闭，circuit breaker 半开探测可恢复，heartbeat 可恢复 readiness | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`ServiceBusIntegrity.GatewayBridgeTimeoutClosesStaleConnectionAndRecovers`、`ServiceBusIntegrity.GatewayBridgeCircuitBreakerHalfOpenProbeRecovers`、`HealthCheckTest.BackendHeartbeatRestoresReadinessAfterUnhealthyMark` |
 | proto transport 实验 | `check_v3_proto_schema` 校验基础 schema，`check_v3_proto_transport_contract` 校验生成传输实验所需 oneof contract | `scripts/check_v3_proto_schema.py`、`src/v3/CMakeLists.txt` |
 
 ## 1. Actor 模型

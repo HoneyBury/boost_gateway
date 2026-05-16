@@ -50,6 +50,11 @@ bool CircuitBreaker::allow_request() {
     return true;
 }
 
+void CircuitBreaker::configure(CircuitBreakerOptions options) {
+    options_ = options;
+    reset();
+}
+
 void CircuitBreaker::reset() {
     state_ = CircuitBreakerState::kClosed;
     failure_count_ = 0;

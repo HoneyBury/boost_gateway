@@ -6,8 +6,8 @@
 
 | 门禁 | 命令 | 通过标准 |
 | --- | --- | --- |
-| R4 快速契约 | `python scripts/verify_r4_contract.py --build-dir build/windows-msvc-debug --configuration Debug` | proto contract、聚焦单测、聚合集成测试、短性能基线全部通过 |
-| CI 快速契约 | `python scripts/verify_r4_contract.py --build-dir <build-dir> --skip-build --skip-arch-baseline` | 不重编译、不跑性能基线，验证 schema 与 R4 聚焦测试 |
+| R4 快速契约 | `python scripts/verify_r4_contract.py --build-dir build/windows-msvc-debug --configuration Debug` | proto contract、聚焦单测、聚合集成测试、短性能基线全部通过，并写出 `runtime/validation/r4-contract-summary.json` |
+| CI 快速契约 | `python scripts/verify_r4_contract.py --build-dir <build-dir> --skip-build --skip-arch-baseline` | 不重编译、不跑性能基线，验证 schema 与 R4 聚焦测试；失败时 summary 标出 `failed_category` 和 `failed_step` |
 | Proto schema | `cmake --build <build-dir> --target check_v3_proto_schema` | v3 proto 文件、包名、核心 message 存在 |
 | Transport contract | `cmake --build <build-dir> --target check_v3_proto_transport_contract` | `ServiceEnvelope` 与各 domain oneof 字段覆盖生成传输实验所需字段 |
 
@@ -19,7 +19,8 @@
 | legacy raw JSON 兼容 | 保留兼容并标记 deprecation notice | `V2ServiceBoundaryTest.DecodeHandlerPayloadMarksLegacyRawJsonDeprecated` |
 | trace/error 传播 | raw bridge 与 typed envelope 路径均有聚合测试 | `ServiceBusIntegrity.GatewayBridgeRoutePropagatesTraceAndErrorCode`、`ServiceBusIntegrity.GatewayBridgeTypedEnvelopePreservesTraceAndError` |
 | proto round-trip | 五个业务后端已有 typed envelope 往返测试 | `ServiceBusIntegrity.ProtoEnvelopeRoundTripsThrough*Backend` |
-| 连接恢复 | backend config 更新后可恢复路由 | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate` |
+| 连接恢复 | backend config 更新后可恢复路由，超时后旧连接关闭且可恢复 | `ServiceBusIntegrity.GatewayBridgeRecoversAfterBackendConfigUpdate`、`ServiceBusIntegrity.GatewayBridgeTimeoutClosesStaleConnectionAndRecovers` |
+| 熔断恢复 | 连续失败后打开 circuit breaker，等待窗口后半开探测成功并闭合 | `ServiceBusIntegrity.GatewayBridgeCircuitBreakerHalfOpenProbeRecovers` |
 
 ## 3. 性能基线
 

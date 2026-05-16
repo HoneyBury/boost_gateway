@@ -670,6 +670,140 @@ TEST(ServiceBusIntegrity, GatewayBridgeRecoversAfterBackendConfigUpdate) {
     EXPECT_NE(recovered.response_payload.find("\"status\":\"ok\""), std::string::npos);
 }
 
+TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) {
+    std::atomic<int> stale_requests{0};
+    std::atomic<int> recovered_requests{0};
+
+    v2::service::BackendServer::HandlerMap stale_handlers;
+    stale_handlers["login_request"] = [&](const v2::service::BackendEnvelope& req) {
+        ++stale_requests;
+        std::this_thread::sleep_for(std::chrono::milliseconds(80));
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = req.payload;
+        return resp;
+    };
+    v2::service::BackendServer stale_server(0, std::move(stale_handlers));
+    stale_server.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = stale_server.local_port(),
+            .timeout = std::chrono::milliseconds(20),
+            .connect_timeout = std::chrono::milliseconds(100),
+        });
+
+    const auto timed_out = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+    EXPECT_FALSE(timed_out.success);
+    EXPECT_EQ(timed_out.error, v2::service::ServiceErrorCode::kTimeout);
+    EXPECT_EQ(stale_requests.load(), 1);
+
+    v2::service::BackendServer::HandlerMap recovered_handlers;
+    recovered_handlers["login_request"] = [&](const v2::service::BackendEnvelope&) {
+        ++recovered_requests;
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kResponse;
+        resp.payload = R"({"status":"ok","user_id":"alice"})";
+        return resp;
+    };
+    v2::service::BackendServer recovered_server(0, std::move(recovered_handlers));
+    recovered_server.start();
+
+    bridge.update_backend_config(
+        v2::service::ServiceId::kLogin,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = recovered_server.local_port(),
+            .timeout = std::chrono::milliseconds(50),
+            .connect_timeout = std::chrono::milliseconds(100),
+        });
+
+    const auto recovered = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+
+    bridge.shutdown();
+    stale_server.stop();
+    recovered_server.stop();
+
+    EXPECT_TRUE(recovered.success);
+    EXPECT_EQ(recovered.response_payload, R"({"status":"ok","user_id":"alice"})");
+    EXPECT_EQ(recovered_requests.load(), 1);
+}
+
+TEST(ServiceBusIntegrity, GatewayBridgeCircuitBreakerHalfOpenProbeRecovers) {
+    std::atomic<int> handled_requests{0};
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["login_request"] = [&](const v2::service::BackendEnvelope&) {
+        const auto request_index = ++handled_requests;
+        v2::service::BackendEnvelope resp;
+        if (request_index <= 2) {
+            resp.kind = v2::service::MessageKind::kError;
+            resp.error_code = static_cast<std::int32_t>(
+                v2::service::ServiceErrorCode::kInvalidRequest);
+        } else {
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = R"({"status":"ok"})";
+        }
+        return resp;
+    };
+    v2::service::BackendServer server(0, std::move(handlers));
+    server.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+            .timeout = std::chrono::milliseconds(50),
+            .connect_timeout = std::chrono::milliseconds(100),
+        });
+    bridge.configure_circuit_breaker(
+        v2::service::ServiceId::kLogin,
+        v2::service::CircuitBreakerOptions{
+            .failure_threshold = 2,
+            .timeout = std::chrono::milliseconds(30),
+            .half_open_max_requests = 1,
+        });
+
+    EXPECT_FALSE(bridge.route(v2::service::ServiceId::kLogin,
+                              "login_request",
+                              R"({"user_id":"bad","token":""})").success);
+    EXPECT_FALSE(bridge.route(v2::service::ServiceId::kLogin,
+                              "login_request",
+                              R"({"user_id":"bad","token":""})").success);
+
+    const auto open_result = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"bad","token":""})");
+    EXPECT_FALSE(open_result.success);
+    EXPECT_EQ(open_result.error, v2::service::ServiceErrorCode::kCircuitOpen);
+    EXPECT_EQ(handled_requests.load(), 2);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(40));
+
+    const auto probe = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+    const auto after_closed = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"alice","token":"token:alice"})");
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_TRUE(probe.success);
+    EXPECT_TRUE(after_closed.success);
+    EXPECT_EQ(handled_requests.load(), 4);
+}
+
 TEST(ServiceBusIntegrity, ServiceErrorCodeClientMapping) {
     using v2::service::ServiceErrorCode;
     // Verify all service error codes have defined to_client_error mappings
