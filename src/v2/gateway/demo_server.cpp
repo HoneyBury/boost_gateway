@@ -299,6 +299,8 @@ std::string DemoServer::diagnostics_json() const {
 
     nlohmann::json backend_metrics = nlohmann::json::object();
     for (const auto& [service_key, snap] : snapshot.backend_metrics) {
+        const auto avg_latency_us =
+            snap.latency_sample_count > 0 ? (snap.total_latency_us / snap.latency_sample_count) : 0;
         backend_metrics[service_key] = {
             {"total_requests", snap.total_requests},
             {"total_successes", snap.total_successes},
@@ -306,6 +308,9 @@ std::string DemoServer::diagnostics_json() const {
             {"total_unavailable", snap.total_unavailable},
             {"total_errors", snap.total_errors},
             {"total_degraded", snap.total_degraded},
+            {"total_latency_us", snap.total_latency_us},
+            {"latency_sample_count", snap.latency_sample_count},
+            {"avg_latency_us", avg_latency_us},
         };
     }
     doc["backend_metrics"] = std::move(backend_metrics);

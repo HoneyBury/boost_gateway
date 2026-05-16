@@ -56,6 +56,7 @@ public:
 
     void set_io_engine(v2::io::IoEngine* io_engine);
     std::size_t drain_mailbox_and_dispatch(std::uint32_t core_id);
+    [[nodiscard]] std::optional<std::uint32_t> dispatch_owner_core() const noexcept;
 
 private:
     struct ActorCell {
@@ -89,6 +90,7 @@ private:
     v2::actor::ActorId next_actor_id_ = 1;
     bool shutting_down_ = false;
     v2::io::IoEngine* io_engine_ = nullptr;
+    std::optional<std::uint32_t> dispatch_owner_core_;
 };
 
 class ScheduleHandle {

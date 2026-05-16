@@ -3,6 +3,13 @@
 > 基准版本: `develop` (v2.0.1 + v2.0.2 B1-B3 测量基础设施)
 > 测量日期: 2026-05-12
 > 测量工具: `v2_gateway_pressure` (新增), `LatencyHistogram`, `ThroughputTracker`
+>
+> `R1` 正式 Windows baseline 结果与 gate 判定见：
+> [Windows R1 基线结果](./performance-baseline-windows-r1.md)
+>
+> `2026-05-16` 之后，R1 collector 已补齐两项关键修复：
+> - baseline 模式下通过环境变量放宽 v2 runtime ingress rate limit，避免 echo 吞吐被默认保护阈值污染
+> - `battle` baseline 支持按房间分组并行生成持续战斗流量，不再把所有客户端压到单房路径
 
 ## 1. 测量方法
 
@@ -57,6 +64,66 @@ cmake --preset release && cmake --build --preset release
 # 5. 查看吞吐/延迟 JSON 输出 → 填入下方表格
 ```
 
+### 1.5 标准采集入口
+
+从 `v3.x` 生产就绪阶段开始，跨平台基线采集统一通过：
+
+```bash
+python ./scripts/collect_v2_perf_baseline.py \
+  --build-dir ./build/release \
+  --run-preset smoke
+```
+
+或完整基线：
+
+```bash
+python ./scripts/collect_v2_perf_baseline.py \
+  --build-dir ./build/release \
+  --run-preset baseline \
+  --repetitions 3
+```
+
+Windows 也可通过 PowerShell 包装器调用同一份 Python 主逻辑：
+
+```powershell
+pwsh ./scripts/collect_v2_perf_baseline.ps1 `
+  -BuildDir D:\Program\boost-github\BoostAsioDemo\build\windows-ninja-release `
+  -RunPreset smoke
+```
+
+脚本职责：
+
+- 启动 `v2_login_backend` / `v2_room_backend` / `v2_battle_backend` / `v2_gateway_demo`
+- 运行标准 `echo` / `battle` 压测场景
+- 抓取 `GET /metrics/diagnostics/json`
+- 记录进程资源快照
+- 记录 `git commit`、平台、构建目录、重复次数等元数据
+- 对同一 case 输出 `min / median / max` 聚合结果
+- 输出 `release_gates` 判定结果，作为 `R1-4` 的自动化基础
+- 将结果落盘到 `runtime/perf/<timestamp>/`
+
+当前主入口已经切换为 Python，目标是统一 Windows / Ubuntu / macOS 的采集流程；平台差异仅保留在进程资源快照实现上。
+
+### 1.6 首轮 smoke 数据（2026-05-16，Windows）
+
+首轮基于 `python ./scripts/collect_v2_perf_baseline.py --build-dir build/windows-ninja-release --run-preset smoke`
+得到的结果如下，原始产物保存在：
+
+- `runtime/perf/20260516-015931/`：修正 echo 统计口径后的首轮有效 smoke
+- `runtime/perf/20260516-020616/`：battle smoke 已推进到 `BattleStartRequest` / `BattleStatePush`
+- `runtime/perf/20260516-022121/`：battle smoke 已完成 3 帧推进与结算收口
+
+| 场景 | 结果 | 说明 |
+|---|---|---|
+| `echo-20-10s` | 20 客户端，3095 消息，309.36 msg/s，P99 2.0ms | 说明跨平台采集脚本、Windows Release 构建、gateway/login 主链和统计口径已经打通 |
+| `battle-2-10s` | 2 客户端，3 条有效消息，完整推进 3 帧并收到 `battle_finished`，P99 2.0ms | 说明房间/开战/battle backend 路由、bridge 模式重连与 battle smoke 状态机已经打通；下一步可继续扩展到更长时长和更高并发 |
+
+当前结论：
+
+- `echo` smoke 已可作为 R1 的最小可用基线样本。
+- `battle` smoke 已从“完全失败”推进到“可开战、可推进帧、可结算结束”，可以作为 R1 的首个 battle 级 smoke 样本；
+  下一步应继续提升时长、并发和每局消息量，再进入 baseline 场景。
+
 ---
 
 ## 2. 吞吐量基线 (B2)
@@ -73,6 +140,11 @@ cmake --preset release && cmake --build --preset release
 | 4 | 1000 | 30s | _待测定_ | _待测定_ | _待测定_ |
 | 4 | 10000 | 30s | _待测定_ | _待测定_ | — |
 
+> `R1-2` 状态：Windows smoke 已验证 `echo-20-10s`，collector 已补 baseline 限流覆盖；
+> 正式 baseline 待按修复后的入口重跑
+> `python ./scripts/collect_v2_perf_baseline.py --run-preset baseline --repetitions 3`
+> 回填本表。
+
 **线性扩容系数** = `吞吐量(N核) / (N × 吞吐量(1核))`
 
 ### 2.2 战斗广播吞吐量
@@ -82,6 +154,10 @@ cmake --preset release && cmake --build --preset release
 | 10 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
 | 50 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
 | 100 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
+
+> `R1-2` 状态：Windows smoke 已验证 `battle-2-10s` 可完整推进 3 帧并结算结束；
+> `battle-20-30s`、`battle-100-30s` 现在已经切换到“按房间分组”的持续战斗生成逻辑，
+> 待正式 baseline 重跑后回填。
 
 **广播 fan-out 系数** = `(总出站消息) / (总入站消息)`
 
@@ -116,6 +192,10 @@ cmake --preset release && cmake --build --preset release
 | battle | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
 
 **测量方式**: `GatewayServiceBridge::route()` 中 `send_request()` 前后打点，记录到 `BackendMetrics::record_latency()`。通过 `GET /metrics/diagnostics/json` 获取。
+
+> `R1-2` 状态：采集脚本已保留每次运行的 diagnostics JSON，且
+> `DemoServer::diagnostics_json()` 已补 `avg_latency_us` / `latency_sample_count`；
+> 下一步从 baseline 目录提取并回填。
 
 ### 3.3 战斗输入广播延迟
 
@@ -190,6 +270,16 @@ cmake --preset release && cmake --build --preset release
 | 80%–100% | 冻结全部发布，全力修复 |
 | 耗尽 | 启动事后复盘，下月发布需 VP 审批 |
 
+### 5.4 当前 R1 门槛执行状态
+
+| 检查项 | 当前状态 |
+|---|---|
+| `echo` smoke | 已通过（Windows） |
+| `battle` smoke | 已通过（Windows，2 客户端 / 3 帧 / 结算结束） |
+| baseline 矩阵 | 已具备可重跑入口，待刷新结果 |
+| 自动聚合结果 | 已支持（`case_aggregates`） |
+| 自动门槛判定 | 已支持（`release_gates`），待首轮 baseline 使用 |
+
 ---
 
 ## 6. 容量规划 (B6)
@@ -238,6 +328,8 @@ cmake --preset release && cmake --build --preset release
 ---
 
 ## 7. 基准数据采集清单
+
+> 从 `v3.x` 生产就绪阶段开始，建议优先使用 `scripts/collect_v2_perf_baseline.py` 生成统一目录结构和结果文件；手工命令主要用于调试或补充单项数据。
 
 以下命令需要在 Release 构建下运行，结果填入上表：
 

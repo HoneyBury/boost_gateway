@@ -2,11 +2,13 @@
 
 #include <chrono>
 #include <memory>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "v2/io/io_engine.h"
 #include "v2/runtime/actor_system.h"
 
 namespace {
@@ -104,6 +106,28 @@ public:
 private:
     int count_ = 0;
     v2::runtime::ScheduleHandle handle_;
+};
+
+class InspectingIoEngine final : public v2::io::IoEngine {
+public:
+    [[nodiscard]] std::uint32_t num_io_cores() const noexcept override { return 2; }
+    void dispatch_to_core(std::uint32_t, std::function<void()>) override {}
+    void dispatch_to_all_cores(std::function<void(std::uint32_t)>) override {}
+    [[nodiscard]] std::optional<std::uint32_t> current_core_id() const noexcept override { return current_core_id_; }
+    std::unique_ptr<v2::io::IoAcceptor> listen(const char*, std::uint16_t, net::SessionOptions, v2::io::IoListenOptions) override {
+        return {};
+    }
+    void run() override {}
+    void stop() override {}
+    void register_session(std::uint32_t) override {}
+    void unregister_session(std::uint32_t) override {}
+    [[nodiscard]] std::uint32_t session_count(std::uint32_t) const noexcept override { return 0; }
+    [[nodiscard]] std::uint32_t total_session_count() const noexcept override { return 0; }
+    bool post_mailbox(std::uint32_t, v2::actor::Message) override { return true; }
+    [[nodiscard]] std::vector<v2::actor::Message> drain_mailbox(std::uint32_t) override { return {}; }
+    void set_actor_system(v2::runtime::ActorSystem*) override {}
+
+    std::optional<std::uint32_t> current_core_id_;
 };
 
 }  // namespace
@@ -584,4 +608,38 @@ TEST(V2ActorRuntimeTest, MultipleActorsOneCancelledOtherDelivers) {
     EXPECT_TRUE(received_a.empty());
     ASSERT_EQ(received_b.size(), 1U);
     EXPECT_EQ(received_b.front(), "msg-b");
+}
+
+TEST(V2ActorRuntimeTest, DispatchOwnerCoreReflectsCurrentIoCoreDuringDispatch) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 1U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::vector<std::string> observed;
+    class OwnerInspectingActor final : public v2::actor::Actor {
+    public:
+        OwnerInspectingActor(v2::runtime::ActorSystem& system, std::vector<std::string>& observed)
+            : system_(system), observed_(observed) {}
+
+        void on_message(v2::actor::Message&&) override {
+            const auto core = system_.dispatch_owner_core();
+            observed_.push_back(core.has_value() ? std::to_string(*core) : "none");
+        }
+
+    private:
+        v2::runtime::ActorSystem& system_;
+        std::vector<std::string>& observed_;
+    };
+
+    auto actor = actor_system.create_actor(std::make_unique<OwnerInspectingActor>(actor_system, observed));
+    v2::actor::Message message;
+    message.header.kind = v2::actor::MessageKind::kUser;
+    message.payload = std::string("owner-core");
+    actor.tell(std::move(message));
+
+    EXPECT_EQ(actor_system.dispatch_all(), 1U);
+    ASSERT_EQ(observed.size(), 1U);
+    EXPECT_EQ(observed.front(), "1");
+    EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
 }

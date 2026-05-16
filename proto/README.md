@@ -1,77 +1,93 @@
-# v3.0.0 Protocol Buffers 接口定义
+# v3 Protocol Buffers
 
-本目录定义 BoostGateway v3.0.0 分布式运行时的服务间通信协议。
+本目录定义 `v3` 服务间通信协议，并保留从仓库内 typed helper 迁移到
+generated protobuf / gRPC stub 的正式入口。
 
 ## 文件结构
 
-```
+```text
 proto/v3/
-├── common.proto       — ServiceEnvelope 路由封装 + 所有 payload oneof
-├── login.proto        — 登录认证服务
-├── room.proto         — 房间管理服务
-├── battle.proto       — 战斗模拟服务
-├── match.proto        — 匹配队列服务
-└── leaderboard.proto  — 排行榜服务
+├── common.proto
+├── login.proto
+├── room.proto
+├── battle.proto
+├── match.proto
+└── leaderboard.proto
 ```
 
-## 设计原则
+- `common.proto`: `ServiceEnvelope`、路由元数据、跨服务公共字段
+- `login.proto`: 登录与 token 校验请求/响应
+- `room.proto`: 房间生命周期消息
+- `battle.proto`: 战斗输入、状态推送、结束消息
+- `match.proto`: 匹配请求与结果
+- `leaderboard.proto`: 提交积分与排行榜查询
 
-1. **ServiceEnvelope 统一路由**: 所有服务间通信使用 `common.proto` 的 `ServiceEnvelope`，通过 `payload` oneof 区分消息类型
-2. **向后兼容**: 字段编号不重用，新增字段追加到末尾
-3. **W3C TraceContext**: `trace_id`/`span_id` 嵌入 Envelope 实现分布式追踪
+## 当前状态
 
-## 编译
+当前主线同时存在两层协议能力：
+
+1. `include/v3/proto/envelope_codec.h`
+   用于当前主链 typed helper 兼容层，已经接入
+   `login/room/battle/match/leaderboard`
+2. `proto/v3/*.proto`
+   作为正式 schema 源，已接入生成入口和 CMake helper target
+
+这意味着当前仓库已经具备：
+
+- typed envelope helper 的运行时兼容能力
+- generated protobuf / gRPC stub 的生成入口
+
+但默认运行路径仍以 helper 兼容层为主，generated stub 还没有完全替代现有桥接实现。
+
+## 生成方式
+
+直接运行脚本：
 
 ```bash
-# 安装 protoc 和 grpc_cpp_plugin
-# Ubuntu: apt install protobuf-compiler grpc-cpp-plugin
-# macOS: brew install protobuf grpc
-
-# 生成 C++ 代码
-protoc --cpp_out=../src/v3/proto \
-       --grpc_out=../src/v3/proto \
-       --plugin=protoc-gen-grpc=$(which grpc_cpp_plugin) \
-       proto/v3/*.proto
+python scripts/generate_proto_cpp.py
 ```
 
-仓库当前还提供了一个**不依赖 generated stub 的 typed helper 过渡层**：
-
-- `include/v3/proto/envelope_codec.h`
-
-它的定位是：
-
-1. 在未接入正式 `protoc` / gRPC 构建链前，先把 `ServiceEnvelope` 的消息 kind、domain 和 payload 契约收口
-2. 允许 `login/room/battle/match/leaderboard` 后端同时兼容 legacy raw JSON 与 wrapped envelope payload
-3. 为后续 generated protobuf/gRPC 接入提供调用形状上的过渡
-
-当前仓库内 proto 生成入口：
+Windows 包装入口：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts/generate_proto_cpp.ps1
 ```
 
-对应的 CMake helper target：
+CMake helper target：
 
 ```bash
 cmake --build <build-dir> --target generate_v3_proto_cpp
 ```
 
+生成逻辑：
+
+- 总是生成 protobuf C++ stub 到 `src/v3/proto/`
+- 如果环境中存在 `grpc_cpp_plugin`，额外生成 gRPC C++ stub
+- 如果缺少 `grpc_cpp_plugin`，脚本会保留 protobuf 生成并明确提示跳过 gRPC
+
+## 设计约束
+
+1. `ServiceEnvelope` 继续作为跨服务统一外层契约
+2. 字段编号不重用，只追加
+3. helper 层与 generated schema 必须保持 kind / domain / payload 语义一致
+4. legacy raw payload 兼容窗口必须通过测试明确，而不是隐式长期保留
+
 ## 消息流
 
+```text
+Gateway -> ServiceEnvelope -> Login Backend
+Gateway -> ServiceEnvelope -> Room Backend
+Gateway -> ServiceEnvelope -> Battle Backend
+Gateway -> ServiceEnvelope -> Match Backend
+Gateway -> ServiceEnvelope -> Leaderboard Backend
 ```
-Gateway ──ServiceEnvelope──▶ Login Backend
-        ──ServiceEnvelope──▶ Room Backend
-        ──ServiceEnvelope──▶ Battle Backend
-        ──ServiceEnvelope──▶ Match Backend
-        ──ServiceEnvelope──▶ Leaderboard Backend
-```
 
-## 与 v2.x JSON 兼容
+## 兼容说明
 
-v3.0.0 初期同时支持 Protobuf 和 JSON 序列化，通过 FeatureFlag `v3_protobuf_enabled` 灰度切换。
+当前实际兼容状态：
 
-当前主线的实际状态是：
+- `login/room/battle/match/leaderboard` 后端都接受 wrapped envelope payload
+- helper 层仍允许与 legacy raw JSON 共存
+- generated protobuf / gRPC 已经有生成入口，但还不是默认唯一传输路径
 
-- `match` / `leaderboard` 已切到 typed helper 驱动
-- `login` / `room` / `battle` 已具备 typed envelope message kind 支持
-- 真正的 generated protobuf/gRPC 仍是后续收口目标，而不是当前主线唯一传输路径
+下一步目标不是再发明第三套协议，而是把现有 helper 契约稳定迁移到 generated stub。

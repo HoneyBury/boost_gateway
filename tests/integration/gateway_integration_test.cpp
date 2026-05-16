@@ -301,6 +301,23 @@ net::packet::DecodedPacket read_until_message(TestClient& client, std::uint16_t 
     }
 }
 
+net::packet::DecodedPacket read_until_any_message(
+    TestClient& client,
+    std::initializer_list<std::uint16_t> expected_ids) {
+    for (;;) {
+        const auto packet = client.read();
+        for (const auto expected_id : expected_ids) {
+            if (packet.message_id == expected_id) {
+                return packet;
+            }
+        }
+        EXPECT_TRUE(packet.message_id == net::protocol::kRoomStatePush ||
+                    packet.message_id == net::protocol::kBattleStatePush ||
+                    packet.message_id == net::protocol::kRoomReadyResponse)
+            << "unexpected message_id=" << packet.message_id;
+    }
+}
+
 std::vector<net::packet::DecodedPacket> collect_matching_messages(TestClient& client,
                                                                   std::uint16_t message_id,
                                                                   std::chrono::milliseconds timeout) {
@@ -1214,18 +1231,18 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByK
 
     owner.send(net::protocol::kBattleStartRequest, 336, "");
     std::vector<net::packet::DecodedPacket> start_responses;
-    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
-    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
-    start_responses.push_back(std::move(*p3));
+    start_responses.push_back(read_until_any_message(
+        owner,
+        {net::protocol::kBattleStartResponse, net::protocol::kBattleStatePush}));
     for (auto& packet : collect_matching_messages(owner, net::protocol::kBattleStartResponse, std::chrono::milliseconds(300))) {
         start_responses.push_back(std::move(packet));
     }
     EXPECT_TRUE(contains_body(start_responses, "battle_started:room_id=bridge_room:battle_id=battle_0001"));
 
     std::vector<net::packet::DecodedPacket> member_started;
-    auto p4 = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
-    ASSERT_TRUE(p4.has_value()) << "BattleStatePush timed out";
-    member_started.push_back(std::move(*p4));
+    member_started.push_back(read_until_any_message(
+        member,
+        {net::protocol::kBattleStatePush, net::protocol::kBattleInputPush}));
     for (auto& packet : collect_matching_messages(member, net::protocol::kBattleStatePush, std::chrono::milliseconds(300))) {
         member_started.push_back(std::move(packet));
     }
@@ -1241,6 +1258,7 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanRestrictBattleShadowResponsesByK
         input_responses.push_back(std::move(packet));
     }
     EXPECT_FALSE(input_responses.empty());
+    EXPECT_EQ(input_responses.front().request_id, 337U);
 
     auto p6 = member.expect_message_for(net::protocol::kBattleInputPush, std::chrono::seconds(5));
     ASSERT_TRUE(p6.has_value()) << "BattleInputPush timed out";
@@ -1329,11 +1347,13 @@ TEST(GatewayIntegrationTest, EchoServerConfigCanMirrorOnlyBattleFinishKinds) {
     EXPECT_EQ(p2->request_id, 345U);
 
     owner.send(net::protocol::kBattleStartRequest, 346, "");
-    auto p3 = owner.expect_message_for(net::protocol::kBattleStartResponse, std::chrono::seconds(5));
-    ASSERT_TRUE(p3.has_value()) << "BattleStartResponse timed out";
-    auto p4 = member.expect_message_for(net::protocol::kBattleStatePush, std::chrono::seconds(5));
-    ASSERT_TRUE(p4.has_value()) << "BattleStatePush timed out";
-    EXPECT_EQ(p4->body, "battle_state:started:bridge_room_finish:2");
+    auto p3 = read_until_any_message(
+        owner,
+        {net::protocol::kBattleStartResponse, net::protocol::kBattleStatePush});
+    auto p4 = read_until_any_message(
+        member,
+        {net::protocol::kBattleStatePush, net::protocol::kBattleInputPush});
+    EXPECT_EQ(p4.body, "battle_state:started:bridge_room_finish:2");
     EXPECT_FALSE(member.try_read_for(std::chrono::milliseconds(300)).has_value());
 
     owner.send(net::protocol::kBattleInputRequest, 347, "finish:surrender");

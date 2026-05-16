@@ -49,6 +49,8 @@ Expected:
 - envtest reconcile passes when local API server / etcd binaries are installed
 - sample `BoostGatewayCluster` install path remains aligned with `config/default`
 - kind smoke verifies CRD install, operator rollout, and sample cluster reconcile
+- kind smoke asserts `status.components[]` for all 6 components and validates
+  steady-state `Ready/Progressing/Degraded/TLSReady` conditions
 - fake-client tests now also verify `desiredReplicas`, `TLSReady`, and cert-manager `Certificate` reconcile
 
 ## Proto / transport

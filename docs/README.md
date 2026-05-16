@@ -52,12 +52,15 @@
 ### v2.0.2 性能基线（已完成，2026-05-12）
 
 - [性能基线报告](./performance-baseline.md) — 吞吐/延迟/资源基线测量方法、SLO/SLI 定义、容量规划公式与扩容推荐
+- [Windows R1 基线结果](./performance-baseline-windows-r1.md) — `2026-05-16` 首轮 Windows baseline 实测、聚合结果与 gate 判定
 - [v2.x 企业级迭代路线](./v2-enterprise-roadmap.md) §2.2 — B1-B6 六项性能基线验收记录
 
 ### v2.x 企业级迭代
 
 - [v2.x 企业级迭代路线](./v2-enterprise-roadmap.md) — 从 v2.0.0 到 v3.0.0 的完整版本规划与验收标准
 - [架构验收标准](./architecture-acceptance-criteria.md) — 五维度量化验收标准（性能/可靠性/可观测性/安全性/可运维性）
+- [v3.x 生产就绪加强规划](./v3-production-readiness-plan.md) — v3.3.x 之后的 12 周收口计划，覆盖性能数据闭环、架构实测、交付面、Actor 多核线程边界、通信契约、控制面和发布门槛
+- [v3.x 发布清单](./v3-release-checklist.md) — v3.x 阶段的版本口径、安装产物、配置脚本、控制面入口和发布阻断条件
 - [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
 
 ## 文档使用建议
@@ -75,5 +78,7 @@
    - `README.md`
    - `docs/development-log.md`
    - `docs/v2-enterprise-roadmap.md`
+   - `docs/v3-production-readiness-plan.md`
+   - `docs/v3-release-checklist.md`
    - `docs/p4-validation-checklist.md`
    - `docs/k8s-operator-implementation.md`

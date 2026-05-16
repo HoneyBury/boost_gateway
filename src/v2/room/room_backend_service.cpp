@@ -6,6 +6,7 @@
 #include "app/audit_log.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -13,6 +14,15 @@
 #include <vector>
 
 namespace {
+
+std::uint32_t read_battle_max_frames_override(std::uint32_t fallback) {
+    const char* raw = std::getenv("V2_BATTLE_MAX_FRAMES");
+    if (raw == nullptr || raw[0] == '\0') {
+        return fallback;
+    }
+    const auto parsed = std::strtoul(raw, nullptr, 10);
+    return parsed > 0 ? static_cast<std::uint32_t>(parsed) : fallback;
+}
 
 struct RoomMember {
     std::string user_id;
@@ -267,7 +277,7 @@ private:
             {"battle_id", battle_id},
             {"room_id", room_id},
             {"player_ids", player_ids},
-            {"max_frames", 3},
+            {"max_frames", read_battle_max_frames_override(3)},
         };
 
         return make_ok({

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 2.0.0
+    VERSION 3.3.2
     DESCRIPTION "A high-performance C++ game server framework"
     LANGUAGES CXX
 )
@@ -64,6 +64,8 @@ install(TARGETS
     v2_battle_backend
     v2_room_backend
     v2_login_backend
+    v2_match_backend
+    v2_leaderboard_backend
     v2_gateway_pressure
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
@@ -97,6 +99,8 @@ install(FILES
     docs/v2-enterprise-roadmap.md
     docs/architecture-acceptance-criteria.md
     docs/performance-baseline.md
+    docs/v3-production-readiness-plan.md
+    docs/v3-release-checklist.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 

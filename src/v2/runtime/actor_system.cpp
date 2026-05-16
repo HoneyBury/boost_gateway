@@ -225,6 +225,8 @@ bool ActorSystem::cancel_schedule(ScheduleId schedule_id) noexcept {
 
 std::size_t ActorSystem::dispatch_all() {
     std::size_t dispatched = 0;
+    const auto previous_owner_core = dispatch_owner_core_;
+    dispatch_owner_core_ = io_engine_ ? io_engine_->current_core_id() : std::nullopt;
     promote_scheduled_messages();
     while (!ready_actors_.empty()) {
         const auto actor_id = ready_actors_.front();
@@ -250,6 +252,7 @@ std::size_t ActorSystem::dispatch_all() {
         }
     }
     ++dispatch_round_;
+    dispatch_owner_core_ = previous_owner_core;
     return dispatched;
 }
 
@@ -272,6 +275,10 @@ std::size_t ActorSystem::drain_mailbox_and_dispatch(std::uint32_t core_id) {
     }
 
     return dispatch_all();
+}
+
+std::optional<std::uint32_t> ActorSystem::dispatch_owner_core() const noexcept {
+    return dispatch_owner_core_;
 }
 
 void ActorSystem::shutdown() {

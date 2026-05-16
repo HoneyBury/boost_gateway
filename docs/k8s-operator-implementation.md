@@ -137,7 +137,10 @@ Why:
 3. Inject Raft peer membership into `match` and `leaderboard` pods from stable DNS.
 4. Rework Helm so Helm installs the operator and a sample `BoostGatewayCluster`,
    instead of trying to template every runtime object directly.
-5. Expand CI `kind` smoke to assert `status.components[]` and all expected conditions.
+5. Expand CI `kind` smoke to assert `status.components[]` coverage and the
+   expected steady-state conditions:
+   `Ready=True`, `Progressing=False`, `Degraded=False`, `TLSReady=False`
+   for the sample non-TLS cluster.
 
 ## Notes About Existing Assets
 

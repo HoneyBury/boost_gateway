@@ -15,11 +15,45 @@
 #include <spdlog/spdlog.h>
 
 #include <chrono>
+#include <cstdlib>
 #include <utility>
 
 namespace v2::gateway {
 
 namespace {
+
+double read_rate_limit_override(const char* name, double fallback) {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr || raw[0] == '\0') {
+        return fallback;
+    }
+    const double parsed = std::strtod(raw, nullptr);
+    return parsed > 0.0 ? parsed : fallback;
+}
+
+std::uint32_t read_uint32_override(const char* name, std::uint32_t fallback) {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr || raw[0] == '\0') {
+        return fallback;
+    }
+    const auto parsed = std::strtoul(raw, nullptr, 10);
+    return parsed > 0 ? static_cast<std::uint32_t>(parsed) : fallback;
+}
+
+RateLimiter::Config load_rate_limiter_config() {
+    RateLimiter::Config config;
+    config.connection_limit = read_rate_limit_override(
+        "V2_RATE_LIMIT_CONNECTION", config.connection_limit);
+    config.message_type_limit = read_rate_limit_override(
+        "V2_RATE_LIMIT_MESSAGE_TYPE", config.message_type_limit);
+    config.ip_limit = read_rate_limit_override(
+        "V2_RATE_LIMIT_IP", config.ip_limit);
+    config.user_limit = read_rate_limit_override(
+        "V2_RATE_LIMIT_USER", config.user_limit);
+    config.login_limit = read_rate_limit_override(
+        "V2_RATE_LIMIT_LOGIN", config.login_limit);
+    return config;
+}
 
 std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& settlement) {
     nlohmann::json doc;
@@ -64,7 +98,7 @@ std::string build_replay_payload(const v2::battle::BattleSettlementPreparedMsg& 
 }  // namespace
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
-    auto rate_limiter = std::make_shared<RateLimiter>();
+    auto rate_limiter = std::make_shared<RateLimiter>(load_rate_limiter_config());
     return actor_system_.create_actor(std::make_unique<GatewayActor>(
         write_sink_,
         this,
@@ -1215,7 +1249,7 @@ void Runtime::push(v2::room::RoomEvent event) {
             .battle_id = battle_id,
             .room_id = requested->room_id,
             .player_ids = requested->player_ids,
-            .max_frames = 3,
+            .max_frames = read_uint32_override("V2_BATTLE_MAX_FRAMES", 3),
         };
         battle_actor.tell(std::move(create));
         actor_system_.dispatch_all();

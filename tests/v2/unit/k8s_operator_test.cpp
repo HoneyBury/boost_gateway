@@ -106,6 +106,16 @@ TEST(K8sOperatorTest, KindAndSampleConfigExist) {
     EXPECT_NE(kind_cfg.find("kind: Cluster"), std::string::npos);
 }
 
+TEST(K8sOperatorTest, OperatorSmokeScriptAssertsStatusComponentsAndConditions) {
+    auto smoke = read_file(path("scripts/operator_kind_smoke.py"));
+    EXPECT_FALSE(smoke.empty()) << "operator smoke script missing";
+    EXPECT_NE(smoke.find("status.get(\"components\""), std::string::npos);
+    EXPECT_NE(smoke.find("\"Progressing\": \"False\""), std::string::npos);
+    EXPECT_NE(smoke.find("\"Degraded\": \"False\""), std::string::npos);
+    EXPECT_NE(smoke.find("\"TLSReady\": \"False\""), std::string::npos);
+    EXPECT_NE(smoke.find("required_components"), std::string::npos);
+}
+
 // ─── SDK Multi-language ──────────────────────────────────────────────────
 
 TEST(SdkMultiLanguageTest, PythonSdkExists) {

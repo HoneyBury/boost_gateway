@@ -1,5 +1,30 @@
 # 更新日志
 
+## v3.3.2 — 版本与交付面收束（2026-05-16）
+
+> **范围**：启动 `v3.x` 生产就绪阶段的第一批收口工作，先统一版本口径、安装目标和发布清单，不扩展新的业务能力。
+
+### 代码与构建
+
+- `CMakeLists.txt`：顶层 `project(boost_gateway VERSION ...)` 更新到 `3.3.2`，与当前主线 `v3.3.x` 文档口径对齐。
+- `install(TARGETS ...)`：补齐 `v2_match_backend`、`v2_leaderboard_backend`，使 README 中列出的 backend 入口与实际安装产物一致。
+- `install(FILES ...)`：安装 `docs/v3-production-readiness-plan.md` 与 `docs/v3-release-checklist.md`。
+
+### 文档
+
+- `README.md`：明确当前主线已进入 **v3.x 生产就绪加强阶段**，增加对应版本行与文档入口。
+- **新增** `docs/v3-production-readiness-plan.md`：定义 12 周生产就绪收口计划，覆盖性能数据闭环、架构实测、Actor 多核线程边界、通信契约、控制面和发布门槛。
+- **新增** `docs/v3-release-checklist.md`：定义 v3.x 阶段的版本口径、安装产物、配置脚本、控制面入口和发布阻断条件。
+- **新增** `scripts/collect_v2_perf_baseline.py`：跨平台 v2 多进程基线采集入口，统一启动 backend/gateway、运行压测、抓取 diagnostics 和进程资源快照、落盘 `runtime/perf/<timestamp>/`。
+- `scripts/collect_v2_perf_baseline.ps1`：调整为 Windows 包装器，调用同一份 Python 主逻辑，避免脚本双份漂移。
+- `docs/README.md`、`docs/v2-enterprise-roadmap.md`：把 v3.x 生产就绪规划与发布清单纳入当前主线文档索引。
+- `docs/performance-baseline.md`：将 Python 跨平台脚本纳入标准采集入口。
+
+### 测试
+
+- 本次为 R0 文档与构建面收口，未新增运行时行为改动。
+- 未执行构建与测试，下一步进入性能基线与架构实测闭环。
+
 ## v1.2.5 — CI / Docker / 发布链路稳定性修复（2026-05-08）
 
 > **范围**：不扩展 `v1.x` 业务能力，不进入 `v2.0.0` 开发；仅补齐稳定发布所需的 CI、Docker 与测试发现可靠性问题。

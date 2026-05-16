@@ -370,6 +370,13 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
 
     const auto send_start = std::chrono::steady_clock::now();
     auto response = conn->send_request(request);
+    if (!response) {
+        conn->close();
+        conn = ensure_connection(target, shard_key);
+        if (conn) {
+            response = conn->send_request(request);
+        }
+    }
     const auto latency_us = static_cast<std::uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
             std::chrono::steady_clock::now() - send_start)

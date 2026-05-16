@@ -85,6 +85,7 @@ class RateLimiter {
 public:
     struct Config {
         double connection_limit = 100.0;  // tokens/s per connection
+        double message_type_limit = 500.0; // tokens/s per protocol message type
         double ip_limit = 200.0;          // tokens/s per IP
         double user_limit = 50.0;         // tokens/s per user
         double login_limit = 5.0;         // tokens/s for login globally
@@ -117,7 +118,7 @@ public:
         // 2. Global per-message-type
         auto& msg_bucket =
             get_or_create(msg_type_buckets_, envelope.protocol_message_id,
-                          kDefaultMsgTypeLimit);
+                          config_.message_type_limit);
         if (!msg_bucket.try_consume()) {
             return {false, "message_type_rate_limited",
                     msg_bucket.estimate_retry_ms()};
@@ -155,8 +156,6 @@ public:
     }
 
 private:
-    static constexpr double kDefaultMsgTypeLimit = 500.0;
-
     // Get-or-create helper: returns reference to the bucket for `key`,
     // initialising it with `limit` tokens if it does not exist yet.
     template <typename Key>

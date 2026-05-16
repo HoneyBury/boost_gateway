@@ -7,6 +7,7 @@ target_link_libraries(project_app
     PUBLIC
         fmt::fmt
         nlohmann_json::nlohmann_json
+        project_boost_asio
         spdlog::spdlog
 )
 target_compile_definitions(project_app
