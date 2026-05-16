@@ -71,7 +71,11 @@ while (-not $process.HasExited) {
     $process.Refresh()
 }
 
+$process.WaitForExit()
 $exitCode = $process.ExitCode
+if ($null -eq $exitCode) {
+    $exitCode = 0
+}
 $elapsedSeconds = [int]((Get-Date) - $started).TotalSeconds
 "exit ${exitCode} after ${elapsedSeconds}s: $FilePath $($Arguments -join ' ')" | Set-Content -Encoding UTF8 -Path $resolvedLogPath
 if (Test-Path $stdoutPath) {
