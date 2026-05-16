@@ -122,6 +122,7 @@ std::optional<DecodedHandlerPayload> decode_handler_payload(const BackendEnvelop
     decoded.typed_request = v3::proto::decode_typed_envelope(envelope.payload);
     if (decoded.typed_request.has_value()) {
         decoded.payload = decoded.typed_request->payload;
+        decoded.encoding = HandlerPayloadEncoding::kTypedEnvelope;
         return decoded;
     }
 
@@ -129,6 +130,7 @@ std::optional<DecodedHandlerPayload> decode_handler_payload(const BackendEnvelop
     if (decoded.payload.is_discarded()) {
         return std::nullopt;
     }
+    decoded.encoding = HandlerPayloadEncoding::kLegacyRawJson;
     return decoded;
 }
 

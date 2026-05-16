@@ -9,10 +9,20 @@
 
 namespace v2::service {
 
+enum class HandlerPayloadEncoding {
+    kTypedEnvelope,
+    kLegacyRawJson,
+};
+
 struct DecodedHandlerPayload {
     std::optional<v3::proto::TypedEnvelope> typed_request;
     nlohmann::json payload;
+    HandlerPayloadEncoding encoding = HandlerPayloadEncoding::kLegacyRawJson;
 };
+
+[[nodiscard]] constexpr std::string_view legacy_raw_json_deprecation_notice() {
+    return "legacy raw JSON backend payload is deprecated; use typed envelope";
+}
 
 [[nodiscard]] std::optional<v3::proto::EnvelopeMessageKind>
 message_kind_from_backend_type(std::string_view message_type);

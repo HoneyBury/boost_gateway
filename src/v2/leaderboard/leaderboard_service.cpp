@@ -5,9 +5,9 @@
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
+#include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
 #include "v3/persistence/redis_leaderboard.h"
-#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -251,12 +251,11 @@ private:
 
     v2::service::BackendEnvelope handle_submit(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
-        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
 
         const std::string user_id = doc.value("user_id", "");
         const std::string display_name = doc.value("display_name", "");
@@ -281,20 +280,19 @@ private:
             body["rank"] = *new_rank;
         }
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse,
-            body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
     }
 
     v2::service::BackendEnvelope handle_top(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
         std::size_t k = doc.value("k", 10);
         if (k > 100) k = 100;  // cap
 
@@ -323,20 +321,19 @@ private:
         }
         auto body = nlohmann::json{{"status", "ok"}, {"entries", std::move(arr)}};
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kLeaderboardTopResponse,
-            body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kLeaderboardTopResponse);
     }
 
     v2::service::BackendEnvelope handle_rank(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
         std::string user_id = doc.value("user_id", "");
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
 
@@ -366,11 +363,10 @@ private:
             {"score", entry->score},
         };
         auto resp = make_response(body);
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse,
-            body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse);
     }
 
     v2::service::BackendEnvelope handle_raft_request_vote(

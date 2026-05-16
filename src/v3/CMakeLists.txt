@@ -21,5 +21,12 @@ add_custom_target(generate_v3_proto_cpp
     COMMENT "Proto C++ generation helper target"
 )
 
+add_custom_target(check_v3_proto_schema
+    COMMAND python "${CMAKE_SOURCE_DIR}/scripts/check_v3_proto_schema.py"
+            --proto-dir "${CMAKE_SOURCE_DIR}/proto/v3"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    COMMENT "Validate v3 proto schema without requiring protoc"
+)
+
 add_subdirectory(cluster)
 add_subdirectory(persistence)

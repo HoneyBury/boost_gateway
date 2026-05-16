@@ -5,8 +5,8 @@
 #include "v2/match/matchmaking_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
+#include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
-#include "v3/proto/envelope_codec.h"
 
 #include <nlohmann/json.hpp>
 
@@ -476,12 +476,11 @@ private:
 
     v2::service::BackendEnvelope handle_match_join(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
-        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
 
         const std::string user_id = doc.value("user_id", "");
         const std::int64_t mmr = doc.value("mmr", 1000);
@@ -509,21 +508,19 @@ private:
 
         auto response_body = nlohmann::json{{"status", "ok"}, {"queued", true}, {"mode", mode_str}};
         v2::service::BackendEnvelope resp = make_ok({{"queued", true}, {"mode", mode_str}});
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kMatchJoinResponse,
-            response_body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
     }
 
     v2::service::BackendEnvelope handle_match_leave(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
-        if (doc.is_discarded()) return make_error(-1004, "invalid_json");
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
 
         const std::string user_id = doc.value("user_id", "");
         const std::string mode_str = doc.value("mode", "1v1");
@@ -541,20 +538,19 @@ private:
         }
         auto response_body = nlohmann::json{{"status", "ok"}, {"left", true}};
         v2::service::BackendEnvelope resp = make_ok({{"left", true}});
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kMatchLeaveResponse,
-            response_body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kMatchLeaveResponse);
     }
 
     v2::service::BackendEnvelope handle_match_status(
         const v2::service::BackendEnvelope& req) {
-        auto decoded_envelope = v3::proto::decode_typed_envelope(req.payload);
-        auto raw_payload = decoded_envelope.has_value()
-            ? decoded_envelope->payload.dump()
-            : req.payload;
-        auto doc = nlohmann::json::parse(raw_payload, nullptr, false);
+        auto decoded = v2::service::decode_handler_payload(req);
+        if (!decoded.has_value() || !decoded->payload.is_object()) {
+            return make_error(-1004, "invalid_json");
+        }
+        const auto& doc = decoded->payload;
         std::string user_id = doc.value("user_id", "");
         std::string mode_str = doc.value("mode", "1v1");
 
@@ -573,11 +569,10 @@ private:
                         {"avg_mmr", result.avg_mmr},
                     };
                     auto resp = make_ok(body);
-                    resp.payload = v3::proto::maybe_wrap_typed_response(
-                        decoded_envelope,
-                        v3::proto::EnvelopeMessageKind::kMatchStatusResponse,
-                        body);
-                    return resp;
+                    return v2::service::wrap_typed_response_if_needed(
+                        decoded->typed_request,
+                        std::move(resp),
+                        v3::proto::EnvelopeMessageKind::kMatchStatusResponse);
                 }
             }
         }
@@ -589,11 +584,10 @@ private:
             {"mode", mode_str},
         };
         auto resp = make_ok(body);
-        resp.payload = v3::proto::maybe_wrap_typed_response(
-            decoded_envelope,
-            v3::proto::EnvelopeMessageKind::kMatchStatusResponse,
-            body);
-        return resp;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kMatchStatusResponse);
     }
 
     void apply_match_join(const MatchPlayer& player) {

@@ -263,9 +263,29 @@ TEST(V2ServiceBoundaryTest, DecodeHandlerPayloadExtractsTypedPayload) {
 
     ASSERT_TRUE(decoded.has_value());
     ASSERT_TRUE(decoded->typed_request.has_value());
+    EXPECT_EQ(decoded->encoding, v2::service::HandlerPayloadEncoding::kTypedEnvelope);
     EXPECT_EQ(decoded->typed_request->message_kind,
               v3::proto::EnvelopeMessageKind::kLoginRequest);
     EXPECT_EQ(decoded->payload.value("user_id", std::string{}), "alice");
+}
+
+TEST(V2ServiceBoundaryTest, DecodeHandlerPayloadMarksLegacyRawJsonDeprecated) {
+    v2::service::BackendEnvelope request{
+        .correlation_id = 78,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"user_id":"alice","token":"token:alice"})",
+        .message_type = "login_request",
+    };
+
+    const auto decoded = v2::service::decode_handler_payload(request);
+
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_FALSE(decoded->typed_request.has_value());
+    EXPECT_EQ(decoded->encoding, v2::service::HandlerPayloadEncoding::kLegacyRawJson);
+    EXPECT_EQ(v2::service::legacy_raw_json_deprecation_notice(),
+              "legacy raw JSON backend payload is deprecated; use typed envelope");
 }
 
 TEST(V2ServiceBoundaryTest, WrapTypedResponseLeavesLegacyPayloadRaw) {
