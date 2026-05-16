@@ -6,6 +6,7 @@
 #include "app/logging.h"
 #include "v2/auth/jwt_validator.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/gateway/gateway_service_bridge.h"
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/battle/battle_backend_service.h"
 #include "v2/login/login_backend_service.h"
@@ -477,6 +478,59 @@ TEST(ServiceBusIntegrity, TraceContextPropagationAcrossEnvelope) {
 }
 
 // ─── Service error code consistency ─────────────────────────────────────
+
+TEST(ServiceBusIntegrity, GatewayBridgeRoutePropagatesTraceAndErrorCode) {
+    constexpr std::uint64_t kTraceId = 0x12345678ABCDEF00ULL;
+    constexpr std::uint64_t kSpanId = 0x1111222233334444ULL;
+
+    std::mutex observed_mutex;
+    v2::service::BackendEnvelope observed_request;
+
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["login_request"] = [&](const v2::service::BackendEnvelope& req) {
+        {
+            std::lock_guard lock(observed_mutex);
+            observed_request = req;
+        }
+
+        v2::service::BackendEnvelope resp;
+        resp.kind = v2::service::MessageKind::kError;
+        resp.error_code = static_cast<std::int32_t>(
+            v2::service::ServiceErrorCode::kInvalidRequest);
+        resp.payload = R"({"error":"invalid_request"})";
+        resp.trace_id = req.trace_id;
+        resp.span_id = req.span_id;
+        return resp;
+    };
+
+    v2::service::BackendServer server(0, std::move(handlers));
+    server.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+        });
+    bridge.set_trace_context(kTraceId, kSpanId);
+
+    const auto result = bridge.route(
+        v2::service::ServiceId::kLogin,
+        "login_request",
+        R"({"user_id":"bad","token":""})");
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_FALSE(result.success);
+    EXPECT_EQ(result.error, v2::service::ServiceErrorCode::kInvalidRequest);
+    EXPECT_NE(result.correlation_id, 0U);
+
+    std::lock_guard lock(observed_mutex);
+    EXPECT_EQ(observed_request.message_type, "login_request");
+    EXPECT_EQ(observed_request.trace_id, kTraceId);
+    EXPECT_EQ(observed_request.span_id, kSpanId);
+    EXPECT_EQ(observed_request.correlation_id, result.correlation_id);
+}
 
 TEST(ServiceBusIntegrity, ServiceErrorCodeClientMapping) {
     using v2::service::ServiceErrorCode;

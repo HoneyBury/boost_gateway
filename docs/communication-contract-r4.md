@@ -23,6 +23,7 @@
 3. leaderboard 的历史 backend message type 使用 `leaderboard_submit` / `leaderboard_top` / `leaderboard_rank`，adapter 内部明确映射到 typed kind。
 4. 单测覆盖 meta、payload、message kind、trace/span/error_code 保留，以及 unknown message type 和 malformed JSON 拒绝路径。
 5. `v2_arch_benchmark` 已纳入通信契约短基线，collector 对三个契约指标设置 P99 门禁。
+6. `GatewayServiceBridge::route()` 已有 integration 测试覆盖 trace/span 写入 backend request，并验证 backend error code 与 correlation id 返回到 routing result。
 
 ## 3. 性能基线
 
@@ -59,7 +60,7 @@ python scripts\collect_v2_arch_baseline.py --build-dir build\windows-msvc-debug 
 
 ## 6. 下一步优先级
 
-1. 在 gateway/backend integration test 中验证 `trace_id` / `error_code` 端到端一致。
-2. 将 adapter 接入 match/leaderboard 以外的主业务 handler 边界，减少散落的手写 message type 逻辑。
-3. 增加 generated proto CMake 可选目标，只做 schema 生成验证，不立刻替换 transport。
-4. 把 raw JSON compatibility 路径集中标记为 deprecated，为 R4-B 切换做准备。
+1. 将 adapter 接入 match/leaderboard 以外的主业务 handler 边界，减少散落的手写 message type 逻辑。
+2. 增加 generated proto CMake 可选目标，只做 schema 生成验证，不立刻替换 transport。
+3. 把 raw JSON compatibility 路径集中标记为 deprecated，为 R4-B 切换做准备。
+4. 将 gateway/backend trace/error integration 覆盖扩展到 typed envelope request/response 路径。
