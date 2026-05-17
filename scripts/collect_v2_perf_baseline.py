@@ -8,6 +8,7 @@ import json
 import os
 import platform
 import re
+import shutil
 import statistics
 import signal
 import socket
@@ -39,7 +40,13 @@ def resolve_executable(build_dir: Path, base_name: str) -> Path:
         p for p in build_dir.rglob("*")
         if p.is_file() and p.name in target_names
     )
-    if is_windows():
+    direct_matches = [
+        p for p in matches
+        if "build" not in p.relative_to(build_dir).parts[:-1]
+    ]
+    if direct_matches:
+        matches = sorted(direct_matches, key=lambda p: (len(p.relative_to(build_dir).parts), str(p)))
+    elif is_windows():
         preferred = [
             p for p in matches
             if any(part.lower() in {"debug", "release", "relwithdebinfo", "minsizerel"} for part in p.parts)
@@ -302,6 +309,9 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     stdout_path = run_dir / f"{case_name}.stdout.log"
     stderr_path = run_dir / f"{case_name}.stderr.log"
     json_path = run_dir / f"{case_name}.result.json"
+    for path in (stdout_path, stderr_path, json_path):
+        with suppress(FileNotFoundError):
+            path.unlink()
     args.extend(["--output", str(json_path)])
 
     log_step(f"Running bench case: {case_name}")
@@ -809,6 +819,12 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     build_dir = Path(args.build_dir).resolve()
     output_root = Path(args.output_root).resolve() if args.output_root else root / "runtime" / "perf" / datetime.now().strftime("%Y%m%d-%H%M%S")
+    if args.output_root:
+        for child in ("logs", "results"):
+            shutil.rmtree(output_root / child, ignore_errors=True)
+        for child in ("summary.json", "report.md"):
+            with suppress(FileNotFoundError):
+                (output_root / child).unlink()
     log_dir = output_root / "logs"
     result_dir = output_root / "results"
     log_dir.mkdir(parents=True, exist_ok=True)

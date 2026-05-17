@@ -199,16 +199,16 @@ python ./scripts/collect_v2_perf_baseline.py \
 |---|---|---|---|---|---|
 | 1 | 100 | 30s | _待测定_ | _待测定_ | 1.00× |
 | 2 | 100 | 30s | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 100 | 30s | _待测定_ | _待测定_ | _待测定_ |
+| 4 | 100 | 30s | 55,298 | 1,836.23 | _待测定_ |
 | 1 | 1000 | 30s | _待测定_ | _待测定_ | — |
 | 2 | 1000 | 30s | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 1000 | 30s | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 10000 | 30s | _待测定_ | _待测定_ | — |
+| 4 | 1000 | 30s | 535,536 | 17,802.35 | _待测定_ |
+| 4 | 10000 | 30s | 694,193 | 23,072.81 | — |
 
-> `R1-2` 状态：Windows smoke 已验证 `echo-20-10s`，collector 已补 baseline 限流覆盖；
-> 正式 baseline 待按修复后的入口重跑
-> `python ./scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3`
-> 回填本表。
+> `P1` 状态：macOS Release baseline 三轮已通过，结果来自
+> `runtime/perf/release-baseline/summary.json`；10K 行来自容量专项
+> `runtime/perf/p1-capacity-local/summary.json`，该专项出现 8,701 个连接失败，
+> 只作为退化点记录，不作为生产通过线。
 
 **线性扩容系数** = `吞吐量(N核) / (N × 吞吐量(1核))`
 
@@ -216,13 +216,12 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 房间数 | 每房间人数 | 输入间隔 | 总消息数 | 吞吐量 (msg/s) | 广播 fan-out 系数 |
 |---|---|---|---|---|---|
-| 10 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
-| 50 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
-| 100 | 2 | 100ms | _待测定_ | _待测定_ | _待测定_ |
+| 10 | 2 | 100ms | 8,855 | 542.91 | _待测定_ |
+| 50 | 2 | 100ms | 39,876 | 1,812.63 | _待测定_ |
+| 250 | 2 | 100ms | 34,773 | 1,158.37 | _待测定_ |
 
-> `R1-2` 状态：Windows smoke 已验证 `battle-2-10s` 可完整推进 3 帧并结算结束；
-> `battle-20-30s`、`battle-100-30s` 现在已经切换到“按房间分组”的持续战斗生成逻辑，
-> 待正式 baseline 重跑后回填；`battle-500-30s` 进入 `capacity` profile，用于观察退化点。
+> `P1` 状态：`battle-20` 与 `battle-100` 三轮 baseline 通过；`battle-500`
+> 容量专项实际连接 361/500、rejected=139、P99=500ms，记录为当前退化点。
 
 **广播 fan-out 系数** = `(总出站消息) / (总入站消息)`
 
@@ -230,8 +229,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 场景 | 峰值吞吐量 (msg/s) | 瓶颈组件 | 备注 |
 |---|---|---|---|
-| 纯 echo | _待测定_ | _待测定_ | — |
-| 战斗广播 | _待测定_ | _待测定_ | — |
+| 纯 echo | 23,952 msg/s | 5K/10K 连接建立失败 | capacity 单轮 echo-5000 吞吐峰值，但 failed=3,653 |
+| 战斗广播 | 1,812 msg/s | battle-500 rejected 与 P99 退化 | baseline battle-100 通过，capacity battle-500 失败 |
 | 稳定性浸泡 | _待测定_ | _待测定_ | 8 小时运行 |
 
 ---
@@ -244,9 +243,9 @@ python ./scripts/collect_v2_perf_baseline.py \
 |---|---|---|---|---|---|---|
 | 1 | 100 | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
 | 1 | 1000 | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 100 | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 1000 | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
-| 4 | 10000 | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
+| 4 | 100 | 5 | 5 | 10 | _待测定_ | _待测定_ |
+| 4 | 1000 | 5 | 5 | 20 | _待测定_ | _待测定_ |
+| 4 | 10000 | 2 | 5 | 20 | _待测定_ | _待测定_ |
 
 ### 3.2 网关→后端延迟 (服务端 `BackendMetrics` 视角)
 
@@ -266,9 +265,9 @@ python ./scripts/collect_v2_perf_baseline.py \
 
 | 房间数 | 输入到广播 P50 (ms) | 输入到广播 P99 (ms) | 备注 |
 |---|---|---|---|
-| 10 | _待测定_ | _待测定_ | — |
-| 50 | _待测定_ | _待测定_ | — |
-| 100 | _待测定_ | _待测定_ | — |
+| 10 | 5 | 20 | `battle-20-30s` baseline |
+| 50 | 50 | 200 | `battle-100-30s` baseline |
+| 250 | 100 | 500 | `battle-500-30s` capacity，失败专项 |
 
 ---
 
@@ -288,18 +287,17 @@ python ./scripts/collect_v2_perf_baseline.py \
 | 负载场景 | 进程 | RSS 峰值 (MB) | CPU (%) | fd 峰值 | 备注 |
 |---|---|---|---|---|---|
 | 1K 空闲连接 | gateway | _待测定_ | _待测定_ | _待测定_ | 仅 accept，无消息 |
-| 1K echo (100 msg/s) | gateway | _待测定_ | _待测定_ | _待测定_ | — |
-| 10K 空闲连接 | gateway | _待测定_ | _待测定_ | _待测定_ | — |
-| 10K echo (1000 msg/s) | gateway | _待测定_ | _待测定_ | _待测定_ | — |
-| 100 战斗房间 | gateway | _待测定_ | _待测定_ | _待测定_ | 每房间 2 人，10 input/s |
+| 1K echo | gateway | 20.42 | 21.8 | 37 | baseline 三轮 |
+| 10K echo | gateway | 34.45 | 32.1 | 31 | capacity 单轮，failed=8,701 |
+| 100 战斗房间 | gateway | 41.97 | 10.2 | 409 | capacity battle-500，实际 361/500 连接 |
 
 ### 4.3 每连接边际成本
 
 | 指标 | 每连接增量 | 计算方式 |
 |---|---|---|
-| RSS | _待测定_ KB | (RSS@10K − RSS@1K) / 9000 |
-| fd | _待测定_ | (fd@10K − fd@1K) / 9000 |
-| CPU (空闲) | _待测定_% | (CPU@10K_idle − CPU@1K_idle) / 9000 |
+| RSS | 16.876 KB | baseline echo-1000 RSS delta / connected clients |
+| fd | 0.016 | baseline echo-1000 fd delta / connected clients |
+| CPU (负载) | 68.66% | baseline echo-1000 CPU seconds delta estimate |
 
 ---
 
@@ -341,9 +339,9 @@ python ./scripts/collect_v2_perf_baseline.py \
 |---|---|
 | `echo` smoke | 已通过（Windows） |
 | `battle` smoke | 已通过（Windows，2 客户端 / 3 帧 / 结算结束） |
-| baseline 矩阵 | 已具备可重跑入口，待刷新结果 |
+| baseline 矩阵 | 已通过，`runtime/perf/release-baseline/summary.json` |
 | 自动聚合结果 | 已支持（`case_aggregates`） |
-| 自动门槛判定 | 已支持（`release_gates`），待首轮 baseline 使用 |
+| 自动门槛判定 | 已执行，baseline `release_gates.overall_pass=true` |
 
 ---
 
