@@ -107,6 +107,8 @@ python scripts/verify_production_resilience_gate.py --build-dir build/default --
 python scripts/verify_production_resilience_gate.py --build-dir build/release --configuration Release --skip-build --soak-profile short --baseline-profile release --include-release-baseline --perf-repetitions 3
 ```
 
+固定 runner 可通过 `.github/workflows/production-resilience.yml` 手动触发，上传 `production-resilience-summary.json`、`p5-*-summary.json`、soak perf 产物和可选 release baseline 产物。
+
 P6 生产证据聚合使用 `scripts/verify_production_evidence_gate.py`。默认入口保持有界，不跑长容量任务；固定 runner 上可逐步打开真实依赖和长项：
 
 ```powershell
