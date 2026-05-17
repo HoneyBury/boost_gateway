@@ -1,7 +1,7 @@
 [Unit]
 Description=BoostAsioDemo v2 Gateway
-Documentation=https://github.com/example/BoostAsioDemo
-After=network.target boost-login-backend.service boost-room-backend.service boost-battle-backend.service
+Documentation=https://github.com/HoneyBury/BoostAsioDemo
+After=network.target boost-login-backend.service boost-room-backend.service boost-battle-backend.service boost-match-backend.service boost-leaderboard-backend.service
 Requires=boost-login-backend.service boost-room-backend.service boost-battle-backend.service
 
 [Service]
@@ -9,6 +9,7 @@ Type=simple
 User=boost-gateway
 Group=boost-gateway
 ExecStart=/usr/local/bin/v2_gateway_demo \
+    --http-port 9080 \
     --login-host 127.0.0.1 --login-port 9202 \
     --room-host 127.0.0.1 --room-port 9302 \
     --battle-host 127.0.0.1 --battle-port 9303

@@ -125,5 +125,7 @@ install(FILES
     deploy/systemd/boost-login-backend.service
     deploy/systemd/boost-room-backend.service
     deploy/systemd/boost-battle-backend.service
+    deploy/systemd/boost-match-backend.service
+    deploy/systemd/boost-leaderboard-backend.service
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy/systemd"
 )

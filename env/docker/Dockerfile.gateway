@@ -1,4 +1,4 @@
-# Boost Gateway v2.6.0 — Gateway Docker image
+# Boost Gateway v3.3.2 — Gateway Docker image
 #
 # Multi-stage build producing a minimal image containing only the gateway
 # binary and its runtime dependencies.

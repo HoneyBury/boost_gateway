@@ -1,4 +1,4 @@
-# Boost Gateway v2.6.0 — Generic Backend Docker image
+# Boost Gateway v3.3.2 — Generic Backend Docker image
 #
 # Multi-stage build producing a minimal image for any of the 5 backend
 # services (login, room, battle, matchmaking, leaderboard).
@@ -64,6 +64,7 @@ ENV SERVICE_PORT=9202
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -76,7 +77,7 @@ COPY config/ /app/config/
 RUN ln -s /app/bin/${SERVICE_BINARY} /app/bin/backend
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=5s \
-    CMD curl -f http://localhost:${SERVICE_PORT}/health || exit 1
+    CMD nc -z 127.0.0.1 "${SERVICE_PORT}" || exit 1
 
 EXPOSE ${SERVICE_PORT}
 

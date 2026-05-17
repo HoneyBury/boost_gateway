@@ -4,15 +4,29 @@
 #include "v3/cluster/raft.h"
 #include "v3/persistence/redis_client.h"
 #include "v3/persistence/redis_leaderboard.h"
+#include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <sstream>
+#include <thread>
 #include <vector>
 
 namespace {
+
+std::atomic<bool> g_running{true};
+v2::leaderboard::LeaderboardService* g_service = nullptr;
+
+void handle_signal(int) {
+    g_running = false;
+    if (g_service) {
+        std::cout << "\nLeaderboard backend shutting down..." << std::endl;
+        g_service->stop();
+    }
+}
 
 std::vector<std::string> split_csv(const std::string& input) {
     std::vector<std::string> items;
@@ -77,9 +91,16 @@ std::optional<v3::cluster::RaftConfig> raft_config_from_env(std::uint16_t port) 
 int main() {
     std::uint16_t port = 9305;
     const char* env_port = std::getenv("LEADERBOARD_PORT");
+    if (!env_port || env_port[0] == '\0') {
+        env_port = std::getenv("SERVICE_PORT");
+    }
     if (env_port) port = static_cast<std::uint16_t>(std::atoi(env_port));
 
+    std::signal(SIGINT, handle_signal);
+    std::signal(SIGTERM, handle_signal);
+
     v2::leaderboard::LeaderboardService service(port);
+    g_service = &service;
     if (auto raft = raft_config_from_env(port); raft.has_value()) {
         service.set_raft_config(std::move(*raft));
         std::cout << "Leaderboard Raft enabled for node " << std::getenv("RAFT_NODE_ID")
@@ -120,8 +141,10 @@ int main() {
 
     service.start();
     std::cout << "Leaderboard backend on port " << port << std::endl;
-    std::cout << "Press Enter to stop..." << std::endl;
-    std::cin.get();
+    std::cout << "Leaderboard backend running (Ctrl+C to stop)" << std::endl;
+    while (g_running) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     service.stop();
     return 0;
 }

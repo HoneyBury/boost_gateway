@@ -41,6 +41,21 @@ services:
       - ./config:/app/config:ro
       - gateway-logs:/app/logs
     restart: unless-stopped
+    command:
+      - --http-port
+      - "9080"
+      - --login-host
+      - login-backend
+      - --login-port
+      - "9202"
+      - --room-host
+      - room-backend
+      - --room-port
+      - "9302"
+      - --battle-host
+      - battle-backend
+      - --battle-port
+      - "9303"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/health"]
       interval: 10s
@@ -77,7 +92,7 @@ services:
       - login-logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9202/health || exit 1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9202"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -105,7 +120,7 @@ services:
       - room-logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9302/health || exit 1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9302"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -134,7 +149,7 @@ services:
       - battle-archive:/app/v2_archive
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9303/health || exit 1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9303"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -162,7 +177,7 @@ services:
       - match-logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9304/health || exit 1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9304"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -184,13 +199,18 @@ services:
       - "9305:9305"
     environment:
       SERVICE_PORT: "9305"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
       BOOST_LOG_LEVEL: "info"
     volumes:
       - ./config:/app/config:ro
       - leaderboard-logs:/app/logs
     restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9305/health || exit 1"]
+      test: ["CMD", "nc", "-z", "127.0.0.1", "9305"]
       interval: 10s
       timeout: 3s
       retries: 3

@@ -1,5 +1,5 @@
 [Unit]
-Description=BoostAsioDemo v2 Login Backend
+Description=BoostAsioDemo v2 Matchmaking Backend
 Documentation=https://github.com/HoneyBury/BoostAsioDemo
 After=network.target
 
@@ -7,23 +7,24 @@ After=network.target
 Type=simple
 User=boost-gateway
 Group=boost-gateway
-ExecStart=/usr/local/bin/v2_login_backend 9202
-WorkingDirectory=/var/lib/boost-gateway/login
+Environment=MATCH_PORT=9304
+ExecStart=/usr/local/bin/v2_match_backend
+WorkingDirectory=/var/lib/boost-gateway/match
 Restart=on-failure
 RestartSec=2s
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=boost-login-backend
+SyslogIdentifier=boost-match-backend
 
-RuntimeDirectory=boost-gateway/login
+RuntimeDirectory=boost-gateway/match
 RuntimeDirectoryMode=0750
-StateDirectory=boost-gateway/login
+StateDirectory=boost-gateway/match
 StateDirectoryMode=0750
 
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/var/lib/boost-gateway/login /var/log/boost-gateway
+ReadWritePaths=/var/lib/boost-gateway/match /var/log/boost-gateway
 
 [Install]
 WantedBy=multi-user.target
