@@ -1,4 +1,4 @@
-// SDK v4.0.0: Client tests
+// SDK v4.1.0: Client tests
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/client.h"
 using namespace boost_gateway::sdk;

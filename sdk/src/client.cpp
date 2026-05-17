@@ -1,4 +1,4 @@
-// SDK v4.0.0: Standalone client — zero server dependencies.
+// SDK v4.1.0: Standalone client — zero server dependencies.
 #include "boost_gateway/sdk/client.h"
 #include "boost_gateway/sdk/protocol/codec.h"
 #include "boost_gateway/sdk/protocol/message.h"

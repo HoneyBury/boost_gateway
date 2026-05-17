@@ -1,4 +1,4 @@
-// SDK v4.0.0 C3: Transport abstraction + ConnectionPool tests.
+// SDK v4.1.0 C3: Transport abstraction + ConnectionPool tests.
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/transport/transport.h"
 

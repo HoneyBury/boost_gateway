@@ -6,6 +6,8 @@ _dll = None
 for p in ["boost_gateway_sdk.dll","libboost_gateway_sdk.so","libboost_gateway_sdk.dylib"]:
     try: _dll = ctypes.CDLL(p); break
     except OSError: continue
+if _dll is None:
+    raise RuntimeError("BoostGateway SDK native library not found")
 
 class GsdkLoginResult(ctypes.Structure):
     _fields_ = [("ok", c_int), ("error_code", c_int32), ("user_id", c_char*64), ("display_name", c_char*64), ("error_message", c_char*256)]
@@ -42,6 +44,10 @@ _si = _b("gsdk_send_battle_input", GsdkBattleInputResult, c_void_p, c_char_p, c_
 _ec = _b("gsdk_echo", GsdkEchoResult, c_void_p, c_char_p, c_int32)
 _op = _b("gsdk_on_push", None, c_void_p, PUSH_CB, c_void_p)
 _od = _b("gsdk_on_disconnect", None, c_void_p, DC_CB, c_void_p)
+_ver = _b("gsdk_version", c_char_p)
+
+def version():
+    return _ver().decode()
 
 class SdkClient:
     def __init__(self): self._h = _cr()

@@ -1,4 +1,4 @@
-// SDK v4.0.0: Connection pool implementation.
+// SDK v4.1.0: Connection pool implementation.
 #include "boost_gateway/sdk/transport/transport.h"
 
 #include <algorithm>

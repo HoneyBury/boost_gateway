@@ -26,6 +26,7 @@ typedef void (*gsdk_disconnect_callback_t)(void* user_data);
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 
+GSDK_API const char* gsdk_version(void);
 GSDK_API gsdk_client_t* gsdk_create(void);
 GSDK_API void gsdk_destroy(gsdk_client_t* client);
 

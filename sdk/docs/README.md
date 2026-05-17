@@ -2,7 +2,7 @@
 
 面向 BoostGateway 游戏服务器的 C++ 客户端 SDK。封装了 TCP 连接管理、协议编解码、请求/响应关联和服务端推送处理。
 
-> **当前版本: v3.0.0** | **下一版本: v4.0.0 (企业级重构)** | [重构规划](roadmap.md)
+> **当前版本: v4.1.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装** | [路线与当前状态](roadmap.md)
 
 ## 快速开始
 
@@ -117,8 +117,16 @@ add_subdirectory(path/to/sdk)
 target_link_libraries(your_app PRIVATE boost_gateway_sdk)
 ```
 
+安装后的消费方式：
+
+```cmake
+find_package(boost_gateway_sdk CONFIG REQUIRED)
+target_link_libraries(your_app PRIVATE boost_gateway::sdk)
+```
+
+C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImport` 绑定。C ABI 入口包含 `gsdk_version()`，用于运行时校验 native library 与语言封装版本是否匹配。
+
 SDK 依赖:
-- `project_net` (协议编解码)
 - Boost.Asio (TCP 网络, 头文件)
 - nlohmann_json (JSON, 头文件)
 
@@ -156,4 +164,5 @@ bob.disconnect();
 
 | SDK 版本 | Gateway 版本 |
 |---------|-------------|
+| v4.1.0 | v3.3.x |
 | v2.4.0 | v2.0.0+ |

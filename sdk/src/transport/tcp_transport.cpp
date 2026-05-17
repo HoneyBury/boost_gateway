@@ -1,4 +1,4 @@
-// SDK v4.0.0: TCP transport implementing ITransport.
+// SDK v4.1.0: TCP transport implementing ITransport.
 #include "boost_gateway/sdk/transport/transport.h"
 
 #include <boost/asio.hpp>
