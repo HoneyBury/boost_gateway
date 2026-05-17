@@ -5,6 +5,7 @@
 #include <boost/asio.hpp>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -19,34 +20,69 @@ public:
     TcpConnection() : socket_(io_context_) {}
     ~TcpConnection() { disconnect(); }
     bool connect(const std::string& host, std::uint16_t port, std::chrono::milliseconds timeout) {
+        disconnect();
+        io_context_.restart();
+        socket_ = tcp::socket(io_context_);
         boost::system::error_code ec;
         auto dl = std::chrono::steady_clock::now() + timeout;
         while (std::chrono::steady_clock::now() < dl) {
             socket_.connect(tcp::endpoint(asio::ip::make_address(host), port), ec);
-            if (!ec) { connected_ = true; io_thread_ = std::thread([this]{io_context_.run();}); return true; }
+            if (!ec) {
+                connected_ = true;
+                return true;
+            }
+            socket_.close(ec);
             std::this_thread::sleep_for(50ms);
         }
         return false;
     }
-    void disconnect() { connected_ = false; boost::system::error_code ec; socket_.close(ec); io_context_.stop(); if (io_thread_.joinable()) io_thread_.join(); }
+    void disconnect() { connected_ = false; boost::system::error_code ec; socket_.close(ec); io_context_.stop(); }
     bool is_connected() const { return connected_; }
     bool send(std::uint16_t mid, std::uint32_t rid, const std::string& body) {
         auto e = protocol::encode(mid, rid, 0, body); boost::system::error_code ec; asio::write(socket_, asio::buffer(e), ec); return !ec;
     }
-    protocol::DecodedPacket read(std::chrono::milliseconds) {
-        protocol::LengthHeader h{}; boost::system::error_code ec;
-        asio::read(socket_, asio::buffer(h.data(), h.size()), ec); if (ec) return {};
+    protocol::DecodedPacket read(std::chrono::milliseconds timeout) {
+        protocol::LengthHeader h{};
+        auto deadline = std::chrono::steady_clock::now() + timeout;
+        if (!read_exact(reinterpret_cast<char*>(h.data()), h.size(), deadline)) return {};
         auto len = protocol::decode_length(h);
-        std::vector<char> p(len); asio::read(socket_, asio::buffer(p.data(), p.size()), ec); if (ec) return {};
+        std::vector<char> p(len);
+        if (!read_exact(p.data(), p.size(), deadline)) return {};
         return protocol::decode_payload(p);
     }
     bool has_data() { boost::system::error_code ec; socket_.available(ec); return !ec && socket_.available() > 0; }
 private:
-    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false}; std::thread io_thread_;
+    bool read_exact(char* data, std::size_t size, std::chrono::steady_clock::time_point deadline) {
+        std::size_t offset = 0;
+        while (offset < size && std::chrono::steady_clock::now() < deadline) {
+            boost::system::error_code ec;
+            const auto available = socket_.available(ec);
+            if (ec) {
+                connected_ = false;
+                return false;
+            }
+            if (available == 0) {
+                std::this_thread::sleep_for(5ms);
+                continue;
+            }
+            const auto chunk = std::min<std::size_t>(available, size - offset);
+            const auto n = socket_.read_some(asio::buffer(data + offset, chunk), ec);
+            if (ec) {
+                connected_ = false;
+                return false;
+            }
+            offset += n;
+        }
+        return offset == size;
+    }
+
+    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false};
 };
 
 class SdkClient::Impl {
-    TcpConnection conn_; std::atomic<std::uint32_t> next_{1}; PushCallback push_callback_; std::mutex callback_mutex_;
+    TcpConnection conn_; std::atomic<std::uint32_t> next_{1}; PushCallback push_callback_; DisconnectCallback disconnect_callback_;
+    std::mutex callback_mutex_; std::mutex io_mutex_; std::mutex heartbeat_mutex_; std::condition_variable heartbeat_cv_;
+    std::thread heartbeat_thread_; std::atomic<bool> heartbeat_running_{false};
 
     bool is_push(std::uint16_t id) { return id == msg::kSessionKickedPush || id == msg::kSessionResumedPush || id == msg::kRoomStatePush || id == msg::kBattleStatePush || id == msg::kBattleInputPush; }
     void dispatch_push(const protocol::DecodedPacket& p) {
@@ -57,21 +93,33 @@ class SdkClient::Impl {
         }
         if (callback) callback(PushMessage{.message_id = p.message_id, .body = p.body});
     }
+    void notify_disconnect() {
+        DisconnectCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            callback = disconnect_callback_;
+        }
+        if (callback) callback();
+    }
 
     protocol::DecodedPacket expect(std::uint16_t req, const std::string& body, std::chrono::milliseconds to, std::uint16_t exp) {
-        auto rid = next_++; if (!conn_.send(req, rid, body)) return {};
+        std::lock_guard<std::mutex> io_lock(io_mutex_);
+        if (!conn_.is_connected()) return {.error_code = static_cast<std::int32_t>(SdkError::kNotConnected), .body = to_string(SdkError::kNotConnected)};
+        auto rid = next_++; if (!conn_.send(req, rid, body)) return {.error_code = static_cast<std::int32_t>(SdkError::kSendFailed), .body = to_string(SdkError::kSendFailed)};
         auto dl = std::chrono::steady_clock::now() + to;
         while (std::chrono::steady_clock::now() < dl) {
             auto p = conn_.read(std::chrono::milliseconds(100)); if (p.message_id == 0) continue;
             if (is_push(p.message_id)) { dispatch_push(p); continue; }
+            if (p.message_id != exp) return {.message_id = p.message_id, .request_id = p.request_id, .error_code = static_cast<std::int32_t>(SdkError::kInvalidResponse), .body = p.body};
             return p;
         }
-        return {};
+        return {.error_code = static_cast<std::int32_t>(SdkError::kTimeout), .body = to_string(SdkError::kTimeout)};
     }
 
 public:
     bool connect(const std::string& h, std::uint16_t p, std::chrono::milliseconds t) { return conn_.connect(h, p, t); }
-    void disconnect() { conn_.disconnect(); }
+    ~Impl() { stop_heartbeat(); conn_.disconnect(); }
+    void disconnect() { stop_heartbeat(); conn_.disconnect(); }
     bool is_connected() const { return conn_.is_connected(); }
 
     LoginResult login(const std::string& u, const std::string& tok, std::chrono::milliseconds to) {
@@ -110,6 +158,39 @@ public:
         std::lock_guard<std::mutex> lock(callback_mutex_);
         push_callback_ = std::move(callback);
     }
+    void on_disconnect(DisconnectCallback callback) {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        disconnect_callback_ = std::move(callback);
+    }
+    bool heartbeat_once(std::chrono::milliseconds timeout) {
+        auto response = expect(msg::kHeartbeatRequest, "", timeout, msg::kHeartbeatResponse);
+        return response.message_id == msg::kHeartbeatResponse && response.error_code == 0;
+    }
+    void start_heartbeat(std::chrono::seconds interval) {
+        stop_heartbeat();
+        if (interval <= std::chrono::seconds(0)) return;
+        heartbeat_running_ = true;
+        heartbeat_thread_ = std::thread([this, interval] {
+            while (heartbeat_running_) {
+                std::unique_lock<std::mutex> lock(heartbeat_mutex_);
+                heartbeat_cv_.wait_for(lock, interval, [this] { return !heartbeat_running_; });
+                lock.unlock();
+                if (!heartbeat_running_) break;
+                if (!conn_.is_connected()) continue;
+                if (!heartbeat_once(std::chrono::seconds(3))) {
+                    conn_.disconnect();
+                    heartbeat_running_ = false;
+                    notify_disconnect();
+                    break;
+                }
+            }
+        });
+    }
+    void stop_heartbeat() {
+        heartbeat_running_ = false;
+        heartbeat_cv_.notify_all();
+        if (heartbeat_thread_.joinable()) heartbeat_thread_.join();
+    }
 };
 
 SdkClient::SdkClient() : impl_(std::make_unique<Impl>()) {}
@@ -126,7 +207,8 @@ BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::mil
 BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) { return impl_->send_battle_input(d,t); }
 EchoResult SdkClient::echo(const std::string& b, std::chrono::milliseconds t) { return impl_->echo(b,t); }
 void SdkClient::on_push(PushCallback callback) { impl_->on_push(std::move(callback)); }
-void SdkClient::start_heartbeat(std::chrono::seconds) {}
-void SdkClient::stop_heartbeat() {}
+void SdkClient::on_disconnect(DisconnectCallback callback) { impl_->on_disconnect(std::move(callback)); }
+void SdkClient::start_heartbeat(std::chrono::seconds interval) { impl_->start_heartbeat(interval); }
+void SdkClient::stop_heartbeat() { impl_->stop_heartbeat(); }
 
 }} // namespaces

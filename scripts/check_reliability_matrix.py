@@ -24,6 +24,7 @@ REQUIRED_SCENARIOS = {
     "fixed_runner_preflight",
     "validation_summary_rendering",
     "monitoring_operability_gate",
+    "sdk_enterprise_client_gate",
     "production_evidence_gate",
 }
 

@@ -77,6 +77,7 @@
 - [v3.3.2 P2 生产证据固定 Runner 收束记录](./releases/v3.3.2-p2-production-evidence-runner.md) — production-evidence workflow、preflight summary、真实依赖场景和归档标准收束
 - [v3.3.2 P3 监控运维收束记录](./releases/v3.3.2-p3-monitoring-operations.md) — Prometheus alerts、Grafana dashboard、生产运维 runbook 和监控静态 gate 收束
 - [v3.3.2 P3 SDK 企业级封装记录](./releases/v3.3.2-p3-sdk-distribution.md) — SDK 版本、CMake package、C ABI、Python/C# wrapper 与分发门禁收束
+- [v3.3.2 P4 SDK 企业级运行语义记录](./releases/v3.3.2-p4-sdk-enterprise-runtime.md) — SDK heartbeat、disconnect callback、push/reconnect、C ABI heartbeat 与 Python/C# 版本诊断收束
 - [v3.3.2 P4 运行态可观测性记录](./releases/v3.3.2-p4-observability-runtime.md) — 真实 `v2_gateway_demo` + SDK 流量验证 `/health`、`/ready` 与 `/metrics*`
 - [v3.3.2 P5 控制面门禁记录](./releases/v3.3.2-p5-control-plane.md) — Operator manifest 静态契约、仓库本地 Go cache 与默认控制面门禁收束
 - [v3.3.2 P6 生产证据收束记录](./releases/v3.3.2-p6-production-evidence.md) — 本机 Redis/kind/Release baseline 真实依赖验证与最终门禁结果

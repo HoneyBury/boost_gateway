@@ -72,7 +72,7 @@ public:
     void on_push(PushCallback callback);
 
     /// Set callback for unexpected disconnection.
-    void on_disconnect(DisconnectCallback callback) { disconnect_callback_ = std::move(callback); }
+    void on_disconnect(DisconnectCallback callback);
 
     // ── Heartbeat ───────────────────────────────────────────────────
 
@@ -84,9 +84,6 @@ public:
 private:
     class Impl;
     std::unique_ptr<Impl> impl_;
-
-    PushCallback push_callback_;
-    DisconnectCallback disconnect_callback_;
 };
 
 }  // namespace sdk

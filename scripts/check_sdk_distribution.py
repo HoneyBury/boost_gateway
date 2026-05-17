@@ -22,6 +22,8 @@ REQUIRED_C_API_SYMBOLS = {
     "gsdk_is_connected",
     "gsdk_on_push",
     "gsdk_on_disconnect",
+    "gsdk_start_heartbeat",
+    "gsdk_stop_heartbeat",
     "gsdk_login",
     "gsdk_create_room",
     "gsdk_join_room",
@@ -35,6 +37,8 @@ REQUIRED_C_API_SYMBOLS = {
 WRAPPER_METHODS = {
     "connect",
     "disconnect",
+    "start_heartbeat",
+    "stop_heartbeat",
     "login",
     "create_room",
     "join_room",
@@ -146,14 +150,26 @@ def validate_wrappers(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-python:version-binding",
-        "gsdk_version" in python,
-        "Python wrapper exposes native SDK version",
+        "gsdk_version" in python and "assert_compatible_version" in python,
+        "Python wrapper exposes and validates native SDK version",
     )
     add_check(
         checks,
         "sdk-csharp:version-binding",
-        "gsdk_version" in csharp,
-        "C# wrapper exposes native SDK version",
+        "gsdk_version" in csharp and "AssertCompatibleNativeVersion" in csharp,
+        "C# wrapper exposes and validates native SDK version",
+    )
+    add_check(
+        checks,
+        "sdk-python:load-diagnostics",
+        "BOOST_GATEWAY_SDK_LIBRARY" in python and "_load_errors" in python,
+        "Python wrapper reports native library load diagnostics",
+    )
+    add_check(
+        checks,
+        "sdk-csharp:allocation-guard",
+        "native client allocation failed" in csharp,
+        "C# wrapper reports native allocation failure",
     )
     for method in sorted(WRAPPER_METHODS):
         add_check(
@@ -162,7 +178,7 @@ def validate_wrappers(checks: list[dict[str, Any]]) -> None:
             f"def {method}" in python,
             f"Python wrapper exposes {method}",
         )
-    for symbol in ("gsdk_start_battle", "gsdk_send_battle_input", "gsdk_echo"):
+    for symbol in ("gsdk_start_battle", "gsdk_send_battle_input", "gsdk_echo", "gsdk_start_heartbeat", "gsdk_stop_heartbeat"):
         add_check(
             checks,
             f"sdk-csharp:{symbol}",
@@ -232,6 +248,26 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         "sdk-tests:business-flow-target",
         "sdk_business_flow_tests" in tests_cmake and "sdk_integration_test.cpp" in tests_cmake,
         "SDK business flow integration target is registered",
+    )
+    client_test = read_text("sdk/tests/unit/client_test.cpp")
+    integration_test = read_text("sdk/tests/sdk_integration_test.cpp")
+    add_check(
+        checks,
+        "sdk-tests:heartbeat-unit",
+        "HeartbeatLifecycleSafeWhenDisconnected" in client_test,
+        "SDK unit tests cover heartbeat lifecycle without a connection",
+    )
+    add_check(
+        checks,
+        "sdk-tests:heartbeat-integration",
+        "SdkHeartbeatKeepsConnectionAlive" in integration_test,
+        "SDK integration tests cover heartbeat against a real gateway",
+    )
+    add_check(
+        checks,
+        "sdk-tests:disconnect-callback-integration",
+        "SdkDisconnectCallbackFiresAfterHeartbeatFailure" in integration_test,
+        "SDK integration tests cover disconnect callback on heartbeat failure",
     )
     add_check(
         checks,

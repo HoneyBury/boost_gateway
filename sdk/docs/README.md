@@ -22,6 +22,10 @@ if (!login.ok) { /* 处理登录失败 */ }
 client.on_push([](const auto& push) {
     // 处理服务端推送: kSessionKickedPush, kBattleStatePush 等
 });
+client.on_disconnect([] {
+    // 处理 heartbeat 失败或意外断开后的重连/降级
+});
+client.start_heartbeat(std::chrono::seconds(15));
 
 // 4. 游戏操作
 auto room = client.create_room("room_001");
@@ -41,6 +45,8 @@ client.disconnect();
 | `connect(host, port, timeout)` | 连接到网关服务器 |
 | `disconnect()` | 断开连接 |
 | `is_connected()` | 检查连接状态 |
+| `start_heartbeat(interval)` | 启动自动 heartbeat，建议登录成功后调用 |
+| `stop_heartbeat()` | 停止自动 heartbeat，`disconnect()` 会自动停止 |
 
 ### 认证
 
@@ -70,6 +76,31 @@ client.disconnect();
 |------|------|
 | `on_push(PushCallback)` | 服务端推送回调 |
 | `on_disconnect(DisconnectCallback)` | 意外断开回调 |
+
+### 线程模型与生命周期
+
+- `SdkClient` 是同步 API。业务请求会持有内部 I/O 锁，避免 heartbeat 与业务请求并发读写同一个 TCP socket。
+- `on_push` 在执行同步请求或 heartbeat 读取到服务端 push 时触发；回调内不要长期阻塞，也不要递归调用同一个 `SdkClient` 的同步请求。
+- `on_disconnect` 目前由自动 heartbeat 检测到连接失败时触发；主动 `disconnect()` 不触发该回调。
+- `disconnect()` 会停止 heartbeat、关闭 socket，并可重复调用。
+- `connect()` 会先清理旧连接，再建立新 TCP 连接；reconnect 建议流程是 `disconnect()` → `connect()` → `login()`。
+- 超时、未连接、发送失败和无效响应会写入 result 的 `error_code` / `error_message`。
+
+### Heartbeat / Reconnect / Push
+
+```cpp
+client.on_disconnect([&] {
+    // 建议在业务线程或调度器里执行重连，不要在回调内阻塞太久。
+});
+client.start_heartbeat(std::chrono::seconds(15));
+
+// reconnect
+client.disconnect();
+client.connect("127.0.0.1", 9201);
+client.login("player1", "token:player1");
+```
+
+SDK 会识别并分发以下 push：`kSessionKickedPush`、`kSessionResumedPush`、`kRoomStatePush`、`kBattleStatePush`、`kBattleInputPush`。
 
 ### 结果类型
 
@@ -125,6 +156,8 @@ target_link_libraries(your_app PRIVATE boost_gateway::sdk)
 ```
 
 C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImport` 绑定。C ABI 入口包含 `gsdk_version()`，用于运行时校验 native library 与语言封装版本是否匹配。
+
+Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native library 路径，加载失败时会列出尝试过的路径和底层错误。Python/C# wrapper 都会校验 native SDK 主版本号，避免语言封装与动态库版本错配。
 
 分发验证入口：
 

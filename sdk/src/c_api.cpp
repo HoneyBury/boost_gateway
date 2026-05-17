@@ -127,6 +127,26 @@ void gsdk_on_disconnect(gsdk_client_t* c, gsdk_disconnect_callback_t cb, void* u
     c->client.on_disconnect([c]() { if(c->dc_cb) c->dc_cb(c->dc_ud); });
 }
 
+void gsdk_start_heartbeat(gsdk_client_t* c, int32_t interval_seconds) {
+    if (c == nullptr || interval_seconds <= 0) {
+        return;
+    }
+    try {
+        c->client.start_heartbeat(std::chrono::seconds(interval_seconds));
+    } catch (const std::exception&) {
+    }
+}
+
+void gsdk_stop_heartbeat(gsdk_client_t* c) {
+    if (c == nullptr) {
+        return;
+    }
+    try {
+        c->client.stop_heartbeat();
+    } catch (const std::exception&) {
+    }
+}
+
 gsdk_login_result_t gsdk_login(gsdk_client_t* c, const char* uid, const char* tok, int32_t ms) {
     if (c == nullptr || uid == nullptr || tok == nullptr || ms < 0) {
         return login_error("invalid_argument");

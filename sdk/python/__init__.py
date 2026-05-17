@@ -1,13 +1,37 @@
 # SDK v4.1.0: Thin Python wrapper via C API (ctypes, zero deps).
 import ctypes, os
+from pathlib import Path
 from ctypes import c_int32, c_uint16, c_uint64, c_char, c_char_p, c_int, c_void_p, CFUNCTYPE
 
+EXPECTED_MAJOR = "4"
+EXPECTED_VERSION_PREFIX = EXPECTED_MAJOR + "."
+
 _dll = None
-for p in ["boost_gateway_sdk.dll","libboost_gateway_sdk.so","libboost_gateway_sdk.dylib"]:
-    try: _dll = ctypes.CDLL(p); break
-    except OSError: continue
+_load_errors = []
+_candidates = []
+if os.environ.get("BOOST_GATEWAY_SDK_LIBRARY"):
+    _candidates.append(os.environ["BOOST_GATEWAY_SDK_LIBRARY"])
+_here = Path(__file__).resolve().parent
+_candidates.extend([
+    str(_here / "boost_gateway_sdk.dll"),
+    str(_here / "libboost_gateway_sdk.so"),
+    str(_here / "libboost_gateway_sdk.dylib"),
+    "boost_gateway_sdk.dll",
+    "libboost_gateway_sdk.so",
+    "libboost_gateway_sdk.dylib",
+])
+for p in _candidates:
+    try:
+        _dll = ctypes.CDLL(p)
+        _loaded_path = p
+        break
+    except OSError as exc:
+        _load_errors.append(f"{p}: {exc}")
 if _dll is None:
-    raise RuntimeError("BoostGateway SDK native library not found")
+    raise RuntimeError(
+        "BoostGateway SDK native library not found. Set BOOST_GATEWAY_SDK_LIBRARY "
+        "to the full native library path. Tried: " + "; ".join(_load_errors)
+    )
 
 class GsdkLoginResult(ctypes.Structure):
     _fields_ = [("ok", c_int), ("error_code", c_int32), ("user_id", c_char*64), ("display_name", c_char*64), ("error_message", c_char*256)]
@@ -44,15 +68,32 @@ _si = _b("gsdk_send_battle_input", GsdkBattleInputResult, c_void_p, c_char_p, c_
 _ec = _b("gsdk_echo", GsdkEchoResult, c_void_p, c_char_p, c_int32)
 _op = _b("gsdk_on_push", None, c_void_p, PUSH_CB, c_void_p)
 _od = _b("gsdk_on_disconnect", None, c_void_p, DC_CB, c_void_p)
+_hb = _b("gsdk_start_heartbeat", None, c_void_p, c_int32)
+_shb = _b("gsdk_stop_heartbeat", None, c_void_p)
 _ver = _b("gsdk_version", c_char_p)
 
 def version():
     return _ver().decode()
 
+def native_library_path():
+    return _loaded_path
+
+def assert_compatible_version():
+    actual = version()
+    if not actual.startswith(EXPECTED_VERSION_PREFIX):
+        raise RuntimeError(f"BoostGateway SDK native version mismatch: expected {EXPECTED_VERSION_PREFIX}x, got {actual}")
+    return actual
+
 class SdkClient:
-    def __init__(self): self._h = _cr()
+    def __init__(self):
+        assert_compatible_version()
+        self._h = _cr()
+        if not self._h:
+            raise RuntimeError("BoostGateway SDK native client allocation failed")
     def connect(self, h="127.0.0.1", p=9201, ms=5000): return bool(_co(self._h, h.encode(), p, ms))
     def disconnect(self): _dc(self._h)
+    def start_heartbeat(self, seconds=15): _hb(self._h, seconds)
+    def stop_heartbeat(self): _shb(self._h)
     def login(self, u, t, ms=5000):
         r = _lo(self._h, u.encode(), t.encode(), ms)
         return {"ok":bool(r.ok),"user_id":r.user_id.decode(),"error_code":r.error_code}

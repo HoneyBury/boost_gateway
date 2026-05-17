@@ -19,6 +19,8 @@ TEST(ClientV4Test, LoginWithoutConnection) {
     SdkClient c;
     auto r = c.login("u", "t", 100ms);
     EXPECT_FALSE(r.ok);
+    EXPECT_EQ(r.error_code, static_cast<int>(SdkError::kNotConnected));
+    EXPECT_EQ(r.error_message, "not_connected");
 }
 
 TEST(ClientV4Test, RoomOpsWithoutConnection) {
@@ -38,4 +40,12 @@ TEST(ClientV4Test, EchoWithoutConnection) {
     SdkClient c;
     auto r = c.echo("hi", 100ms);
     EXPECT_FALSE(r.ok);
+}
+
+TEST(ClientV4Test, HeartbeatLifecycleSafeWhenDisconnected) {
+    SdkClient c;
+    c.start_heartbeat(1s);
+    c.stop_heartbeat();
+    c.disconnect();
+    SUCCEED();
 }

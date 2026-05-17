@@ -40,6 +40,8 @@ GSDK_API int gsdk_is_connected(const gsdk_client_t* client);
 
 GSDK_API void gsdk_on_push(gsdk_client_t* client, gsdk_push_callback_t cb, void* user_data);
 GSDK_API void gsdk_on_disconnect(gsdk_client_t* client, gsdk_disconnect_callback_t cb, void* user_data);
+GSDK_API void gsdk_start_heartbeat(gsdk_client_t* client, int32_t interval_seconds);
+GSDK_API void gsdk_stop_heartbeat(gsdk_client_t* client);
 
 // ── Auth ─────────────────────────────────────────────────────────────
 

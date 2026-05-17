@@ -9,6 +9,7 @@
 #include <boost/asio.hpp>
 
 #include <chrono>
+#include <atomic>
 #include <memory>
 #include <string>
 #include <thread>
@@ -160,6 +161,41 @@ TEST_F(GatewayFixture, SdkReconnectAfterDisconnect) {
     EXPECT_TRUE(relogin.ok);
 
     client.disconnect();
+}
+
+TEST_F(GatewayFixture, SdkHeartbeatKeepsConnectionAlive) {
+    auto client = make_client();
+    ASSERT_TRUE(client.connect("127.0.0.1", port_, 5s));
+    ASSERT_TRUE(client.login("heartbeat_user", "token:heartbeat_user", 5s).ok);
+
+    client.start_heartbeat(1s);
+    std::this_thread::sleep_for(1200ms);
+    EXPECT_TRUE(client.echo("after heartbeat", 5s).ok);
+    client.stop_heartbeat();
+    client.disconnect();
+}
+
+TEST_F(GatewayFixture, SdkDisconnectCallbackFiresAfterHeartbeatFailure) {
+    auto client = make_client();
+    ASSERT_TRUE(client.connect("127.0.0.1", port_, 5s));
+    ASSERT_TRUE(client.login("disconnect_user", "token:disconnect_user", 5s).ok);
+
+    std::atomic<int> disconnects{0};
+    client.on_disconnect([&] { disconnects.fetch_add(1); });
+    client.start_heartbeat(1s);
+
+    server_->stop();
+    if (server_thread_ && server_thread_->joinable()) {
+        server_thread_->join();
+    }
+    server_thread_.reset();
+    server_.reset();
+
+    for (int i = 0; i < 50 && disconnects.load() == 0; ++i) {
+        std::this_thread::sleep_for(100ms);
+    }
+    client.stop_heartbeat();
+    EXPECT_GT(disconnects.load(), 0);
 }
 
 // ─── Battle flow ───────────────────────────────────────────────────────
