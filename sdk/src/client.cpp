@@ -85,6 +85,14 @@ class SdkClient::Impl {
     std::thread heartbeat_thread_; std::atomic<bool> heartbeat_running_{false};
 
     bool is_push(std::uint16_t id) { return id == msg::kSessionKickedPush || id == msg::kSessionResumedPush || id == msg::kRoomStatePush || id == msg::kBattleStatePush || id == msg::kBattleInputPush; }
+    static std::string match_body(const std::string& user_id, std::int64_t mmr, const std::string& mode) {
+        return user_id + "|" + std::to_string(mmr) + "|" + mode;
+    }
+    static std::string leaderboard_submit_body(const std::string& user_id,
+                                               const std::string& display_name,
+                                               std::int64_t score) {
+        return user_id + "|" + display_name + "|" + std::to_string(score);
+    }
     void dispatch_push(const protocol::DecodedPacket& p) {
         PushCallback callback;
         {
@@ -150,6 +158,30 @@ public:
         auto r = expect(msg::kBattleInputRequest, d, to, msg::kBattleInputResponse);
         BattleInputResult bi; bi.ok = (r.message_id == msg::kBattleInputResponse); bi.error_code = r.error_code; bi.error_message = r.body; bi.input_seq = 0; return bi;
     }
+    MatchResult match_join(const std::string& user_id, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds to) {
+        auto r = expect(msg::kMatchJoinRequest, match_body(user_id, mmr, mode), to, msg::kMatchJoinResponse);
+        MatchResult mr; mr.ok = (r.message_id == msg::kMatchJoinResponse); mr.error_code = r.error_code; mr.error_message = r.body; mr.response_body = r.body; return mr;
+    }
+    MatchResult match_leave(const std::string& user_id, const std::string& mode, std::chrono::milliseconds to) {
+        auto r = expect(msg::kMatchLeaveRequest, match_body(user_id, 0, mode), to, msg::kMatchLeaveResponse);
+        MatchResult mr; mr.ok = (r.message_id == msg::kMatchLeaveResponse); mr.error_code = r.error_code; mr.error_message = r.body; mr.response_body = r.body; return mr;
+    }
+    MatchResult match_status(const std::string& user_id, const std::string& mode, std::chrono::milliseconds to) {
+        auto r = expect(msg::kMatchStatusRequest, match_body(user_id, 0, mode), to, msg::kMatchStatusResponse);
+        MatchResult mr; mr.ok = (r.message_id == msg::kMatchStatusResponse); mr.error_code = r.error_code; mr.error_message = r.body; mr.response_body = r.body; return mr;
+    }
+    LeaderboardSubmitResult leaderboard_submit(const std::string& user_id, const std::string& display_name, std::int64_t score, std::chrono::milliseconds to) {
+        auto r = expect(msg::kLeaderboardSubmitRequest, leaderboard_submit_body(user_id, display_name, score), to, msg::kLeaderboardSubmitResponse);
+        LeaderboardSubmitResult lr; lr.ok = (r.message_id == msg::kLeaderboardSubmitResponse); lr.error_code = r.error_code; lr.error_message = r.body; lr.response_body = r.body; return lr;
+    }
+    LeaderboardQueryResult leaderboard_top(std::size_t k, std::chrono::milliseconds to) {
+        auto r = expect(msg::kLeaderboardTopRequest, std::to_string(k), to, msg::kLeaderboardTopResponse);
+        LeaderboardQueryResult lr; lr.ok = (r.message_id == msg::kLeaderboardTopResponse); lr.error_code = r.error_code; lr.error_message = r.body; lr.response_body = r.body; return lr;
+    }
+    LeaderboardQueryResult leaderboard_rank(const std::string& user_id, std::chrono::milliseconds to) {
+        auto r = expect(msg::kLeaderboardRankRequest, user_id, to, msg::kLeaderboardRankResponse);
+        LeaderboardQueryResult lr; lr.ok = (r.message_id == msg::kLeaderboardRankResponse); lr.error_code = r.error_code; lr.error_message = r.body; lr.response_body = r.body; return lr;
+    }
     EchoResult echo(const std::string& b, std::chrono::milliseconds to) {
         auto r = expect(msg::kEchoRequest, b, to, msg::kEchoResponse);
         EchoResult er; er.ok = (r.message_id == msg::kEchoResponse); er.echo_body = r.body; return er;
@@ -205,6 +237,12 @@ RoomResult SdkClient::leave_room(const std::string& r, std::chrono::milliseconds
 RoomResult SdkClient::set_ready(bool r, std::chrono::milliseconds t) { return impl_->set_ready(r,t); }
 BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::milliseconds t) { return impl_->start_battle(r,t); }
 BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) { return impl_->send_battle_input(d,t); }
+MatchResult SdkClient::match_join(const std::string& u, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_join(u,mmr,mode,t); }
+MatchResult SdkClient::match_leave(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_leave(u,mode,t); }
+MatchResult SdkClient::match_status(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_status(u,mode,t); }
+LeaderboardSubmitResult SdkClient::leaderboard_submit(const std::string& u, const std::string& d, std::int64_t s, std::chrono::milliseconds t) { return impl_->leaderboard_submit(u,d,s,t); }
+LeaderboardQueryResult SdkClient::leaderboard_top(std::size_t k, std::chrono::milliseconds t) { return impl_->leaderboard_top(k,t); }
+LeaderboardQueryResult SdkClient::leaderboard_rank(const std::string& u, std::chrono::milliseconds t) { return impl_->leaderboard_rank(u,t); }
 EchoResult SdkClient::echo(const std::string& b, std::chrono::milliseconds t) { return impl_->echo(b,t); }
 void SdkClient::on_push(PushCallback callback) { impl_->on_push(std::move(callback)); }
 void SdkClient::on_disconnect(DisconnectCallback callback) { impl_->on_disconnect(std::move(callback)); }

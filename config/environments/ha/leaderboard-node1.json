@@ -1,0 +1,24 @@
+{
+  "service": {
+    "name": "leaderboard",
+    "port": 9505,
+    "config_version": "ha-leaderboard-node1-v1"
+  },
+  "redis": {
+    "host": "redis",
+    "port": 6379,
+    "leaderboard_key": "lb:global"
+  },
+  "raft": {
+    "node_id": "lb-1",
+    "peers": [
+      { "id": "lb-1", "host": "leaderboard-1", "port": 9505 },
+      { "id": "lb-2", "host": "leaderboard-2", "port": 9506 },
+      { "id": "lb-3", "host": "leaderboard-3", "port": 9507 }
+    ],
+    "storage_dir": "runtime/raft/leaderboard/lb-1",
+    "election_timeout_min_ms": 150,
+    "election_timeout_max_ms": 300,
+    "heartbeat_interval_ms": 50
+  }
+}

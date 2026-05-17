@@ -27,6 +27,12 @@ enum class GatewayCommandType : std::uint16_t {
     kRoomLeave = 7,
     kBattleStart = 8,
     kBattleInput = 9,
+    kMatchJoin = 10,
+    kMatchLeave = 11,
+    kMatchStatus = 12,
+    kLeaderboardSubmit = 13,
+    kLeaderboardTop = 14,
+    kLeaderboardRank = 15,
 };
 
 struct GatewayCommand {

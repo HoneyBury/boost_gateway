@@ -47,6 +47,9 @@ constexpr std::uint16_t kMatchJoinRequest    = 6001;
 constexpr std::uint16_t kMatchJoinResponse   = 6002;
 constexpr std::uint16_t kMatchFoundPush      = 6003;
 constexpr std::uint16_t kMatchLeaveRequest   = 6004;
+constexpr std::uint16_t kMatchLeaveResponse  = 6005;
+constexpr std::uint16_t kMatchStatusRequest  = 6006;
+constexpr std::uint16_t kMatchStatusResponse = 6007;
 
 constexpr std::uint16_t kLeaderboardSubmitRequest = 7001;
 constexpr std::uint16_t kLeaderboardSubmitResponse = 7002;

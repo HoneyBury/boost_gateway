@@ -92,3 +92,53 @@ TEST(V2GatewayCommandParserTest, RejectsInvalidBattleInputBody) {
     EXPECT_FALSE(v2::gateway::validate_battle_input_command_body(
         v2::gateway::ParsedBattleInputCommandBody{}));
 }
+
+TEST(V2GatewayCommandParserTest, ParsesAndValidatesMatchCommandBodies) {
+    const auto join = v2::gateway::parse_match_command_body("alice|1234|2v2");
+    ASSERT_TRUE(join.has_value());
+    EXPECT_EQ(join->user_id, "alice");
+    EXPECT_EQ(join->mmr, 1234);
+    EXPECT_EQ(join->mode, "2v2");
+    EXPECT_TRUE(v2::gateway::validate_match_command_body(*join));
+
+    const auto defaults = v2::gateway::parse_match_command_body("bob");
+    ASSERT_TRUE(defaults.has_value());
+    EXPECT_EQ(defaults->user_id, "bob");
+    EXPECT_EQ(defaults->mmr, 1000);
+    EXPECT_EQ(defaults->mode, "1v1");
+    EXPECT_TRUE(v2::gateway::validate_match_command_body(*defaults));
+
+    const auto invalid_mode = v2::gateway::parse_match_command_body("bob|1000|solo");
+    ASSERT_TRUE(invalid_mode.has_value());
+    EXPECT_FALSE(v2::gateway::validate_match_command_body(*invalid_mode));
+
+    EXPECT_FALSE(v2::gateway::parse_match_command_body("").has_value());
+    EXPECT_FALSE(v2::gateway::parse_match_command_body("bob|not_a_number|1v1").has_value());
+}
+
+TEST(V2GatewayCommandParserTest, ParsesAndValidatesLeaderboardCommandBodies) {
+    const auto submit = v2::gateway::parse_leaderboard_submit_command_body("alice|Alice|9001");
+    ASSERT_TRUE(submit.has_value());
+    EXPECT_EQ(submit->user_id, "alice");
+    EXPECT_EQ(submit->display_name, "Alice");
+    EXPECT_EQ(submit->score, 9001);
+    EXPECT_TRUE(v2::gateway::validate_leaderboard_submit_command_body(*submit));
+
+    EXPECT_FALSE(v2::gateway::parse_leaderboard_submit_command_body("alice|Alice").has_value());
+    EXPECT_FALSE(v2::gateway::parse_leaderboard_submit_command_body("alice|Alice|NaN").has_value());
+
+    const auto default_top = v2::gateway::parse_leaderboard_top_command_body("");
+    ASSERT_TRUE(default_top.has_value());
+    EXPECT_EQ(*default_top, 10U);
+
+    const auto explicit_top = v2::gateway::parse_leaderboard_top_command_body("25");
+    ASSERT_TRUE(explicit_top.has_value());
+    EXPECT_EQ(*explicit_top, 25U);
+
+    EXPECT_FALSE(v2::gateway::parse_leaderboard_top_command_body("zero").has_value());
+
+    const auto rank = v2::gateway::parse_leaderboard_rank_command_body("alice");
+    ASSERT_TRUE(rank.has_value());
+    EXPECT_EQ(*rank, "alice");
+    EXPECT_FALSE(v2::gateway::parse_leaderboard_rank_command_body("").has_value());
+}

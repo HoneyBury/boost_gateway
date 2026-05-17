@@ -75,6 +75,33 @@ def parse_stats(raw: str) -> list[dict[str, Any]]:
     return stats
 
 
+def summarize_backend_metrics(diagnostics: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    metrics = diagnostics.get("backend_metrics")
+    if not isinstance(metrics, dict):
+        return {}
+    summary: dict[str, dict[str, Any]] = {}
+    for service in ("login", "room", "battle", "matchmaking", "leaderboard"):
+        snap = metrics.get(service)
+        if not isinstance(snap, dict):
+            summary[service] = {"present": False}
+            continue
+        requests = int(snap.get("total_requests", 0))
+        errors = int(snap.get("total_errors", 0))
+        timeouts = int(snap.get("total_timeouts", 0))
+        summary[service] = {
+            "present": True,
+            "total_requests": requests,
+            "total_successes": int(snap.get("total_successes", 0)),
+            "total_errors": errors,
+            "total_timeouts": timeouts,
+            "avg_latency_us": snap.get("avg_latency_us"),
+            "latency_sample_count": snap.get("latency_sample_count"),
+            "has_traffic": requests > 0,
+            "healthy_counters": errors == 0 and timeouts == 0,
+        }
+    return summary
+
+
 def collect(compose_file: Path, output_dir: Path, containers: list[str]) -> dict[str, Any]:
     gateway_ready = parse_json_output(
         "gateway /ready",
@@ -105,6 +132,7 @@ def collect(compose_file: Path, output_dir: Path, containers: list[str]) -> dict
 
     active_targets = prometheus_targets.get("data", {}).get("activeTargets", [])
     prometheus_up = all(target.get("health") == "up" for target in active_targets)
+    backend_metric_summary = summarize_backend_metrics(gateway_diagnostics)
     summary = {
         "collected_at": dt.datetime.now(dt.timezone.utc).astimezone().isoformat(timespec="seconds"),
         "git_commit": git_commit(Path.cwd()),
@@ -118,6 +146,7 @@ def collect(compose_file: Path, output_dir: Path, containers: list[str]) -> dict
         ),
         "gateway_ready": gateway_ready,
         "gateway_diagnostics": gateway_diagnostics,
+        "business_backend_metrics": backend_metric_summary,
         "prometheus": {
             "ready": prometheus_ready,
             "active_target_count": len(active_targets),
@@ -165,11 +194,26 @@ def render_report(summary: dict[str, Any]) -> str:
         f"| outbound dispatches | {diagnostics.get('total_outbound_dispatches')} |",
         f"| backend instances | {len(diagnostics.get('backend_instances', []))} |",
         "",
+        "## Business Backend Metrics",
+        "",
+        "| Service | Present | Has traffic | Healthy counters | Requests | Successes | Errors | Timeouts | Avg latency us | Samples |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for service, metric in summary.get("business_backend_metrics", {}).items():
+        lines.append(
+            f"| `{service}` | {metric.get('present')} | {metric.get('has_traffic')} | "
+            f"{metric.get('healthy_counters')} | {metric.get('total_requests', '')} | "
+            f"{metric.get('total_successes', '')} | {metric.get('total_errors', '')} | "
+            f"{metric.get('total_timeouts', '')} | {metric.get('avg_latency_us', '')} | "
+            f"{metric.get('latency_sample_count', '')} |"
+        )
+    lines.extend([
+        "",
         "## Container Stats",
         "",
         "| Container | CPU | Memory | Mem % | PIDs | Net I/O | Block I/O |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
-    ]
+    ])
     for stat in summary["docker_stats"]:
         lines.append(
             "| {name} | {cpu} | {mem} | {memp} | {pids} | {net} | {block} |".format(

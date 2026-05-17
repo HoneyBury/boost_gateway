@@ -70,6 +70,12 @@ def exe_name(base: str) -> str:
 def find_executable(build_dir: Path, base_name: str) -> Path:
     names = {exe_name(base_name), base_name}
     matches = sorted(p for p in build_dir.rglob("*") if p.is_file() and p.name in names)
+    direct_matches = [
+        p for p in matches
+        if "build" not in p.relative_to(build_dir).parts[:-1]
+    ]
+    if direct_matches:
+        matches = sorted(direct_matches, key=lambda p: (len(p.relative_to(build_dir).parts), str(p)))
     if os.name == "nt":
         preferred = [
             p for p in matches

@@ -78,6 +78,18 @@ std::optional<std::uint16_t> parse_http_port(int argc, char* argv[]) {
     return std::nullopt;
 }
 
+std::uint16_t parse_gateway_port(int argc, char* argv[]) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--port") {
+            const auto parsed = std::atoi(argv[i + 1]);
+            if (parsed > 0) {
+                return static_cast<std::uint16_t>(parsed);
+            }
+        }
+    }
+    return 9201;
+}
+
 bool has_flag(int argc, char* argv[], const char* flag) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == flag) {
@@ -228,6 +240,7 @@ int main(int argc, char* argv[]) {
         }
 
         const auto io_cores = parse_io_cores(argc, argv);
+        const auto gateway_port = parse_gateway_port(argc, argv);
         const auto acceptor_core = parse_acceptor_core(argc, argv);
         const auto http_port = parse_http_port(argc, argv);
         const auto login_backend_config = parse_backend_config(
@@ -241,7 +254,7 @@ int main(int argc, char* argv[]) {
         const auto leaderboard_backend_config = parse_backend_config(
             argc, argv, "--leaderboard-host", "--leaderboard-port");
         auto io_engine = std::make_unique<v2::io::AsioIoEngine>(io_cores);
-        v2::gateway::DemoServer server(9201,
+        v2::gateway::DemoServer server(gateway_port,
                                        {},
                                        v2::gateway::DemoServerOptions{
                                            .acceptor_core_id = acceptor_core,

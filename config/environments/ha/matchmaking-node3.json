@@ -1,0 +1,19 @@
+{
+  "service": {
+    "name": "matchmaking",
+    "port": 9406,
+    "config_version": "ha-matchmaking-node3-v1"
+  },
+  "raft": {
+    "node_id": "match-3",
+    "peers": [
+      { "id": "match-1", "host": "matchmaking-1", "port": 9404 },
+      { "id": "match-2", "host": "matchmaking-2", "port": 9405 },
+      { "id": "match-3", "host": "matchmaking-3", "port": 9406 }
+    ],
+    "storage_dir": "runtime/raft/matchmaking/match-3",
+    "election_timeout_min_ms": 150,
+    "election_timeout_max_ms": 300,
+    "heartbeat_interval_ms": 50
+  }
+}

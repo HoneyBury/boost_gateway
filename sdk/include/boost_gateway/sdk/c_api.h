@@ -64,6 +64,21 @@ GSDK_API gsdk_battle_start_result_t gsdk_start_battle(gsdk_client_t* client, con
 typedef struct { int ok; int32_t error_code; uint64_t input_seq; char error_message[256]; } gsdk_battle_input_result_t;
 GSDK_API gsdk_battle_input_result_t gsdk_send_battle_input(gsdk_client_t* client, const char* input_data, int32_t timeout_ms);
 
+// ── Matchmaking ─────────────────────────────────────────────────────
+
+typedef struct { int ok; int32_t error_code; char response_body[4096]; char error_message[256]; } gsdk_match_result_t;
+GSDK_API gsdk_match_result_t gsdk_match_join(gsdk_client_t* client, const char* user_id, int64_t mmr, const char* mode, int32_t timeout_ms);
+GSDK_API gsdk_match_result_t gsdk_match_leave(gsdk_client_t* client, const char* user_id, const char* mode, int32_t timeout_ms);
+GSDK_API gsdk_match_result_t gsdk_match_status(gsdk_client_t* client, const char* user_id, const char* mode, int32_t timeout_ms);
+
+// ── Leaderboard ─────────────────────────────────────────────────────
+
+typedef struct { int ok; int32_t error_code; char response_body[4096]; char error_message[256]; } gsdk_leaderboard_submit_result_t;
+typedef struct { int ok; int32_t error_code; char response_body[4096]; char error_message[256]; } gsdk_leaderboard_query_result_t;
+GSDK_API gsdk_leaderboard_submit_result_t gsdk_leaderboard_submit(gsdk_client_t* client, const char* user_id, const char* display_name, int64_t score, int32_t timeout_ms);
+GSDK_API gsdk_leaderboard_query_result_t gsdk_leaderboard_top(gsdk_client_t* client, uint32_t k, int32_t timeout_ms);
+GSDK_API gsdk_leaderboard_query_result_t gsdk_leaderboard_rank(gsdk_client_t* client, const char* user_id, int32_t timeout_ms);
+
 // ── Echo ─────────────────────────────────────────────────────────────
 
 typedef struct { int ok; char body[4096]; } gsdk_echo_result_t;

@@ -9,10 +9,12 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 | 用途 | 建议 label | Workflow | 必需能力 |
 | --- | --- | --- | --- |
 | Release baseline | `self-hosted,release-baseline` | `release-baseline.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
-| Redis live | `self-hosted,redis-live` | `specialized-e2e.yml` | Redis `127.0.0.1:6379` 可达，CMake、Ninja、Python |
+| Redis live | `self-hosted,redis-live` | `specialized-e2e.yml` | Redis `127.0.0.1:6379` 可达，CMake、Ninja、Python；`specialized_profile=redis-live` |
+| Raft HA | `self-hosted,raft-ha` | `specialized-e2e.yml` | CMake、Ninja、Python；`specialized_profile=raft-ha` |
 | Operator kind | `self-hosted,operator-kind` | `specialized-e2e.yml` | Docker、kind、kubectl、make、CMake、Ninja、Python |
 | Observability | `self-hosted,observability` | 手动命令或 release gate | CMake、Ninja、Python、可绑定本地端口；可选 fake OTel collector 与真实 gateway HTTP runtime 测试 |
 | Control plane | `self-hosted,operator-kind` | 手动命令或 `specialized-e2e.yml` | Go、Docker、kind、kubectl、make、Python；可选 envtest assets |
+| Business closure P5-P8 | `self-hosted,business-closure` | 手动命令 | CMake、Ninja、Python、可绑定本地端口；可选 OTel、kind、K8s 已部署集群 |
 | Production resilience | `self-hosted,production-resilience` | `production-resilience.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 
@@ -40,19 +42,21 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 ## Specialized E2E
 
-默认专项 E2E 不要求 Redis/kind，只跑 Raft 与 Redis degraded。固定 Redis/kind runner 上再显式开启：
+默认专项 E2E 不要求 Redis/kind，只跑 Raft 与 Redis degraded。P4 之后可以用 `specialized_profile` 明确区分 Redis live、Raft HA 与全专项：
 
-| 场景 | `runner` | `include_redis_live` | `include_operator_kind` |
-| --- | --- | --- | --- |
-| Raft + Redis degraded | `ubuntu-latest` 或自托管普通 runner | `false` | `false` |
-| Redis live | `["self-hosted","redis-live"]` | `true` | `false` |
-| Operator kind | `["self-hosted","operator-kind"]` | `false` | `true` |
-| 全专项 | `["self-hosted","redis-live","operator-kind"]` | `true` | `true` |
+| 场景 | `runner` | `specialized_profile` | `include_redis_live` | `include_operator_kind` |
+| --- | --- | --- | --- | --- |
+| Raft + Redis degraded | `ubuntu-latest` 或自托管普通 runner | `default` | `false` | `false` |
+| Redis live | `["self-hosted","redis-live"]` | `redis-live` | `true` | `false` |
+| Raft HA | `["self-hosted","raft-ha"]` | `raft-ha` | `false` | `false` |
+| Operator kind | `["self-hosted","operator-kind"]` | `default` | `false` | `true` |
+| 全专项 | `["self-hosted","redis-live","operator-kind"]` | `all` | `true` | `true` |
 
 通过标准：
 
 - `runtime/validation/specialized-e2e-summary.json` 中 `passed=true`。
 - Redis live 场景必须确认 runner 上 Redis 服务可达。
+- Raft HA 场景必须归档 `profile=raft-ha` 的 summary，覆盖 leader election、failover/follower catch-up 和重启恢复 gates。
 - Operator kind 场景必须确认 Docker daemon、kind、kubectl、make 可用。
 
 ## Observability / P4
@@ -73,6 +77,24 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 - `--include-runtime-http` 场景会启动真实 `v2_gateway_demo`，用 SDK full-flow 产生业务流量，并验证 `/health`、`/ready`、`/metrics`、`/metrics/json`、`/metrics/diagnostics/json`；子 summary 位于 `runtime/validation/gateway-observability-runtime-summary.json`。
 - 如需验证真实 collector，运行 `examples/v2_gateway_demo` 时设置 `OTEL_EXPORT_ENDPOINT=http://<collector>/v1/traces`；默认 P4 gate 不依赖真实外部 collector。
 
+## Business Closure / P5-P8
+
+P5-P8 剩余 profile 的聚合入口：
+
+```bash
+python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build
+python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-otel-collector --include-runtime-http
+python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-operator-kind --include-k8s-full-flow
+```
+
+通过标准：
+
+- 默认聚合 summary `runtime/validation/p5-p8-business-closure-summary.json` 中 `passed=true`。
+- `--include-otel-collector` 需要 runner 允许测试进程绑定 loopback 随机端口。
+- `--include-runtime-http` 会启动真实 gateway HTTP 入口并产生 SDK 业务流量。
+- `--include-operator-kind` 需要 Docker/kind/kubectl/make。
+- `--include-k8s-full-flow` 要求目标 Kubernetes 集群已经部署 gateway 与五后端，并允许 `kubectl port-forward svc/gateway`。
+
 ## Control Plane / P5
 
 默认 release gate 已运行 `scripts/verify_control_plane_gate.py`，只依赖 Operator manifest 静态契约和 Go fake-client/unit tests，不要求 Docker 或 kind。固定控制面 runner 可追加：
@@ -89,7 +111,7 @@ python scripts/verify_control_plane_gate.py --include-envtest --include-kind
 ```bash
 python scripts/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-redis
 python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
-python scripts/verify_specialized_e2e.py --build-dir build/default --skip-build --include-redis-live --include-operator-kind --summary-path runtime/validation/dev-p5-specialized-e2e-summary.json --operator-timeout-seconds 1200
+python scripts/verify_specialized_e2e.py --build-dir build/default --skip-build --profile all --summary-path runtime/validation/dev-p5-specialized-e2e-summary.json --operator-timeout-seconds 1200
 python scripts/verify_control_plane_gate.py --include-kind --summary-path runtime/validation/dev-p5-control-plane-kind-summary.json --kind-timeout-seconds 1200
 ```
 

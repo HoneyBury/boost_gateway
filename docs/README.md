@@ -67,9 +67,15 @@
 - [v3.x 生产就绪加强规划](./v3-production-readiness-plan.md) — v3.3.x 之后的 12 周收口计划，覆盖性能数据闭环、架构实测、交付面、Actor 多核线程边界、通信契约、控制面和发布门槛
 - [生产稳定化与交付闭环路线图](./production-stabilization-roadmap.md) — v3.3.2 之后的大阶段执行规划，聚焦生产部署、性能基线、固定 runner 证据、监控运维、SDK 企业级封装和长稳故障演练
 - [生产候选实测与发布硬化规划](./production-candidate-hardening-plan.md) — P0-P6 收束后的下一阶段规划，聚焦固定 runner 常态化、长稳、容量、Kubernetes 发布演练、观测闭环和 SDK 企业接入包
+- [生产业务闭环接入规划](./production-business-closure-plan.md) — H0-H5 收束后的下一阶段规划，聚焦 matchmaking、leaderboard、Redis settlement、Raft、OTel、TLS、K8s/Operator 和 proto/gRPC 从单侧能力进入真实业务流水线
 - [生产部署运行手册](./production-deployment-runbook.md) — P0 生产部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证
 - [生产运维 Runbook](./production-operations-runbook.md) — P3 告警响应、backend/Redis/gateway 排障、发布失败、回滚和日志采集流程
 - [生产配置 Runbook](./production-configuration-runbook.md) — gateway / backend / Docker / systemd 配置入口、热重载边界、修改方式和生产配置建议
+- [Redis / Raft HA Runbook](./redis-raft-ha-runbook.md) — P4 Redis 持久化/备份/恢复/降级策略、Raft HA profile 边界、三节点样例和固定 runner 验证入口
+- [Observability / Trace Runbook](./observability-trace-runbook.md) — P5 OTel collector profile、trace/full-flow 验证、diagnostics 与延迟指标边界
+- [TLS / mTLS Runbook](./tls-mtls-runbook.md) — P6 TLS/mTLS 配置、证书、灰度策略、默认 plain TCP 边界和发布前置条件
+- [Kubernetes Business Flow Runbook](./k8s-business-flow-runbook.md) — P7 K8s manifest 发布、SDK full-flow 验证和 Operator kind evidence
+- [v3 Proto / gRPC ADR](./v3-proto-grpc-adr.md) — P8 proto/gRPC 决策记录，明确 proto 契约已完成、generated gRPC transport 暂不默认上线
 - [v3.x 发布清单](./v3-release-checklist.md) — v3.x 阶段的版本口径、P3 数据恢复、配置脚本、控制面入口和发布阻断条件
 - [固定 Runner 执行手册](./fixed-runner-playbook.md) — Release baseline、Redis live、Operator kind 固定 runner 的 label、环境预检和手动 workflow 参数
 - [生产证据固定 Runner 配置说明](./production-evidence-runner.md) — P2 生产证据 workflow 的 runner JSON 输入、真实依赖场景、预检 summary 和 artifact 归档标准

@@ -5,7 +5,10 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "v2/gateway/gateway_actor.h"
 #include "v2/gateway/gateway_service_bridge.h"
@@ -65,6 +68,13 @@ private:
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
     [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
     void archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement);
+    void submit_battle_finished_push_to_leaderboard(const nlohmann::json& push,
+                                                     const std::string& room_id);
+    void submit_battle_settlement_to_leaderboard(
+        const std::string& battle_id,
+        const std::string& room_id,
+        const std::string& reason,
+        const std::vector<v2::battle::BattleScore>& scores);
     void process_battle_finished(const v2::battle::BattleFinishedMsg& finished);
     void process_deferred_finished(const std::string& battle_id);
 
@@ -90,6 +100,7 @@ private:
     std::unordered_map<std::string, PendingSettlementAck> pending_settlement_acks_;
     std::unordered_map<std::string, v2::battle::BattleFinishedMsg> deferred_finished_events_;
     std::unordered_map<std::string, v2::runtime::ScheduleHandle> pending_battle_timeout_;
+    std::unordered_set<std::string> leaderboard_settlement_keys_;
     std::uint64_t next_battle_id_ = 1;
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;

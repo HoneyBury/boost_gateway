@@ -51,6 +51,27 @@ struct BattleInputResult {
     std::uint64_t input_seq = 0;
 };
 
+struct MatchResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
+struct LeaderboardSubmitResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
+struct LeaderboardQueryResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
 struct EchoResult {
     bool ok = false;
     std::string echo_body;

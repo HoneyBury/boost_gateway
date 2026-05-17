@@ -71,6 +71,12 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
         case GatewayCommandType::kRoomReady:
         case GatewayCommandType::kRoomLeave:
         case GatewayCommandType::kBattleStart:
+        case GatewayCommandType::kMatchJoin:
+        case GatewayCommandType::kMatchLeave:
+        case GatewayCommandType::kMatchStatus:
+        case GatewayCommandType::kLeaderboardSubmit:
+        case GatewayCommandType::kLeaderboardTop:
+        case GatewayCommandType::kLeaderboardRank:
             if (command_sink_ != nullptr && command_sink_->handle(*command)) {
                 return;
             }
@@ -155,6 +161,24 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
             return command;
         case net::protocol::kBattleInputRequest:
             command.type = GatewayCommandType::kBattleInput;
+            return command;
+        case net::protocol::kMatchJoinRequest:
+            command.type = GatewayCommandType::kMatchJoin;
+            return command;
+        case net::protocol::kMatchLeaveRequest:
+            command.type = GatewayCommandType::kMatchLeave;
+            return command;
+        case net::protocol::kMatchStatusRequest:
+            command.type = GatewayCommandType::kMatchStatus;
+            return command;
+        case net::protocol::kLeaderboardSubmitRequest:
+            command.type = GatewayCommandType::kLeaderboardSubmit;
+            return command;
+        case net::protocol::kLeaderboardTopRequest:
+            command.type = GatewayCommandType::kLeaderboardTop;
+            return command;
+        case net::protocol::kLeaderboardRankRequest:
+            command.type = GatewayCommandType::kLeaderboardRank;
             return command;
         default:
             return std::nullopt;

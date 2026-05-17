@@ -22,6 +22,16 @@ on:
         description: "Build configuration"
         required: true
         default: "Debug"
+      specialized_profile:
+        description: "Specialized E2E profile: default, redis-live, raft-ha, all"
+        required: true
+        default: "default"
+        type: choice
+        options:
+          - default
+          - redis-live
+          - raft-ha
+          - all
       include_redis_live:
         description: "Run Redis live tests"
         required: true
@@ -87,6 +97,7 @@ jobs:
             scripts/verify_specialized_e2e.py
             --build-dir "${{ inputs.build_dir }}"
             --configuration "${{ inputs.configuration }}"
+            --profile "${{ inputs.specialized_profile }}"
             --summary-path runtime/validation/specialized-e2e-summary.json
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then

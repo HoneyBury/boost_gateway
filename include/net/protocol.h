@@ -66,6 +66,21 @@ constexpr std::uint16_t kAdminServerStatus = 5003;
 constexpr std::uint16_t kAdminReloadConfig = 5004;
 constexpr std::uint16_t kAdminResponse = 5005;
 
+constexpr std::uint16_t kMatchJoinRequest = 6001;
+constexpr std::uint16_t kMatchJoinResponse = 6002;
+constexpr std::uint16_t kMatchFoundPush = 6003;
+constexpr std::uint16_t kMatchLeaveRequest = 6004;
+constexpr std::uint16_t kMatchLeaveResponse = 6005;
+constexpr std::uint16_t kMatchStatusRequest = 6006;
+constexpr std::uint16_t kMatchStatusResponse = 6007;
+
+constexpr std::uint16_t kLeaderboardSubmitRequest = 7001;
+constexpr std::uint16_t kLeaderboardSubmitResponse = 7002;
+constexpr std::uint16_t kLeaderboardTopRequest = 7003;
+constexpr std::uint16_t kLeaderboardTopResponse = 7004;
+constexpr std::uint16_t kLeaderboardRankRequest = 7005;
+constexpr std::uint16_t kLeaderboardRankResponse = 7006;
+
 [[nodiscard]] constexpr const char* to_string(ErrorCode error_code) {
     switch (error_code) {
         case ErrorCode::kOk:

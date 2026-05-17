@@ -113,7 +113,7 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 
 脚本职责：
 
-- 启动 `v2_login_backend` / `v2_room_backend` / `v2_battle_backend` / `v2_gateway_demo`
+- 启动 `v2_login_backend` / `v2_room_backend` / `v2_battle_backend` / `v2_match_backend` / `v2_leaderboard_backend` / `v2_gateway_demo`
 - 运行标准 `echo` / `battle` 压测场景；`capacity` profile 额外覆盖 5K/10K 连接容量样本
 - 抓取 `GET /metrics/diagnostics/json`
 - 记录进程资源快照
@@ -122,8 +122,9 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 - 对同一 case 输出 `min / median / max` 聚合结果
 - 输出 `resource_analysis`，按 case/service 聚合 RSS、fd/handles、线程、CPU 快照和每连接边际成本
 - 输出 `release_gates` 判定结果，作为 `R1-4` 的自动化基础
+- 可选 `--include-business-flow` 会额外运行 SDK full-flow，覆盖 match_join/status、battle finish 自动 settlement、leaderboard submit/top/rank 和 reconnect，并把结果写入同一份 summary/report
 - 将结果落盘到 `runtime/perf/<timestamp>/`
-- 同步生成 `report.md`，包含 release gate、case 聚合和 gateway 资源聚合，便于直接归档到 release evidence
+- 同步生成 `report.md`，包含 release gate、case 聚合、business flow coverage、backend metrics snapshot 和 gateway 资源聚合，便于直接归档到 release evidence
 
 当前主入口已经切换为 Python，目标是统一 Windows / Ubuntu / macOS 的采集流程；平台差异仅保留在进程资源快照实现上。
 
@@ -158,7 +159,7 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 python3 scripts/collect_docker_production_perf_snapshot.py
 ```
 
-脚本从容器内读取 gateway `/ready`、`/metrics/diagnostics/json`、Prometheus targets、Grafana health，并通过 `docker stats --no-stream` 记录 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager 和 redis-exporter 的 CPU/RSS/PID/IO 快照。输出固定为：
+脚本从容器内读取 gateway `/ready`、`/metrics/diagnostics/json`、Prometheus targets、Grafana health，并通过 `docker stats --no-stream` 记录 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager 和 redis-exporter 的 CPU/RSS/PID/IO 快照。报告会额外突出 `business_backend_metrics`，用于判断 login/room/battle/matchmaking/leaderboard 是否被业务流量压到，以及 errors/timeouts 是否为 0。输出固定为：
 
 | 产物 | 说明 |
 |---|---|
@@ -271,6 +272,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 | login | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
 | room | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
 | battle | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ | _待测定_ |
+| matchmaking | _由 P3 business-flow / diagnostics 回填_ | _由 P3 business-flow / diagnostics 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
+| leaderboard | _由 P3 business-flow / settlement 回填_ | _由 P3 business-flow / settlement 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
 
 **测量方式**: `GatewayServiceBridge::route()` 中 `send_request()` 前后打点，记录到 `BackendMetrics::record_latency()`。通过 `GET /metrics/diagnostics/json` 获取。
 
@@ -428,6 +431,8 @@ python ./scripts/collect_v2_perf_baseline.py \
 | DiagnosticsSnapshot | ✅ 可用 | JSON 格式，含 messages_per_second |
 | gateway 独立启动 | ✅ 可用 | `v2_gateway_demo --io-cores N --management-port 9080` |
 | 4 进程拓扑 | ✅ 已验证 | `collect_release_baseline.py` 与 `collect_v2_perf_baseline.py` 自动编排 gateway/login/room/battle |
+| 6 服务业务拓扑 | ✅ 已接入采集脚本 | P3 后 `collect_v2_perf_baseline.py` 自动编排 gateway/login/room/battle/matchmaking/leaderboard |
+| SDK full-flow business case | ✅ 可选运行 | `collect_v2_perf_baseline.py --include-business-flow` 归档 match/leaderboard/settlement 业务覆盖 |
 | Docker 生产拓扑 | ✅ 已验证 | `collect_docker_production_perf_snapshot.py` 覆盖 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager |
 
 > **注意**: 性能数据采集需要在受控环境下进行（独占机器、关闭无关进程、预热后采集）。以下命令已验证可执行，但实际数据待填入上表。
@@ -505,3 +510,23 @@ python3 scripts/collect_docker_production_perf_snapshot.py
 | battle-500 容量 | 已发现 rejected 与 P99 退化 | capacity profile + battle专项复测 |
 | 1/2/4 核线性扩容 | 仅 4 核 baseline 已沉淀 | 固定机器分别设置 `--io-cores 1/2/4` 后归档报告 |
 | Prometheus P99 histogram/summary | 当前 `/metrics` 未导出 route latency histogram | H4 观测增强，新增可 scrape 的 route latency histogram/summary |
+
+### 7.4 P3 业务闭环性能采集入口
+
+P3 之后，新增业务路径的性能证据入口为：
+
+```bash
+python3 scripts/collect_v2_perf_baseline.py \
+  --build-dir build/release \
+  --run-preset smoke \
+  --include-business-flow
+```
+
+该命令会：
+
+- 启动五个真实 backend 和 gateway。
+- 运行 echo/battle smoke，battle finish 会触发 settlement 自动提交 leaderboard。
+- 运行 SDK full-flow，覆盖 match_join/status、leaderboard 自动 settlement 查询、manual submit、top/rank 和 reconnect。
+- 在 `summary.json.final_backend_metrics` 和 `report.md` 中列出五后端 RED counters 与 avg latency。
+
+生产 Docker 空载快照仍使用 `collect_docker_production_perf_snapshot.py`；业务流量快照必须先运行 SDK full-flow 或压测，再读取报告里的 `business_backend_metrics`。

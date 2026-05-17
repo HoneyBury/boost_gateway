@@ -111,6 +111,9 @@ struct LoginResult { bool ok; int32_t error_code; string error_message; string u
 struct RoomResult { bool ok; int32_t error_code; string error_message; string room_id; int member_count; };
 struct BattleStartResult { bool ok; int32_t error_code; string error_message; string battle_id; };
 struct BattleInputResult { bool ok; int32_t error_code; string error_message; uint64_t input_seq; };
+struct MatchResult { bool ok; int32_t error_code; string error_message; string response_body; };
+struct LeaderboardSubmitResult { bool ok; int32_t error_code; string error_message; string response_body; };
+struct LeaderboardQueryResult { bool ok; int32_t error_code; string error_message; string response_body; };
 struct EchoResult { bool ok; string echo_body; };
 ```
 
@@ -141,6 +144,12 @@ SDK 自动处理以下协议消息的编解码:
 | 3007 | kRoomReadyRequest | C→S |
 | 4001 | kBattleStartRequest | C→S |
 | 4003 | kBattleInputRequest | C→S |
+| 6001 | kMatchJoinRequest | C→S |
+| 6004 | kMatchLeaveRequest | C→S |
+| 6006 | kMatchStatusRequest | C→S |
+| 7001 | kLeaderboardSubmitRequest | C→S |
+| 7003 | kLeaderboardTopRequest | C→S |
+| 7005 | kLeaderboardRankRequest | C→S |
 
 ## 编译链接
 

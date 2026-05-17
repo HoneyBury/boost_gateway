@@ -114,6 +114,7 @@ add_dependencies(project_v2_multi_process_tests
     v2_login_backend
     v2_room_backend
     v2_battle_backend
+    v2_leaderboard_backend
 )
 target_compile_definitions(project_v2_multi_process_tests
     PRIVATE
@@ -121,6 +122,7 @@ target_compile_definitions(project_v2_multi_process_tests
         V2_LOGIN_BINARY="$<TARGET_FILE:v2_login_backend>"
         V2_ROOM_BINARY="$<TARGET_FILE:v2_room_backend>"
         V2_BATTLE_BINARY="$<TARGET_FILE:v2_battle_backend>"
+        V2_LEADERBOARD_BINARY="$<TARGET_FILE:v2_leaderboard_backend>"
 )
 target_link_libraries(project_v2_multi_process_tests
     PRIVATE

@@ -24,7 +24,7 @@
 | P3 SDK 分发门禁 | `python scripts/check_sdk_distribution.py --build-dir <build-dir>` | SDK 版本、CMake package、C ABI 动态库、Python/C# wrapper、C ABI 测试和构建产物一致 |
 | P3 SDK 安装消费 | `python scripts/verify_sdk_package_consumer.py --build-dir <build-dir>` | SDK 可安装到临时 prefix，外部 CMake 项目可 `find_package(boost_gateway_sdk)` 并链接 `boost_gateway::sdk` |
 | P4 SDK 业务闭环 | `python scripts/verify_sdk_business_flow.py --build-dir <build-dir>` | SDK C++ 业务 API 跑通 login、echo、room、ready、battle、reconnect、heartbeat、push 与多客户端闭环 |
-| P4 SDK 示例联调 | `python scripts/verify_sdk_full_flow_client.py --build-dir <build-dir>` | 启动真实 `v2_gateway_demo` 并运行 `sdk_full_flow_client` 完整流程，验证真实客户端接入形态 |
+| P4 SDK 示例联调 | `python scripts/verify_sdk_full_flow_client.py --build-dir <build-dir>` | 启动真实 login/room/battle/matchmaking/leaderboard 后端、`v2_gateway_demo` 和 `sdk_full_flow_client`，验证 SDK full-flow 覆盖新增业务路径与 backend metrics |
 
 ## 2. R4 契约状态
 

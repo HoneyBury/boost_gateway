@@ -39,4 +39,27 @@ struct ParsedBattleInputCommandBody {
 [[nodiscard]] std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std::string_view body);
 [[nodiscard]] bool validate_battle_input_command_body(const ParsedBattleInputCommandBody& body) noexcept;
 
+struct ParsedMatchCommandBody {
+    std::string user_id;
+    std::int64_t mmr = 1000;
+    std::string mode = "1v1";
+};
+
+[[nodiscard]] std::optional<ParsedMatchCommandBody> parse_match_command_body(std::string_view body);
+[[nodiscard]] bool validate_match_command_body(const ParsedMatchCommandBody& body) noexcept;
+
+struct ParsedLeaderboardSubmitCommandBody {
+    std::string user_id;
+    std::string display_name;
+    std::int64_t score = 0;
+};
+
+[[nodiscard]] std::optional<ParsedLeaderboardSubmitCommandBody>
+parse_leaderboard_submit_command_body(std::string_view body);
+[[nodiscard]] bool validate_leaderboard_submit_command_body(
+    const ParsedLeaderboardSubmitCommandBody& body) noexcept;
+
+[[nodiscard]] std::optional<std::size_t> parse_leaderboard_top_command_body(std::string_view body);
+[[nodiscard]] std::optional<std::string> parse_leaderboard_rank_command_body(std::string_view body);
+
 }  // namespace v2::gateway

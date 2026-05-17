@@ -31,31 +31,31 @@
 - P4 SDK 企业级封装：C++ SDK heartbeat 已实作，disconnect callback 可由 heartbeat failure 触发；C ABI 暴露 heartbeat 控制，Python/C# wrapper 增加 native 版本校验和加载/分配诊断；SDK business-flow 与 full-flow client 验证覆盖 login、room、ready、battle、push、reconnect、heartbeat。
 - H0-H5 生产候选硬化：`scripts/check_production_hardening_gate.py` 聚合固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据；`production-resilience.yml` 与 `production-evidence.yml` 已具备 weekly schedule 和 runner fallback。
 - 生产性能快照：`scripts/collect_docker_production_perf_snapshot.py` 已补齐 OrbStack / Docker Compose 生产栈运行态采样入口，覆盖 gateway readiness/diagnostics、Prometheus targets、Grafana health 和容器 CPU/RSS/PID/IO 快照；本机实测 `overall_pass=true`，产物见 `runtime/perf/docker-production-snapshot/`。
+- 生产业务闭环接入：`docs/production-business-closure-plan.md` 已完成 P0-P8 收束。P0-P2 打通 SDK matchmaking/leaderboard、full-flow 和 battle settlement 自动写榜；P3-P4 将新业务路径纳入性能/监控/快照，并完成 Redis/Raft HA profile；P5-P8 补齐 OTel/trace、TLS 边界、K8s/Operator full-flow 入口和 v3 proto/gRPC ADR。聚合验证入口为 `scripts/verify_p5_p8_business_closure.py`。
 
 ## 保留边界
 
-- 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳和 Prometheus P99 histogram/summary 仍属于固定 runner 长项；P5 resilience gate、P6 production-evidence workflow 与 Docker production snapshot 已提供统一入口，但正式容量/长稳数据仍需固定 runner 持续沉淀。
+- 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 histogram/summary 和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 
 ## 当前阶段结论
 
-生产稳定化与交付闭环阶段已经完成 P0-P6 收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate 和生产候选完整性审核。
+生产稳定化、交付闭环和生产业务闭环接入阶段已经完成当前规划的 P0-P8 收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate 和生产候选完整性审核。
 
 当前默认可执行入口：
 
 1. 本地/PR 快速：`python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke`
 2. P5 resilience：`python3 scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build`
 3. P6 production evidence：`python3 scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build`
-4. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
+4. P5-P8 business closure：`python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build`
+5. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
 
 ## 下一阶段优先级
 
-生产候选实测与发布硬化阶段 H0-H5 已完成可执行证据收束，事实源见 `docs/production-candidate-hardening-plan.md`。
+下一阶段不再扩功能，建议进入“生产数据沉淀与风险燃尽”：
 
-1. H0：固定 runner 真实依赖常态化，持续跑 Redis live、Operator kind、runtime HTTP、P5/P6 gates。
-2. H1：2h/8h soak 与资源曲线沉淀，补 RSS、fd、CPU、错误率和 P99 长稳报告。
-3. H2：容量边界专项，复测 5K/10K 连接、battle-500、backend pool 参数和退化阈值。
-4. H3：Kubernetes 生产演练，补 rollout/rollback/probe、PDB/HPA/resource limits 和 Operator 更完整 E2E。
-5. H4：观测闭环增强，补 route latency histogram/summary、后端指标采集方案和真实 OTel collector 长稳。
-6. H5：SDK 企业接入样例和兼容矩阵，补 Python/C# 真实业务示例、错误码矩阵和客户端接入包说明。
+1. 固定 runner 常态化：按周归档 Redis live、raft-ha、OTel runtime、Operator kind、K8s full-flow 和 P5-P8 business closure。
+2. 长稳与容量：补 2h/8h soak、5K/10K echo、battle-500、RSS/fd/CPU/P99 曲线和退化阈值。
+3. 真实云端演练：在预发 K8s 或云主机上跑 Docker/K8s full-flow、回滚、备份恢复和监控告警链路。
+4. 后续专项：Prometheus route latency histogram/summary、backend exporter、generated gRPC transport PoC、默认 TLS transport 上线评估。

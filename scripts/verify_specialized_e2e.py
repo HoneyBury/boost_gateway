@@ -22,7 +22,10 @@ RAFT_UNIT_FILTER = (
 RAFT_INTEGRATION_FILTER = (
     "V2BackendRoutingTest.LeaderboardReplicatesCommittedScoresAcrossRaftFollowers:"
     "V2BackendRoutingTest.MatchmakingReplicatesQueuedPlayersAndMatchesAcrossFollowers:"
-    "V2BackendRoutingTest.MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers"
+    "V2BackendRoutingTest.MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers:"
+    "V2BackendRoutingTest.LeaderboardRestoresCommittedScoresAfterRestart:"
+    "V2BackendRoutingTest.MatchmakingRestoresCommittedMatchAfterRestart:"
+    "V2BackendRoutingTest.LeaderboardFollowerCatchesUpAfterLeaderRestart"
 )
 
 REDIS_DEGRADED_FILTER = (
@@ -69,6 +72,12 @@ def exe_name(base: str) -> str:
 def find_executable(build_dir: Path, base_name: str) -> Path:
     names = {exe_name(base_name), base_name}
     matches = sorted(p for p in build_dir.rglob("*") if p.is_file() and p.name in names)
+    direct_matches = [
+        p for p in matches
+        if "build" not in p.relative_to(build_dir).parts[:-1]
+    ]
+    if direct_matches:
+        matches = sorted(direct_matches, key=lambda p: (len(p.relative_to(build_dir).parts), str(p)))
     if os.name == "nt":
         preferred = [
             p for p in matches
@@ -144,6 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=Path("build/windows-ninja-debug"))
     parser.add_argument("--configuration", default="Debug")
+    parser.add_argument("--profile", choices=["default", "redis-live", "raft-ha", "all"], default="default")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--include-redis-live", action="store_true")
     parser.add_argument("--include-operator-kind", action="store_true")
@@ -156,6 +166,10 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.profile in {"redis-live", "all"}:
+        args.include_redis_live = True
+    if args.profile == "all":
+        args.include_operator_kind = True
     root = Path(__file__).resolve().parent.parent
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
@@ -163,6 +177,7 @@ def main() -> int:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir),
         "configuration": args.configuration,
+        "profile": args.profile,
         "include_redis_live": args.include_redis_live,
         "include_operator_kind": args.include_operator_kind,
         "passed": False,
@@ -191,41 +206,45 @@ def main() -> int:
         unit_tests = find_executable(build_dir, "project_v2_unit_tests")
         integration_tests = find_executable(build_dir, "project_v2_integration_tests")
         root_unit_tests = find_executable(build_dir, "project_unit_tests")
-        summary["steps"].append(run_step(
-            "Raft cluster and persistence gates",
-            "raft",
-            [str(unit_tests), f"--gtest_filter={RAFT_UNIT_FILTER}"],
-            unit_tests.parent,
-            args.test_timeout_seconds,
-        ))
-        summary["steps"].append(run_step(
-            "Raft-backed service recovery gates",
-            "raft",
-            [str(integration_tests), f"--gtest_filter={RAFT_INTEGRATION_FILTER}"],
-            integration_tests.parent,
-            args.test_timeout_seconds,
-        ))
-        summary["steps"].append(run_step(
-            "Redis service degraded-mode gates",
-            "redis",
-            [str(unit_tests), f"--gtest_filter={REDIS_DEGRADED_FILTER}"],
-            unit_tests.parent,
-            args.test_timeout_seconds,
-        ))
-        summary["steps"].append(run_step(
-            "Redis event-store degraded-mode gates",
-            "redis",
-            [
-                str(root_unit_tests),
-                "--gtest_filter=RedisClientTest.ConnectFailsGracefully:"
-                "RedisClientTest.DisconnectedOperationsReturnEmpty:"
-                "RedisEventStoreTest.NoRedisAppendReturnsFalse:"
-                "RedisEventStoreTest.NoRedisReadReturnsEmpty:"
-                "RedisConnectionPoolTest.AcquireWhenRedisDownReturnsEmpty",
-            ],
-            root_unit_tests.parent,
-            args.test_timeout_seconds,
-        ))
+        run_redis_degraded = args.profile in {"default", "redis-live", "all"}
+        run_raft = args.profile in {"default", "raft-ha", "all"}
+        if run_raft:
+            summary["steps"].append(run_step(
+                "Raft cluster and persistence gates",
+                "raft-ha",
+                [str(unit_tests), f"--gtest_filter={RAFT_UNIT_FILTER}"],
+                unit_tests.parent,
+                args.test_timeout_seconds,
+            ))
+            summary["steps"].append(run_step(
+                "Raft-backed service recovery gates",
+                "raft-ha",
+                [str(integration_tests), f"--gtest_filter={RAFT_INTEGRATION_FILTER}"],
+                integration_tests.parent,
+                args.test_timeout_seconds,
+            ))
+        if run_redis_degraded:
+            summary["steps"].append(run_step(
+                "Redis service degraded-mode gates",
+                "redis",
+                [str(unit_tests), f"--gtest_filter={REDIS_DEGRADED_FILTER}"],
+                unit_tests.parent,
+                args.test_timeout_seconds,
+            ))
+            summary["steps"].append(run_step(
+                "Redis event-store degraded-mode gates",
+                "redis",
+                [
+                    str(root_unit_tests),
+                    "--gtest_filter=RedisClientTest.ConnectFailsGracefully:"
+                    "RedisClientTest.DisconnectedOperationsReturnEmpty:"
+                    "RedisEventStoreTest.NoRedisAppendReturnsFalse:"
+                    "RedisEventStoreTest.NoRedisReadReturnsEmpty:"
+                    "RedisConnectionPoolTest.AcquireWhenRedisDownReturnsEmpty",
+                ],
+                root_unit_tests.parent,
+                args.test_timeout_seconds,
+            ))
         if args.include_redis_live:
             summary["steps"].append(run_step(
                 "Redis service live gates",

@@ -25,6 +25,7 @@ volumes:
   battle-logs:
   match-logs:
   leaderboard-logs:
+  otel-data:
 
 services:
 
@@ -45,6 +46,7 @@ services:
       CONFIG_PATH: /app/config/environments/docker/gateway.json
       MANAGEMENT_PORT: "9080"
       BOOST_LOG_LEVEL: "info"
+      OTEL_EXPORT_ENDPOINT: ${OTEL_EXPORT_ENDPOINT:-}
     volumes:
       - ../../config:/app/config:ro
       - gateway-logs:/app/logs
@@ -557,6 +559,27 @@ services:
       - --config.file=/etc/prometheus/prometheus.yml
     depends_on:
       - cadvisor
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  otel-collector:
+    image: otel/opentelemetry-collector:0.104.0
+    container_name: boost-otel-collector
+    networks:
+      - boost-net
+    ports:
+      - "${OTEL_COLLECTOR_HOST_BIND:-127.0.0.1}:4318:4318"
+    volumes:
+      - ../monitoring/otel-collector.yml:/etc/otelcol/config.yaml:ro
+      - otel-data:/otel
+    restart: unless-stopped
+    profiles:
+      - otel
+    command:
+      - --config=/etc/otelcol/config.yaml
     logging:
       driver: json-file
       options:

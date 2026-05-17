@@ -883,6 +883,8 @@ bool Runtime::handle(const GatewayCommand& command) {
                                 for (const auto& push : resp["push_to_sessions"]) {
                                     std::string kind = push.value("kind", "");
                                     if (kind == "battle_finished") {
+                                        submit_battle_finished_push_to_leaderboard(
+                                            push, session_room_id);
                                         for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                             if (rid == session_room_id) {
                                                 emit(net::protocol::kBattleStatePush,
@@ -943,6 +945,8 @@ bool Runtime::handle(const GatewayCommand& command) {
                                         }
                                     }
                                 } else if (kind == "battle_finished") {
+                                    submit_battle_finished_push_to_leaderboard(
+                                        push, session_room_id);
                                     for (const auto& [sid, rid] : lookup_.session_rooms()) {
                                         if (rid == session_room_id) {
                                             emit(net::protocol::kBattleStatePush,
@@ -1014,6 +1018,288 @@ bool Runtime::handle(const GatewayCommand& command) {
             };
             battle_it->second.tell(std::move(input));
             actor_system_.dispatch_all();
+            return true;
+        }
+        case GatewayCommandType::kMatchJoin: {
+            const auto session_user_id = lookup_.user_id_for(command.session_id);
+            const auto match = parse_match_command_body(command.body);
+            if (session_user_id.empty() || !match.has_value() ||
+                !validate_match_command_body(*match) ||
+                match->user_id != session_user_id) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_match_join");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "matchmaking_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", match->user_id},
+                {"mmr", match->mmr},
+                {"mode", match->mode},
+            };
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kMatchmaking,
+                         "match_join",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kMatchJoinResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
+            return true;
+        }
+        case GatewayCommandType::kMatchLeave: {
+            const auto session_user_id = lookup_.user_id_for(command.session_id);
+            const auto match = parse_match_command_body(command.body);
+            if (session_user_id.empty() || !match.has_value() ||
+                !validate_match_command_body(*match) ||
+                match->user_id != session_user_id) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_match_leave");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "matchmaking_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", match->user_id},
+                {"mode", match->mode},
+            };
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kMatchmaking,
+                         "match_leave",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kMatchLeaveResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
+            return true;
+        }
+        case GatewayCommandType::kMatchStatus: {
+            const auto session_user_id = lookup_.user_id_for(command.session_id);
+            const auto match = parse_match_command_body(command.body);
+            if (session_user_id.empty() || !match.has_value() ||
+                !validate_match_command_body(*match) ||
+                match->user_id != session_user_id) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_match_status");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "matchmaking_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", match->user_id},
+                {"mode", match->mode},
+            };
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kMatchmaking,
+                         "match_status",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kMatchStatusResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
+            return true;
+        }
+        case GatewayCommandType::kLeaderboardSubmit: {
+            const auto session_user_id = lookup_.user_id_for(command.session_id);
+            const auto submit = parse_leaderboard_submit_command_body(command.body);
+            if (session_user_id.empty() || !submit.has_value() ||
+                !validate_leaderboard_submit_command_body(*submit) ||
+                submit->user_id != session_user_id) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_leaderboard_submit");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "leaderboard_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{
+                {"user_id", submit->user_id},
+                {"display_name", submit->display_name},
+                {"score", submit->score},
+            };
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kLeaderboard,
+                         "leaderboard_submit",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kLeaderboardSubmitResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
+            return true;
+        }
+        case GatewayCommandType::kLeaderboardTop: {
+            if (lookup_.user_id_for(command.session_id).empty()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
+                return true;
+            }
+            const auto top_k = parse_leaderboard_top_command_body(command.body);
+            if (!top_k.has_value()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_leaderboard_top");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "leaderboard_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{{"k", *top_k}};
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kLeaderboard,
+                         "leaderboard_top",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kLeaderboardTopResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
+            return true;
+        }
+        case GatewayCommandType::kLeaderboardRank: {
+            if (lookup_.user_id_for(command.session_id).empty()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     net::protocol::to_string(net::protocol::ErrorCode::kAuthRequired));
+                return true;
+            }
+            const auto rank_user_id = parse_leaderboard_rank_command_body(command.body);
+            if (!rank_user_id.has_value()) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+                     "invalid_leaderboard_rank");
+                return true;
+            }
+            if (!bridge_) {
+                emit(net::protocol::kErrorResponse,
+                     command.session_id,
+                     command.request_id,
+                     static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                     "leaderboard_backend_unavailable");
+                return true;
+            }
+
+            nlohmann::json payload{{"user_id", *rank_user_id}};
+            bridge_route(bridge_.get(),
+                         v2::service::ServiceId::kLeaderboard,
+                         "leaderboard_rank",
+                         payload.dump(),
+                         [&](const nlohmann::json& resp) {
+                             emit(net::protocol::kLeaderboardRankResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+                                  resp.dump());
+                         },
+                         [&](const std::string& reason) {
+                             emit(net::protocol::kErrorResponse,
+                                  command.session_id,
+                                  command.request_id,
+                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kSessionNotFound),
+                                  reason);
+                         });
             return true;
         }
         case GatewayCommandType::kHeartbeat:
@@ -1383,6 +1669,79 @@ void Runtime::process_deferred_finished(const std::string& battle_id) {
     }
 }
 
+void Runtime::submit_battle_finished_push_to_leaderboard(const nlohmann::json& push,
+                                                         const std::string& room_id) {
+    if (!push.is_object() || push.value("kind", "") != "battle_finished") {
+        return;
+    }
+    if (!push.contains("scores") || !push["scores"].is_array()) {
+        return;
+    }
+
+    std::vector<v2::battle::BattleScore> scores;
+    scores.reserve(push["scores"].size());
+    for (const auto& score : push["scores"]) {
+        const auto user_id = score.value("user_id", std::string{});
+        if (user_id.empty()) {
+            continue;
+        }
+        scores.push_back(v2::battle::BattleScore{
+            .user_id = user_id,
+            .score = score.value("score", std::int64_t{0}),
+        });
+    }
+
+    submit_battle_settlement_to_leaderboard(
+        push.value("battle_id", std::string{}),
+        room_id,
+        push.value("reason", std::string{"finished"}),
+        scores);
+}
+
+void Runtime::submit_battle_settlement_to_leaderboard(
+    const std::string& battle_id,
+    const std::string& room_id,
+    const std::string& reason,
+    const std::vector<v2::battle::BattleScore>& scores) {
+    if (battle_id.empty() || !bridge_) {
+        return;
+    }
+
+    for (const auto& score : scores) {
+        if (score.user_id.empty()) {
+            continue;
+        }
+        const auto idempotency_key = battle_id + ":" + score.user_id;
+        if (!leaderboard_settlement_keys_.insert(idempotency_key).second) {
+            continue;
+        }
+
+        nlohmann::json payload{
+            {"user_id", score.user_id},
+            {"display_name", score.user_id},
+            {"score", score.score},
+            {"idempotency_key", idempotency_key},
+            {"source", "battle_settlement"},
+            {"battle_id", battle_id},
+            {"room_id", room_id},
+            {"reason", reason},
+        };
+
+        auto result = bridge_->route(v2::service::ServiceId::kLeaderboard,
+                                     "leaderboard_submit",
+                                     payload.dump(),
+                                     score.user_id);
+        if (!result.success) {
+            leaderboard_settlement_keys_.erase(idempotency_key);
+            SPDLOG_ERROR("leaderboard settlement submit failed battle_id={} user_id={} reason={} service_error={}",
+                         battle_id,
+                         score.user_id,
+                         reason,
+                         static_cast<int>(result.error));
+        }
+    }
+}
+
 void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement) {
     auto archive = BattleArchive{
         .battle_id = settlement.battle_id,
@@ -1395,6 +1754,11 @@ void Runtime::archive_battle(const v2::battle::BattleSettlementPreparedMsg& sett
         .result = settlement.result,
     };
     archived_battles_[settlement.battle_id] = archive;
+    submit_battle_settlement_to_leaderboard(
+        settlement.battle_id,
+        settlement.room_id,
+        v2::battle::to_string(settlement.reason),
+        settlement.result.scores);
     if (archive_sink_ != nullptr) {
         if (!archive_sink_->persist(archive)) {
             SPDLOG_ERROR("Failed to persist battle archive {}", settlement.battle_id);

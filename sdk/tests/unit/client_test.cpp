@@ -42,6 +42,38 @@ TEST(ClientV4Test, EchoWithoutConnection) {
     EXPECT_FALSE(r.ok);
 }
 
+TEST(ClientV4Test, MatchmakingWithoutConnection) {
+    SdkClient c;
+
+    auto join = c.match_join("u", 1000, "1v1", 100ms);
+    EXPECT_FALSE(join.ok);
+    EXPECT_EQ(join.error_code, static_cast<int>(SdkError::kNotConnected));
+
+    auto leave = c.match_leave("u", "1v1", 100ms);
+    EXPECT_FALSE(leave.ok);
+    EXPECT_EQ(leave.error_code, static_cast<int>(SdkError::kNotConnected));
+
+    auto status = c.match_status("u", "1v1", 100ms);
+    EXPECT_FALSE(status.ok);
+    EXPECT_EQ(status.error_code, static_cast<int>(SdkError::kNotConnected));
+}
+
+TEST(ClientV4Test, LeaderboardWithoutConnection) {
+    SdkClient c;
+
+    auto submit = c.leaderboard_submit("u", "User", 42, 100ms);
+    EXPECT_FALSE(submit.ok);
+    EXPECT_EQ(submit.error_code, static_cast<int>(SdkError::kNotConnected));
+
+    auto top = c.leaderboard_top(10, 100ms);
+    EXPECT_FALSE(top.ok);
+    EXPECT_EQ(top.error_code, static_cast<int>(SdkError::kNotConnected));
+
+    auto rank = c.leaderboard_rank("u", 100ms);
+    EXPECT_FALSE(rank.ok);
+    EXPECT_EQ(rank.error_code, static_cast<int>(SdkError::kNotConnected));
+}
+
 TEST(ClientV4Test, HeartbeatLifecycleSafeWhenDisconnected) {
     SdkClient c;
     c.start_heartbeat(1s);

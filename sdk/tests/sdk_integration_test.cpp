@@ -4,12 +4,18 @@
 
 #include "boost_gateway/sdk/client.h"
 #include "app/logging.h"
+#include "v2/battle/battle_backend_service.h"
 #include "v2/gateway/demo_server.h"
+#include "v2/leaderboard/leaderboard_service.h"
+#include "v2/login/login_backend_service.h"
+#include "v2/match/matchmaking_service.h"
+#include "v2/room/room_backend_service.h"
 
 #include <boost/asio.hpp>
 
 #include <chrono>
 #include <atomic>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <thread>
@@ -24,11 +30,62 @@ namespace {
 struct GatewayFixture : public ::testing::Test {
     std::unique_ptr<v2::gateway::DemoServer> server_;
     std::unique_ptr<std::thread> server_thread_;
+    std::unique_ptr<v2::login::LoginBackendService> login_backend_;
+    std::unique_ptr<v2::room::RoomBackendService> room_backend_;
+    std::unique_ptr<v2::battle::BattleBackendService> battle_backend_;
+    std::unique_ptr<v2::match::MatchmakingService> matchmaking_backend_;
+    std::unique_ptr<v2::leaderboard::LeaderboardService> leaderboard_backend_;
     std::uint16_t port_ = 19201;
 
     void SetUp() override {
         app::logging::init("sdk_business_flow_tests");
-        server_ = std::make_unique<v2::gateway::DemoServer>(port_);
+        setenv("CONFIG_PATH", "/tmp/boost_gateway_sdk_business_flow_no_config.json", 1);
+
+        login_backend_ = std::make_unique<v2::login::LoginBackendService>(0);
+        room_backend_ = std::make_unique<v2::room::RoomBackendService>(0);
+        battle_backend_ = std::make_unique<v2::battle::BattleBackendService>(0);
+        matchmaking_backend_ = std::make_unique<v2::match::MatchmakingService>(0);
+        leaderboard_backend_ = std::make_unique<v2::leaderboard::LeaderboardService>(0);
+
+        login_backend_->start();
+        room_backend_->start();
+        battle_backend_->start();
+        matchmaking_backend_->start();
+        leaderboard_backend_->start();
+
+        v2::gateway::DemoServerOptions options;
+        options.login_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = login_backend_->local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        };
+        options.room_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = room_backend_->local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        };
+        options.battle_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = battle_backend_->local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        };
+        options.matchmaking_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = matchmaking_backend_->local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        };
+        options.leaderboard_backend_config = v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = leaderboard_backend_->local_port(),
+            .timeout = std::chrono::milliseconds(5000),
+            .connect_timeout = std::chrono::milliseconds(1000),
+        };
+
+        server_ = std::make_unique<v2::gateway::DemoServer>(port_, net::SessionOptions{}, std::move(options));
         server_thread_ = std::make_unique<std::thread>([this]() {
             server_->start();
         });
@@ -50,6 +107,12 @@ struct GatewayFixture : public ::testing::Test {
     void TearDown() override {
         if (server_) server_->stop();
         if (server_thread_ && server_thread_->joinable()) server_thread_->join();
+        if (leaderboard_backend_) leaderboard_backend_->stop();
+        if (matchmaking_backend_) matchmaking_backend_->stop();
+        if (battle_backend_) battle_backend_->stop();
+        if (room_backend_) room_backend_->stop();
+        if (login_backend_) login_backend_->stop();
+        unsetenv("CONFIG_PATH");
     }
 
     sdk::SdkClient make_client() { return sdk::SdkClient(); }
@@ -140,6 +203,59 @@ TEST_F(GatewayFixture, SdkEchoRoundTrip) {
     EXPECT_EQ(result.echo_body, "Hello, SDK!");
 
     client.disconnect();
+}
+
+// ─── Matchmaking / Leaderboard backends ───────────────────────────────
+
+TEST_F(GatewayFixture, SdkMatchmakingRoundTripThroughBackend) {
+    auto client = make_client();
+    ASSERT_TRUE(client.connect("127.0.0.1", port_, 5s));
+    ASSERT_TRUE(client.login("match_user", "token:match_user", 5s).ok);
+
+    auto join = client.match_join("match_user", 1180, "1v1", 5s);
+    ASSERT_TRUE(join.ok) << join.error_message << " body=" << join.response_body;
+    EXPECT_NE(join.response_body.find("\"queued\":true"), std::string::npos);
+
+    auto status = client.match_status("match_user", "1v1", 5s);
+    ASSERT_TRUE(status.ok) << status.error_message << " body=" << status.response_body;
+    EXPECT_NE(status.response_body.find("\"matched\":false"), std::string::npos);
+    EXPECT_NE(status.response_body.find("\"queue_size\""), std::string::npos);
+
+    auto leave = client.match_leave("match_user", "1v1", 5s);
+    ASSERT_TRUE(leave.ok) << leave.error_message << " body=" << leave.response_body;
+    EXPECT_NE(leave.response_body.find("\"left\":true"), std::string::npos);
+
+    client.disconnect();
+}
+
+TEST_F(GatewayFixture, SdkLeaderboardRoundTripThroughBackend) {
+    auto alice = make_client();
+    auto bob = make_client();
+    ASSERT_TRUE(alice.connect("127.0.0.1", port_, 5s));
+    ASSERT_TRUE(bob.connect("127.0.0.1", port_, 5s));
+    ASSERT_TRUE(alice.login("lb_alice", "token:lb_alice", 5s).ok);
+    ASSERT_TRUE(bob.login("lb_bob", "token:lb_bob", 5s).ok);
+
+    auto alice_submit = alice.leaderboard_submit("lb_alice", "Alice", 9001, 5s);
+    ASSERT_TRUE(alice_submit.ok) << alice_submit.error_message
+                                 << " body=" << alice_submit.response_body;
+
+    auto bob_submit = bob.leaderboard_submit("lb_bob", "Bob", 9100, 5s);
+    ASSERT_TRUE(bob_submit.ok) << bob_submit.error_message
+                               << " body=" << bob_submit.response_body;
+
+    auto top = alice.leaderboard_top(2, 5s);
+    ASSERT_TRUE(top.ok) << top.error_message << " body=" << top.response_body;
+    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_bob\""), std::string::npos);
+    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_alice\""), std::string::npos);
+
+    auto rank = alice.leaderboard_rank("lb_alice", 5s);
+    ASSERT_TRUE(rank.ok) << rank.error_message << " body=" << rank.response_body;
+    EXPECT_NE(rank.response_body.find("\"rank\":2"), std::string::npos);
+    EXPECT_NE(rank.response_body.find("\"score\":9001"), std::string::npos);
+
+    alice.disconnect();
+    bob.disconnect();
 }
 
 // ─── Reconnect / Session Resume ────────────────────────────────────────

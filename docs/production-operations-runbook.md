@@ -97,6 +97,8 @@ rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leader
 
 当前 Prometheus 配置只 scrape gateway 和 Prometheus 自身。后端服务是 TCP 协议，不直接暴露 HTTP `/metrics`；后端健康通过 Docker healthcheck、gateway backend counters、日志和 SDK full-flow 共同判断。
 
+Battle settlement 会由 gateway 自动提交到 leaderboard backend。一次战斗结束后，可以用 `gateway_backend_leaderboard_requests_total` 确认 settlement submit 与后续查询是否进入后端；如果 `gateway_backend_leaderboard_errors_total` 或 `gateway_backend_leaderboard_timeouts_total` 增长，优先检查 leaderboard backend、Redis 可用性和 gateway 日志中的 `leaderboard settlement submit failed`。
+
 ### Grafana（3000）
 
 `3000` 是 Grafana 仪表盘。首次访问需要登录，Docker Compose 默认配置为：
@@ -159,6 +161,12 @@ Grafana 已通过以下文件自动配置 Prometheus 数据源和 dashboard：
 build/default/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
 ```
 
+如果希望由脚本自动启动 gateway 与 login / room / battle / matchmaking / leaderboard 五个真实后端，并校验 `/metrics/diagnostics/json` 中的 backend request counters，使用：
+
+```bash
+python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
+```
+
 成功输出应包含：
 
 ```text
@@ -186,9 +194,58 @@ python3 scripts/collect_docker_production_perf_snapshot.py
 - `runtime/perf/docker-production-snapshot/summary.json`
 - `runtime/perf/docker-production-snapshot/report.md`
 
-脚本会从容器内读取 gateway `/ready` 与 `/metrics/diagnostics/json`，检查 Prometheus targets、Grafana health，并记录 `docker stats --no-stream` 资源快照。它需要能访问 Docker API 的本机或固定 runner 权限；如果运行环境无法连接 Docker socket，应在有 Docker 权限的终端或已授权的自动化环境中执行。
+脚本会从容器内读取 gateway `/ready` 与 `/metrics/diagnostics/json`，检查 Prometheus targets、Grafana health，并记录 `docker stats --no-stream` 资源快照。报告里的 `Business Backend Metrics` 会列出 login、room、battle、matchmaking、leaderboard 的 requests/successes/errors/timeouts/avg latency，适合判断 match/leaderboard/settlement 是否进入真实生产链路。它需要能访问 Docker API 的本机或固定 runner 权限；如果运行环境无法连接 Docker socket，应在有 Docker 权限的终端或已授权的自动化环境中执行。
 
 该快照只回答当前生产栈的运行态健康和空载资源问题，不替代 2h/8h soak、5K/10K capacity 和 battle-500 容量专项。
+
+如果要把 P3 业务闭环纳入性能 evidence，使用：
+
+```bash
+python3 scripts/collect_v2_perf_baseline.py \
+  --build-dir build/release \
+  --run-preset smoke \
+  --include-business-flow
+```
+
+该命令会启动五后端拓扑，运行 echo/battle smoke，并额外跑 SDK full-flow，覆盖 match_join/status、battle settlement 自动写 leaderboard、manual submit、top/rank 和 reconnect。
+
+### P5-P8 聚合验证
+
+剩余高级 profile 的统一验证入口：
+
+```bash
+python3 scripts/verify_p5_p8_business_closure.py \
+  --build-dir build/default \
+  --skip-build
+```
+
+可选增强：
+
+```bash
+# OTel fake collector + runtime HTTP
+python3 scripts/verify_p5_p8_business_closure.py \
+  --build-dir build/default \
+  --skip-build \
+  --include-otel-collector \
+  --include-runtime-http
+
+# 已部署 K8s / kind 环境
+python3 scripts/verify_p5_p8_business_closure.py \
+  --build-dir build/default \
+  --skip-build \
+  --include-operator-kind \
+  --include-k8s-full-flow
+```
+
+子产物：
+
+- `runtime/validation/p5-observability-summary.json`
+- `runtime/validation/p6-tls-profile-summary.json`
+- `runtime/validation/p7-control-plane-summary.json`
+- `runtime/validation/p7-k8s-full-flow-summary.json`
+- `runtime/validation/p5-p8-business-closure-summary.json`
+
+P5-P8 的详细边界见 `docs/observability-trace-runbook.md`、`docs/tls-mtls-runbook.md`、`docs/k8s-business-flow-runbook.md` 和 `docs/v3-proto-grpc-adr.md`。
 
 ## 告警分级
 
@@ -266,6 +323,9 @@ kubectl -n boost-gateway exec deploy/redis -- redis-cli ping
 2. 再重启 leaderboard backend，确认 Redis 连接重新建立。
 3. 检查 `gateway_backend_leaderboard_errors_total` 和 `gateway_backend_leaderboard_timeouts_total` 不再增长。
 4. 如果 Redis 数据有损坏风险，按 `docs/production-deployment-runbook.md` 的备份/恢复流程处理。
+5. 恢复后运行 `python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default`，确认 `battle finish -> leaderboard settlement -> top/rank` 仍可查询。
+
+Redis / Raft HA 细节见 `docs/redis-raft-ha-runbook.md`。默认生产配置不启用 Raft；matchmaking/leaderboard 三节点样例位于 `config/environments/ha/`，只在 `raft-ha` profile 或正式 HA 部署中显式启用。
 
 ## gateway error rate
 

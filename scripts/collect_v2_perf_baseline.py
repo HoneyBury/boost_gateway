@@ -378,6 +378,42 @@ def fetch_json(url: str) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+def run_business_flow_case(root: Path, build_dir: Path, output_root: Path) -> dict[str, Any]:
+    summary_path = output_root / "business-flow-summary.json"
+    started = time.monotonic()
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "verify_sdk_full_flow_client.py"),
+            "--build-dir",
+            str(build_dir),
+            "--skip-build",
+            "--summary-path",
+            str(summary_path),
+        ],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        timeout=90,
+    )
+    duration = round(time.monotonic() - started, 3)
+    result: dict[str, Any] = {
+        "name": "sdk-full-flow-business-path",
+        "passed": proc.returncode == 0,
+        "duration_seconds": duration,
+        "summary_path": str(summary_path),
+        "stdout_tail": (proc.stdout or "")[-8000:],
+        "stderr_tail": (proc.stderr or "")[-8000:],
+    }
+    if summary_path.exists():
+        try:
+            result["summary"] = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            result["passed"] = False
+            result["stderr_tail"] = f"{result['stderr_tail']}\ninvalid business flow summary: {exc}"
+    return result
+
+
 def git_commit(root: Path) -> str:
     try:
         return subprocess.check_output(
@@ -693,6 +729,45 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"{fmt_number(aggregate.get('forced_timeout'))} |"
         )
 
+    business_flow = summary.get("business_flow")
+    if isinstance(business_flow, dict):
+        flow_summary = business_flow.get("summary") if isinstance(business_flow.get("summary"), dict) else {}
+        lines.extend([
+            "",
+            "## Business Flow Coverage",
+            "",
+            "| Check | Value |",
+            "| --- | --- |",
+            f"| pass | {fmt_number(business_flow.get('passed'))} |",
+            f"| duration seconds | {fmt_number(business_flow.get('duration_seconds'), 3)} |",
+            f"| total checks | {fmt_number(flow_summary.get('total_checks'))} |",
+            f"| failed checks | {fmt_number(flow_summary.get('failed_checks'))} |",
+            f"| summary | `{business_flow.get('summary_path')}` |",
+        ])
+
+    backend_metrics = summary.get("final_backend_metrics")
+    if isinstance(backend_metrics, dict) and backend_metrics:
+        lines.extend([
+            "",
+            "## Backend Metrics Snapshot",
+            "",
+            "| Service | Requests | Successes | Errors | Timeouts | Avg latency us | Samples |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for service in ("login", "room", "battle", "matchmaking", "leaderboard"):
+            metric = backend_metrics.get(service)
+            if not isinstance(metric, dict):
+                continue
+            lines.append(
+                f"| `{service}` | "
+                f"{fmt_number(metric.get('total_requests'))} | "
+                f"{fmt_number(metric.get('total_successes'))} | "
+                f"{fmt_number(metric.get('total_errors'))} | "
+                f"{fmt_number(metric.get('total_timeouts'))} | "
+                f"{fmt_number(metric.get('avg_latency_us'))} | "
+                f"{fmt_number(metric.get('latency_sample_count'))} |"
+            )
+
     resources = summary.get("resource_analysis", {})
     lines.extend([
         "",
@@ -805,8 +880,15 @@ def main() -> int:
     parser.add_argument("--login-port", type=int, default=9202)
     parser.add_argument("--room-port", type=int, default=9302)
     parser.add_argument("--battle-port", type=int, default=9303)
+    parser.add_argument("--matchmaking-port", type=int, default=9304)
+    parser.add_argument("--leaderboard-port", type=int, default=9305)
     parser.add_argument("--http-port", type=int, default=9080)
     parser.add_argument("--io-cores", type=int, default=4)
+    parser.add_argument(
+        "--include-business-flow",
+        action="store_true",
+        help="Run SDK full-flow business coverage after pressure cases and include it in the report.",
+    )
     parser.add_argument(
         "--backend-pool-size",
         type=int,
@@ -834,6 +916,8 @@ def main() -> int:
         "login": resolve_executable(build_dir, "v2_login_backend"),
         "room": resolve_executable(build_dir, "v2_room_backend"),
         "battle": resolve_executable(build_dir, "v2_battle_backend"),
+        "matchmaking": resolve_executable(build_dir, "v2_match_backend"),
+        "leaderboard": resolve_executable(build_dir, "v2_leaderboard_backend"),
         "gateway": resolve_executable(build_dir, "v2_gateway_demo"),
         "pressure": resolve_executable(build_dir, "v2_gateway_pressure"),
     }
@@ -874,12 +958,33 @@ def main() -> int:
         managed.append(ManagedProcess("v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir))
         wait_tcp_port("127.0.0.1", args.battle_port)
 
+        managed.append(ManagedProcess(
+            "v2_match_backend",
+            executables["matchmaking"],
+            [str(args.matchmaking_port)],
+            log_dir,
+            {"SERVICE_PORT": str(args.matchmaking_port), "MATCH_PORT": str(args.matchmaking_port)},
+        ))
+        wait_tcp_port("127.0.0.1", args.matchmaking_port)
+
+        managed.append(ManagedProcess(
+            "v2_leaderboard_backend",
+            executables["leaderboard"],
+            [str(args.leaderboard_port)],
+            log_dir,
+            {"SERVICE_PORT": str(args.leaderboard_port), "LEADERBOARD_PORT": str(args.leaderboard_port)},
+        ))
+        wait_tcp_port("127.0.0.1", args.leaderboard_port)
+
         gateway_args = [
+            "--port", str(args.gateway_port),
             "--io-cores", str(args.io_cores),
             "--http-port", str(args.http_port),
             "--login-port", str(args.login_port),
             "--room-port", str(args.room_port),
             "--battle-port", str(args.battle_port),
+            "--matchmaking-port", str(args.matchmaking_port),
+            "--leaderboard-port", str(args.leaderboard_port),
         ]
         gateway_env = {
             "V2_RATE_LIMIT_CONNECTION": "100000",
@@ -910,6 +1015,8 @@ def main() -> int:
                 "login_port": args.login_port,
                 "room_port": args.room_port,
                 "battle_port": args.battle_port,
+                "matchmaking_port": args.matchmaking_port,
+                "leaderboard_port": args.leaderboard_port,
                 "http_port": args.http_port,
                 "io_cores": args.io_cores,
                 "battle_max_frames": battle_max_frames,
@@ -919,6 +1026,8 @@ def main() -> int:
             "case_aggregates": [],
             "release_gates": {},
             "process_snapshots": {},
+            "business_flow": None,
+            "final_backend_metrics": {},
         }
         summary["process_snapshots"]["idle"] = snapshot_processes(managed)
 
@@ -946,6 +1055,23 @@ def main() -> int:
 
         summary["release_gates"] = evaluate_release_gates(summary["case_aggregates"])
         summary["resource_analysis"] = analyze_resources(summary)
+        final_diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
+        summary["final_backend_metrics"] = final_diagnostics.get("backend_metrics", {})
+        (result_dir / "final.gateway.diagnostics.json").write_text(
+            json.dumps(final_diagnostics, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        if args.include_business_flow:
+            log_step("Running SDK full-flow business coverage")
+            summary["business_flow"] = run_business_flow_case(root, build_dir, output_root)
+            if not summary["business_flow"].get("passed"):
+                summary["release_gates"].setdefault("checks", []).append({
+                    "case": "sdk-full-flow-business-path",
+                    "passed": False,
+                    "criteria": "SDK full-flow covers login/room/battle/matchmaking/leaderboard/settlement",
+                    "observed": {"duration_seconds": summary["business_flow"].get("duration_seconds")},
+                })
+                summary["release_gates"]["overall_pass"] = False
 
         summary_path = output_root / "summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")

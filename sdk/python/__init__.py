@@ -45,6 +45,15 @@ class GsdkBattleStartResult(ctypes.Structure):
 class GsdkBattleInputResult(ctypes.Structure):
     _fields_ = [("ok", c_int), ("error_code", c_int32), ("input_seq", c_uint64), ("error_message", c_char*256)]
 
+class GsdkMatchResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("response_body", c_char*4096), ("error_message", c_char*256)]
+
+class GsdkLeaderboardSubmitResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("response_body", c_char*4096), ("error_message", c_char*256)]
+
+class GsdkLeaderboardQueryResult(ctypes.Structure):
+    _fields_ = [("ok", c_int), ("error_code", c_int32), ("response_body", c_char*4096), ("error_message", c_char*256)]
+
 class GsdkEchoResult(ctypes.Structure):
     _fields_ = [("ok", c_int), ("body", c_char*4096)]
 
@@ -65,6 +74,12 @@ _lrm = _b("gsdk_leave_room", GsdkRoomResult, c_void_p, c_char_p, c_int32)
 _sr = _b("gsdk_set_ready", GsdkRoomResult, c_void_p, c_int, c_int32)
 _sb = _b("gsdk_start_battle", GsdkBattleStartResult, c_void_p, c_char_p, c_int32)
 _si = _b("gsdk_send_battle_input", GsdkBattleInputResult, c_void_p, c_char_p, c_int32)
+_mj = _b("gsdk_match_join", GsdkMatchResult, c_void_p, c_char_p, ctypes.c_int64, c_char_p, c_int32)
+_ml = _b("gsdk_match_leave", GsdkMatchResult, c_void_p, c_char_p, c_char_p, c_int32)
+_ms = _b("gsdk_match_status", GsdkMatchResult, c_void_p, c_char_p, c_char_p, c_int32)
+_lbs = _b("gsdk_leaderboard_submit", GsdkLeaderboardSubmitResult, c_void_p, c_char_p, c_char_p, ctypes.c_int64, c_int32)
+_lbt = _b("gsdk_leaderboard_top", GsdkLeaderboardQueryResult, c_void_p, ctypes.c_uint32, c_int32)
+_lbr = _b("gsdk_leaderboard_rank", GsdkLeaderboardQueryResult, c_void_p, c_char_p, c_int32)
 _ec = _b("gsdk_echo", GsdkEchoResult, c_void_p, c_char_p, c_int32)
 _op = _b("gsdk_on_push", None, c_void_p, PUSH_CB, c_void_p)
 _od = _b("gsdk_on_disconnect", None, c_void_p, DC_CB, c_void_p)
@@ -109,6 +124,24 @@ class SdkClient:
         v = _sb(self._h, r.encode(), ms); return {"ok":bool(v.ok),"battle_id":v.battle_id.decode()}
     def send_battle_input(self, d, ms=5000):
         v = _si(self._h, d.encode(), ms); return {"ok":bool(v.ok)}
+    def match_join(self, user_id, mmr=1000, mode="1v1", ms=5000):
+        v = _mj(self._h, user_id.encode(), mmr, mode.encode(), ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
+    def match_leave(self, user_id, mode="1v1", ms=5000):
+        v = _ml(self._h, user_id.encode(), mode.encode(), ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
+    def match_status(self, user_id, mode="1v1", ms=5000):
+        v = _ms(self._h, user_id.encode(), mode.encode(), ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
+    def leaderboard_submit(self, user_id, display_name, score, ms=5000):
+        v = _lbs(self._h, user_id.encode(), display_name.encode(), score, ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
+    def leaderboard_top(self, k=10, ms=5000):
+        v = _lbt(self._h, k, ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
+    def leaderboard_rank(self, user_id, ms=5000):
+        v = _lbr(self._h, user_id.encode(), ms)
+        return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
     def echo(self, b, ms=5000):
         v = _ec(self._h, b.encode(), ms); return {"ok":bool(v.ok),"body":v.body.decode()}
     def __del__(self):

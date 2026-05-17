@@ -7,6 +7,8 @@
 #include "boost_gateway/sdk/types.h"
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -60,6 +62,34 @@ public:
 
     BattleInputResult send_battle_input(const std::string& input_data,
                                          std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    // ── Matchmaking ─────────────────────────────────────────────────
+
+    MatchResult match_join(const std::string& user_id,
+                           std::int64_t mmr = 1000,
+                           const std::string& mode = "1v1",
+                           std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    MatchResult match_leave(const std::string& user_id,
+                            const std::string& mode = "1v1",
+                            std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    MatchResult match_status(const std::string& user_id,
+                             const std::string& mode = "1v1",
+                             std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    // ── Leaderboard ─────────────────────────────────────────────────
+
+    LeaderboardSubmitResult leaderboard_submit(const std::string& user_id,
+                                               const std::string& display_name,
+                                               std::int64_t score,
+                                               std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    LeaderboardQueryResult leaderboard_top(std::size_t k = 10,
+                                           std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    LeaderboardQueryResult leaderboard_rank(const std::string& user_id,
+                                            std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
     // ── Echo (test) ─────────────────────────────────────────────────
 

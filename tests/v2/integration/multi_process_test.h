@@ -126,12 +126,6 @@ private:
 //   }
 class MultiProcessFixture : public ::testing::Test {
 public:
-    // Default ports (9201-9303 range).
-    static constexpr std::uint16_t kGatewayPort = 9201;
-    static constexpr std::uint16_t kLoginPort = 9202;
-    static constexpr std::uint16_t kRoomPort = 9302;
-    static constexpr std::uint16_t kBattlePort = 9303;
-
     static constexpr std::chrono::milliseconds kServiceStartTimeout{15'000};
     static constexpr std::chrono::milliseconds kServicePollInterval{100};
 
@@ -169,6 +163,8 @@ protected:
     static std::string login_binary();
     static std::string room_binary();
     static std::string battle_binary();
+    static std::string leaderboard_binary();
+    static std::uint16_t reserve_free_port();
 
     ServiceProcess* find_service(const std::string& service_id);
     const ServiceProcess* find_service(const std::string& service_id) const;
@@ -176,6 +172,11 @@ protected:
     std::vector<ServiceProcess> services_;
     std::string startup_error_;
     bool all_started_ = false;
+    std::uint16_t gateway_port_ = 0;
+    std::uint16_t login_port_ = 0;
+    std::uint16_t room_port_ = 0;
+    std::uint16_t battle_port_ = 0;
+    std::uint16_t leaderboard_port_ = 0;
 };
 
 }  // namespace v2_test

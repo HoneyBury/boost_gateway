@@ -23,6 +23,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <spawn.h>
+#include <stdlib.h>
 
 extern "C" char **environ;
 #endif
@@ -406,6 +407,12 @@ std::string MultiProcessFixture::battle_binary() { return V2_BATTLE_BINARY; }
 std::string MultiProcessFixture::battle_binary() { return "v2_battle_backend"; }
 #endif
 
+#ifdef V2_LEADERBOARD_BINARY
+std::string MultiProcessFixture::leaderboard_binary() { return V2_LEADERBOARD_BINARY; }
+#else
+std::string MultiProcessFixture::leaderboard_binary() { return "v2_leaderboard_backend"; }
+#endif
+
 ServiceProcess* MultiProcessFixture::find_service(const std::string& service_id) {
     for (auto& svc : services_) {
         if (svc.service_id == service_id) return &svc;
@@ -424,20 +431,28 @@ void MultiProcessFixture::SetUp() {
     services_.clear();
     startup_error_.clear();
     all_started_ = false;
+    gateway_port_ = reserve_free_port();
+    login_port_ = reserve_free_port();
+    room_port_ = reserve_free_port();
+    battle_port_ = reserve_free_port();
+    leaderboard_port_ = reserve_free_port();
+    setenv("CONFIG_PATH", "/tmp/boost_gateway_multi_process_no_config.json", 1);
 }
 
 void MultiProcessFixture::TearDown() {
     stop_all();
     services_.clear();
+    unsetenv("CONFIG_PATH");
 }
 
 bool MultiProcessFixture::start_all() {
     if (all_started_) return true;
 
-    // Start in order: login → room → battle → gateway
+    // Start in order: login → room → battle → leaderboard → gateway
     if (!start_service("login")) return false;
     if (!start_service("room")) return false;
     if (!start_service("battle")) return false;
+    if (!start_service("leaderboard")) return false;
     if (!start_service("gateway")) return false;
 
     all_started_ = true;
@@ -447,6 +462,7 @@ bool MultiProcessFixture::start_all() {
 void MultiProcessFixture::stop_all() {
     // Stop in reverse order
     stop_service("gateway");
+    stop_service("leaderboard");
     stop_service("battle");
     stop_service("room");
     stop_service("login");
@@ -472,25 +488,35 @@ bool MultiProcessFixture::start_service(const std::string& service_id) {
 
     if (service_id == "gateway") {
         binary = gateway_binary();
-        port = kGatewayPort;
+        port = gateway_port_;
         args = {
+            "--port", std::to_string(gateway_port_),
             "--io-cores", "1",
             "--login-host", "127.0.0.1",
-            "--login-port", std::to_string(kLoginPort),
+            "--login-port", std::to_string(login_port_),
             "--room-host", "127.0.0.1",
-            "--room-port", std::to_string(kRoomPort),
+            "--room-port", std::to_string(room_port_),
             "--battle-host", "127.0.0.1",
-            "--battle-port", std::to_string(kBattlePort),
+            "--battle-port", std::to_string(battle_port_),
+            "--leaderboard-host", "127.0.0.1",
+            "--leaderboard-port", std::to_string(leaderboard_port_),
         };
     } else if (service_id == "login") {
         binary = login_binary();
-        port = kLoginPort;
+        port = login_port_;
+        args = {std::to_string(login_port_)};
     } else if (service_id == "room") {
         binary = room_binary();
-        port = kRoomPort;
+        port = room_port_;
+        args = {std::to_string(room_port_)};
     } else if (service_id == "battle") {
         binary = battle_binary();
-        port = kBattlePort;
+        port = battle_port_;
+        args = {std::to_string(battle_port_)};
+    } else if (service_id == "leaderboard") {
+        binary = leaderboard_binary();
+        port = leaderboard_port_;
+        args = {std::to_string(leaderboard_port_)};
     } else {
         startup_error_ = "unknown service: " + service_id;
         return false;
@@ -519,8 +545,14 @@ bool MultiProcessFixture::start_service(const std::string& service_id) {
 
 std::unique_ptr<TestClient> MultiProcessFixture::make_client() {
     auto client = std::make_unique<TestClient>();
-    client->connect(kGatewayPort);
+    client->connect(gateway_port_);
     return client;
+}
+
+std::uint16_t MultiProcessFixture::reserve_free_port() {
+    boost::asio::io_context io;
+    tcp::acceptor acceptor(io, tcp::endpoint(tcp::v4(), 0));
+    return acceptor.local_endpoint().port();
 }
 
 bool MultiProcessFixture::wait_for_port(std::uint16_t port,

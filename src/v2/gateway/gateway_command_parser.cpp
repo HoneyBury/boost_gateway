@@ -2,6 +2,7 @@
 
 #include "v2/gateway/battle_protocol_codec.h"
 
+#include <charconv>
 #include <cstdlib>
 #include <sstream>
 #include <vector>
@@ -18,6 +19,28 @@ std::vector<std::string> split(std::string_view body, char delimiter) {
         parts.push_back(item);
     }
     return parts;
+}
+
+std::optional<std::int64_t> parse_i64(std::string_view raw) noexcept {
+    std::int64_t value = 0;
+    const auto* begin = raw.data();
+    const auto* end = raw.data() + raw.size();
+    const auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
+    return value;
+}
+
+std::optional<std::size_t> parse_size(std::string_view raw) noexcept {
+    std::size_t value = 0;
+    const auto* begin = raw.data();
+    const auto* end = raw.data() + raw.size();
+    const auto [ptr, ec] = std::from_chars(begin, end, value);
+    if (ec != std::errc{} || ptr != end) {
+        return std::nullopt;
+    }
+    return value;
 }
 
 }  // namespace
@@ -111,6 +134,70 @@ bool validate_battle_input_command_body(const ParsedBattleInputCommandBody& body
         return !body.input_data.empty();
     }
     return !body.input_data.empty();
+}
+
+std::optional<ParsedMatchCommandBody> parse_match_command_body(std::string_view body) {
+    const auto parts = split(body, '|');
+    if (parts.empty() || parts.front().empty()) {
+        return std::nullopt;
+    }
+
+    ParsedMatchCommandBody parsed;
+    parsed.user_id = parts[0];
+    if (parts.size() >= 2 && !parts[1].empty()) {
+        const auto mmr = parse_i64(parts[1]);
+        if (!mmr.has_value()) {
+            return std::nullopt;
+        }
+        parsed.mmr = *mmr;
+    }
+    if (parts.size() >= 3 && !parts[2].empty()) {
+        parsed.mode = parts[2];
+    }
+    return parsed;
+}
+
+bool validate_match_command_body(const ParsedMatchCommandBody& body) noexcept {
+    return !body.user_id.empty() &&
+           (body.mode == "1v1" || body.mode == "2v2" || body.mode == "4v4");
+}
+
+std::optional<ParsedLeaderboardSubmitCommandBody>
+parse_leaderboard_submit_command_body(std::string_view body) {
+    const auto parts = split(body, '|');
+    if (parts.size() < 3 || parts[0].empty()) {
+        return std::nullopt;
+    }
+
+    const auto score = parse_i64(parts[2]);
+    if (!score.has_value()) {
+        return std::nullopt;
+    }
+
+    return ParsedLeaderboardSubmitCommandBody{
+        .user_id = parts[0],
+        .display_name = parts[1],
+        .score = *score,
+    };
+}
+
+bool validate_leaderboard_submit_command_body(
+    const ParsedLeaderboardSubmitCommandBody& body) noexcept {
+    return !body.user_id.empty();
+}
+
+std::optional<std::size_t> parse_leaderboard_top_command_body(std::string_view body) {
+    if (body.empty()) {
+        return std::size_t{10};
+    }
+    return parse_size(body);
+}
+
+std::optional<std::string> parse_leaderboard_rank_command_body(std::string_view body) {
+    if (body.empty()) {
+        return std::nullopt;
+    }
+    return std::string(body);
 }
 
 }  // namespace v2::gateway

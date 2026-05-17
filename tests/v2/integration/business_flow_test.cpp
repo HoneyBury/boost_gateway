@@ -150,7 +150,24 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
         EXPECT_TRUE(bob_finished)
             << "Bob did not receive battle-finished push";
 
-        // ── 14. After battle, ready state reset ────────────────────
+        // ── 14. Battle settlement auto-submits scores to leaderboard ─
+        resp = alice->exchange(net::protocol::kLeaderboardRankRequest, rid++,
+                              "alice", kDefaultTimeout);
+        EXPECT_EQ(resp.message_id, net::protocol::kLeaderboardRankResponse)
+            << "body=" << resp.body << " error_code=" << resp.error_code;
+        EXPECT_NE(resp.body.find("\"user_id\":\"alice\""), std::string::npos)
+            << resp.body;
+
+        resp = bob->exchange(net::protocol::kLeaderboardTopRequest, rid++,
+                            "10", kDefaultTimeout);
+        EXPECT_EQ(resp.message_id, net::protocol::kLeaderboardTopResponse)
+            << "body=" << resp.body << " error_code=" << resp.error_code;
+        EXPECT_NE(resp.body.find("\"user_id\":\"alice\""), std::string::npos)
+            << resp.body;
+        EXPECT_NE(resp.body.find("\"user_id\":\"bob\""), std::string::npos)
+            << resp.body;
+
+        // ── 15. After battle, ready state reset ────────────────────
         // Alice re-readies up (post-battle the room may re-arm ready).
         resp = alice->exchange(net::protocol::kRoomReadyRequest, rid++,
                               "true", kDefaultTimeout);
@@ -159,7 +176,7 @@ TEST_F(MultiProcessFixture, BusinessFlowFullCycle) {
                             "true", kDefaultTimeout);
         EXPECT_EQ(resp.message_id, net::protocol::kRoomReadyResponse);
 
-        // ── 15. Alice leaves room → member count decreases ─────────
+        // ── 16. Alice leaves room → member count decreases ─────────
         resp = alice->exchange(net::protocol::kRoomLeaveRequest, rid++,
                               "e2e_room", kDefaultTimeout);
         EXPECT_EQ(resp.message_id, net::protocol::kRoomLeaveResponse);

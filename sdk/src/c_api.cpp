@@ -62,6 +62,27 @@ static gsdk_battle_input_result_t battle_input_error(const char* message) {
     return out;
 }
 
+static gsdk_match_result_t match_error(const char* message) {
+    gsdk_match_result_t out{};
+    out.error_code = -1;
+    copy_cstr(out.error_message, sizeof(out.error_message), message);
+    return out;
+}
+
+static gsdk_leaderboard_submit_result_t leaderboard_submit_error(const char* message) {
+    gsdk_leaderboard_submit_result_t out{};
+    out.error_code = -1;
+    copy_cstr(out.error_message, sizeof(out.error_message), message);
+    return out;
+}
+
+static gsdk_leaderboard_query_result_t leaderboard_query_error(const char* message) {
+    gsdk_leaderboard_query_result_t out{};
+    out.error_code = -1;
+    copy_cstr(out.error_message, sizeof(out.error_message), message);
+    return out;
+}
+
 static gsdk_echo_result_t echo_error(const char* message) {
     gsdk_echo_result_t out{};
     copy_cstr(out.body, sizeof(out.body), message);
@@ -245,6 +266,102 @@ gsdk_battle_input_result_t gsdk_send_battle_input(gsdk_client_t* c, const char* 
     }
     gsdk_battle_input_result_t out{}; out.ok = r.ok; out.error_code = r.error_code; out.input_seq = r.input_seq;
     copy_str(out.error_message, 256, r.error_message);
+    return out;
+}
+
+gsdk_match_result_t gsdk_match_join(gsdk_client_t* c, const char* user_id, int64_t mmr, const char* mode, int32_t ms) {
+    if (c == nullptr || user_id == nullptr || mode == nullptr || ms < 0) {
+        return match_error("invalid_argument");
+    }
+    MatchResult r;
+    try {
+        r = c->client.match_join(user_id, mmr, mode, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return match_error(ex.what());
+    }
+    gsdk_match_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
+    return out;
+}
+
+gsdk_match_result_t gsdk_match_leave(gsdk_client_t* c, const char* user_id, const char* mode, int32_t ms) {
+    if (c == nullptr || user_id == nullptr || mode == nullptr || ms < 0) {
+        return match_error("invalid_argument");
+    }
+    MatchResult r;
+    try {
+        r = c->client.match_leave(user_id, mode, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return match_error(ex.what());
+    }
+    gsdk_match_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
+    return out;
+}
+
+gsdk_match_result_t gsdk_match_status(gsdk_client_t* c, const char* user_id, const char* mode, int32_t ms) {
+    if (c == nullptr || user_id == nullptr || mode == nullptr || ms < 0) {
+        return match_error("invalid_argument");
+    }
+    MatchResult r;
+    try {
+        r = c->client.match_status(user_id, mode, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return match_error(ex.what());
+    }
+    gsdk_match_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
+    return out;
+}
+
+gsdk_leaderboard_submit_result_t gsdk_leaderboard_submit(gsdk_client_t* c, const char* user_id, const char* display_name, int64_t score, int32_t ms) {
+    if (c == nullptr || user_id == nullptr || display_name == nullptr || ms < 0) {
+        return leaderboard_submit_error("invalid_argument");
+    }
+    LeaderboardSubmitResult r;
+    try {
+        r = c->client.leaderboard_submit(user_id, display_name, score, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return leaderboard_submit_error(ex.what());
+    }
+    gsdk_leaderboard_submit_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
+    return out;
+}
+
+gsdk_leaderboard_query_result_t gsdk_leaderboard_top(gsdk_client_t* c, uint32_t k, int32_t ms) {
+    if (c == nullptr || ms < 0) {
+        return leaderboard_query_error("invalid_argument");
+    }
+    LeaderboardQueryResult r;
+    try {
+        r = c->client.leaderboard_top(k, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return leaderboard_query_error(ex.what());
+    }
+    gsdk_leaderboard_query_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
+    return out;
+}
+
+gsdk_leaderboard_query_result_t gsdk_leaderboard_rank(gsdk_client_t* c, const char* user_id, int32_t ms) {
+    if (c == nullptr || user_id == nullptr || ms < 0) {
+        return leaderboard_query_error("invalid_argument");
+    }
+    LeaderboardQueryResult r;
+    try {
+        r = c->client.leaderboard_rank(user_id, std::chrono::milliseconds(ms));
+    } catch (const std::exception& ex) {
+        return leaderboard_query_error(ex.what());
+    }
+    gsdk_leaderboard_query_result_t out{}; out.ok = r.ok; out.error_code = r.error_code;
+    copy_str(out.response_body, sizeof(out.response_body), r.response_body);
+    copy_str(out.error_message, sizeof(out.error_message), r.error_message);
     return out;
 }
 

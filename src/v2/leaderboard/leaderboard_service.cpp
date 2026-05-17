@@ -233,6 +233,8 @@ private:
     v3::cluster::RaftConfig raft_config_;
     std::unique_ptr<v3::cluster::RaftNode> raft_node_;
     std::atomic<bool> leader_{false};
+    std::mutex idempotency_mutex_;
+    std::set<std::string> applied_idempotency_keys_;
 
     v2::service::BackendEnvelope make_response(nlohmann::json body) {
         v2::service::BackendEnvelope resp;
@@ -260,8 +262,27 @@ private:
         const std::string user_id = doc.value("user_id", "");
         const std::string display_name = doc.value("display_name", "");
         const std::int64_t score = doc.value("score", 0);
+        const std::string idempotency_key = doc.value("idempotency_key", "");
 
         if (user_id.empty()) return make_error(-1004, "empty_user_id");
+
+        if (!idempotency_key.empty()) {
+            std::lock_guard lock(idempotency_mutex_);
+            const auto [_, inserted] = applied_idempotency_keys_.insert(idempotency_key);
+            if (!inserted) {
+                nlohmann::json body{{"status", "ok"},
+                                    {"user_id", user_id},
+                                    {"idempotent", true}};
+                if (auto current_rank = rank_of(user_id); current_rank.has_value()) {
+                    body["rank"] = *current_rank;
+                }
+                auto resp = make_response(body);
+                return v2::service::wrap_typed_response_if_needed(
+                    decoded->typed_request,
+                    std::move(resp),
+                    v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
+            }
+        }
 
         if (raft_node_) {
             if (!raft_node_->is_leader()) {
