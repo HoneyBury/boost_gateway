@@ -131,6 +131,8 @@ C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImpor
 ```bash
 python3 scripts/check_sdk_distribution.py --build-dir build/default
 python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
+python3 scripts/verify_sdk_business_flow.py --build-dir build/default
+python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
 ```
 
 SDK 依赖:

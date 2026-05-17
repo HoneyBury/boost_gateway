@@ -227,6 +227,24 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         "verify_sdk_package_consumer.py" in read_text("sdk/docs/README.md"),
         "SDK docs mention installed package consumer verification",
     )
+    add_check(
+        checks,
+        "sdk-tests:business-flow-target",
+        "sdk_business_flow_tests" in tests_cmake and "sdk_integration_test.cpp" in tests_cmake,
+        "SDK business flow integration target is registered",
+    )
+    add_check(
+        checks,
+        "sdk-tools:business-flow",
+        (REPO_ROOT / "scripts/verify_sdk_business_flow.py").exists(),
+        "SDK business flow verification script exists",
+    )
+    add_check(
+        checks,
+        "sdk-tools:full-flow-client",
+        (REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").exists(),
+        "SDK full-flow example verification script exists",
+    )
 
 
 def validate_build_artifacts(build_dir: Path | None, checks: list[dict[str, Any]]) -> None:

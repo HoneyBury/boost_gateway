@@ -3,6 +3,7 @@
 // battle start/move/finish, service split data consistency.
 
 #include "boost_gateway/sdk/client.h"
+#include "app/logging.h"
 #include "v2/gateway/demo_server.h"
 
 #include <boost/asio.hpp>
@@ -25,6 +26,7 @@ struct GatewayFixture : public ::testing::Test {
     std::uint16_t port_ = 19201;
 
     void SetUp() override {
+        app::logging::init("sdk_business_flow_tests");
         server_ = std::make_unique<v2::gateway::DemoServer>(port_);
         server_thread_ = std::make_unique<std::thread>([this]() {
             server_->start();

@@ -22,6 +22,8 @@
 | P6 生产证据聚合入口 | `python scripts/verify_production_evidence_gate.py --build-dir <build-dir> --skip-build` | 有界 stability、P3 data recovery、Redis/Raft/Operator 专项证据全部通过；固定 runner 可追加 Redis live、Operator kind、settlement replay、release/capacity baseline |
 | P3 SDK 分发门禁 | `python scripts/check_sdk_distribution.py --build-dir <build-dir>` | SDK 版本、CMake package、C ABI 动态库、Python/C# wrapper、C ABI 测试和构建产物一致 |
 | P3 SDK 安装消费 | `python scripts/verify_sdk_package_consumer.py --build-dir <build-dir>` | SDK 可安装到临时 prefix，外部 CMake 项目可 `find_package(boost_gateway_sdk)` 并链接 `boost_gateway::sdk` |
+| P3 SDK 业务闭环 | `python scripts/verify_sdk_business_flow.py --build-dir <build-dir>` | SDK C++ 业务 API 跑通 login、echo、room、ready、battle、reconnect 与多客户端闭环 |
+| P3 SDK 示例联调 | `python scripts/verify_sdk_full_flow_client.py --build-dir <build-dir>` | 启动真实 `v2_gateway_demo` 并运行 `sdk_full_flow_client` 完整流程 |
 
 ## 2. R4 契约状态
 
