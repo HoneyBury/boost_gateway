@@ -33,5 +33,11 @@
 
 ## 下一步优先级
 
-1. 将 P6 本机交付记录同步到 main，并在固定 runner 上继续按 `docs/fixed-runner-playbook.md` 沉淀 capacity、settlement replay 和长稳数据。
-2. 持续扩充 `docs/reliability-matrix.md`，每新增可靠性承诺必须绑定测试或脚本证据。
+下一大阶段以 `docs/production-stabilization-roadmap.md` 为规划事实源，主题是生产稳定化与交付闭环，不继续横向扩展功能模块。
+
+1. P0：生产部署口径与发布 runbook 收束。
+2. P1：性能基线与容量事实闭环。
+3. P2：真实生产证据固定 runner 流水线。
+4. P3：监控、告警与运维 runbook 产品化。
+5. P4：SDK 企业级封装稳定化。
+6. P5：长稳、故障注入与回滚演练。
