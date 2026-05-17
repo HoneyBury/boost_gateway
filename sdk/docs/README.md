@@ -126,6 +126,13 @@ target_link_libraries(your_app PRIVATE boost_gateway::sdk)
 
 C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImport` 绑定。C ABI 入口包含 `gsdk_version()`，用于运行时校验 native library 与语言封装版本是否匹配。
 
+分发验证入口：
+
+```bash
+python3 scripts/check_sdk_distribution.py --build-dir build/default
+python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
+```
+
 SDK 依赖:
 - Boost.Asio (TCP 网络, 头文件)
 - nlohmann_json (JSON, 头文件)

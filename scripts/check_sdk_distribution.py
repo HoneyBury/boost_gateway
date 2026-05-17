@@ -194,6 +194,41 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
     )
 
 
+def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
+    tests_cmake = read_text("sdk/tests/CMakeLists.txt")
+    c_api_test = read_text("sdk/tests/unit/c_api_test.cpp")
+    add_check(
+        checks,
+        "sdk-tests:c-api-test-registered",
+        "unit/c_api_test.cpp" in tests_cmake,
+        "C ABI boundary tests are compiled into sdk_tests",
+    )
+    add_check(
+        checks,
+        "sdk-tests:c-api-version",
+        "gsdk_version()" in c_api_test and "BOOST_GATEWAY_SDK_VERSION" in c_api_test,
+        "C ABI tests verify native version",
+    )
+    add_check(
+        checks,
+        "sdk-tests:c-api-null-guards",
+        "NullHandleOperationsAreSafe" in c_api_test and "InvalidArgumentsReturnErrors" in c_api_test,
+        "C ABI tests cover null handles and invalid arguments",
+    )
+    add_check(
+        checks,
+        "sdk-tools:consumer-smoke",
+        (REPO_ROOT / "scripts/verify_sdk_package_consumer.py").exists(),
+        "installed package consumer verification script exists",
+    )
+    add_check(
+        checks,
+        "sdk-docs:consumer-smoke",
+        "verify_sdk_package_consumer.py" in read_text("sdk/docs/README.md"),
+        "SDK docs mention installed package consumer verification",
+    )
+
+
 def validate_build_artifacts(build_dir: Path | None, checks: list[dict[str, Any]]) -> None:
     if build_dir is None:
         return
@@ -233,6 +268,7 @@ def main() -> int:
     validate_c_api(checks)
     validate_wrappers(checks)
     validate_docs(checks)
+    validate_tests_and_tools(checks)
     validate_build_artifacts(args.build_dir, checks)
 
     failed = [check for check in checks if not check["passed"]]

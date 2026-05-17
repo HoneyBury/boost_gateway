@@ -20,7 +20,8 @@
 | Release baseline 聚合入口 | `python scripts/collect_release_baseline.py --build-dir build/windows-ninja-release --configuration Release --perf-preset baseline --perf-repetitions 3` | R4 release contract 与 v2 多进程 `echo/battle` baseline 均通过，并写出 `runtime/validation/release-baseline-summary.json` 与 `runtime/perf/release-baseline/summary.json` |
 | 专项 E2E 聚合入口 | `python scripts/verify_specialized_e2e.py --build-dir <build-dir> --skip-build` | Raft 集群/恢复与 Redis 降级路径通过；Redis live 与 Operator kind 通过显式参数启用 |
 | P6 生产证据聚合入口 | `python scripts/verify_production_evidence_gate.py --build-dir <build-dir> --skip-build` | 有界 stability、P3 data recovery、Redis/Raft/Operator 专项证据全部通过；固定 runner 可追加 Redis live、Operator kind、settlement replay、release/capacity baseline |
-| P3 SDK 分发门禁 | `python scripts/check_sdk_distribution.py --build-dir <build-dir>` | SDK 版本、CMake package、C ABI 动态库、Python/C# wrapper 和构建产物一致 |
+| P3 SDK 分发门禁 | `python scripts/check_sdk_distribution.py --build-dir <build-dir>` | SDK 版本、CMake package、C ABI 动态库、Python/C# wrapper、C ABI 测试和构建产物一致 |
+| P3 SDK 安装消费 | `python scripts/verify_sdk_package_consumer.py --build-dir <build-dir>` | SDK 可安装到临时 prefix，外部 CMake 项目可 `find_package(boost_gateway_sdk)` 并链接 `boost_gateway::sdk` |
 
 ## 2. R4 契约状态
 
