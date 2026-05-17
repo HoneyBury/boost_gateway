@@ -21,6 +21,7 @@ REQUIRED_FILES = {
     "reliability-matrix": "docs/reliability-matrix.md",
     "fixed-runner-playbook": "docs/fixed-runner-playbook.md",
     "production-evidence-runner": "docs/production-evidence-runner.md",
+    "production-candidate-hardening-plan": "docs/production-candidate-hardening-plan.md",
     "p5-resilience-release": "docs/releases/v3.3.2-p5-production-resilience.md",
     "p6-production-evidence-release": "docs/releases/v3.3.2-p6-production-evidence.md",
     "deploy-operability-gate": "scripts/check_deploy_operability.py",
@@ -36,9 +37,19 @@ REQUIRED_FILES = {
 
 REQUIRED_TEXT = {
     "docs/production-stabilization-roadmap.md": [
+        "当前阶段已经完成 P0-P6 收束",
+        "docs/production-candidate-hardening-plan.md",
         "生产部署 runbook、运维 runbook、SDK 接入文档和 release checklist 与实际代码一致",
         "P6 生产证据在固定 runner 上可以稳定通过",
         "SDK 能以稳定线程模型和版本兼容策略被客户端项目接入",
+    ],
+    "docs/production-candidate-hardening-plan.md": [
+        "H0：固定 Runner 常态化",
+        "H1：长稳与资源曲线",
+        "H2：容量边界与退化阈值",
+        "H3：Kubernetes 发布演练",
+        "H4：观测闭环增强",
+        "H5：SDK 企业接入包",
     ],
     "docs/v3-release-checklist.md": [
         "P6 生产证据聚合入口",

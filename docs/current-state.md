@@ -36,13 +36,24 @@
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 
-## 下一步优先级
+## 当前阶段结论
 
-下一大阶段以 `docs/production-stabilization-roadmap.md` 为规划事实源，主题是生产稳定化与交付闭环，不继续横向扩展功能模块。
+生产稳定化与交付闭环阶段已经完成 P0-P6 收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate 和生产候选完整性审核。
 
-1. P0：生产部署口径与发布 runbook 收束。
-2. P1：性能基线与容量事实闭环。
-3. P2：真实生产证据固定 runner 流水线。
-4. P3：监控、告警与运维 runbook 产品化。
-5. P4：SDK 企业级封装稳定化。
-6. P5：长稳、故障注入与回滚演练。
+当前默认可执行入口：
+
+1. 本地/PR 快速：`python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke`
+2. P5 resilience：`python3 scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build`
+3. P6 production evidence：`python3 scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build`
+4. 生产候选审核：`python3 scripts/check_production_candidate_audit.py`
+
+## 下一阶段优先级
+
+下一阶段不建议继续横向扩功能，建议进入“生产候选实测与发布硬化”阶段，事实源见 `docs/production-candidate-hardening-plan.md`。
+
+1. H0：固定 runner 真实依赖常态化，持续跑 Redis live、Operator kind、runtime HTTP、P5/P6 gates。
+2. H1：2h/8h soak 与资源曲线沉淀，补 RSS、fd、CPU、错误率和 P99 长稳报告。
+3. H2：容量边界专项，复测 5K/10K 连接、battle-500、backend pool 参数和退化阈值。
+4. H3：Kubernetes 生产演练，补 rollout/rollback/probe、PDB/HPA/resource limits 和 Operator 更完整 E2E。
+5. H4：观测闭环增强，补 route latency histogram/summary、后端指标采集方案和真实 OTel collector 长稳。
+6. H5：SDK 企业接入样例和兼容矩阵，补 Python/C# 真实业务示例、错误码矩阵和客户端接入包说明。

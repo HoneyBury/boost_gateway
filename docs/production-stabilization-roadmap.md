@@ -2,7 +2,7 @@
 
 更新时间：2026-05-17
 
-本文档记录 v3.3.2 之后的下一大阶段规划。当前阶段不继续横向扩展功能模块，而是围绕现有 gateway、后端服务、SDK、Operator、部署资产和验证脚本，完成生产运行前必须具备的稳定性、性能、部署、监控和交付闭环。
+本文档记录 v3.3.2 之后生产稳定化与交付闭环阶段的规划和完成状态。当前阶段已经完成 P0-P6 收束；后续继续推进时，以 `docs/production-candidate-hardening-plan.md` 作为新的阶段规划事实源。
 
 ## 阶段目标
 
@@ -76,7 +76,19 @@ curl http://localhost:9080/health
 - 资源 requests/limits、PDB、HPA、滚动发布和回滚流程验证。
 - Operator kind smoke 与 rollout/rollback 证据进入固定 runner。
 
-## 优先级规划
+## P0-P6 完成状态
+
+| 阶段 | 状态 | 交付记录 / 证据 |
+| --- | --- | --- |
+| P0 生产部署口径与发布 Runbook | completed | `docs/releases/v3.3.2-p0-production-deployment.md`、`docs/production-deployment-runbook.md` |
+| P1 性能基线与容量事实 | completed | `docs/releases/v3.3.2-p1-performance-stabilization.md`、`runtime/perf/release-baseline/summary.json` |
+| P2 真实生产证据固定 Runner | completed | `docs/releases/v3.3.2-p2-production-evidence-runner.md`、`.github/workflows/production-evidence.yml` |
+| P3 监控告警与运维 Runbook | completed | `docs/releases/v3.3.2-p3-monitoring-operations.md`、`scripts/check_monitoring_operability.py` |
+| P4 SDK 企业级封装稳定化 | completed | `docs/releases/v3.3.2-p4-sdk-enterprise-runtime.md`、`scripts/verify_sdk_full_flow_client.py` |
+| P5 长稳故障回滚演练 | completed | `docs/releases/v3.3.2-p5-production-resilience.md`、`.github/workflows/production-resilience.yml` |
+| P6 生产证据与候选审核 | completed | `docs/releases/v3.3.2-p6-production-evidence.md`、`scripts/check_production_candidate_audit.py` |
+
+## 历史优先级规划
 
 ### P0：生产部署口径与发布 Runbook 收束
 
@@ -241,7 +253,24 @@ curl http://localhost:9080/health
 - 监控、告警、故障注入和长稳数据能支撑生产运维判断。
 - SDK 能以稳定线程模型和版本兼容策略被客户端项目接入。
 
-## 推荐执行顺序
+## 阶段收束结论
+
+截至提交 `d5c8493 Close P6 production evidence delivery`，本阶段的核心目标已经完成：
+
+- 生产部署、运维、SDK、release checklist 与实际代码有静态和运行证据约束。
+- Docker Compose、systemd、Kubernetes manifest、Prometheus/Grafana、SDK full-flow 和 P6 production evidence 具备统一验证入口。
+- Release baseline、capacity baseline、P5 resilience、P6 production evidence 均有固定 runner 或本机执行手册。
+- P6 默认 gate 已包含 production candidate audit，能检查证据链、workflow、summary 契约和关键文档是否漂移。
+
+仍需持续沉淀的内容不再阻断当前阶段交付，转入下一阶段“生产候选实测与发布硬化”：
+
+- 2h/8h soak 的固定机器长期数据。
+- 5K/10K 连接容量边界的多轮可比数据。
+- 更完整的 Kubernetes rollout/rollback/probe、PDB/HPA/resource limits 实战。
+- 外部 OTel collector 和 route latency histogram/summary。
+- 跨节点 Redis/Raft 与 SDK 多语言生产示例。
+
+## 历史推荐执行顺序
 
 1. P0：先收束生产部署口径与 runbook。
 2. P1：再沉淀固定机器性能和容量事实。
