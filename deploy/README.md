@@ -118,7 +118,7 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 - Prometheus 配置：`env/monitoring/prometheus.yml`，当前只 scrape gateway HTTP `/metrics`
 - Grafana 仪表盘：`env/monitoring/grafana-dashboard.json`
 
-管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。
+管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。gateway `/health` 当前是 liveness stub，不等价于完整业务 ready；发布后必须叠加 SDK full-flow 或生产证据 gate。
 
 ## 6. 部署预检
 
@@ -133,3 +133,5 @@ python3 scripts/check_deploy_operability.py --build-dir build/default
 ```
 runtime/validation/deploy-operability-summary.json
 ```
+
+完整生产部署、回滚、监控和发布后验证流程见 `docs/production-deployment-runbook.md`。

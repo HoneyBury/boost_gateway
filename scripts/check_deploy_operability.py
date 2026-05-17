@@ -10,6 +10,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_VERSION = "3.3.2"
 
 BACKENDS = {
     "login-backend": ("v2_login_backend", "9202"),
@@ -25,6 +26,15 @@ GATEWAY_ROUTED_BACKENDS = {
     "battle-backend": ("--battle-host", "--battle-port", "9303"),
     "matchmaking-backend": ("--matchmaking-host", "--matchmaking-port", "9304"),
     "leaderboard-backend": ("--leaderboard-host", "--leaderboard-port", "9305"),
+}
+
+K8S_IMAGES = {
+    "gateway-deployment.yaml": "ghcr.io/boost-gateway/gateway:v3.3.2",
+    "login-backend-deployment.yaml": "ghcr.io/boost-gateway/login-backend:v3.3.2",
+    "room-backend-deployment.yaml": "ghcr.io/boost-gateway/room-backend:v3.3.2",
+    "battle-backend-deployment.yaml": "ghcr.io/boost-gateway/battle-backend:v3.3.2",
+    "matchmaking-backend-deployment.yaml": "ghcr.io/boost-gateway/matchmaking-backend:v3.3.2",
+    "leaderboard-backend-deployment.yaml": "ghcr.io/boost-gateway/leaderboard-backend:v3.3.2",
 }
 
 SYSTEMD_UNITS = {
@@ -191,6 +201,36 @@ def validate_examples(checks: list[dict[str, Any]]) -> None:
 
 def validate_k8s(checks: list[dict[str, Any]]) -> None:
     k8s_dir = REPO_ROOT / "env/k8s"
+    for file_name, expected_image in K8S_IMAGES.items():
+        path = k8s_dir / file_name
+        add_check(
+            checks,
+            f"k8s:{file_name}:manifest-exists",
+            path.exists(),
+            f"{path.relative_to(REPO_ROOT)} exists",
+        )
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        add_check(
+            checks,
+            f"k8s:{file_name}:version-label",
+            f'app.kubernetes.io/version: "{PROJECT_VERSION}"' in text,
+            f"{file_name} uses app version {PROJECT_VERSION}",
+        )
+        add_check(
+            checks,
+            f"k8s:{file_name}:pinned-image",
+            f"image: {expected_image}" in text,
+            f"{file_name} uses pinned image {expected_image}",
+        )
+        add_check(
+            checks,
+            f"k8s:{file_name}:no-latest-image",
+            ":latest" not in text,
+            f"{file_name} does not use a floating latest tag",
+        )
+
     for service, (_, port) in BACKENDS.items():
         path = k8s_dir / f"{service}-deployment.yaml"
         add_check(
@@ -229,6 +269,20 @@ def validate_k8s(checks: list[dict[str, Any]]) -> None:
         "leaderboard Kubernetes manifest points at Redis service",
     )
 
+    gateway = read_text("env/k8s/gateway-deployment.yaml")
+    add_check(
+        checks,
+        "k8s:gateway:http-health-probe-documented",
+        "gateway `/health` is a liveness stub" in read_text("docs/production-deployment-runbook.md"),
+        "gateway HTTP health probe limitation is documented in the production runbook",
+    )
+    add_check(
+        checks,
+        "k8s:gateway:routes-all-backends",
+        all(host in gateway and host_flag in gateway and port_flag in gateway for host, (host_flag, port_flag, _) in GATEWAY_ROUTED_BACKENDS.items()),
+        "gateway Kubernetes args route all five backend services",
+    )
+
 
 def validate_monitoring(checks: list[dict[str, Any]]) -> None:
     text = read_text("env/monitoring/prometheus.yml")
@@ -251,6 +305,14 @@ def validate_monitoring(checks: list[dict[str, Any]]) -> None:
             f"{service}:{port}" not in text,
             f"{service} is not scraped as HTTP metrics endpoint",
         )
+
+    env_readme = read_text("env/README.md")
+    add_check(
+        checks,
+        "docs:env-readme:gateway-only-scrape",
+        "scrapes gateway `/metrics` only" in env_readme and "scrape /metrics from all 6 services" not in env_readme,
+        "environment README describes the current gateway-only Prometheus scrape scope",
+    )
 
 
 def validate_binaries(build_dir: Path | None, checks: list[dict[str, Any]]) -> None:

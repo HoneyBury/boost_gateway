@@ -1,4 +1,4 @@
-# Boost Gateway v3.1.0 — Matchmaking Backend Deployment + Service + HPA
+# Boost Gateway v3.3.2 — Matchmaking Backend Deployment + Service + HPA
 #
 # Usage:
 #   kubectl apply -f env/k8s/matchmaking-backend-deployment.yaml
@@ -34,7 +34,7 @@ metadata:
   labels:
     app.kubernetes.io/name: boost-gateway
     app.kubernetes.io/component: backend
-    app.kubernetes.io/version: "3.1.0"
+    app.kubernetes.io/version: "3.3.2"
     boost-gateway.io/backend: matchmaking
 spec:
   replicas: 1
@@ -69,8 +69,8 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: backend
-          image: ghcr.io/boost-gateway/matchmaking-backend:latest
-          imagePullPolicy: Always
+          image: ghcr.io/boost-gateway/matchmaking-backend:v3.3.2
+          imagePullPolicy: IfNotPresent
           args:
             - "9304"
           ports:

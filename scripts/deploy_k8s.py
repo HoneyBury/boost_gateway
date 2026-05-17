@@ -22,6 +22,14 @@ def run(cmd: list[str], cwd: Path) -> None:
     subprocess.run(cmd, cwd=cwd, check=True)
 
 
+def kubectl_action(action: str, file_path: Path, root: Path, dry_run: bool) -> None:
+    cmd = ["kubectl", action]
+    if dry_run and action == "apply":
+        cmd = ["kubectl", "create", "--dry-run=client", "--validate=false"]
+    cmd.extend(["-f", str(file_path)])
+    run(cmd, root)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Deploy Boost Gateway to Kubernetes.")
     parser.add_argument("--dry-run", action="store_true")
@@ -31,11 +39,12 @@ def main() -> int:
     root = Path(__file__).resolve().parent.parent
     k8s_dir = root / "env" / "k8s"
     action = "delete" if args.delete else "apply"
+    display_action = "dry-run" if args.dry_run and action == "apply" else action
 
-    print(f"=== Boost Gateway K8s: {action} ===")
+    print(f"=== Boost Gateway K8s: {display_action} ===")
 
     if action == "apply":
-        run(["kubectl", "apply", "-f", str(k8s_dir / "namespace.yaml")], root)
+        kubectl_action(action, k8s_dir / "namespace.yaml", root, args.dry_run)
         print("[OK] namespace")
     else:
         print("Tearing down all resources...")
@@ -52,11 +61,7 @@ def main() -> int:
         if not file_path.exists():
             print(f"[!] missing: {file_path}")
             continue
-        cmd = ["kubectl", action]
-        if args.dry_run:
-            cmd.append("--dry-run=client")
-        cmd.extend(["-f", str(file_path)])
-        run(cmd, root)
+        kubectl_action(action, file_path, root, args.dry_run)
         print(f"[OK] {path}")
 
     print("\n=== Deploy complete ===\n")

@@ -32,7 +32,7 @@ docker compose -f env/docker/docker-compose.yml down -v
 | Service              | Internal Port | External Port | Protocol | Notes                        |
 |----------------------|---------------|---------------|----------|------------------------------|
 | gateway              | 9201          | 9201          | TCP      | Client-facing game port      |
-| gateway (HTTP mgmt)  | 9080          | 9080          | HTTP     | `/health`, `/metrics`, `/ready` |
+| gateway (HTTP mgmt)  | 9080          | 9080          | HTTP     | `/health`, `/metrics`, diagnostics |
 | login backend        | 9202          | 9202          | TCP      | Token validation, session    |
 | room backend         | 9302          | 9302          | TCP      | Room lifecycle               |
 | battle backend       | 9303          | 9303          | TCP      | Battle simulation, ECS tick  |
@@ -72,7 +72,7 @@ docker compose -f env/docker/docker-compose.yml down -v
                     └───────────┘
 
            ┌───────────────────────────┐
-           │  Prometheus :9090         │── scrape /metrics from all 6 services
+           │  Prometheus :9090         │── scrapes gateway `/metrics` only
            └─────────────┬─────────────┘
                          │
            ┌─────────────▼─────────────┐
@@ -150,6 +150,8 @@ game backend protocol rather than HTTP.
 The Prometheus config (`env/monitoring/prometheus.yml`) scrapes gateway
 `/metrics` every 15 seconds. Backends currently expose TCP service ports and
 file-oriented metrics configuration, not HTTP `/metrics` endpoints.
+Do not configure Prometheus to scrape backend TCP ports as HTTP targets until
+backend HTTP management endpoints are implemented.
 
 ### Grafana
 
