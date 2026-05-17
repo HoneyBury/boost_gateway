@@ -236,6 +236,10 @@ int main(int argc, char* argv[]) {
             argc, argv, "--room-host", "--room-port");
         const auto battle_backend_config = parse_backend_config(
             argc, argv, "--battle-host", "--battle-port");
+        const auto matchmaking_backend_config = parse_backend_config(
+            argc, argv, "--matchmaking-host", "--matchmaking-port");
+        const auto leaderboard_backend_config = parse_backend_config(
+            argc, argv, "--leaderboard-host", "--leaderboard-port");
         auto io_engine = std::make_unique<v2::io::AsioIoEngine>(io_cores);
         v2::gateway::DemoServer server(9201,
                                        {},
@@ -246,6 +250,8 @@ int main(int argc, char* argv[]) {
                                            .login_backend_config = login_backend_config,
                                            .room_backend_config = room_backend_config,
                                            .battle_backend_config = battle_backend_config,
+                                           .matchmaking_backend_config = matchmaking_backend_config,
+                                           .leaderboard_backend_config = leaderboard_backend_config,
                                        },
                                        std::move(io_engine));
         server.start();

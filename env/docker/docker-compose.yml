@@ -62,12 +62,24 @@ services:
       - battle-backend
       - --battle-port
       - "9303"
+      - --matchmaking-host
+      - matchmaking-backend
+      - --matchmaking-port
+      - "9304"
+      - --leaderboard-host
+      - leaderboard-backend
+      - --leaderboard-port
+      - "9305"
     depends_on:
       login-backend:
         condition: service_healthy
       room-backend:
         condition: service_healthy
       battle-backend:
+        condition: service_healthy
+      matchmaking-backend:
+        condition: service_healthy
+      leaderboard-backend:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9080/health"]

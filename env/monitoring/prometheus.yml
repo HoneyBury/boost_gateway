@@ -1,7 +1,8 @@
-# Boost Gateway v2.6.0 — Prometheus Scrape Configuration
+# Boost Gateway v3.3.2 — Prometheus Scrape Configuration
 #
-# Scrapes /metrics from all 6 backend services plus Prometheus itself.
-# Alerting rules are maintained at: prometheus/alerts.yml
+# Scrapes HTTP metrics only from services that currently expose an HTTP
+# management endpoint. v2 backends publish custom TCP protocols and do not
+# expose /metrics directly.
 #
 # Usage:
 #   docker compose -f env/docker/docker-compose.yml up -d prometheus
@@ -12,7 +13,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: "boost-gateway"
-    version: "2.6.0"
+    version: "3.3.2"
 
 # Alertmanager configuration (placeholder — configure your own endpoint)
 alerting:
@@ -20,10 +21,6 @@ alerting:
     - static_configs:
         - targets:
             # - alertmanager:9093
-
-# Load alerting rules from the project's existing alerts file
-rule_files:
-  - /etc/prometheus/alerts.yml
 
 scrape_configs:
 
@@ -39,71 +36,6 @@ scrape_configs:
         labels:
           service: "gateway"
           tier: "ingress"
-
-  # ---------------------------------------------------------------
-  # Login Backend
-  # ---------------------------------------------------------------
-  - job_name: "login-backend"
-    scrape_interval: 15s
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "login-backend:9202"
-        labels:
-          service: "login-backend"
-          tier: "backend"
-
-  # ---------------------------------------------------------------
-  # Room Backend
-  # ---------------------------------------------------------------
-  - job_name: "room-backend"
-    scrape_interval: 15s
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "room-backend:9302"
-        labels:
-          service: "room-backend"
-          tier: "backend"
-
-  # ---------------------------------------------------------------
-  # Battle Backend
-  # ---------------------------------------------------------------
-  - job_name: "battle-backend"
-    scrape_interval: 15s
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "battle-backend:9303"
-        labels:
-          service: "battle-backend"
-          tier: "backend"
-
-  # ---------------------------------------------------------------
-  # Matchmaking Backend
-  # ---------------------------------------------------------------
-  - job_name: "matchmaking-backend"
-    scrape_interval: 15s
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "matchmaking-backend:9304"
-        labels:
-          service: "matchmaking-backend"
-          tier: "backend"
-
-  # ---------------------------------------------------------------
-  # Leaderboard Backend
-  # ---------------------------------------------------------------
-  - job_name: "leaderboard-backend"
-    scrape_interval: 15s
-    metrics_path: /metrics
-    static_configs:
-      - targets:
-          - "leaderboard-backend:9305"
-        labels:
-          service: "leaderboard-backend"
-          tier: "backend"
 
   # ---------------------------------------------------------------
   # Prometheus itself (for up=1 health)

@@ -2,7 +2,7 @@
 Description=BoostAsioDemo v2 Gateway
 Documentation=https://github.com/HoneyBury/BoostAsioDemo
 After=network.target boost-login-backend.service boost-room-backend.service boost-battle-backend.service boost-match-backend.service boost-leaderboard-backend.service
-Requires=boost-login-backend.service boost-room-backend.service boost-battle-backend.service
+Requires=boost-login-backend.service boost-room-backend.service boost-battle-backend.service boost-match-backend.service boost-leaderboard-backend.service
 
 [Service]
 Type=simple

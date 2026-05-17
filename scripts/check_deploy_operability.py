@@ -19,6 +19,14 @@ BACKENDS = {
     "leaderboard-backend": ("v2_leaderboard_backend", "9305"),
 }
 
+GATEWAY_ROUTED_BACKENDS = {
+    "login-backend": ("--login-host", "--login-port", "9202"),
+    "room-backend": ("--room-host", "--room-port", "9302"),
+    "battle-backend": ("--battle-host", "--battle-port", "9303"),
+    "matchmaking-backend": ("--matchmaking-host", "--matchmaking-port", "9304"),
+    "leaderboard-backend": ("--leaderboard-host", "--leaderboard-port", "9305"),
+}
+
 SYSTEMD_UNITS = {
     "boost-gateway.service",
     "boost-login-backend.service",
@@ -71,12 +79,18 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
             f"{service} does not pretend to expose HTTP /health",
         )
 
-    for host in ("login-backend", "room-backend", "battle-backend"):
+    for host, (host_flag, port_flag, port) in GATEWAY_ROUTED_BACKENDS.items():
         add_check(
             checks,
             f"{label}:gateway:{host}",
-            host in text,
-            f"gateway command routes to compose service {host}",
+            host in text and host_flag in text and port_flag in text and f'"{port}"' in text,
+            f"gateway command routes to compose service {host}:{port}",
+        )
+        add_check(
+            checks,
+            f"{label}:gateway:{host}:healthy-dependency",
+            f"{host}:\n        condition: service_healthy" in text,
+            f"gateway waits for {host} to become healthy",
         )
     add_check(
         checks,
@@ -114,6 +128,21 @@ def validate_systemd(checks: list[dict[str, Any]]) -> None:
                 f"{unit} documentation URL is not a placeholder",
             )
 
+    gateway = (systemd_dir / "boost-gateway.service").read_text(encoding="utf-8")
+    for unit in (
+        "boost-login-backend.service",
+        "boost-room-backend.service",
+        "boost-battle-backend.service",
+        "boost-match-backend.service",
+        "boost-leaderboard-backend.service",
+    ):
+        add_check(
+            checks,
+            f"systemd:boost-gateway.service:requires:{unit}",
+            unit in gateway,
+            f"gateway unit depends on {unit}",
+        )
+
 
 def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
     text = read_text("env/docker/Dockerfile.backend")
@@ -150,6 +179,79 @@ def validate_examples(checks: list[dict[str, Any]]) -> None:
             f"{relative} accepts generic container SERVICE_PORT",
         )
 
+    gateway_main = read_text("examples/v2_gateway_demo/main.cpp")
+    for host, (host_flag, port_flag, _) in GATEWAY_ROUTED_BACKENDS.items():
+        add_check(
+            checks,
+            f"examples/v2_gateway_demo/main.cpp:{host}:flag",
+            host_flag in gateway_main and port_flag in gateway_main,
+            f"gateway demo parses {host_flag}/{port_flag}",
+        )
+
+
+def validate_k8s(checks: list[dict[str, Any]]) -> None:
+    k8s_dir = REPO_ROOT / "env/k8s"
+    for service, (_, port) in BACKENDS.items():
+        path = k8s_dir / f"{service}-deployment.yaml"
+        add_check(
+            checks,
+            f"k8s:{service}:manifest-exists",
+            path.exists(),
+            f"{path.relative_to(REPO_ROOT)} exists",
+        )
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        add_check(
+            checks,
+            f"k8s:{service}:tcp-liveness",
+            f"livenessProbe:\n            tcpSocket:\n              port: {port}" in text,
+            f"{service} liveness probe uses TCP port {port}",
+        )
+        add_check(
+            checks,
+            f"k8s:{service}:tcp-readiness",
+            f"readinessProbe:\n            tcpSocket:\n              port: {port}" in text,
+            f"{service} readiness probe uses TCP port {port}",
+        )
+        add_check(
+            checks,
+            f"k8s:{service}:no-http-probe",
+            f"path: /health\n              port: {port}" not in text,
+            f"{service} does not use HTTP /health probe",
+        )
+
+    leaderboard = read_text("env/k8s/leaderboard-backend-deployment.yaml")
+    add_check(
+        checks,
+        "k8s:leaderboard:redis-host",
+        'name: REDIS_HOST\n              value: "redis"' in leaderboard,
+        "leaderboard Kubernetes manifest points at Redis service",
+    )
+
+
+def validate_monitoring(checks: list[dict[str, Any]]) -> None:
+    text = read_text("env/monitoring/prometheus.yml")
+    add_check(
+        checks,
+        "prometheus:version",
+        'version: "3.3.2"' in text,
+        "Prometheus config version matches current release line",
+    )
+    add_check(
+        checks,
+        "prometheus:gateway-scrape",
+        '"gateway:9080"' in text and "metrics_path: /metrics" in text,
+        "Prometheus scrapes gateway HTTP metrics",
+    )
+    for service, (_, port) in BACKENDS.items():
+        add_check(
+            checks,
+            f"prometheus:{service}:not-scraped",
+            f"{service}:{port}" not in text,
+            f"{service} is not scraped as HTTP metrics endpoint",
+        )
+
 
 def validate_binaries(build_dir: Path | None, checks: list[dict[str, Any]]) -> None:
     if build_dir is None:
@@ -181,6 +283,8 @@ def main() -> int:
     validate_compose(REPO_ROOT / "env/docker/docker-compose.yml", checks)
     validate_systemd(checks)
     validate_examples(checks)
+    validate_k8s(checks)
+    validate_monitoring(checks)
     validate_binaries(args.build_dir, checks)
 
     failed = [check for check in checks if not check["passed"]]

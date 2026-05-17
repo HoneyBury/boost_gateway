@@ -1,4 +1,4 @@
-# Boost Gateway v2.6.0 — Environment Configuration
+# Boost Gateway v3.3.2 — Environment Configuration
 
 This directory contains the production-ready environment infrastructure for the
 Boost Gateway game server framework. It covers Docker Compose orchestration,
@@ -120,7 +120,7 @@ docker compose -f env/docker/docker-compose.yml up -d --scale room-backend=3
 ### Dockerfiles
 
 - **`env/docker/Dockerfile.gateway`** — Builds only the gateway binary in a
-  multi-stage build. Produces a minimal image (ubuntu:22.04 base, ~30 MB layer).
+  multi-stage build on the current Ubuntu runtime base.
 
 - **`env/docker/Dockerfile.backend`** — Generic image for all 5 backend services
   (login, room, battle, matchmaking, leaderboard). The `SERVICE_BINARY`
@@ -137,17 +137,19 @@ kubectl apply -f env/k8s/
 kubectl -n boost-gateway get pods
 ```
 
-The `backend-deployment.yaml` is a ConfigMap-driven generic template. Set the
-`SERVICE_NAME` and `SERVICE_PORT` environment variables in the pod template to
-adapt it for any backend.
+Each backend has its own manifest (`login-backend-deployment.yaml`,
+`room-backend-deployment.yaml`, `battle-backend-deployment.yaml`,
+`matchmaking-backend-deployment.yaml`, `leaderboard-backend-deployment.yaml`).
+Backend probes use TCP socket checks because backend services expose the custom
+game backend protocol rather than HTTP.
 
 ## Monitoring
 
 ### Prometheus
 
-The Prometheus config (`env/monitoring/prometheus.yml`) scrapes `/metrics` from
-all 6 services every 15 seconds. An alerting rules file is at the legacy path
-`prometheus/alerts.yml`.
+The Prometheus config (`env/monitoring/prometheus.yml`) scrapes gateway
+`/metrics` every 15 seconds. Backends currently expose TCP service ports and
+file-oriented metrics configuration, not HTTP `/metrics` endpoints.
 
 ### Grafana
 

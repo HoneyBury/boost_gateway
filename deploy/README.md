@@ -115,7 +115,7 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 ## 5. 监控
 
 - Gateway HTTP 管理面：`:9080/health`、`:9080/metrics`、`:9080/metrics/json`、`:9080/metrics/diagnostics`
-- Prometheus 配置：`env/monitoring/prometheus.yml`
+- Prometheus 配置：`env/monitoring/prometheus.yml`，当前只 scrape gateway HTTP `/metrics`
 - Grafana 仪表盘：`env/monitoring/grafana-dashboard.json`
 
 管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。
@@ -128,7 +128,7 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 python3 scripts/check_deploy_operability.py --build-dir build/default
 ```
 
-脚本会检查 Dockerfile、两套 Compose、systemd unit、CMake 安装清单、非交互运行语义以及可选构建产物，并生成：
+脚本会检查 Dockerfile、两套 Compose、systemd unit、CMake 安装清单、Kubernetes 探针、Prometheus scrape 目标、入口参数、非交互运行语义以及可选构建产物，并生成：
 
 ```
 runtime/validation/deploy-operability-summary.json

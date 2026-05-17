@@ -1,4 +1,4 @@
-# Boost Gateway v2.6.0 — CI/CD Pipeline
+# Boost Gateway v3.3.2 — CI/CD Pipeline
 #
 # Triggers:
 #   - Push to develop or main: builds, tests, builds Docker images
