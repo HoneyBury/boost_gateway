@@ -70,6 +70,7 @@
 - [v3.3.2 P1 性能稳定化记录](./releases/v3.3.2-p1-performance-stabilization.md) — 性能事实管线、backend pool 实验和默认 baseline 稳定线
 - [v3.3.2 P2 部署运维收束记录](./releases/v3.3.2-p2-deploy-operability.md) — Docker Compose、systemd、K8s、Prometheus 与部署预检门禁收束
 - [v3.3.2 P3 SDK 企业级封装记录](./releases/v3.3.2-p3-sdk-distribution.md) — SDK 版本、CMake package、C ABI、Python/C# wrapper 与分发门禁收束
+- [v3.3.2 P4 运行态可观测性记录](./releases/v3.3.2-p4-observability-runtime.md) — 真实 `v2_gateway_demo` + SDK 流量验证 `/health`、`/ready` 与 `/metrics*`
 - [v3.3.2 P6 生产证据收束记录](./releases/v3.3.2-p6-production-evidence.md) — 本机 Redis/kind/Release baseline 真实依赖验证与最终门禁结果
 - [部署手册](../deploy/README.md) — Docker Compose + systemd 部署运行手册
 

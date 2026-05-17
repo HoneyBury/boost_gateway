@@ -161,6 +161,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--include-otel-collector", action="store_true")
+    parser.add_argument("--include-runtime-http", action="store_true")
     parser.add_argument("--build-timeout-seconds", type=int, default=180)
     parser.add_argument("--test-timeout-seconds", type=int, default=120)
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/observability-gate-summary.json"))
@@ -177,6 +178,7 @@ def main() -> int:
         "build_dir": str(build_dir),
         "configuration": args.configuration,
         "include_otel_collector": args.include_otel_collector,
+        "include_runtime_http": args.include_runtime_http,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
@@ -241,6 +243,23 @@ def main() -> int:
                 "otel_collector",
                 [str(v2_integration_tests), f"--gtest_filter={OTEL_COLLECTOR_FILTER}"],
                 v2_integration_tests.parent,
+                args.test_timeout_seconds,
+            ))
+        if args.include_runtime_http:
+            runtime_summary = summary_path.parent / "gateway-observability-runtime-summary.json"
+            summary["steps"].append(run_step(
+                "gateway runtime HTTP observability coverage",
+                "runtime_http",
+                [
+                    sys.executable,
+                    str(root / "scripts" / "verify_gateway_observability_runtime.py"),
+                    "--build-dir",
+                    str(args.build_dir),
+                    "--summary-path",
+                    str(runtime_summary),
+                    *([] if not args.skip_build else ["--skip-build"]),
+                ],
+                root,
                 args.test_timeout_seconds,
             ))
     except (FileNotFoundError, RuntimeError) as exc:

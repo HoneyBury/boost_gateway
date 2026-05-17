@@ -276,9 +276,10 @@ P4 发布门禁：
 ```bash
 python scripts/verify_observability_gate.py --build-dir build/default --skip-build
 python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector
+python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http
 ```
 
-默认门禁不依赖外部 OTel collector，只验证 exporter buffer、flush failure requeue、trace 传播和 route span 生成；`--include-otel-collector` 会启动测试内 fake collector，要求 runner 允许绑定 `127.0.0.1` 随机端口。
+默认门禁不依赖外部 OTel collector，只验证 exporter buffer、flush failure requeue、trace 传播和 route span 生成；`--include-otel-collector` 会启动测试内 fake collector，要求 runner 允许绑定 `127.0.0.1` 随机端口。`--include-runtime-http` 会启动真实 `v2_gateway_demo`，用 SDK full-flow 产生业务流量，并验证 `/health`、`/ready`、`/metrics`、`/metrics/json`、`/metrics/diagnostics/json`。
 
 ### v2 backend RED 指标命名
 

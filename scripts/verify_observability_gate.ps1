@@ -3,6 +3,7 @@ param(
     [string]$Configuration = "Debug",
     [switch]$SkipBuild,
     [switch]$IncludeOtelCollector,
+    [switch]$IncludeRuntimeHttp,
     [int]$BuildTimeoutSeconds = 180,
     [int]$TestTimeoutSeconds = 120,
     [string]$SummaryPath = "runtime/validation/observability-gate-summary.json"
@@ -26,6 +27,9 @@ if ($SkipBuild) {
 }
 if ($IncludeOtelCollector) {
     $argsList += "--include-otel-collector"
+}
+if ($IncludeRuntimeHttp) {
+    $argsList += "--include-runtime-http"
 }
 
 Push-Location $repoRoot
