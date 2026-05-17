@@ -120,12 +120,56 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 - 记录空载与每个 case 后的进程资源快照
 - 记录 `git commit`、平台、构建目录、重复次数等元数据
 - 对同一 case 输出 `min / median / max` 聚合结果
+- 输出 `resource_analysis`，按 case/service 聚合 RSS、fd/handles、线程、CPU 快照和每连接边际成本
 - 输出 `release_gates` 判定结果，作为 `R1-4` 的自动化基础
 - 将结果落盘到 `runtime/perf/<timestamp>/`
+- 同步生成 `report.md`，包含 release gate、case 聚合和 gateway 资源聚合，便于直接归档到 release evidence
 
 当前主入口已经切换为 Python，目标是统一 Windows / Ubuntu / macOS 的采集流程；平台差异仅保留在进程资源快照实现上。
 
-### 1.6 首轮 smoke 数据（2026-05-16，Windows）
+### 1.6 输出产物结构
+
+每次采集输出目录固定包含：
+
+| 产物 | 说明 |
+|---|---|
+| `summary.json` | 机器可读事实源，包含原始 case、聚合结果、release gates、资源分析和进程快照 |
+| `report.md` | 人工可读性能报告，可直接贴入发布记录或 GitHub Step Summary |
+| `results/*.result.json` | 每次压测工具输出的原始 JSON |
+| `results/*.gateway.diagnostics.json` | 每次 case 后抓取的 gateway diagnostics 快照 |
+| `logs/*.stdout.log` / `logs/*.stderr.log` | gateway/backend 进程日志 |
+
+`resource_analysis.case_aggregates` 按 case 聚合每个服务的资源指标：
+
+- `working_set_mb` / `working_set_mb_delta`
+- `handles` / `handles_delta`，在 Linux/macOS 表示 fd/open files，Windows 表示 process handles
+- `threads` / `threads_delta`
+- `cpu_percent`，来自系统快照
+- `cpu_percent_from_cpu_seconds`，按采样前后 CPU 时间差估算
+- `rss_kb_per_connected_client` 与 `handles_per_connected_client`
+
+`collect_release_baseline.py` 在启用性能采集时会把 `performance_summary_path` 和 `performance_report_path` 写入 release summary，方便从 `runtime/validation/release-baseline-summary.json` 直接追溯性能证据。
+
+### 1.7 P1 性能优化实验口径
+
+P1 阶段优先保证默认基线稳定，不把实验性优化直接推入默认路径。`collect_v2_perf_baseline.py` 支持：
+
+```bash
+python ./scripts/collect_v2_perf_baseline.py \
+  --build-dir ./build/release \
+  --run-preset baseline \
+  --repetitions 1 \
+  --backend-pool-size 1
+```
+
+`--backend-pool-size` 会设置 gateway 进程的 `V2_BACKEND_CONNECTION_POOL_SIZE` 并写入 `summary.json.topology.backend_connection_pool_size` 与 `report.md`。当前稳定默认值为 `1`；显式放大连接池属于性能实验项，必须单独记录报告，不得作为 release baseline 默认值。
+
+本机 P1 实验结论：
+
+- `backend_pool_size=1`：baseline 单轮通过，`echo-1000` p99 20ms，`battle-100` p99 200ms，rejected/failed/forced_timeout 均为 0。
+- `backend_pool_size=8`：smoke 中 battle 场景出现 backend_error/rejected，说明多连接池会放大当前 backend connection 生命周期和熔断交互的波动，不进入默认优化。
+
+### 1.8 首轮 smoke 数据（2026-05-16，Windows）
 
 首轮基于 `python ./scripts/collect_v2_perf_baseline.py --build-dir build/windows-ninja-release --run-preset smoke`
 得到的结果如下，原始产物保存在：

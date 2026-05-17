@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import platform
+import re
 import statistics
 import signal
 import socket
@@ -61,6 +62,81 @@ def wait_tcp_port(host: str, port: int, timeout_seconds: float = 30.0) -> None:
     raise TimeoutError(f"Timed out waiting for TCP {host}:{port}")
 
 
+def parse_cpu_time_to_seconds(value: str) -> float | None:
+    value = value.strip()
+    if not value:
+        return None
+    days = 0
+    if "-" in value:
+        day_part, value = value.split("-", 1)
+        with suppress(ValueError):
+            days = int(day_part)
+    parts = value.split(":")
+    try:
+        if len(parts) == 3:
+            hours, minutes, seconds = parts
+        elif len(parts) == 2:
+            hours = "0"
+            minutes, seconds = parts
+        else:
+            return None
+        return days * 86400 + int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+    except ValueError:
+        return None
+
+
+def count_open_files(pid: int) -> int | None:
+    proc_fd = Path(f"/proc/{pid}/fd")
+    if proc_fd.is_dir():
+        with suppress(OSError):
+            return sum(1 for _ in proc_fd.iterdir())
+
+    try:
+        output = subprocess.check_output(
+            ["lsof", "-p", str(pid), "-Fn"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+            timeout=2,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    # lsof -Fn emits one "n..." line per named open file plus process header lines.
+    return sum(1 for line in output.splitlines() if line.startswith("n"))
+
+
+def thread_count(pid: int) -> int | None:
+    for cmd in (
+        ["ps", "-o", "nlwp=", "-p", str(pid)],
+        ["ps", "-o", "thcount=", "-p", str(pid)],
+    ):
+        try:
+            output = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+        if output:
+            with suppress(ValueError):
+                return int(output.splitlines()[-1].strip())
+    return None
+
+
+def process_cpu_seconds(pid: int) -> float | None:
+    for field in ("cputime", "time"):
+        try:
+            output = subprocess.check_output(
+                ["ps", "-o", f"{field}=", "-p", str(pid)],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).strip()
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            continue
+        if not output:
+            continue
+        parsed = parse_cpu_time_to_seconds(output.splitlines()[-1])
+        if parsed is not None:
+            return parsed
+    return None
+
+
 def process_snapshot(pid: int) -> dict[str, Any]:
     if is_windows():
         cmd = [
@@ -96,9 +172,9 @@ def process_snapshot(pid: int) -> dict[str, Any]:
                 "working_set_mb": 0.0,
                 "private_memory_mb": None,
                 "virtual_memory_mb": 0.0,
-                "handles": None,
-                "threads": None,
-                "cpu_seconds": None,
+                "handles": count_open_files(pid),
+                "threads": thread_count(pid),
+                "cpu_seconds": process_cpu_seconds(pid),
             }
         parts = output.split()
         if len(parts) < 5:
@@ -108,9 +184,9 @@ def process_snapshot(pid: int) -> dict[str, Any]:
                 "working_set_mb": 0.0,
                 "private_memory_mb": None,
                 "virtual_memory_mb": 0.0,
-                "handles": None,
-                "threads": None,
-                "cpu_seconds": None,
+                "handles": count_open_files(pid),
+                "threads": thread_count(pid),
+                "cpu_seconds": process_cpu_seconds(pid),
             }
         return {
             "pid": int(parts[0]),
@@ -118,10 +194,10 @@ def process_snapshot(pid: int) -> dict[str, Any]:
             "working_set_mb": round(float(parts[2]) / 1024.0, 2),
             "private_memory_mb": None,
             "virtual_memory_mb": round(float(parts[3]) / 1024.0, 2),
-            "handles": None,
-            "threads": None,
+            "handles": count_open_files(pid),
+            "threads": thread_count(pid),
             "cpu_percent": float(parts[4]),
-            "cpu_seconds": None,
+            "cpu_seconds": process_cpu_seconds(pid),
         }
 
     with open(status_path, "r", encoding="utf-8") as fh:
@@ -148,9 +224,9 @@ def process_snapshot(pid: int) -> dict[str, Any]:
         "working_set_mb": parse_kb(info.get("VmRSS")),
         "private_memory_mb": parse_kb(info.get("RssAnon")),
         "virtual_memory_mb": parse_kb(info.get("VmSize")),
-        "handles": None,
+        "handles": count_open_files(pid),
         "threads": int(info.get("Threads", "0")),
-        "cpu_seconds": None,
+        "cpu_seconds": process_cpu_seconds(pid),
     }
 
 
@@ -190,6 +266,15 @@ class ManagedProcess:
                     self.proc.kill()
         self.stdout_handle.close()
         self.stderr_handle.close()
+
+
+def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
+    snapshots = []
+    for item in managed:
+        snap = process_snapshot(item.pid)
+        snap["service_name"] = item.name
+        snapshots.append(snap)
+    return snapshots
 
 
 def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any], run_dir: Path) -> dict[str, Any]:
@@ -353,6 +438,149 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def case_base_name(snapshot_key: str) -> str:
+    return re.sub(r"\.run\d+$", "", snapshot_key)
+
+
+def snapshot_service_map(snapshots: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    return {str(item.get("service_name") or item.get("process_name") or item.get("pid")): item for item in snapshots}
+
+
+def numeric_snapshot_value(snapshot: dict[str, Any] | None, key: str) -> float | None:
+    if snapshot is None:
+        return None
+    value = snapshot.get(key)
+    if value is None:
+        return None
+    with suppress(TypeError, ValueError):
+        return float(value)
+    return None
+
+
+def aggregate_numeric(values: list[float]) -> dict[str, float] | None:
+    if not values:
+        return None
+    return {
+        "min": min(values),
+        "median": statistics.median(values),
+        "max": max(values),
+    }
+
+
+def service_resource_delta(
+    idle: dict[str, Any] | None,
+    loaded: dict[str, Any] | None,
+    elapsed_seconds: float,
+) -> dict[str, Any]:
+    fields = [
+        "working_set_mb",
+        "private_memory_mb",
+        "virtual_memory_mb",
+        "handles",
+        "threads",
+        "cpu_seconds",
+        "cpu_percent",
+    ]
+    result: dict[str, Any] = {}
+    for field in fields:
+        loaded_value = numeric_snapshot_value(loaded, field)
+        idle_value = numeric_snapshot_value(idle, field)
+        result[field] = loaded_value
+        result[f"{field}_delta"] = (
+            round(loaded_value - idle_value, 3)
+            if loaded_value is not None and idle_value is not None
+            else None
+        )
+    cpu_delta = result.get("cpu_seconds_delta")
+    result["cpu_percent_from_cpu_seconds"] = (
+        round((float(cpu_delta) / elapsed_seconds) * 100.0, 3)
+        if cpu_delta is not None and elapsed_seconds > 0
+        else None
+    )
+    return result
+
+
+def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
+    snapshots = summary.get("process_snapshots", {})
+    idle_map = snapshot_service_map(snapshots.get("idle", []))
+    cases = summary.get("cases", [])
+
+    per_run: list[dict[str, Any]] = []
+    by_case: dict[str, dict[str, list[float]]] = {}
+    for run in cases:
+        case_name = str(run.get("case_name") or "")
+        snapshot_key = case_name
+        if snapshot_key not in snapshots:
+            continue
+        base_name = case_base_name(case_name)
+        connected = max(0, int(run.get("connected_clients", 0)))
+        elapsed = float(run.get("elapsed_seconds", 0.0))
+        loaded_map = snapshot_service_map(snapshots.get(snapshot_key, []))
+        services: dict[str, Any] = {}
+        for service_name, loaded in loaded_map.items():
+            delta = service_resource_delta(idle_map.get(service_name), loaded, elapsed)
+            if connected > 0:
+                rss_delta = delta.get("working_set_mb_delta")
+                handles_delta = delta.get("handles_delta")
+                delta["rss_kb_per_connected_client"] = (
+                    round((float(rss_delta) * 1024.0) / connected, 3)
+                    if rss_delta is not None
+                    else None
+                )
+                delta["handles_per_connected_client"] = (
+                    round(float(handles_delta) / connected, 6)
+                    if handles_delta is not None
+                    else None
+                )
+            else:
+                delta["rss_kb_per_connected_client"] = None
+                delta["handles_per_connected_client"] = None
+            services[service_name] = delta
+
+            bucket = by_case.setdefault(base_name, {}).setdefault(service_name, {})
+            for metric in (
+                "working_set_mb",
+                "working_set_mb_delta",
+                "handles",
+                "handles_delta",
+                "threads",
+                "threads_delta",
+                "cpu_percent",
+                "cpu_percent_from_cpu_seconds",
+                "rss_kb_per_connected_client",
+                "handles_per_connected_client",
+            ):
+                value = delta.get(metric)
+                if value is not None:
+                    bucket.setdefault(metric, []).append(float(value))
+
+        per_run.append({
+            "case_name": case_name,
+            "connected_clients": connected,
+            "elapsed_seconds": elapsed,
+            "services": services,
+        })
+
+    case_aggregates: list[dict[str, Any]] = []
+    for case_name, service_metrics in sorted(by_case.items()):
+        services = {}
+        for service_name, metrics in sorted(service_metrics.items()):
+            services[service_name] = {
+                metric: aggregate_numeric(values)
+                for metric, values in sorted(metrics.items())
+            }
+        case_aggregates.append({
+            "case_name": case_name,
+            "services": services,
+        })
+
+    return {
+        "idle": snapshots.get("idle", []),
+        "per_run": per_run,
+        "case_aggregates": case_aggregates,
+    }
+
+
 def minimum_battle_messages(case_name: str) -> int:
     if case_name.startswith("battle-500"):
         return 20_000
@@ -369,6 +597,126 @@ def battle_p99_limit_ms(case_name: str) -> float:
     if case_name.startswith("battle-100") or case_name.startswith("battle-500"):
         return 250.0
     return 100.0
+
+
+def fmt_number(value: Any, digits: int = 2) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    with suppress(TypeError, ValueError):
+        number = float(value)
+        if number.is_integer():
+            return str(int(number))
+        return f"{number:.{digits}f}".rstrip("0").rstrip(".")
+    return str(value)
+
+
+def aggregate_metric(resource_case: dict[str, Any], service: str, metric: str, stat: str = "median") -> Any:
+    service_metrics = resource_case.get("services", {}).get(service, {})
+    metric_value = service_metrics.get(metric)
+    if isinstance(metric_value, dict):
+        return metric_value.get(stat)
+    return None
+
+
+def render_markdown_report(summary: dict[str, Any]) -> str:
+    lines = [
+        "# v2 Performance Baseline Report",
+        "",
+        f"- Collected at: `{summary.get('collected_at', 'unknown')}`",
+        f"- Git commit: `{summary.get('git_commit', 'unknown')}`",
+        f"- Platform: `{summary.get('host_platform', 'unknown')}`",
+        f"- Build dir: `{summary.get('build_dir', 'unknown')}`",
+        f"- Preset: `{summary.get('preset', 'unknown')}`",
+        f"- Repetitions: `{summary.get('repetitions', 'unknown')}`",
+        f"- Backend pool size: `{summary.get('topology', {}).get('backend_connection_pool_size', 'unknown')}`",
+        f"- Output dir: `{summary.get('output_dir', 'unknown')}`",
+        "",
+        "## Release Gates",
+        "",
+    ]
+    gates = summary.get("release_gates", {})
+    lines.append(f"- Overall pass: **{fmt_number(gates.get('overall_pass'))}**")
+    warnings = gates.get("warnings", [])
+    if warnings:
+        lines.append(f"- Warnings: {len(warnings)}")
+    else:
+        lines.append("- Warnings: 0")
+    lines.extend([
+        "",
+        "| Case | Pass | Criteria | Observed |",
+        "| --- | --- | --- | --- |",
+    ])
+    for check in gates.get("checks", []):
+        observed = check.get("observed", {})
+        observed_text = (
+            f"p99={fmt_number(observed.get('p99_ms'))}ms, "
+            f"throughput={fmt_number(observed.get('throughput_msg_per_sec'))}/s, "
+            f"rejected={fmt_number(observed.get('rejected_clients'))}, "
+            f"failed={fmt_number(observed.get('failed_clients'))}, "
+            f"forced_timeout={fmt_number(observed.get('forced_timeout'))}"
+        )
+        lines.append(
+            f"| `{check.get('case')}` | {fmt_number(check.get('passed'))} | "
+            f"{check.get('criteria')} | {observed_text} |"
+        )
+
+    lines.extend([
+        "",
+        "## Case Aggregates",
+        "",
+        "| Case | Runs | Connected | Messages | Throughput msg/s | P50 ms | P90 ms | P99 ms | Rejected | Failed | Forced timeout |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+    ])
+    for aggregate in summary.get("case_aggregates", []):
+        lines.append(
+            f"| `{aggregate.get('case_name')}` | {aggregate.get('runs')} | "
+            f"{fmt_number(aggregate.get('connected_clients', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('total_messages', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('throughput_msg_per_sec', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('latency_p50_ms', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('latency_p90_ms', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('latency_p99_ms', {}).get('median'))} | "
+            f"{fmt_number(aggregate.get('rejected_clients', {}).get('max'))} | "
+            f"{fmt_number(aggregate.get('failed_clients', {}).get('max'))} | "
+            f"{fmt_number(aggregate.get('forced_timeout'))} |"
+        )
+
+    resources = summary.get("resource_analysis", {})
+    lines.extend([
+        "",
+        "## Gateway Resource Aggregates",
+        "",
+        "| Case | RSS MB | RSS delta MB | RSS KB/client | fd | fd delta | fd/client | Threads | CPU % snapshot | CPU % from delta |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ])
+    for resource_case in resources.get("case_aggregates", []):
+        lines.append(
+            f"| `{resource_case.get('case_name')}` | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'working_set_mb'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'working_set_mb_delta'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'rss_kb_per_connected_client'), 3)} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'handles'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'handles_delta'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'handles_per_connected_client'), 6)} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'threads'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'cpu_percent'))} | "
+            f"{fmt_number(aggregate_metric(resource_case, 'v2_gateway_demo', 'cpu_percent_from_cpu_seconds'))} |"
+        )
+
+    lines.extend([
+        "",
+        "## Artifacts",
+        "",
+        "- Raw summary: `summary.json`",
+        "- Markdown report: `report.md`",
+        "- Case result JSON files: `results/*.result.json`",
+        "- Gateway diagnostics snapshots: `results/*.gateway.diagnostics.json`",
+        "- Process logs: `logs/*.log`",
+        "",
+    ])
+    return "\n".join(lines)
 
 
 def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -449,6 +797,12 @@ def main() -> int:
     parser.add_argument("--battle-port", type=int, default=9303)
     parser.add_argument("--http-port", type=int, default=9080)
     parser.add_argument("--io-cores", type=int, default=4)
+    parser.add_argument(
+        "--backend-pool-size",
+        type=int,
+        default=0,
+        help="Override V2_BACKEND_CONNECTION_POOL_SIZE for explicit backend pool experiments.",
+    )
     parser.add_argument("--output-root", default="")
     args = parser.parse_args()
 
@@ -519,6 +873,8 @@ def main() -> int:
             "V2_RATE_LIMIT_LOGIN": "50000",
             "V2_BATTLE_MAX_FRAMES": str(battle_max_frames),
         }
+        if args.backend_pool_size > 0:
+            gateway_env["V2_BACKEND_CONNECTION_POOL_SIZE"] = str(args.backend_pool_size)
         managed.append(ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env))
         wait_tcp_port("127.0.0.1", args.gateway_port)
         wait_tcp_port("127.0.0.1", args.http_port)
@@ -541,15 +897,14 @@ def main() -> int:
                 "http_port": args.http_port,
                 "io_cores": args.io_cores,
                 "battle_max_frames": battle_max_frames,
+                "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "1")),
             },
             "cases": [],
             "case_aggregates": [],
             "release_gates": {},
             "process_snapshots": {},
         }
-        summary["process_snapshots"]["idle"] = [
-            process_snapshot(item.pid) for item in managed
-        ]
+        summary["process_snapshots"]["idle"] = snapshot_processes(managed)
 
         for case in run_cases:
             case_runs: list[dict[str, Any]] = []
@@ -560,24 +915,28 @@ def main() -> int:
                     {**case, "name": f"{case['name']}.run{repetition + 1}"},
                     result_dir,
                 )
+                run_result["case_name"] = f"{case['name']}.run{repetition + 1}"
+                run_result["base_case_name"] = case["name"]
                 case_runs.append(run_result)
 
                 diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
                 diagnostics_path = result_dir / f"{case['name']}.run{repetition + 1}.gateway.diagnostics.json"
                 diagnostics_path.write_text(json.dumps(diagnostics, indent=2, ensure_ascii=False), encoding="utf-8")
-                summary["process_snapshots"][f"{case['name']}.run{repetition + 1}"] = [
-                    process_snapshot(item.pid) for item in managed
-                ]
+                summary["process_snapshots"][f"{case['name']}.run{repetition + 1}"] = snapshot_processes(managed)
 
             aggregate = aggregate_case_runs(case["name"], case_runs)
             summary["cases"].extend(case_runs)
             summary["case_aggregates"].append(aggregate)
 
         summary["release_gates"] = evaluate_release_gates(summary["case_aggregates"])
+        summary["resource_analysis"] = analyze_resources(summary)
 
         summary_path = output_root / "summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+        report_path = output_root / "report.md"
+        report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
+        log_step(f"Markdown report written: {report_path}")
         if args.run_preset == "smoke" or summary["release_gates"].get("overall_pass"):
             return 0
         log_step("Release performance gates failed")

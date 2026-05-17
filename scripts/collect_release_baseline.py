@@ -185,6 +185,8 @@ def main() -> int:
             root,
             args.perf_timeout_seconds,
         ))
+        summary["performance_summary_path"] = str(perf_output / "summary.json")
+        summary["performance_report_path"] = str(perf_output / "report.md")
 
     summary["steps"] = steps
     failed = next((step for step in steps if step["status"] != "passed"), None)
