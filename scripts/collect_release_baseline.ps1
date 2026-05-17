@@ -3,6 +3,12 @@ param(
     [string]$Configuration = "Release",
     [switch]$SkipBuild,
     [int]$BaselineTimeoutSeconds = 120,
+    [ValidateSet("smoke", "baseline", "capacity")]
+    [string]$PerfPreset = "baseline",
+    [int]$PerfRepetitions = 3,
+    [int]$PerfTimeoutSeconds = 600,
+    [switch]$SkipR4,
+    [switch]$SkipPerf,
     [string]$SummaryPath = "runtime/validation/release-baseline-summary.json"
 )
 
@@ -15,11 +21,20 @@ $argsList = @(
     "--build-dir", $BuildDir,
     "--configuration", $Configuration,
     "--baseline-timeout-seconds", "$BaselineTimeoutSeconds",
+    "--perf-preset", $PerfPreset,
+    "--perf-repetitions", "$PerfRepetitions",
+    "--perf-timeout-seconds", "$PerfTimeoutSeconds",
     "--summary-path", $SummaryPath
 )
 
 if ($SkipBuild) {
     $argsList += "--skip-build"
+}
+if ($SkipR4) {
+    $argsList += "--skip-r4"
+}
+if ($SkipPerf) {
+    $argsList += "--skip-perf"
 }
 
 Push-Location $repoRoot

@@ -3,7 +3,7 @@
 ## 1. 文档定位
 
 - **任务**：对齐 **`development-optimization.md`** 路线图**第三步**：在进入「可被依赖」的运维面之前，先把 **二进制 admin（L3）** 的调用前提与 **审计最小键**说清楚。
-- **范围**：默认 **仍无**令牌/角色/来源 IP ACL；**不包含**改写 `kAdminResponse` body 的失败细分（仍为固定 `*_ok` / 回调产出 JSON）。
+- **范围**：`AdminService` 默认启用最小 ACL；集成方必须配置共享密钥、可信 peer，或在 demo-only 入口显式关闭 ACL。本文仍**不包含**细分业务失败响应（回调失败仍由集成方自定）。
 - **实现落点**：`AdminService::register_handlers`（`src/game/gateway/admin_service.cpp`）在每条 admin handler **入口**写 **`AUDIT_LOG("admin_invoke", …)`**。集成方 **仍可在回调里**追加业务语义审计（勿与本文 **必备键**语义冲突）。
 - **冲突处理**：成熟度子状态以 **`docs/v1-maturity-matrix.md` §4** 为准；本文是 **契约 + SHOULD**。
 
@@ -17,8 +17,8 @@
 |------|------|
 | **注册显式化** | 仅在为 `examples/admin_demo` / `examples/login_demo` 等 showcase **手工**调用 `AdminService::register_handlers` 时出现；**默认 `GatewayServer` 不注册**（见 **`docs/v1-governance-layers.md`** §L3）。 |
 | **网络信任域** | 仅允许在 **内网 / 专线 / VPN** 等对端身份已保证的环境暴露业务 TCP；**不得在公网直连**且无额外控制面时使用 L3 admin。 |
-| **调用方会话** | 当前实现 **不要求**会话已登录；满足消息号与白名单Ingress 的包即可投递到 handler — 即 **等价于任意已连接 TCP 对等体**。编排方须自行保证「对等体可信」。 |
-| **推荐接入方式（SHOULD）** | 运维客户端经 **跳板 / 堡垒**、或 **Sidecar admin 连接器**专线；或由 **单独的 HTTP+mTLS / gRPC** 控制面改写为内部 `dispatch`，**不把**原生 500x 暴露在不可信链路。 |
+| **调用方会话** | 当前实现不要求业务登录态，但默认 ACL 会拒绝未携带共享密钥且不在可信 peer 前缀内的调用。 |
+| **推荐接入方式（SHOULD）** | 运维客户端经 **跳板 / 堡垒**、或 **Sidecar admin 连接器**专线；或由 **单独的 HTTP+mTLS / gRPC** 控制面改写为内部 `dispatch`，并配置 `AdminService::AccessControl`。 |
 
 ---
 
@@ -31,7 +31,7 @@
 | `5001` `kAdminKickPlayer` | 踢人（示例钩子） | 惯例为 `user_id` 明文 | `on_kick_(body)`；由集成方断开会话 | 固定 **`kick_ok`**（即使未找到目标也返回，集成方自定是否 no-op） |
 | `5002` `kAdminBanIp` | 封禁（示例钩子） | 惯例为目标 IP | `on_ban_(body, 3600)`，`3600` 为**字面常量**秒 | 固定 **`ban_ok`** |
 
-**失败细分（当前刻意不承诺）**：handler **不区分**回调是否执行成功、`body` 是否合法；不向调用方返回 `error_code`。`T18` 已完成对当前固定语义的边界回归，但**没有**把失败细分、运行时 ACL、结构化错误返回提升为 `stable` 能力。
+**失败细分（当前刻意不承诺）**：handler **不区分**回调是否执行成功、`body` 是否合法；不向调用方返回结构化 `error_code`。ACL 拒绝路径会写 `admin_denied`，有 session 时返回固定 `admin_denied` body。
 
 ---
 
@@ -54,6 +54,13 @@
 
 > **JSON 脆弱性**：`AUDIT_LOG` 整体仍是矩阵 §4.4 所称「近似 JSON 行」，**≠**结构化日志后端；编排层 **不得**假定 `details` 内无偶发破坏 JSON 的字符（`endpoint` 等）。
 
+### 4.2 ACL 拒绝审计
+
+ACL 拒绝时写入：
+
+- **`event`**：固定 **`admin_denied`**。
+- **`details`** 至少包含 `layer=L3_admin`、`action=<name>`、`outcome=denied`、`actor_endpoint=<peer>`、`request_id=<u32>`、`trace_id=<u64>`。
+
 ### 4.1 示例行（节选）
 
 ```
@@ -74,4 +81,5 @@
 | 版本 | 内容 |
 |------|------|
 | **`v1.1.11`**（本文） | 文档契约 + **`admin_invoke`** 边界审计 |
-| **`v1.2.2`（T18）** | **已完成**：治理边界回归已覆盖默认装配不注册 admin、`admin_invoke` 最小审计键、HTTP 固定行为；ACL / 失败细分语义仍维持 `reserved` |
+| **`v1.2.2`（T18）** | **已完成**：治理边界回归已覆盖默认装配不注册 admin、`admin_invoke` 最小审计键、HTTP 固定行为 |
+| **`v3.3.x/P2`** | **已完成**：`AdminService` 默认 ACL、共享密钥前缀、可信 peer 前缀、`admin_denied` 审计；demo-only 入口需显式关闭 ACL |

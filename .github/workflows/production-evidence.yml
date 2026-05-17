@@ -1,0 +1,183 @@
+name: Production Evidence
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner label"
+        required: true
+        default: "ubuntu-latest"
+      configure_preset:
+        description: "CMake configure preset"
+        required: true
+        default: "default"
+      build_dir:
+        description: "CMake build directory"
+        required: true
+        default: "build/default"
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Debug"
+      soak_profile:
+        description: "Stability soak profile"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - short
+          - medium
+      baseline_profile:
+        description: "Architecture gate profile"
+        required: true
+        default: "debug"
+        type: choice
+        options:
+          - debug
+          - release
+      include_redis_live:
+        description: "Run Redis live tests"
+        required: true
+        default: false
+        type: boolean
+      include_operator_kind:
+        description: "Run Operator kind smoke"
+        required: true
+        default: false
+        type: boolean
+      include_settlement_replay:
+        description: "Run multi-process settlement replay"
+        required: true
+        default: false
+        type: boolean
+      include_release_baseline:
+        description: "Collect release baseline"
+        required: true
+        default: false
+        type: boolean
+      include_capacity_baseline:
+        description: "Collect capacity baseline"
+        required: true
+        default: false
+        type: boolean
+      perf_repetitions:
+        description: "Repetitions per performance case"
+        required: true
+        default: "1"
+      step_timeout_seconds:
+        description: "Timeout for each P6 sub-gate"
+        required: true
+        default: "1200"
+
+permissions:
+  contents: read
+
+jobs:
+  production-evidence:
+    runs-on: ${{ inputs.runner }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/boostgateway-operator/go.mod
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Fixed runner preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            scripts/check_fixed_runner_environment.py
+            --profile production-evidence
+            --build-dir "${{ inputs.build_dir }}"
+          )
+          if [ "${{ inputs.include_redis_live }}" = "true" ]; then
+            args+=(--require-redis)
+          fi
+          if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
+            args+=(--require-kind)
+          fi
+          python "${args[@]}"
+
+      - name: Configure
+        run: cmake --preset ${{ inputs.configure_preset }}
+
+      - name: Production evidence gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            scripts/verify_production_evidence_gate.py
+            --build-dir "${{ inputs.build_dir }}"
+            --configuration "${{ inputs.configuration }}"
+            --soak-profile "${{ inputs.soak_profile }}"
+            --baseline-profile "${{ inputs.baseline_profile }}"
+            --perf-repetitions "${{ inputs.perf_repetitions }}"
+            --step-timeout-seconds "${{ inputs.step_timeout_seconds }}"
+            --summary-path runtime/validation/production-evidence-summary.json
+          )
+          if [ "${{ inputs.include_redis_live }}" = "true" ]; then
+            args+=(--include-redis-live)
+          fi
+          if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
+            args+=(--include-operator-kind)
+          fi
+          if [ "${{ inputs.include_settlement_replay }}" = "true" ]; then
+            args+=(--include-settlement-replay)
+          fi
+          if [ "${{ inputs.include_release_baseline }}" = "true" ]; then
+            args+=(--include-release-baseline)
+          fi
+          if [ "${{ inputs.include_capacity_baseline }}" = "true" ]; then
+            args+=(--include-capacity-baseline)
+          fi
+          python "${args[@]}"
+
+      - name: Render production evidence summary
+        if: always()
+        shell: bash
+        run: |
+          summaries=()
+          for path in \
+            runtime/validation/production-evidence-summary.json \
+            runtime/validation/p6-stability-soak-summary.json \
+            runtime/validation/p6-data-recovery-summary.json \
+            runtime/validation/p6-specialized-e2e-summary.json \
+            runtime/validation/p6-release-baseline-summary.json \
+            runtime/perf/release-baseline/summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-evidence-${{ inputs.runner }}
+          path: |
+            runtime/validation/production-evidence-summary.json
+            runtime/validation/p6-*-summary.json
+            runtime/perf/v2-stability-soak/**
+            runtime/perf/release-baseline/**
+          if-no-files-found: warn

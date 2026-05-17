@@ -6,6 +6,9 @@
 #include "v3/persistence/redis_connection_pool.h"
 #include "v3/persistence/redis_event_store.h"
 
+#include <chrono>
+#include <string>
+
 using namespace v3::persistence;
 
 // ── Redis availability check (shared by all tests) ────────────────────────
@@ -18,6 +21,13 @@ static bool is_redis_running() {
 }
 
 static bool redis_available = is_redis_running();
+
+static std::string unique_redis_prefix(const std::string& label) {
+    static int counter = 0;
+    static const auto run_id = std::to_string(
+        std::chrono::steady_clock::now().time_since_epoch().count());
+    return "test:" + label + ":" + run_id + ":" + std::to_string(++counter);
+}
 
 // ── RedisClient tests ─────────────────────────────────────────────────────
 
@@ -253,7 +263,7 @@ TEST(RedisClientTest, MoveSemantics) {
 TEST(RedisEventStoreTest, AppendAndRead) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es";
+    cfg.key_prefix = unique_redis_prefix("es");
     RedisEventStore store(cfg);
 
     EventRecord e1;
@@ -277,7 +287,7 @@ TEST(RedisEventStoreTest, AppendAndRead) {
 TEST(RedisEventStoreTest, LatestSequence) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es2";
+    cfg.key_prefix = unique_redis_prefix("es2");
     RedisEventStore store(cfg);
 
     EXPECT_EQ(store.latest_sequence("empty"), 0U);
@@ -295,7 +305,7 @@ TEST(RedisEventStoreTest, LatestSequence) {
 TEST(RedisEventStoreTest, ReadByType) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es3";
+    cfg.key_prefix = unique_redis_prefix("es3");
     RedisEventStore store(cfg);
 
     EventRecord e1;
@@ -322,7 +332,7 @@ TEST(RedisEventStoreTest, ReadByType) {
 TEST(RedisEventStoreTest, TotalEvents) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es4";
+    cfg.key_prefix = unique_redis_prefix("es4");
     RedisEventStore store(cfg);
 
     EventRecord e;
@@ -339,7 +349,7 @@ TEST(RedisEventStoreTest, TotalEvents) {
 TEST(RedisEventStoreTest, FromSequenceFilter) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es5";
+    cfg.key_prefix = unique_redis_prefix("es5");
     RedisEventStore store(cfg);
 
     EventRecord e1;
@@ -365,7 +375,7 @@ TEST(RedisEventStoreTest, FromSequenceFilter) {
 TEST(RedisEventStoreTest, ClientAccess) {
     if (!redis_available) GTEST_SKIP() << "Redis not running";
     RedisEventStore::Config cfg;
-    cfg.key_prefix = "test:es6";
+    cfg.key_prefix = unique_redis_prefix("es6");
     RedisEventStore store(cfg);
 
     EXPECT_TRUE(store.redis_available());

@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
     });
 
     // =================================================================
-    // 1. Admin 二进制「管理」消息 — 消息号 5001-5005（demo-only，无任何权限校验）
+    // 1. Admin 二进制「管理」消息 — 消息号 5001-5005（demo-only，显式关闭 ACL）
     //    默认 GatewayServer **不注册**；本示例手工 register_handlers。
     //    - kick_player (5001):  踢出指定用户，body=user_id
     //    - ban_ip (5002):       封禁指定 IP，body=ip_addr
@@ -80,6 +80,7 @@ int main(int argc, char* argv[]) {
     //    - admin_response (5005): 接收管理指令执行结果
     // =================================================================
     game::gateway::AdminService admin(session_mgr, metrics, push);
+    admin.set_access_control({.enabled = false});
 
     admin.set_kick_callback([&](const std::string& user_id) {
         for (const auto& s : session_mgr.all_sessions()) {

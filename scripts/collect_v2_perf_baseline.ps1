@@ -2,8 +2,9 @@ $ErrorActionPreference = "Stop"
 
 param(
     [string]$BuildDir = "D:\Program\boost-github\BoostAsioDemo\build\windows-ninja-release",
-    [ValidateSet("smoke", "baseline")]
+    [ValidateSet("smoke", "baseline", "capacity")]
     [string]$RunPreset = "smoke",
+    [int]$Repetitions = 1,
     [int]$GatewayPort = 9201,
     [int]$LoginPort = 9202,
     [int]$RoomPort = 9302,
@@ -24,6 +25,7 @@ $args = @(
     $scriptPath,
     "--build-dir", $BuildDir,
     "--run-preset", $RunPreset,
+    "--repetitions", [string]$Repetitions,
     "--gateway-port", [string]$GatewayPort,
     "--login-port", [string]$LoginPort,
     "--room-port", [string]$RoomPort,

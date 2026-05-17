@@ -54,6 +54,9 @@ Current scaffold behavior:
   `.status.components[]`, and `Ready` / `Progressing` / `Degraded` / `TLSReady`
   conditions
 - Uses HTTP readiness/liveness probes when `managementPort` is configured
+- P5 control-plane gate runs `scripts/verify_control_plane_gate.py` by default
+  for fake-client/unit tests; fixed runners can add `--include-envtest` and
+  `--include-kind` to verify envtest plus kind status/components/delete smoke.
 
 ## Production Shape
 
@@ -137,10 +140,10 @@ Why:
 3. Inject Raft peer membership into `match` and `leaderboard` pods from stable DNS.
 4. Rework Helm so Helm installs the operator and a sample `BoostGatewayCluster`,
    instead of trying to template every runtime object directly.
-5. Expand CI `kind` smoke to assert `status.components[]` coverage and the
-   expected steady-state conditions:
-   `Ready=True`, `Progressing=False`, `Degraded=False`, `TLSReady=False`
-   for the sample non-TLS cluster.
+5. Keep expanding fixed-runner `kind` smoke beyond the current P5 gate:
+   the current gate asserts `status.components[]`, `Ready=True`,
+   `Progressing=False`, `Degraded=False`, `TLSReady=False`, and sample CR
+   deletion; the next layer is rollout/rollback and probe failure injection.
 
 ## Notes About Existing Assets
 

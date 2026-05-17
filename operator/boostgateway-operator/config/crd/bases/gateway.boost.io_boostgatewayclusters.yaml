@@ -43,6 +43,9 @@ spec:
                       type: integer
                     managementPort:
                       type: integer
+                    resources:
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
                 login:
                   type: object
                   properties: *componentProperties
@@ -78,6 +81,26 @@ spec:
                   type: integer
                 desiredReplicas:
                   type: integer
+                components:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                      kind:
+                        type: string
+                      desiredReplicas:
+                        type: integer
+                      readyReplicas:
+                        type: integer
+                      updatedReplicas:
+                        type: integer
+                      availableReplicas:
+                        type: integer
+                      observedGeneration:
+                        type: integer
+                        format: int64
                 conditions:
                   type: array
                   items:

@@ -81,7 +81,7 @@
 | 服务 | 端口 | 说明 |
 |------|------|------|
 | gateway | 9201 | 客户端唯一接入点 |
-| login backend | 9202 | 登录认证 (JWT/dev) |
+| login backend | 9202 | 登录认证；本地默认 dev token，生产模式必须配置 JWT |
 | room backend | 9302 | 房间管理 |
 | battle backend | 9303 | 战斗模拟 |
 | matchmaking backend | 9304 | MMR 匹配 |
@@ -101,6 +101,14 @@ client.create_room("room_001");
 client.send_battle_input("move:100,200");
 client.disconnect();
 ```
+
+生产运行 login backend 时设置：
+
+```bash
+V2_LOGIN_AUTH_MODE=production V2_LOGIN_JWT_SECRET=<secret> v2_login_backend 9202
+```
+
+未设置 `V2_LOGIN_JWT_SECRET` 或 `V2_LOGIN_JWT_PUBLIC_KEY` 时，生产模式会拒绝启动，避免 dev token fallback 进入生产发布。
 
 详细文档见 `sdk/docs/README.md`，示例见 `sdk/examples/`。
 

@@ -17,6 +17,7 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace v2::config {
 class FeatureFlags;
@@ -126,8 +127,13 @@ private:
     struct BackendSlot {
         std::optional<BackendConfig> config;
         std::unique_ptr<v2::service::BackendConnection> connection;
+        std::vector<std::unique_ptr<v2::service::BackendConnection>> connection_pool;
+        std::size_t next_connection_index = 0;
         std::unordered_map<std::string, std::unique_ptr<v2::service::BackendConnection>>
             cluster_connections;
+        std::unordered_map<std::string, std::vector<std::unique_ptr<v2::service::BackendConnection>>>
+            cluster_connection_pools;
+        std::unordered_map<std::string, std::size_t> cluster_next_connection_index;
         v2::service::CircuitBreaker breaker;
     };
 

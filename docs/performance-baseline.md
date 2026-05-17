@@ -83,20 +83,41 @@ python ./scripts/collect_v2_perf_baseline.py \
   --repetitions 3
 ```
 
+容量专项（固定机器执行，覆盖 5K/10K echo 与 500 battle）：
+
+```bash
+python ./scripts/collect_v2_perf_baseline.py \
+  --build-dir ./build/release \
+  --run-preset capacity \
+  --repetitions 3
+```
+
+发布候选的聚合入口会同时执行 R4 release contract 与多进程性能基线：
+
+```bash
+python ./scripts/collect_release_baseline.py \
+  --build-dir ./build/release \
+  --configuration Release \
+  --perf-preset baseline \
+  --perf-repetitions 3
+```
+
 Windows 也可通过 PowerShell 包装器调用同一份 Python 主逻辑：
 
 ```powershell
 pwsh ./scripts/collect_v2_perf_baseline.ps1 `
   -BuildDir D:\Program\boost-github\BoostAsioDemo\build\windows-ninja-release `
-  -RunPreset smoke
+  -RunPreset baseline `
+  -Repetitions 3
 ```
 
 脚本职责：
 
 - 启动 `v2_login_backend` / `v2_room_backend` / `v2_battle_backend` / `v2_gateway_demo`
-- 运行标准 `echo` / `battle` 压测场景
+- 运行标准 `echo` / `battle` 压测场景；`capacity` profile 额外覆盖 5K/10K 连接容量样本
 - 抓取 `GET /metrics/diagnostics/json`
 - 记录进程资源快照
+- 记录空载与每个 case 后的进程资源快照
 - 记录 `git commit`、平台、构建目录、重复次数等元数据
 - 对同一 case 输出 `min / median / max` 聚合结果
 - 输出 `release_gates` 判定结果，作为 `R1-4` 的自动化基础
@@ -142,7 +163,7 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 
 > `R1-2` 状态：Windows smoke 已验证 `echo-20-10s`，collector 已补 baseline 限流覆盖；
 > 正式 baseline 待按修复后的入口重跑
-> `python ./scripts/collect_v2_perf_baseline.py --run-preset baseline --repetitions 3`
+> `python ./scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3`
 > 回填本表。
 
 **线性扩容系数** = `吞吐量(N核) / (N × 吞吐量(1核))`
@@ -157,7 +178,7 @@ pwsh ./scripts/collect_v2_perf_baseline.ps1 `
 
 > `R1-2` 状态：Windows smoke 已验证 `battle-2-10s` 可完整推进 3 帧并结算结束；
 > `battle-20-30s`、`battle-100-30s` 现在已经切换到“按房间分组”的持续战斗生成逻辑，
-> 待正式 baseline 重跑后回填。
+> 待正式 baseline 重跑后回填；`battle-500-30s` 进入 `capacity` profile，用于观察退化点。
 
 **广播 fan-out 系数** = `(总出站消息) / (总入站消息)`
 

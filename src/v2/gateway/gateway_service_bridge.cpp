@@ -13,6 +13,8 @@ namespace v2::gateway {
 
 namespace {
 
+constexpr std::size_t kBackendConnectionPoolSize = 8;
+
 struct SpanExportGuard {
     v2::tracing::Span span;
     v3::tracing::OtlpExporter* exporter = nullptr;
@@ -163,12 +165,28 @@ void GatewayServiceBridge::update_backend_config(
         slot.connection->close();
         slot.connection.reset();
     }
+    for (auto& conn : slot.connection_pool) {
+        if (conn) {
+            conn->close();
+        }
+    }
+    slot.connection_pool.clear();
+    slot.next_connection_index = 0;
     for (auto& [_, conn] : slot.cluster_connections) {
         if (conn) {
             conn->close();
         }
     }
     slot.cluster_connections.clear();
+    for (auto& [_, pool] : slot.cluster_connection_pools) {
+        for (auto& conn : pool) {
+            if (conn) {
+                conn->close();
+            }
+        }
+    }
+    slot.cluster_connection_pools.clear();
+    slot.cluster_next_connection_index.clear();
     slot.breaker.reset();
 }
 
@@ -263,10 +281,33 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         auto& slot = slot_for(service);
         auto* existing = target.from_cluster
             ? [&]() -> v2::service::BackendConnection* {
-                  auto it = slot.cluster_connections.find(target.connection_key);
-                  return it == slot.cluster_connections.end() ? nullptr : it->second.get();
+                  auto& pool = slot.cluster_connection_pools[target.connection_key];
+                  if (pool.empty()) {
+                      return nullptr;
+                  }
+                  auto& next = slot.cluster_next_connection_index[target.connection_key];
+                  for (std::size_t attempt = 0; attempt < pool.size(); ++attempt) {
+                      const auto index = (next + attempt) % pool.size();
+                      if (pool[index] && pool[index]->is_connected()) {
+                          next = (index + 1) % pool.size();
+                          return pool[index].get();
+                      }
+                  }
+                  return nullptr;
               }()
-            : slot.connection.get();
+            : [&]() -> v2::service::BackendConnection* {
+                  if (slot.connection_pool.empty()) {
+                      return nullptr;
+                  }
+                  for (std::size_t attempt = 0; attempt < slot.connection_pool.size(); ++attempt) {
+                      const auto index = (slot.next_connection_index + attempt) % slot.connection_pool.size();
+                      if (slot.connection_pool[index] && slot.connection_pool[index]->is_connected()) {
+                          slot.next_connection_index = (index + 1) % slot.connection_pool.size();
+                          return slot.connection_pool[index].get();
+                      }
+                  }
+                  return nullptr;
+              }();
         if (existing && existing->is_connected()) {
             if (registry_) {
                 registry_->heartbeat(service, target.config.host, target.config.port);
@@ -291,18 +332,35 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
     auto& slot = slot_for(service);
     v2::service::BackendConnection* stored = nullptr;
     if (target.from_cluster) {
-        auto& entry = slot.cluster_connections[target.connection_key];
-        if (entry) {
-            entry->close();
+        auto& pool = slot.cluster_connection_pools[target.connection_key];
+        auto& next = slot.cluster_next_connection_index[target.connection_key];
+        if (pool.size() < kBackendConnectionPoolSize) {
+            pool.push_back(std::move(conn));
+            stored = pool.back().get();
+            next = pool.empty() ? 0 : next % pool.size();
+        } else {
+            auto& entry = pool[next % pool.size()];
+            if (entry) {
+                entry->close();
+            }
+            entry = std::move(conn);
+            stored = entry.get();
+            next = (next + 1) % pool.size();
         }
-        entry = std::move(conn);
-        stored = entry.get();
     } else {
-        if (slot.connection) {
-            slot.connection->close();
+        if (slot.connection_pool.size() < kBackendConnectionPoolSize) {
+            slot.connection_pool.push_back(std::move(conn));
+            stored = slot.connection_pool.back().get();
+            slot.next_connection_index %= slot.connection_pool.size();
+        } else {
+            auto& entry = slot.connection_pool[slot.next_connection_index % slot.connection_pool.size()];
+            if (entry) {
+                entry->close();
+            }
+            entry = std::move(conn);
+            stored = entry.get();
+            slot.next_connection_index = (slot.next_connection_index + 1) % slot.connection_pool.size();
         }
-        slot.connection = std::move(conn);
-        stored = slot.connection.get();
     }
     if (registry_) {
         registry_->heartbeat(service, target.config.host, target.config.port);
@@ -379,9 +437,7 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
 
     const auto send_start = std::chrono::steady_clock::now();
     auto response = conn->send_request(request);
-    const auto failure_stage = conn->last_failure_stage();
-    if (!response &&
-        failure_stage != v2::service::BackendConnection::FailureStage::kRead) {
+    if (!response) {
         conn->close();
         conn = ensure_connection(target, shard_key);
         if (conn) {
@@ -497,12 +553,28 @@ void GatewayServiceBridge::shutdown() {
             slot->connection->close();
             slot->connection.reset();
         }
+        for (auto& conn : slot->connection_pool) {
+            if (conn) {
+                conn->close();
+            }
+        }
+        slot->connection_pool.clear();
+        slot->next_connection_index = 0;
         for (auto& [_, conn] : slot->cluster_connections) {
             if (conn) {
                 conn->close();
             }
         }
         slot->cluster_connections.clear();
+        for (auto& [_, pool] : slot->cluster_connection_pools) {
+            for (auto& conn : pool) {
+                if (conn) {
+                    conn->close();
+                }
+            }
+        }
+        slot->cluster_connection_pools.clear();
+        slot->cluster_next_connection_index.clear();
     }
 }
 

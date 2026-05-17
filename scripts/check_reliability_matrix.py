@@ -15,7 +15,15 @@ REQUIRED_SCENARIOS = {
     "readiness_heartbeat_recovery",
     "writebehind_drain_failure",
     "proto_transport_contract",
+    "production_auth_audit_gate",
+    "data_recovery_gate",
+    "rate_limit_key_paths",
+    "observability_release_gate",
+    "control_plane_operator_gate",
     "stability_soak_gate",
+    "fixed_runner_preflight",
+    "validation_summary_rendering",
+    "production_evidence_gate",
 }
 
 

@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 
@@ -64,6 +65,7 @@ private:
     std::unique_ptr<boost::asio::ssl::context> ssl_context_;
     std::unique_ptr<boost::asio::ssl::stream<boost::asio::ip::tcp::socket&>> ssl_stream_;
     FailureStage last_failure_stage_ = FailureStage::kNone;
+    mutable std::recursive_mutex mutex_;
 };
 
 }  // namespace v2::service

@@ -9,25 +9,29 @@
 - v1.x：维护期能力已经收束，主要保留历史协议、业务边界、运行手册和发布记录。
 - v2.x：当前主线。`ActorSystem`、gateway-only ingress、五个后端服务、`BackendEnvelope`、typed envelope adapter、服务健康检查、TTL/readiness、WriteBehind drain 统计与失败上报已经进入可验收状态。
 - R4 契约门禁：`scripts/verify_r4_contract.py` 覆盖通信契约、后端恢复、typed envelope、proto schema、gateway-only ingress 和短架构基线入口。
-- 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile。
+- 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile；`.github/workflows/nightly-stability.yml` 已将 `short` profile 纳入夜间任务。
 - Windows 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 不再依赖平台 `select()`，改为 Boost.Asio non-blocking bounded read，降低 Windows/MSVC 下 stale backend 与多客户端 smoke 的挂起风险。
 - RC 总门禁：`scripts/verify_release_candidate.py` 汇总可靠性矩阵、R4 契约、稳定性 soak 和可选 Release baseline，并输出结构化 summary。
+- 安全发布门禁：`scripts/check_security_release_gate.py` 检查生产模式禁用 dev token fallback 的证据、admin 审计最小键和 ACL 边界说明。
 
 ## 增量能力
 
 - v3 proto/gRPC：schema 校验、CMake target 和 release checklist 已存在，当前定位为传输契约与构建入口，不作为默认生产链路。
-- Redis/Raft/Operator：文档和部分实现入口已经存在，当前仍应按独立可靠性闭环推进，不扩大默认发布承诺。
-- Release baseline：`scripts/collect_release_baseline.py` 是 Release profile 的性能基线入口，适合固定机器或 CI release runner 执行。
+- Redis/Raft/Operator：已通过专项 E2E 形成独立可靠性闭环；默认发布仍保持有界 smoke，固定本机/runner 可显式启用 Redis live 与 Operator kind 验证。
+- Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` profile 用于 5K/10K 连接容量专项；`.github/workflows/release-baseline.yml` 提供手动触发入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
+- 专项 E2E：`scripts/verify_specialized_e2e.py` 聚合 Raft 集群/恢复、Redis 降级与可选 Redis live / Operator kind smoke，作为 Redis/Raft/Operator 独立验收入口；`.github/workflows/specialized-e2e.yml` 提供手动触发入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
+- P3 数据恢复：`scripts/verify_data_recovery_gate.py` 聚合 replay/result/snapshot、WriteBehind flush/drain、Redis degraded、Raft committed restart replay 和持久化 round trip；Redis live 与 settlement replay 通过显式参数接入固定环境。
+- P4 可观测性/限流：`scripts/verify_observability_gate.py` 聚合 rate limit 全局消息类型/IP/user/login/connection、trace/OTel、backend RED metrics、gateway metrics 导出和 audit 事件证据，并接入 RC 总门禁；固定观测 runner 可通过 `--include-otel-collector` 验证 fake collector POST。
+- P5 控制面：`scripts/verify_control_plane_gate.py` 聚合 Operator fake-client Go 测试，并接入 RC 总门禁；固定 runner 可通过 `--include-envtest` / `--include-kind` 验证 envtest、kind status/components 和样例 CR 删除路径。本机 P5 收束验证已覆盖 Redis live、Raft 恢复和 Operator kind，证据输出为 `runtime/validation/dev-p5-specialized-e2e-summary.json` 与 `runtime/validation/dev-p5-control-plane-kind-summary.json`。
+- P6 生产证据聚合：`scripts/verify_production_evidence_gate.py` 将 stability soak、P3 data recovery、Redis/Raft/Operator specialized E2E 与可选 release/capacity baseline 聚合为一个固定 runner 入口；默认模式保持有界，长稳、Redis live、Operator kind、settlement replay、capacity baseline 通过显式参数启用。本机 P6 收束验证已覆盖 Release 构建、Redis live、Operator kind 和 3 轮 Release baseline，交付记录见 `docs/releases/v3.3.2-p6-production-evidence.md`。
 
 ## 保留边界
 
-- 长稳 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft/Operator E2E 和生产级鉴权加固仍属于后续稳定性专项。
+- 长稳 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC 和外部 OTel collector 长稳仍属于后续稳定性专项；P6 已提供统一聚合入口，但正式数据仍需固定 runner 沉淀。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 
 ## 下一步优先级
 
-1. 在固定 Release runner 上执行 `scripts/collect_release_baseline.py`，沉淀可比较的 Release 性能基线。
-2. 将 `scripts/verify_stability_soak.py --soak-profile short` 纳入夜间任务，保留 release/tag 任务的 smoke 门禁。
-3. 为 Redis/Raft/Operator 分别建立最小 E2E 验收矩阵，避免混入默认 gateway 发布门禁。
-4. 持续扩充 `docs/reliability-matrix.md`，每新增可靠性承诺必须绑定测试或脚本证据。
+1. 将 P6 本机交付记录同步到 main，并在固定 runner 上继续按 `docs/fixed-runner-playbook.md` 沉淀 capacity、settlement replay 和长稳数据。
+2. 持续扩充 `docs/reliability-matrix.md`，每新增可靠性承诺必须绑定测试或脚本证据。

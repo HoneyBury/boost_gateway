@@ -75,7 +75,7 @@ public:
         return n >= 0 ? static_cast<std::size_t>(n) : 0;
     }
 
-    bool available() const { return client_.is_connected(); }
+    bool available() { return ensure_available(); }
 
 private:
     RedisClient client_;

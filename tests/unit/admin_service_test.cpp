@@ -7,6 +7,7 @@
 
 #include <boost/asio/thread_pool.hpp>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -34,6 +35,7 @@ TEST(AdminServiceTest, RegistersAllAdminHandlers) {
     game::gateway::PushService push;
 
     game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_access_control({.enabled = false});
     admin.register_handlers(dispatcher);
 
     EXPECT_TRUE(dispatcher.has_handler(net::protocol::kAdminKickPlayer));
@@ -53,6 +55,7 @@ TEST(AdminServiceTest, ServerStatusCallback) {
     game::gateway::PushService push;
 
     game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_access_control({.enabled = false});
     admin.set_status_callback([] { return "{\"status\":\"ok\"}"; });
     admin.register_handlers(dispatcher);
 
@@ -73,6 +76,7 @@ TEST(AdminServiceTest, DispatchInvokesCallbacksWithoutGatewayDefaultWiring) {
     auto reload_promise = std::make_shared<std::promise<bool>>();
 
     game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_access_control({.enabled = false});
     admin.set_kick_callback([kick_promise](const std::string& user_id) {
         kick_promise->set_value(user_id);
     });
@@ -105,6 +109,7 @@ TEST(AdminServiceTest, WritesAdminInvokeAuditWithRequiredKeysAndSanitizedExcerpt
     game::gateway::PushService push;
 
     game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_access_control({.enabled = false});
     admin.register_handlers(dispatcher);
 
     const std::string payload = "10.0.0.1\"\n\t\\oops";
@@ -117,4 +122,58 @@ TEST(AdminServiceTest, WritesAdminInvokeAuditWithRequiredKeysAndSanitizedExcerpt
     EXPECT_NE(log_text.find("layer=L3_admin action=ban_ip outcome=accepted actor_endpoint=none request_id=7311 trace_id=88117"),
               std::string::npos);
     EXPECT_NE(log_text.find("payload_excerpt=10.0.0.1____oops"), std::string::npos);
+}
+
+TEST(AdminServiceTest, DefaultAclDeniesAdminCallbacksAndAuditsDenial) {
+    app::logging::init("project_tests");
+
+    boost::asio::thread_pool pool(1);
+    net::MessageDispatcher dispatcher(pool);
+    game::gateway::SessionManager sm;
+    game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
+
+    auto kick_called = std::make_shared<std::promise<bool>>();
+
+    game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_kick_callback([kick_called](const std::string&) {
+        kick_called->set_value(true);
+    });
+    admin.register_handlers(dispatcher);
+
+    ASSERT_TRUE(dispatcher.dispatch({}, net::protocol::kAdminKickPlayer, 7401, 0, "player_to_kick", 88118));
+    pool.join();
+
+    EXPECT_EQ(kick_called->get_future().wait_for(std::chrono::milliseconds(0)), std::future_status::timeout);
+    const auto log_text = slurp("logs/audit.log");
+    EXPECT_NE(log_text.find("\"event\":\"admin_denied\""), std::string::npos);
+    EXPECT_NE(log_text.find("layer=L3_admin action=kick_player outcome=denied"), std::string::npos);
+}
+
+TEST(AdminServiceTest, SharedSecretAclStripsTokenBeforeCallbackAndAudit) {
+    app::logging::init("project_tests");
+
+    boost::asio::thread_pool pool(1);
+    net::MessageDispatcher dispatcher(pool);
+    game::gateway::SessionManager sm;
+    game::gateway::GatewayMetrics metrics;
+    game::gateway::PushService push;
+
+    auto kick_promise = std::make_shared<std::promise<std::string>>();
+
+    game::gateway::AdminService admin(sm, metrics, push);
+    admin.set_access_control({.enabled = true, .shared_secret = "s3cr3t"});
+    admin.set_kick_callback([kick_promise](const std::string& user_id) {
+        kick_promise->set_value(user_id);
+    });
+    admin.register_handlers(dispatcher);
+
+    ASSERT_TRUE(dispatcher.dispatch({}, net::protocol::kAdminKickPlayer, 7402, 0,
+                                    "token:s3cr3t|player_to_kick", 88119));
+    pool.join();
+
+    EXPECT_EQ(kick_promise->get_future().get(), "player_to_kick");
+    const auto log_text = slurp("logs/audit.log");
+    EXPECT_NE(log_text.find("layer=L3_admin action=kick_player outcome=accepted"), std::string::npos);
+    EXPECT_NE(log_text.find("payload_excerpt=player_to_kick"), std::string::npos);
 }

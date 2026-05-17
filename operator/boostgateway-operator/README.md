@@ -16,13 +16,17 @@ operator built with `controller-runtime`.
   - `leaderboard`
 - Reconciles per-service `ConfigMap` objects and injects them via `envFrom`
 - Reconciles a placeholder TLS `Secret` when `.spec.tls.enabled=true`
+- Reconciles a cert-manager `Certificate` when
+  `.spec.tls.managedByCertManager=true` and `.spec.tls.certManagerIssuer` is set
 - Injects Raft peer environment variables for stateful components:
   - `RAFT_NODE_ID`
   - `RAFT_PEERS`
   - `RAFT_ELECTION_TIMEOUT_MIN_MS`
   - `RAFT_ELECTION_TIMEOUT_MAX_MS`
   - `RAFT_HEARTBEAT_INTERVAL_MS`
-- Updates `.status.phase`, `.status.readyReplicas`, and a basic `Ready` condition
+- Updates `.status.phase`, `.status.readyReplicas`, `.status.desiredReplicas`,
+  `.status.components[]`, and `Ready` / `Progressing` / `Degraded` /
+  `TLSReady` conditions
 - Designed for local development on `kind`
 
 ## Layout
@@ -47,6 +51,12 @@ make install-sample
 make test
 ```
 
+The repository-level P5 gate wraps this default test path:
+
+```bash
+python ../../scripts/verify_control_plane_gate.py
+```
+
 `envtest` is also wired for reconcile-level validation. It requires
 `KUBEBUILDER_ASSETS` to point at the local API server / etcd binaries.
 
@@ -61,8 +71,21 @@ For a full local install smoke path on `kind`:
 make kind-smoke
 ```
 
+The kind smoke path installs the CRD/controller/sample, waits for the sample
+`BoostGatewayCluster` to become `Running`, asserts steady-state conditions and
+six component status entries, then deletes the sample CR and waits for deletion.
+
+Repository-level fixed-runner variants:
+
+```bash
+python ../../scripts/verify_control_plane_gate.py --include-envtest
+python ../../scripts/verify_control_plane_gate.py --include-kind
+python ../../scripts/verify_control_plane_gate.py --include-envtest --include-kind
+```
+
 ## Next steps
 
-- Wire TLS and cert-manager objects
-- Reconcile `status.conditions` from actual pod readiness and rollout state
-- Turn the sample install flow into a CI `kind` smoke test
+- Add rollout/rollback failure injection beyond the current status/delete smoke
+- Exercise readiness/liveness probe failures on a fixed kind runner
+- Decide whether Helm should install only the operator or also a sample
+  `BoostGatewayCluster`

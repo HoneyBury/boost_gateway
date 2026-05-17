@@ -27,6 +27,7 @@
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -287,6 +288,22 @@ TEST(ServiceBusIntegrity, LoginBackendAcceptsRs256JwtAndValidatesToken) {
     EXPECT_FALSE(bad_validate_doc.value("valid", true));
 
     service.stop();
+}
+
+TEST(ServiceBusIntegrity, LoginBackendProductionModeRequiresJwtVerifier) {
+    EXPECT_THROW(
+        v2::login::LoginBackendService(v2::login::LoginBackendOptions{
+            .port = 0,
+            .production_auth_required = true,
+        }),
+        std::invalid_argument);
+
+    EXPECT_NO_THROW(
+        v2::login::LoginBackendService(v2::login::LoginBackendOptions{
+            .port = 0,
+            .production_auth_required = true,
+            .jwt_secret = "production-secret",
+        }));
 }
 
 // ─── Room backend data chain ────────────────────────────────────────────
@@ -700,7 +717,7 @@ TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) 
         R"({"user_id":"alice","token":"token:alice"})");
     EXPECT_FALSE(timed_out.success);
     EXPECT_EQ(timed_out.error, v2::service::ServiceErrorCode::kTimeout);
-    EXPECT_EQ(stale_requests.load(), 1);
+    EXPECT_EQ(stale_requests.load(), 2);
 
     v2::service::BackendServer::HandlerMap recovered_handlers;
     recovered_handlers["login_request"] = [&](const v2::service::BackendEnvelope&) {

@@ -127,6 +127,58 @@ TEST(RateLimiterTest, BlocksAfterExhaustingUserLimit) {
     EXPECT_GT(result.retry_after_ms, 0);
 }
 
+TEST(RateLimiterTest, BlocksAfterExhaustingIpLimit) {
+    RateLimiter::Config config;
+    config.connection_limit = 1000;
+    config.message_type_limit = 1000;
+    config.ip_limit = 3;
+    config.user_limit = 1000;
+    config.login_limit = 1000;
+    RateLimiter limiter(config);
+
+    ClientEnvelope env;
+    env.protocol_message_id = 1001;
+
+    env.session_id = 1;
+    EXPECT_TRUE(limiter.check(env, 1, "10.0.0.7").allowed);
+    env.session_id = 2;
+    EXPECT_TRUE(limiter.check(env, 2, "10.0.0.7").allowed);
+    env.session_id = 3;
+    EXPECT_TRUE(limiter.check(env, 3, "10.0.0.7").allowed);
+    env.session_id = 4;
+
+    const auto result = limiter.check(env, 4, "10.0.0.7");
+    EXPECT_FALSE(result.allowed);
+    EXPECT_EQ(result.reason, "ip_rate_limited");
+    EXPECT_GT(result.retry_after_ms, 0);
+}
+
+TEST(RateLimiterTest, BlocksAfterExhaustingMessageTypeLimit) {
+    RateLimiter::Config config;
+    config.connection_limit = 1000;
+    config.message_type_limit = 3;
+    config.ip_limit = 1000;
+    config.user_limit = 1000;
+    config.login_limit = 1000;
+    RateLimiter limiter(config);
+
+    ClientEnvelope env;
+    env.protocol_message_id = 3001;
+
+    env.session_id = 1;
+    EXPECT_TRUE(limiter.check(env, 1, "ip1").allowed);
+    env.session_id = 2;
+    EXPECT_TRUE(limiter.check(env, 2, "ip2").allowed);
+    env.session_id = 3;
+    EXPECT_TRUE(limiter.check(env, 3, "ip3").allowed);
+    env.session_id = 4;
+
+    const auto result = limiter.check(env, 4, "ip4");
+    EXPECT_FALSE(result.allowed);
+    EXPECT_EQ(result.reason, "message_type_rate_limited");
+    EXPECT_GT(result.retry_after_ms, 0);
+}
+
 TEST(RateLimiterTest, AllowsDifferentUsersIndependently) {
     RateLimiter::Config config;
     config.connection_limit = 1000;

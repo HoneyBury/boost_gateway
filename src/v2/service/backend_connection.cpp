@@ -13,6 +13,7 @@ BackendConnection::BackendConnection(BackendConnectionOptions options)
 BackendConnection::~BackendConnection() { close(); }
 
 bool BackendConnection::connect() {
+    std::scoped_lock lock(mutex_);
     io_context_.restart();
     socket_ = std::make_unique<tcp::socket>(io_context_);
 
@@ -118,6 +119,7 @@ bool BackendConnection::tls_handshake() {
 
 std::optional<BackendEnvelope> BackendConnection::send_request(
     BackendEnvelope request) {
+    std::scoped_lock lock(mutex_);
     last_failure_stage_ = FailureStage::kNone;
     if (!socket_ || !socket_->is_open()) {
         last_failure_stage_ = FailureStage::kNotConnected;
@@ -161,6 +163,7 @@ std::optional<BackendEnvelope> BackendConnection::send_request(
 }
 
 void BackendConnection::close() {
+    std::scoped_lock lock(mutex_);
     if (ssl_stream_) {
         boost::system::error_code ec;
         ssl_stream_->shutdown(ec);
@@ -175,6 +178,7 @@ void BackendConnection::close() {
 }
 
 bool BackendConnection::is_connected() const {
+    std::scoped_lock lock(mutex_);
     if (ssl_stream_) {
         // Check the underlying TCP socket since SSL stream doesn't
         // expose is_open() directly.

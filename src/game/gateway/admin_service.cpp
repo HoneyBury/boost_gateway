@@ -39,11 +39,53 @@ void audit_admin_invoke(const net::DispatchContext& ctx, std::string_view action
     AUDIT_LOG("admin_invoke", details);
 }
 
+void audit_admin_denied(const net::DispatchContext& ctx, std::string_view action_name) {
+    const std::string peer = ctx.session ? ctx.session->remote_endpoint() : "none";
+    AUDIT_LOG("admin_denied",
+              fmt::format("layer=L3_admin action={} outcome=denied actor_endpoint={} request_id={} trace_id={}",
+                          action_name, peer, ctx.request_id, ctx.trace_id));
+}
+
 }  // namespace
+
+bool AdminService::is_authorized(const net::DispatchContext& ctx) const {
+    if (!acl_.enabled) {
+        return true;
+    }
+    const std::string peer = ctx.session ? ctx.session->remote_endpoint() : "none";
+    for (const auto& prefix : acl_.trusted_peer_prefixes) {
+        if (!prefix.empty() && peer.rfind(prefix, 0) == 0) {
+            return true;
+        }
+    }
+    if (!acl_.shared_secret.empty()) {
+        const std::string expected = "token:" + acl_.shared_secret + "|";
+        return ctx.body.rfind(expected, 0) == 0;
+    }
+    return false;
+}
+
+std::string AdminService::strip_auth_prefix(const std::string& body) const {
+    if (acl_.shared_secret.empty()) {
+        return body;
+    }
+    const std::string expected = "token:" + acl_.shared_secret + "|";
+    if (body.rfind(expected, 0) == 0) {
+        return body.substr(expected.size());
+    }
+    return body;
+}
 
 void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
     dispatcher.register_handler(net::protocol::kAdminServerStatus,
         [this](const net::DispatchContext& ctx) {
+            if (!is_authorized(ctx)) {
+                audit_admin_denied(ctx, "server_status");
+                if (ctx.session) {
+                    push_service_.send_ok(ctx.session, net::protocol::kAdminResponse, ctx.request_id, "admin_denied");
+                }
+                return;
+            }
             audit_admin_invoke(ctx, "server_status", {});
             auto status = on_status_ ? on_status_() : "{}";
             if (ctx.session) {
@@ -56,8 +98,16 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
 
     dispatcher.register_handler(net::protocol::kAdminReloadConfig,
         [this](const net::DispatchContext& ctx) {
+            if (!is_authorized(ctx)) {
+                audit_admin_denied(ctx, "reload_config");
+                if (ctx.session) {
+                    push_service_.send_ok(ctx.session, net::protocol::kAdminResponse, ctx.request_id, "admin_denied");
+                }
+                return;
+            }
+            const auto body = strip_auth_prefix(ctx.body);
             audit_admin_invoke(ctx, "reload_config",
-                               fmt::format("payload_excerpt={}", clipped_payload_excerpt(ctx.body)));
+                               fmt::format("payload_excerpt={}", clipped_payload_excerpt(body)));
             if (on_reload_) {
                 on_reload_();
             }
@@ -71,10 +121,18 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
 
     dispatcher.register_handler(net::protocol::kAdminKickPlayer,
         [this](const net::DispatchContext& ctx) {
+            if (!is_authorized(ctx)) {
+                audit_admin_denied(ctx, "kick_player");
+                if (ctx.session) {
+                    push_service_.send_ok(ctx.session, net::protocol::kAdminResponse, ctx.request_id, "admin_denied");
+                }
+                return;
+            }
+            const auto body = strip_auth_prefix(ctx.body);
             audit_admin_invoke(ctx, "kick_player",
-                               fmt::format("payload_excerpt={}", clipped_payload_excerpt(ctx.body)));
+                               fmt::format("payload_excerpt={}", clipped_payload_excerpt(body)));
             if (on_kick_) {
-                on_kick_(ctx.body);
+                on_kick_(body);
             }
             if (ctx.session) {
                 push_service_.send_ok(ctx.session,
@@ -86,9 +144,17 @@ void AdminService::register_handlers(net::MessageDispatcher& dispatcher) {
 
     dispatcher.register_handler(net::protocol::kAdminBanIp,
         [this](const net::DispatchContext& ctx) {
-            audit_admin_invoke(ctx, "ban_ip", fmt::format("payload_excerpt={}", clipped_payload_excerpt(ctx.body)));
+            if (!is_authorized(ctx)) {
+                audit_admin_denied(ctx, "ban_ip");
+                if (ctx.session) {
+                    push_service_.send_ok(ctx.session, net::protocol::kAdminResponse, ctx.request_id, "admin_denied");
+                }
+                return;
+            }
+            const auto body = strip_auth_prefix(ctx.body);
+            audit_admin_invoke(ctx, "ban_ip", fmt::format("payload_excerpt={}", clipped_payload_excerpt(body)));
             if (on_ban_) {
-                on_ban_(ctx.body, 3600);
+                on_ban_(body, 3600);
             }
             if (ctx.session) {
                 push_service_.send_ok(ctx.session,

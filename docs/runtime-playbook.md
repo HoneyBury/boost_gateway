@@ -255,6 +255,44 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 - 验证 `DemoServer` 的 `IoEngine` / pinned acceptor / per-core session 分布
 - 验证 `v2` diagnostics schema，而不需要接入 `echo_server`
 
+### v2 rate limit 与 P4 可观测性配置
+
+`v2::gateway::Runtime` 默认启用多级 token bucket 限流，覆盖：
+
+| 环境变量 | 默认值 | 作用域 |
+|---|---:|---|
+| `V2_RATE_LIMIT_CONNECTION` | `100` | 单连接 / session |
+| `V2_RATE_LIMIT_MESSAGE_TYPE` | `500` | 全局消息类型 |
+| `V2_RATE_LIMIT_IP` | `200` | IP |
+| `V2_RATE_LIMIT_USER` | `50` | 用户 |
+| `V2_RATE_LIMIT_LOGIN` | `5` | login 请求专项 |
+
+性能 baseline 会临时放宽这些环境变量，避免吞吐测试被保护阈值污染；生产环境应按入口容量和上游限流策略显式设置。
+
+`examples/v2_gateway_demo` 读取 `OTEL_EXPORT_ENDPOINT`。仅当该环境变量非空时才创建 `OtlpExporter` 并将 span POST 到该 endpoint；未配置时主链仍会继续路由，不依赖外部 collector。
+
+P4 发布门禁：
+
+```bash
+python scripts/verify_observability_gate.py --build-dir build/default --skip-build
+python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector
+```
+
+默认门禁不依赖外部 OTel collector，只验证 exporter buffer、flush failure requeue、trace 传播和 route span 生成；`--include-otel-collector` 会启动测试内 fake collector，要求 runner 允许绑定 `127.0.0.1` 随机端口。
+
+### v2 backend RED 指标命名
+
+`v2_gateway_demo` 的 `/metrics` 对每个已出现 backend service 输出以下 Prometheus counter，`<service>` 使用 `login` / `room` / `battle` / `matchmaking` / `leaderboard`：
+
+| 指标 | 语义 |
+|---|---|
+| `gateway_backend_<service>_requests_total` | 后端路由请求数 |
+| `gateway_backend_<service>_successes_total` | 成功响应数 |
+| `gateway_backend_<service>_errors_total` | 业务/协议错误数 |
+| `gateway_backend_<service>_timeouts_total` | 超时数 |
+
+当前 RED 指标的 `rate` 由外部 Prometheus/rules 计算；进程内只暴露累计 counter 和 diagnostics JSON。
+
 ## 8. 当前主链已闭环的能力清单
 
 仅列 `stable` 项。`experimental` / `reserved` / `demo-only` 详见 `docs/v1-maturity-matrix.md`。
@@ -320,6 +358,22 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 ```
 
 > **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**横切接线事实**：**`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。**横切应收口规范**：**`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16**）。**横切数据格式与支持级别**：**`docs/v1-cross-cutting-data-formats.md`**（**v1.1.17**）。
+
+### v2 login backend 生产鉴权
+
+`config/login_backend.json` 默认保留 `provider=dev`，仅用于本地和测试。生产运行必须显式启用 JWT：
+
+```bash
+V2_LOGIN_AUTH_MODE=production V2_LOGIN_JWT_SECRET=<secret> v2_login_backend 9202
+```
+
+或使用 RS256 公钥：
+
+```bash
+V2_LOGIN_AUTH_MODE=production V2_LOGIN_JWT_PUBLIC_KEY="$(cat public.pem)" v2_login_backend 9202
+```
+
+生产模式下未配置 `V2_LOGIN_JWT_SECRET` 或 `V2_LOGIN_JWT_PUBLIC_KEY` 会拒绝启动；release candidate 会通过 `scripts/check_security_release_gate.py` 检查该证据链。
 
 ## 10. v1.x 维护收束结论
 

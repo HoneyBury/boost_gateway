@@ -6,6 +6,7 @@
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
 
+#include <stdexcept>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -55,7 +56,9 @@ namespace v2::login {
 class LoginBackendService::Impl {
 public:
     explicit Impl(std::uint16_t port) : port_(port) {}
-    explicit Impl(LoginBackendOptions options) : port_(options.port) {
+    explicit Impl(LoginBackendOptions options)
+        : port_(options.port),
+          production_auth_required_(options.production_auth_required) {
         if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty()) {
             jwt_validator_.emplace(v2::auth::JwtValidator::Config{
                 .secret = options.jwt_secret,
@@ -64,6 +67,10 @@ public:
                 .issuer = options.jwt_issuer,
                 .audience = options.jwt_audience,
             });
+        }
+        if (production_auth_required_ && !jwt_validator_.has_value()) {
+            throw std::invalid_argument(
+                "production auth requires V2_LOGIN_JWT_SECRET or V2_LOGIN_JWT_PUBLIC_KEY");
         }
     }
 
@@ -93,6 +100,7 @@ private:
     std::unique_ptr<v2::service::BackendServer> server_;
     BackendPlayerState state_;
     std::optional<v2::auth::JwtValidator> jwt_validator_;
+    bool production_auth_required_ = false;
 
     v2::service::BackendEnvelope handle_login_request(
         const v2::service::BackendEnvelope& request) {
@@ -120,7 +128,6 @@ private:
             return make_error_response(-1004, "empty_token");
         }
 
-        bool token_valid = false;
         std::string token_role = "player";
 
         if (jwt_validator_.has_value()) {
@@ -130,13 +137,12 @@ private:
                     AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=jwt_subject_mismatch");
                     return make_error_response(-1003, "token_subject_mismatch");
                 }
-                token_valid = true;
                 token_role = result.payload.role;
             } else {
                 AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=" + result.error);
                 return make_error_response(-1003, result.error);
             }
-        } else {
+        } else if (!production_auth_required_) {
             // Dev mode: "token:user_id" format — any non-empty token is accepted
             auto colon_pos = token.find(':');
             std::string token_user_id = (colon_pos != std::string::npos)
@@ -145,7 +151,9 @@ private:
                 AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=invalid_token_format");
                 return make_error_response(-1004, "invalid_token_format");
             }
-            token_valid = true;
+        } else {
+            AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=jwt_required");
+            return make_error_response(-1003, "jwt_required");
         }
 
         // Accept the token
@@ -180,6 +188,8 @@ private:
         bool valid = !token.empty();
         if (jwt_validator_.has_value() && valid) {
             valid = jwt_validator_->validate(token).valid;
+        } else if (production_auth_required_) {
+            valid = false;
         }
 
         v2::service::BackendEnvelope response;

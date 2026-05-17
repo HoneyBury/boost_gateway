@@ -262,8 +262,12 @@ public:
         if (!ensure_connected()) return std::nullopt;
         auto* reply = cmd("ZSCORE %s %b", key.c_str(),
                           member.data(), member.size());
-        if (!reply || reply->type == REDIS_REPLY_STRING) {
+        if (!reply || reply->type == REDIS_REPLY_NIL) {
             free_if(reply);
+            return std::nullopt;
+        }
+        if (reply->type != REDIS_REPLY_STRING) {
+            freeReplyObject(reply);
             return std::nullopt;
         }
         double score = std::strtod(reply->str, nullptr);

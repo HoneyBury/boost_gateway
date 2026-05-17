@@ -12,7 +12,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-def tail(text: str, max_chars: int = 4000) -> str:
+def normalize_output(text: str | bytes | None) -> str:
+    if text is None:
+        return ""
+    if isinstance(text, bytes):
+        return text.decode("utf-8", errors="replace")
+    return text
+
+
+def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
+    text = normalize_output(text)
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
@@ -36,14 +45,16 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
             "command": cmd,
             "status": "timeout",
             "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout or ""),
-            "stderr_tail": tail(exc.stderr or ""),
+            "stdout_tail": tail(exc.stdout),
+            "stderr_tail": tail(exc.stderr),
         }
 
-    if completed.stdout:
-        print(completed.stdout, end="")
-    if completed.stderr:
-        print(completed.stderr, end="", file=sys.stderr)
+    stdout = normalize_output(completed.stdout)
+    stderr = normalize_output(completed.stderr)
+    if stdout:
+        print(stdout, end="")
+    if stderr:
+        print(stderr, end="", file=sys.stderr)
     return {
         "name": name,
         "category": category,
@@ -51,8 +62,8 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
         "status": "passed" if completed.returncode == 0 else "failed",
         "returncode": completed.returncode,
         "duration_seconds": round(time.monotonic() - started, 3),
-        "stdout_tail": tail(completed.stdout),
-        "stderr_tail": tail(completed.stderr),
+        "stdout_tail": tail(stdout),
+        "stderr_tail": tail(stderr),
     }
 
 
@@ -114,6 +125,42 @@ def main() -> int:
         args.timeout_seconds,
     ))
     steps.append(run_step(
+        "security release gate",
+        "security",
+        [sys.executable, str(root / "scripts" / "check_security_release_gate.py")],
+        root,
+        30,
+    ))
+    steps.append(run_step(
+        "observability release gate",
+        "observability",
+        [
+            sys.executable,
+            str(root / "scripts" / "verify_observability_gate.py"),
+            "--build-dir",
+            str(args.build_dir),
+            "--configuration",
+            args.configuration,
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-observability-gate-summary.json"),
+            *(["--skip-build"] if args.skip_build else []),
+        ],
+        root,
+        args.timeout_seconds,
+    ))
+    steps.append(run_step(
+        "control-plane operator gate",
+        "control_plane",
+        [
+            sys.executable,
+            str(root / "scripts" / "verify_control_plane_gate.py"),
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-control-plane-gate-summary.json"),
+        ],
+        root,
+        args.timeout_seconds,
+    ))
+    steps.append(run_step(
         "stability soak gate",
         "soak",
         [
@@ -145,10 +192,12 @@ def main() -> int:
                 str(args.build_dir),
                 "--configuration",
                 args.configuration,
+                "--perf-timeout-seconds",
+                str(args.timeout_seconds + 300),
                 *(["--skip-build"] if args.skip_build else []),
             ],
             root,
-            args.timeout_seconds + 90,
+            args.timeout_seconds + 420,
         ))
 
     summary["steps"] = steps

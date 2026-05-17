@@ -2,7 +2,5 @@ namespace: boost-gateway-system
 
 resources:
   - namespace.yaml
-  - ../crd/bases/gateway.boost.io_boostgatewayclusters.yaml
   - ../rbac/role.yaml
   - ../manager/manager.yaml
-

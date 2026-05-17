@@ -85,6 +85,45 @@ def process_snapshot(pid: int) -> dict[str, Any]:
         return json.loads(output)
 
     status_path = Path(f"/proc/{pid}/status")
+    if not status_path.exists():
+        cmd = ["ps", "-o", "pid=,comm=,rss=,vsz=,%cpu=", "-p", str(pid)]
+        try:
+            output = subprocess.check_output(cmd, text=True).strip()
+        except subprocess.CalledProcessError:
+            return {
+                "pid": pid,
+                "process_name": "",
+                "working_set_mb": 0.0,
+                "private_memory_mb": None,
+                "virtual_memory_mb": 0.0,
+                "handles": None,
+                "threads": None,
+                "cpu_seconds": None,
+            }
+        parts = output.split()
+        if len(parts) < 5:
+            return {
+                "pid": pid,
+                "process_name": "",
+                "working_set_mb": 0.0,
+                "private_memory_mb": None,
+                "virtual_memory_mb": 0.0,
+                "handles": None,
+                "threads": None,
+                "cpu_seconds": None,
+            }
+        return {
+            "pid": int(parts[0]),
+            "process_name": parts[1],
+            "working_set_mb": round(float(parts[2]) / 1024.0, 2),
+            "private_memory_mb": None,
+            "virtual_memory_mb": round(float(parts[3]) / 1024.0, 2),
+            "handles": None,
+            "threads": None,
+            "cpu_percent": float(parts[4]),
+            "cpu_seconds": None,
+        }
+
     with open(status_path, "r", encoding="utf-8") as fh:
         status_lines = fh.readlines()
 
@@ -315,6 +354,8 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
 
 
 def minimum_battle_messages(case_name: str) -> int:
+    if case_name.startswith("battle-500"):
+        return 20_000
     if case_name.startswith("battle-100"):
         return 5_000
     if case_name.startswith("battle-20"):
@@ -322,6 +363,12 @@ def minimum_battle_messages(case_name: str) -> int:
     if case_name.startswith("battle-2"):
         return 50
     return 1
+
+
+def battle_p99_limit_ms(case_name: str) -> float:
+    if case_name.startswith("battle-100") or case_name.startswith("battle-500"):
+        return 250.0
+    return 100.0
 
 
 def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -358,23 +405,25 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             })
         elif case_name.startswith("battle"):
             min_messages = minimum_battle_messages(case_name)
+            p99_limit = battle_p99_limit_ms(case_name)
             min_observed_messages = aggregate["total_messages"]["min"]
             passed = (
                 rejected == 0 and failed == 0 and not forced_timeout and
-                min_observed_messages >= min_messages and p99 <= 100.0
+                min_observed_messages >= min_messages and p99 <= p99_limit
             )
-            if p99 >= 90.0:
+            if p99 >= p99_limit * 0.9:
                 gates["warnings"].append({
                     "case": case_name,
-                    "warning": "battle p99 is within 10% of the 100ms gate",
+                    "warning": f"battle p99 is within 10% of the {p99_limit:.0f}ms gate",
                     "p99_ms": p99,
                 })
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": f"battle: rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, p99<=100ms",
+                "criteria": f"battle: rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, p99<={p99_limit:.0f}ms",
                 "observed": {
                     "p99_ms": p99,
+                    "p99_limit_ms": p99_limit,
                     "throughput_msg_per_sec": throughput,
                     "rejected_clients": rejected,
                     "failed_clients": failed,
@@ -392,7 +441,7 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect v2 performance baseline data.")
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
-    parser.add_argument("--run-preset", choices=["smoke", "baseline"], default="smoke")
+    parser.add_argument("--run-preset", choices=["smoke", "baseline", "capacity"], default="smoke")
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--gateway-port", type=int, default=9201)
     parser.add_argument("--login-port", type=int, default=9202)
@@ -419,7 +468,15 @@ def main() -> int:
         "pressure": resolve_executable(build_dir, "v2_gateway_pressure"),
     }
 
-    if args.run_preset == "baseline":
+    if args.run_preset == "capacity":
+        run_cases = [
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_500", "room_group_size": 2},
+        ]
+    elif args.run_preset == "baseline":
         run_cases = [
             {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50},
             {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
@@ -490,6 +547,9 @@ def main() -> int:
             "release_gates": {},
             "process_snapshots": {},
         }
+        summary["process_snapshots"]["idle"] = [
+            process_snapshot(item.pid) for item in managed
+        ]
 
         for case in run_cases:
             case_runs: list[dict[str, Any]] = []
@@ -518,7 +578,10 @@ def main() -> int:
         summary_path = output_root / "summary.json"
         summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
-        return 0
+        if args.run_preset == "smoke" or summary["release_gates"].get("overall_pass"):
+            return 0
+        log_step("Release performance gates failed")
+        return 2
     finally:
         for proc in reversed(managed):
             proc.stop()

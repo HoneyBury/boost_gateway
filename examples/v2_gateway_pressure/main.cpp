@@ -667,7 +667,7 @@ private:
             return;
         }
 
-        if (battle_start_retry_attempts_ >= 20) {
+        if (battle_start_retry_attempts_ >= 50) {
             LOG_WARN("pressure client {} timed out waiting for grouped battle start in room {}",
                      user_id_, room_name_for_client());
             finish_rejected();
@@ -823,6 +823,7 @@ int main(int argc, char* argv[]) {
     std::atomic<bool> stop_requested{false};
     std::atomic<bool> run_finished{false};
     auto stop_poll_timer = std::make_shared<asio::steady_timer>(io);
+    auto stop_grace_timer = std::make_shared<asio::steady_timer>(io);
     std::function<void()> poll_stop_done;
     poll_stop_done = [&]() {
         if (controller->done_clients() >= config.client_count) {
@@ -841,16 +842,26 @@ int main(int argc, char* argv[]) {
         if (!stop_requested.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
             return;
         }
-        LOG_WARN("v2_gateway_pressure forcing stop: {}", reason);
-        for (const auto& client : clients) {
-            client->force_complete();
-        }
-        LOG_WARN("v2_gateway_pressure stop requested: done={} completed={} failed={} rejected={}",
-                 controller->done_clients(),
-                 controller->completed_clients(),
-                 controller->failed_clients(),
-                 controller->rejected_clients());
-        poll_stop_done();
+        const std::string reason_text(reason);
+        asio::post(io, [&, reason_text]() {
+            controller->mark_global_completion();
+            LOG_WARN("v2_gateway_pressure forcing stop: {}", reason_text);
+            for (const auto& client : clients) {
+                client->force_complete();
+            }
+            LOG_WARN("v2_gateway_pressure stop requested: done={} completed={} failed={} rejected={}",
+                     controller->done_clients(),
+                     controller->completed_clients(),
+                     controller->failed_clients(),
+                     controller->rejected_clients());
+            poll_stop_done();
+            stop_grace_timer->expires_after(std::chrono::seconds(5));
+            stop_grace_timer->async_wait([&](const error_code& ec) {
+                if (!ec && !run_finished.load(std::memory_order_relaxed)) {
+                    io.stop();
+                }
+            });
+        });
     };
 
     const auto room_group_size = std::max<std::size_t>(2, config.room_group_size);
@@ -944,14 +955,12 @@ int main(int argc, char* argv[]) {
             if (!run_finished.load(std::memory_order_relaxed)) {
                 controller->on_time_expired();
                 request_stop("duration elapsed");
-                std::this_thread::sleep_for(std::chrono::milliseconds(250));
-                controller->stop_now();
             }
         });
     }
 
     const auto hard_timeout = config.messages_per_client == 0 && config.duration.count() > 0
-        ? config.duration + std::chrono::seconds(3)
+        ? config.duration + std::chrono::seconds(30)
         : std::chrono::seconds(30);
     std::thread hard_stop_thread([&]() {
         const auto deadline = std::chrono::steady_clock::now() + hard_timeout;
@@ -969,7 +978,7 @@ int main(int argc, char* argv[]) {
 
     const auto thread_count = config.io_threads > 0
         ? config.io_threads
-        : (config.scenario == BenchScenario::kBattle ? 1u : std::max(2u, std::thread::hardware_concurrency()));
+        : std::max(2u, std::thread::hardware_concurrency());
     std::vector<std::thread> workers;
     workers.reserve(thread_count);
     for (unsigned int i = 0; i < thread_count; ++i) {

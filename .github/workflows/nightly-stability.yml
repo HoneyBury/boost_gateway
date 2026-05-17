@@ -1,0 +1,84 @@
+name: Nightly Stability
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    - cron: "30 18 * * *"
+  workflow_dispatch:
+    inputs:
+      soak_profile:
+        description: "Stability soak profile"
+        required: true
+        default: "short"
+        type: choice
+        options:
+          - smoke
+          - short
+          - medium
+
+permissions:
+  contents: read
+
+jobs:
+  stability-soak:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            configure_preset: default
+            build_dir: build/default
+            configuration: Debug
+            baseline_profile: debug
+          - os: windows-2022
+            configure_preset: windows-ninja-debug
+            build_dir: build/windows-ninja-debug
+            configuration: Debug
+            baseline_profile: debug
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.configure_preset }}
+
+      - name: Stability short soak
+        run: >
+          python scripts/verify_stability_soak.py
+          --build-dir ${{ matrix.build_dir }}
+          --configuration ${{ matrix.configuration }}
+          --baseline-profile ${{ matrix.baseline_profile }}
+          --soak-profile ${{ inputs.soak_profile || 'short' }}
+          --summary-path runtime/validation/nightly-stability-soak-summary.json
+
+      - name: Render stability summary
+        if: always()
+        shell: bash
+        run: |
+          if [ -f runtime/validation/nightly-stability-soak-summary.json ]; then
+            python scripts/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload stability summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nightly-stability-${{ matrix.os }}
+          path: |
+            runtime/validation/nightly-stability-soak-summary.json
+            runtime/perf/v2-stability-soak/**
+          if-no-files-found: warn

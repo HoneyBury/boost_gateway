@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <string>
 
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v3/persistence/redis_leaderboard.h"
@@ -90,7 +91,9 @@ protected:
 
     static std::string unique_key() {
         static int counter = 0;
-        return "test:lb:" + std::to_string(++counter);
+        static const auto run_id = std::to_string(
+            std::chrono::steady_clock::now().time_since_epoch().count());
+        return "test:lb:" + run_id + ":" + std::to_string(++counter);
     }
 
     std::unique_ptr<v3::persistence::RedisLeaderboard> lb_;

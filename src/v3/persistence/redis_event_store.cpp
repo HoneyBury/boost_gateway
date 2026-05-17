@@ -92,7 +92,10 @@ public:
     }
 
     RedisClient& client() { return client_; }
-    bool redis_available() const { return client_.is_connected(); }
+    bool redis_available() const {
+        if (client_.is_connected()) return true;
+        return const_cast<Impl*>(this)->ensure_redis();
+    }
 
 private:
     bool ensure_redis() {

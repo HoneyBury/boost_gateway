@@ -23,10 +23,13 @@ docker-build:
 .PHONY: install
 install:
 	kubectl apply -f config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml
-	kubectl apply -k config/default
+	kubectl apply -f config/default/namespace.yaml
+	kubectl apply -f config/rbac/role.yaml
+	kubectl apply -f config/manager/manager.yaml
 
 .PHONY: install-sample
 install-sample:
+	kubectl create namespace boost-gateway --dry-run=client -o yaml | kubectl apply -f -
 	kubectl apply -f config/samples/gateway_v1alpha1_boostgatewaycluster.yaml
 
 .PHONY: uninstall-sample

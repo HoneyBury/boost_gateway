@@ -5,8 +5,10 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 
@@ -23,13 +25,103 @@ def capture(cmd: list[str], cwd: Path) -> str:
     return subprocess.check_output(cmd, cwd=cwd, text=True)
 
 
+def ensure_namespace(namespace: str, cwd: Path) -> None:
+    result = subprocess.run(
+        ["kubectl", "get", "namespace", namespace],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode != 0:
+        run(["kubectl", "create", "namespace", namespace], cwd)
+
+
+def delete_existing_sample(namespace: str, cwd: Path) -> None:
+    result = subprocess.run(
+        ["kubectl", "-n", namespace, "get", "boostgatewaycluster/demo-cluster"],
+        cwd=cwd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if result.returncode == 0:
+        run(["kubectl", "-n", namespace, "delete", "boostgatewaycluster/demo-cluster"], cwd)
+        run([
+            "kubectl", "-n", namespace, "wait", "--for=delete",
+            "boostgatewaycluster/demo-cluster", "--timeout=120s",
+        ], cwd)
+
+
+def free_tcp_port() -> int:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
+
+
+def write_kind_config(path: Path) -> None:
+    http_port = free_tcp_port()
+    https_port = free_tcp_port()
+    path.write_text(
+        "\n".join([
+            "kind: Cluster",
+            "apiVersion: kind.x-k8s.io/v1alpha4",
+            "nodes:",
+            "  - role: control-plane",
+            "    extraPortMappings:",
+            "      - containerPort: 30080",
+            f"        hostPort: {http_port}",
+            "        listenAddress: \"127.0.0.1\"",
+            "        protocol: TCP",
+            "      - containerPort: 30443",
+            f"        hostPort: {https_port}",
+            "        listenAddress: \"127.0.0.1\"",
+            "        protocol: TCP",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+
+def write_smoke_sample(path: Path, namespace: str, workload_image: str) -> None:
+    component_names = ["gateway", "login", "room", "battle", "match", "leaderboard"]
+    component_blocks = []
+    for name in component_names:
+        component_blocks.extend([
+            f"  {name}:",
+            "    replicas: 1",
+            f"    image: {workload_image}",
+            "    port: 80",
+        ])
+    path.write_text(
+        "\n".join([
+            "apiVersion: gateway.boost.io/v1alpha1",
+            "kind: BoostGatewayCluster",
+            "metadata:",
+            "  name: demo-cluster",
+            f"  namespace: {namespace}",
+            "spec:",
+            "  pullPolicy: IfNotPresent",
+            *component_blocks,
+            "  tls:",
+            "    enabled: false",
+            "",
+        ]),
+        encoding="utf-8",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run operator kind smoke test.")
     parser.add_argument("--cluster-name", default=os.environ.get("KIND_CLUSTER_NAME", "boostgateway-operator-smoke"))
     parser.add_argument("--namespace", default="boost-gateway")
+    parser.add_argument("--kind-config", type=Path)
+    parser.add_argument("--operator-image", default="ghcr.io/honeybury/boostgateway-operator:v0.1.0")
+    parser.add_argument("--workload-image", default="nginx:1.27-alpine")
+    parser.add_argument("--sample-manifest", type=Path)
     args = parser.parse_args()
 
-    for cmd in ["kind", "kubectl", "make"]:
+    for cmd in ["docker", "kind", "kubectl", "make"]:
         require_cmd(cmd)
 
     root = Path(__file__).resolve().parent.parent
@@ -37,16 +129,32 @@ def main() -> int:
 
     clusters = subprocess.check_output(["kind", "get", "clusters"], text=True)
     if args.cluster_name not in {line.strip() for line in clusters.splitlines()}:
-        run([
-            "kind", "create", "cluster",
-            "--name", args.cluster_name,
-            "--config", str(operator_dir / "hack" / "kind-config.yaml"),
-        ], operator_dir)
+        with tempfile.TemporaryDirectory(prefix="boost-kind-") as temp_dir:
+            kind_config = args.kind_config
+            if kind_config is None:
+                kind_config = Path(temp_dir) / "kind-config.yaml"
+                write_kind_config(kind_config)
+            run([
+                "kind", "create", "cluster",
+                "--name", args.cluster_name,
+                "--config", str(kind_config),
+            ], operator_dir)
 
+    run(["docker", "build", "-t", args.operator_image, "."], operator_dir)
+    run(["kind", "load", "docker-image", args.operator_image, "--name", args.cluster_name], operator_dir)
+    run(["docker", "pull", args.workload_image], operator_dir)
+    run(["kind", "load", "docker-image", args.workload_image, "--name", args.cluster_name], operator_dir)
     run(["make", "install"], operator_dir)
-    run(["make", "install-sample"], operator_dir)
     run(["kubectl", "wait", "--for=condition=Established",
          "crd/boostgatewayclusters.gateway.boost.io", "--timeout=120s"], operator_dir)
+    with tempfile.TemporaryDirectory(prefix="boost-sample-") as temp_dir:
+        sample_manifest = args.sample_manifest
+        if sample_manifest is None:
+            sample_manifest = Path(temp_dir) / "boostgatewaycluster.yaml"
+            write_smoke_sample(sample_manifest, args.namespace, args.workload_image)
+        ensure_namespace(args.namespace, operator_dir)
+        delete_existing_sample(args.namespace, operator_dir)
+        run(["kubectl", "apply", "-f", str(sample_manifest)], operator_dir)
     run(["kubectl", "-n", "boost-gateway-system", "rollout", "status",
          "deployment/boostgateway-operator-controller-manager", "--timeout=180s"], operator_dir)
     run(["kubectl", "-n", args.namespace, "wait",
@@ -87,6 +195,9 @@ def main() -> int:
             raise SystemExit(f"component {name} availableReplicas must be >= 1, got {available}")
 
     run(["kubectl", "-n", args.namespace, "get", "deploy,statefulset,svc"], operator_dir)
+    run(["kubectl", "-n", args.namespace, "delete", "boostgatewaycluster/demo-cluster"], operator_dir)
+    run(["kubectl", "-n", args.namespace, "wait", "--for=delete",
+         "boostgatewaycluster/demo-cluster", "--timeout=120s"], operator_dir)
     return 0
 
 

@@ -56,6 +56,11 @@ jobs:
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
 
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: operator/boostgateway-operator/go.mod
+
       - name: Setup MSVC environment
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -71,6 +76,15 @@ jobs:
 
       - name: R4 release contract gate
         run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
+
+      - name: Security release gate
+        run: python scripts/check_security_release_gate.py
+
+      - name: Observability release gate
+        run: python scripts/verify_observability_gate.py --build-dir build/${{ matrix.configure_preset }} --configuration Release --skip-build
+
+      - name: Control-plane operator gate
+        run: python scripts/verify_control_plane_gate.py
 
       - name: Release candidate bounded gate
         run: python scripts/verify_release_candidate.py --build-dir build/${{ matrix.configure_preset }} --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
