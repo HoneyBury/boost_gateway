@@ -153,14 +153,20 @@ file-oriented metrics configuration, not HTTP `/metrics` endpoints.
 Do not configure Prometheus to scrape backend TCP ports as HTTP targets until
 backend HTTP management endpoints are implemented.
 
+Alert rules live at `env/monitoring/prometheus-alerts.yml` and are loaded by
+Prometheus through `rule_files`. The default rules cover gateway scrape down,
+backend route errors/timeouts inferred from gateway RED counters, leaderboard
+Redis-dependent failures, rate-limit spikes, active-session pressure, and
+optional process-exporter RSS/fd signals.
+
 ### Grafana
 
 The dashboard (`env/monitoring/grafana-dashboard.json`) provides RED-metrics
 visualization:
 
-- **Rate**: Packets/sec, bytes/sec, messages/sec per service
-- **Errors**: Blocked packets, backend routing errors, unhealthy instances
-- **Duration**: Backend route latency (p50/p99)
+- **Rate**: gateway accepted sessions, packets/sec, bytes/sec, backend request rates
+- **Errors**: blocked packets, backend route errors/timeouts, leaderboard Redis-dependent failures
+- **Capacity**: active sessions, optional process RSS/fd when an exporter is configured
 
 Import it into Grafana via **Configuration > Data Sources > Add data source >
 Prometheus**, then **+ Import** the JSON file.
@@ -202,7 +208,7 @@ The GitHub Actions pipeline (`env/cicd/github-actions.yml`) runs on push to
 | Deployment Guide | `deploy/README.md` | systemd setup, manual install |
 | Project README | `README.md` | Build from source, testing |
 | Config Files | `config/*.json` | Service configuration schemas |
-| Prometheus Alerts | `prometheus/alerts.yml` | Alerting rules |
-| Legacy Grafana Dashboard | `grafana/dashboard.json` | v2.0-era dashboard |
+| Prometheus Alerts | `env/monitoring/prometheus-alerts.yml` | Production alerting rules |
+| Grafana Dashboard | `env/monitoring/grafana-dashboard.json` | Production dashboard backed by current gateway metrics |
 | Release Process | `docs/release-process.md` | Versioning and publishing |
 | V2 Roadmap | `docs/v2-roadmap.md` | Architecture evolution |

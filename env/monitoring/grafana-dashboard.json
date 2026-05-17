@@ -1,16 +1,16 @@
 {
   "__inputs": [],
   "__requires": [],
-  "title": "Boost Gateway v2.6",
-  "uid": "boost-gateway-v26",
-  "version": 1,
+  "title": "Boost Gateway Production",
+  "uid": "boost-gateway-production",
+  "version": 2,
   "schemaVersion": 39,
-  "tags": ["boost-gateway", "game-server"],
+  "tags": ["boost-gateway", "game-server", "production"],
   "timezone": "utc",
   "editable": true,
-  "refresh": "auto",
+  "refresh": "30s",
   "time": {
-    "from": "now-15m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
@@ -30,9 +30,31 @@
   },
   "panels": [
     {
+      "title": "Gateway Up",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 4, "x": 0, "y": 0 },
+      "targets": [
+        { "expr": "up{job=\"gateway\"}", "legendFormat": "gateway" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 1 }
+            ]
+          }
+        }
+      },
+      "description": "Prometheus scrape status for gateway /metrics"
+    },
+    {
       "title": "Active Sessions",
       "type": "gauge",
-      "gridPos": { "h": 6, "w": 4, "x": 0, "y": 0 },
+      "gridPos": { "h": 5, "w": 5, "x": 4, "y": 0 },
       "targets": [
         { "expr": "gateway_active_sessions", "legendFormat": "active" }
       ],
@@ -51,171 +73,136 @@
           }
         }
       },
-      "description": "Current number of active TCP sessions on the gateway"
+      "description": "Current active gateway TCP sessions"
     },
     {
-      "title": "Messages / sec",
+      "title": "Accepted Sessions",
       "type": "timeseries",
-      "gridPos": { "h": 6, "w": 10, "x": 4, "y": 0 },
+      "gridPos": { "h": 5, "w": 7, "x": 9, "y": 0 },
       "targets": [
-        { "expr": "rate(gateway_packets_received_total[1m])", "legendFormat": "recv" },
-        { "expr": "rate(gateway_packets_sent_total[1m])", "legendFormat": "sent" }
+        { "expr": "rate(gateway_accepted_sessions_total[1m])", "legendFormat": "accepted/s" },
+        { "expr": "rate(gateway_sessions_accepted_total[1m])", "legendFormat": "accepted/s legacy server" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "pps"
-        }
+        "defaults": { "unit": "ops" }
       },
-      "description": "Packet rate in/out of the gateway"
+      "description": "Accepted session rate. The v2 demo exports gateway_accepted_sessions_total; legacy server exports gateway_sessions_accepted_total."
     },
     {
-      "title": "Backend Health",
+      "title": "Outbound Dispatches",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 0 },
+      "targets": [
+        { "expr": "rate(gateway_outbound_dispatches_total[1m])", "legendFormat": "dispatches/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ops" }
+      },
+      "description": "Responses and pushes dispatched by the v2 gateway runtime"
+    },
+    {
+      "title": "Gateway Packets",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 5 },
+      "targets": [
+        { "expr": "rate(gateway_packets_received_total[1m])", "legendFormat": "received/s" },
+        { "expr": "rate(gateway_packets_sent_total[1m])", "legendFormat": "sent/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "pps" }
+      },
+      "description": "Packet counters exposed by the game gateway runtime when using the legacy GatewayServer metrics surface"
+    },
+    {
+      "title": "Rate Limit / Blocked Packets",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 5 },
+      "targets": [
+        { "expr": "rate(gateway_packets_blocked_total[5m])", "legendFormat": "blocked/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "eps" }
+      },
+      "description": "Packets blocked by gateway protection controls"
+    },
+    {
+      "title": "Backend Requests",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 5 },
+      "targets": [
+        { "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_requests_total\"}[1m]))", "legendFormat": "{{__name__}}" },
+        { "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_successes_total\"}[1m]))", "legendFormat": "{{__name__}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "rps" }
+      },
+      "description": "Gateway-observed backend request and success rates"
+    },
+    {
+      "title": "Backend Errors / Timeouts",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 11 },
+      "targets": [
+        { "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_errors_total\"}[5m]))", "legendFormat": "{{__name__}}" },
+        { "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_timeouts_total\"}[5m]))", "legendFormat": "{{__name__}}" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "eps" }
+      },
+      "description": "Gateway RED counters for backend route errors and timeouts"
+    },
+    {
+      "title": "Leaderboard / Redis Dependent Errors",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 11 },
+      "targets": [
+        { "expr": "rate(gateway_backend_leaderboard_errors_total[5m])", "legendFormat": "leaderboard errors/s" },
+        { "expr": "rate(gateway_backend_leaderboard_timeouts_total[5m])", "legendFormat": "leaderboard timeouts/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "eps" }
+      },
+      "description": "Current Redis degradation signal is inferred through leaderboard backend route failures"
+    },
+    {
+      "title": "Gateway Bytes",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 8, "x": 0, "y": 17 },
+      "targets": [
+        { "expr": "rate(gateway_bytes_received_total[1m])", "legendFormat": "received B/s" },
+        { "expr": "rate(gateway_bytes_sent_total[1m])", "legendFormat": "sent B/s" }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "Bps" }
+      },
+      "description": "Gateway payload byte rates when using the legacy GatewayServer metrics surface"
+    },
+    {
+      "title": "Authenticated Sessions / Rooms / Battles",
       "type": "stat",
-      "gridPos": { "h": 6, "w": 10, "x": 14, "y": 0 },
+      "gridPos": { "h": 5, "w": 8, "x": 8, "y": 17 },
       "targets": [
         { "expr": "gateway_authenticated_sessions", "legendFormat": "authenticated" },
         { "expr": "gateway_active_rooms", "legendFormat": "rooms" },
         { "expr": "gateway_active_battles", "legendFormat": "battles" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
+        "defaults": { "unit": "short" }
       },
-      "description": "Aggregate counts across all backends"
+      "description": "Business state gauges exposed by the game gateway runtime when present"
     },
     {
-      "title": "Latency P99 (Backend Route)",
+      "title": "Optional Process Exporter",
       "type": "timeseries",
-      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 6 },
+      "gridPos": { "h": 5, "w": 8, "x": 16, "y": 17 },
       "targets": [
-        { "expr": "backend_route_latency_ms{quantile=\"0.50\"}", "legendFormat": "p50" },
-        { "expr": "backend_route_latency_ms{quantile=\"0.90\"}", "legendFormat": "p90" },
-        { "expr": "backend_route_latency_ms{quantile=\"0.99\"}", "legendFormat": "p99" }
+        { "expr": "process_resident_memory_bytes{job=\"gateway\"}", "legendFormat": "rss" },
+        { "expr": "process_open_fds{job=\"gateway\"}", "legendFormat": "open fds" }
       ],
       "fieldConfig": {
-        "defaults": {
-          "unit": "ms"
-        }
+        "defaults": { "unit": "short" }
       },
-      "description": "Backend routing latency percentiles. Sub-millisecond p50 is the target."
-    },
-    {
-      "title": "Error Rates",
-      "type": "timeseries",
-      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 6 },
-      "targets": [
-        { "expr": "rate(gateway_packets_blocked_total[1m])", "legendFormat": "blocked" },
-        { "expr": "rate(backend_route_errors_total[1m])", "legendFormat": "route errors" },
-        { "expr": "rate(backend_route_timeouts_total[1m])", "legendFormat": "timeouts" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "eps"
-        }
-      },
-      "description": "Error rates: blocked packets, routing errors, and timeouts"
-    },
-    {
-      "title": "Backend Instance Health",
-      "type": "stat",
-      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 13 },
-      "targets": [
-        { "expr": "backend_login_healthy_instances", "legendFormat": "login healthy" },
-        { "expr": "backend_room_healthy_instances", "legendFormat": "room healthy" },
-        { "expr": "backend_battle_healthy_instances", "legendFormat": "battle healthy" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      },
-      "description": "Number of healthy instances per backend service"
-    },
-    {
-      "title": "Unhealthy Instances",
-      "type": "stat",
-      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 13 },
-      "targets": [
-        { "expr": "backend_login_unhealthy_instances", "legendFormat": "login unhealthy" },
-        { "expr": "backend_room_unhealthy_instances", "legendFormat": "room unhealthy" },
-        { "expr": "backend_battle_unhealthy_instances", "legendFormat": "battle unhealthy" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        }
-      },
-      "description": "Unhealthy backend instances requiring attention"
-    },
-    {
-      "title": "Backend Route Requests",
-      "type": "timeseries",
-      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 13 },
-      "targets": [
-        { "expr": "rate(backend_route_requests_total[1m])", "legendFormat": "requests" },
-        { "expr": "rate(backend_route_successes_total[1m])", "legendFormat": "successes" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "rps"
-        }
-      },
-      "description": "Backend routing request and success rates"
-    },
-    {
-      "title": "Gateway Up Status",
-      "type": "stat",
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 19 },
-      "targets": [
-        { "expr": "up{job=\"gateway\"}", "legendFormat": "gateway" },
-        { "expr": "up{job=\"login-backend\"}", "legendFormat": "login" },
-        { "expr": "up{job=\"room-backend\"}", "legendFormat": "room" },
-        { "expr": "up{job=\"battle-backend\"}", "legendFormat": "battle" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "none",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "green", "value": 1 }
-            ]
-          }
-        }
-      },
-      "description": "Prometheus UP status for each service target"
-    },
-    {
-      "title": "Bytes / sec",
-      "type": "timeseries",
-      "gridPos": { "h": 5, "w": 10, "x": 4, "y": 19 },
-      "targets": [
-        { "expr": "rate(gateway_bytes_received_total[1m])", "legendFormat": "recv" },
-        { "expr": "rate(gateway_bytes_sent_total[1m])", "legendFormat": "sent" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "Bps"
-        }
-      },
-      "description": "Throughput in bytes per second"
-    },
-    {
-      "title": "Login Rate",
-      "type": "timeseries",
-      "gridPos": { "h": 5, "w": 10, "x": 14, "y": 19 },
-      "targets": [
-        { "expr": "rate(gateway_login_success_total[1m])", "legendFormat": "success" }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops"
-        }
-      },
-      "description": "Login success rate"
+      "description": "Optional process exporter metrics. Empty until a process exporter target is added."
     }
   ]
 }

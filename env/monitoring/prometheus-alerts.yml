@@ -1,0 +1,107 @@
+# Boost Gateway v3.3.2 production alert rules.
+#
+# These rules intentionally reference only metrics exposed by the current
+# gateway `/metrics` endpoint or common optional exporters. Backend services do
+# not expose HTTP `/metrics`; backend health is inferred from gateway RED
+# counters until a backend exporter is implemented.
+
+groups:
+  - name: boost-gateway.availability
+    rules:
+      - alert: BoostGatewayScrapeDown
+        expr: up{job="gateway"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: gateway
+        annotations:
+          summary: "Boost Gateway scrape target is down"
+          description: "Prometheus cannot scrape gateway /metrics for more than 1 minute."
+
+      - alert: BoostGatewayNoRecentAccepts
+        expr: sum(rate(gateway_accepted_sessions_total[10m])) == 0 and max(gateway_active_sessions) > 0
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Gateway has active sessions but no recent accepts"
+          description: "The gateway is still scraped, but accepted-session traffic has stopped while active sessions remain."
+
+  - name: boost-gateway.backend-red
+    rules:
+      - alert: BoostGatewayBackendErrors
+        expr: sum(rate({__name__=~"gateway_backend_.*_errors_total"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: backend-routing
+        annotations:
+          summary: "Backend routing errors detected"
+          description: "Gateway backend RED counters report route errors. Check /metrics/diagnostics/json and backend logs."
+
+      - alert: BoostGatewayBackendTimeouts
+        expr: sum(rate({__name__=~"gateway_backend_.*_timeouts_total"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: critical
+          component: backend-routing
+        annotations:
+          summary: "Backend routing timeouts detected"
+          description: "Gateway backend RED counters report timeouts. This can indicate backend outage, network loss, or overload."
+
+      - alert: BoostGatewayLeaderboardBackendErrors
+        expr: rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leaderboard_timeouts_total[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: redis-dependent-leaderboard
+        annotations:
+          summary: "Leaderboard backend errors or timeouts detected"
+          description: "Leaderboard failures may indicate Redis degradation or leaderboard backend issues. Verify redis-cli ping and leaderboard logs."
+
+  - name: boost-gateway.protection
+    rules:
+      - alert: BoostGatewayRateLimitSpike
+        expr: sum(rate(gateway_packets_blocked_total[5m])) > 10
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Gateway rate limiting spike"
+          description: "gateway_packets_blocked_total is increasing quickly. Check client traffic, per-IP limits, and abuse patterns."
+
+      - alert: BoostGatewayHighActiveSessions
+        expr: max(gateway_active_sessions) > 9000
+        for: 5m
+        labels:
+          severity: warning
+          component: gateway
+        annotations:
+          summary: "Gateway active sessions are close to capacity"
+          description: "Active sessions exceeded the current production warning threshold. Compare with release/capacity baseline."
+
+  - name: boost-gateway.optional-runtime-exporters
+    rules:
+      - alert: BoostGatewayHighRSS
+        expr: process_resident_memory_bytes{job="gateway"} > 1500000000
+        for: 10m
+        labels:
+          severity: warning
+          component: gateway
+          exporter: optional-process
+        annotations:
+          summary: "Gateway RSS is high"
+          description: "Requires process exporter metrics. RSS exceeded 1.5GB for more than 10 minutes."
+
+      - alert: BoostGatewayHighFileDescriptors
+        expr: process_open_fds{job="gateway"} / process_max_fds{job="gateway"} > 0.8
+        for: 5m
+        labels:
+          severity: critical
+          component: gateway
+          exporter: optional-process
+        annotations:
+          summary: "Gateway file descriptor usage is high"
+          description: "Requires process exporter metrics. Open fd usage is above 80% of the configured limit."

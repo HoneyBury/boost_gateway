@@ -23,6 +23,7 @@ REQUIRED_SCENARIOS = {
     "stability_soak_gate",
     "fixed_runner_preflight",
     "validation_summary_rendering",
+    "monitoring_operability_gate",
     "production_evidence_gate",
 }
 
