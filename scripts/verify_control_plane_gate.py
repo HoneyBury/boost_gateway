@@ -83,14 +83,67 @@ def require_command(name: str) -> None:
         raise FileNotFoundError(f"missing required command: {name}")
 
 
+def go_cache_paths(root: Path) -> tuple[Path, Path]:
+    cache_root = root / "runtime" / "go-cache"
+    return cache_root / "build", cache_root / "mod"
+
+
 def go_environment(root: Path) -> dict[str, str]:
     env = os.environ.copy()
-    cache_root = root / "runtime" / "go-cache"
-    env.setdefault("GOCACHE", str(cache_root / "build"))
-    env.setdefault("GOMODCACHE", str(cache_root / "mod"))
+    build_cache, mod_cache = go_cache_paths(root)
+    env["GOCACHE"] = str(build_cache)
+    env["GOMODCACHE"] = str(mod_cache)
     Path(env["GOCACHE"]).mkdir(parents=True, exist_ok=True)
     Path(env["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
     return env
+
+
+def preflight_control_plane(root: Path, include_envtest: bool, include_kind: bool) -> dict[str, object]:
+    checks: list[str] = []
+    warnings: list[str] = []
+    errors: list[str] = []
+    require_command("go")
+    checks.append("go")
+
+    if include_envtest:
+        if not os.environ.get("KUBEBUILDER_ASSETS"):
+            errors.append("KUBEBUILDER_ASSETS is required for --include-envtest")
+        else:
+            checks.append("KUBEBUILDER_ASSETS")
+        require_command("make")
+        checks.append("make")
+
+    if include_kind:
+        for command in ["kind", "kubectl", "make"]:
+            require_command(command)
+            checks.append(command)
+        completed = subprocess.run(
+            ["kind", "get", "clusters"],
+            cwd=root,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if completed.returncode != 0:
+            errors.append("kind is installed but `kind get clusters` failed")
+            if completed.stderr:
+                warnings.append(tail(completed.stderr, 1000))
+        else:
+            checks.append("kind-cluster-access")
+
+    return {
+        "name": "control-plane fixed-runner preflight",
+        "category": "preflight",
+        "command": ["internal-preflight"],
+        "cwd": str(root),
+        "timeout_seconds": 0,
+        "status": "passed" if not errors else "failed",
+        "returncode": 0 if not errors else 1,
+        "duration_seconds": 0,
+        "stdout_tail": "\n".join(f"ok: {check}" for check in checks),
+        "stderr_tail": "\n".join([*errors, *warnings]),
+    }
 
 
 def parse_args() -> argparse.Namespace:
@@ -115,6 +168,10 @@ def main() -> int:
         "operator_dir": str(operator_dir),
         "include_envtest": args.include_envtest,
         "include_kind": args.include_kind,
+        "go_cache": {
+            "build": str(go_cache_paths(root)[0]),
+            "module": str(go_cache_paths(root)[1]),
+        },
         "passed": False,
         "failed_category": "",
         "failed_step": "",
@@ -124,10 +181,10 @@ def main() -> int:
     try:
         if not operator_dir.is_dir():
             raise FileNotFoundError(f"missing operator dir: {operator_dir}")
-        require_command("go")
-        if args.include_kind:
-            for command in ["kind", "kubectl", "make"]:
-                require_command(command)
+        preflight = preflight_control_plane(root, args.include_envtest, args.include_kind)
+        summary["steps"].append(preflight)
+        if preflight["status"] != "passed":
+            raise RuntimeError(preflight["name"])
 
         summary["steps"].append(run_step(
             "Operator static manifest contract",
