@@ -103,12 +103,17 @@ def validate_scripts(checks: list[dict[str, Any]]) -> None:
     k8s_flow = read_text("scripts/verify_k8s_full_flow.py")
     resilience = read_text("scripts/verify_production_resilience_gate.py")
     hardening = read_text("scripts/check_production_hardening_gate.py")
+    drill_record = read_text("scripts/check_recovery_drill_record.py")
 
     add(checks, "script:deploy-k8s:dry-run", "--dry-run" in deploy and "--validate=false" in deploy, "deploy_k8s supports client-side dry-run")
     add(checks, "script:deploy-k8s:delete", "--delete" in deploy and "--ignore-not-found=true" in deploy, "deploy_k8s supports idempotent delete")
     add(checks, "script:k8s-full-flow:rollout", "rollout" in k8s_flow and "status" in k8s_flow, "K8s full-flow gate waits for rollout")
     add(checks, "script:k8s-full-flow:port-forward", "port-forward" in k8s_flow and "sdk_full_flow_client" in k8s_flow, "K8s full-flow gate validates real SDK traffic")
     add(checks, "script:resilience:n3-recovery", "check_production_recovery_gate.py" in resilience, "production resilience gate includes N3 recovery evidence")
+    add(checks, "script:drill-record:exists", exists("scripts/check_recovery_drill_record.py"), "recovery drill record validator exists")
+    add(checks, "script:drill-record:scenario", "ALLOWED_SCENARIOS" in drill_record and "gateway_restart" in drill_record, "drill record validator constrains scenario names")
+    add(checks, "script:drill-record:rto-rpo", "rto_seconds" in drill_record and "rpo_seconds" in drill_record, "drill record validator checks RTO/RPO")
+    add(checks, "script:drill-record:summaries", "SUMMARY_FIELDS" in drill_record and "sdk_full_flow_summary" in drill_record, "drill record validator checks validation summary paths")
     add(checks, "script:hardening:h3-k8s", "validate_h3" in hardening and "HorizontalPodAutoscaler" in hardening, "production hardening gate covers K8s resource/HPA/PDB evidence")
 
 
@@ -121,7 +126,29 @@ def validate_runbooks(checks: list[dict[str, Any]]) -> None:
     add(checks, "runbook:rto-rpo", "RTO" in deployment and "RPO" in deployment, "RTO/RPO targets are documented")
     add(checks, "runbook:failure-matrix", "后端重启" in deployment and "Redis 恢复" in deployment and "镜像回滚" in deployment, "deployment runbook has recovery drill matrix")
     add(checks, "runbook:recovery-record", "恢复演练记录" in operations and "最终验证 summary" in operations, "operations runbook defines recovery record requirements")
+    add(checks, "runbook:drill-template", "production-recovery-drill-record-template.json" in deployment and "production-recovery-drill-record-template.json" in operations, "recovery drill record template is documented")
+    add(checks, "runbook:drill-validator", "check_recovery_drill_record.py" in deployment and "check_recovery_drill_record.py" in operations, "recovery drill record validator is documented")
     add(checks, "roadmap:n3-status", "N3 部署恢复、回滚与灾备演练" in roadmap and "check_production_recovery_gate.py" in roadmap, "roadmap references the N3 recovery gate")
+
+
+def validate_drill_record_assets(checks: list[dict[str, Any]]) -> None:
+    template_path = REPO_ROOT / "docs/production-recovery-drill-record-template.json"
+    add(checks, "drill-template:exists", template_path.exists(), "recovery drill record template exists")
+    if not template_path.exists():
+        return
+
+    try:
+        template = json.loads(template_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        add(checks, "drill-template:json", False, f"template JSON parses: {exc}")
+        return
+
+    add(checks, "drill-template:json", isinstance(template, dict), "template JSON is an object")
+    add(checks, "drill-template:template-flag", template.get("template") is True, "template is explicitly marked")
+    add(checks, "drill-template:scenario", template.get("scenario") in {"gateway_restart", "backend_restart", "redis_recovery", "compose_image_rollback", "k8s_rollout_rollback", "network_jitter", "config_reload"}, "template uses a supported scenario")
+    add(checks, "drill-template:rto-rpo", "rto_seconds" in template.get("recovery", {}) and "rpo_seconds" in template.get("recovery", {}), "template captures RTO/RPO")
+    add(checks, "drill-template:observability", "alerts_observed" in template.get("observability", {}) and "metrics_checked" in template.get("observability", {}), "template captures alerts and metrics")
+    add(checks, "drill-template:verification", "passed" in template.get("verification", {}) and "sdk_full_flow_summary" in template.get("verification", {}), "template captures final verification summaries")
 
 
 def main() -> int:
@@ -135,6 +162,7 @@ def main() -> int:
     validate_k8s_recovery(checks)
     validate_scripts(checks)
     validate_runbooks(checks)
+    validate_drill_record_assets(checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
@@ -156,6 +184,7 @@ def main() -> int:
             "summary_path": str(summary_path),
             "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
             "operations_runbook": str(REPO_ROOT / "docs/production-operations-runbook.md"),
+            "drill_record_template": str(REPO_ROOT / "docs/production-recovery-drill-record-template.json"),
         },
     }
 

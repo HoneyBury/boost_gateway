@@ -506,6 +506,12 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 4. 执行 SDK full-flow，确认 login、room、battle、leaderboard 业务闭环恢复。
 5. 如涉及 Redis，记录备份来源、恢复动作、RPO 风险和 leaderboard 查询结果。
 6. 如涉及回滚，记录旧/新镜像 tag、回滚命令、rollout 状态和最终验证 summary。
+7. 复制 `docs/production-recovery-drill-record-template.json` 作为本次演练记录，将 `template` 改为 `false` 后归档。
+8. 运行记录校验：
+
+```bash
+python3 scripts/check_recovery_drill_record.py --record runtime/validation/<drill-record>.json --summary-path runtime/validation/recovery-drill-record-check-summary.json
+```
 
 恢复演练记录至少包含：
 
@@ -514,9 +520,10 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 - 触发告警、异常指标、日志片段和恢复动作。
 - RTO、RPO、是否有数据一致性风险。
 - 最终验证 summary：`production-recovery-summary.json`、SDK full-flow、Docker snapshot 或 K8s full-flow。
+- `scripts/check_recovery_drill_record.py` 通过后的 `recovery-drill-record-check-summary.json`。
 
 ## 当前边界
 
-- P99 告警暂不在默认 Prometheus rules 中启用，因为当前 `/metrics` 没有 route latency histogram/summary；只能通过 `/metrics/diagnostics/json` 的 backend latency 累计值和性能基线脚本离线判断。
+- P99 route latency 告警已默认启用，口径为 gateway `/metrics` 导出的 `gateway_backend_*_p99_latency_us` 和 `gateway_backend_route_latency_us_bucket/_sum/_count`；容量、长稳和回归判断仍以固定 runner 性能报告为事实源。
 - RSS/fd 告警依赖 process exporter 或等价 agent；默认 Compose 只 scrape gateway `/metrics`，因此这些规则在未接入 exporter 时不会产生序列。
-- Redis down 目前通过 leaderboard backend 的 gateway RED counters 和日志判断；Redis exporter 可作为后续增强，但不是当前 P3 的默认依赖。
+- Redis down 目前通过 leaderboard backend 的 gateway RED counters、日志和业务闭环恢复验证判断；Redis exporter 可作为后续增强，但不是当前默认依赖。

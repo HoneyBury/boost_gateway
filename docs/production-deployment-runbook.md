@@ -226,6 +226,12 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 ```
 
 固定 runner 或真实环境可在此基础上追加 Docker Compose / Kubernetes 实操演练和 SDK full-flow。
+真实演练完成后，复制 `docs/production-recovery-drill-record-template.json`，将
+`template` 改为 `false`，填入本次环境、故障注入、RTO/RPO、观测和验证 summary，并执行：
+
+```bash
+python3 scripts/check_recovery_drill_record.py --record runtime/validation/<drill-record>.json --summary-path runtime/validation/recovery-drill-record-check-summary.json
+```
 
 ### RTO / RPO 目标
 
@@ -266,11 +272,13 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 4. 运行 `python3 scripts/verify_sdk_full_flow_client.py --build-dir build/release`。
 5. 运行 `python3 scripts/collect_docker_production_perf_snapshot.py` 或固定 runner 对应 snapshot。
 6. 将 summary 路径写入发布或演练记录。
+7. 用 `scripts/check_recovery_drill_record.py` 校验演练记录，确认记录字段和 summary 路径可复核。
 
 ## 发布前检查清单
 
 ```bash
 python3 scripts/check_production_recovery_gate.py --summary-path runtime/validation/production-recovery-summary.json
+python3 scripts/check_recovery_drill_record.py --record docs/production-recovery-drill-record-template.json --allow-template --summary-path runtime/validation/recovery-drill-record-template-check-summary.json
 python3 -m py_compile scripts/deploy_k8s.py scripts/check_deploy_operability.py
 python3 scripts/check_deploy_operability.py --build-dir build/release --summary-path runtime/validation/p0-deploy-operability-summary.json
 python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/monitoring-operability-summary.json

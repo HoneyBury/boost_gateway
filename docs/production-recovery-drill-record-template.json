@@ -1,0 +1,52 @@
+{
+  "summary_version": 1,
+  "template": true,
+  "drill_id": "n3-compose-gateway-restart-example",
+  "executed_at": "2026-05-19T00:00:00Z",
+  "operator": "replace-with-operator",
+  "environment": {
+    "type": "docker-compose",
+    "name": "staging-orbstack",
+    "git_commit": "0000000000000000000000000000000000000000",
+    "image_tag_before": "boost-asio-demo:previous",
+    "image_tag_after": "boost-asio-demo:current"
+  },
+  "scenario": "gateway_restart",
+  "failure_injection": {
+    "method": "docker compose -f env/docker/docker-compose.yml restart gateway",
+    "started_at": "2026-05-19T00:00:00Z",
+    "ended_at": "2026-05-19T00:01:00Z"
+  },
+  "recovery": {
+    "actions": [
+      "wait for compose healthcheck",
+      "verify gateway /ready and /metrics",
+      "run SDK full-flow"
+    ],
+    "rto_seconds": 120,
+    "rpo_seconds": 0,
+    "data_consistency_risk": "none"
+  },
+  "observability": {
+    "alerts_observed": [
+      "BoostGatewayScrapeDown"
+    ],
+    "metrics_checked": [
+      "up{job=\"gateway\"}",
+      "gateway_backend_route_latency_us_bucket",
+      "gateway_backend_*_errors_total"
+    ],
+    "log_sources": [
+      "docker compose -f env/docker/docker-compose.yml logs gateway"
+    ]
+  },
+  "verification": {
+    "production_recovery_summary": "runtime/validation/production-recovery-summary.json",
+    "sdk_full_flow_summary": "runtime/validation/sdk-full-flow-client-summary.json",
+    "docker_snapshot_summary": "runtime/perf/docker-production-snapshot/summary.json",
+    "k8s_full_flow_summary": "",
+    "monitoring_summary": "runtime/validation/monitoring-operability-summary.json",
+    "passed": true
+  },
+  "notes": "Copy this template into runtime/validation or a release evidence directory, set template=false, and replace all environment-specific values after the real drill."
+}

@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-05-18
+更新时间：2026-05-19
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.3.2` 为准；提交状态以 `git HEAD` 为准。
 
@@ -30,7 +30,7 @@
 - N0 固定 runner 常态化：`release-baseline.yml`、`specialized-e2e.yml` 已补齐 JSON runner、preflight summary 归档和统一 Step Summary 渲染；`check_fixed_runner_environment.py`、`render_validation_summary.py` 与各聚合 gate summary 已统一到 `summary_version=2`、`overall_pass`、`failed_category`、`environment`、`artifacts` 契约。本地收束证据见 `runtime/validation/n0-release-baseline-preflight-summary.json`、`runtime/validation/n0-specialized-preflight-summary.json`、`runtime/validation/n0-specialized-raft-ha-summary.json`。
 - N1 性能证据索引：`docs/performance-baseline.md` 已补 baseline / capacity / bounded soak / long soak / business-flow perf / business-capacity / docker snapshot 统一归档口径，`verify_stability_soak.py` 新增 `long` / `overnight` profile，`collect_v2_perf_baseline.py` 新增 `business-capacity` 与 `business_flow_clients` 入口，作为后续 2h/8h soak、5K/10K capacity、battle-500 与业务并发复测事实源；当前仍保留“固定 runner 实测数据待继续沉淀”的边界，不把短样本误宣称为生产上限。
 - N2 监控 SLO：Prometheus alerts 已新增 `BoostGatewayHighRouteLatency`、`BoostGatewayBusinessFlowFailure`，Grafana dashboard 已新增 route latency 与 business-flow success 面板；`docs/production-operations-runbook.md` 已明确 SLI/SLO 口径和告警响应流程。本地收束验证见 `runtime/validation/monitoring-operability-summary.json` 与 `runtime/validation/n2-observability-summary.json`。
-- N3 部署恢复/回滚：`scripts/check_production_recovery_gate.py` 已补默认有界静态门禁，覆盖 Docker Compose、Kubernetes rollout/rollback、Redis volume/PVC、RTO/RPO、SDK full-flow 恢复验证和运维记录模板，并接入 `scripts/verify_production_resilience_gate.py` 默认步骤；真实 Docker/K8s 演练仍由固定 runner 或预演环境持续归档。
+- N3 部署恢复/回滚：`scripts/check_production_recovery_gate.py` 已补默认有界静态门禁，覆盖 Docker Compose、Kubernetes rollout/rollback、Redis volume/PVC、RTO/RPO、SDK full-flow 恢复验证和运维记录模板，并接入 `scripts/verify_production_resilience_gate.py` 默认步骤；`docs/production-recovery-drill-record-template.json` 与 `scripts/check_recovery_drill_record.py` 已将真实演练记录固化为可校验 JSON。真实 Docker/K8s 演练仍由固定 runner 或预演环境持续归档。
 - N4 传输安全与配置治理：`scripts/check_transport_config_governance.py` 已聚合 TLS/mTLS profile 边界和配置漂移检查；K8s gateway ConfigMap 已补齐 `feature_flags`、`tls`、`security_policy`，默认生产结论仍是 plain TCP，TLS transport 上线需要 backend listener/Secret/SDK full-flow 额外证据。
 - N5 SDK 企业交付：`scripts/verify_sdk_enterprise_delivery.py` 已聚合 SDK distribution、package consumer、in-process business-flow 和真实 gateway full-flow；`sdk/docs/compatibility.md` 已补 C++/C ABI/Python/C# 客户端兼容矩阵，`sdk/docs/README.md` 已补生产客户端接入清单。
 - N6 gRPC/proto 取舍：`scripts/check_v3_grpc_poc_decision.py` 已补 v3 proto/gRPC PoC 决策门禁，验证 schema/transport contract、CMake target、TCP baseline 对照和 ADR 边界；当前结论是 generated gRPC 保留实验，不进入默认生产链路。
@@ -42,7 +42,7 @@
 
 ## 保留边界
 
-- 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 histogram/summary 和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
+- 2h/8h soak、10K 连接生产容量基线、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 告警灵敏度多轮实测和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
 - 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
 
