@@ -149,9 +149,10 @@ public:
     bool hset(const std::string& key, const std::string& field,
               const std::string& value) {
         if (!ensure_connected()) return false;
-        auto* reply = cmd("HSET %s %b %b", key.c_str(),
-                          field.data(), field.size(),
-                          value.data(), value.size());
+        auto* reply = cmd("HSET %s %s %s",
+                          key.c_str(),
+                          field.c_str(),
+                          value.c_str());
         bool ok = reply && reply->type == REDIS_REPLY_INTEGER;
         free_if(reply);
         return ok;
@@ -160,8 +161,9 @@ public:
     std::optional<std::string> hget(const std::string& key,
                                     const std::string& field) {
         if (!ensure_connected()) return std::nullopt;
-        auto* reply = cmd("HGET %s %b", key.c_str(),
-                          field.data(), field.size());
+        auto* reply = cmd("HGET %s %s",
+                          key.c_str(),
+                          field.c_str());
         if (!reply || reply->type == REDIS_REPLY_NIL) {
             free_if(reply);
             return std::nullopt;
@@ -177,8 +179,10 @@ public:
 
     bool zadd(const std::string& key, double score, const std::string& member) {
         if (!ensure_connected()) return false;
-        auto* reply = cmd("ZADD %s %f %b", key.c_str(),
-                          score, member.data(), member.size());
+        auto* reply = cmd("ZADD %s %f %s",
+                          key.c_str(),
+                          score,
+                          member.c_str());
         bool ok = reply && reply->type == REDIS_REPLY_INTEGER;
         free_if(reply);
         return ok;
@@ -246,8 +250,9 @@ public:
     std::optional<std::int64_t> zrevrank(const std::string& key,
                                          const std::string& member) {
         if (!ensure_connected()) return std::nullopt;
-        auto* reply = cmd("ZREVRANK %s %b", key.c_str(),
-                          member.data(), member.size());
+        auto* reply = cmd("ZREVRANK %s %s",
+                          key.c_str(),
+                          member.c_str());
         if (!reply || reply->type != REDIS_REPLY_INTEGER) {
             free_if(reply);
             return std::nullopt;
@@ -260,8 +265,9 @@ public:
     std::optional<double> zscore(const std::string& key,
                                  const std::string& member) {
         if (!ensure_connected()) return std::nullopt;
-        auto* reply = cmd("ZSCORE %s %b", key.c_str(),
-                          member.data(), member.size());
+        auto* reply = cmd("ZSCORE %s %s",
+                          key.c_str(),
+                          member.c_str());
         if (!reply || reply->type == REDIS_REPLY_NIL) {
             free_if(reply);
             return std::nullopt;

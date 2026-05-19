@@ -80,6 +80,17 @@ def render_blockers(title: str, summary: dict[str, Any]) -> list[str]:
     return lines
 
 
+def failed_check_names(summary: dict[str, Any]) -> set[str]:
+    checks = summary.get("checks")
+    if not isinstance(checks, list):
+        return set()
+    return {
+        str(item.get("name", ""))
+        for item in checks
+        if isinstance(item, dict) and item.get("passed") is not True
+    }
+
+
 def render_r0_summary(path: Path) -> list[str]:
     summary = load_json(path)
     if not summary:
@@ -217,16 +228,20 @@ def main() -> int:
     lines.extend(render_blockers("Final Production Blockers", fixed_runner_summary if fixed_runner_summary else {}))
     lines.extend(render_r0_summary(r0_summary_path))
     lines.extend(render_r1_summary(r1_summary_path))
-    lines.extend(
-        [
-            "## Required Next Evidence",
-            "",
-            "- `fixed_runner_release_capacity`: fixed low-noise release/capacity baseline summary.",
-            "- `preprod_recovery_drill`: real Docker/K8s recovery and rollback drill summary.",
-            "- `tls_preprod_multi_run`: production-like TLS profile multi-run summary.",
-            "",
-        ]
-    )
+    required_next_evidence = {
+        "fixed_runner_release_capacity": "fixed low-noise release/capacity baseline summary.",
+        "preprod_recovery_drill": "real Docker/K8s recovery and rollback drill summary.",
+        "tls_preprod_multi_run": "production-like TLS profile multi-run summary.",
+    }
+    remaining = failed_check_names(fixed_runner_summary) if fixed_runner_summary else set(required_next_evidence)
+    lines.extend(["## Required Next Evidence", ""])
+    if remaining:
+        for name, description in required_next_evidence.items():
+            if name in remaining:
+                lines.append(f"- `{name}`: {description}")
+    else:
+        lines.append("No remaining fixed-runner/pre-production evidence blockers.")
+    lines.append("")
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text("\n".join(lines), encoding="utf-8")

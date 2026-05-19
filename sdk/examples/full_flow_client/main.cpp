@@ -201,11 +201,25 @@ int main(int argc, char* argv[]) {
     CHECK(top.response_body.find("\"entries\"") != std::string::npos,
           "Leaderboard top missing entries: " + top.response_body);
 
-    auto rank = alice.leaderboard_rank(alice_id, 5s);
+    auto wait_for_rank = [&](const std::string& user_id) {
+        sdk::LeaderboardQueryResult latest;
+        const auto deadline = std::chrono::steady_clock::now() + 5s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            latest = alice.leaderboard_rank(user_id, 5s);
+            if (latest.ok &&
+                latest.response_body.find("\"user_id\":\"" + user_id + "\"") != std::string::npos) {
+                return latest;
+            }
+            std::this_thread::sleep_for(100ms);
+        }
+        return latest;
+    };
+
+    auto rank = wait_for_rank(alice_id);
     CHECK(rank.ok, "Leaderboard rank Alice: " + rank.error_message);
     CHECK(rank.response_body.find("\"user_id\":\"" + alice_id + "\"") != std::string::npos,
           "Leaderboard rank missing Alice: " + rank.response_body);
-    auto bob_rank = alice.leaderboard_rank(bob_id, 5s);
+    auto bob_rank = wait_for_rank(bob_id);
     CHECK(bob_rank.ok, "Leaderboard rank Bob: " + bob_rank.error_message);
     CHECK(bob_rank.response_body.find("\"user_id\":\"" + bob_id + "\"") != std::string::npos,
           "Leaderboard rank missing Bob: " + bob_rank.response_body);

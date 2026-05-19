@@ -36,6 +36,9 @@ REQUIRED_SCENARIOS = {
     "production_hardening_gate",
     "production_candidate_evidence_manifest",
     "production_readiness_report",
+    "fixed_runner_release_capacity_gate",
+    "preprod_recovery_drill_gate",
+    "tls_preprod_multi_run_gate",
 }
 
 

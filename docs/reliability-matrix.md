@@ -36,6 +36,9 @@
 | `production_hardening_gate` | stable | H0-H5 生产候选硬化必须有统一静态证据：定时固定 runner、长稳/容量入口、K8s resource/HPA/PDB、runtime observability、SDK Python/C# 企业接入示例 | `scripts/check_production_hardening_gate.py`, `.github/workflows/production-resilience.yml`, `.github/workflows/production-evidence.yml`, `docs/production-candidate-hardening-plan.md`, `sdk/examples/python_full_flow.py`, `sdk/examples/csharp_full_flow/Program.cs`, `env/k8s/gateway-deployment.yaml`, `docs/releases/v3.3.2-h0-h5-production-hardening.md` |
 | `production_candidate_evidence_manifest` | stable | R2 必须把 R0/R1 本机有界证据和固定 runner / 预发证据统一到 manifest；默认阻断 R0/R1 缺失或失败，投产前通过 `--require-fixed-runner` 阻断 release/capacity、恢复演练和 TLS 预发多轮证据缺失 | `scripts/check_production_evidence_manifest.py`, `docs/production-candidate-evidence-manifest.json`, `scripts/verify_production_candidate_evidence.py`, `scripts/verify_tls_production_readiness.py`, `docs/production-evidence-runner.md`, `docs/production-stabilization-roadmap.md` |
 | `production_readiness_report` | stable | R3 必须把 R2 manifest、R0 aggregate 和 R1 TLS readiness 汇总为投产评审报告，并明确区分本机有界候选证据与最终固定 runner / 预发准入状态 | `scripts/render_production_readiness_report.py`, `scripts/check_production_evidence_manifest.py`, `docs/production-evidence-runner.md`, `docs/production-stabilization-roadmap.md` |
+| `fixed_runner_release_capacity_gate` | stable | R4 必须把 release baseline、capacity profile 和 business-capacity profile 汇总成可被 R2 manifest 消费的固定 runner release/capacity summary，覆盖 10K echo、battle-500 和 SDK full-flow business path | `scripts/verify_fixed_runner_release_capacity.py`, `scripts/collect_release_baseline.py`, `scripts/collect_v2_perf_baseline.py`, `docs/production-candidate-evidence-manifest.json`, `docs/performance-baseline.md`, `docs/production-evidence-runner.md` |
+| `preprod_recovery_drill_gate` | stable | R5 必须把预发恢复演练记录、N3 recovery gate、SDK full-flow 和 Docker/K8s 观测 summary 聚合成可被 R2 manifest 消费的 recovery drill summary | `scripts/verify_preprod_recovery_drill.py`, `scripts/check_production_recovery_gate.py`, `scripts/check_recovery_drill_record.py`, `docs/production-recovery-drill-record-template.json`, `docs/production-evidence-runner.md` |
+| `tls_preprod_multi_run_gate` | stable | R6 必须把多轮 TLS readiness、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead 聚合成可被 R2 manifest 消费的 TLS 预发多轮 summary | `scripts/verify_tls_preprod_multi_run.py`, `scripts/verify_tls_production_readiness.py`, `scripts/verify_sdk_full_flow_client.py`, `docs/tls-mtls-runbook.md`, `docs/production-evidence-runner.md` |
 
 ## 分层门禁
 
@@ -54,6 +57,9 @@
 - H0-H5 生产候选硬化：运行 `scripts/check_production_hardening_gate.py`，验证固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据链。
 - R2 生产候选证据 Manifest：运行 `scripts/check_production_evidence_manifest.py` 校验 R0/R1 本机有界证据；投产前运行 `scripts/check_production_evidence_manifest.py --require-fixed-runner`，要求固定 runner / 预发证据齐全。
 - R3 投产评审报告：运行 `scripts/render_production_readiness_report.py`，生成 `runtime/validation/r3-production-readiness-report.md`。
+- R4 固定 Runner Release / Capacity：运行 `scripts/verify_fixed_runner_release_capacity.py`，生成 `runtime/validation/fixed-runner-release-capacity-summary.json`。
+- R5 预发恢复演练：运行 `scripts/verify_preprod_recovery_drill.py --build-dir <build-dir>`，生成 `runtime/validation/preprod-recovery-drill-summary.json`。
+- R6 TLS 预发多轮：运行 `scripts/verify_tls_preprod_multi_run.py --build-dir <build-dir> --skip-build`，生成 `runtime/validation/tls-preprod-multi-run-summary.json`。
 
 ## 当前未纳入默认门禁的专项
 

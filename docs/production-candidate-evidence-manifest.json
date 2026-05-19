@@ -84,7 +84,8 @@
       "required": false,
       "fixed_runner_required": true,
       "freshness_hours": 336,
-      "notes": "Populate this entry from a fixed low-noise performance runner before final production approval."
+      "producer": "python3 scripts/verify_fixed_runner_release_capacity.py",
+      "notes": "R4 validates release baseline, capacity profile, and business-capacity evidence. Prefer fixed low-noise performance runner output before final production approval."
     },
     {
       "id": "preprod_recovery_drill",
@@ -94,7 +95,8 @@
       "required": false,
       "fixed_runner_required": true,
       "freshness_hours": 336,
-      "notes": "Populate this entry after a real Docker/K8s recovery and rollback drill."
+      "producer": "python3 scripts/verify_preprod_recovery_drill.py",
+      "notes": "R5 produces a Docker Compose gateway restart drill summary when Docker is available; staging/prod records should reuse the same drill record schema."
     },
     {
       "id": "tls_preprod_multi_run",
@@ -104,7 +106,8 @@
       "required": false,
       "fixed_runner_required": true,
       "freshness_hours": 336,
-      "notes": "Populate this entry after multi-run TLS profile validation with production-like cert handling."
+      "producer": "python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build",
+      "notes": "R6 runs multiple TLS readiness passes and aggregates rotation, expected failure, and plain-vs-TLS overhead evidence."
     }
   ]
 }

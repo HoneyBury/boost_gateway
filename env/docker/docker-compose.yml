@@ -45,6 +45,7 @@ services:
     environment:
       CONFIG_PATH: /app/config/environments/docker/gateway.json
       MANAGEMENT_PORT: "9080"
+      V2_BACKEND_CONNECTION_POOL_SIZE: "1"
       BOOST_LOG_LEVEL: "info"
       OTEL_EXPORT_ENDPOINT: ${OTEL_EXPORT_ENDPOINT:-}
     volumes:

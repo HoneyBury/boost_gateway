@@ -17,9 +17,13 @@ public:
                                        std::int64_t score) {
         if (!ensure_available()) return std::nullopt;
 
-        client_.zadd(zset_key_, static_cast<double>(score), user_id);
+        if (!client_.zadd(zset_key_, static_cast<double>(score), user_id)) {
+            return std::nullopt;
+        }
         if (!display_name.empty()) {
-            client_.hset(names_key_, user_id, display_name);
+            if (!client_.hset(names_key_, user_id, display_name)) {
+                return std::nullopt;
+            }
         }
 
         auto rank = client_.zrevrank(zset_key_, user_id);

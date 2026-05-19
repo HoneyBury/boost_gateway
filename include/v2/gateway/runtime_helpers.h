@@ -204,7 +204,16 @@ bool bridge_route(GatewayServiceBridge* bridge,
         on_error(reason);
         return true;
     }
-    on_error("backend_error");
+    std::string reason = "backend_error";
+    if (!result.response_payload.empty()) {
+        auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+        if (!resp.is_discarded()) {
+            reason = resp.value("reason", reason);
+        } else {
+            reason = result.response_payload;
+        }
+    }
+    on_error(reason);
     return true;
 }
 

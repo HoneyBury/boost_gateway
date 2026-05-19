@@ -4,6 +4,7 @@
 
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/service/backend_connection.h"
+#include "v2/service/error_codes.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
@@ -328,13 +329,25 @@ private:
 
         if (redis_lb_ && redis_lb_->available()) {
             auto entries = redis_lb_->top_k(k);
-            for (const auto& e : entries) {
-                arr.push_back({
-                    {"rank", e.rank},
-                    {"user_id", e.user_id},
-                    {"display_name", e.display_name},
-                    {"score", e.score},
-                });
+            if (entries.empty() && leaderboard_.size() > 0) {
+                auto fallback_entries = leaderboard_.top_k(k);
+                for (const auto& e : fallback_entries) {
+                    arr.push_back({
+                        {"rank", e.rank},
+                        {"user_id", e.user_id},
+                        {"display_name", e.display_name},
+                        {"score", e.score},
+                    });
+                }
+            } else {
+                for (const auto& e : entries) {
+                    arr.push_back({
+                        {"rank", e.rank},
+                        {"user_id", e.user_id},
+                        {"display_name", e.display_name},
+                        {"score", e.score},
+                    });
+                }
             }
         } else {
             auto entries = leaderboard_.top_k(k);
@@ -369,7 +382,8 @@ private:
 
         if (redis_lb_ && redis_lb_->available()) {
             entry = redis_lb_->rank_of(user_id);
-        } else {
+        }
+        if (!entry.has_value()) {
             auto mem_entry = leaderboard_.rank_of(user_id);
             if (mem_entry.has_value()) {
                 entry = v3::persistence::LeaderboardEntry{
@@ -382,7 +396,9 @@ private:
         }
 
         if (!entry.has_value()) {
-            return make_error(-1, "user_not_found");
+            return make_error(
+                static_cast<std::int32_t>(v2::service::ServiceErrorCode::kRejected),
+                "user_not_found");
         }
         auto body = nlohmann::json{
             {"status", "ok"},
@@ -440,11 +456,10 @@ private:
     void apply_submit(const std::string& user_id,
                       const std::string& display_name,
                       std::int64_t score) {
+        leaderboard_.submit(user_id, display_name, score);
         if (redis_lb_ && redis_lb_->available()) {
             redis_lb_->submit(user_id, display_name, score);
-            return;
         }
-        leaderboard_.submit(user_id, display_name, score);
     }
 
     std::optional<std::int64_t> rank_of(const std::string& user_id) const {
@@ -452,7 +467,6 @@ private:
             if (auto entry = redis_lb_->rank_of(user_id); entry.has_value()) {
                 return entry->rank;
             }
-            return std::nullopt;
         }
         if (auto entry = leaderboard_.rank_of(user_id); entry.has_value()) {
             return entry->rank;
