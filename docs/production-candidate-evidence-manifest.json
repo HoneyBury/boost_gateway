@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "name": "production-candidate-evidence-manifest",
+  "description": "R2 production candidate evidence manifest. Local bounded evidence is required; fixed-runner/pre-production entries become required only when check_production_evidence_manifest.py is run with --require-fixed-runner.",
+  "generated_for": "BoostAsioDemo v3.3.2 production candidate",
+  "required_categories": [
+    "production_candidate",
+    "production_resilience",
+    "production_evidence",
+    "sdk_enterprise",
+    "transport_tls",
+    "grpc_decision",
+    "tls_readiness"
+  ],
+  "evidence": [
+    {
+      "id": "r0_production_candidate_evidence",
+      "category": "production_candidate",
+      "title": "R0 production candidate aggregate evidence",
+      "path": "runtime/validation/r0-production-candidate-evidence-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "notes": "Aggregates fixed-runner preflight, P5/P6, N5, optional N4 TLS full-flow, and optional N6 decision evidence."
+    },
+    {
+      "id": "r0_production_resilience",
+      "category": "production_resilience",
+      "title": "R0 production resilience child summary",
+      "path": "runtime/validation/r0-production-resilience-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "artifact_of": "r0_production_candidate_evidence"
+    },
+    {
+      "id": "r0_production_evidence",
+      "category": "production_evidence",
+      "title": "R0 production evidence child summary",
+      "path": "runtime/validation/r0-production-evidence-gate-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "artifact_of": "r0_production_candidate_evidence"
+    },
+    {
+      "id": "r0_sdk_enterprise_delivery",
+      "category": "sdk_enterprise",
+      "title": "R0 SDK enterprise delivery child summary",
+      "path": "runtime/validation/r0-sdk-enterprise-delivery-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "artifact_of": "r0_production_candidate_evidence"
+    },
+    {
+      "id": "r0_transport_tls_full_flow",
+      "category": "transport_tls",
+      "title": "R0 transport config governance with TLS full-flow",
+      "path": "runtime/validation/r0-transport-config-governance-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "artifact_of": "r0_production_candidate_evidence"
+    },
+    {
+      "id": "r0_grpc_poc_decision",
+      "category": "grpc_decision",
+      "title": "R0 N6 gRPC PoC decision child summary",
+      "path": "runtime/validation/r0-n6-grpc-poc-decision-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "artifact_of": "r0_production_candidate_evidence"
+    },
+    {
+      "id": "r1_tls_production_readiness",
+      "category": "tls_readiness",
+      "title": "R1 TLS production readiness evidence",
+      "path": "runtime/validation/r1-tls-production-readiness-summary.json",
+      "required": true,
+      "freshness_hours": 168,
+      "notes": "Covers TLS full-flow, server CA verification, certificate rotation, mismatched CA expected failure, and plain-vs-TLS smoke comparison."
+    },
+    {
+      "id": "fixed_runner_release_capacity",
+      "category": "fixed_runner_capacity",
+      "title": "Fixed-runner release/capacity baseline evidence",
+      "path": "runtime/validation/fixed-runner-release-capacity-summary.json",
+      "required": false,
+      "fixed_runner_required": true,
+      "freshness_hours": 336,
+      "notes": "Populate this entry from a fixed low-noise performance runner before final production approval."
+    },
+    {
+      "id": "preprod_recovery_drill",
+      "category": "preprod_recovery",
+      "title": "Pre-production Docker/K8s recovery drill evidence",
+      "path": "runtime/validation/preprod-recovery-drill-summary.json",
+      "required": false,
+      "fixed_runner_required": true,
+      "freshness_hours": 336,
+      "notes": "Populate this entry after a real Docker/K8s recovery and rollback drill."
+    },
+    {
+      "id": "tls_preprod_multi_run",
+      "category": "tls_preprod",
+      "title": "TLS pre-production multi-run evidence",
+      "path": "runtime/validation/tls-preprod-multi-run-summary.json",
+      "required": false,
+      "fixed_runner_required": true,
+      "freshness_hours": 336,
+      "notes": "Populate this entry after multi-run TLS profile validation with production-like cert handling."
+    }
+  ]
+}

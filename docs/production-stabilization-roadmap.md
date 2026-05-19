@@ -290,6 +290,39 @@ N0-N6 已完成默认有界收束后，R 阶段不扩功能，目标是把“可
 - `python3 scripts/verify_tls_production_readiness.py --build-dir build/release --skip-build` 通过。
 - R1 summary 同时包含 plain full-flow、TLS full-flow、rotated TLS full-flow、mismatched CA expected failure 和耗时对比。
 
+### R2：生产候选证据 Manifest 与预发准入
+
+当前收束状态：已新增 `docs/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py`。R2 把 R0/R1 以及固定 runner / 预发多轮证据归一到可校验 manifest，默认要求本机有界候选证据全部存在且通过；运行 `--require-fixed-runner` 时会把 release/capacity、恢复演练和 TLS 预发多轮证据提升为阻断项，用于最终投产审批前检查。
+
+任务：
+
+- [x] 建立生产候选 evidence manifest，统一记录 evidence id、类别、summary 路径、freshness 和固定 runner 要求。
+- [x] 校验 R0/R1 必选 summary 是否存在、是否通过、是否在 freshness 窗口内。
+- [x] 校验 R0 子 summary 是否被 R0 aggregate artifacts 引用，避免孤立 JSON 被误当作聚合证据。
+- [x] 保留固定 runner / 预发证据入口，并通过 `--require-fixed-runner` 切换为投产前阻断项。
+- [ ] 在固定 runner / 预发环境填充 `fixed_runner_release_capacity`、`preprod_recovery_drill` 和 `tls_preprod_multi_run` 的真实 summary。
+
+验收标准：
+
+- `python3 scripts/check_production_evidence_manifest.py` 在当前本机 R0/R1 证据齐全时通过。
+- `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner` 在最终投产前必须通过；当前若缺少固定 runner / 预发 summary，应明确失败而不是误报投产就绪。
+
+### R3：生产 Readiness Report
+
+当前收束状态：已新增 `scripts/render_production_readiness_report.py`，读取 R2 manifest summary、R2 fixed-runner 准入 summary、R0 aggregate summary 和 R1 TLS readiness summary，生成 `runtime/validation/r3-production-readiness-report.md` 与机器可读 summary。默认判定以本机有界证据为通过条件，同时单独输出 `final_production_ready`，避免把固定 runner / 预发缺口误报成已投产就绪。
+
+任务：
+
+- [x] 将 R0/R1/R2 的 JSON summary 汇总为投产评审 Markdown。
+- [x] 在报告顶部明确区分 bounded local candidate evidence 与 final production fixed-runner/pre-production readiness。
+- [x] 将 `fixed_runner_release_capacity`、`preprod_recovery_drill`、`tls_preprod_multi_run` 列为最终投产阻断项。
+- [ ] 固定 runner / 预发 summary 补齐后，R3 report 应自然更新为 `final_production_ready=true`。
+
+验收标准：
+
+- `python3 scripts/render_production_readiness_report.py` 通过，并生成 Markdown 报告。
+- 报告必须展示 R2 evidence table、最终投产阻断项、R0 聚合步骤和 R1 TLS 耗时对比。
+
 ## 下一阶段推荐执行顺序
 
 1. N0 固定 Runner 与证据自动化常态化。
@@ -301,6 +334,8 @@ N0-N6 已完成默认有界收束后，R 阶段不扩功能，目标是把“可
 7. N6 gRPC / 协议演进 PoC 与生产取舍。
 8. R0 生产候选证据聚合。
 9. R1 TLS 上线前置证据。
+10. R2 生产候选证据 Manifest 与预发准入。
+11. R3 生产 Readiness Report。
 
 推荐先从 N0 和 N1 开始，因为它们会直接暴露当前系统在真实生产环境下的波动、容量边界和回归风险；N2-N5 再围绕这些事实完善观测、部署、配置和客户端交付；N6 放在最后，避免在主链稳定前引入新的传输复杂度。
 

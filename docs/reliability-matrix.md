@@ -34,6 +34,8 @@
 | `v3_grpc_poc_decision_gate` | bounded | N6 必须验证 v3 proto/transport contract、CMake 生成入口、TCP baseline 对照和 ADR 取舍；generated gRPC 在没有独立 full-flow/benchmark 前不得进入默认生产链路 | `scripts/check_v3_grpc_poc_decision.py`, `scripts/check_v3_proto_schema.py`, `proto/v3/common.proto`, `proto/README.md`, `docs/v3-proto-grpc-adr.md`, `docs/current-state.md`, `runtime/perf/release-baseline/summary.json` |
 | `production_evidence_gate` | stable | P6 必须把 stability、data recovery、Redis/Raft/Operator 专项、生产候选完整性审核、runtime observability 和可选 release/capacity baseline 聚合为固定 runner 证据；默认入口保持有界，真实依赖和长项由 production-evidence workflow 显式启用并归档 | `scripts/verify_production_evidence_gate.py`, `scripts/verify_production_evidence_gate.ps1`, `scripts/check_production_candidate_audit.py`, `scripts/verify_stability_soak.py`, `scripts/verify_data_recovery_gate.py`, `scripts/verify_specialized_e2e.py`, `scripts/verify_observability_gate.py`, `scripts/collect_release_baseline.py`, `.github/workflows/production-evidence.yml`, `docs/production-evidence-runner.md`, `docs/fixed-runner-playbook.md`, `docs/v3-release-checklist.md` |
 | `production_hardening_gate` | stable | H0-H5 生产候选硬化必须有统一静态证据：定时固定 runner、长稳/容量入口、K8s resource/HPA/PDB、runtime observability、SDK Python/C# 企业接入示例 | `scripts/check_production_hardening_gate.py`, `.github/workflows/production-resilience.yml`, `.github/workflows/production-evidence.yml`, `docs/production-candidate-hardening-plan.md`, `sdk/examples/python_full_flow.py`, `sdk/examples/csharp_full_flow/Program.cs`, `env/k8s/gateway-deployment.yaml`, `docs/releases/v3.3.2-h0-h5-production-hardening.md` |
+| `production_candidate_evidence_manifest` | stable | R2 必须把 R0/R1 本机有界证据和固定 runner / 预发证据统一到 manifest；默认阻断 R0/R1 缺失或失败，投产前通过 `--require-fixed-runner` 阻断 release/capacity、恢复演练和 TLS 预发多轮证据缺失 | `scripts/check_production_evidence_manifest.py`, `docs/production-candidate-evidence-manifest.json`, `scripts/verify_production_candidate_evidence.py`, `scripts/verify_tls_production_readiness.py`, `docs/production-evidence-runner.md`, `docs/production-stabilization-roadmap.md` |
+| `production_readiness_report` | stable | R3 必须把 R2 manifest、R0 aggregate 和 R1 TLS readiness 汇总为投产评审报告，并明确区分本机有界候选证据与最终固定 runner / 预发准入状态 | `scripts/render_production_readiness_report.py`, `scripts/check_production_evidence_manifest.py`, `docs/production-evidence-runner.md`, `docs/production-stabilization-roadmap.md` |
 
 ## 分层门禁
 
@@ -50,6 +52,8 @@
 - P5 长稳/故障/回滚：运行 `scripts/verify_production_resilience_gate.py --build-dir <build-dir> --skip-build`；固定 runner 可追加 `--soak-profile short|medium`、`--include-redis-live`、`--include-operator-kind`、`--include-runtime-http`、`--include-release-baseline` 或 `--include-capacity-baseline`。
 - P6 生产证据：运行 `scripts/verify_production_evidence_gate.py --build-dir <build-dir> --skip-build`；固定 runner 通过 `.github/workflows/production-evidence.yml` 追加 Redis live、Operator kind、settlement replay、runtime observability、release baseline 或 capacity baseline，并归档 preflight 与所有子 summary。
 - H0-H5 生产候选硬化：运行 `scripts/check_production_hardening_gate.py`，验证固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据链。
+- R2 生产候选证据 Manifest：运行 `scripts/check_production_evidence_manifest.py` 校验 R0/R1 本机有界证据；投产前运行 `scripts/check_production_evidence_manifest.py --require-fixed-runner`，要求固定 runner / 预发证据齐全。
+- R3 投产评审报告：运行 `scripts/render_production_readiness_report.py`，生成 `runtime/validation/r3-production-readiness-report.md`。
 
 ## 当前未纳入默认门禁的专项
 

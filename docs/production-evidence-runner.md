@@ -77,6 +77,45 @@ python scripts/check_fixed_runner_environment.py \
 
 通过标准是所有启用项 summary 的 `passed=true`。容量专项如果用于发现上限，可以允许性能 gate 失败，但必须在发布说明中标注它是容量边界证据，不得把失败 capacity 结果声明为生产基线通过。
 
+## R2 生产候选 Evidence Manifest
+
+R2 新增 `docs/production-candidate-evidence-manifest.json`，用于把本机有界证据、固定 runner 证据和预发演练证据统一成可校验清单。
+
+默认本机检查：
+
+```bash
+python3 scripts/check_production_evidence_manifest.py
+```
+
+默认检查会要求 R0/R1 已产出的候选证据存在、通过且未超过 freshness 窗口，并校验 R0 子 summary 被 R0 aggregate artifacts 引用。
+
+投产前固定 runner / 预发准入检查：
+
+```bash
+python3 scripts/check_production_evidence_manifest.py --require-fixed-runner
+```
+
+该模式会把 manifest 中 `fixed_runner_required=true` 的条目提升为阻断项，当前包括：
+
+- `fixed_runner_release_capacity`
+- `preprod_recovery_drill`
+- `tls_preprod_multi_run`
+
+这些条目必须由固定性能机器或预发环境生成真实 summary 后再通过，不能用本机 smoke 结果替代。
+
+R3 会把 R2 的判断渲染成投产评审报告：
+
+```bash
+python3 scripts/render_production_readiness_report.py
+```
+
+默认输出：
+
+- `runtime/validation/r3-production-readiness-report.md`
+- `runtime/validation/r3-production-readiness-report-summary.json`
+
+报告中的 `Bounded local candidate evidence` 表示当前本机/有界证据是否健康；`Final production fixed-runner/pre-production readiness` 表示固定 runner / 预发证据是否已经满足投产准入。两者必须分开看，不能用前者替代最终投产审批。
+
 ## 推荐运行矩阵
 
 | 阶段 | 建议运行项 | 目标 |
