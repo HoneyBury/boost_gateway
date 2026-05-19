@@ -194,6 +194,11 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 
 目标：让 SDK 具备客户端团队可稳定接入、升级和排障的交付质量。
 
+当前收束状态：N5 企业交付门禁已覆盖 SDK distribution、外部 CMake package
+consumer、in-process business-flow、真实 gateway full-flow，以及 N4 backend TLS profile
+下的真实 gateway full-flow。SDK 对外 API 仍连接默认 TCP gateway；backend TLS profile
+由服务端部署治理，对客户端保持透明。
+
 任务：
 
 - [x] 固化 C++、C ABI、Python、C# 的版本兼容矩阵和 native library 加载诊断。
@@ -201,6 +206,7 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 - [x] 为 C++、Python、C# 保留真实 gateway full-flow example，并接入 N5 聚合门禁。
 - [x] 增加 SDK package consumer matrix，覆盖安装、链接、运行、版本不匹配和错误诊断。
 - [x] 明确客户端接入建议，包括线程模型、回调线程、资源释放、并发限制和生产日志字段。
+- [x] 将 backend TLS profile 下的真实 gateway SDK full-flow 纳入 N5 交付证据，保证 SDK API 与 N4 服务端 TLS profile 兼容。
 - [ ] 正式 wheel/NuGet 签名与多平台包仓库发布仍为后续客户端发布专项。
 
 交付物：
@@ -208,6 +214,7 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 - 更新后的 `sdk/docs/README.md`
 - 更新后的 `sdk/docs/compatibility.md`
 - SDK full-flow / package consumer summary
+- backend TLS profile SDK full-flow summary
 - Python/C# 生产接入示例说明
 - `scripts/verify_sdk_enterprise_delivery.py`
 
@@ -215,7 +222,7 @@ SDK full-flow 恢复证据；同时已补 `docs/production-recovery-drill-record
 
 - 客户端能按文档独立完成安装、连接、登录、进房、战斗、排行榜、重连和排障。
 - 版本不匹配和 native 加载失败能给出清晰错误。
-- `python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/release --skip-build` 通过，并归档 distribution、package consumer、business-flow、real gateway full-flow 子 summary。
+- `python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/release --skip-build` 通过，并归档 distribution、package consumer、business-flow、real gateway full-flow 和 backend TLS real gateway full-flow 子 summary。
 - SDK 行为与真实服务端业务链路保持同步。
 
 ### N6：gRPC / 协议演进 PoC 与生产取舍

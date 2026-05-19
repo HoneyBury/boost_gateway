@@ -94,6 +94,7 @@ def main() -> int:
         "package_consumer_summary_path": str(ROOT / "runtime/validation/n5-sdk-package-consumer-summary.json"),
         "business_flow_summary_path": str(ROOT / "runtime/validation/n5-sdk-business-flow-summary.json"),
         "full_flow_client_summary_path": str(ROOT / "runtime/validation/n5-sdk-full-flow-client-summary.json"),
+        "tls_full_flow_client_summary_path": str(ROOT / "runtime/validation/n5-sdk-tls-full-flow-client-summary.json"),
     }
     steps: list[dict[str, Any]] = []
     steps.append(
@@ -157,6 +158,25 @@ def main() -> int:
                 "N5 real gateway SDK full-flow example",
                 "runtime_full_flow",
                 full_flow_cmd,
+                args.step_timeout_seconds,
+            )
+        )
+        tls_full_flow_cmd = [
+            sys.executable,
+            str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+            "--build-dir",
+            str(build_dir),
+            "--backend-tls",
+            "--summary-path",
+            artifacts["tls_full_flow_client_summary_path"],
+        ]
+        if args.skip_build:
+            tls_full_flow_cmd.append("--skip-build")
+        steps.append(
+            run_step(
+                "N5 real gateway SDK TLS full-flow example",
+                "runtime_tls_full_flow",
+                tls_full_flow_cmd,
                 args.step_timeout_seconds,
             )
         )

@@ -1,6 +1,6 @@
 # SDK 与 Gateway 兼容矩阵
 
-更新时间：2026-05-18
+更新时间：2026-05-19
 
 本文档记录当前客户端 SDK 与 BoostGateway 服务端的生产接入口径。默认事实源以 SDK native 版本、C ABI、语言封装和真实 gateway full-flow gate 为准。
 
@@ -25,6 +25,7 @@
 - Python wrapper 支持 `BOOST_GATEWAY_SDK_LIBRARY` 指定 native library 路径；加载失败时输出尝试路径和底层错误。
 - C# wrapper 在 native client allocation 失败时抛出明确异常。
 - SDK full-flow gate 必须覆盖 login、echo、room、ready、battle、push、reconnect、heartbeat 和 disconnect callback。
+- N4/N5 起还必须保留 backend TLS profile full-flow 证据；客户端仍连接 plain TCP gateway，TLS profile 发生在 gateway->backend。
 
 ## N5 企业交付门禁
 
@@ -40,10 +41,12 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 - `scripts/verify_sdk_package_consumer.py`：临时安装 SDK，并让外部 CMake consumer `find_package()`、链接和运行。
 - `scripts/verify_sdk_business_flow.py`：in-process gateway 业务闭环，覆盖 heartbeat、reconnect、push、disconnect callback。
 - `scripts/verify_sdk_full_flow_client.py`：真实 `v2_gateway_demo` + 五后端 + `sdk_full_flow_client`，覆盖最接近客户端接入的生产链路。
+- `scripts/verify_sdk_full_flow_client.py --backend-tls`：同一 SDK 客户端 API，在服务端 backend TLS profile 下跑通真实 full-flow。
 
 ## 兼容边界
 
 - 当前 SDK 面向现有 TCP wire protocol，不承诺 proto/gRPC 外部客户端协议。
+- backend TLS profile 不改变 SDK 外部 API；证书加载和 mTLS 策略由服务端部署治理，客户端 SDK 只感知 gateway 连接和业务结果。
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。
 - 兼容升级默认策略：Gateway patch/minor 版本保持 SDK `4.x` 主版本兼容；破坏性协议变化必须提升 SDK 主版本并更新本矩阵。

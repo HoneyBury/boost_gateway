@@ -184,9 +184,19 @@ python3 scripts/check_sdk_distribution.py --build-dir build/default
 python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
 python3 scripts/verify_sdk_business_flow.py --build-dir build/default
 python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
+python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default --backend-tls
 ```
 
-`verify_sdk_enterprise_delivery.py` 是 N5 客户端交付总门禁，会依次验证 SDK 分发、外部 CMake consumer、in-process 业务闭环和真实 gateway full-flow。正式交付给客户端团队前优先归档这份 summary。
+`verify_sdk_enterprise_delivery.py` 是 N5 客户端交付总门禁，会依次验证 SDK 分发、外部 CMake consumer、in-process 业务闭环、真实 gateway full-flow，以及 backend TLS profile 下的真实 gateway full-flow。正式交付给客户端团队前优先归档这份 summary。
+
+### Plain TCP 与 TLS Profile
+
+SDK 对外连接仍是当前生产默认的 plain TCP gateway 入口。N4 起，服务端 gateway->backend 可以通过 opt-in backend TLS profile 运行；客户端 SDK API 不需要变化。客户端团队验收时建议同时归档两份 summary：
+
+- plain TCP：`runtime/validation/n5-sdk-full-flow-client-summary.json`
+- backend TLS profile：`runtime/validation/n5-sdk-tls-full-flow-client-summary.json`
+
+当 TLS profile 开启时，SDK 仍连接同一个 gateway host/port；证书、`BACKEND_TLS_ENABLED`、`security_policy.require_tls` 和 `v3_tls_enabled` 由服务端部署配置治理，不暴露给客户端 SDK。
 
 ## 生产客户端接入清单
 
@@ -200,6 +210,7 @@ python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
 | 断线 | `on_disconnect` 表示 heartbeat 发现异常断开；主动 `disconnect()` 不触发该回调 |
 | 日志 | 至少包含 player id、room id、request step、error code、retry count、reconnect attempt、sdk version |
 | 排障 | native 加载失败先检查 `BOOST_GATEWAY_SDK_LIBRARY`、动态库平台后缀、SDK/Gateway 版本矩阵 |
+| TLS profile | 客户端 SDK 不直接加载 backend 证书；使用 `--backend-tls` full-flow summary 证明服务端 TLS profile 与 SDK API 兼容 |
 
 SDK 依赖:
 - Boost.Asio (TCP 网络, 头文件)

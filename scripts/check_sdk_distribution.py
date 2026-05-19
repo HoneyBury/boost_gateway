@@ -189,6 +189,7 @@ def validate_wrappers(checks: list[dict[str, Any]]) -> None:
 
 def validate_docs(checks: list[dict[str, Any]]) -> None:
     docs = read_text("sdk/docs/README.md")
+    compatibility = read_text("sdk/docs/compatibility.md")
     roadmap = read_text("sdk/docs/roadmap.md")
     add_check(
         checks,
@@ -201,6 +202,12 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
         "sdk-docs:c-api",
         "C API" in docs and "Python" in docs and "C#" in docs,
         "SDK docs cover cross-language wrappers",
+    )
+    add_check(
+        checks,
+        "sdk-docs:tls-profile",
+        "--backend-tls" in docs and "--backend-tls" in compatibility,
+        "SDK docs describe the backend TLS full-flow profile",
     )
     add_check(
         checks,
@@ -278,8 +285,9 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-tools:full-flow-client",
-        (REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").exists(),
-        "SDK full-flow example verification script exists",
+        (REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").exists()
+        and "--backend-tls" in read_text("scripts/verify_sdk_full_flow_client.py"),
+        "SDK full-flow example verification script exists and supports backend TLS profile",
     )
 
 
