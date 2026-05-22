@@ -7,10 +7,13 @@
 #include "app/audit_log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 #include <unordered_map>
 #include <vector>
 
@@ -39,6 +42,7 @@ struct RoomState {
     std::uint32_t version = 0;        // incremented on each state change
     RoomStatus status = RoomStatus::kWaiting;
     std::int64_t created_at_ms = 0;
+    std::optional<std::chrono::steady_clock::time_point> last_activity_at_;
 };
 
 struct RoomStateManager {
@@ -95,6 +99,11 @@ struct RoomStateManager {
         if (!room.metadata.empty()) {
             j["metadata"] = room.metadata;
         }
+        if (room.last_activity_at_.has_value()) {
+            auto idle = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::steady_clock::now() - *room.last_activity_at_).count();
+            j["idle_ms"] = idle;
+        }
         return j;
     }
 
@@ -136,8 +145,10 @@ namespace v2::room {
 
 class RoomBackendService::Impl {
 public:
-    explicit Impl(std::uint16_t port, std::uint32_t battle_max_frames)
-        : port_(port), battle_max_frames_(battle_max_frames) {}
+    explicit Impl(std::uint16_t port, std::uint32_t battle_max_frames,
+                  std::uint32_t room_ttl_ms, std::uint32_t cleanup_interval_ms)
+        : port_(port), battle_max_frames_(battle_max_frames),
+          room_ttl_ms_(room_ttl_ms), cleanup_interval_ms_(cleanup_interval_ms) {}
 
     void start() {
         v2::service::BackendServer::HandlerMap handlers;
@@ -156,9 +167,11 @@ public:
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
             std::move(handlers));
         server_->start();
+        start_cleanup_timer();
     }
 
     void stop() {
+        stop_cleanup_timer();
         if (server_) {
             server_->stop();
         }
@@ -178,6 +191,49 @@ private:
     std::unique_ptr<v2::service::BackendServer> server_;
     std::optional<v3::cluster::TlsSessionConfig> tls_config_;
     RoomStateManager room_manager_;
+
+    std::uint32_t room_ttl_ms_ = 300000;
+    std::uint32_t cleanup_interval_ms_ = 60000;
+    std::atomic<bool> cleanup_running_{false};
+    std::thread cleanup_thread_;
+
+    void start_cleanup_timer() {
+        cleanup_running_ = true;
+        cleanup_thread_ = std::thread([this]() {
+            while (cleanup_running_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(cleanup_interval_ms_));
+                if (!cleanup_running_) break;
+                cleanup_expired_rooms();
+            }
+        });
+    }
+
+    void stop_cleanup_timer() {
+        cleanup_running_ = false;
+        if (cleanup_thread_.joinable()) {
+            cleanup_thread_.join();
+        }
+    }
+
+    void cleanup_expired_rooms() {
+        auto now = std::chrono::steady_clock::now();
+        std::lock_guard<std::mutex> lock(room_manager_.mutex_);
+
+        std::vector<std::string> expired;
+        for (const auto& [id, room] : room_manager_.rooms_) {
+            if (room.status == RoomStatus::kWaiting && room.last_activity_at_.has_value()) {
+                auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+                    now - *room.last_activity_at_).count();
+                if (elapsed >= static_cast<std::int64_t>(room_ttl_ms_)) {
+                    expired.push_back(id);
+                }
+            }
+        }
+        for (const auto& id : expired) {
+            AUDIT_LOG("room_ttl_cleaned", "room_id=" + id);
+            room_manager_.rooms_.erase(id);
+        }
+    }
 
     // ─── room_create ─────────────────────────────────────────────────
 
@@ -223,6 +279,7 @@ private:
         room.version = 1;
         room.status = RoomStatus::kWaiting;
         room.created_at_ms = now_ms;
+        room.last_activity_at_ = std::chrono::steady_clock::now();
         room.members.push_back(RoomMember{.user_id = user_id, .display_name = display_name, .ready = false});
         room_manager_.rooms_[room_id] = std::move(room);
 
@@ -278,6 +335,7 @@ private:
 
         room->members.push_back(RoomMember{.user_id = user_id, .display_name = display_name, .ready = false});
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         auto resp = make_ok({{"room_id", room_id}, {"member_count", room->members.size()}});
         return v2::service::wrap_typed_response_if_needed(
@@ -315,6 +373,7 @@ private:
 
         member->ready = ready;
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         auto resp = make_ok({
             {"room_id", room_id},
@@ -367,6 +426,7 @@ private:
         room->active_battle_id = battle_id;
         room->status = RoomStatus::kInInstance;
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         AUDIT_LOG("battle_created", "room_id=" + room_id + " battle_id=" + room->active_battle_id);
 
@@ -428,6 +488,7 @@ private:
         members.erase(it, members.end());
 
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         if (members.empty()) {
             AUDIT_LOG("room_deleted", "room_id=" + room_id);
@@ -553,6 +614,7 @@ private:
         }
         members.erase(it, members.end());
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         AUDIT_LOG("room_kick", "room_id=" + room_id + " kicked=" + target_user_id +
                                " by=" + user_id);
@@ -599,6 +661,7 @@ private:
 
         room->owner_user_id = new_owner_id;
         room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
 
         AUDIT_LOG("room_owner_transferred",
                   "room_id=" + room_id + " from=" + user_id + " to=" + new_owner_id);
@@ -656,7 +719,12 @@ RoomBackendService::RoomBackendService(std::uint16_t port)
     : RoomBackendService(port, 3) {}
 
 RoomBackendService::RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames)
-    : impl_(std::make_unique<Impl>(port, battle_max_frames > 0 ? battle_max_frames : 3)) {}
+    : RoomBackendService(port, battle_max_frames, 300000, 60000) {}
+
+RoomBackendService::RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames,
+                                        std::uint32_t room_ttl_ms, std::uint32_t cleanup_interval_ms)
+    : impl_(std::make_unique<Impl>(port, battle_max_frames > 0 ? battle_max_frames : 3,
+                                   room_ttl_ms, cleanup_interval_ms)) {}
 
 RoomBackendService::~RoomBackendService() = default;
 

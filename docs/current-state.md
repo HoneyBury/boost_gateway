@@ -47,6 +47,8 @@
 - 生产性能快照：`scripts/collect_docker_production_perf_snapshot.py` 已补齐 OrbStack / Docker Compose 生产栈运行态采样入口，覆盖 gateway readiness/diagnostics、Prometheus targets、Grafana health 和容器 CPU/RSS/PID/IO 快照；本机实测 `overall_pass=true`，产物见 `runtime/perf/docker-production-snapshot/`。
 - 生产业务闭环接入：`docs/production-business-closure-plan.md` 已完成 P0-P8 收束。P0-P2 打通 SDK matchmaking/leaderboard、full-flow 和 battle settlement 自动写榜；P3-P4 将新业务路径纳入性能/监控/快照，并完成 Redis/Raft HA profile；P5-P8 补齐 OTel/trace、TLS 边界、K8s/Operator full-flow 入口和 v3 proto/gRPC ADR。聚合验证入口为 `scripts/verify_p5_p8_business_closure.py`。
 - P0-P7 框架现代化与坦克大战 demo：已按 `docs/realtime-framework-modernization-plan.md` 完成 P0-P7 全部 checkpoint。P0 目录与文档结构固化；P1 identity 注册协议与错误码完成；P2 房间大厅支持 list/detail/kick/transfer；P3 实时实例运行时（`v2::realtime::InstanceRuntime`）实现 tick-based 游戏循环；P4 坦克大战仿真（`TankWorld` 20×15 网格）含运动/碰撞/子弹/得分；P5 settlement 与 leaderboard 数据结构就绪；P6 resume/reconnect 支持；P7 回归门禁与验证脚本覆盖 642 测试 + 8 个 checkpoint。demo 全部位于 `demo/games/tank_battle/`，默认不参与生产构建（`BOOST_BUILD_TANK_DEMO=OFF`）。
+- N1 性能刻度（perf scaling）：`demo/games/tank_battle/tests/perf_test.cpp` 新增 500 实例 × 50  ticks 基准规格（保守阈值 100 TPS），覆盖 2/20/100/500 四级并发刻度用于 CI 性能回归。
+- N5 SDK Python 示例：`demo/games/tank_battle/client_sdk_adapter/python_demo.py` 作为坦克大战 Python SDK demo，走通 connect→login→room→battle→move→finish→leaderboard→disconnect 全生命周期，输出 JSON 摘要并支持 `--n5-demo` 集成到 `verify_tank_battle_demo.py` 验证脚本。
 
 ## 保留边界
 

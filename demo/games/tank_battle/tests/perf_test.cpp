@@ -197,7 +197,7 @@ int main() {
 
     // Benchmarks: 2 instances x 300 ticks, 20 x 300, 100 x 100
     struct BenchSpec { std::uint32_t instances; std::uint32_t ticks; };
-    BenchSpec specs[] = {{2, 300}, {20, 300}, {100, 100}};
+    BenchSpec specs[] = {{2, 300}, {20, 300}, {100, 100}, {500, 50}};
 
     for (const auto& spec : specs) {
         auto r = run_benchmark(spec.instances, spec.ticks);
@@ -205,7 +205,8 @@ int main() {
 
         // Conservative thresholds for CI/dev machines (~30 Hz tick rate)
         double min_tps = (spec.instances == 2) ? 200.0 :
-                         (spec.instances == 20) ? 500.0 : 200.0;
+                         (spec.instances == 20) ? 500.0 :
+                         (spec.instances == 500) ? 100.0 : 200.0;
         j["passed"] = r.ticks_per_second >= min_tps;
         j["min_ticks_per_second"] = min_tps;
         results.push_back(j);

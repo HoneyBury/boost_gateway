@@ -7,6 +7,8 @@
 #include <nlohmann/json.hpp>
 #include "app/audit_log.h"
 
+#include <random>
+
 #include <cctype>
 #include <chrono>
 #include <stdexcept>
@@ -106,6 +108,19 @@ v2::service::BackendEnvelope make_ok_response(const std::string& user_id,
     return response;
 }
 
+std::string generate_guest_user_id() {
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<int> dis(0, 15);
+    std::string suffix;
+    suffix.reserve(16);
+    const char hex_chars[] = "0123456789abcdef";
+    for (int i = 0; i < 16; ++i) {
+        suffix += hex_chars[dis(gen)];
+    }
+    return "guest_" + suffix;
+}
+
 }  // namespace
 
 namespace v2::login {
@@ -140,6 +155,7 @@ public:
         handlers["session_bind"] = [this](const auto& req) { return handle_session_bind(req); };
         handlers["session_close"] = [this](const auto& req) { return handle_session_close(req); };
         handlers["token_refresh"] = [this](const auto& req) { return handle_token_refresh(req); };
+        handlers["guest_login"] = [this](const auto& req) { return handle_guest_login(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -295,6 +311,26 @@ private:
             return make_error_response(-1003, "jwt_required");
         }
 
+        // Check account status
+        {
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            auto* record = account_store_.find(user_id);
+            if (record != nullptr) {
+                if (record->status == "disabled") {
+                    AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=account_disabled");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_disabled");
+                }
+                if (record->status == "banned") {
+                    AUDIT_LOG("login_failure", "user_id=" + user_id + " reason=account_banned");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_banned");
+                }
+            }
+        }
+
         // Accept the token
         std::lock_guard<std::mutex> lock(state_.mutex_);
 
@@ -324,6 +360,23 @@ private:
         }
 
         std::string token = doc["token"].get<std::string>();
+
+        // Check account status if user_id is provided
+        if (doc.contains("user_id")) {
+            std::string user_id = doc["user_id"].get<std::string>();
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            auto* record = account_store_.find(user_id);
+            if (record != nullptr) {
+                if (record->status == "disabled" || record->status == "banned") {
+                    v2::service::BackendEnvelope response;
+                    response.kind = v2::service::MessageKind::kResponse;
+                    nlohmann::json body{{"valid", false}};
+                    response.payload = body.dump();
+                    return response;
+                }
+            }
+        }
+
         bool valid = !token.empty();
         if (jwt_validator_.has_value() && valid) {
             valid = jwt_validator_->validate(token).valid;
@@ -346,6 +399,26 @@ private:
         }
 
         std::string user_id = doc["user_id"].get<std::string>();
+
+        // Check account status
+        {
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            auto* record = account_store_.find(user_id);
+            if (record != nullptr) {
+                if (record->status == "disabled") {
+                    AUDIT_LOG("session_bind_failure", "user_id=" + user_id + " reason=account_disabled");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_disabled");
+                }
+                if (record->status == "banned") {
+                    AUDIT_LOG("session_bind_failure", "user_id=" + user_id + " reason=account_banned");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_banned");
+                }
+            }
+        }
 
         std::lock_guard<std::mutex> lock(state_.mutex_);
         state_.active_sessions_[user_id] = user_id;
@@ -383,6 +456,26 @@ private:
 
         std::string user_id = doc["user_id"].get<std::string>();
         std::string token = doc["token"].get<std::string>();
+
+        // Check account status
+        {
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            auto* record = account_store_.find(user_id);
+            if (record != nullptr) {
+                if (record->status == "disabled") {
+                    AUDIT_LOG("token_refresh_failure", "user_id=" + user_id + " reason=account_disabled");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_disabled");
+                }
+                if (record->status == "banned") {
+                    AUDIT_LOG("token_refresh_failure", "user_id=" + user_id + " reason=account_banned");
+                    return make_error_response(
+                        static_cast<std::int32_t>(v2::service::ServiceErrorCode::kAccountDisabled),
+                        "account_banned");
+                }
+            }
+        }
 
         // Validate existing token first
         bool token_valid = false;
@@ -440,6 +533,74 @@ private:
         };
         response.payload = body.dump();
         return response;
+    }
+
+    v2::service::BackendEnvelope handle_guest_login(
+        const v2::service::BackendEnvelope& request) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value()) {
+            AUDIT_LOG("guest_login_failure", "reason=empty_payload");
+            return make_error_response(-1004, "empty_payload");
+        }
+
+        std::string display_name;
+        if (decoded->payload.is_object()) {
+            display_name = decoded->payload.value("display_name", "");
+        }
+
+        // Generate a unique guest user_id
+        std::string user_id;
+        {
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            // Retry up to 3 times on the extremely unlikely event of an ID collision
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                user_id = generate_guest_user_id();
+                if (account_store_.find(user_id) == nullptr) {
+                    break;
+                }
+                user_id.clear();
+            }
+            if (user_id.empty()) {
+                AUDIT_LOG("guest_login_failure", "reason=id_collision");
+                return make_error_response(-1005, "internal_error");
+            }
+
+            if (display_name.empty()) {
+                display_name = "Guest_" + user_id.substr(6);
+            }
+
+            AccountRecord record;
+            record.user_id = user_id;
+            record.display_name = display_name;
+            record.status = "guest";
+            record.created_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+
+            if (!account_store_.insert(std::move(record))) {
+                AUDIT_LOG("guest_login_failure", "user_id=" + user_id + " reason=storage_error");
+                return make_error_response(
+                    static_cast<std::int32_t>(v2::service::ServiceErrorCode::kStorageUnavailable),
+                    "storage_unavailable");
+            }
+        }
+
+        std::string token = "guest_token:" + user_id;
+
+        AUDIT_LOG("guest_login_success", "user_id=" + user_id + " display_name=" + display_name);
+
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        nlohmann::json body{
+            {"status", "ok"},
+            {"user_id", user_id},
+            {"display_name", display_name},
+            {"token", token},
+        };
+        response.payload = body.dump();
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kLoginResponse);
     }
 };
 

@@ -2,7 +2,7 @@
 """
 Tank Battle Demo Verification Script.
 
-Verifies the tank battle demo across all P0-P7 and C0 checkpoints:
+Verifies the tank battle demo across all P0-P7, M2-M3, and C0 checkpoints:
   - P0: Directory structure and docs
   - P1: Identity registration
   - P2: Room lobby capabilities
@@ -11,11 +11,15 @@ Verifies the tank battle demo across all P0-P7 and C0 checkpoints:
   - P5: Settlement/Leaderboard
   - P6: Resume/Reconnect
   - P7: Regression gates
+  - M2: Room backend service maturity
+  - M3: Realtime boundary documentation maturity
   - C0: End-to-end closed loop tests
+  - N5: Python SDK demo (via --n5-demo flag)
 
 Usage:
     python3 demo/games/tank_battle/scripts/verify_tank_battle_demo.py --build-dir build
     python3 demo/games/tank_battle/scripts/verify_tank_battle_demo.py --build-dir build --smoke-perf
+    python3 demo/games/tank_battle/scripts/verify_tank_battle_demo.py --build-dir build --n5-demo
 """
 
 import argparse
@@ -250,12 +254,72 @@ def check_c0_e2e(demo_root: Path, build_dir: Path, errors: list, warnings: list)
     return ok
 
 
+# ─── M2: Room Backend Service Maturity ──────────────────────────────
+
+def check_m2_room_backend(demo_root: Path, errors: list, warnings: list) -> bool:
+    """Verify room backend service existence and handler registration pattern."""
+    ok = True
+    repo_root = demo_root.parent.parent.parent
+
+    # room_backend_service.h exists
+    header = repo_root / "include/v2/room/room_backend_service.h"
+    ok &= check_file(header, "M2:room_backend_header", errors)
+
+    # Check handler registration pattern in implementation
+    cpp = repo_root / "src/v2/room/room_backend_service.cpp"
+    if cpp.is_file():
+        content = cpp.read_text(encoding='utf-8')
+        expected_handlers = [
+            "room_create", "room_join", "room_ready", "room_start_battle",
+            "room_leave", "room_list", "room_detail", "room_kick",
+            "room_transfer_owner", "room_state_push",
+        ]
+        for h in expected_handlers:
+            marker = f'handlers["{h}"]'
+            if marker not in content:
+                errors.append(f"M2:handler_registration: missing handler registration for '{h}'")
+                ok = False
+    else:
+        errors.append("M2:room_backend_impl: room_backend_service.cpp not found")
+        ok = False
+
+    return ok
+
+
+# ─── M3: Realtime Boundary & Documentation Maturity ────────────────
+
+def check_m3_realtime_boundary(demo_root: Path, errors: list, warnings: list) -> bool:
+    """Verify realtime instance boundary headers and documentation exist."""
+    ok = True
+    repo_root = demo_root.parent.parent.parent
+
+    # instance_plugin.h exists
+    plugin_header = repo_root / "include/v2/realtime/instance_plugin.h"
+    ok &= check_file(plugin_header, "M3:instance_plugin_header", errors)
+
+    # realtime types exist
+    types_header = repo_root / "include/v2/realtime/types.h"
+    ok &= check_file(types_header, "M3:realtime_types_header", errors)
+
+    # Boundary docs exist
+    module_boundaries = repo_root / "docs/realtime-framework-module-boundaries.md"
+    sdk_boundary = repo_root / "docs/realtime-framework-sdk-boundary.md"
+    ok &= check_file(module_boundaries, "M3:module_boundaries_doc", errors)
+    ok &= check_file(sdk_boundary, "M3:sdk_boundary_doc", errors)
+
+    return ok
+
+
 # ─── Main ───────────────────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="Verify tank battle demo")
     parser.add_argument("--build-dir", default="build", help="Build directory")
     parser.add_argument("--smoke-perf", action="store_true", help="Run performance smoke test")
+    parser.add_argument("--full-flow", action="store_true",
+                        help="Run demo_full_flow_client.py for comprehensive validation")
+    parser.add_argument("--n5-demo", action="store_true",
+                        help="Run Python SDK demo (N5)")
     args = parser.parse_args()
 
     build_dir = Path(args.build_dir).resolve()
@@ -303,9 +367,62 @@ def main():
     print("[P7] Checking regression gates...")
     checkpoint_results["P7"] = check_p7_regression(demo_root, errors, warnings)
 
+    # M2: Room backend service
+    print("[M2] Checking room backend service maturity...")
+    checkpoint_results["M2"] = check_m2_room_backend(demo_root, errors, warnings)
+
+    # M3: Realtime boundary and documentation
+    print("[M3] Checking realtime boundary documentation maturity...")
+    checkpoint_results["M3"] = check_m3_realtime_boundary(demo_root, errors, warnings)
+
     # C0: End-to-end closed loop
     print("[C0] Running end-to-end closed loop tests...")
     checkpoint_results["C0"] = check_c0_e2e(demo_root, build_dir, errors, warnings)
+
+    # Full-flow comprehensive validation (optional)
+    full_flow_pass = True
+    if args.full_flow:
+        print()
+        print("[FullFlow] Running comprehensive full-flow validation...")
+        full_flow_script = Path(__file__).resolve().parent / "demo_full_flow_client.py"
+        if not full_flow_script.is_file():
+            errors.append("FullFlow: demo_full_flow_client.py not found")
+            full_flow_pass = False
+        else:
+            ff_cmd = [sys.executable, str(full_flow_script),
+                      "--build-dir", str(build_dir)]
+            if args.smoke_perf:
+                ff_cmd.append("--perf")
+            rc, stdout, stderr = run_cmd(ff_cmd, demo_root, timeout=120)
+            if stdout:
+                print(stdout)
+            if stderr:
+                print(stderr, file=sys.stderr)
+            full_flow_pass = rc == 0
+            if not full_flow_pass:
+                errors.append(f"FullFlow: full-flow client exited with code {rc}")
+        checkpoint_results["FullFlow"] = full_flow_pass
+
+    # N5: Python SDK demo (optional)
+    n5_pass = True
+    if args.n5_demo:
+        print()
+        print("[N5] Running Python SDK demo...")
+        n5_script = demo_root / "client_sdk_adapter" / "python_demo.py"
+        if not n5_script.is_file():
+            errors.append("N5: python_demo.py not found")
+            n5_pass = False
+        else:
+            n5_cmd = [sys.executable, str(n5_script)]
+            rc, stdout, stderr = run_cmd(n5_cmd, demo_root, timeout=60)
+            if stdout:
+                print(stdout)
+            if stderr:
+                print(stderr, file=sys.stderr)
+            n5_pass = rc == 0
+            if not n5_pass:
+                errors.append(f"N5: Python SDK demo exited with code {rc}")
+        checkpoint_results["N5"] = n5_pass
 
     # Summary
     print()

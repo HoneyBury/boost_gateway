@@ -12,6 +12,8 @@ class RoomBackendService {
 public:
     explicit RoomBackendService(std::uint16_t port);
     RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames);
+    RoomBackendService(std::uint16_t port, std::uint32_t battle_max_frames,
+                       std::uint32_t room_ttl_ms, std::uint32_t cleanup_interval_ms);
     ~RoomBackendService();
 
     void start();
