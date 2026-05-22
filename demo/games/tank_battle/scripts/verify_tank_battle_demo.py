@@ -2,7 +2,7 @@
 """
 Tank Battle Demo Verification Script.
 
-Verifies the tank battle demo across all P0-P7 checkpoints:
+Verifies the tank battle demo across all P0-P7 and C0 checkpoints:
   - P0: Directory structure and docs
   - P1: Identity registration
   - P2: Room lobby capabilities
@@ -11,6 +11,7 @@ Verifies the tank battle demo across all P0-P7 checkpoints:
   - P5: Settlement/Leaderboard
   - P6: Resume/Reconnect
   - P7: Regression gates
+  - C0: End-to-end closed loop tests
 
 Usage:
     python3 demo/games/tank_battle/scripts/verify_tank_battle_demo.py --build-dir build
@@ -202,6 +203,53 @@ def check_p7_regression(demo_root: Path, errors: list, warnings: list) -> bool:
     return ok
 
 
+# ─── C0: End-to-End Closed Loop ────────────────────────────────────
+
+def check_c0_e2e(demo_root: Path, build_dir: Path, errors: list, warnings: list) -> bool:
+    """Run the E2E closed-loop test suite."""
+    ok = True
+
+    e2e_exe = build_dir / "demo" / "games" / "tank_battle" / "tests" / "Debug" / "tank_battle_e2e_test.exe"
+    config = "Debug"
+    # Try Release if Debug not found
+    if not e2e_exe.is_file():
+        e2e_exe = build_dir / "demo" / "games" / "tank_battle" / "tests" / "Release" / "tank_battle_e2e_test.exe"
+        config = "Release"
+
+    if not e2e_exe.is_file():
+        # Search more broadly
+        import glob as glob_mod
+        candidates = glob_mod.glob(str(build_dir / "demo" / "games" / "tank_battle" / "tests" / "**" / "tank_battle_e2e_test.exe"), recursive=True)
+        if candidates:
+            e2e_exe = Path(candidates[0])
+        else:
+            errors.append(f"C0:e2e: e2e test executable not found in {build_dir / 'demo' / 'games' / 'tank_battle' / 'tests'}")
+            return False
+
+    rc, stdout, stderr = run_cmd([str(e2e_exe)], demo_root, timeout=30)
+
+    if rc != 0:
+        errors.append(f"C0:e2e: e2e tests failed (exit={rc})")
+        if stdout:
+            errors.append(f"C0:e2e: stdout: {stdout[:500]}")
+        return False
+
+    # Parse GTest output for pass/fail counts
+    passed_count = 0
+    failed_count = 0
+    for line in stdout.splitlines():
+        import re
+        m = re.match(r'^\[\s+PASSED\s+\]\s+(\d+)\s+test', line)
+        if m:
+            passed_count = int(m.group(1))
+        m = re.match(r'^\[\s+FAILED\s+\]\s+(\d+)\s+test', line)
+        if m:
+            failed_count = int(m.group(1))
+
+    warnings.append(f"C0:e2e: {passed_count} passed, {failed_count} failed")
+    return ok
+
+
 # ─── Main ───────────────────────────────────────────────────────────
 
 def main():
@@ -254,6 +302,10 @@ def main():
     # P7: Regression
     print("[P7] Checking regression gates...")
     checkpoint_results["P7"] = check_p7_regression(demo_root, errors, warnings)
+
+    # C0: End-to-end closed loop
+    print("[C0] Running end-to-end closed loop tests...")
+    checkpoint_results["C0"] = check_c0_e2e(demo_root, build_dir, errors, warnings)
 
     # Summary
     print()
