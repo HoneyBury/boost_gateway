@@ -459,3 +459,227 @@ TEST(TankBattlePluginTest, InputRejectedForNonExistentPlayer) {
     // so it's NOT in inputs_this_tick
     EXPECT_EQ(stats.inputs_processed, 0);
 }
+
+// --- Shoot action tests ------------------------------------------------
+
+TEST(TankBattlePluginTest, ShootProjectileSpawned) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
+
+    runtime.create_instance("battle_001", "room_001", "tank_battle",
+                            {make_player("alice"), make_player("bob")},
+                            33, 100, 30000);
+
+    // alice shoots bob (same position = instant arrival)
+    auto input = make_input("battle_001", "alice", 1,
+                            R"({"action":"shoot","target_user_id":"bob"})");
+    auto result = runtime.submit_input(input);
+    EXPECT_TRUE(result.accepted);
+
+    // Tick to process
+    auto stats = runtime.tick_instance("battle_001", 1, now_ms());
+    EXPECT_EQ(stats.frame_number, 1);
+    EXPECT_EQ(stats.inputs_processed, 1);
+
+    // Verify snapshot is valid
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    ASSERT_FALSE(snap.payload.empty());
+
+    auto parsed = json::parse(snap.payload);
+    EXPECT_EQ(parsed["type"], "tank.snapshot");
+    ASSERT_TRUE(parsed["players"].is_array());
+    ASSERT_EQ(parsed["players"].size(), 2);
+
+    // Both players should have valid state
+    for (const auto& player : parsed["players"]) {
+        EXPECT_TRUE(player.contains("user_id"));
+        EXPECT_TRUE(player.contains("x"));
+        EXPECT_TRUE(player.contains("y"));
+        EXPECT_TRUE(player.contains("hp"));
+        EXPECT_TRUE(player.contains("max_hp"));
+    }
+}
+
+TEST(TankBattlePluginTest, ShootReducesHealthOnImpact) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
+
+    runtime.create_instance("battle_001", "room_001", "tank_battle",
+                            {make_player("alice"), make_player("bob")},
+                            33, 100, 30000);
+
+    std::uint32_t frame = 1;
+
+    // Frame 1: Move alice to (50, 0) so she's at range
+    {
+        auto input = make_input("battle_001", "alice", frame,
+                                R"({"action":"move","x":50,"y":0})");
+        auto result = runtime.submit_input(input);
+        EXPECT_TRUE(result.accepted);
+        runtime.tick_instance("battle_001", frame, now_ms());
+        frame++;
+    }
+
+    // Frame 2: alice shoots bob. Distance=50, speed=50 -> arrives in 1 tick
+    {
+        auto input = make_input("battle_001", "alice", frame,
+                                R"({"action":"shoot","target_user_id":"bob"})");
+        auto result = runtime.submit_input(input);
+        EXPECT_TRUE(result.accepted);
+        runtime.tick_instance("battle_001", frame, now_ms());
+        frame++;
+    }
+
+    // Frame 3: Projectile arrives
+    runtime.tick_instance("battle_001", frame, now_ms());
+
+    // Verify bob's health was reduced
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    ASSERT_FALSE(snap.payload.empty());
+
+    auto parsed = json::parse(snap.payload);
+    ASSERT_TRUE(parsed["players"].is_array());
+
+    bool found_bob = false;
+    for (const auto& player : parsed["players"]) {
+        if (player["user_id"] == "bob") {
+            EXPECT_EQ(player["hp"].get<int>(), 90);   // 100 - 10 damage
+            EXPECT_EQ(player["max_hp"].get<int>(), 100);
+            found_bob = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_bob);
+}
+
+TEST(TankBattlePluginTest, ShootWithAoeRadius) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
+
+    runtime.create_instance("battle_001", "room_001", "tank_battle",
+                            {make_player("alice"), make_player("bob"),
+                             make_player("charlie")},
+                            33, 100, 30000);
+
+    std::uint32_t frame = 1;
+
+    // Frame 1: Move alice away so projectile has travel time
+    {
+        auto input = make_input("battle_001", "alice", frame,
+                                R"({"action":"move","x":50,"y":0})");
+        runtime.submit_input(input);
+        runtime.tick_instance("battle_001", frame, now_ms());
+        frame++;
+    }
+
+    // Frame 2: alice shoots bob with aoe_radius=10
+    // Both bob and charlie at (0,0) so both are in AoE range
+    {
+        auto input = make_input("battle_001", "alice", frame,
+                                R"({"action":"shoot","target_user_id":"bob",)"
+                                R"("aoe_radius":10})");
+        runtime.submit_input(input);
+        runtime.tick_instance("battle_001", frame, now_ms());
+        frame++;
+    }
+
+    // Frame 3: Projectile arrives
+    runtime.tick_instance("battle_001", frame, now_ms());
+
+    // Verify both bob and charlie took AoE damage
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    ASSERT_FALSE(snap.payload.empty());
+
+    auto parsed = json::parse(snap.payload);
+    ASSERT_TRUE(parsed["players"].is_array());
+
+    for (const auto& player : parsed["players"]) {
+        auto uid = player["user_id"].get<std::string>();
+        if (uid == "alice") {
+            EXPECT_EQ(player["hp"].get<int>(), 100);
+        } else {
+            // bob and charlie at (0,0) both within AoE radius of impact (0,0)
+            EXPECT_EQ(player["hp"].get<int>(), 90) << "user_id=" << uid;
+        }
+    }
+}
+
+TEST(TankBattlePluginTest, ShootWithDamageOverTime) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
+
+    runtime.create_instance("battle_001", "room_001", "tank_battle",
+                            {make_player("alice"), make_player("bob")},
+                            33, 100, 30000);
+
+    std::uint32_t frame = 1;
+
+    // Frame 1: alice shoots bob with duration_frames=2 (DoT for 2 ticks)
+    // Both at (0,0) -> instant projectile arrival
+    {
+        auto input = make_input("battle_001", "alice", frame,
+                                R"({"action":"shoot","target_user_id":"bob",)"
+                                R"("duration_frames":2})");
+        auto result = runtime.submit_input(input);
+        EXPECT_TRUE(result.accepted);
+        runtime.tick_instance("battle_001", frame, now_ms());
+        frame++;
+    }
+
+    // Frame 2: DoT tick 1
+    runtime.tick_instance("battle_001", frame, now_ms());
+    frame++;
+
+    // Frame 3: DoT tick 2 (last tick)
+    runtime.tick_instance("battle_001", frame, now_ms());
+
+    // Bob should have taken:
+    //   direct damage: 10 (frame 1 impact)
+    //   DoT tick 1:    10 (frame 2)
+    //   DoT tick 2:    10 (frame 3)
+    // Total: 30 damage, HP = 70
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    ASSERT_FALSE(snap.payload.empty());
+
+    auto parsed = json::parse(snap.payload);
+    ASSERT_TRUE(parsed["players"].is_array());
+
+    bool found_bob = false;
+    for (const auto& player : parsed["players"]) {
+        if (player["user_id"] == "bob") {
+            EXPECT_EQ(player["hp"].get<int>(), 70);
+            found_bob = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found_bob);
+}
+
+TEST(TankBattlePluginTest, ShootWithoutTargetReturnsAccepted) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
+
+    runtime.create_instance("battle_001", "room_001", "tank_battle",
+                            {make_player("alice"), make_player("bob")},
+                            33, 100, 30000);
+
+    // Shoot without target_user_id - should be accepted but no-op
+    auto input = make_input("battle_001", "alice", 1,
+                            R"({"action":"shoot"})");
+    auto result = runtime.submit_input(input);
+    EXPECT_TRUE(result.accepted);
+
+    // Tick
+    runtime.tick_instance("battle_001", 1, now_ms());
+
+    // Verify no damage was done (HP still 100)
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    ASSERT_FALSE(snap.payload.empty());
+
+    auto parsed = json::parse(snap.payload);
+    ASSERT_TRUE(parsed["players"].is_array());
+
+    for (const auto& player : parsed["players"]) {
+        EXPECT_EQ(player["hp"].get<int>(), 100);
+    }
+}

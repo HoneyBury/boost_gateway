@@ -16,6 +16,7 @@ add_executable(project_v2_unit_tests
     unit/data_layer_test.cpp
     unit/battle_determinism_test.cpp
     unit/battle_authoritative_test.cpp
+    unit/battle_lifecycle_test.cpp
     unit/ecs_world_test.cpp
     unit/fault_injector_test.cpp
     unit/feature_flags_test.cpp
@@ -23,6 +24,7 @@ add_executable(project_v2_unit_tests
     unit/gateway_bridge_test.cpp
     unit/gateway_response_parser_test.cpp
     unit/io_engine_test.cpp
+    unit/json_file_store_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
     unit/service_boundary_test.cpp
@@ -30,6 +32,7 @@ add_executable(project_v2_unit_tests
     unit/service_registry_test.cpp
     unit/write_behind_store_test.cpp
     unit/cached_data_store_test.cpp
+    unit/aoi_system_test.cpp
     unit/aoi_spatial_grid_test.cpp
     unit/arena_test.cpp
     unit/cache_line_test.cpp

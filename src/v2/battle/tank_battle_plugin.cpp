@@ -5,6 +5,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <string>
@@ -64,6 +65,7 @@ void TankBattlePlugin::on_instance_created(
     // Register ECS systems in order
     state->world->add_system(std::make_unique<MovementSystem>());
     state->world->add_system(std::make_unique<CombatSystem>());
+    state->world->add_system(std::make_unique<ProjectileSystem>());
     state->world->add_system(std::make_unique<BattleClockSystem>());
 
     // Create entities for each player
@@ -177,6 +179,81 @@ v2::realtime::InputResult TankBattlePlugin::on_input(
         }
 
         participant->pending_target_user_id = target_it->get<std::string>();
+
+        return v2::realtime::InputResult{.accepted = true};
+    }
+
+    if (action == "shoot") {
+        // {"action":"shoot","target_user_id":"bob","aoe_radius":0,"duration_frames":0,"speed":50}
+        auto target_it = payload.find("target_user_id");
+        if (target_it == payload.end() || !target_it->is_string()) {
+            return v2::realtime::InputResult{
+                .accepted = true,
+            };
+        }
+        std::string target_user_id = target_it->get<std::string>();
+
+        // Get shooter's position for spawn coordinates
+        auto* shooter_pos = state.world->get_component<PositionComponent>(
+            entity_it->second);
+        if (shooter_pos == nullptr) {
+            return v2::realtime::InputResult{.accepted = true};
+        }
+
+        // Find target entity and get its position
+        auto target_entity_it = state.player_entities.find(target_user_id);
+        if (target_entity_it == state.player_entities.end()) {
+            return v2::realtime::InputResult{.accepted = true};
+        }
+        auto* target_pos = state.world->get_component<PositionComponent>(
+            target_entity_it->second);
+        if (target_pos == nullptr) {
+            return v2::realtime::InputResult{.accepted = true};
+        }
+
+        // Get damage from shooter's attack state
+        auto* attack_state = state.world->get_component<AttackStateComponent>(
+            entity_it->second);
+        std::int32_t damage = (attack_state != nullptr)
+            ? attack_state->damage : 10;
+
+        // Parse optional fields
+        std::int32_t aoe_radius = 0;
+        auto aoe_it = payload.find("aoe_radius");
+        if (aoe_it != payload.end() && aoe_it->is_number_integer()) {
+            aoe_radius = aoe_it->get<std::int32_t>();
+        }
+
+        std::uint32_t duration_frames = 0;
+        auto dur_it = payload.find("duration_frames");
+        if (dur_it != payload.end() && dur_it->is_number_integer()) {
+            duration_frames = dur_it->get<std::uint32_t>();
+        }
+
+        std::int32_t speed = 50;
+        auto speed_it = payload.find("speed");
+        if (speed_it != payload.end() && speed_it->is_number_integer()) {
+            speed = speed_it->get<std::int32_t>();
+        }
+
+        // Generate unique projectile ID
+        static std::atomic<std::uint64_t> proj_counter{0};
+        auto proj_id = "proj_" + input.user_id + "_"
+                     + std::to_string(++proj_counter);
+
+        // Spawn the projectile
+        ProjectileSystem::spawn_projectile(
+            *state.world,
+            entity_it->second,
+            proj_id,
+            input.user_id,
+            target_user_id,
+            shooter_pos->x, shooter_pos->y,
+            target_pos->x, target_pos->y,
+            damage,
+            speed,
+            aoe_radius,
+            duration_frames);
 
         return v2::realtime::InputResult{.accepted = true};
     }

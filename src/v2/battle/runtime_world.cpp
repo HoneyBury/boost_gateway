@@ -71,20 +71,149 @@ void BattleInputSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& 
         });
 }
 
+BattleLifecycleSystem::BattleLifecycleSystem(
+    std::uint32_t max_idle_frames,
+    std::uint32_t max_offline_frames)
+    : max_idle_frames_(max_idle_frames)
+    , max_offline_frames_(max_offline_frames) {
+}
+
 void BattleLifecycleSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
     (void)ctx;
-    (void)world;
-    // Lifecycle transitions are handled by battle_world_advance_frame() and
-    // finish_battle(). This system is reserved for future side-effects
-    // (e.g. cleanup, timeout escalations).
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
+    if (simple_world == nullptr) {
+        return;
+    }
+
+    BattleMetadataComponent* metadata = nullptr;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& m) {
+            metadata = &m;
+        });
+    if (metadata == nullptr) {
+        return;
+    }
+
+    // 1. Auto-transition from kCreated to kRunning on first tick
+    if (metadata->lifecycle == BattleLifecycleState::kCreated) {
+        metadata->lifecycle = BattleLifecycleState::kRunning;
+        idle_frames_ = 0;
+        offline_frames_ = 0;
+        last_input_seq_ = metadata->next_input_seq;
+        return;
+    }
+
+    // 2. If kFinished, clean up stale components
+    if (metadata->lifecycle == BattleLifecycleState::kFinished) {
+        std::vector<v2::ecs::EntityHandle> proj_handles;
+        simple_world->for_each<ProjectileComponent>(
+            [&](v2::ecs::EntityHandle handle, ProjectileComponent&) {
+                proj_handles.push_back(handle);
+            });
+        for (const auto& h : proj_handles) {
+            world.remove_component<ProjectileComponent>(h);
+        }
+
+        std::vector<v2::ecs::EntityHandle> dot_handles;
+        simple_world->for_each<DamageOverlayComponent>(
+            [&](v2::ecs::EntityHandle handle, DamageOverlayComponent&) {
+                dot_handles.push_back(handle);
+            });
+        for (const auto& h : dot_handles) {
+            world.remove_component<DamageOverlayComponent>(h);
+        }
+        return;
+    }
+
+    // Only process lifecycle transitions in kRunning state
+    if (metadata->lifecycle != BattleLifecycleState::kRunning) {
+        return;
+    }
+
+    // 3. Track idle frames via next_input_seq comparison
+    const bool has_input = metadata->next_input_seq > last_input_seq_;
+    last_input_seq_ = metadata->next_input_seq;
+
+    if (has_input) {
+        idle_frames_ = 0;
+    } else {
+        idle_frames_++;
+    }
+
+    // 4. Idle timeout → kFinished with kTimeout semantics
+    if (idle_frames_ >= max_idle_frames_) {
+        metadata->lifecycle = BattleLifecycleState::kFinished;
+        return;
+    }
+
+    // 5. All-players-offline timeout → kFinished with kPlayerDisconnected semantics
+    bool all_offline = true;
+    bool any_participant = false;
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle, BattleParticipantComponent& p) {
+            any_participant = true;
+            if (p.online) {
+                all_offline = false;
+            }
+        });
+
+    if (!any_participant) {
+        return;
+    }
+
+    if (all_offline) {
+        offline_frames_++;
+        if (offline_frames_ >= max_offline_frames_) {
+            metadata->lifecycle = BattleLifecycleState::kFinished;
+        }
+    } else {
+        offline_frames_ = 0;
+    }
 }
 
 void BattleReplaySystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
-    (void)ctx;
-    (void)world;
-    // Replay recording is handled by battle_world_append_replay_input()
-    // called from battle_world_process_input(). This system is reserved
-    // for future per-frame state snapshot captures.
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(&world);
+    if (simple_world == nullptr) {
+        return;
+    }
+
+    BattleMetadataComponent* metadata = nullptr;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& m) {
+            metadata = &m;
+        });
+    if (metadata == nullptr) return;
+
+    BattleReplayLogComponent* replay_log = nullptr;
+    simple_world->for_each<BattleReplayLogComponent>(
+        [&](v2::ecs::EntityHandle, BattleReplayLogComponent& rl) {
+            replay_log = &rl;
+        });
+    if (replay_log == nullptr) return;
+
+    BattleReplayFrameRecord record;
+    record.frame_number = ctx.frame_number;
+    record.lifecycle = metadata->lifecycle;
+
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle handle, BattleParticipantComponent& participant) {
+            BattleReplayFrameRecord::ParticipantState ps;
+            ps.user_id = participant.user_id;
+            ps.score = participant.score;
+            ps.online = participant.online;
+
+            if (auto* pos = simple_world->get_component<PositionComponent>(handle)) {
+                ps.x = pos->x;
+                ps.y = pos->y;
+            }
+            if (auto* health = simple_world->get_component<HealthComponent>(handle)) {
+                ps.hp = health->hp;
+            }
+
+            record.participants.push_back(std::move(ps));
+        });
+
+    replay_log->frame_snapshots.push_back(std::move(record));
 }
 
 std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id,
@@ -397,6 +526,20 @@ std::vector<BattleReplayInputRecord> battle_world_collect_replay_inputs(v2::ecs:
             replay_inputs = replay_log.replay_inputs;
         });
     return replay_inputs;
+}
+
+std::vector<BattleReplayFrameRecord> battle_world_collect_frame_snapshots(v2::ecs::World& world) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return {};
+    }
+
+    std::vector<BattleReplayFrameRecord> snapshots;
+    simple_world->for_each<BattleReplayLogComponent>(
+        [&](v2::ecs::EntityHandle, BattleReplayLogComponent& replay_log) {
+            snapshots = replay_log.frame_snapshots;
+        });
+    return snapshots;
 }
 
 std::vector<BattleScore> battle_world_collect_scores(

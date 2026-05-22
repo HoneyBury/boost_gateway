@@ -37,8 +37,25 @@ struct BattleMetadataComponent final : v2::ecs::Component {
     std::uint32_t current_frame_number = 0;
 };
 
+struct BattleReplayFrameRecord {
+    std::uint32_t frame_number = 0;
+
+    struct ParticipantState {
+        std::string user_id;
+        std::int32_t x = 0;
+        std::int32_t y = 0;
+        std::int32_t hp = 0;
+        std::int64_t score = 0;
+        bool online = true;
+    };
+
+    std::vector<ParticipantState> participants;
+    BattleLifecycleState lifecycle = BattleLifecycleState::kCreated;
+};
+
 struct BattleReplayLogComponent final : v2::ecs::Component {
     std::vector<BattleReplayInputRecord> replay_inputs;
+    std::vector<BattleReplayFrameRecord> frame_snapshots;
 };
 
 struct PositionComponent final : v2::ecs::Component {
@@ -77,7 +94,18 @@ public:
 
 class BattleLifecycleSystem final : public v2::ecs::System {
 public:
+    explicit BattleLifecycleSystem(
+        std::uint32_t max_idle_frames = 300,
+        std::uint32_t max_offline_frames = 60);
+
     void run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) override;
+
+private:
+    std::uint32_t max_idle_frames_;
+    std::uint32_t max_offline_frames_;
+    std::uint32_t idle_frames_ = 0;
+    std::uint32_t offline_frames_ = 0;
+    std::uint64_t last_input_seq_ = 0;
 };
 
 class BattleReplaySystem final : public v2::ecs::System {

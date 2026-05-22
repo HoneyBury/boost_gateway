@@ -1,6 +1,7 @@
 #pragma once
 
 #include "v2/battle/message_types.h"
+#include "v2/battle/runtime_components.h"
 #include "v2/ecs/world.h"
 
 #include <cstdint>
@@ -106,6 +107,9 @@ void battle_world_apply_trigger_to_frame(v2::ecs::World& world,
                                          const std::string& trigger);
 
 [[nodiscard]] std::vector<BattleReplayInputRecord> battle_world_collect_replay_inputs(
+    v2::ecs::World& world);
+
+[[nodiscard]] std::vector<BattleReplayFrameRecord> battle_world_collect_frame_snapshots(
     v2::ecs::World& world);
 
 [[nodiscard]] std::vector<BattleScore> battle_world_collect_scores(
