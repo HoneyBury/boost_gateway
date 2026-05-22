@@ -23,3 +23,4 @@ third_party/*.zip
 # v2 runtime artifacts
 v2_archive/
 sdk/python/__pycache__/
+/build_p0_p7/

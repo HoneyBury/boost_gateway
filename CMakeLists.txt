@@ -39,6 +39,7 @@ endfunction()
 add_subdirectory(src)
 add_subdirectory(sdk)
 add_subdirectory(examples)
+add_subdirectory(demo/games)
 
 if(ENABLE_TESTING)
     add_subdirectory(tests)

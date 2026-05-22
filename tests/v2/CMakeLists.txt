@@ -56,6 +56,9 @@ add_executable(project_v2_unit_tests
     unit/v3_integration_test.cpp
     unit/sdk_protocol_test.cpp
     unit/error_paths_test.cpp
+    unit/identity_register_test.cpp
+    unit/room_lobby_test.cpp
+    unit/realtime/instance_runtime_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
