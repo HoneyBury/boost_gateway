@@ -47,6 +47,7 @@ add_executable(project_v2_unit_tests
     unit/broadcast_test.cpp
     unit/battle_replay_test.cpp
     unit/reconnect_test.cpp
+    unit/redis_persistence_test.cpp
     unit/proto_schema_test.cpp
     unit/cluster_router_test.cpp
     unit/remote_actor_test.cpp
