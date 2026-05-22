@@ -1,7 +1,7 @@
 # v2.x 架构路线与当前状态
 
-> 本文档已从最初的 `v2.0.0` 规划稿收口为“规划 + 当前实现事实源”。
-> 当前主线已经不处于 `v2` 启动阶段，而是在 `v3.3.x` 收口阶段继续推进验证链、typed envelope 和控制面能力。
+> 本文档已从最初的 `v2.0.0` 规划稿收口为”规划 + 当前实现事实源”。
+> 当前主线已经不处于 `v2` 启动阶段，而是在 `v3.4.x` 收口阶段继续推进验证链、typed envelope、控制面能力和实时实例框架。
 
 ## 1. 核心结论
 
@@ -41,10 +41,10 @@
 | `M3 内存架构` | done | `BumpArena`、`ObjectPool<T>`、`CacheLinePad`、`HotCold<T>` 已落地并有测试 |
 | `M4 分布式原语` | done | `BackendEnvelope`、`ServiceManifest`、`GatewayServiceBridge`、`ServiceRegistry`、`ClusterRouter` 均已进入主链 |
 | `M5 数据层 v2` | done | `WriteBehindDataStore`、`CachedBattleDataStore`、battle archive/snapshot/replay 路径已落地 |
-| `M6 battle world` | done | 7-system pipeline、authoritative simulation、deterministic replay、AOI 已完成 |
+| `M6 battle world` | done | 8-system ECS pipeline（BattleClock/BattleInput/Movement/Combat/Aoi/BattleLifecycle/BattleReplay）+ ProjectileSystem（弹道/AoE/DoT）、authoritative simulation、deterministic replay、AOI 已全部完成 |
 | `M7 运维成熟度` | done | `DiagnosticsManager`、`HealthCheck`、`FeatureFlags`、`TraceContext`、`OtlpExporter` 接线完成 |
 
-## 3. v3.3.x 收口项
+## 3. v3.4.0 收口项
 
 当前已经额外推进的收口内容：
 
@@ -58,6 +58,32 @@
 - Operator `status.desiredReplicas`
 - Operator `status.components[]`
 - Operator `Ready / Progressing / Degraded / TLSReady`
+
+### Realtime Instance Framework（v3.4.0+）
+
+实时实例框架已在主线落地，覆盖 M3-M5 的全部能力：
+
+- **InstanceRuntime**（`v2::realtime::InstanceRuntime`）：通用实时实例运行时，管理实例生命周期、tick 调度、输入队列、snapshot push、resume/reconnect
+- **InstancePlugin SPI**（`v2::realtime::InstancePlugin`）：8 虚方法业务插件接口，noexcept 契约 + try-catch 错误隔离
+- **TankBattlePlugin**（`src/v2/battle/`）：框架集成参考实现，基于 ECS SimpleWorld 的完整业务插件
+- **EchoPlugin**（`examples/realtime_echo_plugin/`）：SPI 最小示例
+- **TankPlugin**（`demo/games/tank_battle/`）：独立仿真适配 demo
+
+### 新增 ECS 系统
+
+当前 ECS 管线已从最初规划的 7 系统扩展到 9 系统：
+
+| 系统 | 注册位置 | 功能 |
+|---|---|---|
+| BattleClockSystem | create_battle_world() | 帧计数器与 trigger 追踪 |
+| BattleInputSystem | create_battle_world() | 解析 pending input 字符串 |
+| MovementSystem | create_battle_world() | 限速移动 + 反外挂传送检测 |
+| CombatSystem | create_battle_world() | 攻击冷却 + 伤害边界 |
+| AoiSystem | create_battle_world() | ECS 集成 AOI + SpatialGrid |
+| BattleLifecycleSystem | create_battle_world() | 自动状态机（kCreated/kRunning/kFinished） |
+| BattleReplaySystem | create_battle_world() | 逐帧 ECS 状态快照 |
+| ProjectileSystem | TankBattlePlugin | 弹道飞行/AoE/DoT |
+| ParallelSystemExecutor | ECS 框架层 | 拓扑排序并行系统执行 |
 
 ## 4. 当前边界
 
@@ -78,7 +104,7 @@
 - Operator 在真实 cluster 上更严格的 rollout/dependency health 判定
 - 全平台 CI 稳定性（尤其 Windows 特定 integration 测试）
 
-## 5. 当前建议优先级
+## 6. 当前建议优先级
 
 1. 修复 CI / 平台差异测试，恢复主线稳定回归能力
 2. 将 typed helper 继续推进到 generated protobuf/gRPC 构建链

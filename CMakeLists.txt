@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 3.3.2
+    VERSION 3.4.0
     DESCRIPTION "A high-performance C++ game server framework"
     LANGUAGES CXX
 )

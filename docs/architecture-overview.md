@@ -53,15 +53,44 @@ Each backend runs as an independent process with its own port:
 - **Matchmaking** (:9104): MMR-based matching, Raft consensus for fault tolerance
 - **Leaderboard** (:9105): Score submission/query, Raft consensus for consistency
 
+### Realtime Instance Runtime (v3.4.0+)
+The Realtime Instance Framework provides a generic tick-based game loop runtime that decouples business logic from lifecycle management.
+
+- **InstanceRuntime** (`v2::realtime::InstanceRuntime`): Manages instance lifecycle (creating/waiting/running/finishing/finished/closed), tick scheduling (`tick_instance()`/`tick_all()`), input queue with per-player ordering, snapshot push, resume support (`get_resume_snapshot()`), and backpressure
+- **InstancePlugin SPI** (`v2::realtime::InstancePlugin`): Pure virtual interface with 8 methods — lifecycle hooks (`on_instance_created`, `on_player_join`, `on_player_leave`), input processing (`on_input`), hot-path tick (`on_tick`, noexcept), and snapshot/settlement (`build_snapshot`, `build_settlement`, `build_resume_snapshot`, all noexcept)
+- **Error isolation**: Framework wraps all plugin calls in try-catch; noexcept methods include defensive try-catch as deep protection; plugin exceptions never crash the runtime
+- **Plugin registry** (`InstancePluginFactory`): Map of `instance_type` → factory function, enabling per-type plugin instantiation
+
+**Concrete plugins:**
+- **TankBattlePlugin** (`v2::battle::TankBattlePlugin`, `src/v2/battle/`): Full InstancePlugin implementation using ECS SimpleWorld, supporting move/attack/shoot/finish actions. Used as the framework-integrated reference implementation and SPI compliance test vehicle.
+- **EchoPlugin** (`echo_plugin::EchoPlugin`, `examples/realtime_echo_plugin/`): Minimal echo plugin demonstrating the SPI with input→response round-trip.
+- **TankPlugin** (`tank::TankPlugin`, `demo/games/tank_battle/`): Demo-specific plugin adapting the standalone TankWorld simulation to the InstancePlugin SPI.
+
 ### Actor System
 - ActorSystem manages actor lifecycle and message dispatching
 - Actors: GatewayActor, RoomBackend, BattleBackend, etc.
 - Messages typed via `MessageKind` enum with `target_service` routing
 
 ### ECS (Entity Component System)
-- World/SimpleWorld architecture with typed component access
-- ParallelSystemExecutor with topological sort for system ordering
-- Systems: MovementSystem, CombatSystem, LifecycleSystem
+- World/SimpleWorld architecture with typed component access and `for_each<T>()` iteration
+- ParallelSystemExecutor with topological sort (Kahn algorithm) for concurrent system execution via `std::async`; SequentialSystemExecutor as default fallback
+
+**Registered systems in `create_battle_world()`** (7 systems):
+- `BattleClockSystem` — per-tick frame counter and trigger tracking
+- `BattleInputSystem` — parses pending input strings into move/attack intents
+- `MovementSystem` — speed-limited movement with anti-cheat teleport detection
+- `CombatSystem` — attack cooldown, damage bounds, attacks-per-frame limit
+- `AoiSystem` — ECS-integrated Area of Interest via SpatialGrid
+- `BattleLifecycleSystem` — auto lifecycle state machine (kCreated→kRunning→kFinished) with idle timeout (300 frames) and all-offline timeout (60 frames)
+- `BattleReplaySystem` — per-frame state snapshot capture for deterministic replay
+
+**Additional system used by TankBattlePlugin:**
+- `ProjectileSystem` — travel-time projectiles with interpolation, single-target damage, AoE radius, and Damage-over-Time (DoT) ticks
+
+**ECS Component types** (defined in `runtime_components.h`):
+- `BattleClockComponent`, `BattleParticipantComponent`, `BattleMetadataComponent`, `BattleReplayLogComponent`
+- `PositionComponent`, `HealthComponent`, `AttackStateComponent`, `AttackCooldownComponent`
+- `ProjectileComponent`, `DamageOverlayComponent`
 
 ### Performance Features
 - RCU (Read-Copy-Update) for lock-free broadcast in AOI and session management
@@ -71,10 +100,13 @@ Each backend runs as an independent process with its own port:
 - Per-session flow control and backpressure
 
 ### Persistence Layer
-- WriteBehind queue with exponential backoff (100ms->5s, max 3 retries)
-- SQLite storage engine with connection pool (min=2/max=8, WAL mode)
-- CachedBattleDataStore for replay storage
-- PlayerData LRU cache (1024 entries)
+- **BattleArchiveSink** abstract interface: save/load replay, result, snapshot; high-level `persist()` method.
+- **JsonFileBattleDataStore**: File-backed JSON implementation storing in `replays/`, `results/`, `snapshots/` subdirectories.
+- **CachedBattleDataStore**: Decorator wrapping a delegate with separate LRU caches (1000 entries each for replay/result/snapshot) + `WriteBehindDataStore` for asynchronous flush.
+- **WriteBehindDataStore**: Background worker thread processes queued commands; failed saves increment `failed_count_` and continue (no retry).
+- **LruCache<K,V>**: Generic thread-safe LRU cache with `put()` returning evicted entries, `for_each()` read-only iteration, `drain()` bulk retrieval.
+- **StorageEngineSQLite**: Optional SQLite engine with connection pool (min=2/max=8, WAL mode) behind `#ifdef HAS_SQLITE`.
+- **PlayerData LRU cache**: 1024 entries for player profile caching.
 
 ### SDK
 - C API (src/sdk/src/c_api.cpp) as the stable ABI boundary

@@ -2,7 +2,7 @@
 
 更新时间：2026-05-23
 
-本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.3.2` 为准；提交状态以 `git HEAD` 为准。
+本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
 
 ## 稳定能力
 
@@ -47,6 +47,7 @@
 - 生产性能快照：`scripts/collect_docker_production_perf_snapshot.py` 已补齐 OrbStack / Docker Compose 生产栈运行态采样入口，覆盖 gateway readiness/diagnostics、Prometheus targets、Grafana health 和容器 CPU/RSS/PID/IO 快照；本机实测 `overall_pass=true`，产物见 `runtime/perf/docker-production-snapshot/`。
 - 生产业务闭环接入：`docs/production-business-closure-plan.md` 已完成 P0-P8 收束。P0-P2 打通 SDK matchmaking/leaderboard、full-flow 和 battle settlement 自动写榜；P3-P4 将新业务路径纳入性能/监控/快照，并完成 Redis/Raft HA profile；P5-P8 补齐 OTel/trace、TLS 边界、K8s/Operator full-flow 入口和 v3 proto/gRPC ADR。聚合验证入口为 `scripts/verify_p5_p8_business_closure.py`。
 - P0-P7 框架现代化与坦克大战 demo：已按 `docs/realtime-framework-modernization-plan.md` 完成 P0-P7 全部 checkpoint。P0 目录与文档结构固化；P1 identity 注册协议与错误码完成；P2 房间大厅支持 list/detail/kick/transfer；P3 实时实例运行时（`v2::realtime::InstanceRuntime`）实现 tick-based 游戏循环；P4 坦克大战仿真（`TankWorld` 20×15 网格）含运动/碰撞/子弹/得分；P5 settlement 与 leaderboard 数据结构就绪；P6 resume/reconnect 支持；P7 回归门禁与验证脚本覆盖 642 测试 + 8 个 checkpoint。demo 全部位于 `demo/games/tank_battle/`，默认不参与生产构建（`BOOST_BUILD_TANK_DEMO=OFF`）。
+- R4/R5 ECS 管线增强与 TankBattlePlugin：`InstancePlugin` SPI 正式化（8 虚方法 + noexcept 契约 + try-catch 错误隔离），`TankBattlePlugin` 完整实现（move/attack/shoot/finish）位于 `src/v2/battle/`。新增 ECS 系统：`ProjectileSystem`（弹道飞行/AoE/DoT）、`BattleLifecycleSystem`（自动状态机 kCreated→kRunning→kFinished，空闲超时 300 帧，离线超时 60 帧）、`BattleReplaySystem`（逐帧快照录制）、`AoiSystem`（ECS 集成 AOI + SpatialGrid）。新增组件：`ProjectileComponent`、`DamageOverlayComponent`、`BattleReplayFrameRecord`。数据持久化层：`CachedBattleDataStore`（LRU + WriteBehind）接入 demo_server，`JsonFileBattleDataStore` 文件落地。远程 Actor 通信：`RemoteActorRef::tell()` 跨节点消息投递。gRPC 网关：`GatewayGrpcServer`（login/logout/health）`BOOST_BUILD_GRPC` 编译开关。62+ 新增测试覆盖 lifecycle/replay/AOI/spatial grid/file store/tank battle plugin/projectile system。
 - N1 性能刻度（perf scaling）：`demo/games/tank_battle/tests/perf_test.cpp` 新增 500 实例 × 50  ticks 基准规格（保守阈值 100 TPS），覆盖 2/20/100/500 四级并发刻度用于 CI 性能回归。
 - N5 SDK Python 示例：`demo/games/tank_battle/client_sdk_adapter/python_demo.py` 作为坦克大战 Python SDK demo，走通 connect→login→room→battle→move→finish→leaderboard→disconnect 全生命周期，输出 JSON 摘要并支持 `--n5-demo` 集成到 `verify_tank_battle_demo.py` 验证脚本。
 
@@ -61,7 +62,7 @@
 
 生产稳定化、交付闭环、生产业务闭环接入、N0-N6 生产数据沉淀与风险燃尽，以及 R0-R3 生产候选实证阶段已经完成当前有界收束。当前主线具备生产候选所需的默认有界 gate、固定 runner 入口、部署/运维/SDK 文档、监控告警静态校验、P5 resilience gate、P6 production evidence gate、P5-P8 business closure gate、N3 recovery gate、N4 transport/config governance gate、N5 SDK enterprise delivery gate、N6 gRPC PoC decision gate、R0 production candidate evidence gate、R1 TLS production readiness gate、R2 evidence manifest gate、R3 readiness report 和生产候选完整性审核。
 
-P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `d59780a..6fa6477`。
+P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43edd`。
 
 当前默认可执行入口：
 
@@ -86,9 +87,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `d59780a..6fa647
 
 当前“生产数据沉淀与风险燃尽”以 `docs/production-stabilization-roadmap.md` 的 N0-N6 与 R0-R3 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
 
-业务验证型下一阶段以“框架与业务隔离”为前提：先按 `docs/realtime-framework-modernization-plan.md` 固化 identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界，再把坦克大战放入 `demo/games/` 作为独立验证样例推进。
+业务验证型下一阶段以”框架与业务隔离”为前提：`docs/realtime-framework-modernization-plan.md` 的 M0-M5 已全部完成，identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界均已固化。
 
-近期服务端实施以 `docs/server-framework-and-tank-demo-development-plan.md` 为执行计划：优先完成 P0-P3 的服务端框架通用能力，再实现 P4-P6 的 tank demo simulation、settlement 和 reconnect，最后通过 P7 的回归与性能 gate 收束。当前阶段不实现正式客户端。
+近期服务端实施以 `docs/server-framework-and-tank-demo-development-plan.md` 为执行计划：P0-P7 全部 checkpoint 已完成，包含坦克大战 demo 的运行、结算、断线重连、性能回归门禁。当前阶段不实现正式客户端。
 
 1. N0 固定 Runner 与证据自动化常态化。
 2. N1 长稳压测与容量基线。
