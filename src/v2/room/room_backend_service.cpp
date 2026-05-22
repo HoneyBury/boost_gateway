@@ -150,6 +150,7 @@ public:
         handlers["room_detail"] = [this](const auto& req) { return handle_room_detail(req); };
         handlers["room_kick"] = [this](const auto& req) { return handle_room_kick(req); };
         handlers["room_transfer_owner"] = [this](const auto& req) { return handle_room_transfer_owner(req); };
+        handlers["room_state_push"] = [this](const auto& req) { return handle_room_state_push(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -607,6 +608,47 @@ private:
             {"new_owner_id", new_owner_id},
             {"version", room->version},
         });
+    }
+
+    // ─── room_state_push ───────────────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_room_state_push(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("room_id")) {
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
+        }
+
+        std::string room_id = doc["room_id"].get<std::string>();
+        std::string event_type = doc.value("event_type", std::string("state_changed"));
+
+        std::lock_guard<std::mutex> lock(room_manager_.mutex_);
+
+        const auto* room = room_manager_.find(room_id);
+        if (room == nullptr) {
+            return make_error(v2::service::ServiceErrorCode::kRoomNotFound, "room_not_found");
+        }
+
+        // Build a push payload with current room state
+        nlohmann::json push_body;
+        push_body["type"] = "room_state_push";
+        push_body["event_type"] = event_type;
+        push_body["room_id"] = room_id;
+        push_body["room"] = room_manager_.room_to_json(*room);
+        push_body["timestamp"] = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+
+        // Collect member user_ids so the gateway knows who to push to
+        nlohmann::json member_ids = nlohmann::json::array();
+        for (const auto& m : room->members) {
+            member_ids.push_back(m.user_id);
+        }
+        push_body["member_user_ids"] = std::move(member_ids);
+
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload = push_body.dump();
+        return response;
     }
 };
 

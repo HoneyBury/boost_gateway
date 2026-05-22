@@ -1,6 +1,9 @@
 #include "v2/service/backend_connection.h"
 
+#include "app/logging.h"
 #include "v2/service/backend_frame_codec.h"
+
+#include <random>
 
 namespace v2::service {
 
@@ -117,15 +120,25 @@ bool BackendConnection::tls_handshake() {
     }
 }
 
-std::optional<BackendEnvelope> BackendConnection::send_request(
-    BackendEnvelope request) {
-    std::scoped_lock lock(mutex_);
-    last_failure_stage_ = FailureStage::kNone;
-    if (!socket_ || !socket_->is_open()) {
-        last_failure_stage_ = FailureStage::kNotConnected;
-        return std::nullopt;
+bool BackendConnection::try_acquire_permit() {
+    if (options_.max_concurrent_requests == 0) return true;  // unlimited
+    auto current = active_requests_.load(std::memory_order_acquire);
+    while (current < options_.max_concurrent_requests) {
+        if (active_requests_.compare_exchange_weak(current, current + 1,
+                                                    std::memory_order_acq_rel)) {
+            return true;
+        }
     }
+    return false;
+}
 
+void BackendConnection::release_permit() {
+    if (options_.max_concurrent_requests > 0) {
+        active_requests_.fetch_sub(1, std::memory_order_release);
+    }
+}
+
+BackendEnvelope BackendConnection::do_send(BackendEnvelope request) {
     if (request.correlation_id == 0) {
         request.correlation_id = generate_correlation_id();
     }
@@ -135,31 +148,123 @@ std::optional<BackendEnvelope> BackendConnection::send_request(
         if (!write_frame(*ssl_stream_, request)) {
             last_failure_stage_ = FailureStage::kWrite;
             close();
-            return std::nullopt;
+            return {};
         }
         auto response = read_frame(*ssl_stream_, options_.timeout);
         if (!response) {
             last_failure_stage_ = FailureStage::kRead;
             close();
-            return std::nullopt;
+            return {};
         }
-        return response;
+        return *response;
     }
 
     if (!write_frame(*socket_, request)) {
         last_failure_stage_ = FailureStage::kWrite;
         close();
-        return std::nullopt;
+        return {};
     }
 
     auto response = read_frame(*socket_, options_.timeout);
     if (!response) {
         last_failure_stage_ = FailureStage::kRead;
         close();
+        return {};
+    }
+
+    return *response;
+}
+
+std::optional<BackendEnvelope> BackendConnection::attempt_send_with_retry(
+    BackendEnvelope request,
+    std::uint32_t remaining_retries,
+    std::chrono::milliseconds backoff) {
+
+    // Try once immediately
+    auto result = do_send(std::move(request));
+    if (last_failure_stage_ == FailureStage::kNone) {
+        return result;
+    }
+
+    // Transient failure and retries remaining
+    if (remaining_retries == 0 || backoff.count() == 0) {
         return std::nullopt;
     }
 
-    return response;
+    // Exponential backoff with jitter
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    double jitter_range = static_cast<double>(backoff.count()) * options_.retry_options.jitter_factor;
+    std::uniform_real_distribution<double> jitter_dist(-jitter_range, jitter_range);
+    auto sleep_ms = static_cast<std::int64_t>(backoff.count() + jitter_dist(gen));
+    if (sleep_ms < 1) sleep_ms = 1;
+
+    LOG_WARN("BackendConnection: retrying in {}ms ({} retries left, failure={})",
+             sleep_ms, remaining_retries,
+             static_cast<int>(last_failure_stage_));
+    std::this_thread::sleep_for(std::chrono::milliseconds(sleep_ms));
+
+    // Reconnect before retry if connection was closed
+    if (!is_connected() || last_failure_stage_ != FailureStage::kNone) {
+        if (!connect()) {
+            LOG_WARN("BackendConnection: reconnect failed before retry");
+        }
+    }
+
+    auto next_backoff = std::min(backoff * 2, options_.retry_options.max_backoff);
+    return attempt_send_with_retry(std::move(request),
+                                   remaining_retries - 1,
+                                   next_backoff);
+}
+
+std::optional<BackendEnvelope> BackendConnection::send_request(
+    BackendEnvelope request) {
+    std::scoped_lock lock(mutex_);
+    last_failure_stage_ = FailureStage::kNone;
+
+    if (!try_acquire_permit()) {
+        last_failure_stage_ = FailureStage::kNotConnected;
+        LOG_WARN("BackendConnection: max concurrent requests reached ({})",
+                 options_.max_concurrent_requests);
+        return std::nullopt;
+    }
+
+    if (!socket_ || !socket_->is_open()) {
+        last_failure_stage_ = FailureStage::kNotConnected;
+        release_permit();
+        return std::nullopt;
+    }
+
+    auto result = do_send(std::move(request));
+    release_permit();
+    return result;
+}
+
+std::optional<BackendEnvelope> BackendConnection::send_request_with_retry(
+    BackendEnvelope request) {
+    std::scoped_lock lock(mutex_);
+
+    if (!try_acquire_permit()) {
+        last_failure_stage_ = FailureStage::kNotConnected;
+        LOG_WARN("BackendConnection: max concurrent requests reached on retry ({})",
+                 options_.max_concurrent_requests);
+        return std::nullopt;
+    }
+
+    last_failure_stage_ = FailureStage::kNone;
+
+    if (options_.retry_options.max_retries == 0) {
+        auto result = do_send(std::move(request));
+        release_permit();
+        return result;
+    }
+
+    auto result = attempt_send_with_retry(
+        std::move(request),
+        options_.retry_options.max_retries,
+        options_.retry_options.initial_backoff);
+    release_permit();
+    return result;
 }
 
 void BackendConnection::close() {

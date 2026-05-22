@@ -31,6 +31,7 @@ private:
     void handle_battle_ended(const BattleEndedMsg& message);
     void handle_session_closed(const SessionClosedMsg& message);
     void handle_reconnect_timeout(const ReconnectTimerExpiredMsg& message);
+    void handle_token_refresh(const TokenRefreshMsg& message);
 
     void schedule_reconnect_timeout();
 

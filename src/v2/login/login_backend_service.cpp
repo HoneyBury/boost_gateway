@@ -139,6 +139,7 @@ public:
         handlers["token_validate"] = [this](const auto& req) { return handle_token_validate(req); };
         handlers["session_bind"] = [this](const auto& req) { return handle_session_bind(req); };
         handlers["session_close"] = [this](const auto& req) { return handle_session_close(req); };
+        handlers["token_refresh"] = [this](const auto& req) { return handle_token_refresh(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -370,6 +371,74 @@ private:
         v2::service::BackendEnvelope response;
         response.kind = v2::service::MessageKind::kResponse;
         response.payload = R"({"status":"ok","action":"session_closed"})";
+        return response;
+    }
+
+    v2::service::BackendEnvelope handle_token_refresh(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("token")) {
+            return make_error_response(-1004, "invalid_json");
+        }
+
+        std::string user_id = doc["user_id"].get<std::string>();
+        std::string token = doc["token"].get<std::string>();
+
+        // Validate existing token first
+        bool token_valid = false;
+        if (jwt_validator_.has_value()) {
+            token_valid = jwt_validator_->validate(token).valid;
+        } else if (!production_auth_required_) {
+            // Dev mode: accept if user_id matches
+            std::string token_user_id = token;
+            auto colon_pos = token.find(':');
+            if (colon_pos != std::string::npos) {
+                token_user_id = token.substr(colon_pos + 1);
+            }
+            token_valid = (token_user_id == user_id);
+        }
+
+        if (!token_valid) {
+            AUDIT_LOG("token_refresh_failure", "user_id=" + user_id + " reason=invalid_token");
+            return make_error_response(-1003, "invalid_token");
+        }
+
+        // Issue new token (refresh)
+        std::string new_token;
+        std::string refresh_token;
+        std::uint64_t expires_at = 0;
+
+        if (jwt_validator_.has_value()) {
+            // In production, would generate a new signed JWT with extended expiry
+            new_token = token;  // placeholder — real impl re-signs
+            refresh_token = user_id + "_rt_" + std::to_string(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
+            expires_at = 0;  // extended window
+        } else {
+            // Dev mode: generate a new token
+            new_token = "refreshed:" + user_id;
+            refresh_token = user_id + "_dev_rt";
+        }
+
+        // Update stored token
+        {
+            std::lock_guard<std::mutex> lock(state_.mutex_);
+            state_.user_tokens_[user_id] = new_token;
+        }
+
+        AUDIT_LOG("token_refresh_success", "user_id=" + user_id);
+
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        nlohmann::json body{
+            {"status", "ok"},
+            {"user_id", user_id},
+            {"new_token", new_token},
+            {"refresh_token", refresh_token},
+            {"expires_at", expires_at},
+        };
+        response.payload = body.dump();
         return response;
     }
 };

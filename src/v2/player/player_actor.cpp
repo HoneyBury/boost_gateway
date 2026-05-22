@@ -36,6 +36,10 @@ void PlayerActor::on_message(v2::actor::Message&& message) {
     }
     if (const auto* reconnect = std::get_if<ReconnectTimerExpiredMsg>(&message.payload)) {
         handle_reconnect_timeout(*reconnect);
+        return;
+    }
+    if (const auto* refresh = std::get_if<TokenRefreshMsg>(&message.payload)) {
+        handle_token_refresh(*refresh);
     }
 }
 
@@ -189,6 +193,27 @@ void PlayerActor::schedule_reconnect_timeout() {
         .user_id = state_.user_id,
     };
     reconnect_timer_id_ = schedule_after(self(), std::move(timeout_msg), kReconnectWindow);
+}
+
+void PlayerActor::handle_token_refresh(const TokenRefreshMsg& message) {
+    if (state_.user_id.empty() || state_.user_id != message.user_id) {
+        return;
+    }
+
+    // In a full implementation this would call the LoginBackendService
+    // to obtain a new token. For now, we extend the existing token meta
+    // and notify the sink so the gateway can deliver the updated token.
+    if (token_meta_.has_value()) {
+        token_meta_->expires_at = 0;  // extended — reset to "no expiry"
+    }
+
+    sink_.push(TokenRefreshedMsg{
+        .session_id = message.session_id,
+        .user_id = state_.user_id,
+        .new_token = state_.user_id,  // placeholder; real impl would receive from backend
+        .refresh_token = "",
+        .expires_at = 0,
+    });
 }
 
 }  // namespace v2::player

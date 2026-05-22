@@ -116,9 +116,23 @@ struct ReconnectTimerExpiredMsg {
     std::string user_id;
 };
 
+struct TokenRefreshMsg {
+    SessionId session_id = 0;
+    std::string user_id;
+};
+
+struct TokenRefreshedMsg {
+    SessionId session_id = 0;
+    std::string user_id;
+    std::string new_token;
+    std::string refresh_token;
+    std::uint64_t expires_at = 0;
+};
+
 using PlayerEvent = std::variant<LoginAcceptedMsg,
                                  SessionKickPushMsg,
                                  SessionResumePushMsg,
-                                 BattleSettlementAppliedMsg>;
+                                 BattleSettlementAppliedMsg,
+                                 TokenRefreshedMsg>;
 
 }  // namespace v2::player
