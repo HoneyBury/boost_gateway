@@ -47,6 +47,7 @@ add_library(project_v2 STATIC
     room/room_backend_service.cpp
     login/login_backend_service.cpp
     battle/battle_backend_service.cpp
+    battle/tank_battle_plugin.cpp
     leaderboard/leaderboard_service.cpp
     match/matchmaking_service.cpp
     security/anti_cheat.cpp

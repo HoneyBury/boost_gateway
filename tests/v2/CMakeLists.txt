@@ -63,6 +63,7 @@ add_executable(project_v2_unit_tests
     unit/realtime/instance_runtime_test.cpp
     unit/realtime/spi_compliance_test.cpp
     unit/parallel_system_executor_test.cpp
+    unit/tank_battle_plugin_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
     PRIVATE
