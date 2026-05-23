@@ -17,15 +17,24 @@ SDK_VERSION = "4.1.0"
 
 
 def run_step(name: str, command: list[str], cwd: Path, checks: list[dict[str, Any]]) -> bool:
-    result = subprocess.run(command, cwd=cwd, text=True, capture_output=True)
+    result = subprocess.run(
+        command,
+        cwd=cwd,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
     passed = result.returncode == 0
     checks.append(
         {
             "name": name,
             "passed": passed,
             "command": command,
-            "stdout": result.stdout[-4000:],
-            "stderr": result.stderr[-4000:],
+            "stdout": stdout[-4000:],
+            "stderr": stderr[-4000:],
         }
     )
     return passed
@@ -33,13 +42,14 @@ def run_step(name: str, command: list[str], cwd: Path, checks: list[dict[str, An
 
 def write_consumer_project(root: Path, prefix: Path) -> None:
     root.mkdir(parents=True, exist_ok=True)
+    cmake_prefix = prefix.as_posix()
     (root / "CMakeLists.txt").write_text(
         f"""cmake_minimum_required(VERSION 3.21)
 project(sdk_consumer_smoke LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(boost_gateway_sdk {SDK_VERSION} CONFIG REQUIRED
-    PATHS "{prefix}"
+    PATHS "{cmake_prefix}"
     NO_DEFAULT_PATH)
 add_executable(sdk_consumer_smoke main.cpp)
 target_link_libraries(sdk_consumer_smoke PRIVATE boost_gateway::sdk)
@@ -89,11 +99,27 @@ def main() -> int:
         shutil.rmtree(work_dir)
 
     install_ok = run_step(
-        "install-sdk",
-        ["cmake", "--install", str(args.build_dir), "--prefix", str(prefix)],
+        "build-sdk-install-artifacts",
+        [
+            "cmake",
+            "--build",
+            str(args.build_dir),
+            "--config",
+            "Release",
+            "--target",
+            "boost_gateway_sdk",
+            "boost_gateway_sdk_dll",
+        ],
         REPO_ROOT,
         checks,
     )
+    if install_ok:
+        install_ok = run_step(
+            "install-sdk",
+            ["cmake", "--install", str(args.build_dir / "sdk"), "--config", "Release", "--prefix", str(prefix)],
+            REPO_ROOT,
+            checks,
+        )
     if install_ok:
         write_consumer_project(consumer_src, prefix)
         configure_ok = run_step(
@@ -104,7 +130,7 @@ def main() -> int:
         )
         build_ok = configure_ok and run_step(
             "build-consumer",
-            ["cmake", "--build", str(consumer_build), "--parallel"],
+            ["cmake", "--build", str(consumer_build), "--config", "Release", "--parallel"],
             REPO_ROOT,
             checks,
         )

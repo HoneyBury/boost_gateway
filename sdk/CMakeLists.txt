@@ -96,10 +96,9 @@ target_include_directories(boost_gateway_sdk
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway>
 )
 
-target_link_libraries(boost_gateway_sdk PUBLIC nlohmann_json::nlohmann_json)
-
 target_include_directories(boost_gateway_sdk PUBLIC
-    $<BUILD_INTERFACE:${boost_SOURCE_DIR}>)
+    $<BUILD_INTERFACE:${boost_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 target_compile_definitions(boost_gateway_sdk PUBLIC
     BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
 if(WIN32)
@@ -112,8 +111,7 @@ add_library(boost_gateway::sdk ALIAS boost_gateway_sdk)
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
-# nlohmann_json — header-only dependency, co-installed so the export set is self-contained.
-install(TARGETS nlohmann_json EXPORT boost_gateway_sdk-targets)
+# nlohmann_json — header-only dependency, co-installed so the SDK package is self-contained.
 install(DIRECTORY "${nlohmann_json_SOURCE_DIR}/include/nlohmann"
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
 

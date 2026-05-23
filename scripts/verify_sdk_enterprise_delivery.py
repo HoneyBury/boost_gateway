@@ -30,6 +30,15 @@ def tail(value: str | bytes | None, max_chars: int = 5000) -> str:
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
+def emit_text(text: str, *, stderr: bool = False) -> None:
+    stream = sys.stderr if stderr else sys.stdout
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        stream.buffer.write(text.encode(encoding, errors="replace"))
+
+
 def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> dict[str, Any]:
     print(f"==> {name}", flush=True)
     started = time.monotonic()
@@ -59,9 +68,9 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
     stdout = normalize_output(completed.stdout)
     stderr = normalize_output(completed.stderr)
     if stdout:
-        print(stdout, end="")
+        emit_text(stdout)
     if stderr:
-        print(stderr, end="", file=sys.stderr)
+        emit_text(stderr, stderr=True)
     return {
         "name": name,
         "category": category,
@@ -131,14 +140,16 @@ def main() -> int:
         run_step(
             "N5 SDK in-process business flow",
             "business_flow",
-            [
+            ([
                 sys.executable,
                 str(ROOT / "scripts/verify_sdk_business_flow.py"),
                 "--build-dir",
                 str(build_dir),
+                "--configuration",
+                "Release",
                 "--summary-path",
                 artifacts["business_flow_summary_path"],
-            ],
+            ] + (["--skip-build"] if args.skip_build else [])),
             args.step_timeout_seconds,
         )
     )

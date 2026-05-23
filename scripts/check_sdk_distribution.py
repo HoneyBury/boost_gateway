@@ -294,6 +294,7 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
 def validate_build_artifacts(build_dir: Path | None, checks: list[dict[str, Any]]) -> None:
     if build_dir is None:
         return
+    release_dir = build_dir / "Release"
     expected = {
         "static-library": ("libboost_gateway_sdk.a", "boost_gateway_sdk.lib"),
         "shared-library": (
@@ -304,7 +305,13 @@ def validate_build_artifacts(build_dir: Path | None, checks: list[dict[str, Any]
         "unit-test": ("sdk_tests", "sdk_tests.exe"),
     }
     for name, candidates in expected.items():
-        found = any(list(build_dir.rglob(candidate)) for candidate in candidates)
+        search_roots = [build_dir]
+        if release_dir.exists():
+            search_roots.append(release_dir)
+        found = any(
+            any(root.rglob(candidate) for root in search_roots)
+            for candidate in candidates
+        )
         add_check(
             checks,
             f"sdk-artifact:{name}",

@@ -124,14 +124,45 @@ std::optional<nlohmann::json> parse_leaderboard_submit_body(std::string_view bod
 std::optional<v2::service::BackendEnvelope> send_backend_request(
     const GatewayServiceBridge::BackendConfig& cfg,
     v2::service::ServiceId service_id,
+    const std::optional<v3::cluster::SecurityPolicy>& security_policy,
     const std::string& handler_name,
     const nlohmann::json& payload) {
-    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+    v2::service::BackendConnectionOptions options{
         .host = cfg.host,
         .port = cfg.port,
         .timeout = cfg.timeout,
         .connect_timeout = cfg.connect_timeout,
-    });
+    };
+    if (security_policy.has_value() && security_policy->require_tls) {
+        auto tls = security_policy->tls_config;
+        const char* service_name = "login";
+        switch (service_id) {
+            case v2::service::ServiceId::kLogin:
+                service_name = "login";
+                break;
+            case v2::service::ServiceId::kRoom:
+                service_name = "room";
+                break;
+            case v2::service::ServiceId::kBattle:
+                service_name = "battle";
+                break;
+            case v2::service::ServiceId::kMatchmaking:
+                service_name = "match";
+                break;
+            case v2::service::ServiceId::kLeaderboard:
+                service_name = "leaderboard";
+                break;
+            default:
+                break;
+        }
+        if (auto* policy = security_policy->policy_for(service_name)) {
+            if (policy->mtls_required) {
+                tls.verify_mode = v3::cluster::TlsVerifyMode::kMutual;
+            }
+        }
+        options.tls_config = std::move(tls);
+    }
+    v2::service::BackendConnection conn(std::move(options));
     v2::service::BackendEnvelope req;
     req.target_service = service_id;
     req.kind = v2::service::MessageKind::kRequest;
@@ -818,6 +849,7 @@ void DemoServer::do_accept() {
                     auto backend_response = send_backend_request(
                         *cfg,
                         v2::service::ServiceId::kMatchmaking,
+                        runtime_.service_bridge()->get_security_policy(),
                         handler_name,
                         payload);
                     if (!backend_response.has_value()) {
@@ -909,6 +941,7 @@ void DemoServer::do_accept() {
                     auto backend_response = send_backend_request(
                         *cfg,
                         v2::service::ServiceId::kRoom,
+                        runtime_.service_bridge()->get_security_policy(),
                         handler_name,
                         payload);
                     if (!backend_response.has_value()) {
@@ -1011,6 +1044,7 @@ void DemoServer::do_accept() {
                     auto backend_response = send_backend_request(
                         *cfg,
                         v2::service::ServiceId::kBattle,
+                        runtime_.service_bridge()->get_security_policy(),
                         handler_name,
                         payload);
                     if (!backend_response.has_value()) {
@@ -1106,6 +1140,7 @@ void DemoServer::do_accept() {
                     auto backend_response = send_backend_request(
                         *cfg,
                         v2::service::ServiceId::kLeaderboard,
+                        runtime_.service_bridge()->get_security_policy(),
                         handler_name,
                         payload);
                     if (!backend_response.has_value()) {

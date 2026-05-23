@@ -242,7 +242,7 @@ TEST_F(RedisTest, ZScore) {
     client.del("test:zsc");
 }
 
-TEST_F(RedisTest, MoveSemantics) {
+TEST_F(RedisTest, ConnectionPoolMoveSemantics) {
     RedisClient::Config cfg;
     cfg.timeout = std::chrono::milliseconds(500);
     RedisClient client(cfg);

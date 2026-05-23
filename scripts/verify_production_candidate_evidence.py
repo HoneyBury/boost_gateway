@@ -23,6 +23,15 @@ def tail(value: str | bytes | None, max_chars: int = 6000) -> str:
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
+def emit_text(text: str, *, stderr: bool = False) -> None:
+    stream = sys.stderr if stderr else sys.stdout
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        stream.buffer.write(text.encode(encoding, errors="replace"))
+
+
 def run_step(name: str, category: str, command: list[str], timeout_seconds: int) -> dict[str, Any]:
     print(f"==> {name}", flush=True)
     started = time.monotonic()
@@ -50,9 +59,9 @@ def run_step(name: str, category: str, command: list[str], timeout_seconds: int)
         }
 
     if completed.stdout:
-        print(completed.stdout, end="")
+        emit_text(completed.stdout)
     if completed.stderr:
-        print(completed.stderr, end="", file=sys.stderr)
+        emit_text(completed.stderr, stderr=True)
     return {
         "name": name,
         "category": category,

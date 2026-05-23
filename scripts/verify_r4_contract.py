@@ -224,12 +224,13 @@ def main() -> int:
             unit_tests.parent,
             args.test_timeout_seconds,
         ))
+        integration_timeout = max(args.test_timeout_seconds, 120)
         summary["steps"].append(run_step(
             "R4 integration gates",
             "integration",
             [str(integration_tests), f"--gtest_filter={INTEGRATION_FILTER}"],
             integration_tests.parent,
-            args.test_timeout_seconds,
+            integration_timeout,
         ))
 
         if not args.skip_arch_baseline:

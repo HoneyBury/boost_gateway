@@ -142,7 +142,7 @@ inline std::string encode_with_compress(std::uint16_t message_id,
     auto mutable_body = std::string(body);
     auto out_flags = flags;
 
-    if (body.size() >= kCompressionThreshold) {
+    if (body.size() >= 512) {
         // Use packet_compressor.h functions if included; otherwise passthrough.
         // The caller is expected to include packet_compressor.h for real compression.
         if (mutable_body.size() != body.size()) {

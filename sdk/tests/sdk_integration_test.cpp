@@ -28,6 +28,24 @@ using namespace std::chrono_literals;
 
 namespace {
 
+#ifdef _WIN32
+void set_test_env(const char* key, const char* value) {
+    _putenv_s(key, value);
+}
+
+void unset_test_env(const char* key) {
+    _putenv_s(key, "");
+}
+#else
+void set_test_env(const char* key, const char* value) {
+    setenv(key, value, 1);
+}
+
+void unset_test_env(const char* key) {
+    unsetenv(key);
+}
+#endif
+
 struct GatewayFixture : public ::testing::Test {
     std::unique_ptr<v2::gateway::DemoServer> server_;
     std::unique_ptr<std::thread> server_thread_;
@@ -40,7 +58,7 @@ struct GatewayFixture : public ::testing::Test {
 
     void SetUp() override {
         app::logging::init("sdk_business_flow_tests");
-        setenv("CONFIG_PATH", "/tmp/boost_gateway_sdk_business_flow_no_config.json", 1);
+        set_test_env("CONFIG_PATH", "/tmp/boost_gateway_sdk_business_flow_no_config.json");
 
         login_backend_ = std::make_unique<v2::login::LoginBackendService>(0);
         room_backend_ = std::make_unique<v2::room::RoomBackendService>(0);
@@ -113,7 +131,7 @@ struct GatewayFixture : public ::testing::Test {
         if (battle_backend_) battle_backend_->stop();
         if (room_backend_) room_backend_->stop();
         if (login_backend_) login_backend_->stop();
-        unsetenv("CONFIG_PATH");
+        unset_test_env("CONFIG_PATH");
     }
 
     sdk::SdkClient make_client() { return sdk::SdkClient(); }
@@ -428,7 +446,7 @@ TEST(SdkAsyncTest, AsyncLoginNoServer) {
 
     auto status = future.wait_for(std::chrono::seconds(2));
     ASSERT_EQ(status, std::future_status::ready);
-    EXPECT_FALSE(future.get().success);
+    EXPECT_FALSE(future.get().ok);
 }
 
 TEST(SdkAsyncTest, AsyncPushCallbackRegistration) {

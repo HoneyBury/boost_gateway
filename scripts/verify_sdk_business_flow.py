@@ -14,15 +14,24 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def run_step(name: str, command: list[str], checks: list[dict[str, Any]]) -> bool:
-    result = subprocess.run(command, cwd=REPO_ROOT, text=True, capture_output=True)
+    result = subprocess.run(
+        command,
+        cwd=REPO_ROOT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    )
+    stdout = result.stdout or ""
+    stderr = result.stderr or ""
     passed = result.returncode == 0
     checks.append(
         {
             "name": name,
             "passed": passed,
             "command": command,
-            "stdout": result.stdout[-6000:],
-            "stderr": result.stderr[-6000:],
+            "stdout": stdout[-6000:],
+            "stderr": stderr[-6000:],
         }
     )
     return passed
@@ -31,6 +40,8 @@ def run_step(name: str, command: list[str], checks: list[dict[str, Any]]) -> boo
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/default")
+    parser.add_argument("--configuration", default="Release")
+    parser.add_argument("--skip-build", action="store_true")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -41,11 +52,13 @@ def main() -> int:
     checks: list[dict[str, Any]] = []
     build_dir = args.build_dir
     target = "sdk_business_flow_tests"
-    built = run_step(
-        "build-sdk-business-flow-tests",
-        ["cmake", "--build", str(build_dir), "--target", target],
-        checks,
-    )
+    built = True
+    if not args.skip_build:
+        built = run_step(
+            "build-sdk-business-flow-tests",
+            ["cmake", "--build", str(build_dir), "--config", args.configuration, "--target", target],
+            checks,
+        )
     if built:
         run_step(
             "run-sdk-business-flow-tests",
@@ -55,6 +68,8 @@ def main() -> int:
                 str(build_dir),
                 "-R",
                 "GatewayFixture",
+                "-C",
+                args.configuration,
                 "--output-on-failure",
             ],
             checks,

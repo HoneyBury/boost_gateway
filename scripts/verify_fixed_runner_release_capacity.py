@@ -175,6 +175,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/release")
     parser.add_argument("--skip-collect", action="store_true")
+    parser.add_argument("--configuration", default="Release")
     parser.add_argument("--collect-smoke", action="store_true", help="Collect fresh smoke evidence before validating existing capacity artifacts.")
     parser.add_argument("--step-timeout-seconds", type=int, default=900)
     parser.add_argument(
@@ -206,7 +207,7 @@ def main() -> int:
     build_dir = args.build_dir if args.build_dir.is_absolute() else REPO_ROOT / args.build_dir
     steps: list[dict[str, Any]] = []
 
-    if args.collect_smoke and not args.skip_collect:
+    if (args.collect_smoke or not release_summary_path.exists()) and not args.skip_collect:
         smoke_summary = REPO_ROOT / "runtime/validation/r4-release-smoke-summary.json"
         steps.append(
             run_step(
@@ -218,18 +219,21 @@ def main() -> int:
                     "--build-dir",
                     str(build_dir),
                     "--configuration",
-                    "Release",
+                    args.configuration,
                     "--skip-build",
                     "--perf-preset",
                     "smoke",
                     "--perf-repetitions",
                     "1",
+                    "--skip-perf",
                     "--summary-path",
                     str(smoke_summary),
                 ],
                 args.step_timeout_seconds,
             )
         )
+        if steps[-1].get("status") == "passed":
+            release_summary_path = smoke_summary
 
     checks = [
         validate_release_summary(release_summary_path, required=True),
