@@ -54,8 +54,17 @@ bool BackendConnection::connect() {
         return false;
     }
 
+    // Batch B: allow disabling TLS via env var for backward compatibility
+    if (options_.tls_enabled) {
+        const char* disable_tls = std::getenv("BOOST_DISABLE_TLS");
+        if (disable_tls != nullptr && (std::string(disable_tls) == "1" ||
+                                        std::string(disable_tls) == "true")) {
+            options_.tls_enabled = false;
+        }
+    }
+
     // v3.0.0: Perform TLS handshake if TLS config is set.
-    if (options_.tls_config.has_value()) {
+    if (options_.tls_enabled && options_.tls_config.has_value()) {
         if (!tls_handshake()) {
             close();
             return false;

@@ -11,6 +11,8 @@
 #include "v3/persistence/redis_leaderboard.h"
 #include "v3/persistence/redis_event_store.h"
 
+#include <spdlog/spdlog.h>
+
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
@@ -171,6 +173,9 @@ public:
     explicit Impl(std::uint16_t port) : port_(port) {}
 
     void start() {
+        // Batch C: Auto-connect Redis (default localhost:6379), fallback to in-memory
+        try_auto_connect_redis();
+
         v2::service::BackendServer::HandlerMap handlers;
         handlers["leaderboard_submit"] = [this](const auto& req) {
             return handle_submit(req);
@@ -193,6 +198,11 @@ public:
             std::move(handlers));
         server_->start();
 
+        // Batch C: Default single-node Raft if not explicitly configured
+        if (raft_config_.node_id.empty()) {
+            raft_config_.node_id = "leaderboard_default";
+            raft_config_.storage_dir = "runtime/data/raft/leaderboard";
+        }
         if (!raft_config_.node_id.empty()) {
             raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
             raft_node_->set_rpc_sender(make_raft_rpc_sender());
@@ -249,6 +259,53 @@ public:
 
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
         tls_config_ = std::move(tls_config);
+    }
+
+    // Batch C: Try auto-connect Redis on startup, fallback to in-memory.
+    // Batch C: Try auto-connect Redis on startup, fallback to in-memory.
+    void try_auto_connect_redis() {
+        if (redis_lb_) return;  // already configured explicitly
+
+        const char* host_env = std::getenv("BOOST_REDIS_HOST");
+        const char* port_env = std::getenv("BOOST_REDIS_PORT");
+        std::string host = host_env ? host_env : "127.0.0.1";
+        int port = port_env ? std::stoi(port_env) : 6379;
+
+        try {
+            v3::persistence::RedisConnectionPool::Config pool_cfg;
+            pool_cfg.redis.host = host;
+            pool_cfg.redis.port = static_cast<std::uint16_t>(port);
+            pool_cfg.max_size = 4;
+
+            auto pool = std::make_shared<v3::persistence::RedisConnectionPool>(pool_cfg);
+            auto conn = pool->acquire();
+            if (!conn) {
+                SPDLOG_WARN("LeaderboardService: Redis not available at {}:{}, "
+                           "using in-memory storage", host, port);
+                return;
+            }
+            conn = {};  // release connection back to pool
+
+            v3::persistence::RedisLeaderboard::Config lb_cfg;
+            lb_cfg.redis.host = host;
+            lb_cfg.redis.port = static_cast<std::uint16_t>(port);
+            lb_cfg.key = "lb:global";
+            redis_lb_ = std::make_shared<v3::persistence::RedisLeaderboard>(
+                lb_cfg, std::move(pool));
+            SPDLOG_INFO("LeaderboardService: Redis connected at {}:{}, "
+                       "using Redis backend", host, port);
+
+            // Also set up event store
+            v3::persistence::RedisEventStore::Config es_cfg;
+            es_cfg.redis.host = host;
+            es_cfg.redis.port = static_cast<std::uint16_t>(port);
+            es_cfg.key_prefix = "es";
+            event_store_ = std::make_shared<v3::persistence::RedisEventStore>(es_cfg);
+            SPDLOG_INFO("LeaderboardService: Redis event store connected");
+        } catch (const std::exception& e) {
+            SPDLOG_WARN("LeaderboardService: Redis connection failed ({}), "
+                       "using in-memory storage", e.what());
+        }
     }
 
 private:

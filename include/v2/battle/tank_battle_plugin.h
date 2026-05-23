@@ -1,5 +1,10 @@
 #pragma once
 
+// NOTE (Batch A, 2026-05-23): TankBattlePlugin implementation moved to
+// demo/games/tank_battle/server/tank_plugin/. This header is kept for
+// backward compatibility. The class is only available when building with
+// BOOST_BUILD_TANK_DEMO=ON.
+
 #include "v2/battle/runtime_components.h"
 #include "v2/ecs/world.h"
 #include "v2/realtime/instance_plugin.h"

@@ -37,6 +37,9 @@ struct BackendConnectionOptions {
     // 0 = unlimited (default). When set, send_request waits on a semaphore.
     std::uint32_t max_concurrent_requests = 0;
 
+    // Batch B: TLS default on. Set BOOST_DISABLE_TLS=1 to disable.
+    bool tls_enabled = true;
+
     // Optional TLS config for encrypted inter-service communication.
     // When set, BackendConnection performs a TLS handshake after TCP connect.
     std::optional<v3::cluster::TlsSessionConfig> tls_config;

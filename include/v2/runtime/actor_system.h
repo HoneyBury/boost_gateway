@@ -58,6 +58,10 @@ public:
     std::size_t drain_mailbox_and_dispatch(std::uint32_t core_id);
     [[nodiscard]] std::optional<std::uint32_t> dispatch_owner_core() const noexcept;
 
+#ifndef NDEBUG
+    [[nodiscard]] bool is_on_owner_core() const noexcept;
+#endif
+
 private:
     struct ActorCell {
         std::unique_ptr<v2::actor::Actor> actor;

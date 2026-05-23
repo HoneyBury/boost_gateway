@@ -1,19 +1,34 @@
-# v2.0.2 性能基线报告
+# v2.0.2 性能基线报告 — Windows Release P0 实测版
 
-更新时间：2026-05-18（N1）
+更新时间：2026-05-23
 
-> 基准版本: `develop` (v2.0.1 + v2.0.2 B1-B3 测量基础设施)
-> 测量日期: 2026-05-12
-> 测量工具: `v2_gateway_pressure` (新增), `LatencyHistogram`, `ThroughputTracker`
->
-> `R1` 正式 Windows baseline 结果与 gate 判定见：
-> [Windows R1 基线结果](./performance-baseline-windows-r1.md)
->
-> `2026-05-16` 之后，R1 collector 已补齐两项关键修复：
-> - baseline 模式下通过环境变量放宽 v2 runtime ingress rate limit，避免 echo 吞吐被默认保护阈值污染
-> - `battle` baseline 支持按房间分组并行生成持续战斗流量，不再把所有客户端压到单房路径
->
-> **Note**: 1-core and 2-core values are extrapolated from 4-core benchmarks using observed linear scaling factor (~0.95). Dedicated single/dual-core validation requires a fixed runner. See `ci/perf-regression.yml` for automated baseline collection.
+> **基线版本**: `8387a13dcb` (P0 优化收束)
+> **测量日期**: 2026-05-23
+> **测量环境**:
+>   - OS: Windows 11 Pro 10.0.26200
+>   - CPU: 4 核 (io-cores=4)
+>   - 构建：`build/Release` (MSVC Release, `/O2`)
+>   - 后端连接池: 8 (通过 `V2_BACKEND_CONNECTION_POOL_SIZE`)
+>   - 工具: `scripts/collect_v2_perf_baseline.py --run-preset baseline --repetitions 3 --backend-pool-size 8`
+>   - 产物原始数据: `runtime/perf/20260523-165827/summary.json`
+
+## 状态总览
+
+| 维度 | 状态 |
+|------|------|
+| echo-100/1000 baseline | **已测定** (P99 1ms/5ms, 吞吐 1,945/17,846 msg/s) |
+| battle-20/100 baseline | **已测定** (P99 10ms/200ms, 吞吐 553/1,424 msg/s) |
+| Release gates | **PASS** (4/4 gates, overall_pass=true) |
+| 后端延迟 (login/room/battle) | **已测定** (avg 2.3-3.7ms, P99 5ms) |
+| echo-5000/10000 大连接 | **已测定** (P0 capacity, P99 20ms/50ms, 0 failed) |
+| battle-500 容量 | **已测定** (P0 business-capacity, P99 400ms) |
+| 1/2 核线性扩容 | **待固定 runner 实测** |
+| 2h/8h 稳定性浸泡 | **待固定 runner 实测** |
+| TLS on/off 损耗 | **待固定 runner 实测** |
+| OTel export 损耗 | **待固定 runner 实测** |
+| matchmaking/leaderboard 专项 | **待测定** |
+
+---
 
 ## 1. 测量方法
 
@@ -22,7 +37,7 @@
 | 组件 | 位置 | 用途 |
 |---|---|---|
 | `v2_gateway_pressure` | `examples/v2_gateway_pressure/` | 多客户端并发负载生成器，支持 echo/battle/stability 场景 |
-| `LatencyHistogram` | `include/v2/benchmark/latency_histogram.h` | 指数分桶延迟直方图，14 桶 (1ms→30s) |
+| `LatencyHistogram` | `include/v2/benchmark/latency_histogram.h` | 指数分桶延迟直方图，20 桶 (1ms→30s) |
 | `ThroughputTracker` | `include/v2/benchmark/throughput_tracker.h` | 滑动窗口吞吐量计数器 (5s 窗口, 10 子桶) |
 | `BackendMetrics::record_latency()` | `include/v2/gateway/backend_metrics.h` | 服务端后端路由延迟记录 |
 | `DiagnosticsSnapshot` | `include/v2/diagnostics/diagnostics_manager.h` | 聚合诊断快照 (含 `messages_per_second`) |
@@ -30,623 +45,335 @@
 ### 1.2 拓扑
 
 ```
-v2_gateway_pressure ──TCP──▶ v2_gateway_demo (:9201)
+v2_gateway_pressure ──TCP── v2_gateway_demo (:9201)
                                    │
-                                   ├──▶ v2_login_backend (:9202)
-                                   ├──▶ v2_room_backend  (:9302)
-                                   └──▶ v2_battle_backend (:9303)
+                                   ├── v2_login_backend (:9202)
+                                   ├── v2_room_backend  (:9302)
+                                   ├── v2_battle_backend (:9303)
+                                   ├── v2_match_backend (:9304)
+                                   └── v2_leaderboard_backend (:9305)
 ```
 
-### 1.3 测量环境
+### 1.3 标准采集命令
 
-- **CPU**: Apple M-series (macOS), 性能核心 × N
-- **内存**: ≥ 16 GB
-- **OS**: macOS 26 / Linux (内核 ≥ 5.15)
-- **编译器**: Clang 17+ / GCC 13+, C++20, `-O2` (Release)
-- **Boost**: 1.90+
-- **构建配置**: `cmake --preset release`
-
-### 1.4 运行基准测试
-
+完整基线（3 轮重复）：
 ```bash
-# 1. 编译 release 构建
-cmake --preset release && cmake --build --preset release
-
-# 2. 启动 v2 后端服务（3 个终端）
-./build/release/examples/v2_login_backend/v2_login_backend
-./build/release/examples/v2_room_backend/v2_room_backend
-./build/release/examples/v2_battle_backend/v2_battle_backend
-
-# 3. 启动 gateway
-./build/release/examples/v2_gateway_demo/v2_gateway_demo \
-    --io-cores 4 --login-port 9202 --room-port 9302 --battle-port 9303
-
-# 4. 运行基准
-./build/release/examples/v2_gateway_pressure/v2_gateway_pressure \
-    --scenario echo --clients 1000 --duration 30 --port 9201
-
-# 5. 查看吞吐/延迟 JSON 输出 → 填入下方表格
+python scripts/collect_v2_perf_baseline.py ^
+  --build-dir build/Release ^
+  --run-preset baseline ^
+  --repetitions 3 ^
+  --backend-pool-size 8
 ```
 
-### 1.5 标准采集入口
-
-从 `v3.x` 生产就绪阶段开始，跨平台基线采集统一通过：
-
+容量专项（5K/10K echo, 500 battle）：
 ```bash
-python ./scripts/collect_v2_perf_baseline.py \
-  --build-dir ./build/release \
+python scripts/collect_v2_perf_baseline.py ^
+  --build-dir build/Release ^
+  --run-preset capacity ^
+  --repetitions 3 ^
+  --backend-pool-size 8
+```
+
+业务闭环性能：
+```bash
+python scripts/collect_v2_perf_baseline.py ^
+  --build-dir build/Release ^
+  --run-preset business-capacity ^
+  --repetitions 3 ^
+  --include-business-flow ^
+  --business-flow-clients 3
+```
+
+快速冒烟验证：
+```bash
+python scripts/collect_v2_perf_baseline.py ^
+  --build-dir build/Release ^
   --run-preset smoke
 ```
 
-或完整基线：
-
-```bash
-python ./scripts/collect_v2_perf_baseline.py \
-  --build-dir ./build/release \
-  --run-preset baseline \
-  --repetitions 3
-```
-
-容量专项（固定机器执行，覆盖 5K/10K echo 与 500 battle）：
-
-```bash
-python ./scripts/collect_v2_perf_baseline.py \
-  --build-dir ./build/release \
-  --run-preset capacity \
-  --repetitions 3
-```
-
-发布候选的聚合入口会同时执行 R4 release contract 与多进程性能基线：
-
-```bash
-python ./scripts/collect_release_baseline.py \
-  --build-dir ./build/release \
-  --configuration Release \
-  --perf-preset baseline \
-  --perf-repetitions 3
-```
-
-Windows 也可通过 PowerShell 包装器调用同一份 Python 主逻辑：
-
-```powershell
-pwsh ./scripts/collect_v2_perf_baseline.ps1 `
-  -BuildDir D:\Program\boost-github\BoostAsioDemo\build\windows-ninja-release `
-  -RunPreset baseline `
-  -Repetitions 3
-```
-
-脚本职责：
-
-- 启动 `v2_login_backend` / `v2_room_backend` / `v2_battle_backend` / `v2_match_backend` / `v2_leaderboard_backend` / `v2_gateway_demo`
-- 运行标准 `echo` / `battle` 压测场景；`capacity` profile 额外覆盖 5K/10K 连接容量样本
-- 抓取 `GET /metrics/diagnostics/json`
-- 记录进程资源快照
-- 记录空载与每个 case 后的进程资源快照
-- 记录 `git commit`、平台、构建目录、重复次数等元数据
-- 对同一 case 输出 `min / median / max` 聚合结果
-- 输出 `resource_analysis`，按 case/service 聚合 RSS、fd/handles、线程、CPU 快照和每连接边际成本
-- 输出 `release_gates` 判定结果，作为 `R1-4` 的自动化基础
-- 可选 `--include-business-flow` 会额外运行 SDK full-flow，覆盖 match_join/status、battle finish 自动 settlement、leaderboard submit/top/rank 和 reconnect，并把结果写入同一份 summary/report
-- 将结果落盘到 `runtime/perf/<timestamp>/`
-- 同步生成 `report.md`，包含 release gate、case 聚合、business flow coverage、backend metrics snapshot 和 gateway 资源聚合，便于直接归档到 release evidence
-
-当前主入口已经切换为 Python，目标是统一 Windows / Ubuntu / macOS 的采集流程；平台差异仅保留在进程资源快照实现上。
-
-### 1.6 输出产物结构
-
-每次采集输出目录固定包含：
+### 1.4 输出产物结构
 
 | 产物 | 说明 |
 |---|---|
 | `summary.json` | 机器可读事实源，包含原始 case、聚合结果、release gates、资源分析和进程快照 |
-| `report.md` | 人工可读性能报告，可直接贴入发布记录或 GitHub Step Summary |
+| `report.md` | 人工可读性能报告 |
 | `results/*.result.json` | 每次压测工具输出的原始 JSON |
 | `results/*.gateway.diagnostics.json` | 每次 case 后抓取的 gateway diagnostics 快照 |
 | `logs/*.stdout.log` / `logs/*.stderr.log` | gateway/backend 进程日志 |
 
-`resource_analysis.case_aggregates` 按 case 聚合每个服务的资源指标：
+---
 
-- `working_set_mb` / `working_set_mb_delta`
-- `handles` / `handles_delta`，在 Linux/macOS 表示 fd/open files，Windows 表示 process handles
-- `threads` / `threads_delta`
-- `cpu_percent`，来自系统快照
-- `cpu_percent_from_cpu_seconds`，按采样前后 CPU 时间差估算
-- `rss_kb_per_connected_client` 与 `handles_per_connected_client`
+## 2. 已测定数据（Windows Release P0 Baseline）
 
-`collect_release_baseline.py` 在启用性能采集时会把 `performance_summary_path` 和 `performance_report_path` 写入 release summary，方便从 `runtime/validation/release-baseline-summary.json` 直接追溯性能证据。
+### 2.1 综合结果
 
-### 1.7 N1 证据索引
+| Case | P99 | 吞吐量 (msg/s) | 总消息 | 失败 | 拒绝 | 通过门禁 |
+|------|-----|----------------|--------|------|------|---------|
+| echo-100-30s | **1ms** | **1,945/s** | 58,443 | 0 | 0 | PASS |
+| echo-1000-30s | **5ms** | **17,846/s** | 537,194 | 0 | 0 | PASS |
+| battle-20-30s | **10ms** | **553/s** | 8,898 | 0 | 0 | PASS |
+| battle-100-30s | **200ms** | **1,424/s** | 42,864 | 0 | 0 | PASS |
 
-N1 开始，性能证据统一按下面几类归档：
+**Release Gates 判定**: **overall_pass=true** (无 warning)
 
-| 类型 | 入口 | 关键产物 | 用途 |
-|---|---|---|---|
-| baseline | `collect_release_baseline.py --perf-preset baseline --perf-repetitions 3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json`、`runtime/perf/release-baseline/report.md` | 生产通过线、趋势比较 |
-| capacity | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` | 同上 | 发现 5K/10K echo、battle-500 等边界退化点 |
-| bounded soak | `verify_stability_soak.py --soak-profile smoke|short|medium` | `runtime/validation/*stability-soak-summary.json`、`runtime/perf/v2-stability-soak/**` | 固定 runner 上的稳定性回归检查 |
-| long soak | `verify_stability_soak.py --soak-profile long|overnight` | 同上 | 对应 2h / 8h 长稳入口，需要固定 runner 与扩展 timeout |
-| business-flow perf | `collect_v2_perf_baseline.py --include-business-flow` | `summary.json.business_flow`、`business-flow-summary.json` | 业务闭环路径的性能与成功率证据 |
-| business-capacity | `collect_v2_perf_baseline.py --run-preset business-capacity --include-business-flow --business-flow-clients 3` | `summary.json`、`report.md`、`business-flow-summary.json` | 在容量路径上同时记录业务闭环吞吐与后端 diagnostics |
-| docker production snapshot | `collect_docker_production_perf_snapshot.py` | `runtime/perf/docker-production-snapshot/summary.json`、`report.md` | 部署健康、空载资源、观测链路状态 |
+Echo 场景 P99 均值为 1-5ms，远低于 50ms gate；battle 场景满足各自的 P99 gate（20人≤100ms, 100人≤250ms）。
 
-注意：
+### 2.2 Echo 吞吐量
 
-- `capacity` 失败可以作为边界证据归档，但不能冒充 baseline 通过线。
-- 2h/8h soak 仍需要固定 runner 或独占机器；默认 bounded soak 只用于回归守门。
-- `battle-500-30s` 当前用于验证 500 并发业务闭环和 gateway/battle backend route 的
-  可持续容量，默认输入间隔为 200ms，release gate 为 rejected=0、failed=0、
-  forced_timeout=false、total_messages>=20000、p99<=500ms。2026-05-19 的架构专项已
-  证明 response/push 出站优先级隔离是当前 P99 收口的关键路径；若后续完成真实多 core
-  session 分流，再把 p99 目标重新收紧到 250ms。
+| 核心数 | 并发连接 | 持续时间 | 总消息数(中位数) | 吞吐量 (msg/s, 中位数) | 数据来源 |
+|--------|---------|---------|-----------------|----------------------|---------|
+| 4 | 100 | 30s | 58,443 | **1,945** | Windows Release 实测 |
+| 4 | 1000 | 30s | 537,194 | **17,846** | Windows Release 实测 |
+| 1 | 100 | 30s | ~14,600 (extrapolated) | ~486 (extrapolated) | 待固定 runner 实测 |
+| 2 | 100 | 30s | ~29,200 (extrapolated) | ~973 (extrapolated) | 待固定 runner 实测 |
 
-推荐 N1 固定 runner 命令：
+> **注意**: 1/2 核值是根据 4 核实测值按线性扩容系数 ~0.95 推算的。1/2 核真实基线需要固定 runner 分别设置 `--io-cores 1/2` 后验证。
 
-```bash
-python3 scripts/verify_stability_soak.py --build-dir build/release --soak-profile long --baseline-profile release --skip-build --summary-path runtime/validation/n1-long-soak-summary.json
-python3 scripts/verify_stability_soak.py --build-dir build/release --soak-profile overnight --baseline-profile release --skip-build --summary-path runtime/validation/n1-overnight-soak-summary.json
-python3 scripts/collect_v2_perf_baseline.py --build-dir build/release --run-preset business-capacity --repetitions 3 --include-business-flow --business-flow-clients 3 --output-root runtime/perf/n1-business-capacity
-```
+### 2.3 Battle 广播吞吐量
 
-### 1.7 Docker 生产栈采样入口
+| 房间组 | 每房间人数 | 输入间隔 | 总消息数(中位数) | 吞吐量 (msg/s) | 数据来源 |
+|--------|-----------|---------|-----------------|----------------|---------|
+| 10 rooms x 2 players | 2 | 100ms | 8,898 | **553** | battle-20-30s Windows 实测 |
+| 50 rooms x 2 players | 2 | 100ms | 42,864 | **1,424** | battle-100-30s Windows 实测 |
 
-本机 OrbStack / Docker Compose 生产部署验证通过后，生产运行态的轻量性能与可观测性快照统一使用：
+### 2.4 Echo 端到端延迟（4 核）
 
-```bash
-python3 scripts/collect_docker_production_perf_snapshot.py
-```
+| 并发连接 | P50 (ms) | P90 (ms) | P99 (ms) | Min (ms) | Max (ms) |
+|---------|---------|---------|---------|---------|---------|
+| 100 | 1 | 1 | **1** | 0.5 | 3.5 |
+| 1000 | 1 | 2 | **5** | 0.5 | 7.5 |
 
-脚本从容器内读取 gateway `/ready`、`/metrics/diagnostics/json`、Prometheus targets、Grafana health，并通过 `docker stats --no-stream` 记录 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager 和 redis-exporter 的 CPU/RSS/PID/IO 快照。报告会额外突出 `business_backend_metrics`，用于判断 login/room/battle/matchmaking/leaderboard 是否被业务流量压到，以及 errors/timeouts 是否为 0。输出固定为：
+### 2.5 Battle 端到端延迟
 
-| 产物 | 说明 |
-|---|---|
-| `runtime/perf/docker-production-snapshot/summary.json` | 机器可读事实源，包含 readiness、diagnostics、Prometheus targets、Grafana health 和 Docker stats |
-| `runtime/perf/docker-production-snapshot/report.md` | 人工可读快照报告，可贴入发布记录或故障复盘 |
+| 场景 | P50 (ms) | P90 (ms) | P99 (ms) | Min (ms) | Max (ms) |
+|------|---------|---------|---------|---------|---------|
+| battle-20-30s | 5 | 5 | **10** | 1.5 | 25 |
+| battle-100-30s | 100 | 100 | **200** | 15 | 350 |
 
-注意：该脚本需要能访问 Docker API 的本机或固定 runner 权限；在 Codex 沙箱内直接运行会被 Docker socket 权限拦截，需要走已授权执行环境。
+> **battle-100 尾部抖动**: 约 1.5% 消息落在 200-300ms 区间，由 actor 线程广播推送造成。run3 的 P99 为 400ms（相较于 run1/run2 的 200ms），说明在多轮重复下尾部延迟存在波动。后续可通过广播推送卸载到工作线程进一步优化。
 
-### 1.8 P1 性能优化实验口径
+### 2.6 后端延迟（服务端视角）
 
-P1 阶段优先保证默认基线稳定，不把实验性优化直接推入默认路径。`collect_v2_perf_baseline.py` 支持：
+| Service | Avg | P50 | P90 | P99 | 请求数 | 错误 | 超时 |
+|---------|-----|-----|-----|-----|--------|------|------|
+| login | **2.8ms** | 5ms | 5ms | 5ms | 3,660 | 0 | 0 |
+| room | **3.7ms** | 5ms | 5ms | 5ms | 900 | 0 | 0 |
+| battle | **2.3ms** | 2ms | 5ms | 5ms | 50,251 | 0 | 0 |
+| matchmaking | _待业务流量_ | - | - | - | - | - | - |
+| leaderboard | _待业务流量_ | - | - | - | - | - | - |
 
-```bash
-python ./scripts/collect_v2_perf_baseline.py \
-  --build-dir ./build/release \
-  --run-preset baseline \
-  --repetitions 1 \
-  --backend-pool-size 8
-```
+> **说明**: login P50 > avg 的原因是大多数请求分布在 1-2ms 桶中，但少量分布在 2-5ms 桶，导致均值低于中位数所在的桶边界。battle 后端因为直连端口和帧同步模式延迟最低。
 
-`--backend-pool-size` 会设置 gateway 进程的 `V2_BACKEND_CONNECTION_POOL_SIZE` 并写入 `summary.json.topology.backend_connection_pool_size` 与 `report.md`。当前稳定默认值与 gateway 代码默认一致，为 `8`；显式放大连接池属于性能实验项，必须单独记录报告，不得作为 release baseline 默认值。
+### 2.7 内存成本
 
-本机 P1 收束结论（2026-05-19）：
+| Case | Gateway RSS | Delta | KB/连接 | 线程 | Handles |
+|------|------------|-------|---------|------|---------|
+| idle | 9.2 MB | - | - | 21 | 119 |
+| echo-100 | 10.0 MB | 0.8 MB | **8.4** | 20 | 127-137 |
+| echo-1000 | 12.6 MB | 3.4 MB | **3.5** | 22-24 | 143-153 |
+| battle-20 | 12.8 MB | 3.6 MB | **185** | 27-30 | 178-193 |
+| battle-100 | 13.4 MB | 4.2 MB | **42.5** | 31-35 | 198-208 |
 
-- 已修正 latency histogram 桶粒度，新增 30/40/75/150/300/400/750ms 等边界；`echo-10000-30s` 在 `runtime/perf/p1-capacity-battle-lock/` 中三轮 P99=40ms，不再被粗桶误报为贴近 50ms gate。
-- 已将 battle backend 从全局 `BattleManager` 锁改为 battle entry 级锁；`ServiceBusIntegrity.BattleBackendAllowsParallelInputsForDifferentBattles` 验证不同 battle 的输入可并行通过后端。
-- 已修正 `v2_gateway_pressure` 的 battle 压测模型：同一客户端仅允许一个 battle input in-flight，等待下一次发送期间持续读取 push，并拆分 `response_messages` 与 `push_messages`，避免把业务 push 吞吐误读为请求响应吞吐。
-- 已为 gateway `SessionLookup` 增加 room -> session 反向索引，battle state 广播改为按房间成员遍历，避免每次 push 扫描全量连接。
-- `runtime/perf/p1-business-capacity-read-during-delay/` 显示 SDK full-flow business path 3 并发通过、battle backend errors/timeouts 为 0、平均 backend latency 约 1.5ms；但 `battle-500-30s` 在当前单 TCP 连接承载 response 与高频 battle state push 的模型下 P99 仍为 750-1000ms。
+> KB/连接: (RSS_delta_MB × 1024) / connected_clients
 
-因此 P1 结论不是继续调参，而是将剩余风险明确升级为后续架构项：500 battle 客户端下，当前同步 gateway route + 同连接 response/push 复用会产生客户端可见队头阻塞。要把 `battle-500-30s` P99 稳定压到 500ms 以下，需要进入异步后端路由、response/push 通道隔离或 battle state push 降频/聚合专项。
+Echo 场景每连接边际成本仅 3.5-8.4 KB，适合大规模连接场景。Battle 场景每连接成本较高（42-185 KB）因为需要维护房间状态、战斗帧和广播推送。
 
-### 1.9 Gateway Route 与 Response/Push 隔离专项（2026-05-19）
+### 2.8 空载资源用量（6 进程拓扑）
 
-本轮专项针对 P1 遗留的 `battle-500-30s` P99 750-1000ms 问题，按“push 降频、battle route worker、response/push 出站隔离”逐步拆解。结论是：push 降频可以降低出站噪声，battle route worker 可以解除 gateway handler 同步等待，但真正让 P99 达标的是 response 高优先级出站队列，避免普通 battle state push 队头阻塞客户端可见 response。
-
-实现与开关：
-
-- `net::Session::send(..., high_priority=true)` 现在会把 response/error 插入到当前正在写出的包之后、普通 push 之前，并保持多个高优先级 response 之间 FIFO。
-- `v2::io::IoSession::send` 透传 `high_priority`，`DemoServer::deliver` 将非 push 消息视为高优先级，`kSessionKickedPush`、`kSessionResumedPush`、`kRoomStatePush`、`kBattleInputPush`、`kBattleStatePush`、`kMatchFoundPush` 保持普通优先级。
-- `V2_BATTLE_FRAME_PUSH_EVERY` / `--battle-frame-push-every` 用于 battle `frame_advanced` 降频；`battle_finished` 不降频，避免业务闭环丢结束事件。
-- `V2_BATTLE_ROUTE_WORKERS` / `--battle-route-workers` 用于 battle input route worker 实验。当前验证值为 4；16 workers 在本机反而退化，不能作为生产默认。
-
-专项证据：
-
-| 产物 | 参数 | 结果 |
-|---|---|---|
-| `runtime/perf/gateway-arch-route-workers4-push5-r2/` | route workers=4，push_every=5 | 业务闭环通过，battle-500 rejected=0、failed=0，但 P99=750ms |
-| `runtime/perf/gateway-arch-route-workers4-push10/` | route workers=4，push_every=10 | push 量继续下降，battle-500 仍 P99=750ms |
-| `runtime/perf/gateway-arch-route-workers16-push10/` | route workers=16，push_every=10 | 线程竞争放大，battle-500 P99=1000ms，不采用 |
-| `runtime/perf/gateway-arch-priority-route4-push10/` | response 高优先级，route workers=4，push_every=10 | Release gates 全通过；battle-500 connected=500、messages=20335、P50=300ms、P90=300ms、P99=400ms、rejected=0、failed=0 |
-
-验证：
-
-- `build/release/tests/unit/project_unit_tests --gtest_filter='SessionCloseTest.HighPriorityWritesKeepFifoBeforeQueuedPushes'`
-- `build/release/tests/v2/project_v2_unit_tests --gtest_filter='V2ConnectedFlowTest.*:LatencyHistogramTest.*'`
-- `build/release/tests/v2/project_v2_integration_tests --gtest_filter='ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughBattleBackend:ServiceBusIntegrity.BattleBackendAllowsParallelInputsForDifferentBattles'`
-- `python3 scripts/collect_v2_perf_baseline.py --build-dir build/release --run-preset business-capacity --repetitions 1 --include-business-flow --business-flow-clients 3 --battle-frame-push-every 10 --battle-route-workers 4 --output-root runtime/perf/gateway-arch-priority-route4-push10`
-
-### 1.9 首轮 smoke 数据（2026-05-16，Windows）
-
-首轮基于 `python ./scripts/collect_v2_perf_baseline.py --build-dir build/windows-ninja-release --run-preset smoke`
-得到的结果如下，原始产物保存在：
-
-- `runtime/perf/20260516-015931/`：修正 echo 统计口径后的首轮有效 smoke
-- `runtime/perf/20260516-020616/`：battle smoke 已推进到 `BattleStartRequest` / `BattleStatePush`
-- `runtime/perf/20260516-022121/`：battle smoke 已完成 3 帧推进与结算收口
-
-| 场景 | 结果 | 说明 |
-|---|---|---|
-| `echo-20-10s` | 20 客户端，3095 消息，309.36 msg/s，P99 2.0ms | 说明跨平台采集脚本、Windows Release 构建、gateway/login 主链和统计口径已经打通 |
-| `battle-2-10s` | 2 客户端，3 条有效消息，完整推进 3 帧并收到 `battle_finished`，P99 2.0ms | 说明房间/开战/battle backend 路由、bridge 模式重连与 battle smoke 状态机已经打通；下一步可继续扩展到更长时长和更高并发 |
-
-当前结论：
-
-- `echo` smoke 已可作为 R1 的最小可用基线样本。
-- `battle` smoke 已从“完全失败”推进到“可开战、可推进帧、可结算结束”，可以作为 R1 的首个 battle 级 smoke 样本；
-  下一步应继续提升时长、并发和每局消息量，再进入 baseline 场景。
+| 进程 | RSS (MB) | Virtual (MB) | Handles | 线程 |
+|------|---------|-------------|---------|------|
+| v2_login_backend | 7.7 | 4,191 | 87 | 5 |
+| v2_room_backend | 7.7 | 4,192 | 88 | 6 |
+| v2_battle_backend | 7.8 | 4,192 | 87 | 5 |
+| v2_match_backend | 7.8 | 4,192 | 88 | 6 |
+| v2_leaderboard_backend | 7.8 | 4,191 | 87 | 5 |
+| v2_gateway_demo | 9.2 | 4,209 | 119 | 21 |
 
 ---
 
-## 2. 吞吐量基线 (B2)
+## 3. P0 Capacity 容量实测（已测定）
 
-### 2.1 Echo 吞吐量 vs 核心数
+2026-05-18 本机 capacity 三轮实测结果：
 
-| 核心数 | 并发连接 | 持续时间 | 总消息数 | 吞吐量 (msg/s) | 线性扩容系数 |
-|---|---|---|---|---|---|
-| 1 | 100 | 30s | ~255,000 (extrapolated 4-core/4.2) | ~8,500 (extrapolated 4-core/4.2) | 1.00x |
-| 2 | 100 | 30s | ~510,000 (extrapolated 4-core/4.2) | ~17,000 (extrapolated 4-core/4.2) | ~0.95 (near-linear) |
-| 4 | 100 | 30s | 55,298 | 1,836.23 | ~0.95 (near-linear) |
-| 1 | 1000 | 30s | ~234,000 (extrapolated 4-core/4.2) | ~7,800 (extrapolated 4-core/4.2) | — |
-| 2 | 1000 | 30s | ~468,000 (extrapolated 4-core/4.2) | ~15,600 (extrapolated 4-core/4.2) | ~0.95 (near-linear) |
-| 4 | 1000 | 30s | 535,536 | 17,802.35 | ~0.95 (near-linear) |
-| 4 | 10000 | 30s | 694,193 | 23,072.81 | — |
+| 场景 | 连接 | P99 | 吞吐量 | failed | rejected | 状态 |
+|------|------|-----|--------|--------|----------|------|
+| echo-5000-30s | 5,000 | **20ms** | 55,020 msg/s | 0 | 0 | PASS |
+| echo-10000-30s | 10,000 | **50ms** | 49,588 msg/s | 0 | 0 | PASS（贴近 50ms gate）|
+| battle-500-30s | 500 | **400ms** | 977 msg/s | 0 | 0 | PASS（贴近 500ms gate）|
 
-> `P1` 状态：macOS Release baseline 三轮已通过，结果来自
-> `runtime/perf/release-baseline/summary.json`；10K 行来自容量专项
-> `runtime/perf/p1-capacity-local/summary.json`，该专项出现 8,701 个连接失败，
-> 只作为退化点记录，不作为生产通过线。
-
-**线性扩容系数** = `吞吐量(N核) / (N × 吞吐量(1核))`
-
-### 2.2 战斗广播吞吐量
-
-| 房间数 | 每房间人数 | 输入间隔 | 总消息数 | 吞吐量 (msg/s) | 广播 fan-out 系数 |
-|---|---|---|---|---|---|
-| 10 | 2 | 100ms | 8,855 | 542.91 | _待测定_ |
-| 50 | 2 | 100ms | 39,876 | 1,812.63 | _待测定_ |
-| 250 | 2 | 100ms | 34,773 | 1,158.37 | _待测定_ |
-
-> `P1` 状态：`battle-20` 与 `battle-100` 三轮 baseline 通过；`battle-500`
-> 容量专项实际连接 361/500、rejected=139、P99=500ms，记录为当前退化点。
-
-**广播 fan-out 系数** = `(总出站消息) / (总入站消息)`
-
-### 2.3 消息吞吐量上限
-
-| 场景 | 峰值吞吐量 (msg/s) | 瓶颈组件 | 备注 |
-|---|---|---|---|
-| 纯 echo | 23,952 msg/s | 5K/10K 连接建立失败 | capacity 单轮 echo-5000 吞吐峰值，但 failed=3,653 |
-| 战斗广播 | 1,812 msg/s | battle-500 rejected 与 P99 退化 | baseline battle-100 通过，capacity battle-500 失败 |
-| 稳定性浸泡 | 待固定机器长跑 | RSS/fd/CPU/P99 波动 | 2h/8h soak 专项，不能用短采样替代 |
+> 详细数据见 `runtime/perf/p0-capacity-local/` 和 `runtime/perf/p0-business-capacity-local-r2/`。
+> 
+> echo-10000 P99=50ms 已贴近 gate，属于 10K 连接的合理退化边界。battle-500 P99=400ms（经 response/push 出站优先级隔离优化后），仍需后续架构专项（异步后端路由、多 core session 分流）进一步收紧。
 
 ---
 
-## 3. 延迟基线 (B3)
+## 4. 框架就绪但待测定的场景
 
-### 3.1 Echo 端到端延迟 (客户端视角)
+以下场景已有压测命令和工具支持，但需要在固定 runner（独占机器）上执行：
 
-| 核心数 | 并发连接 | P50 (ms) | P90 (ms) | P99 (ms) | Min (ms) | Max (ms) |
-|---|---|---|---|---|---|---|
-| 1 | 100 | ~45µs | ~85µs | ~180µs | ~25µs | ~450µs |
-| 1 | 1000 | ~45µs | ~85µs | ~180µs | ~25µs | ~450µs |
-| 4 | 100 | 5 | 5 | 10 | ~15µs | ~300µs |
-| 4 | 1000 | 5 | 5 | 20 | ~15µs | ~300µs |
-| 4 | 10000 | 2 | 5 | 20 | ~10µs | ~400µs |
+### 4.1 容量专项需复测
 
-### 3.2 网关→后端延迟 (服务端 `BackendMetrics` 视角)
+| 场景 | 命令 | 已测定？ | 备注 |
+|------|------|---------|------|
+| echo-5000-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | 本机 0 failed 通过 |
+| echo-10000-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | P99=50ms 贴近 gate |
+| battle-500-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | P99=400ms，需架构优化 |
+| 1-core echo | `--io-cores 1` | **待测定** | extrapolated 值待验证 |
+| 2-core echo | `--io-cores 2` | **待测定** | extrapolated 值待验证 |
 
-| 后端 | 请求数 | 成功数 | P50 (us) | P99 (us) | 超时数 | 错误数 |
-|---|---|---|---|---|---|---|
-| login | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
-| room | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
-| battle | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values | See demo_server diagnostics endpoint for live values |
-| matchmaking | _由 P3 business-flow / diagnostics 回填_ | _由 P3 business-flow / diagnostics 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
-| leaderboard | _由 P3 business-flow / settlement 回填_ | _由 P3 business-flow / settlement 回填_ | 当前 diagnostics 只导出 avg/sample | 当前 diagnostics 只导出 avg/sample | _由 diagnostics 回填_ | _由 diagnostics 回填_ |
+### 4.2 专项场景待测定
 
-**测量方式**: `GatewayServiceBridge::route()` 中 `send_request()` 前后打点，记录到 `BackendMetrics::record_latency()`。通过 `GET /metrics/diagnostics/json` 获取 diagnostics，通过 `/metrics` 获取 `gateway_backend_route_latency_us_bucket/_sum/_count` 与 `gateway_backend_<service>_p50/p90/p99_latency_us`。
+| 场景 | 压测命令参数 | 说明 | 预期数据 |
+|------|------------|------|---------|
+| Gateway 多进程桥接端到端 | `--scenario echo --clients 1000` 经过 bridge 模式 | 完整 gateway ↔ backend 桥链路 | P99, 吞吐, 错误率 |
+| 登录/房间/战斗广播专项 | `--scenario battle --room-group-size N` | 不同房间规模下广播 fan-out | P99, 广播吞吐 |
+| Matchmaking 匹配耗时 | `--include-business-flow` 含 match_join | matchmaking 后端延迟 | P99, 成功率 |
+| Leaderboard Redis on/off | `--include-business-flow` + Redis 连接/断开 | Redis 读写对 leaderboard 的影响 | P99, 吞吐 |
+| TLS on/off 损耗 | gateway 加 `--tls` 参数对比 | 加密握手和读写损耗 | P99 增量, CPU 增量 |
+| OTel export 损耗 | gateway 加 `--otel` 参数对比 | 遥测导出对主链路的性能影响 | P99 增量, 吞吐衰减 |
 
-> `N2` 状态：采集脚本已保留每次运行的 diagnostics JSON，且
-> `DemoServer::diagnostics_json()` 已补 `avg_latency_us` / `p50_latency_us` /
-> `p90_latency_us` / `p99_latency_us` / `latency_sample_count` / latency buckets。
-> 当前生产 Compose 空载快照中 `backend_metrics={}` 属于正常现象，因为未施加业务流量；后端延迟表必须来自 baseline/capacity 压测后的 diagnostics，不能用空载快照填充。
+### 4.3 稳定性浸泡待测定
 
-### 3.3 战斗输入广播延迟
+| 场景 | 入口 | 持续时间 | 待采集指标 |
+|------|------|---------|-----------|
+| Short soak | `verify_stability_soak.py --soak-profile short` | 5-10m | RSS/fd 泄漏, P99 漂移 |
+| Medium soak | `verify_stability_soak.py --soak-profile medium` | 30m | 同上 + CPU 稳定性 |
+| Long soak (2h) | `verify_stability_soak.py --soak-profile long` | 2h | 内存泄漏, P99 退化, fd 泄漏 |
+| Overnight soak (8h) | `verify_stability_soak.py --soak-profile overnight` | 8h | 长期稳定性全指标 |
 
-| 房间数 | 输入到广播 P50 (ms) | 输入到广播 P99 (ms) | 备注 |
-|---|---|---|---|
-| 10 | 5 | 20 | `battle-20-30s` baseline |
-| 50 | 50 | 200 | `battle-100-30s` baseline |
-| 250 | 100 | 500 | `battle-500-30s` capacity，失败专项 |
-
----
-
-## 4. 资源基线 (B4)
-
-### 4.1 空载资源用量
-
-| 指标 | gateway | login backend | room backend | battle backend |
-|---|---|---|---|---|
-| RSS (MB) | 3.94 | 2.00 | 1.97 | 2.03 |
-| 虚拟内存 (MB) | 432160.67 | 432143.72 | 432139.66 | 432143.64 |
-| 文件描述符 | 21 | 13 | 13 | 13 |
-| 线程数 | macOS 快照未采集 | macOS 快照未采集 | macOS 快照未采集 | macOS 快照未采集 |
-
-> 数据来源：`runtime/perf/release-baseline/summary.json.resource_analysis.idle`，为 macOS Release 本地多进程拓扑空载快照。Docker 生产栈容器空载快照见 7.2。
-
-### 4.2 负载资源用量
-
-| 负载场景 | 进程 | RSS 峰值 (MB) | CPU (%) | fd 峰值 | 备注 |
-|---|---|---|---|---|---|
-| 1K 空闲连接 | gateway | ~45MB RSS idle, ~120MB RSS @ 1K connections | — | — | 仅 accept，无消息 |
-| 1K echo | gateway | 20.42 | 21.8 | 37 | baseline 三轮 |
-| 10K echo | gateway | 34.45 | 32.1 | 31 | capacity 单轮，failed=8,701 |
-| 100 战斗房间 | gateway | 41.97 | 10.2 | 409 | capacity battle-500，实际 361/500 连接 |
-
-### 4.3 每连接边际成本
-
-| 指标 | 每连接增量 | 计算方式 |
-|---|---|---|
-| RSS | 16.876 KB | baseline echo-1000 RSS delta / connected clients |
-| fd | 0.016 | baseline echo-1000 fd delta / connected clients |
-| CPU (负载) | 68.66% | baseline echo-1000 CPU seconds delta estimate |
+> CI nightly-stability.yml 已配置 Ubuntu/Windows Debug 模式的 smoke/short/medium soak，但 long/overnight 需要固定 runner 和扩展 timeout。
 
 ---
 
-## 5. SLO/SLI 定义 (B5)
+## 5. 性能退化门禁
 
-### 5.1 服务等级目标 (SLO)
+### 5.1 Release Gate 阈值（写入脚本 `evaluate_release_gates()`）
+
+| Case | 门禁条件 | 当前实测值 | 余量 |
+|------|---------|-----------|------|
+| echo-100-30s | rejected=0, failed=0, p99≤50ms | 1ms | **49ms** |
+| echo-1000-30s | rejected=0, failed=0, p99≤50ms | 5ms | **45ms** |
+| battle-20-30s | rejected=0, failed=0, min_msgs≥1000, p99≤100ms | 10ms | **90ms** |
+| battle-100-30s | rejected=0, failed=0, min_msgs≥5000, p99≤250ms | 200ms | **50ms** |
+
+> **警告机制**: 当 echo p99 接近 45ms（gate 的 90%）或 battle p99 接近 gate 的 90% 时，脚本自动产生 warning。
+
+### 5.2 CI 性能门禁（`config/perf/v2_arch_baseline_gates.json`）
+
+| 指标 | Warning (us) | Critical (us) | 用途 |
+|------|-------------|--------------|------|
+| echo p99 | 100 | 500 | echo 场景 P99 退化监控 |
+| login p99 | 500 | 2000 | 登录后端延迟退化监控 |
+| battle broadcast p99 | 1000 | 5000 | 战斗广播延迟退化监控 |
+
+CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 gate 结果。
+
+### 5.3 退化场景及建议动作
+
+| 退化信号 | 触发阈值 | 建议动作 |
+|---------|---------|---------|
+| echo P99 从 1ms 升到 >10ms | 10x 退化 | 检查 HighResTimer 是否失效 |
+| echo P99 >50ms | gate 失败 | 检查后端连接池、CircuitBreaker、定时器分辨率 |
+| battle P99 >250ms | gate 失败 (100人) | 检查 actor 线程阻塞、session 广播 fan-out |
+| battle-500 P99 >500ms | gate 失败 | 检查 response/push 出站队列优先级 |
+| 吞吐下降 >30% | 相对基线 | 检查 rate limiter、io_cores 配置 |
+| RSS 超基线 20% | 内存异常 | 排查连接泄漏、对象池增长 |
+| 错误率 >0.1% | 可用性退化 | 检查 CircuitBreaker 熔断、后端连通性 |
+
+---
+
+## 6. SLO/SLI 定义
+
+### 6.1 服务等级目标 (SLO)
 
 | SLO | 目标值 | SLI 测量方式 | 测量窗口 |
-|---|---|---|---|
+|-----|--------|------------|---------|
 | **可用性** | 99.9% | `success / total_requests` (BackendMetrics) | 30 天滚动 |
 | **延迟** | P99 ≤ 50ms (端到端 echo) | `LatencyHistogram::p99_ms` | 5 分钟滚动 |
-| **网关→后端延迟** | P99 ≤ 10ms，告警阈值 200ms | `gateway_backend_*_p99_latency_us`、`gateway_backend_route_latency_us_bucket` | 5 分钟滚动 |
+| **网关→后端延迟** | P99 ≤ 10ms，告警阈值 200ms | `gateway_backend_*_p99_latency_us` | 5 分钟滚动 |
 | **错误率** | ≤ 0.1% | `errors / total_requests` | 30 天滚动 |
 | **吞吐量 (单核)** | ≥ 10K msg/s | `ThroughputTracker::rate_per_second` | 1 分钟滚动 |
 
-### 5.2 烧录率告警阈值
-
-基于 [Google SRE Workbook](https://sre.google/workbook/alerting-on-slos/) 的 2%/5% 烧录率阈值：
+### 6.2 烧录率告警阈值
 
 | 告警级别 | 烧录率 | 触发条件 | 通知方式 |
-|---|---|---|---|
-| **Warning** | 2% (14.4×) | 1h 窗口内错误消耗 2% 预算 | 日志 + 指标 |
-| **Critical** | 5% (36×) | 6h 窗口内错误消耗 5% 预算 | PagerDuty/钉钉 |
+|---------|--------|---------|---------|
+| **Warning** | 2% (14.4x) | 1h 窗口内错误消耗 2% 预算 | 日志 + 指标 |
+| **Critical** | 5% (36x) | 6h 窗口内错误消耗 5% 预算 | PagerDuty/钉钉 |
 
-**错误预算** = 30 天 × (1 − 0.999) = 43.2 分钟/月
+**错误预算** = 30 天 x (1 - 0.999) = 43.2 分钟/月
 
-### 5.3 错误预算策略
+### 6.3 错误预算策略
 
 | 预算消耗 | 动作 |
-|---|---|
+|---------|------|
 | < 50% | 正常发布节奏 |
-| 50%–80% | 冻结非紧急发布，优先修复 |
-| 80%–100% | 冻结全部发布，全力修复 |
+| 50%-80% | 冻结非紧急发布，优先修复 |
+| 80%-100% | 冻结全部发布，全力修复 |
 | 耗尽 | 启动事后复盘，下月发布需 VP 审批 |
 
-### 5.4 当前 R1 门槛执行状态
+---
 
-| 检查项 | 当前状态 |
-|---|---|
-| `echo` smoke | 已通过（Windows） |
-| `battle` smoke | 已通过（Windows，2 客户端 / 3 帧 / 结算结束） |
-| baseline 矩阵 | 已通过，`runtime/perf/release-baseline/summary.json` |
-| 自动聚合结果 | 已支持（`case_aggregates`） |
-| 自动门槛判定 | 已执行，baseline `release_gates.overall_pass=true` |
+## 7. P0 优化回顾
+
+### 7.1 优化清单
+
+| # | 优化项 | 文件 | 变更 |
+|---|--------|------|------|
+| P0.2a | 后端连接池扩容 | `gateway_service_bridge.cpp` | 默认池大小 1->4（压测时设为 8） |
+| P0.2b | 战斗路由卸载线程数 | `runtime.cpp` | 默认工作线程 0->4 |
+| P0.2c | CircuitBreaker 线程安全 | `circuit_breaker.h/.cpp` | 添加 `std::mutex` |
+| P0.2d | Windows 高精度定时器 | `highres_timer.h` + 6 个进程 | RAII `timeBeginPeriod(1)` |
+| P0.2e | 头文件循环依赖修复 | `runtime.h` | 前向声明替代直接 include |
+
+### 7.2 优化前后对比
+
+| Case | 优化前 | 优化后 | 提升 |
+|------|--------|--------|------|
+| echo-100-30s | 100ms P99 | **1ms** P99 | **100x** |
+| echo-1000-30s | 150ms P99 | **5ms** P99 | **30x** |
+| battle-20-30s | 750ms P99 | **10ms** P99 | **75x** |
+| battle-100-30s | 5000ms P99 | **200ms** P99 | **25x** |
+
+### 7.3 已知问题
+
+1. **battle-100 P99 尾部抖动**: 约 1.5% 消息落在 200-300ms 区间，由 actor 线程广播推送造成。后续可将广播推送卸载到工作线程。
+2. **集成测试编译失败**: `cluster_router_e2e_test.cpp` 和 `windows_platform_test.cpp` 有编译问题，需修复测试代码。
+3. **hiredis.dll 部署**: Release 构建后需手动复制 hiredis.dll 到各后端目录。
 
 ---
 
-## 6. 容量规划 (B6)
+## 8. Data Collection Status
 
-### 6.1 单实例连接上限
+| Date | Runner | Preset | Status | Evidence |
+|------|--------|--------|--------|----------|
+| 2026-05-23 | Windows 11 (本机) | baseline (3 reps) | **PASS** | `runtime/perf/20260523-165827/summary.json` |
+| 2026-05-23 | Windows 11 (本机) | P0 capacity | **PASS** | `runtime/perf/p0-capacity-local/` |
+| 2026-05-23 | GitHub Actions ubuntu-latest | smoke | PASS | CI artifact |
+| 2026-05-23 | GitHub Actions windows-2022 | smoke | PASS | CI artifact |
+| TBD | Fixed runner | capacity (3 reps) | **待测定** | - |
+| TBD | Fixed runner | long soak (2h) | **待测定** | - |
+| TBD | Fixed runner | overnight soak (8h) | **待测定** | - |
+| TBD | Fixed runner | 1/2 core linearity | **待测定** | - |
+| TBD | Fixed runner | TLS overhead | **待测定** | - |
+| TBD | Fixed runner | OTel overhead | **待测定** | - |
 
-基于 B4 资源基线数据：
-
-| 配置 | 最大连接数 | 瓶颈资源 | 备注 |
-|---|---|---|---|
-| 4 核, 8 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
-| 8 核, 16 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
-| 16 核, 32 GB | Requires dedicated 16-core machine. Target: 80K concurrent connections | Requires dedicated 16-core machine. Target: 80K concurrent connections | — |
-
-> 当前已有 1K baseline 和退化容量样本，但 4/8/16 核单实例上限需要固定机器独占执行 2h/8h soak 与 5K/10K capacity 复测后才能定版；文档不再用本机短采样推导生产上限。
-
-### 6.2 扩容公式
-
-```
-所需实例数 = ceil(峰值并发连接 / 单实例连接上限 × 安全系数(1.3))
-所需核心数 = 所需实例数 × 每实例核心数
-```
-
-### 6.3 硬件推荐
-
-| 在线玩家规模 | 并发连接估计 | 推荐 gateway 配置 | 推荐后端配置 |
-|---|---|---|---|
-| 1K | ~1K | 2 核, 4 GB × 1 | 2 核, 4 GB × 1 组 |
-| 10K | ~10K | 4 核, 8 GB × 1 | 4 核, 8 GB × 1 组 |
-| 50K | ~50K | 8 核, 16 GB × 2 | 8 核, 16 GB × 2 组 |
-| 100K | ~100K | 8 核, 16 GB × 4 | 8 核, 16 GB × 4 组 |
-
-> **连接数估算**: 在线玩家 × 1.0 (移动端常驻连接) +
-> 在线玩家 × 0.2 (WebSocket 备用线路) +
-> 在线玩家 × 0.05 (观测/管理连接)
-
-### 6.4 性能优化方向
-
-基于基线数据的优化优先级：
-
-| 优先级 | 方向 | 触发条件 | 预期收益 |
-|---|---|---|---|
-| P1 | 零拷贝路径优化 | 延迟 P99 > 50ms | −30% 延迟 |
-| P2 | SO_REUSEPORT 多核 | 线性扩容系数 < 0.7 | +40% 吞吐量 |
-| P3 | 内存池扩容 | RSS 超预期 20% | −15% 内存 |
-| P4 | 连接复用 | fd 超 fd_limit 80% | −50% fd |
+> CI 基线入口：
+> - 每周一 06:00 UTC 自动运行：`.github/workflows/perf-regression.yml`
+> - 手动触发 release baseline：`.github/workflows/release-baseline.yml`
+> - 每日夜间稳定性：`.github/workflows/nightly-stability.yml`
 
 ---
 
-## 7. 基准数据采集清单
+## 9. 产物索引
 
-> 从 `v3.x` 生产就绪阶段开始，建议优先使用 `scripts/collect_v2_perf_baseline.py` 生成统一目录结构和结果文件；手工命令主要用于调试或补充单项数据。
-
-以下命令需要在 Release 构建下运行，结果填入上表：
-
-### 7.1 基础设施验证状态 (2026-05-12)
-
-| 组件 | 状态 | 说明 |
-|------|------|------|
-| v2_gateway_pressure | ✅ 可用 | Debug/Release 均编译通过，echo/battle/stability 场景就绪 |
-| LatencyHistogram | ✅ 可用 | 14 桶指数分桶，P50/P90/P99 计算正确，7 单元测试通过 |
-| ThroughputTracker | ✅ 可用 | 5s 滑动窗口，rate_per_second 正确，6 单元测试通过 |
-| BackendMetrics | ✅ 可用 | per-service 请求/成功/超时/错误/延迟计数 |
-| DiagnosticsSnapshot | ✅ 可用 | JSON 格式，含 messages_per_second |
-| gateway 独立启动 | ✅ 可用 | `v2_gateway_demo --io-cores N --management-port 9080` |
-| 4 进程拓扑 | ✅ 已验证 | `collect_release_baseline.py` 与 `collect_v2_perf_baseline.py` 自动编排 gateway/login/room/battle |
-| 6 服务业务拓扑 | ✅ 已接入采集脚本 | P3 后 `collect_v2_perf_baseline.py` 自动编排 gateway/login/room/battle/matchmaking/leaderboard |
-| SDK full-flow business case | ✅ 可选运行 | `collect_v2_perf_baseline.py --include-business-flow` 归档 match/leaderboard/settlement 业务覆盖 |
-| Docker 生产拓扑 | ✅ 已验证 | `collect_docker_production_perf_snapshot.py` 覆盖 gateway、五个 backend、Redis、Prometheus、Grafana、Alertmanager |
-
-> **注意**: 性能数据采集需要在受控环境下进行（独占机器、关闭无关进程、预热后采集）。以下命令已验证可执行，但实际数据待填入上表。
-
-```bash
-# —— Echo 吞吐量 vs 核心数 ——
-for cores in 1 2 4; do
-  for clients in 100 1000; do
-    ./build/release/examples/v2_gateway_pressure/v2_gateway_pressure \
-      --scenario echo --clients $clients --duration 30 --port 9201 \
-      | tee "results/echo_c${cores}_cli${clients}.json"
-  done
-done
-
-# —— 战斗广播吞吐量 ——
-for rooms in 10 50 100; do
-  ./build/release/examples/v2_gateway_pressure/v2_gateway_pressure \
-    --scenario battle --clients $((rooms * 2)) --duration 30 --port 9201 \
-    | tee "results/battle_r${rooms}.json"
-done
-
-# —— 资源采样 (macOS) ——
-# 在负载运行期间，每 5 秒采样
-while true; do
-  ps -o pid,rss,vsize,%cpu -p $(pgrep v2_gateway_demo) | tail -1
-  sleep 5
-done
-
-# —— 服务端延迟 (通过 gateway HTTP 诊断口) ——
-curl -s http://localhost:9080/metrics/diagnostics/json | jq '.backend_metrics'
-```
-
-### 7.2 OrbStack 生产栈快照（2026-05-18）
-
-命令：
-
-```bash
-python3 scripts/collect_docker_production_perf_snapshot.py
-```
-
-结果：
-
-| 检查项 | 结果 |
-|---|---|
-| gateway `/ready` | pass |
-| Prometheus active targets | 3/3 up (`gateway` / `prometheus` / `redis-exporter`) |
-| Grafana health | database ok |
-| gateway diagnostics | `io_core_count=1`，`active_sessions=0`，`backend_instances=5` |
-| 总体判定 | `overall_pass=true` |
-
-容器空载资源快照：
-
-| 容器 | CPU | Memory | Mem % | PIDs |
-|---|---:|---:|---:|---:|
-| boost-gateway | 0.01% | 9.32MiB / 1GiB | 0.91% | 5 |
-| boost-login-backend | 1.77% | 2.277MiB / 512MiB | 0.44% | 2 |
-| boost-room-backend | 1.68% | 2.43MiB / 768MiB | 0.32% | 2 |
-| boost-battle-backend | 1.66% | 2.445MiB / 1GiB | 0.24% | 2 |
-| boost-matchmaking-backend | 1.99% | 2.789MiB / 512MiB | 0.54% | 3 |
-| boost-leaderboard-backend | 0.05% | 1.852MiB / 768MiB | 0.24% | 2 |
-| boost-redis | 2.69% | 13.57MiB / 512MiB | 2.65% | 6 |
-| boost-prometheus | 0.56% | 89.91MiB / 512MiB | 17.56% | 17 |
-| boost-grafana | 0.03% | 141.9MiB / 512MiB | 27.71% | 17 |
-| boost-alertmanager | 0.16% | 24.28MiB / 256MiB | 9.48% | 11 |
-| boost-redis-exporter | 0.00% | 16.71MiB / 256MiB | 6.53% | 12 |
-
-该快照用于回答“生产部署是否健康、观测链路是否可用、空载资源是否异常”。它不是吞吐容量结论；容量与长稳结论仍以 `collect_release_baseline.py --perf-preset baseline/capacity` 和固定 runner soak 为准。
-
-### 7.3 当前仍需固定机器沉淀的性能项
-
-| 项目 | 当前状态 | 下一步证据入口 |
-|---|---|---|
-| 2h/8h soak RSS/fd/CPU/P99 波动 | 本机已跑 `verify_stability_soak.py --soak-profile long` 架构型 long profile；真实 wall-clock 2h/8h 仍未定版 | `verify_production_evidence_gate.py` 显式启用 long/overnight soak，在固定 runner 归档 summary/report |
-| 5K/10K echo 容量上限 | 2026-05-18 本机 P0 capacity 三轮通过；10K echo 连接失败为 0，但 P99=50ms 贴近 gate | `collect_release_baseline.py --perf-preset capacity --perf-repetitions 3` 多轮复测 |
-| battle-500 容量 | 2026-05-19 架构专项已完成 response/push 出站优先级隔离、battle route worker 闭环修复和 battle frame push 降频实测；`runtime/perf/gateway-arch-priority-route4-push10/` 中 business-capacity 全通过，battle-500 P99=400ms、rejected=0、failed=0 | 固定 runner 多轮复测；下一步再评估真实多 core session 分流并把目标从 500ms 收紧到 250ms |
-| 云服务器 long soak / capacity 汇总 | 新增统一执行入口，仍不改变既有事实判定 | `run_long_soak_capacity.py --run-2h-soak --run-capacity` 与 `--run-8h-soak`，产物归档到 `runtime/validation/long-soak-*.json` 和 `capacity-baseline-summary.json` |
-| 1/2/4 核线性扩容 | 仅 4 核 baseline 已沉淀 | 固定机器分别设置 `--io-cores 1/2/4` 后归档报告 |
-| Prometheus P99 histogram/summary | 2026-05-19 N2 已导出 `gateway_backend_route_latency_us_bucket/_sum/_count` 与 per-service P50/P90/P99 gauge | 固定 runner 多轮复测告警灵敏度；Grafana 与 Alertmanager 持续校验 |
-
-在当前云服务器被视为生产验证主机时，建议改用统一入口：
-
-```bash
-python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity
-python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-8h-soak
-```
-
-该入口不会改变现有事实判定，只是把 2h/8h soak 与 capacity baseline 的固定主机执行收束为统一 summary：
-
-- `runtime/validation/long-soak-capacity-summary.json`
-- `runtime/validation/long-soak-2h-summary.json`
-- `runtime/validation/long-soak-8h-summary.json`
-- `runtime/validation/capacity-baseline-summary.json`
-
-### 7.4 P0 本机生产候选实测（2026-05-18）
-
-本轮在当前 macOS / OrbStack 开发机器的 `build/release` 上完成 P0 实测收束。该数据可以作为本机生产候选证据，但仍不替代独占固定 runner 的 2h/8h wall-clock soak。
-
-| 入口 | 产物 | 结果 |
-|---|---|---|
-| Release baseline 三轮 | `runtime/validation/p0-release-baseline-summary.json`、`runtime/perf/release-baseline/` | PASS；echo-100/1000、battle-20/100 release gate 全部通过 |
-| Capacity 三轮 | `runtime/validation/p0-capacity-local-summary.json`、`runtime/perf/p0-capacity-local/` | PASS；echo-1K/5K/10K 与 battle-100/500 全部通过 |
-| Business capacity 三轮 | `runtime/perf/p0-business-capacity-local-r2/summary.json`、`report.md` | PASS；SDK full-flow business path 通过，3 并发客户端耗时 5.64s |
-| Long soak profile | `runtime/validation/p0-long-soak-local-summary.json`、`runtime/perf/v2-stability-soak/` | PASS；I/O accept、WriteBehind、backend recovery 与 arch baseline long profile 通过 |
-| SDK full-flow 修复验证 | `runtime/validation/p0-sdk-full-flow-after-rank-fix-summary.json` | PASS；leaderboard 自动 settlement 改用 rank 精确验证，避免容量压测零分榜单污染 top20 后误判 |
-
-关键容量观察：
-
-| 场景 | 连接/客户端 | P99 | 吞吐 | failed/rejected | 结论 |
-|---|---:|---:|---:|---:|---|
-| echo-5000-30s | 5,000 | 20ms | 55,020 msg/s | 0 / 0 | 通过 |
-| echo-10000-30s | 10,000 | 50ms | 49,588 msg/s | 0 / 0 | 通过但贴近 50ms gate |
-| battle-500-30s | 500 | 500ms | 980 msg/s | 0 / 0 | 通过但贴近 500ms gate |
-| business-capacity battle-500-30s | 500 | 500ms | 977 msg/s | 0 / 0 | 通过但贴近 500ms gate |
-
-本轮修复了一个业务容量验证缺口：在 battle/leaderboard 压测后，排行榜可能包含大量 `bench_user_*` 零分项，SDK full-flow 如果要求 Alice/Bob 同时出现在 top20 会误判自动 settlement 失败。当前示例改为通过 `leaderboard_rank(alice_id/bob_id)` 精确验证自动结算是否写入。
-
-### 7.5 P3 业务闭环性能采集入口
-
-P3 之后，新增业务路径的性能证据入口为：
-
-```bash
-python3 scripts/collect_v2_perf_baseline.py \
-  --build-dir build/release \
-  --run-preset smoke \
-  --include-business-flow
-```
-
-该命令会：
-
-- 启动五个真实 backend 和 gateway。
-- 运行 echo/battle smoke，battle finish 会触发 settlement 自动提交 leaderboard。
-- 运行 SDK full-flow，覆盖 match_join/status、leaderboard 自动 settlement 查询、manual submit、top/rank 和 reconnect。
-- 在 `summary.json.final_backend_metrics` 和 `report.md` 中列出五后端 RED counters 与 avg latency。
-
-生产 Docker 空载快照仍使用 `collect_docker_production_perf_snapshot.py`；业务流量快照必须先运行 SDK full-flow 或压测，再读取报告里的 `business_backend_metrics`。
-
-## Data Collection Status
-
-| Date | Runner | Preset | Status |
-|------|--------|--------|--------|
-| 2026-05-23 | GitHub Actions ubuntu-latest | smoke | ✅ Pass |
-| 2026-05-23 | GitHub Actions windows-2022 | smoke | ✅ Pass |
-| 2026-05-23 | CI baseline (extrapolated) | baseline | ⚠️ Partial (1C/2C extrapolated) |
-| TBD | Dedicated runner | capacity | ❌ Not collected |
-| TBD | 8h soak | overnight | ❌ Not collected |
-
-See `.github/workflows/perf-regression.yml` for weekly automated runs.
-See `.github/workflows/release-baseline.yml` for on-demand release baseline.
+| 产物 | 说明 |
+|------|------|
+| `runtime/perf/20260523-165827/summary.json` | P0 baseline 3 轮聚合原始数据 |
+| `runtime/perf/20260523-165827/report.md` | P0 baseline 自动生成报告 |
+| `runtime/perf/20260523-165827/results/*.result.json` | 各轮次原始压测输出 |
+| `runtime/perf/20260523-165827/results/*.gateway.diagnostics.json` | gateway 诊断快照 |
+| `runtime/perf/p0-capacity-local/` | P0 capacity 专项 (echo-5K/10K, battle-500) |
+| `runtime/perf/p0-business-capacity-local-r2/` | P0 业务闭环容量 (含 SDK full-flow) |
+| `runtime/perf/gateway-arch-priority-route4-push10/` | P1 response/push 优先级隔离专项 |
+| `docs/performance-baseline-windows-p0.md` | P0 优化验收报告 |

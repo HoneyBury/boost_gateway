@@ -1,13 +1,13 @@
-# Boost 游戏服务器框架 v3.3.x
+# Boost 游戏服务器框架 v3.4.0
 
 基于 Boost.Asio 构建的高性能 C++20 游戏服务器框架。
 
 > **版本基线说明**
 >
 > - `v1.0.0` 对应 git tag `v1.0.0`，是稳定承诺的最小发布面。
-> - 当前主线已完成 **`v3.3.x`** 收口：P0-P3 模块接入、验证脚本、typed envelope、Operator 状态汇总持续推进。
+> - 当前主线已完成 **`v3.4.0`** 收口：P0 性能优化轮次（连接池/战斗线程/高精度定时器/断路器）、R7 模块收束（持久化/内存/诊断/鉴权）。
 > - 当前执行重点已切换到 **v3.x 生产就绪加强阶段**：性能数据闭环、架构实测、交付面收束、Actor 并发边界、通信契约正式化、控制面与恢复链路验收。
-> - `develop` / `main` 当前在 **v3.3.0 基线之上**继续修正验证链与控制面实现，测试总数以当前 `ctest -N` / CI 为准。
+> - `develop` / `main` 当前在 **v3.4.0 基线之上**继续推进架构验收闭环与性能数据沉淀，测试总数以当前 `ctest -N` / CI 为准。
 > - **v1.x 能力成熟度以 `docs/v1-maturity-matrix.md` 为准**——该矩阵是维护期单一事实源。
 
 ## 版本演进
@@ -27,17 +27,19 @@
 | v3.1.0 | ✅ | 751 | Redis + Docker + K8s + TLS/mTLS + FeatureFlags |
 | v3.2.0 | ✅ | 780 | RedisLeaderboard + RedisConnectionPool + Raft 集群验证 |
 | v3.3.0 | ✅ | 780 | P0-P3 模块集成 (Matchmaking/Leaderboard路由 + ClusterRouter + OtlpExporter + CachedDataStore + SchemaValidator + InputValidator) |
-| v3.3.x | 持续收口 | 持续验证 | typed envelope、Operator TLS/status、恢复/故障验证、CI 修复 |
-| v3.x 生产就绪 | 进行中 | 持续验证 | 性能基线实测、架构验收闭环、交付面收束、Actor 线程边界、proto/gRPC 正式化、发布门槛 |
+| v3.3.2 | ✅ | 780 | 初轮版本与交付面收束、SDK 企业封装、生产证据框架 |
+| v3.4.0 | ✅ | 772+ | P0 性能优化（连接池/战斗线程/断路器/高精度定时器）、R7 模块收束（持久化/内存/诊断/鉴权） |
+| v3.x 生产就绪 | 持续进行 | 持续验证 | 性能基线实测、架构验收闭环、交付面收束、Actor 线程边界、proto/gRPC 正式化、发布门槛 |
 
 ## 功能概览
 
-当前主线在 v3.3.0 的 13 个模块接入基础上，继续收口：
+当前主线基于 v3.4.0 已完成的 P0 性能优化与 R7 模块收束，继续推进生产就绪加强：
 
-- `ServiceEnvelope` 风格 typed transport（当前以仓库内 typed helper 实现）
-- `login/room/battle/match/leaderboard` 后端对 envelope payload 的兼容
-- Operator `cert-manager` / `desiredReplicas` / rollout-aware `status.conditions`
-- 恢复测试、Raft 跟随者追平测试、P4 验证脚本
+- 性能基线实测与瓶颈分析（echo/battle/capacity 多场景覆盖）
+- 架构验收闭环（Actor/I/O/内存/数据/Battle 微基准）
+- Actor 多核线程边界固化（并发模型文档、debug 断言、shutdown 验证）
+- 通信契约正式化（proto/gRPC 迁移计划、兼容测试）
+- 控制面与发布门槛（Operator e2e、Redis/Raft 恢复、CI 性能门禁）
 
 核心架构已覆盖 Actor 模型、多核 I/O、内存管理、服务拆分、数据持久化、ECS 战斗世界、运维成熟度、分布式运行时、生产基础设施（Redis/Docker/K8s/TLS）。
 

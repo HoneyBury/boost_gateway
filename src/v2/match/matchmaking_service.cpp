@@ -359,7 +359,11 @@ public:
             std::move(handlers));
         server_->start();
 
-        // v3.0.0: Start Raft consensus if configured.
+        // Batch C: Default single-node Raft if not explicitly configured
+        if (raft_config_.node_id.empty()) {
+            raft_config_.node_id = "matchmaking_default";
+            raft_config_.storage_dir = "runtime/data/raft/matchmaking";
+        }
         if (!raft_config_.node_id.empty()) {
             raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
             raft_node_->set_rpc_sender(make_raft_rpc_sender());

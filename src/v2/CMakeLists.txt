@@ -48,7 +48,7 @@ add_library(project_v2 STATIC
     login/login_backend_service.cpp
     battle/battle_backend_service.cpp
     battle/battle_instance_plugin.cpp
-    battle/tank_battle_plugin.cpp
+    # battle/tank_battle_plugin.cpp -- moved to demo/games/tank_battle/ (Batch A)
     leaderboard/leaderboard_service.cpp
     match/matchmaking_service.cpp
     security/anti_cheat.cpp
@@ -75,27 +75,29 @@ apply_project_warnings(project_v2)
 
 # SQLite-backed persistence (disabled by default)
 # Enable with: cmake -B build -DBOOST_BUILD_SQLITE=ON
+# Batch C: SQLite auto-detect — enabled by default, gracefully degrades if not found
 if(BOOST_BUILD_SQLITE)
-  target_compile_definitions(project_v2
-    PRIVATE
-      HAS_SQLITE
-  )
-
   find_package(sqlite3 QUIET)
   if(sqlite3_FOUND)
-    target_link_libraries(project_v2
-      PUBLIC
-        sqlite3
-    )
+    target_compile_definitions(project_v2 PRIVATE HAS_SQLITE)
+    target_link_libraries(project_v2 PUBLIC sqlite3)
+    message(STATUS "SQLite found — persistence with SQLite enabled")
   else()
     message(WARNING "BOOST_BUILD_SQLITE=ON but sqlite3 not found — "
-                    "persistence stubs will compile without SQLite support")
+                    "persistence will compile without SQLite support")
   endif()
 endif()
 
-# gRPC gateway (experimental, disabled by default)
+# gRPC gateway (experimental, disabled by default).
 # Enable with: cmake -B build -DBOOST_BUILD_GRPC=ON
 # Test with: ctest -C Debug -R "gateway_grpc"
+#
+# Batch B gap analysis (2026-05-23): gRPC GatewayServer implements 3 RPCs
+# (Login/Logout/Health). Missing vs TCP Gateway: Room Create/Join/Leave/Ready/
+# StartBattle, Battle Input/Finish/FramePush(streaming), Match Join/Leave/Status,
+# Leaderboard Submit/Top/Rank, Session Kick/Resume, Rate Limiting, RBAC, TLS.
+# gRPC remains experimental — compile when available, but do NOT start listener
+# by default (use --enable-grpc or config to activate at runtime).
 # ─── gRPC server sources (conditional on BOOST_BUILD_GRPC) ─────────────────
 if(BOOST_BUILD_GRPC)
   target_sources(project_v2 PRIVATE

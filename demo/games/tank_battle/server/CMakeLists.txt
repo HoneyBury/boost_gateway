@@ -2,9 +2,11 @@
 add_library(tank_battle_server STATIC
     tank_simulation/tank_world.cpp
     tank_plugin/tank_plugin.cpp
+    tank_plugin/tank_battle_plugin.cpp
 )
 target_include_directories(tank_battle_server
     PUBLIC
+        "${CMAKE_CURRENT_SOURCE_DIR}/tank_plugin"   # for tank_battle_plugin.h
         "${CMAKE_CURRENT_SOURCE_DIR}/../.."   # for demo/games/ include path
         "${CMAKE_SOURCE_DIR}/include"
 )

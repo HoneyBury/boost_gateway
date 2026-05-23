@@ -9,4 +9,4 @@
 
 - `PlayerActor` 已与 `Runtime`、`RoomActor`、`BattleActor` 完整接线
 - `SessionKickPush` / `SessionResumePush` / `BattleSettlementAppliedMsg` 已被测试覆盖
-- 在 v3.3.x 收口阶段，玩家链路更多工作集中在验证与桥接层，而不是 Actor 本身结构变化
+- 在 v3.4.0 阶段，玩家链路更多工作集中在验证与桥接层，而不是 Actor 本身结构变化

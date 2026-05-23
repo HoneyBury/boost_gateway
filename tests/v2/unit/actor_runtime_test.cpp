@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "v2/io/io_engine.h"
+#include "v2/io/mailbox.h"
 #include "v2/runtime/actor_system.h"
 
 namespace {
@@ -838,4 +839,166 @@ TEST(V2ActorRuntimeTest, ShutdownDropsQueuedCrossCoreMailboxMessagesSafely) {
     EXPECT_EQ(actor_system.drain_mailbox_and_dispatch(1U), 0U);
     EXPECT_EQ(delivered, 0U);
     EXPECT_EQ(actor_system.dispatch_owner_core(), std::nullopt);
+}
+
+// ─── R3: Cross-core multi-actor stress ─────────────────────────────────
+
+TEST(V2ActorRuntimeTest, CrossCoreMultiActorStress) {
+    constexpr std::size_t kNumActors = 8;
+    constexpr std::size_t kNumCores = 3;
+    constexpr std::size_t kMessagesPerSender = 2000;
+
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    actor_system.set_io_engine(&io_engine);
+
+    std::vector<std::size_t> delivered(kNumActors, 0);
+    std::vector<v2::actor::ActorRef> actors;
+    actors.reserve(kNumActors);
+
+    for (std::size_t i = 0; i < kNumActors; ++i) {
+        auto actor = actor_system.create_actor(
+            std::make_unique<ExternalCountingActor>(delivered[i]),
+            {},
+            static_cast<std::uint32_t>(i % kNumCores));
+        ASSERT_TRUE(actor.is_valid());
+        actors.push_back(actor);
+    }
+
+    // Simulate each core sending to every actor (including same-core targets).
+    for (std::uint32_t core = 0; core < kNumCores; ++core) {
+        io_engine.current_core_id_ = core;
+        for (auto& target : actors) {
+            for (std::size_t m = 0; m < kMessagesPerSender; ++m) {
+                v2::actor::Message msg;
+                msg.header.kind = v2::actor::MessageKind::kUser;
+                msg.payload = std::string("stress");
+                target.tell(std::move(msg));
+            }
+        }
+    }
+
+    // Drain and dispatch across all cores.
+    for (std::uint32_t core = 0; core < kNumCores; ++core) {
+        io_engine.current_core_id_ = core;
+        actor_system.dispatch_all();
+        actor_system.drain_mailbox_and_dispatch(core);
+    }
+
+    const std::size_t expected_per_actor = kMessagesPerSender * kNumCores;
+    for (std::size_t i = 0; i < kNumActors; ++i) {
+        EXPECT_EQ(delivered[i], expected_per_actor)
+            << "Actor " << i << " on core " << (i % kNumCores);
+    }
+}
+
+// ─── R3: Shutdown race tests ──────────────────────────────────────────
+
+TEST(V2ActorRuntimeTest, ShutdownRaceWithPendingSchedules) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 0U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::size_t delivered = 0;
+    auto actor = actor_system.create_actor(
+        std::make_unique<ExternalCountingActor>(delivered), {}, 1U);
+
+    // Schedule many wall-clock timers.
+    for (int i = 0; i < 100; ++i) {
+        v2::actor::Message msg;
+        msg.header.kind = v2::actor::MessageKind::kUser;
+        msg.header.target_actor = actor.actor_id();
+        msg.payload = std::string("sched-") + std::to_string(i);
+        actor_system.schedule_after(std::move(msg), std::chrono::milliseconds(1));
+    }
+
+    // Shutdown immediately — all pending schedules must be cleared without
+    // delivering any messages.
+    actor_system.shutdown();
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_EQ(delivered, 0U);
+}
+
+TEST(V2ActorRuntimeTest, ShutdownRaceWithConcurrentCreateAndSend) {
+    v2::runtime::ActorSystem actor_system;
+    InspectingIoEngine io_engine;
+    io_engine.current_core_id_ = 0U;
+    actor_system.set_io_engine(&io_engine);
+
+    std::size_t delivered = 0;
+    auto actor = actor_system.create_actor(
+        std::make_unique<ExternalCountingActor>(delivered), {}, 1U);
+
+    // Queue a direct message and a scheduled message.
+    {
+        v2::actor::Message msg;
+        msg.header.kind = v2::actor::MessageKind::kUser;
+        msg.header.target_actor = actor.actor_id();
+        msg.payload = std::string("direct-race");
+        actor_system.send(std::move(msg));
+    }
+    {
+        v2::actor::Message msg;
+        msg.header.kind = v2::actor::MessageKind::kUser;
+        msg.header.target_actor = actor.actor_id();
+        msg.payload = std::string("sched-race");
+        actor_system.schedule_after(std::move(msg), std::chrono::milliseconds(5));
+    }
+
+    // Shutdown — dispatches after this must be no-ops.
+    actor_system.shutdown();
+
+    EXPECT_EQ(actor_system.dispatch_all(), 0U);
+    EXPECT_EQ(delivered, 0U);
+
+    // create_actor after shutdown must return invalid ref.
+    bool started_after = false;
+    bool stopped_after = false;
+    auto after_shutdown = actor_system.create_actor(
+        std::make_unique<LifecycleProbeActor>(started_after, stopped_after));
+    EXPECT_FALSE(after_shutdown.is_valid());
+    EXPECT_FALSE(started_after);
+}
+
+// ─── R3: SPSC full-queue behavior ─────────────────────────────────────
+
+TEST(V2ActorRuntimeTest, SpscQueueFullBehaviorDropsMessages) {
+    v2::io::SpscQueue<v2::actor::Message> queue(4);
+    ASSERT_EQ(queue.capacity(), 4U);
+
+    // Fill the queue.
+    for (std::size_t i = 0; i < 4; ++i) {
+        v2::actor::Message msg;
+        msg.header.kind = v2::actor::MessageKind::kUser;
+        msg.payload = std::string("msg-") + std::to_string(i);
+        EXPECT_TRUE(queue.try_enqueue(std::move(msg)));
+    }
+    EXPECT_EQ(queue.size(), 4U);
+
+    // Next enqueue fails — queue is full.
+    v2::actor::Message overflow;
+    overflow.header.kind = v2::actor::MessageKind::kUser;
+    overflow.payload = std::string("overflow");
+    EXPECT_FALSE(queue.try_enqueue(std::move(overflow)));
+    EXPECT_EQ(queue.size(), 4U);
+
+    // Drain — only the original 4 messages are recovered.
+    auto drained = queue.drain();
+    EXPECT_EQ(drained.size(), 4U);
+    for (std::size_t i = 0; i < 4; ++i) {
+        const auto* text = std::get_if<std::string>(&drained[i].payload);
+        ASSERT_NE(text, nullptr);
+        EXPECT_EQ(*text, "msg-" + std::to_string(i));
+    }
+
+    // After drain, enqueue works again.
+    EXPECT_TRUE(queue.try_enqueue(std::move(overflow)));
+    EXPECT_EQ(queue.size(), 1U);
+
+    auto post_drain = queue.drain();
+    ASSERT_EQ(post_drain.size(), 1U);
+    const auto* text = std::get_if<std::string>(&post_drain[0].payload);
+    ASSERT_NE(text, nullptr);
+    EXPECT_EQ(*text, "overflow");
 }

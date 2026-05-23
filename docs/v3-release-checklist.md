@@ -153,3 +153,144 @@ R4 gate：
 已知风险：
 回滚方式：
 ```
+
+## 7. 产物流清单
+
+### 7.1 二进制产物
+
+| 产物 | 类型 | 安装路径 | 说明 |
+|------|------|----------|------|
+| `v2_gateway_demo` | 主入口 | `bin/v2_gateway_demo` | v2 Actor + IoEngine + 多进程 backend 路由，**推荐运行参考** |
+| `v2_login_backend` | backend 服务 | `bin/v2_login_backend` | 独立登录后端进程 |
+| `v2_room_backend` | backend 服务 | `bin/v2_room_backend` | 独立房间后端进程 |
+| `v2_battle_backend` | backend 服务 | `bin/v2_battle_backend` | 独立战斗后端进程 |
+| `v2_match_backend` | backend 服务 | `bin/v2_match_backend` | 独立匹配后端进程 |
+| `v2_leaderboard_backend` | backend 服务 | `bin/v2_leaderboard_backend` | 排行榜后端（可选 Redis 持久化） |
+| `v2_gateway_pressure` | 压测工具 | `bin/v2_gateway_pressure` | 9 种场景压测工具 |
+| `v2_arch_benchmark` | 微基准 | `bin/v2_arch_benchmark` | 架构微基准测试 |
+| `sdk_echo_client` | SDK 示例 | `bin/sdk_echo_client` | SDK Echo 客户端 |
+| `sdk_full_flow_client` | SDK 示例 | `bin/sdk_full_flow_client` | SDK 全流程客户端 |
+| `example_hello_world` | 示例 | `bin/example_hello_world` | Hello World 演示 |
+| `echo_server` | v1 入口 | `bin/echo_server` | 完整 v1 网关装配 |
+| `echo_client` | 工具 | `bin/echo_client` | 基础 Echo 客户端 |
+| `gateway_pressure` | v1 压测 | `bin/gateway_pressure` | v1 压测工具（9 种场景） |
+| `login_server` | v1 入口 | `bin/login_server` | 实验性独立登录服务 |
+| `room_server` | v1 入口 | `bin/room_server` | 实验性独立房间服务 |
+| `battle_server` | v1 入口 | `bin/battle_server` | 实验性独立战斗服务 |
+| `login_demo` | showcase | `bin/login_demo` | 登录流程演示 |
+| `room_demo` | showcase | `bin/room_demo` | 房间系统演示 |
+| `battle_demo` | showcase | `bin/battle_demo` | 战斗系统演示 |
+| `admin_demo` | showcase | `bin/admin_demo` | 管理工具演示（无权限校验，仅 demo） |
+
+> 条件编译产物（需对应 CMake 选项开启）：`tank_battle_demo`（`BOOST_BUILD_TANK_DEMO=ON`）、`realtime_echo_plugin`（`BOOST_BUILD_ECHO_PLUGIN_DEMO=ON`）。
+
+### 7.2 配置文件
+
+| 文件 | 安装路径 | 说明 |
+|------|----------|------|
+| `config/gateway.json` | `share/boost_gateway/config/gateway.json` | 网关配置（v1/v2 共用） |
+| `config/login_backend.json` | `share/boost_gateway/config/login_backend.json` | 登录后端配置 |
+| `config/room_backend.json` | `share/boost_gateway/config/room_backend.json` | 房间后端配置 |
+| `config/battle_backend.json` | `share/boost_gateway/config/battle_backend.json` | 战斗后端配置 |
+
+### 7.3 脚本入口
+
+| 脚本 | 路径 | 说明 |
+|------|------|------|
+| `verify_release_candidate.py` | `scripts/verify_release_candidate.py` | RC 总门禁 |
+| `verify_r4_contract.py` | `scripts/verify_r4_contract.py` | R4 通信契约门禁 |
+| `verify_stability_soak.py` | `scripts/verify_stability_soak.py` | 稳定性浸泡门禁 |
+| `check_security_release_gate.py` | `scripts/check_security_release_gate.py` | 安全发布门禁 |
+| `collect_release_baseline.py` | `scripts/collect_release_baseline.py` | 性能基线聚合 |
+| `collect_v2_perf_baseline.py` | `scripts/collect_v2_perf_baseline.py` | v2 多进程基线采集 |
+| `verify_production_resilience_gate.py` | `scripts/verify_production_resilience_gate.py` | 长稳故障回滚门禁 |
+| `verify_production_evidence_gate.py` | `scripts/verify_production_evidence_gate.py` | 生产证据聚合门禁 |
+| `verify_p5_p8_business_closure.py` | `scripts/verify_p5_p8_business_closure.py` | 生产业务闭环门禁 |
+| `verify_production_candidate_evidence.py` | `scripts/verify_production_candidate_evidence.py` | 生产候选证据聚合 |
+| `verify_tls_production_readiness.py` | `scripts/verify_tls_production_readiness.py` | TLS 上线前置门禁 |
+| `verify_fixed_runner_release_capacity.py` | `scripts/verify_fixed_runner_release_capacity.py` | 固定 Runner 性能证据 |
+| `verify_preprod_recovery_drill.py` | `scripts/verify_preprod_recovery_drill.py` | 预发恢复演练 |
+| `verify_tls_preprod_multi_run.py` | `scripts/verify_tls_preprod_multi_run.py` | TLS 预发多轮证据 |
+| `check_production_candidate_audit.py` | `scripts/check_production_candidate_audit.py` | 生产候选审核 |
+| `render_production_readiness_report.py` | `scripts/render_production_readiness_report.py` | Readiness Report 渲染 |
+| `check_production_evidence_manifest.py` | `scripts/check_production_evidence_manifest.py` | 证据 Manifest 校验 |
+| `generate_proto_cpp.ps1` | `scripts/generate_proto_cpp.ps1` | Proto C++ 代码生成（Windows） |
+| `generate_proto_cpp.sh` | `scripts/generate_proto_cpp.sh` | Proto C++ 代码生成（Linux/macOS） |
+| `deploy_k8s.sh` | `scripts/deploy_k8s.sh` | K8s 一键部署 |
+| `build_docker.sh` | `scripts/build_docker.sh` | Docker 构建 |
+
+### 7.4 Docker 镜像列表
+
+| 镜像 | Dockerfile | 基础镜像 | 说明 |
+|------|-----------|----------|------|
+| `boost-gateway` | `Dockerfile` | ubuntu:22.04 | 全栈网关 + 5 后端 + 工具 |
+| `boost-gateway-minimal` | `Dockerfile.minimal` | alpine:3.18 | 最小运行时镜像 |
+| `boost-gateway-dev` | `Dockerfile.dev` | ubuntu:22.04 | 开发环境镜像（含构建工具） |
+| `boost-gateway-sdk` | `sdk/Dockerfile` | ubuntu:22.04 | SDK 封装镜像（含 Python/C#） |
+
+生产 deploy 脚本：`scripts/build_docker.sh`、`env/docker/docker-compose.yml`。
+
+### 7.5 K8s/Operator YAML 列表
+
+| 文件 | 路径 | 说明 |
+|------|------|------|
+| `env/k8s/gateway-deployment.yaml` | gateway Deployment |  |
+| `env/k8s/login-backend-deployment.yaml` | login backend Deployment |  |
+| `env/k8s/room-backend-deployment.yaml` | room backend Deployment |  |
+| `env/k8s/battle-backend-deployment.yaml` | battle backend Deployment |  |
+| `env/k8s/match-backend-deployment.yaml` | match backend Deployment |  |
+| `env/k8s/leaderboard-backend-deployment.yaml` | leaderboard backend Deployment |  |
+| `env/k8s/redis-statefulset.yaml` | Redis StatefulSet |  |
+| `env/k8s/redis-service.yaml` | Redis Service |  |
+| `env/k8s/gateway-service.yaml` | gateway 内部 Service |  |
+| `env/k8s/hpa.yaml` | 水平自动扩缩容 |  |
+| `env/k8s/pdb.yaml` | Pod 中断预算 |  |
+| `env/k8s/namespace.yaml` | 命名空间 |  |
+| `operator/boostgateway-operator/` | Operator 源码 | controller-runtime 控制器 |
+| `operator/boostgateway-operator/config/crd/` | CRD 定义 | BoostGatewayCluster CRD |
+| `operator/boostgateway-operator/config/samples/` | CR 样例 | BoostGatewayCluster 实例 |
+
+### 7.6 Proto 生成入口
+
+| 入口 | 说明 |
+|------|------|
+| `proto/*.proto` | v3 proto 协议定义（envelope、service common、login、room、battle、match、leaderboard） |
+| `scripts/generate_proto_cpp.ps1` | Windows Proto C++ 代码生成脚本 |
+| `scripts/generate_proto_cpp.sh` | Linux/macOS Proto C++ 代码生成脚本 |
+| CMake target `generate_v3_proto` | CMake 驱动的 proto 生成（`BOOST_BUILD_GRPC=ON` 时） |
+| CMake target `generate_v3_grpc` | CMake 驱动的 gRPC stub 生成（`BOOST_BUILD_GRPC=ON` 时） |
+| `check_v3_proto_schema` | CMake target，验证 proto schema 完整性 |
+| `check_v3_proto_transport_contract` | CMake target，验证 transport contract 字段覆盖 |
+
+## 8. 测试结果与性能基线要求
+
+### 8.1 测试结果要求
+
+| 测试类别 | 通过标准 | 说明 |
+|----------|----------|------|
+| 单元测试 | 100% 通过 | Release 构建下全部通过，跳过项仅限 Redis/外部依赖 |
+| 集成测试 | 100% 通过 | 多进程集成真实拓扑 |
+| 架构微基准 | 无崩溃、无断言失败 | `v2_arch_benchmark` 全部规格可行 |
+| 稳定性 soak（short） | 通过 | I/O accept、WriteBehind drain/failure、backend timeout/recovery |
+| R4 契约门禁 | `passed=true` | proto schema、typed envelope round-trip、恢复/熔断 |
+| 安全发布门禁 | 通过 | 生产模式 dev token 禁用、admin 审计键、ACL 边界 |
+| P3 数据恢复 | 通过 | replay/result/snapshot、WriteBehind flush/drain、Redis/Raft 恢复 |
+| P4 可观测性/限流 | 通过 | rate limit、trace/OTel、backend RED metrics、audit |
+| P5 控制面 | 通过 | Operator manifest 静态契约、Go fake-client 测试 |
+| P6 生产证据 | 通过 | 聚合 stability、data recovery、specialized、完整性审核 |
+
+### 8.2 性能基线要求
+
+| 场景 | 规模 | 目标门槛 | 状态 |
+|------|------|----------|------|
+| echo-100 | 100 连接 | P99 ≤ 50ms | ✅ 1ms（v3.4.0） |
+| echo-1000 | 1000 连接 | P99 ≤ 50ms | ✅ 5ms（v3.4.0） |
+| battle-20 | 20 房间 | P99 ≤ 100ms | ✅ 10ms（v3.4.0） |
+| battle-100 | 100 房间 | P99 ≤ 250ms | ✅ 200ms（v3.4.0） |
+| capacity 5K | 5000 连接 | 无退化 | ⚠️ 存在连接建立失败 |
+| capacity 10K | 10000 连接 | 无退化 | ⚠️ 存在连接建立失败 |
+| TLS on/off 对比 | — | 吞吐损耗 ≤ 25% | 待测定 |
+| OTel on/off 对比 | — | 不阻塞主链 | 待测定 |
+| 长稳 2h | 1000 连接 | RSS 增长 ≤ 5%，无 fd 泄漏 | 待测定 |
+
+> 基线数据来源：`runtime/perf/release-baseline/summary.json`。退化超过发布门槛（P99 退化 > 10% / 吞吐下降 > 15% / 错误率 > 0.1%）时阻断生产候选发布。

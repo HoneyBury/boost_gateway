@@ -2,6 +2,18 @@
 
 > 当前事实源优先阅读：[当前项目事实源](./current-state.md) 和 [可靠性矩阵](./reliability-matrix.md)。两者用于对齐稳定性、可靠性、性能收束状态，并由 release candidate 门禁校验关键证据。
 
+## 版本类型说明
+
+项目涉及四类版本号，含义不同：
+
+- **Framework version**（`CMakeLists.txt` 中 `project(VERSION ...)`）：项目的程序化版本号，对应 `PROJECT_VERSION` / `boost_gateway_VERSION` 变量，用于包管理和 CMake 依赖解析。当前为 `3.4.0`。版本号变更表示库接口、构建产物或能力集的变更。
+
+- **Git tag**（`v*`）：发布版标记，格式为 `v<major>.<minor>.<patch>`（如 `v3.4.0`）。由 GitHub Actions `release.yml` 触发构建、测试、打包和 Release 发布。Tag 版本号与 Framework version 对齐。
+
+- **CMake package version**（SDK `boost_gateway_sdk`）：SDK 的 CMake 包版本，通过 `find_package(boost_gateway_sdk)` 解析。独立于框架版本演进，当前为 `4.x` 系列。
+
+- **文档基线版本**：文档中标注的版本号（如 `v3.4.0`、`v2.0.0`）表示该文档最后一次与对应代码基线对齐的时间点。历史文档（如 `v1.x` 系列文档）保留原始基线版本，不代表当前仓库状态。当前文档统一以 `v3.4.0` 为基线。
+
 当前项目的工程化文档统一放在 `docs/` 目录下，面向后续把本项目持续演进成一个企业级高性能实时服务框架。
 
 ## 文档列表
@@ -107,7 +119,7 @@
 3. **日常开发**：按《工程开发规范》执行。
 4. 每次较大迭代结束后更新《开发日志模板与阶段记录》和 `CHANGELOG.md`。
 5. 所有分支流转、提交信息和合并动作遵循《Git 工作流与提交规范》。
-6. v2.0.0 七大模块（M1-M7）已于 2026-05-12 全部落地，当前主线已进入 **v3.3.x 收口阶段**：
+6. v2.0.0 七大模块（M1-M7）已于 2026-05-12 全部落地，v3.4.0 已完成 P0 性能优化与 R7 模块收束，当前主线已进入 **v3.x 生产就绪加强执行阶段**：
    - typed `ServiceEnvelope` helper 已接入 `login/room/battle/match/leaderboard`
    - Operator 已具备 `Certificate` reconcile 与 rollout-aware `status.conditions`
    - 恢复/追平验证与 P4 验证脚本已持续补强

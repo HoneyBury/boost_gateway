@@ -23,6 +23,16 @@ BackendServer::~BackendServer() { stop(); }
 
 void BackendServer::start() {
     running_ = true;
+
+    // Batch B: allow disabling TLS via env var for backward compatibility
+    if (options_.tls_enabled) {
+        const char* disable_tls = std::getenv("BOOST_DISABLE_TLS");
+        if (disable_tls != nullptr && (std::string(disable_tls) == "1" ||
+                                        std::string(disable_tls) == "true")) {
+            options_.tls_enabled = false;
+        }
+    }
+
     if (!setup_tls_context()) {
         running_ = false;
         throw std::runtime_error("failed to initialize backend TLS context");
@@ -79,7 +89,14 @@ std::uint16_t BackendServer::local_port() const {
 }
 
 bool BackendServer::setup_tls_context() {
+    // Batch B: when TLS is disabled via env var, skip setup
+    if (!options_.tls_enabled) {
+        ssl_context_.reset();
+        return true;
+    }
+
     if (!options_.tls_config) {
+        // Dev mode: TLS enabled but no certs configured → warn and continue plain
         ssl_context_.reset();
         return true;
     }

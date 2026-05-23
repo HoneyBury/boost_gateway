@@ -23,6 +23,7 @@ using BackendHandler = std::function<BackendEnvelope(const BackendEnvelope& requ
 
 struct BackendServerOptions {
     std::uint16_t port = 0;
+    bool tls_enabled = true;   // Batch B: TLS default on, set BOOST_DISABLE_TLS=1 to disable
     std::optional<v3::cluster::TlsSessionConfig> tls_config;
 };
 

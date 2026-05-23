@@ -34,6 +34,27 @@
   "scenario_gates": {
     "echo_p99_us": {"warning": 100, "critical": 500},
     "login_p99_us": {"warning": 500, "critical": 2000},
-    "battle_broadcast_p99_us": {"warning": 1000, "critical": 5000}
+    "battle_broadcast_p99_us": {"warning": 1000, "critical": 5000},
+    "echo_throughput_msg_per_sec": {"warning": 90000, "critical": 50000},
+    "login_throughput_msg_per_sec": {"warning": 10000, "critical": 5000},
+    "battle_broadcast_throughput_msg_per_sec": {"warning": 5000, "critical": 2000},
+    "echo_error_rate_pct": {"warning": 0.05, "critical": 0.1},
+    "login_error_rate_pct": {"warning": 0.05, "critical": 0.1},
+    "battle_error_rate_pct": {"warning": 0.05, "critical": 0.1}
+  },
+  "regression_gates": {
+    "p99_regression_pct": {"warning": 15.0, "critical": 20.0},
+    "throughput_regression_pct": {"warning": 10.0, "critical": 15.0},
+    "error_rate_absolute_pct": {"warning": 0.05, "critical": 0.1}
+  },
+  "soak_gates": {
+    "fd_leak_max_growth": {"metric": "fd_count", "threshold": 100, "direction": "max"},
+    "fd_leak_max_growth_per_hour": {"metric": "fd_growth_per_hour", "threshold": 50, "direction": "max"},
+    "memory_leak_max_growth_mb_per_hour": {"metric": "rss_growth_mb_per_hour", "threshold": 100, "direction": "max"}
+  },
+  "description": {
+    "scenario_gates": "Fixed absolute thresholds for scenario-level performance. Evaluated by CI workflows (perf-regression.yml, perf-commit-check.yml).",
+    "regression_gates": "Percentage-based regression thresholds for P99/throughput/error-rate. Intended for baseline comparison evaluation (requires evaluator support to compare against stored baseline).",
+    "soak_gates": "Resource leak thresholds for long-running soak tests. Evaluated by comparing resource snapshots at start and end of soak profiles >= 2h."
   }
 }

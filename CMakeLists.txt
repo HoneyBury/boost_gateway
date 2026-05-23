@@ -12,7 +12,13 @@ include(GNUInstallDirs)
 option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
-option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
+option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" ON)
+
+# Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
+find_package(gRPC QUIET)
+if(gRPC_FOUND AND NOT BOOST_BUILD_GRPC)
+  message(STATUS "gRPC found — set BOOST_BUILD_GRPC=ON to compile gRPC gateway")
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -78,6 +84,8 @@ install(TARGETS
     v2_leaderboard_backend
     v2_gateway_pressure
     v2_arch_benchmark
+    sdk_echo_client
+    sdk_full_flow_client
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -90,6 +98,14 @@ install(FILES
     CHANGELOG.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}"
 )
+
+# Conditionally install optional demo/example targets
+if(TARGET tank_battle_demo)
+    install(TARGETS tank_battle_demo RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
+if(TARGET realtime_echo_plugin)
+    install(TARGETS realtime_echo_plugin RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
 
 install(FILES
     docs/README.md

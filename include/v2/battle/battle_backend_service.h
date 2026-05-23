@@ -21,8 +21,8 @@ public:
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config);
 
     /// Select the instance plugin type used for all battle instances.
-    /// Supported values: "battle" (default, uses BattleInstancePlugin),
-    /// "tank_battle" (uses TankBattlePlugin).
+    /// Supported values: "battle" (default, uses BattleInstancePlugin).
+    /// For "tank_battle", enable BOOST_BUILD_TANK_DEMO and see demo/games/tank_battle/.
     void set_instance_type(const std::string& type);
 
     /// Set an archive store for persisting battle snapshots and results.

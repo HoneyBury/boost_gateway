@@ -2,6 +2,7 @@
 #include "v2/io/io_engine.h"
 
 #include <algorithm>
+#include <cassert>
 #include <utility>
 
 #include <spdlog/spdlog.h>
@@ -76,6 +77,17 @@ v2::actor::ActorRef ActorSystem::create_actor(
     return self_ref;
 }
 
+#ifndef NDEBUG
+bool ActorSystem::is_on_owner_core() const noexcept {
+    if (!io_engine_ || !dispatch_owner_core_.has_value()) {
+        // No io_engine or not in a dispatch context — cannot verify, assume OK.
+        return true;
+    }
+    const auto current = io_engine_->current_core_id();
+    return current.has_value() && *current == *dispatch_owner_core_;
+}
+#endif
+
 void ActorSystem::send(v2::actor::Message message) {
     if (shutting_down_ || message.header.target_actor == 0) {
         return;
@@ -93,6 +105,14 @@ void ActorSystem::send(v2::actor::Message message) {
             return;
         }
     }
+
+#ifndef NDEBUG
+    // If we reach local delivery with an io_engine, target has core affinity,
+    // and we're in a dispatch context, verify we haven't bypassed cross-core routing.
+    if (io_engine_ && cell->core_id.has_value() && dispatch_owner_core_.has_value()) {
+        assert(*dispatch_owner_core_ == *cell->core_id);
+    }
+#endif
 
     cell->mailbox.push_back(std::move(message));
     enqueue_ready_actor(message.header.target_actor, *cell);
@@ -232,6 +252,12 @@ std::size_t ActorSystem::dispatch_ready(std::optional<std::uint32_t> owner_core)
         dispatch_owner_core_.reset();
         return 0;
     }
+
+#ifndef NDEBUG
+    // If already in a dispatch context, verify we haven't migrated cores
+    // (reentrant dispatch from a different IO thread).
+    assert(is_on_owner_core());
+#endif
 
     std::size_t dispatched = 0;
     const auto previous_owner_core = dispatch_owner_core_;

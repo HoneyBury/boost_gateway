@@ -2,7 +2,7 @@
 #include "v2/battle/battle_instance_plugin.h"
 #include "v2/battle/message_types.h"
 #include "v2/battle/runtime_world.h"
-#include "v2/battle/tank_battle_plugin.h"
+
 #include "v2/ecs/world.h"
 #include "v2/gateway/battle_data_store.h"
 #include "v2/persistence/replay_storage.h"
@@ -138,10 +138,8 @@ public:
             []() -> std::unique_ptr<v2::realtime::InstancePlugin> {
                 return std::make_unique<BattleInstancePlugin>();
             });
-        runtime_.register_plugin("tank_battle",
-            []() -> std::unique_ptr<v2::realtime::InstancePlugin> {
-                return std::make_unique<TankBattlePlugin>();
-            });
+        // "tank_battle" plugin is now registered by demo/games/tank_battle/
+        // when BOOST_BUILD_TANK_DEMO=ON. See demo tank_battle_main.cpp.
 
         // Capture events for synchronous consumption
         runtime_.set_event_callback(

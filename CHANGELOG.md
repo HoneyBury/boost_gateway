@@ -1,5 +1,34 @@
 # 更新日志
 
+## v3.4.0 — P0 性能优化 + R7 模块收束（2026-05-23）
+
+> **范围**：P0 性能优化轮次（连接池扩容、战斗路由线程卸载、断路器线程安全、Windows 高精度定时器）与 R7 模块收束（持久化层编译接入、内存架构 ECS 集成、诊断/鉴权注入），并将版本口径统一到 3.4.0。
+
+### 性能
+
+- **后端连接池扩容**: `GatewayServiceBridge` 默认池 1→4，压测覆盖 8（echo P99 从 100ms→1ms）
+- **战斗路由线程卸载**: `Runtime` 默认工作线程 0→4（battle P99 从 750ms→10ms）
+- **CircuitBreaker 线程安全**: 添加 mutex 保护，消除数据竞争
+- **Windows 高精度定时器**: `HighResTimer` RAII 封装 `timeBeginPeriod(1)`，消除 15.6ms 休眠粒度
+
+### 模块收束（R7）
+
+- **P0 持久化层**: `persistence/*.cpp` 编译入 `project_v2`，`ReplayStorage` 接入 `BattleBackendService`
+- **P1 内存架构**: `BumpArena` + `ObjectPool<EntityHandle>` 注入 `SimpleWorld` ECS 实体管理
+- **P1+P2 诊断**: `DiagnosticsManager`/`HealthCheck` 注入 gateway `Runtime`，`diag_wrap` 覆盖后端 handler
+- **P1+P2 鉴权**: `Authorizer` RBAC 集成 gateway 消息分发路径
+
+### 文档与构建
+
+- `CMakeLists.txt`：顶层 `project(boost_gateway VERSION ...)` 更新到 `3.4.0`
+- `README.md`、`docs/README.md`、`docs/v2-roadmap.md`、`docs/v2-enterprise-roadmap.md`：版本口径统一到 v3.4.0
+- `CHANGELOG.md`：添加 v3.4.0 版本记录
+
+### 测试
+
+- Unit tests: **772 通过 / 63 跳过（Redis 依赖）/ 0 失败**（Release 构建）
+- 后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s
+
 ## v3.3.2 — 版本与交付面收束（2026-05-16）
 
 > **范围**：启动 `v3.x` 生产就绪阶段的第一批收口工作，先统一版本口径、安装目标和发布清单，不扩展新的业务能力。
