@@ -37,6 +37,13 @@ struct RoomResult {
     int member_count = 0;
 };
 
+struct RoomQueryResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
 struct BattleStartResult {
     bool ok = false;
     std::int32_t error_code = 0;
@@ -49,6 +56,13 @@ struct BattleInputResult {
     std::int32_t error_code = 0;
     std::string error_message;
     std::uint64_t input_seq = 0;
+};
+
+struct BattleStateResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
 };
 
 struct MatchResult {

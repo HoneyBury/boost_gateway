@@ -31,8 +31,11 @@ client.start_heartbeat(std::chrono::seconds(15));
 
 // 4. 游戏操作
 auto room = client.create_room("room_001");
+auto rooms = client.room_list();
+auto room_detail = client.room_detail("room_001");
 auto battle = client.start_battle("room_001");
 client.send_battle_input("move:100,200");
+auto state = client.battle_state(battle.battle_id);
 
 // 5. 断开
 client.disconnect();
@@ -64,6 +67,8 @@ client.disconnect();
 | `join_room(room_id, timeout)` | `RoomResult` | 加入房间 |
 | `leave_room(room_id, timeout)` | `RoomResult` | 离开房间 |
 | `set_ready(ready, timeout)` | `RoomResult` | 设置准备状态 |
+| `room_list(page, page_size, status, timeout)` | `RoomQueryResult` | 查询房间列表，`status` 为空时不过滤 |
+| `room_detail(room_id, timeout)` | `RoomQueryResult` | 查询房间详情，返回服务端 JSON body |
 
 ### 战斗
 
@@ -71,6 +76,7 @@ client.disconnect();
 |------|------|------|
 | `start_battle(room_id, timeout)` | `BattleStartResult` | 开始战斗 |
 | `send_battle_input(input_data, timeout)` | `BattleInputResult` | 发送战斗输入 |
+| `battle_state(battle_id, timeout)` | `BattleStateResult` | 查询当前战斗最新 authoritative snapshot，用于恢复和观战入口 |
 
 ### 事件回调
 
@@ -109,8 +115,10 @@ SDK 会识别并分发以下 push：`kSessionKickedPush`、`kSessionResumedPush`
 ```cpp
 struct LoginResult { bool ok; int32_t error_code; string error_message; string user_id; string display_name; };
 struct RoomResult { bool ok; int32_t error_code; string error_message; string room_id; int member_count; };
+struct RoomQueryResult { bool ok; int32_t error_code; string error_message; string response_body; };
 struct BattleStartResult { bool ok; int32_t error_code; string error_message; string battle_id; };
 struct BattleInputResult { bool ok; int32_t error_code; string error_message; uint64_t input_seq; };
+struct BattleStateResult { bool ok; int32_t error_code; string error_message; string response_body; };
 struct MatchResult { bool ok; int32_t error_code; string error_message; string response_body; };
 struct LeaderboardSubmitResult { bool ok; int32_t error_code; string error_message; string response_body; };
 struct LeaderboardQueryResult { bool ok; int32_t error_code; string error_message; string response_body; };
@@ -142,8 +150,11 @@ SDK 自动处理以下协议消息的编解码:
 | 3003 | kRoomJoinRequest | C→S |
 | 3005 | kRoomLeaveRequest | C→S |
 | 3007 | kRoomReadyRequest | C→S |
+| 3010 | kRoomListRequest | C→S |
+| 3012 | kRoomDetailRequest | C→S |
 | 4001 | kBattleStartRequest | C→S |
 | 4003 | kBattleInputRequest | C→S |
+| 4007 | kBattleStateRequest | C→S |
 | 6001 | kMatchJoinRequest | C→S |
 | 6004 | kMatchLeaveRequest | C→S |
 | 6006 | kMatchStatusRequest | C→S |
@@ -225,6 +236,8 @@ sdk::SdkClient alice, bob;
 alice.connect("127.0.0.1", 9201);
 alice.login("alice", "token:alice");
 alice.create_room("battle_room");
+auto list = alice.room_list();
+auto detail = alice.room_detail("battle_room");
 alice.set_ready(true);
 
 // === Bob 加入房间 ===
@@ -234,11 +247,12 @@ bob.join_room("battle_room");
 bob.set_ready(true);
 
 // === 开始战斗 ===
-alice.start_battle("battle_room");
+auto battle = alice.start_battle("battle_room");
 
 // === 战斗输入 ===
 alice.send_battle_input("move:10,20");
 bob.send_battle_input("move:30,40");
+auto resume = alice.battle_state(battle.battle_id);
 
 // === 结束 ===
 alice.send_battle_input("finish:surrender");

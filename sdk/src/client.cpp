@@ -23,6 +23,19 @@ std::string login_body(const std::string& user_id, const std::string& token) {
     return user_id + "|" + token + "|" + user_id;
 }
 
+std::string parse_key_value_field(const std::string& body, const std::string& key) {
+    const auto token = key + "=";
+    const auto pos = body.find(token);
+    if (pos == std::string::npos) {
+        return {};
+    }
+    const auto value_start = pos + token.size();
+    const auto value_end = body.find(':', value_start);
+    return body.substr(value_start, value_end == std::string::npos
+                                    ? std::string::npos
+                                    : value_end - value_start);
+}
+
 }  // namespace
 
 class TcpConnection {
@@ -120,6 +133,15 @@ class SdkClient::Impl {
                                                std::int64_t score) {
         return user_id + "|" + display_name + "|" + std::to_string(score);
     }
+    static std::string room_list_body(std::size_t page, std::size_t page_size, const std::string& status) {
+        std::string body = "{\"page\":" + std::to_string(page) +
+                           ",\"page_size\":" + std::to_string(page_size);
+        if (!status.empty()) {
+            body += ",\"status\":\"" + status + "\"";
+        }
+        body += "}";
+        return body;
+    }
     void dispatch_push(const protocol::DecodedPacket& p) {
         PushCallback callback;
         {
@@ -179,13 +201,25 @@ public:
         auto r = expect(msg::kRoomReadyRequest, v?"true":"false", to, msg::kRoomReadyResponse);
         RoomResult rr; rr.ok = (r.message_id == msg::kRoomReadyResponse); rr.room_id = ""; rr.error_code = 0; rr.error_message = r.body; return rr;
     }
+    RoomQueryResult room_list(std::size_t page, std::size_t page_size, const std::string& status, std::chrono::milliseconds to) {
+        auto r = expect(msg::kRoomListRequest, room_list_body(page, page_size, status), to, msg::kRoomListResponse);
+        RoomQueryResult rr; rr.ok = (r.message_id == msg::kRoomListResponse); rr.error_code = r.error_code; rr.error_message = r.body; rr.response_body = r.body; return rr;
+    }
+    RoomQueryResult room_detail(const std::string& room_id, std::chrono::milliseconds to) {
+        auto r = expect(msg::kRoomDetailRequest, room_id, to, msg::kRoomDetailResponse);
+        RoomQueryResult rr; rr.ok = (r.message_id == msg::kRoomDetailResponse); rr.error_code = r.error_code; rr.error_message = r.body; rr.response_body = r.body; return rr;
+    }
     BattleStartResult start_battle(const std::string& rid, std::chrono::milliseconds to) {
         auto r = expect(msg::kBattleStartRequest, rid, to, msg::kBattleStartResponse);
-        BattleStartResult br; br.ok = (r.message_id == msg::kBattleStartResponse); br.error_code = r.error_code; br.error_message = r.body; br.battle_id = ""; return br;
+        BattleStartResult br; br.ok = (r.message_id == msg::kBattleStartResponse); br.error_code = r.error_code; br.error_message = r.body; br.battle_id = parse_key_value_field(r.body, "battle_id"); return br;
     }
     BattleInputResult send_battle_input(const std::string& d, std::chrono::milliseconds to) {
         auto r = expect(msg::kBattleInputRequest, d, to, msg::kBattleInputResponse);
         BattleInputResult bi; bi.ok = (r.message_id == msg::kBattleInputResponse); bi.error_code = r.error_code; bi.error_message = r.body; bi.input_seq = 0; return bi;
+    }
+    BattleStateResult battle_state(const std::string& battle_id, std::chrono::milliseconds to) {
+        auto r = expect(msg::kBattleStateRequest, battle_id, to, msg::kBattleStateResponse);
+        BattleStateResult bs; bs.ok = (r.message_id == msg::kBattleStateResponse); bs.error_code = r.error_code; bs.error_message = r.body; bs.response_body = r.body; return bs;
     }
     MatchResult match_join(const std::string& user_id, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds to) {
         auto r = expect(msg::kMatchJoinRequest, match_body(user_id, mmr, mode), to, msg::kMatchJoinResponse);
@@ -272,8 +306,11 @@ RoomResult SdkClient::create_room(const std::string& r, std::chrono::millisecond
 RoomResult SdkClient::join_room(const std::string& r, std::chrono::milliseconds t) { return impl_->join_room(r,t); }
 RoomResult SdkClient::leave_room(const std::string& r, std::chrono::milliseconds t) { return impl_->leave_room(r,t); }
 RoomResult SdkClient::set_ready(bool r, std::chrono::milliseconds t) { return impl_->set_ready(r,t); }
+RoomQueryResult SdkClient::room_list(std::size_t p, std::size_t ps, const std::string& s, std::chrono::milliseconds t) { return impl_->room_list(p,ps,s,t); }
+RoomQueryResult SdkClient::room_detail(const std::string& r, std::chrono::milliseconds t) { return impl_->room_detail(r,t); }
 BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::milliseconds t) { return impl_->start_battle(r,t); }
 BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) { return impl_->send_battle_input(d,t); }
+BattleStateResult SdkClient::battle_state(const std::string& b, std::chrono::milliseconds t) { return impl_->battle_state(b,t); }
 MatchResult SdkClient::match_join(const std::string& u, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_join(u,mmr,mode,t); }
 MatchResult SdkClient::match_leave(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_leave(u,mode,t); }
 MatchResult SdkClient::match_status(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_status(u,mode,t); }

@@ -69,7 +69,10 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
         case GatewayCommandType::kRoomJoin:
         case GatewayCommandType::kRoomReady:
         case GatewayCommandType::kRoomLeave:
+        case GatewayCommandType::kRoomList:
+        case GatewayCommandType::kRoomDetail:
         case GatewayCommandType::kBattleStart:
+        case GatewayCommandType::kBattleState:
         case GatewayCommandType::kMatchJoin:
         case GatewayCommandType::kMatchLeave:
         case GatewayCommandType::kMatchStatus:
@@ -155,11 +158,20 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
         case net::protocol::kRoomLeaveRequest:
             command.type = GatewayCommandType::kRoomLeave;
             return command;
+        case net::protocol::kRoomListRequest:
+            command.type = GatewayCommandType::kRoomList;
+            return command;
+        case net::protocol::kRoomDetailRequest:
+            command.type = GatewayCommandType::kRoomDetail;
+            return command;
         case net::protocol::kBattleStartRequest:
             command.type = GatewayCommandType::kBattleStart;
             return command;
         case net::protocol::kBattleInputRequest:
             command.type = GatewayCommandType::kBattleInput;
+            return command;
+        case net::protocol::kBattleStateRequest:
+            command.type = GatewayCommandType::kBattleState;
             return command;
         case net::protocol::kMatchJoinRequest:
             command.type = GatewayCommandType::kMatchJoin;

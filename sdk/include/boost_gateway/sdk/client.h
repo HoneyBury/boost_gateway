@@ -56,6 +56,14 @@ public:
     RoomResult set_ready(bool ready,
                          std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
+    RoomQueryResult room_list(std::size_t page = 1,
+                              std::size_t page_size = 20,
+                              const std::string& status = "",
+                              std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    RoomQueryResult room_detail(const std::string& room_id,
+                                std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
     // ── Battle ──────────────────────────────────────────────────────
 
     BattleStartResult start_battle(const std::string& room_id,
@@ -63,6 +71,9 @@ public:
 
     BattleInputResult send_battle_input(const std::string& input_data,
                                          std::chrono::milliseconds timeout = std::chrono::seconds(5));
+
+    BattleStateResult battle_state(const std::string& battle_id,
+                                   std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
     // ── Matchmaking ─────────────────────────────────────────────────
 

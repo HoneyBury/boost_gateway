@@ -74,8 +74,11 @@ inline void Authorizer::init_defaults() {
         3003,  // kRoomJoinRequest
         3005,  // kRoomLeaveRequest
         3007,  // kRoomReadyRequest
+        3010,  // kRoomListRequest
+        3012,  // kRoomDetailRequest
         4001,  // kBattleStartRequest
         4003,  // kBattleInputRequest
+        4007,  // kBattleStateRequest
         6001,  // kMatchJoinRequest
         6004,  // kMatchLeaveRequest
         6006,  // kMatchStatusRequest

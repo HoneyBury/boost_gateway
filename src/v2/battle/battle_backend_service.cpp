@@ -90,6 +90,11 @@ private:
     std::unordered_map<std::string, std::string> settlements_;
 };
 
+struct CachedBattleSnapshot {
+    std::uint32_t frame_number = 0;
+    std::string payload;
+};
+
 // ─── Snapshot payload helpers ───────────────────────────────────────────
 
 // Extract participant data from a snapshot payload, handling both
@@ -162,6 +167,7 @@ public:
         v2::service::BackendServer::HandlerMap handlers;
         handlers["battle_create"] = [this](const auto& req) { return handle_battle_create(req); };
         handlers["battle_input"] = [this](const auto& req) { return handle_battle_input(req); };
+        handlers["battle_state"] = [this](const auto& req) { return handle_battle_state(req); };
         handlers["battle_finish"] = [this](const auto& req) { return handle_battle_finish(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
@@ -216,6 +222,7 @@ private:
     // InstanceContext does not expose the current frame; the handler
     // requires it to pass the correct next_frame into tick_instance().
     std::unordered_map<std::string, std::uint32_t> instance_frames_;
+    std::unordered_map<std::string, CachedBattleSnapshot> latest_snapshots_;
     std::mutex frames_mutex_;
 
     std::uint32_t get_instance_frame(const std::string& battle_id) {
@@ -229,9 +236,29 @@ private:
         instance_frames_[battle_id] = frame;
     }
 
+    void set_latest_snapshot(const std::string& battle_id,
+                             std::uint32_t frame,
+                             std::string payload) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        latest_snapshots_[battle_id] = CachedBattleSnapshot{
+            .frame_number = frame,
+            .payload = std::move(payload),
+        };
+    }
+
+    std::optional<CachedBattleSnapshot> latest_snapshot(const std::string& battle_id) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto it = latest_snapshots_.find(battle_id);
+        if (it == latest_snapshots_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    }
+
     void erase_instance_frame(const std::string& battle_id) {
         std::lock_guard<std::mutex> lock(frames_mutex_);
         instance_frames_.erase(battle_id);
+        latest_snapshots_.erase(battle_id);
     }
 
     // ─── Handler: battle_create ─────────────────────────────────────
@@ -352,6 +379,9 @@ private:
 
         // Get snapshot from the event callback
         auto snapshot = sync_capture_.consume_snapshot(battle_id);
+        if (!snapshot.payload.empty()) {
+            set_latest_snapshot(battle_id, tick_stats.frame_number, snapshot.payload);
+        }
 
         // Build push events
         nlohmann::json pushes = nlohmann::json::array();
@@ -449,6 +479,52 @@ private:
             decoded->typed_request,
             std::move(resp),
             v3::proto::EnvelopeMessageKind::kBattleInputResponse);
+    }
+
+    // ─── Handler: battle_state ──────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_battle_state(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("battle_id")) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        const auto battle_id = doc["battle_id"].get<std::string>();
+        if (battle_id.empty()) {
+            return make_error(-1004, "empty_battle_id");
+        }
+
+        auto* instance_ctx = runtime_.find_instance(battle_id);
+        const auto frame_number = get_instance_frame(battle_id);
+        const auto cached = latest_snapshot(battle_id);
+        if (instance_ctx == nullptr && !cached.has_value()) {
+            return make_error(-2003, "battle_not_found");
+        }
+
+        nlohmann::json state{
+            {"kind", "frame_advanced"},
+            {"battle_id", battle_id},
+            {"frame_number", frame_number},
+            {"is_resume", true},
+        };
+
+        if (cached.has_value() && !cached->payload.empty()) {
+            auto payload = nlohmann::json::parse(cached->payload, nullptr, false);
+            if (!payload.is_discarded()) {
+                state["snapshot"] = std::move(payload);
+            }
+            auto participants = extract_participants_from_snapshot(cached->payload);
+            if (!participants.empty()) {
+                state["participants"] = std::move(participants);
+            }
+        }
+
+        return make_ok({
+            {"battle_id", battle_id},
+            {"frame_number", frame_number},
+            {"snapshot", std::move(state)},
+        });
     }
 
     // ─── Handler: battle_finish ─────────────────────────────────────
