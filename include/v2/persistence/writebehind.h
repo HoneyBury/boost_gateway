@@ -48,7 +48,8 @@ public:
         int max_retries = 3;
     };
 
-    explicit WriteBehindEngine(Options opts = {});
+    explicit WriteBehindEngine(Options opts);
+    WriteBehindEngine();
     ~WriteBehindEngine();
 
     // -- Push ----------------------------------------------------------------

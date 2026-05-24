@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import shutil
 import subprocess
 import sys
@@ -303,12 +304,17 @@ def main() -> int:
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary = {
-        "summary_version": 1,
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "passed": failed is None,
         "overall_pass": failed is None,
         "failed_category": str(failed.get("category", "")) if failed else "",
         "failed_step": str(failed.get("name", "")) if failed else "",
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
         "scope": {
             "tls_full_flow_with_server_verification": True,
             "certificate_rotation_full_flow": True,
@@ -333,9 +339,9 @@ def main() -> int:
         "steps": steps,
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"R1 TLS production readiness: {'PASS' if summary['passed'] else 'FAIL'}")
+    print(f"R1 TLS production readiness: {'PASS' if summary['overall_pass'] else 'FAIL'}")
     print(f"summary: {summary_path}")
-    return 0 if summary["passed"] else 1
+    return 0 if summary["overall_pass"] else 1
 
 
 if __name__ == "__main__":

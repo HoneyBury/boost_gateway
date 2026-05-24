@@ -78,6 +78,7 @@ int main() {{
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/default")
+    parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--prefix", type=Path, default=REPO_ROOT / "runtime/sdk-package-prefix")
     parser.add_argument("--work-dir", type=Path, default=REPO_ROOT / "runtime/sdk-package-consumer")
     parser.add_argument(
@@ -105,7 +106,7 @@ def main() -> int:
             "--build",
             str(args.build_dir),
             "--config",
-            "Release",
+            args.configuration,
             "--target",
             "boost_gateway_sdk",
             "boost_gateway_sdk_dll",
@@ -116,7 +117,7 @@ def main() -> int:
     if install_ok:
         install_ok = run_step(
             "install-sdk",
-            ["cmake", "--install", str(args.build_dir / "sdk"), "--config", "Release", "--prefix", str(prefix)],
+            ["cmake", "--install", str(args.build_dir), "--config", args.configuration, "--prefix", str(prefix)],
             REPO_ROOT,
             checks,
         )
@@ -124,25 +125,26 @@ def main() -> int:
         write_consumer_project(consumer_src, prefix)
         configure_ok = run_step(
             "configure-consumer",
-            ["cmake", "-S", str(consumer_src), "-B", str(consumer_build), "-DCMAKE_BUILD_TYPE=Release"],
+            ["cmake", "-S", str(consumer_src), "-B", str(consumer_build)],
             REPO_ROOT,
             checks,
         )
         build_ok = configure_ok and run_step(
             "build-consumer",
-            ["cmake", "--build", str(consumer_build), "--config", "Release", "--parallel"],
+            ["cmake", "--build", str(consumer_build), "--config", args.configuration, "--parallel"],
             REPO_ROOT,
             checks,
         )
         if build_ok:
             exe = consumer_build / "sdk_consumer_smoke"
             if os.name == "nt":
-                exe = consumer_build / "Release" / "sdk_consumer_smoke.exe"
+                exe = consumer_build / args.configuration / "sdk_consumer_smoke.exe"
             run_step("run-consumer", [str(exe)], REPO_ROOT, checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
         "passed": not failed,
+        "configuration": args.configuration,
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "prefix": str(prefix),

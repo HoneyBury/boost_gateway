@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
+import socket
 import subprocess
 import sys
 import time
@@ -91,6 +93,18 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def environment_snapshot() -> dict[str, object]:
+    return {
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": sys.version.split()[0],
+        "host": socket.gethostname(),
+        "cwd": str(ROOT),
+    }
+
+
 def main() -> int:
     args = parse_args()
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
@@ -160,6 +174,7 @@ def main() -> int:
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
@@ -167,15 +182,23 @@ def main() -> int:
         "run_8h_soak": args.run_8h_soak,
         "run_capacity": args.run_capacity,
         "perf_repetitions": args.perf_repetitions,
+        "environment": environment_snapshot(),
+        "overall_pass": failed is None,
         "passed": failed is None,
         "failed_category": "" if failed is None else str(failed.get("category")),
         "failed_step": "" if failed is None else str(failed.get("name")),
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "long_soak_2h_summary_path": str(ROOT / LONG_SOAK_PRESETS["2h"]["summary_path"]) if args.run_2h_soak else "",
+            "long_soak_8h_summary_path": str(ROOT / LONG_SOAK_PRESETS["8h"]["summary_path"]) if args.run_8h_soak else "",
+            "capacity_summary_path": str(ROOT / "runtime/validation/capacity-baseline-summary.json") if args.run_capacity else "",
+        },
         "steps": steps,
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"summary: {summary_path}")
-    return 0 if summary["passed"] else 1
+    return 0 if summary["overall_pass"] else 1
 
 
 if __name__ == "__main__":

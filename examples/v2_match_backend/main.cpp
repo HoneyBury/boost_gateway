@@ -66,6 +66,9 @@ int main(int argc, char* argv[]) {
     const auto config_path = app::config::resolve_backend_config_path(
         "matchmaking", argc, argv, "config/environments/local/matchmaking.json");
     auto config = app::config::load_backend_service_config("matchmaking", config_path, 9304);
+    if (argc > 1 && std::string(argv[1]) != "--config") {
+        config.port = static_cast<std::uint16_t>(std::stoi(argv[1]));
+    }
     std::signal(SIGINT, handle_signal);
     std::signal(SIGTERM, handle_signal);
 

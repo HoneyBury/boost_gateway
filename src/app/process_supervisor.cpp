@@ -661,7 +661,6 @@ bool ProcessSupervisor::spawn_posix(
     }
 
     state.pid = pid;
-    state.process_handle = nullptr;  // Not used on POSIX
 
     LOG_DEBUG("ProcessSupervisor: spawned '{}' (PID {})", config.name, state.pid);
     return true;

@@ -1,27 +1,59 @@
 name: Release Baseline
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   workflow_dispatch:
     inputs:
-      preset:
-        description: 'Performance preset (smoke, baseline, capacity)'
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","release-baseline"]'
         required: true
-        default: 'smoke'
-      repetitions:
-        description: 'Number of repetitions'
-        required: false
-        default: '1'
+        default: '"ubuntu-latest"'
+      configure_preset:
+        description: "CMake configure preset"
+        required: true
+        default: "release"
+      build_dir:
+        description: "CMake build directory"
+        required: true
+        default: "build/release"
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+      perf_preset:
+        description: "Performance preset"
+        required: true
+        default: "baseline"
+        type: choice
+        options:
+          - smoke
+          - baseline
+          - capacity
+      perf_repetitions:
+        description: "Repetitions per performance case"
+        required: true
+        default: "3"
+      baseline_timeout_seconds:
+        description: "Timeout for R4 baseline checks"
+        required: true
+        default: "120"
+      perf_timeout_seconds:
+        description: "Timeout for performance collection"
+        required: true
+        default: "1800"
 
 permissions:
   contents: read
 
 jobs:
   release-baseline:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 720
+    concurrency:
+      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'ubuntu-latest' }}
+      cancel-in-progress: false
 
     steps:
       - name: Checkout
@@ -37,31 +69,58 @@ jobs:
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Configure (Release)
+      - name: Fixed runner preflight
+        shell: bash
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_CXX_FLAGS_RELEASE="-O2 -DNDEBUG"
+          set -euo pipefail
+          python scripts/check_fixed_runner_environment.py \
+            --profile release-baseline \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --summary-path runtime/validation/fixed-runner-preflight-summary.json
 
-      - name: Build
-        run: cmake --build build --config Release --parallel
+      - name: Configure
+        run: cmake --preset ${{ inputs.configure_preset || 'release' }}
 
-      - name: Run release baseline
+      - name: Release baseline gate
+        shell: bash
         run: |
+          set -euo pipefail
           python scripts/collect_release_baseline.py \
-            --build-dir build \
-            --perf-preset ${{ github.event.inputs.preset }} \
-            --perf-repetitions ${{ github.event.inputs.repetitions }}
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --configuration "${{ inputs.configuration || 'Release' }}" \
+            --perf-preset "${{ inputs.perf_preset || 'baseline' }}" \
+            --perf-repetitions "${{ inputs.perf_repetitions || '3' }}" \
+            --baseline-timeout-seconds "${{ inputs.baseline_timeout_seconds || '120' }}" \
+            --perf-timeout-seconds "${{ inputs.perf_timeout_seconds || '1800' }}" \
+            --summary-path runtime/validation/release-baseline-summary.json
 
-      - name: Check gates
+      - name: Render release baseline summary
+        if: always()
+        shell: bash
         run: |
-          python scripts/verify_r4_contract.py \
-            --build-dir build \
-            --skip-build \
-            --configuration Release
+          summaries=()
+          for path in \
+            runtime/validation/fixed-runner-preflight-summary.json \
+            runtime/validation/release-baseline-summary.json \
+            runtime/validation/release-r4-contract-summary.json \
+            runtime/perf/release-baseline/summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-      - name: Upload baseline artifact
+      - name: Upload release baseline artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-baseline-${{ matrix.os }}-${{ github.event.inputs.preset }}
-          path: runtime/perf-results/
+          name: release-baseline-${{ github.run_id }}
+          path: |
+            runtime/validation/fixed-runner-preflight-summary.json
+            runtime/validation/release-baseline-summary.json
+            runtime/validation/release-r4-contract-summary.json
+            runtime/perf/release-baseline/**
           retention-days: 90
+          if-no-files-found: warn

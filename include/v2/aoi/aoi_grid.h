@@ -17,9 +17,9 @@ namespace v2::aoi {
 // RCU-protected actor-reference list for lock-free AOI broadcast.
 //
 // The hot path (broadcast) takes an atomic snapshot of the observer list and
-// iterates it without holding any lock.  Writer threads (add / remove) use a
+// iterates it without holding any lock. Writer threads (add / remove) use a
 // shared_mutex to serialize, copy the current list, mutate the copy, then
-// atomically publish the new list via std::atomic<std::shared_ptr<const ...>>.
+// atomically publish the new list via the C++20 shared_ptr atomic free functions.
 //
 // Write coalescing (back-off):
 //   If more than 10 modifications happen within a 100 ms window the grid enters
@@ -71,7 +71,7 @@ private:
     mutable std::shared_mutex write_mutex_;
 
     // The RCU-protected observer list.
-    std::atomic<ActorRefList> observers_{
+    ActorRefList observers_{
         std::make_shared<const std::vector<v2::actor::ActorRef>>()};
 
     // ── Write coalescing state (protected by write_mutex_) ───────────────

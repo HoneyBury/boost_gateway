@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 from datetime import UTC, datetime
@@ -118,7 +119,9 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
         checks,
         "client-ingress-plain-boundary-documented",
         file_contains(ROOT / "docs/production-business-closure-plan.md", "默认生产仍是 plain TCP")
-        or file_contains(ROOT / "docs/v1-maturity-matrix.md", "主链未启用 SSL stream"),
+        or file_contains(ROOT / "docs/v1-maturity-matrix.md", "主链未启用 SSL stream")
+        or file_contains(ROOT / "docs/tls-mtls-runbook.md", "默认生产链路仍是 plain TCP")
+        or file_contains(ROOT / "docs/current-state.md", "默认生产结论仍是 plain TCP"),
         "docs explicitly avoid claiming client ingress TLS is default production behavior",
     )
     add(
@@ -183,16 +186,30 @@ def main() -> int:
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": not failed,
         "passed": not failed,
+        "failed_category": "tls_profile" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
         "config": str(args.config),
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "config_path": str(args.config),
+            "cert_dir": str(ROOT / "certs"),
+        },
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"tls profile gate: {'PASS' if summary['passed'] else 'FAIL'} ({len(checks)-len(failed)}/{len(checks)} checks)")
+    print(f"tls profile gate: {'PASS' if summary['overall_pass'] else 'FAIL'} ({len(checks)-len(failed)}/{len(checks)} checks)")
     print(f"summary: {summary_path}")
     if failed:
         for check in failed:

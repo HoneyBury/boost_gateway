@@ -1,6 +1,6 @@
 # 生产证据固定 Runner 配置说明
 
-日期：2026-05-18
+日期：2026-05-20
 
 本文档用于收束 P2：把 P6 生产证据从本地手动命令推进到可归档的固定 runner 流水线。默认 PR/Release 仍保持有界 smoke，真实依赖、长项和容量数据必须在固定 runner 上显式开启。
 
@@ -121,6 +121,8 @@ Docker 可用且镜像存在时，该脚本会执行真实 Docker Compose gatewa
 
 R5 实测注意：生产镜像 builder 需要 `python3` 支持当前 CMake/proto/gRPC 配置；gateway 生产默认应使用 `V2_BACKEND_CONNECTION_POOL_SIZE=1`，多连接池仍按实验能力处理，不能作为默认投产路径。
 
+2026-05-20 已在当前 macOS + OrbStack 环境完成 R5 复测并通过：gateway 重启前后两次 SDK full-flow 均通过，Docker production snapshot `overall_pass=true`，recovery drill record 校验 `PASS (32/32 checks)`。
+
 `tls_preprod_multi_run` 的 R6 入口：
 
 ```bash
@@ -130,6 +132,8 @@ python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip
 该脚本多轮调用 R1 TLS readiness，聚合证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio。
 
 R6 会启动本机服务并绑定临时 TCP 端口；在 macOS 沙箱或未授权环境下可能因端口绑定权限失败，固定 runner/预发环境应显式授予本机端口权限后刷新 summary。
+
+2026-05-20 已在当前授权环境完成 2 轮 R6 复测并通过，`runtime/validation/tls-preprod-multi-run-summary.json` 已转绿。
 
 R3 会把 R2 的判断渲染成投产评审报告：
 
@@ -152,3 +156,11 @@ python3 scripts/render_production_readiness_report.py
 | Redis / kind 例行 | Redis live + Operator kind | 持续沉淀真实依赖场景证据 |
 | 性能例行 | release baseline + capacity baseline | 沉淀 baseline/capacity 趋势和退化点 |
 | 发布前 | Redis + kind + runtime observability + release baseline | 形成完整生产候选 evidence |
+
+N1/N2/N3 的 fixed-runner 建议补充如下：
+
+- N1 长稳/容量：运行 `python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity`，归档 `long-soak-capacity-summary.json`、`long-soak-2h-summary.json` 和 `capacity-baseline-summary.json`。
+- N2 监控 SLO/告警：运行 `python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`，确认 Prometheus、Grafana、Alert rules 与 gateway-only metrics surface 一致。
+- N3 部署恢复：运行 `python3 scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`，归档 cloud preflight、deploy operability、docker snapshot、kind gate 和 production evidence aggregate summary。
+
+这三类 summary 同样应满足 `summary_version=2`、`overall_pass`、`environment`、`artifacts` 的统一契约，避免 fixed-runner 证据链在 N0 之外重新分叉。

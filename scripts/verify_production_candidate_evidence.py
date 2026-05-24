@@ -112,7 +112,8 @@ def main() -> int:
         str(args.build_dir),
     ]
     add_flag(preflight_cmd, args.include_redis_live, "--include-redis-live")
-    add_flag(preflight_cmd, args.include_kind, "--include-kind")
+    add_flag(preflight_cmd, args.include_redis_live, "--require-redis")
+    add_flag(preflight_cmd, args.include_kind, "--require-kind")
 
     resilience_summary = validation_dir / "r0-production-resilience-summary.json"
     resilience_cmd = [
@@ -206,7 +207,7 @@ def main() -> int:
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary = {
-        "summary_version": 1,
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "passed": failed is None,
         "overall_pass": failed is None,
