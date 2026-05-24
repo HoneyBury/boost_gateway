@@ -1273,7 +1273,7 @@ bool Runtime::handle(const GatewayCommand& command) {
 
             const auto user_id = lookup_.user_id_for(command.session_id);
             const auto session_room_id = lookup_.room_id_for(command.session_id);
-            if (user_id.empty() || session_room_id.empty()) {
+            if (user_id.empty()) {
                 return false;
             }
 
