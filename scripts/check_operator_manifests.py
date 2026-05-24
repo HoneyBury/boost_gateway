@@ -5,10 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any
-
-import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -22,24 +21,22 @@ REQUIRED_STATUS_FIELDS = [
     "conditions",
 ]
 
-
-def load_yaml_documents(path: Path) -> list[dict[str, Any]]:
-    with path.open("r", encoding="utf-8") as fh:
-        return [doc for doc in yaml.safe_load_all(fh) if isinstance(doc, dict)]
+def read_text(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
 
 
-def nested(mapping: dict[str, Any], *keys: str | int) -> Any:
-    cur: Any = mapping
-    for key in keys:
-        if isinstance(key, int):
-            if not isinstance(cur, list) or key >= len(cur):
-                return None
-            cur = cur[key]
-        else:
-            if not isinstance(cur, dict) or key not in cur:
-                return None
-            cur = cur[key]
-    return cur
+def has_sequence(text: str, *tokens: str) -> bool:
+    position = 0
+    for token in tokens:
+        found = text.find(token, position)
+        if found < 0:
+            return False
+        position = found + len(token)
+    return True
+
+
+def has_resource(text: str, resource: str) -> bool:
+    return bool(re.search(rf'\b{re.escape(resource)}\b', text))
 
 
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str = "") -> None:
@@ -48,36 +45,24 @@ def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str
 
 def validate_crd(operator_dir: Path, checks: list[dict[str, Any]]) -> None:
     path = operator_dir / "config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"
-    docs = load_yaml_documents(path)
-    crd = docs[0] if docs else {}
-    add_check(checks, "crd-kind", crd.get("kind") == "CustomResourceDefinition")
-    add_check(checks, "crd-name", nested(crd, "metadata", "name") == "boostgatewayclusters.gateway.boost.io")
-    add_check(checks, "crd-status-subresource", nested(crd, "spec", "versions", 0, "subresources", "status") == {})
-
-    spec_props = nested(crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "spec", "properties")
-    status_props = nested(crd, "spec", "versions", 0, "schema", "openAPIV3Schema", "properties", "status", "properties")
-    add_check(checks, "crd-spec-components", isinstance(spec_props, dict) and all(name in spec_props for name in REQUIRED_COMPONENTS))
-    add_check(checks, "crd-status-fields", isinstance(status_props, dict) and all(name in status_props for name in REQUIRED_STATUS_FIELDS))
-
-    component_items = nested(status_props or {}, "components", "items", "properties")
+    text = read_text(path)
+    add_check(checks, "crd-kind", "kind: CustomResourceDefinition" in text)
+    add_check(checks, "crd-name", "name: boostgatewayclusters.gateway.boost.io" in text)
+    add_check(checks, "crd-status-subresource", has_sequence(text, "subresources:", "status: {}"))
+    add_check(checks, "crd-spec-components", all(re.search(rf"^\s*{name}:\s*$", text, re.MULTILINE) for name in REQUIRED_COMPONENTS))
+    add_check(checks, "crd-status-fields", all(re.search(rf"^\s*{field}:\s*$", text, re.MULTILINE) for field in REQUIRED_STATUS_FIELDS))
     add_check(
         checks,
         "crd-component-status-shape",
-        isinstance(component_items, dict)
-        and all(field in component_items for field in ["name", "kind", "desiredReplicas", "readyReplicas", "availableReplicas"]),
+        all(re.search(rf"^\s*{field}:\s*$", text, re.MULTILINE)
+            for field in ["name", "kind", "desiredReplicas", "readyReplicas", "availableReplicas"]),
     )
 
 
 def validate_rbac(operator_dir: Path, checks: list[dict[str, Any]]) -> None:
-    docs = load_yaml_documents(operator_dir / "config/rbac/role.yaml")
-    service_account = next((doc for doc in docs if doc.get("kind") == "ServiceAccount"), {})
-    role = next((doc for doc in docs if doc.get("kind") == "ClusterRole"), {})
-    binding = next((doc for doc in docs if doc.get("kind") == "ClusterRoleBinding"), {})
-    add_check(checks, "rbac-service-account", nested(service_account, "metadata", "name") == "boostgateway-operator-controller-manager")
-    add_check(checks, "rbac-role-binding", nested(binding, "roleRef", "name") == nested(role, "metadata", "name"))
-
-    rules = role.get("rules", [])
-    resources = {resource for rule in rules for resource in rule.get("resources", [])}
+    text = read_text(operator_dir / "config/rbac/role.yaml")
+    add_check(checks, "rbac-service-account", "name: boostgateway-operator-controller-manager" in text)
+    add_check(checks, "rbac-role-binding", "kind: ClusterRoleBinding" in text and "name: boostgateway-operator-manager-role" in text)
     required_resources = {
         "boostgatewayclusters",
         "boostgatewayclusters/status",
@@ -89,31 +74,26 @@ def validate_rbac(operator_dir: Path, checks: list[dict[str, Any]]) -> None:
         "certificates",
         "events",
     }
-    add_check(checks, "rbac-required-resources", required_resources.issubset(resources), f"missing={sorted(required_resources - resources)}")
+    missing = sorted(resource for resource in required_resources if not has_resource(text, resource))
+    add_check(checks, "rbac-required-resources", not missing, f"missing={missing}")
 
 
 def validate_manager(operator_dir: Path, checks: list[dict[str, Any]]) -> None:
-    docs = load_yaml_documents(operator_dir / "config/manager/manager.yaml")
-    deployment = docs[0] if docs else {}
-    containers = nested(deployment, "spec", "template", "spec", "containers")
-    container = containers[0] if isinstance(containers, list) and containers else {}
-    ports = {port.get("name"): port.get("containerPort") for port in container.get("ports", [])}
-    add_check(checks, "manager-deployment", deployment.get("kind") == "Deployment")
-    add_check(checks, "manager-service-account", nested(deployment, "spec", "template", "spec", "serviceAccountName") == "boostgateway-operator-controller-manager")
-    add_check(checks, "manager-probe-port", ports.get("probes") == 8081)
-    add_check(checks, "manager-metrics-port", ports.get("metrics") == 8080)
-    add_check(checks, "manager-health-probes", bool(container.get("readinessProbe")) and bool(container.get("livenessProbe")))
+    text = read_text(operator_dir / "config/manager/manager.yaml")
+    add_check(checks, "manager-deployment", "kind: Deployment" in text)
+    add_check(checks, "manager-service-account", "serviceAccountName: boostgateway-operator-controller-manager" in text)
+    add_check(checks, "manager-probe-port", has_sequence(text, "containerPort: 8081", "name: probes"))
+    add_check(checks, "manager-metrics-port", has_sequence(text, "containerPort: 8080", "name: metrics"))
+    add_check(checks, "manager-health-probes", "readinessProbe:" in text and "livenessProbe:" in text)
 
 
 def validate_sample(operator_dir: Path, checks: list[dict[str, Any]]) -> None:
-    docs = load_yaml_documents(operator_dir / "config/samples/gateway_v1alpha1_boostgatewaycluster.yaml")
-    sample = docs[0] if docs else {}
-    spec = sample.get("spec", {})
-    add_check(checks, "sample-kind", sample.get("kind") == "BoostGatewayCluster")
-    add_check(checks, "sample-components", isinstance(spec, dict) and all(name in spec for name in REQUIRED_COMPONENTS))
-    ports_ok = all(isinstance(nested(spec, name, "port"), int) and nested(spec, name, "port") > 0 for name in REQUIRED_COMPONENTS)
+    text = read_text(operator_dir / "config/samples/gateway_v1alpha1_boostgatewaycluster.yaml")
+    add_check(checks, "sample-kind", "kind: BoostGatewayCluster" in text)
+    add_check(checks, "sample-components", all(re.search(rf"^\s*{name}:\s*$", text, re.MULTILINE) for name in REQUIRED_COMPONENTS))
+    ports_ok = all(re.search(rf"^\s*{name}:\s*(?:\n\s+.*)*?\n\s+port:\s*[1-9][0-9]*", text, re.MULTILINE) for name in REQUIRED_COMPONENTS)
     add_check(checks, "sample-component-ports", ports_ok)
-    add_check(checks, "sample-gateway-management-port", isinstance(nested(spec, "gateway", "managementPort"), int))
+    add_check(checks, "sample-gateway-management-port", bool(re.search(r"managementPort:\s*[1-9][0-9]*", text)))
 
 
 def write_summary(path: Path, checks: list[dict[str, Any]]) -> int:

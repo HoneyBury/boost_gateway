@@ -996,6 +996,20 @@ bool Runtime::handle(const GatewayCommand& command) {
                                     }
                                 }
                             }
+                            nlohmann::json room_finish_payload{
+                                {"room_id", session_room_id},
+                                {"battle_id", bridge_battle_id},
+                            };
+                            auto room_finish = bridge_->route(
+                                v2::service::ServiceId::kRoom,
+                                "room_battle_finished",
+                                room_finish_payload.dump(),
+                                session_room_id);
+                            if (!room_finish.success) {
+                                SPDLOG_WARN("Runtime: failed to mark bridge room battle finished for room={} battle={}",
+                                            session_room_id,
+                                            bridge_battle_id);
+                            }
                             battles_by_room_id_.erase(session_room_id);
                             room_to_battle_id_.erase(session_room_id);
                             return true;
@@ -2080,6 +2094,22 @@ void Runtime::process_battle_finished(const v2::battle::BattleFinishedMsg& finis
     pending_battle_timeout_.erase(finished.battle_id);
     battles_by_room_id_.erase(finished.room_id);
     room_to_battle_id_.erase(finished.room_id);
+
+    if (bridge_) {
+        nlohmann::json payload{
+            {"room_id", finished.room_id},
+            {"battle_id", finished.battle_id},
+        };
+        auto result = bridge_->route(v2::service::ServiceId::kRoom,
+                                     "room_battle_finished",
+                                     payload.dump(),
+                                     finished.room_id);
+        if (!result.success) {
+            SPDLOG_WARN("Runtime: failed to mark room battle finished for room={} battle={}",
+                        finished.room_id,
+                        finished.battle_id);
+        }
+    }
 
     if (!finished.triggering_user_id.empty()) {
         const auto sid = lookup_.session_for_user(finished.triggering_user_id);

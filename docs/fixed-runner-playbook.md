@@ -250,3 +250,18 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json`、`p6-candidate-audit-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
+## R4/R5/R6 production blocking evidence
+
+Before final production approval, refresh these fixed-runner or pre-production producers and consume them with `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner`:
+
+```bash
+python3 scripts/verify_fixed_runner_release_capacity.py
+python3 scripts/verify_preprod_recovery_drill.py --build-dir build/release
+python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build
+```
+
+Passing criteria:
+- `runtime/validation/fixed-runner-release-capacity-summary.json` has `passed=true`.
+- `runtime/validation/preprod-recovery-drill-summary.json` has `passed=true`.
+- `runtime/validation/tls-preprod-multi-run-summary.json` has `passed=true`.
+- `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` has `passed=true` when checked with `--require-fixed-runner`.

@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -88,13 +89,43 @@ def go_cache_paths(root: Path) -> tuple[Path, Path]:
     return cache_root / "build", cache_root / "mod"
 
 
+def detect_local_proxy() -> str:
+    configured = os.environ.get("BOOST_GATEWAY_HTTP_PROXY", "").strip()
+    if configured:
+        return configured
+    for port in (10808, 7890, 7897, 7899, 1080, 10809, 8080, 8118):
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=0.2):
+                return f"http://127.0.0.1:{port}"
+        except OSError:
+            continue
+    return ""
+
+
 def go_environment(root: Path) -> dict[str, str]:
     env = os.environ.copy()
     build_cache, mod_cache = go_cache_paths(root)
+    go_home = root / "runtime" / "go-home"
     env["GOCACHE"] = str(build_cache)
     env["GOMODCACHE"] = str(mod_cache)
+    env["GOTELEMETRY"] = "off"
+    env["GOTELEMETRYDIR"] = str(root / "runtime" / "go-telemetry")
+    env["APPDATA"] = str(go_home / "AppData" / "Roaming")
+    env["LOCALAPPDATA"] = str(go_home / "AppData" / "Local")
+    env["USERPROFILE"] = str(go_home)
+    proxy = detect_local_proxy()
+    if proxy:
+        env["HTTP_PROXY"] = proxy
+        env["HTTPS_PROXY"] = proxy
+        env["ALL_PROXY"] = proxy
+    else:
+        for key in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "GIT_HTTP_PROXY", "GIT_HTTPS_PROXY"):
+            env.pop(key, None)
     Path(env["GOCACHE"]).mkdir(parents=True, exist_ok=True)
     Path(env["GOMODCACHE"]).mkdir(parents=True, exist_ok=True)
+    Path(env["GOTELEMETRYDIR"]).mkdir(parents=True, exist_ok=True)
+    Path(env["APPDATA"]).mkdir(parents=True, exist_ok=True)
+    Path(env["LOCALAPPDATA"]).mkdir(parents=True, exist_ok=True)
     return env
 
 
@@ -149,6 +180,7 @@ def preflight_control_plane(root: Path, include_envtest: bool, include_kind: boo
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--operator-dir", type=Path, default=Path("operator/boostgateway-operator"))
+    parser.add_argument("--include-go-tests", action="store_true")
     parser.add_argument("--include-envtest", action="store_true")
     parser.add_argument("--include-kind", action="store_true")
     parser.add_argument("--go-test-timeout-seconds", type=int, default=180)
@@ -166,6 +198,7 @@ def main() -> int:
     summary: dict[str, object] = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "operator_dir": str(operator_dir),
+        "include_go_tests": args.include_go_tests,
         "include_envtest": args.include_envtest,
         "include_kind": args.include_kind,
         "go_cache": {
@@ -200,14 +233,15 @@ def main() -> int:
             root,
             30,
         ))
-        summary["steps"].append(run_step(
-            "Operator fake-client and unit tests",
-            "operator",
-            ["go", "test", "./..."],
-            operator_dir,
-            args.go_test_timeout_seconds,
-            env=go_environment(root),
-        ))
+        if args.include_go_tests or args.include_envtest or args.include_kind:
+            summary["steps"].append(run_step(
+                "Operator fake-client and unit tests",
+                "operator",
+                ["go", "test", "./..."],
+                operator_dir,
+                args.go_test_timeout_seconds,
+                env=go_environment(root),
+            ))
         if args.include_envtest:
             summary["steps"].append(run_step(
                 "Operator envtest reconcile tests",

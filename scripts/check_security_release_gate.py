@@ -41,7 +41,7 @@ def check_source_contracts(root: Path, errors: list[str]) -> None:
     login_source = root / "src" / "v2" / "login" / "login_backend_service.cpp"
     login_main = root / "examples" / "v2_login_backend" / "main.cpp"
     config_source = root / "src" / "app" / "config.cpp"
-    admin_doc = root / "docs" / "v1-admin-audit-rules.md"
+    admin_doc = root / "docs" / "archive" / "history-v1" / "v1-admin-audit-rules.md"
     admin_source = root / "src" / "game" / "gateway" / "admin_service.cpp"
 
     required_snippets = {

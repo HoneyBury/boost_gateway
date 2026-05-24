@@ -151,7 +151,9 @@ install(FILES
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/boost_gateway_sdk)
 
 # ── Tests ────────────────────────────────────────────────────────────
-add_subdirectory(tests)
+if(ENABLE_TESTING OR BOOST_GATEWAY_SDK_STANDALONE)
+    add_subdirectory(tests)
+endif()
 
 # ── Examples ─────────────────────────────────────────────────────────
 add_subdirectory(examples)

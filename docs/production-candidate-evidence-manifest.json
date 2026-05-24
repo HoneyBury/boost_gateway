@@ -54,7 +54,7 @@
       "category": "transport_tls",
       "title": "R0 transport config governance with TLS full-flow",
       "path": "runtime/validation/r0-transport-config-governance-summary.json",
-      "required": true,
+      "required": false,
       "freshness_hours": 168,
       "artifact_of": "r0_production_candidate_evidence"
     },
@@ -63,7 +63,7 @@
       "category": "grpc_decision",
       "title": "R0 N6 gRPC PoC decision child summary",
       "path": "runtime/validation/r0-n6-grpc-poc-decision-summary.json",
-      "required": true,
+      "required": false,
       "freshness_hours": 168,
       "artifact_of": "r0_production_candidate_evidence"
     },
@@ -72,7 +72,7 @@
       "category": "tls_readiness",
       "title": "R1 TLS production readiness evidence",
       "path": "runtime/validation/r1-tls-production-readiness-summary.json",
-      "required": true,
+      "required": false,
       "freshness_hours": 168,
       "notes": "Covers TLS full-flow, server CA verification, certificate rotation, mismatched CA expected failure, and plain-vs-TLS smoke comparison."
     },

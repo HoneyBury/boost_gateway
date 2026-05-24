@@ -543,7 +543,6 @@ private:
         const std::string user_id = doc.value("user_id", "");
         const std::int64_t mmr = doc.value("mmr", 1000);
         const std::string mode_str = doc.value("mode", "1v1");
-
         if (user_id.empty()) {
             return make_error(-1004, "empty_user_id");
         }

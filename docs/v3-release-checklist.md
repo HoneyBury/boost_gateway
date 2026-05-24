@@ -8,6 +8,9 @@
 
 | 门禁 | 命令 | 通过标准 |
 | --- | --- | --- |
+| P0 文档/安装清单收口 | `python scripts/check_current_docs_install.py` | 顶层当前文档、归档目录和 CMake install 清单全部指向存在路径 |
+| P1/P2 主链与证据准入 | `python scripts/check_mainline_readiness.py` | 业务 ingress 收敛到 `SessionAdapter/GatewayActor/Runtime`，gRPC/Tank demo 不进入默认主链，R4/R5/R6 固定 runner 证据入口存在 |
+| P3/P4 发布主链收口 | `python scripts/check_p3_p4_release_readiness.py` | P3 data recovery 和 P4 observability 已接入 RC 总门禁，summary 契约版本化，固定环境扩展项保持显式启用 |
 | R4 快速契约 | `python scripts/verify_r4_contract.py --build-dir build/windows-msvc-debug --configuration Debug` | proto contract、聚焦单测、聚合集成测试、短性能基线全部通过，并写出 `runtime/validation/r4-contract-summary.json` |
 | CI 快速契约 | `python scripts/verify_r4_contract.py --build-dir <build-dir> --skip-build --skip-arch-baseline` | 不重编译、不跑性能基线，验证 schema 与 R4 聚焦测试；失败时 summary 标出 `failed_category` 和 `failed_step` |
 | 安全发布门禁 | `python scripts/check_security_release_gate.py` | 生产模式 dev token fallback 有显式禁用路径，admin 审计最小键与 ACL 边界有证据 |

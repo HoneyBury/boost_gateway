@@ -490,7 +490,6 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
         record_route_result(target, result);
         return result;
     }
-
     v2::service::BackendEnvelope request{
         .target_service = target,
         .kind = v2::service::MessageKind::kRequest,

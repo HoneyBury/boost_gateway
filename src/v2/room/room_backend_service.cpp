@@ -183,6 +183,7 @@ public:
         handlers["room_kick"] = diag_wrap("room_kick", [this](const auto& req) { return handle_room_kick(req); });
         handlers["room_transfer_owner"] = diag_wrap("room_transfer_owner", [this](const auto& req) { return handle_room_transfer_owner(req); });
         handlers["room_state_push"] = diag_wrap("room_state_push", [this](const auto& req) { return handle_room_state_push(req); });
+        handlers["room_battle_finished"] = diag_wrap("room_battle_finished", [this](const auto& req) { return handle_room_battle_finished(req); });
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -527,6 +528,36 @@ private:
     }
 
     // ─── room_list ───────────────────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_room_battle_finished(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("room_id") || !doc.contains("battle_id")) {
+            return make_error(v2::service::ServiceErrorCode::kInvalidRequest, "invalid_json");
+        }
+
+        const std::string room_id = doc["room_id"].get<std::string>();
+        const std::string battle_id = doc["battle_id"].get<std::string>();
+
+        std::lock_guard<std::mutex> lock(room_manager_.mutex_);
+        auto* room = room_manager_.find(room_id);
+        if (room == nullptr) {
+            return make_error(v2::service::ServiceErrorCode::kRoomNotFound, "room_not_found");
+        }
+        if (!room->active_battle_id.empty() && room->active_battle_id != battle_id) {
+            return make_error(v2::service::ServiceErrorCode::kRejected, "battle_mismatch");
+        }
+
+        room->active_battle_id.clear();
+        room->status = RoomStatus::kWaiting;
+        for (auto& member : room->members) {
+            member.ready = false;
+        }
+        room->version++;
+        room->last_activity_at_ = std::chrono::steady_clock::now();
+
+        return make_ok({{"room_id", room_id}, {"battle_id", battle_id}, {"version", room->version}});
+    }
 
     v2::service::BackendEnvelope handle_room_list(
         const v2::service::BackendEnvelope& request) {

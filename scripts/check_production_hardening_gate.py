@@ -42,7 +42,7 @@ def validate_h0(checks: list[dict[str, Any]]) -> None:
 
 def validate_h1(checks: list[dict[str, Any]]) -> None:
     soak = read_text("scripts/verify_stability_soak.py")
-    plan = read_text("docs/production-candidate-hardening-plan.md")
+    plan = read_text("docs/archive/plans/production-candidate-hardening-plan.md")
     add(checks, "h1:soak-profiles", all(item in soak for item in ['"smoke"', '"short"', '"medium"']), "bounded soak profiles exist")
     add(checks, "h1:long-soak-plan", "2h / 8h soak" in plan and "RSS、fd、线程数、CPU" in plan, "long soak resource plan exists")
     add(checks, "h1:nightly-workflow", contains(".github/workflows/nightly-stability.yml", "schedule:"), "nightly stability workflow exists")
@@ -76,7 +76,7 @@ def validate_h4(checks: list[dict[str, Any]]) -> None:
     add(checks, "h4:runtime-http-gate", contains("scripts/verify_observability_gate.py", "--include-runtime-http"), "runtime HTTP observability gate exists")
     add(checks, "h4:otel-collector-gate", contains("scripts/verify_observability_gate.py", "--include-otel-collector"), "OTel collector gate exists")
     add(checks, "h4:gateway-red-dashboard", contains("env/monitoring/grafana-dashboard.json", "gateway_backend_.*_requests_total"), "dashboard has backend RED panels")
-    add(checks, "h4:p99-boundary-doc", contains("docs/releases/v3.3.2-p3-monitoring-operations.md", "P99"), "P99 observability boundary documented")
+    add(checks, "h4:p99-boundary-doc", contains("docs/archive/releases/v3.3.2-p3-monitoring-operations.md", "P99"), "P99 observability boundary documented")
 
 
 def validate_h5(checks: list[dict[str, Any]]) -> None:

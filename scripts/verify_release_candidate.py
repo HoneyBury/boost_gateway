@@ -100,9 +100,45 @@ def main() -> int:
 
     steps: list[dict[str, object]] = []
     steps.append(run_step(
+        "current docs install gate",
+        "docs",
+        [
+            sys.executable,
+            str(root / "scripts" / "check_current_docs_install.py"),
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-current-docs-install-summary.json"),
+        ],
+        root,
+        30,
+    ))
+    steps.append(run_step(
         "reliability matrix evidence",
         "docs",
         [sys.executable, str(root / "scripts" / "check_reliability_matrix.py")],
+        root,
+        30,
+    ))
+    steps.append(run_step(
+        "mainline readiness gate",
+        "mainline",
+        [
+            sys.executable,
+            str(root / "scripts" / "check_mainline_readiness.py"),
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-mainline-readiness-summary.json"),
+        ],
+        root,
+        30,
+    ))
+    steps.append(run_step(
+        "P3/P4 release readiness gate",
+        "release_readiness",
+        [
+            sys.executable,
+            str(root / "scripts" / "check_p3_p4_release_readiness.py"),
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-p3-p4-release-readiness-summary.json"),
+        ],
         root,
         30,
     ))
@@ -144,6 +180,23 @@ def main() -> int:
         ],
         root,
         30,
+    ))
+    steps.append(run_step(
+        "data recovery gate",
+        "data_recovery",
+        [
+            sys.executable,
+            str(root / "scripts" / "verify_data_recovery_gate.py"),
+            "--build-dir",
+            str(args.build_dir),
+            "--configuration",
+            args.configuration,
+            "--summary-path",
+            str(root / "runtime" / "validation" / "rc-data-recovery-summary.json"),
+            *(["--skip-build"] if args.skip_build else []),
+        ],
+        root,
+        args.timeout_seconds,
     ))
     steps.append(run_step(
         "observability release gate",

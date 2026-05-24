@@ -26,6 +26,9 @@
 
 ```bash
 python scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke
+python scripts/check_current_docs_install.py
+python scripts/check_mainline_readiness.py
+python scripts/check_p3_p4_release_readiness.py
 python scripts/verify_sdk_enterprise_delivery.py --build-dir build/Release --skip-build
 python scripts/verify_production_candidate_evidence.py --build-dir build/Release --skip-build
 python scripts/check_production_evidence_manifest.py

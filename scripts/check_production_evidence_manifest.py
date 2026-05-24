@@ -97,6 +97,11 @@ def check_evidence(
         check["details"].append("summary is missing or is not a JSON object")
         return check
 
+    if not effective_required and fixed_runner_required:
+        check["status"] = "optional-present"
+        check["details"].append("optional fixed-runner/pre-production evidence is present but not required in bounded mode")
+        return check
+
     if not summary_passed(summary):
         check["passed"] = False
         check["status"] = "failed-summary"
@@ -138,12 +143,19 @@ def main() -> int:
     parser.add_argument(
         "--summary-path",
         type=Path,
-        default=REPO_ROOT / "runtime/validation/r2-production-evidence-manifest-summary.json",
+        default=None,
     )
     args = parser.parse_args()
 
     manifest_path = args.manifest if args.manifest.is_absolute() else REPO_ROOT / args.manifest
-    summary_path = args.summary_path if args.summary_path.is_absolute() else REPO_ROOT / args.summary_path
+    if args.summary_path is None:
+        summary_path = REPO_ROOT / (
+            "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json"
+            if args.require_fixed_runner
+            else "runtime/validation/r2-production-evidence-manifest-summary.json"
+        )
+    else:
+        summary_path = args.summary_path if args.summary_path.is_absolute() else REPO_ROOT / args.summary_path
     manifest = load_json(manifest_path)
     now = datetime.now(UTC)
     checks: list[dict[str, Any]] = []

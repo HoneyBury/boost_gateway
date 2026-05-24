@@ -17,6 +17,14 @@ namespace boost_gateway { namespace sdk {
 namespace asio = boost::asio; using tcp = asio::ip::tcp; namespace msg = protocol;
 using namespace std::chrono_literals;
 
+namespace {
+
+std::string login_body(const std::string& user_id, const std::string& token) {
+    return user_id + "|" + token + "|" + user_id;
+}
+
+}  // namespace
+
 class TcpConnection {
 public:
     TcpConnection() : socket_(io_context_) {}
@@ -138,6 +146,7 @@ class SdkClient::Impl {
         while (std::chrono::steady_clock::now() < dl) {
             auto p = conn_.read(std::chrono::milliseconds(100)); if (p.message_id == 0) continue;
             if (is_push(p.message_id)) { dispatch_push(p); continue; }
+            if (p.message_id == msg::kErrorResponse) return {.message_id = p.message_id, .request_id = p.request_id, .error_code = p.error_code, .body = p.body};
             if (p.message_id != exp) return {.message_id = p.message_id, .request_id = p.request_id, .error_code = static_cast<std::int32_t>(SdkError::kInvalidResponse), .body = p.body};
             return p;
         }
@@ -151,7 +160,7 @@ public:
     bool is_connected() const { return conn_.is_connected(); }
 
     LoginResult login(const std::string& u, const std::string& tok, std::chrono::milliseconds to) {
-        auto r = expect(msg::kLoginRequest, u+"|token:"+tok+"|"+u, to, msg::kLoginResponse);
+        auto r = expect(msg::kLoginRequest, login_body(u, tok), to, msg::kLoginResponse);
         LoginResult lr; lr.ok = (r.message_id == msg::kLoginResponse); lr.user_id = u; lr.display_name = u; lr.error_code = r.error_code; lr.error_message = r.body; return lr;
     }
     RoomResult create_room(const std::string& rid, std::chrono::milliseconds to) {

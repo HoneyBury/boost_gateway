@@ -120,7 +120,7 @@ def validate_scripts(checks: list[dict[str, Any]]) -> None:
 def validate_runbooks(checks: list[dict[str, Any]]) -> None:
     deployment = read_text("docs/production-deployment-runbook.md")
     operations = read_text("docs/production-operations-runbook.md")
-    roadmap = read_text("docs/production-stabilization-roadmap.md")
+    roadmap = read_text("docs/archive/plans/production-stabilization-roadmap.md")
 
     add(checks, "runbook:n3-section", "N3 部署恢复、回滚与灾备演练" in deployment and "N3 部署恢复、回滚与灾备演练" in operations, "N3 recovery section exists in runbooks")
     add(checks, "runbook:rto-rpo", "RTO" in deployment and "RPO" in deployment, "RTO/RPO targets are documented")

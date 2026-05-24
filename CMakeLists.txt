@@ -110,36 +110,27 @@ endif()
 install(FILES
     docs/README.md
     docs/current-state.md
+    docs/architecture-overview.md
     docs/reliability-matrix.md
-    docs/runtime-playbook.md
-    docs/development-priority.md
-    docs/v1-structure-upgrade-decision.md
-    docs/release-process.md
-    docs/v2-roadmap.md
-    docs/v2-design.md
-    docs/v2-startup-checklist.md
-    docs/v2-next-phases.md
-    docs/v2-runtime.md
-    docs/v2-protocol-bridge.md
-    docs/v2-player-lifecycle.md
-    docs/v2-room-lifecycle.md
-    docs/v2-gateway-cutover-criteria.md
-    docs/v2-service-split-plan.md
-    docs/v2-enterprise-roadmap.md
-    docs/architecture-acceptance-criteria.md
-    docs/architecture-baseline-r2.md
-    docs/actor-concurrency-model-r3.md
-    docs/communication-contract-r4.md
     docs/performance-baseline.md
-    docs/v3-production-readiness-plan.md
+    docs/production-deployment-runbook.md
+    docs/production-operations-runbook.md
+    docs/production-configuration-runbook.md
+    docs/production-evidence-runner.md
+    docs/fixed-runner-playbook.md
+    docs/tls-mtls-runbook.md
     docs/v3-release-checklist.md
-    docs/grpc-poc-summary.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 
 install(FILES
-    docs/releases/v1.2.5.md
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/releases"
+    docs/production-candidate-evidence-manifest.json
+    docs/production-recovery-drill-record-template.json
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
+)
+
+install(DIRECTORY docs/archive/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/archive"
 )
 
 install(FILES

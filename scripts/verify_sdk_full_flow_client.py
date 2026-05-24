@@ -57,6 +57,21 @@ def runtime_path_entries(build_dir: Path) -> list[str]:
     return [str(path) for path in candidates if path.exists()]
 
 
+def process_runtime_path_entries(paths: list[Path]) -> list[str]:
+    entries: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        parent = path.parent
+        if not parent.exists():
+            continue
+        value = str(parent)
+        key = value.lower() if os.name == "nt" else value
+        if key not in seen:
+            seen.add(key)
+            entries.append(value)
+    return entries
+
+
 def write_temp_gateway_config(
     path: Path,
     http_port: int,
@@ -170,6 +185,57 @@ def wait_for_port(host: str, port: int, timeout_s: float) -> bool:
     return False
 
 
+def wait_for_process_port(
+    proc: subprocess.Popen[str] | None,
+    host: str,
+    port: int,
+    timeout_s: float,
+) -> tuple[bool, str]:
+    if proc is None:
+        return False, "process did not start"
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            return False, f"process exited before opening TCP port {port}, exit_code={proc.returncode}"
+        try:
+            with socket.create_connection((host, port), timeout=0.2):
+                return True, ""
+        except OSError:
+            time.sleep(0.1)
+    if proc.poll() is not None:
+        return False, f"process exited before opening TCP port {port}, exit_code={proc.returncode}"
+    return False, f"TCP port {port} did not open within {timeout_s:g}s"
+
+
+def process_output_snapshot(proc: subprocess.Popen[str] | None) -> tuple[str, str]:
+    if proc is None or proc.poll() is None:
+        stdout_path = getattr(proc, "_boost_stdout_path", None) if proc is not None else None
+        stderr_path = getattr(proc, "_boost_stderr_path", None) if proc is not None else None
+        stdout_file = getattr(proc, "_boost_stdout_file", None) if proc is not None else None
+        stderr_file = getattr(proc, "_boost_stderr_file", None) if proc is not None else None
+        for handle in (stdout_file, stderr_file):
+            if handle is not None:
+                try:
+                    handle.flush()
+                except OSError:
+                    pass
+        return read_process_log_tail(stdout_path), read_process_log_tail(stderr_path)
+    try:
+        stdout, stderr = proc.communicate(timeout=1)
+    except subprocess.TimeoutExpired:
+        return "", ""
+    return (stdout or "")[-30000:], (stderr or "")[-30000:]
+
+
+def read_process_log_tail(path: Path | None, limit: int = 30000) -> str:
+    if path is None or not path.exists():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")[-limit:]
+    except OSError:
+        return ""
+
+
 def reserve_free_port(host: str) -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.bind((host, 0))
@@ -202,18 +268,32 @@ def start_process(
     env: dict[str, str],
     checks: list[dict[str, Any]],
 ) -> subprocess.Popen[str] | None:
+    log_dir = REPO_ROOT / "runtime/validation/process-logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    stamp = f"{int(time.time() * 1000)}-{name}"
+    stdout_path = log_dir / f"{stamp}.stdout.log"
+    stderr_path = log_dir / f"{stamp}.stderr.log"
+    stdout_file = stdout_path.open("w+", encoding="utf-8", errors="replace")
+    stderr_file = stderr_path.open("w+", encoding="utf-8", errors="replace")
     try:
-        return subprocess.Popen(
+        proc = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
             env=env,
             text=True,
             encoding="utf-8",
             errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stdout=stdout_file,
+            stderr=stderr_file,
         )
+        proc._boost_stdout_path = stdout_path  # type: ignore[attr-defined]
+        proc._boost_stderr_path = stderr_path  # type: ignore[attr-defined]
+        proc._boost_stdout_file = stdout_file  # type: ignore[attr-defined]
+        proc._boost_stderr_file = stderr_file  # type: ignore[attr-defined]
+        return proc
     except OSError as exc:
+        stdout_file.close()
+        stderr_file.close()
         checks.append(
             {
                 "name": f"start-{name}",
@@ -229,10 +309,21 @@ def start_process(
 def terminate_process(name: str, proc: subprocess.Popen[str], checks: list[dict[str, Any]]) -> None:
     proc.terminate()
     try:
-        stdout, stderr = proc.communicate(timeout=5)
+        proc.communicate(timeout=5)
     except subprocess.TimeoutExpired:
         proc.kill()
-        stdout, stderr = proc.communicate(timeout=5)
+        proc.communicate(timeout=5)
+    stdout_file = getattr(proc, "_boost_stdout_file", None)
+    stderr_file = getattr(proc, "_boost_stderr_file", None)
+    for handle in (stdout_file, stderr_file):
+        if handle is not None:
+            try:
+                handle.flush()
+                handle.close()
+            except OSError:
+                pass
+    stdout = read_process_log_tail(getattr(proc, "_boost_stdout_path", None))
+    stderr = read_process_log_tail(getattr(proc, "_boost_stderr_path", None))
     checks.append(
         {
             "name": f"{name}-shutdown",
@@ -358,6 +449,8 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "runtime/validation/sdk-full-flow-client-summary.json",
     )
+    parser.add_argument("--backend-ready-timeout-seconds", type=float, default=30.0)
+    parser.add_argument("--gateway-ready-timeout-seconds", type=float, default=30.0)
     args = parser.parse_args()
 
     gateway = resolve_executable(args.build_dir, "examples/v2_gateway_demo/v2_gateway_demo")
@@ -419,7 +512,7 @@ def main() -> int:
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
-        extra_paths = runtime_path_entries(args.build_dir)
+        extra_paths = process_runtime_path_entries(required_binaries) + runtime_path_entries(args.build_dir)
         if extra_paths:
             base_env["PATH"] = os.pathsep.join(extra_paths + [base_env.get("PATH", "")])
         tls_cert_dir = args.tls_cert_dir if args.tls_cert_dir.is_absolute() else REPO_ROOT / args.tls_cert_dir
@@ -474,15 +567,23 @@ def main() -> int:
             proc = start_process(name, [str(executable)], env, checks)
             if proc is not None:
                 processes.append((name, proc))
-            ready = proc is not None and wait_for_port(args.host, port, 10.0)
+            ready, ready_error = wait_for_process_port(
+                proc,
+                args.host,
+                port,
+                args.backend_ready_timeout_seconds,
+            )
+            ready_stdout, ready_stderr = ("", "")
+            if not ready:
+                ready_stdout, ready_stderr = process_output_snapshot(proc)
             checks.append(
                 {
                     "name": f"{name}-backend-ready",
-                "passed": ready,
-                "command": [str(executable)],
-                "duration_seconds": 0.0,
-                "stdout": "",
-                "stderr": "" if ready else f"{name} backend did not open TCP port {port} within 10s",
+                    "passed": ready,
+                    "command": [str(executable)],
+                    "duration_seconds": 0.0,
+                    "stdout": ready_stdout,
+                    "stderr": "" if ready else f"{name} backend did not become ready: {ready_error}; {ready_stderr}",
                 }
             )
             if not ready:
@@ -515,16 +616,27 @@ def main() -> int:
         )
         if gateway_proc is not None:
             processes.append(("gateway", gateway_proc))
-        ready = wait_for_port(args.host, gateway_port, 10.0)
-        http_ready = wait_for_http(f"http://{args.host}:{http_port}/health", 10.0)
+        ready, ready_error = wait_for_process_port(
+            gateway_proc,
+            args.host,
+            gateway_port,
+            args.gateway_ready_timeout_seconds,
+        )
+        http_ready = ready and wait_for_http(
+            f"http://{args.host}:{http_port}/health",
+            args.gateway_ready_timeout_seconds,
+        )
+        ready_stdout, ready_stderr = ("", "")
+        if not ready or not http_ready:
+            ready_stdout, ready_stderr = process_output_snapshot(gateway_proc)
         checks.append(
             {
                 "name": "gateway-ready",
                 "passed": ready and http_ready,
                 "command": [str(gateway), "--http-port", str(http_port)],
                 "duration_seconds": 0.0,
-                "stdout": "",
-                "stderr": "" if ready and http_ready else "gateway TCP or HTTP endpoint did not become ready",
+                "stdout": ready_stdout,
+                "stderr": "" if ready and http_ready else f"gateway TCP or HTTP endpoint did not become ready: {ready_error}; {ready_stderr}",
             }
         )
         if ready and http_ready:
@@ -532,6 +644,11 @@ def main() -> int:
                 "run-sdk-full-flow-client",
                 [str(client), args.host, str(gateway_port)],
                 checks,
+            )
+            time.sleep(8)
+            add_backend_metric_check(
+                checks,
+                f"http://{args.host}:{http_port}/metrics/diagnostics/json",
             )
             add_sdk_flow_output_check(checks)
             if args.backend_tls:

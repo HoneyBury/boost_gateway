@@ -51,6 +51,20 @@
 - `v3-release-checklist.md`
   当前 release gate 与最终发布检查口径。
 
+## P0/P1/P2 收口门禁
+
+- `scripts/check_current_docs_install.py`
+  校验顶层主文档、归档目录和 CMake install 清单是否一致。
+
+- `scripts/check_mainline_readiness.py`
+  校验默认生产主链边界、gRPC/Tank demo 边界和固定 runner 证据入口。
+
+- `scripts/check_p3_p4_release_readiness.py`
+  校验 P3 data recovery 与 P4 observability 已接入 RC 总门禁，并使用统一 summary 契约。
+
+- `scripts/check_production_evidence_manifest.py --require-fixed-runner`
+  投产前把 R4/R5/R6 固定 runner 或预发证据提升为阻断项。
+
 ## 归档文档
 
 - `archive/history-v1/`

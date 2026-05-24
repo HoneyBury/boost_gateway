@@ -3,7 +3,7 @@
 更新时间：2026-05-18
 
 本文档记录 v3.3.2 之后生产稳定化与交付闭环阶段的规划和完成状态。当前阶段已经完成 P0-P8 生产业务闭环接入收束；后续继续推进时，本文档新增的“生产数据沉淀与风险燃尽”作为下一阶段规划事实源。
-历史 P 阶段中，当前阶段已经完成 P0-P6 收束，生产候选硬化方向的原始规划入口保留在 `docs/production-candidate-hardening-plan.md`，后续以本文档、`docs/current-state.md` 和各 runtime summary 作为最新事实源。
+历史 P 阶段中，当前阶段已经完成 P0-P6 收束，生产候选硬化方向的原始规划入口保留在 `docs/archive/plans/production-candidate-hardening-plan.md`，后续以 `docs/current-state.md`、顶层 runbook 和各 runtime summary 作为最新事实源。
 
 ## 阶段目标
 
@@ -461,13 +461,13 @@ curl http://localhost:9080/health
 
 | 阶段 | 状态 | 交付记录 / 证据 |
 | --- | --- | --- |
-| P0 生产部署口径与发布 Runbook | completed | `docs/releases/v3.3.2-p0-production-deployment.md`、`docs/production-deployment-runbook.md` |
-| P1 性能基线与容量事实 | completed | `docs/releases/v3.3.2-p1-performance-stabilization.md`、`runtime/perf/release-baseline/summary.json` |
-| P2 真实生产证据固定 Runner | completed | `docs/releases/v3.3.2-p2-production-evidence-runner.md`、`.github/workflows/production-evidence.yml` |
-| P3 监控告警与运维 Runbook | completed | `docs/releases/v3.3.2-p3-monitoring-operations.md`、`scripts/check_monitoring_operability.py` |
-| P4 SDK 企业级封装稳定化 | completed | `docs/releases/v3.3.2-p4-sdk-enterprise-runtime.md`、`scripts/verify_sdk_full_flow_client.py` |
-| P5 长稳故障回滚演练 | completed | `docs/releases/v3.3.2-p5-production-resilience.md`、`.github/workflows/production-resilience.yml` |
-| P6 生产证据与候选审核 | completed | `docs/releases/v3.3.2-p6-production-evidence.md`、`scripts/check_production_candidate_audit.py` |
+| P0 生产部署口径与发布 Runbook | completed | `docs/archive/releases/v3.3.2-p0-production-deployment.md`、`docs/production-deployment-runbook.md` |
+| P1 性能基线与容量事实 | completed | `docs/archive/releases/v3.3.2-p1-performance-stabilization.md`、`runtime/perf/release-baseline/summary.json` |
+| P2 真实生产证据固定 Runner | completed | `docs/archive/releases/v3.3.2-p2-production-evidence-runner.md`、`.github/workflows/production-evidence.yml` |
+| P3 监控告警与运维 Runbook | completed | `docs/archive/releases/v3.3.2-p3-monitoring-operations.md`、`scripts/check_monitoring_operability.py` |
+| P4 SDK 企业级封装稳定化 | completed | `docs/archive/releases/v3.3.2-p4-sdk-enterprise-runtime.md`、`scripts/verify_sdk_full_flow_client.py` |
+| P5 长稳故障回滚演练 | completed | `docs/archive/releases/v3.3.2-p5-production-resilience.md`、`.github/workflows/production-resilience.yml` |
+| P6 生产证据与候选审核 | completed | `docs/archive/releases/v3.3.2-p6-production-evidence.md`、`scripts/check_production_candidate_audit.py` |
 
 ## 历史优先级规划
 
