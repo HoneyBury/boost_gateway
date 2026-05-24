@@ -270,7 +270,7 @@ python3 scripts/verify_p5_p8_business_closure.py \
 - `runtime/validation/p7-k8s-full-flow-summary.json`
 - `runtime/validation/p5-p8-business-closure-summary.json`
 
-P5-P8 的详细边界见 `docs/observability-trace-runbook.md`、`docs/tls-mtls-runbook.md`、`docs/k8s-business-flow-runbook.md` 和 `docs/v3-proto-grpc-adr.md`。
+P5-P8 的详细边界以当前主线文档和归档计划文档为准；历史补充材料已归档到 `docs/archive/`，其中与观测、K8s 业务流和 proto/gRPC 取舍相关的旧文档位于 `docs/archive/runbooks/` 和 `docs/archive/process/`。
 
 ## 告警分级
 
