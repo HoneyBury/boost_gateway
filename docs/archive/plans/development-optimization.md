@@ -68,11 +68,11 @@
 
 - 协议格式冲突
   - `README.md` 写的是：`[4字节长度][2字节消息号][4字节请求序号][4字节错误码][1字节标记位][消息体]`
-  - `docs/runtime-playbook.md` 第 2 节仍写成：`[4字节长度][2字节消息号][4字节请求序号][4字节错误码][消息体]`
+  - `../runbooks/runtime-playbook.md` 第 2 节仍写成：`[4字节长度][2字节消息号][4字节请求序号][4字节错误码][消息体]`
   - 同一份 `runtime-playbook.md` 的后续章节又承认协议包含 `flags`
 - 压测场景数量冲突
   - `README.md` / `CHANGELOG.md` 写 8 种场景
-  - `docs/development-priority.md`、`docs/runtime-playbook.md`、`docs/architecture-roadmap.md` 仍保留 6 种场景表述
+  - `../plans/development-priority.md`、`../runbooks/runtime-playbook.md`、`docs/architecture-roadmap.md` 仍保留 6 种场景表述
 - 测试规模表述存在阶段残留
   - `docs/development-log.md` 中持续保留 `28/28`、`32/32`、`34/34` 等阶段性数字
   - 但总览文档已经按 `54 个测试` 对外描述
@@ -224,7 +224,7 @@
   - [include/net/internal_bus.h](/D:/Program/boost/include/net/internal_bus.h)
   - [src/game/gateway/gateway_server.cpp](/D:/Program/boost/src/game/gateway/gateway_server.cpp)
 - 相关文档：
-  - [docs/runtime-playbook.md](/D:/Program/boost/docs/runtime-playbook.md)
+  - [../runbooks/runtime-playbook.md](/D:/Program/boost/../runbooks/runtime-playbook.md)
   - [docs/architecture-roadmap.md](/D:/Program/boost/docs/architecture-roadmap.md)
 
 ### 现状
@@ -1437,7 +1437,7 @@
   - [src/app/config.cpp](/D:/Program/boost/src/app/config.cpp)
   - [include/app/config_watcher.h](/D:/Program/boost/include/app/config_watcher.h)
   - [config/gateway.json](/D:/Program/boost/config/gateway.json)
-  - [docs/runtime-playbook.md](/D:/Program/boost/docs/runtime-playbook.md)
+  - [../runbooks/runtime-playbook.md](/D:/Program/boost/../runbooks/runtime-playbook.md)
   - [examples/echo/server_main.cpp](/D:/Program/boost/examples/echo/server_main.cpp)
   - [examples/login_demo/login_demo_main.cpp](/D:/Program/boost/examples/login_demo/login_demo_main.cpp)
   - [examples/room_demo/room_demo_main.cpp](/D:/Program/boost/examples/room_demo/room_demo_main.cpp)
@@ -1821,7 +1821,7 @@
 
 #### 改造任务
 
-1. 统一 `README.md`、`docs/runtime-playbook.md`、`docs/development-priority.md` 中对以下能力的表述：
+1. 统一 `README.md`、`../runbooks/runtime-playbook.md`、`../plans/development-priority.md` 中对以下能力的表述：
    - 结构化消息体是否已进入主链
    - 分片能力是否已正式启用
    - 多进程/拆服是否已完成

@@ -4,7 +4,7 @@
 
 本文档配合 **`v1.1.7`**（`development-optimization.md` §11 **T07 / T08**），把散落在多处的「登录顶号」「空房清理」编成**可查的统一流程说明**，并与**代码单一策略入口**对应。
 
-冻结的字符串协议仍以 **`docs/v1-string-protocol.md`** 为准；本文不重复每条 body，只描述**调用顺序与职责边界**。
+冻结的字符串协议仍以 **`../history-v1/v1-string-protocol.md`** 为准；本文不重复每条 body，只描述**调用顺序与职责边界**。
 
 ---
 
@@ -58,13 +58,13 @@
 
 ## C. 与后续版本的关系
 
-- **`v1.1.8` / T09 / T06②**（房战边界、`transfer_session`、`member_user_id`）：**`docs/v1-room-battle-boundary.md`**
-- **`v1.1.9` / T10** — 治理入口分层：**`docs/v1-governance-layers.md`** §1–§5
+- **`v1.1.8` / T09 / T06②**（房战边界、`transfer_session`、`member_user_id`）：**`../history-v1/v1-room-battle-boundary.md`**
+- **`v1.1.9` / T10** — 治理入口分层：**`../history-v1/v1-governance-layers.md`** §1–§5
 - **`v1.1.10`** — 治理成熟度冻结（文档与示例用语）：同文 **§6**
-- **`v1.1.11` / T11** — **`docs/v1-admin-audit-rules.md`**（admin **调用前提** + **`admin_invoke`** 最小审计）；**运行时 ACL**：仍 `reserved`
-- **`v1.1.12` / T12** — **`docs/v1-config-maturity.md`**（`GatewayAppConfig` 启动/热更新/预留；`ConfigWatcher` 现状）
-- **`v1.1.13`–`v1.1.14` / T13** — **`docs/v1-runtime-lifecycle.md`**（启动 / reload / shutdown 清单；showcase **`io.stop()`**；**v1.1.14**：**`try_load_gateway_config`** + shutdown **最小保证 / reserved** 分界 **§6–§7**）
-- **`v1.1.15` / T14** — **`docs/v1-cross-cutting-capabilities.md`**（player store / replay / **`AUDIT_LOG`** 与生命周期节点的当前接线事实）
-- **`v1.1.16` / T15** — **`docs/v1-cross-cutting-lifecycle-binding.md`**（节点 **N1–N7** 横切动作 **应收口** 规范矩阵；与 T14 **事实**区分）
-- **`v1.1.17` / T16** — **`docs/v1-cross-cutting-data-formats.md`**（player / SQLite / replay / **`AUDIT_LOG`** **格式与支持级别**）
+- **`v1.1.11` / T11** — **`../history-v1/v1-admin-audit-rules.md`**（admin **调用前提** + **`admin_invoke`** 最小审计）；**运行时 ACL**：仍 `reserved`
+- **`v1.1.12` / T12** — **`../history-v1/v1-config-maturity.md`**（`GatewayAppConfig` 启动/热更新/预留；`ConfigWatcher` 现状）
+- **`v1.1.13`–`v1.1.14` / T13** — **`../history-v1/v1-runtime-lifecycle.md`**（启动 / reload / shutdown 清单；showcase **`io.stop()`**；**v1.1.14**：**`try_load_gateway_config`** + shutdown **最小保证 / reserved** 分界 **§6–§7**）
+- **`v1.1.15` / T14** — **`../history-v1/v1-cross-cutting-capabilities.md`**（player store / replay / **`AUDIT_LOG`** 与生命周期节点的当前接线事实）
+- **`v1.1.16` / T15** — **`../history-v1/v1-cross-cutting-lifecycle-binding.md`**（节点 **N1–N7** 横切动作 **应收口** 规范矩阵；与 T14 **事实**区分）
+- **`v1.1.17` / T16** — **`../history-v1/v1-cross-cutting-data-formats.md`**（player / SQLite / replay / **`AUDIT_LOG`** **格式与支持级别**）
 - **开战编排链**：仍主要在 `BattleService` + `RoomService`/`RoomManager`；若将来提取独立助手，再追加专节并指向实现文件。

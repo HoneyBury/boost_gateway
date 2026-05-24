@@ -3,7 +3,7 @@
 ## 1. 文档定位
 
 - **任务**：落实 **`development-optimization.md` §11 T12**：把 `GatewayAppConfig` 相关字段的 **启动生效 / 热更新生效 / 仅解析（预留）** 写清，避免「配置能写进 JSON」被误读成「进程已按该字段运行」。
-- **单一事实源**：字段级表格仍以 **`docs/v1-maturity-matrix.md` §5.1** 为准；本文补充 **口径说明**、**热更新现状**、**示例入口差异**，并与 **`ConfigWatcher` / `GracefulShutdown`**（矩阵 §5.2 / §5.3）对齐。
+- **单一事实源**：字段级表格仍以 **`../history-v1/v1-maturity-matrix.md` §5.1** 为准；本文补充 **口径说明**、**热更新现状**、**示例入口差异**，并与 **`ConfigWatcher` / `GracefulShutdown`**（矩阵 §5.2 / §5.3）对齐。
 - **不在本版承诺**：统一 reload 校验 / 回滚 / 去抖 /「改配置自动重建线程池或重绑监听」— 归 **`v1.1.13`–`v1.1.14`（T13）** 与后续工程化。
 
 ---
@@ -29,7 +29,7 @@
 
 ## 4. `GatewayAppConfig` 字段表
 
-与 **`docs/v1-maturity-matrix.md` §5.1** 同步维护；修订字段时 **先改矩阵 §5.1**，再视需要更新本节叙述。
+与 **`../history-v1/v1-maturity-matrix.md` §5.1** 同步维护；修订字段时 **先改矩阵 §5.1**，再视需要更新本节叙述。
 
 | 字段 | 启动生效 | 热更新生效 | 主链接入 | 备注 |
 |---|---|---|---|---|
@@ -74,9 +74,9 @@
 | 版本 | 内容 |
 |---|---|
 | **`v1.1.12`**（本文） | T12：配置字段成熟度 **单列文档** + 热更新叙事收口 |
-| **`v1.1.13`** | T13：**`docs/v1-runtime-lifecycle.md`** + showcase shutdown **`io_context.stop()`** |
-| **`v1.1.14`** | T13 后半：**`try_load_gateway_config`**；**`docs/v1-runtime-lifecycle.md` §6–§7**（矩阵 §5.2–§5.3 组件表仍为本索引） |
-| **`v1.1.15`** | **T14**：player store / replay / audit 与生命周期节点对照 — **`docs/v1-cross-cutting-capabilities.md`** |
-| **`v1.1.16`** | **T15**：横切动作 **应收口** — **`docs/v1-cross-cutting-lifecycle-binding.md`** |
-| **`v1.1.17`** | **T16**：横切 **数据格式与后端支持级别** — **`docs/v1-cross-cutting-data-formats.md`** |
+| **`v1.1.13`** | T13：**`../history-v1/v1-runtime-lifecycle.md`** + showcase shutdown **`io_context.stop()`** |
+| **`v1.1.14`** | T13 后半：**`try_load_gateway_config`**；**`../history-v1/v1-runtime-lifecycle.md` §6–§7**（矩阵 §5.2–§5.3 组件表仍为本索引） |
+| **`v1.1.15`** | **T14**：player store / replay / audit 与生命周期节点对照 — **`../history-v1/v1-cross-cutting-capabilities.md`** |
+| **`v1.1.16`** | **T15**：横切动作 **应收口** — **`../history-v1/v1-cross-cutting-lifecycle-binding.md`** |
+| **`v1.1.17`** | **T16**：横切 **数据格式与后端支持级别** — **`../history-v1/v1-cross-cutting-data-formats.md`** |
 | **`v1.2.3`（T19）** | **已完成**：生命周期与装配回归测试（`lifecycle_assembly_test`） |

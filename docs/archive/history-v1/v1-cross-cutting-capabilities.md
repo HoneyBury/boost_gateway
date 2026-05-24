@@ -3,8 +3,8 @@
 ## 1. 文档定位
 
 - **任务**：落实 **`development-optimization.md` §11 T14** 与 **§9.43 / Persistence·Audit 路线图第一步**：把 **player store**、**battle replay**、**文本审计（`AUDIT_LOG`）** 从矩阵条目提升为一份可读的 **「接在哪些节点 / 不接在哪些节点」** 事实说明，避免「接口或示例存在」被误读成「主链已按生命周期统一绑定」。
-- **单一事实源**：**成熟度等级**仍以 **`docs/v1-maturity-matrix.md`** **§6**（持久化 / 回放）与 **§4.4**（审计）为准；本文只补充 **跨三类能力的对照表** 与 **生命周期矩阵**，不与矩阵等级定义冲突。
-- **不在本版承诺**：按节点 **收口横切动作**（登录是否落盘、结算是否产 replay 等）的 **规范矩阵** 见 **`docs/v1-cross-cutting-lifecycle-binding.md`（`v1.1.16` / T15）**；**格式与后端支持级别冻结**归 **`v1.1.17`（T16）**；**自动化回归**归 **`v1.2.4`（T20）**。
+- **单一事实源**：**成熟度等级**仍以 **`../history-v1/v1-maturity-matrix.md`** **§6**（持久化 / 回放）与 **§4.4**（审计）为准；本文只补充 **跨三类能力的对照表** 与 **生命周期矩阵**，不与矩阵等级定义冲突。
+- **不在本版承诺**：按节点 **收口横切动作**（登录是否落盘、结算是否产 replay 等）的 **规范矩阵** 见 **`../history-v1/v1-cross-cutting-lifecycle-binding.md`（`v1.1.16` / T15）**；**格式与后端支持级别冻结**归 **`v1.1.17`（T16）**；**自动化回归**归 **`v1.2.4`（T20）**。
 
 ---
 
@@ -27,7 +27,7 @@
 | **登录成功 / 失败** | ❌ 主链不落盘 | ❌ | ✅ `login_success` / `login_failure`（`LoginService`） |
 | **连接拒绝**（容量 / 每 IP） | — | — | ✅ `connection_rejected`（`GatewayServer`） |
 | **Ingress 限频拒绝** | — | — | ✅ `rate_limited`（`GatewayService`） |
-| **二进制 Admin 请求** | — | — | ✅ `admin_invoke`（`AdminService`，键约定见 **`docs/v1-admin-audit-rules.md`**） |
+| **二进制 Admin 请求** | — | — | ✅ `admin_invoke`（`AdminService`，键约定见 **`../history-v1/v1-admin-audit-rules.md`**） |
 | **战斗进行中 / 结算** | ❌ | ❌ **主链不调用** `save_replay` | ❌ **无**统一审计钩子 |
 | **配置热更新回调** | ❌ | — | **示例**：`config_reload`（`echo` / `login_demo` / `admin_demo` 等） |
 | **优雅停服回调** | **示例**：`JsonFilePlayerStore::save` 遍历会话（`echo` / `login_demo` / `admin_demo`） | ❌ | **示例**：`shutdown`（同上）；**`battle_demo` / `room_demo` 无** `GracefulShutdown` 装配时不适用 |
@@ -44,7 +44,7 @@
 | `battle_demo` | ❌ | ❌ | 仅构造 `replay_store`，**未**接 `end_battle` |
 | `room_demo` | ❌ | ❌ | — |
 
-完整启动 / reload / shutdown 清单见 **`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。
+完整启动 / reload / shutdown 清单见 **`../history-v1/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。
 
 ---
 
@@ -53,6 +53,6 @@
 | 版本 | 内容 |
 |------|------|
 | **`v1.1.15`**（本文） | **T14**：三类能力 **定位 + 生命周期事实矩阵** |
-| **`v1.1.16`**（T15） | **`docs/v1-cross-cutting-lifecycle-binding.md`**：节点 **N1–N7** × 审计 / 持久化 / replay **规范矩阵** + showcase 自检清单 |
-| **`v1.1.17`**（T16） | **`docs/v1-cross-cutting-data-formats.md`**：后端与 audit / replay **格式与支持级别（叙述冻结）** |
+| **`v1.1.16`**（T15） | **`../history-v1/v1-cross-cutting-lifecycle-binding.md`**：节点 **N1–N7** × 审计 / 持久化 / replay **规范矩阵** + showcase 自检清单 |
+| **`v1.1.17`**（T16） | **`../history-v1/v1-cross-cutting-data-formats.md`**：后端与 audit / replay **格式与支持级别（叙述冻结）** |
 | **`v1.2.4`**（T20） | persistence / audit / replay **回归测试**加固 |

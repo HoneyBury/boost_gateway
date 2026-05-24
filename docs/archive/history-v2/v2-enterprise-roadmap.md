@@ -115,7 +115,7 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 | E3 | 故障注入测试 | 后端宕机恢复、网络分区、超时场景、重复连接 |
 | E4 | 服务发现演练 | ServiceRegistry TTL 过期、心跳恢复、实例上下线 |
 | E5 | 长时间浸泡测试 | 8 小时连续运行，验证无内存泄漏、fd 泄漏、日志不爆盘 |
-| E6 | 客户端协议规范 | 输出 `docs/v2-protocol-spec.md`：消息格式、错误码、状态机、重连协议 |
+| E6 | 客户端协议规范 | 输出 `../history-v2/v2-protocol-spec.md`：消息格式、错误码、状态机、重连协议 |
 
 **验收标准**：
 - E2E 测试覆盖 ≥ 15 个业务场景
@@ -226,7 +226,7 @@ SDK 封装     全量测试     文档+环境     分布式运行时
 |---|---|---|
 | v2.0.1 | `docs/architecture-acceptance-criteria.md` | 五维度验收标准（本文档 §1） |
 | v2.0.2 | `docs/performance-baseline.md` | 吞吐/延迟/资源基线 + 容量规划 |
-| v2.1.0 | `docs/v2-protocol-spec.md` | 客户端协议规范 |
+| v2.1.0 | `../history-v2/v2-protocol-spec.md` | 客户端协议规范 |
 | v2.1.0 | `docs/e2e-test-plan.md` | 端到端测试用例清单 |
 | v2.2.0 | `docs/security-model.md` | 认证/授权/审计安全模型 |
 | v2.2.0 | `docs/observability-guide.md` | 指标/追踪/告警运维手册 |

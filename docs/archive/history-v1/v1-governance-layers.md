@@ -9,7 +9,7 @@
 - **权限与审计约束**：**`v1.1.11`**（T11）。
 - **治理边界测试**：**`v1.2.2`**（T18，已在当前维护分支完成）。
 
-单项能力仍以 **`docs/v1-maturity-matrix.md` §4** 为准；本文负责「这些能力分属哪一层、谁可以碰」。
+单项能力仍以 **`../history-v1/v1-maturity-matrix.md` §4** 为准；本文负责「这些能力分属哪一层、谁可以碰」。
 
 ---
 
@@ -58,7 +58,7 @@
 | 版本 | 内容 |
 |------|------|
 | `v1.1.10` | 冻结治理能力成熟度与接线方式（文档与示例表述；**§6**） |
-| `v1.1.11` | T11：**`docs/v1-admin-audit-rules.md`** — 调用前提契约 + `admin_invoke` **边界审计**（**无**运行时 ACL） |
+| `v1.1.11` | T11：**`../history-v1/v1-admin-audit-rules.md`** — 调用前提契约 + `admin_invoke` **边界审计**（**无**运行时 ACL） |
 | `v1.2.2` | T18：治理边界测试加固 |
 
 ---
@@ -76,7 +76,7 @@
 
 ## 6. 治理能力成熟度冻结（`v1.1.10`）
 
-对应 **`development-optimization.md`** 路线图**第二步**验收点：**文档与示例不再暗示**未正式收口的治理能力已经可稳定依赖。下列表述在 **v1.1.10** 起视为 **维护期约束**（与 `docs/v1-maturity-matrix.md` §4 一致；冲突时以矩阵为准）。
+对应 **`development-optimization.md`** 路线图**第二步**验收点：**文档与示例不再暗示**未正式收口的治理能力已经可稳定依赖。下列表述在 **v1.1.10** 起视为 **维护期约束**（与 `../history-v1/v1-maturity-matrix.md` §4 一致；冲突时以矩阵为准）。
 
 ### 6.1 必须写清的事实（不得用语义偷换）
 
@@ -88,8 +88,8 @@
 
 ### 6.2 文档与源码落点（本版本已校对）
 
-- `README.md`、`docs/runtime-playbook.md`：**HTTP** 用词与 `/health` 语义与上表对齐。
+- `README.md`、`../runbooks/runtime-playbook.md`：**HTTP** 用词与 `/health` 语义与上表对齐。
 - `examples/admin_demo/admin_demo_main.cpp`、`examples/login_demo/login_demo_main.cpp`：注释与日志用词与 **§6.1** 对齐。
 - **`include/game/gateway/admin_service.h`**：类前注释标明 **demo-only** 与本文引用。
 
-**`v1.1.11`（T11）** 起：L3 二进制 admin 的调用前提与 **`admin_invoke`** 必备键见 **`docs/v1-admin-audit-rules.md`**。权限运行时强制、失败细分响应、结构化审计后端等仍属 **`reserved`**，由 **`v1.2.2`（T18）** 等与该文后续章节承接。
+**`v1.1.11`（T11）** 起：L3 二进制 admin 的调用前提与 **`admin_invoke`** 必备键见 **`../history-v1/v1-admin-audit-rules.md`**。权限运行时强制、失败细分响应、结构化审计后端等仍属 **`reserved`**，由 **`v1.2.2`（T18）** 等与该文后续章节承接。

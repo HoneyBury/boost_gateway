@@ -41,7 +41,7 @@ commits with the following order.
    - JWT / service bus tests
 
 5. `operator: scaffold controller tests, configmaps, and TLS placeholder secret`
-   - `docs/k8s-operator-implementation.md`
+   - `../plans/k8s-operator-implementation.md`
    - `operator/boostgateway-operator/**`
    - `tests/v2/unit/k8s_operator_test.cpp`
 

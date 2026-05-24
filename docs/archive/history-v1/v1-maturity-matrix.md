@@ -59,7 +59,7 @@
 
 ## 3. 业务层
 
-> **模块边界与「谁说了算」的叙述说明**见 `docs/v1-business-fact-source.md`（维护版 **`v1.1.5`**）。下表仍为本节**单项能力**的成熟度事实源。
+> **模块边界与「谁说了算」的叙述说明**见 `../history-v1/v1-business-fact-source.md`（维护版 **`v1.1.5`**）。下表仍为本节**单项能力**的成熟度事实源。
 
 ### 3.1 登录
 
@@ -78,7 +78,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 创建 / 加入 / 离开 / 准备 / 房主切换 | `stable` | 主链闭环 |
-| `RoomManager::transfer_session` | `stable`（v1.1.8 叙述补强） | 顶号桥接；战斗中允许迁移（战斗以 `user_id` 为键）。契约见 `docs/v1-room-battle-boundary.md` §2 |
+| `RoomManager::transfer_session` | `stable`（v1.1.8 叙述补强） | 顶号桥接；战斗中允许迁移（战斗以 `user_id` 为键）。契约见 `../history-v1/v1-room-battle-boundary.md` §2 |
 | `RoomManager::broadcast_to_room()` (COW 快照接口) | `experimental` | 接口存在，但 `RoomService` 实际广播仍走 `room_snapshot()` + 循环 `send`，主链未统一 |
 | 房间快照成员 **`user_id`**（`member_user_id`） | `stable`（v1.1.8） | **`RoomService`** 在进入房间（create/join）后写入 `RoomMember.member_user_id`；**`room_state` 与开战 `player_ids` 优先使用该字段**，空时回退 **`SessionManager::login_context_of`**（未走 `RoomService` 的演示装配） |
 
@@ -111,7 +111,7 @@
 
 ## 4. 治理与控制面
 
-> **`v1.1.9` / T10**：多层治理入口的职责划分见 **`docs/v1-governance-layers.md`** §1–§5。**`v1.1.10`** 起对「文档与示例如何描述」做了**成熟度冻结**，见同文 **§6**。**`v1.1.11` / T11**：L3 admin **调用前提**与 **`admin_invoke`** **最小审计**见 **`docs/v1-admin-audit-rules.md`**。下表仍为**子能力成熟度**单一事实源。
+> **`v1.1.9` / T10**：多层治理入口的职责划分见 **`../history-v1/v1-governance-layers.md`** §1–§5。**`v1.1.10`** 起对「文档与示例如何描述」做了**成熟度冻结**，见同文 **§6**。**`v1.1.11` / T11**：L3 admin **调用前提**与 **`admin_invoke`** **最小审计**见 **`../history-v1/v1-admin-audit-rules.md`**。下表仍为**子能力成熟度**单一事实源。
 
 ### 4.1 HTTP 管理端点（`net::HttpManager`）
 
@@ -126,8 +126,8 @@
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`docs/v1-governance-layers.md`** §L3；**无令牌/角色 ACL** — 任意已建立会话只要发对应 **message_id** 即进入 handler（须在**受信链路**使用） |
-| **调用前提 / 审计最小键 / 动作语义（T11）** | `experimental`（v1.1.11） | **`docs/v1-admin-audit-rules.md`**：**进程外信任域** + 注册显式化；handler 入口统一 **`AUDIT_LOG(admin_invoke, …)`**（`layer=L3_admin`、`action`、`actor_endpoint`、`request_id`、`trace_id`、`outcome=accepted`…） |
+| `kAdminServerStatus / kAdminReloadConfig / kAdminKickPlayer / kAdminBanIp / kAdminResponse` | `demo-only` | 仅在 `examples/admin_demo` / `examples/login_demo` 中手工接线，**默认 `GatewayServer` 不注册这组 handler**；**入口分层**见 **`../history-v1/v1-governance-layers.md`** §L3；**无令牌/角色 ACL** — 任意已建立会话只要发对应 **message_id** 即进入 handler（须在**受信链路**使用） |
+| **调用前提 / 审计最小键 / 动作语义（T11）** | `experimental`（v1.1.11） | **`../history-v1/v1-admin-audit-rules.md`**：**进程外信任域** + 注册显式化；handler 入口统一 **`AUDIT_LOG(admin_invoke, …)`**（`layer=L3_admin`、`action`、`actor_endpoint`、`request_id`、`trace_id`、`outcome=accepted`…） |
 | **运行时鉴权（who can call）、失败细分响应、结构化审计后端** | `reserved` | 当前 `kAdminResponse` body 仍为固定 `*__ok`（或回调 JSON），**不因**回调未命中目标而改变；`T18` 已完成对这组边界的测试固化，但统一 `actor`/`target` JSON 字段与高可靠审计后端仍未进入当前维护分支 |
 
 ### 4.3 限频与连接控制
@@ -141,12 +141,12 @@
 
 ### 4.4 审计日志（`app::audit_log`）
 
-与 **持久化 / 回放** 的横向对照见 **`docs/v1-cross-cutting-capabilities.md` §3**。**行模板、`details` 拼接脆弱性**见 **`docs/v1-cross-cutting-data-formats.md` §5**。
+与 **持久化 / 回放** 的横向对照见 **`../history-v1/v1-cross-cutting-capabilities.md` §3**。**行模板、`details` 拼接脆弱性**见 **`../history-v1/v1-cross-cutting-data-formats.md` §5**。
 
 | 项 | 状态 | 说明 |
 |---|---|---|
-| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝；**`config_reload` / `shutdown` 等多为部分 showcase 回调**，见 **`docs/v1-cross-cutting-capabilities.md` §3**；Admin 二进制路径在 **`v1.1.11`** 起于 handler **入口**写 **`admin_invoke`**（键约定见 **`docs/v1-admin-audit-rules.md`** §4）；**输出格式仍为"近似 JSON 行"**：`details` **未统一转义**，**不应被视为稳定结构化日志** |
-| 统一审计字段（`actor` / `target` / `source_ip` / `request_id` / `outcome` / `reason_code`） | `reserved` | **`v1.1.11`** 仅在 `details` **字符串内**约束 **必备键=k=v**（见 **`docs/v1-admin-audit-rules.md`**）；**不包含**顶层 JSON Schema 与高可靠后端 |
+| `AUDIT_LOG(event, details)` 写入 `logs/audit.log` | `experimental` | 主链已接入登录成功 / 失败、限频、连接拒绝；**`config_reload` / `shutdown` 等多为部分 showcase 回调**，见 **`../history-v1/v1-cross-cutting-capabilities.md` §3**；Admin 二进制路径在 **`v1.1.11`** 起于 handler **入口**写 **`admin_invoke`**（键约定见 **`../history-v1/v1-admin-audit-rules.md`** §4）；**输出格式仍为"近似 JSON 行"**：`details` **未统一转义**，**不应被视为稳定结构化日志** |
+| 统一审计字段（`actor` / `target` / `source_ip` / `request_id` / `outcome` / `reason_code`） | `reserved` | **`v1.1.11`** 仅在 `details` **字符串内**约束 **必备键=k=v**（见 **`../history-v1/v1-admin-audit-rules.md`**）；**不包含**顶层 JSON Schema 与高可靠后端 |
 
 ### 4.5 TLS
 
@@ -159,20 +159,20 @@
 
 ## 5. 配置与运行时装配
 
-运维向「哪些字段改 JSON 会生效 / 是否要重启」优先读 **`docs/v1-config-maturity.md`**；**启动 / reload / shutdown 步骤清单**与 **v1.1.14** 受控语义见 **`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14** / T13）。本节保留 **成熟度等级** 与 **组件（Watcher / Shutdown）** 子表。
+运维向「哪些字段改 JSON 会生效 / 是否要重启」优先读 **`../history-v1/v1-config-maturity.md`**；**启动 / reload / shutdown 步骤清单**与 **v1.1.14** 受控语义见 **`../history-v1/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14** / T13）。本节保留 **成熟度等级** 与 **组件（Watcher / Shutdown）** 子表。
 
 ### 5.1 `GatewayAppConfig` 字段成熟度
 
-**字段级表格（启动 / 热更新 / 主链接入）**维护在 **`docs/v1-config-maturity.md` §4**，与本节保持同步；**`v1.1.12` / T12** 起以该文为「可读运维说明」，矩阵本节保留锚点以免外链断裂。
+**字段级表格（启动 / 热更新 / 主链接入）**维护在 **`../history-v1/v1-config-maturity.md` §4**，与本节保持同步；**`v1.1.12` / T12** 起以该文为「可读运维说明」，矩阵本节保留锚点以免外链断裂。
 
-> 说明：`✅(解析)` 表示配置层能读出该字段，但运行时主链未对该字段做出行为响应；`reserved` 字段**不应被运维当作可生效配置**。热更新叙事见 **`docs/v1-config-maturity.md` §3** 与下文 §5.2。
+> 说明：`✅(解析)` 表示配置层能读出该字段，但运行时主链未对该字段做出行为响应；`reserved` 字段**不应被运维当作可生效配置**。热更新叙事见 **`../history-v1/v1-config-maturity.md` §3** 与下文 §5.2。
 
 ### 5.2 `ConfigWatcher`
 
 | 项 | 状态 | 说明 |
 |---|---|---|
 | 文件 `last_write_time` 轮询 + 触发 reload callback | `stable` | 主链可用 |
-| **`try_load_gateway_config`**：仅加载成功时调用 **`on_reload_`** | `stable`（**v1.1.14**） | 失败（不可读 / 解析失败等）仅 WARN，**不**回调，避免历史上 **`load_gateway_config` 失败仍返回默认配置**误触 **`set_connection_limits`**；见 **`docs/v1-runtime-lifecycle.md` §6** |
+| **`try_load_gateway_config`**：仅加载成功时调用 **`on_reload_`** | `stable`（**v1.1.14**） | 失败（不可读 / 解析失败等）仅 WARN，**不**回调，避免历史上 **`load_gateway_config` 失败仍返回默认配置**误触 **`set_connection_limits`**；见 **`../history-v1/v1-runtime-lifecycle.md` §6** |
 | 配置校验失败回滚 / reload 状态传播 / 去抖 | `reserved` | 当前实现仅是文件变更触发器，不是完整热更新框架 |
 
 ### 5.3 `GracefulShutdown`
@@ -180,7 +180,7 @@
 | 项 | 状态 | 说明 |
 |---|---|---|
 | `SIGINT` / `SIGTERM` 触发 `on_shutdown` 回调 | `stable` | 主链可用 |
-| 统一 shutdown sequence（监听停 → 会话排干 → metrics flush → persistence flush） | `reserved` | **框架级**仍无单一编排器；**`v1.1.13`** 起 **`examples/echo`**、`login_demo`、`admin_demo` 信号回调按 **`docs/v1-runtime-lifecycle.md` §4** 对齐 **`watcher.stop()` →（可选持久化）→ `server.stop()` → `io_context.stop()`**，以便 **`io_context.run()`** 退出；**`v1.1.14`** 在同文 **§7** 写明 showcase **最小保证**与仍为 **reserved** 的分界；其它入口仍可能不一致 |
+| 统一 shutdown sequence（监听停 → 会话排干 → metrics flush → persistence flush） | `reserved` | **框架级**仍无单一编排器；**`v1.1.13`** 起 **`examples/echo`**、`login_demo`、`admin_demo` 信号回调按 **`../history-v1/v1-runtime-lifecycle.md` §4** 对齐 **`watcher.stop()` →（可选持久化）→ `server.stop()` → `io_context.stop()`**，以便 **`io_context.run()`** 退出；**`v1.1.14`** 在同文 **§7** 写明 showcase **最小保证**与仍为 **reserved** 的分界；其它入口仍可能不一致 |
 
 ### 5.4 `examples/` 入口分类
 
@@ -195,7 +195,7 @@
 
 ## 6. 持久化与回放
 
-运维向「三类横切能力（player store / replay / audit）**当前接在哪**」读 **`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15** / **T14**）；「**应收口在哪**」读 **`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16** / **T15**）；「**磁盘 / 日志长什么样、有无兼容承诺**」读 **`docs/v1-cross-cutting-data-formats.md`**（**v1.1.17** / **T16**）。本节仍为 **子能力成熟度** 单一事实源。
+运维向「三类横切能力（player store / replay / audit）**当前接在哪**」读 **`../history-v1/v1-cross-cutting-capabilities.md`**（**v1.1.15** / **T14**）；「**应收口在哪**」读 **`../history-v1/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16** / **T15**）；「**磁盘 / 日志长什么样、有无兼容承诺**」读 **`../history-v1/v1-cross-cutting-data-formats.md`**（**v1.1.17** / **T16**）。本节仍为 **子能力成熟度** 单一事实源。
 
 | 项 | 状态 | 说明 |
 |---|---|---|
@@ -243,7 +243,7 @@
 4. **登录防爆破** — `RateLimiter` 接口存在，`LoginService` 未调用
 5. **游客账号** — `max_guests` 配置存在，主链未引用
 6. **完整热更新** — `ConfigWatcher` 仅是文件变更触发器，实际生效字段仅 `max_connections` / `per_ip_connection_limit`
-7. **完整管理面 / 二进制管理命令** — `AdminService` demo-only；**文档契约 / 最小审计**：`docs/v1-admin-audit-rules.md`；**运行时 ACL**：仍缺位
+7. **完整管理面 / 二进制管理命令** — `AdminService` demo-only；**文档契约 / 最小审计**：`../history-v1/v1-admin-audit-rules.md`；**运行时 ACL**：仍缺位
 8. **多进程拆服架构** — `login_server` / `room_server` / `battle_server` 是各自带接入层的独立 demo 入口
 9. **服务发现** — `ServiceRegistry` 是内存注册表，无 TTL / 健康联动
 10. **战斗回放** — 读取链与存储抽象存在，生产链未闭环
@@ -255,7 +255,7 @@
 
 ## 10. 维护版本节奏
 
-`v1.x` 维护期版本号严格按照 `docs/development-optimization.md` §8.0 / §11 给出的批次推进：
+`v1.x` 维护期版本号严格按照 `../plans/development-optimization.md` §8.0 / §11 给出的批次推进：
 
 | 版本 | 主题 | 范围（任务编号见 development-optimization §11.2） |
 |---|---|---|
@@ -264,23 +264,23 @@
 | `v1.1.3` | 入口治理前置 | T05 |
 | `v1.1.4` | `battle_started` 单一事实源（T06 第一阶段） | T06 |
 | `v1.1.5` | 业务事实源校准（文档） | （`v1-business-fact-source.md`） |
-| `v1.1.6` | 业务协议冻结 | T02 后半：`docs/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
-| `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`docs/v1-cross-domain-flows.md` |
-| `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`docs/v1-room-battle-boundary.md` |
-| `v1.1.9` | 治理入口分层 | T10：`docs/v1-governance-layers.md` §1–§5 |
-| `v1.1.10` | 治理成熟度冻结 | （文档：`docs/v1-governance-layers.md` **§6** + 示例/README/playbook 用语） |
-| `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`docs/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计） |
-| `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`docs/v1-config-maturity.md`** + 矩阵 §5.1 指针 |
-| `v1.1.13` | 标准启动 / reload / shutdown 顺序 | **T13**：**`docs/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** |
+| `v1.1.6` | 业务协议冻结 | T02 后半：`../history-v1/v1-string-protocol.md` + **`kPlayerNotInBattle`** |
+| `v1.1.7` | 跨域编排收口 | T07 / T08：`login_recovery`、`room_battle_lifecycle`、`../history-v1/v1-cross-domain-flows.md` |
+| `v1.1.8` | 房间/战斗边界收紧 | T09 + T06②：`member_user_id`、`../history-v1/v1-room-battle-boundary.md` |
+| `v1.1.9` | 治理入口分层 | T10：`../history-v1/v1-governance-layers.md` §1–§5 |
+| `v1.1.10` | 治理成熟度冻结 | （文档：`../history-v1/v1-governance-layers.md` **§6** + 示例/README/playbook 用语） |
+| `v1.1.11` | admin 权限前提与最小审计规则 | （**T11**：**`../history-v1/v1-admin-audit-rules.md`** + `admin_invoke` 边界审计） |
+| `v1.1.12` | 配置字段成熟度（单列文档） | **T12**：**`../history-v1/v1-config-maturity.md`** + 矩阵 §5.1 指针 |
+| `v1.1.13` | 标准启动 / reload / shutdown 顺序 | **T13**：**`../history-v1/v1-runtime-lifecycle.md`** + showcase **`io_context.stop()`** |
 | `v1.1.14` | 受控生命周期流程 | **T13** 后半：**`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7** |
-| `v1.1.15` | 横切能力定位 | **T14**：**`docs/v1-cross-cutting-capabilities.md`** |
-| `v1.1.16` | 横切动作按生命周期收口 | **T15**：**`docs/v1-cross-cutting-lifecycle-binding.md`** |
-| `v1.1.17` | 数据格式冻结 | **T16**：**`docs/v1-cross-cutting-data-formats.md`** |
-| `v1.2.0` | 结构升级决策点 | **T21**：见 `docs/v1-structure-upgrade-decision.md`，结论为**当前维护分支不转正结构升级项** |
+| `v1.1.15` | 横切能力定位 | **T14**：**`../history-v1/v1-cross-cutting-capabilities.md`** |
+| `v1.1.16` | 横切动作按生命周期收口 | **T15**：**`../history-v1/v1-cross-cutting-lifecycle-binding.md`** |
+| `v1.1.17` | 数据格式冻结 | **T16**：**`../history-v1/v1-cross-cutting-data-formats.md`** |
+| `v1.2.0` | 结构升级决策点 | **T21**：见 `../history-v1/v1-structure-upgrade-decision.md`，结论为**当前维护分支不转正结构升级项** |
 | `v1.2.1` | 业务边界测试加固 | **T17**：`battle_manager_test` / `room_manager_test` / `gateway_integration_test` |
 | `v1.2.2` | 治理边界测试加固 | **T18**：`admin_service_test` / `http_management_test` / 默认装配不注册 admin |
 | `v1.2.3` | 生命周期与装配测试加固 | **T19**：`lifecycle_assembly_test`、`ConfigWatcher` / `GatewayServer::stop()` |
 | `v1.2.4` | 持久化 / 审计 / 回放测试加固 | **T20**：`persistence_replay_audit_test` |
 | `v1.2.5` | CI / Docker / 发布链路稳定性修复 | 不改变能力成熟度，仅修复发布与 CI 稳定性问题 — **当前版本** |
 
-**严格约束**：在 `v1.2.0` 决策点之前，**不进入 v2.0.0 范畴的开发**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `docs/v2-roadmap.md` 与 `docs/v2-design.md`）。
+**严格约束**：在 `v1.2.0` 决策点之前，**不进入 v2.0.0 范畴的开发**（Actor / ECS / 集群路由 / 状态生命周期系统 / 控制面，详见 `../history-v2/v2-roadmap.md` 与 `../history-v2/v2-design.md`）。

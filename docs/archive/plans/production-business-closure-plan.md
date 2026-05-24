@@ -306,7 +306,7 @@ Docker Compose 已经启动完整六服务拓扑：gateway、login、room、batt
 
 - 新增 `env/monitoring/otel-collector.yml` 和 Docker Compose `otel` profile；gateway 可通过 `OTEL_EXPORT_ENDPOINT=http://otel-collector:4318/v1/traces` 启用 OTLP HTTP 导出。
 - `scripts/verify_observability_gate.py` 已覆盖 trace context、typed envelope trace/error 保留、backend RED metrics、OTel exporter、fake collector POST、collector 未配置不崩溃和 runtime HTTP observability。
-- 新增 `docs/observability-trace-runbook.md`，明确默认链路仍以 gateway `/metrics*`、diagnostics、Prometheus/Grafana 和性能采集报告为事实源。
+- 新增 `../runbooks/observability-trace-runbook.md`，明确默认链路仍以 gateway `/metrics*`、diagnostics、Prometheus/Grafana 和性能采集报告为事实源。
 - 新增 `scripts/verify_p5_p8_business_closure.py`，P5 会聚合 `verify_observability_gate.py`，可按需启用 `--include-otel-collector` 与 `--include-runtime-http`。
 
 边界说明：
@@ -381,7 +381,7 @@ Docker Compose 已经启动完整六服务拓扑：gateway、login、room、batt
 完成记录（2026-05-18）：
 
 - 新增 `scripts/verify_k8s_full_flow.py`，可对已部署的 Kubernetes gateway Service 执行 port-forward、SDK full-flow、HTTP health 和 backend metrics 覆盖检查。
-- 新增 `docs/k8s-business-flow-runbook.md`，记录 manifest 发布、rollout、SDK full-flow 和 Operator kind smoke 的执行方式。
+- 新增 `../runbooks/k8s-business-flow-runbook.md`，记录 manifest 发布、rollout、SDK full-flow 和 Operator kind smoke 的执行方式。
 - `scripts/verify_control_plane_gate.py` 已覆盖 Operator manifest、Go fake-client/unit tests、可选 kind smoke；kind 路径验证 `Ready/Progressing/Degraded/TLSReady`、六组件 `status.components[]` 和 sample CR 删除。
 - `scripts/verify_p5_p8_business_closure.py` 默认执行 control-plane gate；可通过 `--include-operator-kind` 和 `--include-k8s-full-flow` 显式进入真实 K8s/Operator 证据路径。
 
@@ -417,7 +417,7 @@ Docker Compose 已经启动完整六服务拓扑：gateway、login、room、batt
 
 完成记录（2026-05-18）：
 
-- 新增 `docs/v3-proto-grpc-adr.md`，决策为：v3 proto 作为 schema/typed envelope 契约层继续保留，generated gRPC 暂不进入默认生产 transport。
+- 新增 `../process/v3-proto-grpc-adr.md`，决策为：v3 proto 作为 schema/typed envelope 契约层继续保留，generated gRPC 暂不进入默认生产 transport。
 - 当前默认生产继续使用 v2 TCP + BackendEnvelope；typed envelope helper 和 adapter 作为兼容迁移层。
 - `scripts/check_v3_proto_schema.py --require-transport-contract` 已作为 P8 contract gate。
 - `scripts/verify_p5_p8_business_closure.py` 会执行 proto schema 与 transport contract 检查。

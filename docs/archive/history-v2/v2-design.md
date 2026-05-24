@@ -1,6 +1,6 @@
 # v2.0.0 设计文档
 
-> **仓库说明**：本文档为 **`v2.0.0` 设计草案**；**在 `v1.2.0` 决策点之前不进入 v2 范畴的开发**，详见 `docs/v2-roadmap.md` 与 `docs/development-priority.md`。
+> **仓库说明**：本文档为 **`v2.0.0` 设计草案**；**在 `v1.2.0` 决策点之前不进入 v2 范畴的开发**，详见 `../history-v2/v2-roadmap.md` 与 `../plans/development-priority.md`。
 
 ## 1. 文档目标
 

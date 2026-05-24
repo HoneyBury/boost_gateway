@@ -20,7 +20,7 @@
 现状：
 
 - `net::msg` / `message_serializer` 仍未进入业务主链。
-- `v1.x` 实际线上契约仍是字符串 body，相关事实源见 `docs/v1-string-protocol.md`。
+- `v1.x` 实际线上契约仍是字符串 body，相关事实源见 `../history-v1/v1-string-protocol.md`。
 
 结论：
 
@@ -63,8 +63,8 @@
 这意味着：
 
 - 当前分支的完成定义是“2.0 前维护准备工作做好”，不是“提前吸收 2.0 的结构升级内容”。
-- `docs/v1-maturity-matrix.md` 中相关能力的 `experimental` / `reserved` 口径维持不变。
-- `docs/v2-roadmap.md` / `docs/v2-design.md` 继续作为后续结构演进的独立输入，而不是本分支的开发任务单。
+- `../history-v1/v1-maturity-matrix.md` 中相关能力的 `experimental` / `reserved` 口径维持不变。
+- `../history-v2/v2-roadmap.md` / `../history-v2/v2-design.md` 继续作为后续结构演进的独立输入，而不是本分支的开发任务单。
 
 ## 4. 后续约束
 

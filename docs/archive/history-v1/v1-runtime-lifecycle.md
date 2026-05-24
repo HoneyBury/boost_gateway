@@ -6,7 +6,7 @@
 - **范围**：以 **`examples/echo/server_main.cpp`** 为**参考骨架**；其它入口允许缺省子步骤（例如无 `ConfigWatcher`），但**不应**在已有步骤上与清单**反向**（除非文档明示为实验例外）。
 - **`v1.1.13`**：**步骤顺序** + showcase **`io_context.stop()`**（§2–§5；§5 为入口对照）。
 - **`v1.1.14`**：**受控语义** — **`ConfigWatcher`** 仅在 **`try_load_gateway_config` 成功**时调用回调（**§6**）；shutdown **最小保证**与「仍为预留的能力」分界（**§7**）。
-- **横切动作**：**应收口规范**（节点 **N1–N7**）见 **`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16** / T15）；**当前接线事实**见 **`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15** / T14）；**数据格式与支持级别**见 **`docs/v1-cross-cutting-data-formats.md`**（**v1.1.17** / T16）。
+- **横切动作**：**应收口规范**（节点 **N1–N7**）见 **`../history-v1/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16** / T15）；**当前接线事实**见 **`../history-v1/v1-cross-cutting-capabilities.md`**（**v1.1.15** / T14）；**数据格式与支持级别**见 **`../history-v1/v1-cross-cutting-data-formats.md`**（**v1.1.17** / T16）。
 
 ---
 
@@ -38,7 +38,7 @@
 
 当前 **`ConfigWatcher`** 仍是 **文件 `last_write_time` 变更触发器**（矩阵 §5.2），**不**承诺去抖、并发保护或「坏配置回滚到上一份合法快照」。
 
-**Showcase 最小契约**（与 **`docs/v1-config-maturity.md` §3** 一致）：
+**Showcase 最小契约**（与 **`../history-v1/v1-config-maturity.md` §3** 一致）：
 
 1.  **`ConfigWatcher`** 内部使用 **`try_load_gateway_config(path)`**（**`v1.1.14`**）：**仅当**磁盘文件 **可读且解析成功**时才有 **`GatewayAppConfig new_cfg`**；失败则 **WARN**、**不调用** reload 回调（避免历史上 **`load_gateway_config` 失败仍塞默认配置**误触发 **`set_connection_limits`**）。
 2. 回调内 **至少**应 **`server.set_connection_limits(new_cfg.max_connections, new_cfg.per_ip_connection_limit)`** —— `echo_server`、`login_demo`、`admin_demo` 均为此模式。

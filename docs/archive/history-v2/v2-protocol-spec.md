@@ -601,12 +601,12 @@ Created ──CreateBattle──▶ Running ──Tick/Input──▶ Running
 
 ## 附录 A: 相关文档
 
-- `docs/v2-design.md` — v2 架构设计文档
-- `docs/v2-roadmap.md` — v2 模块规划
-- `docs/v2-player-lifecycle.md` — 玩家生命周期
-- `docs/v2-room-lifecycle.md` — 房间生命周期
-- `docs/v2-protocol-bridge.md` — 协议桥接说明
-- `docs/v2-enterprise-roadmap.md` — 企业级迭代路线
+- `../history-v2/v2-design.md` — v2 架构设计文档
+- `../history-v2/v2-roadmap.md` — v2 模块规划
+- `../history-v2/v2-player-lifecycle.md` — 玩家生命周期
+- `../history-v2/v2-room-lifecycle.md` — 房间生命周期
+- `../history-v2/v2-protocol-bridge.md` — 协议桥接说明
+- `../history-v2/v2-enterprise-roadmap.md` — 企业级迭代路线
 - `docs/architecture-acceptance-criteria.md` — 架构验收标准
 - `include/net/protocol.h` — 协议常量定义（代码事实源）
 - `include/v2/gateway/message_types.h` — 网关消息类型

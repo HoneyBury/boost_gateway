@@ -2,7 +2,7 @@
 
 ## 文档定位
 
-本文对应 **`v1.1.8`**：收紧 **Room** 与 **Battle** 的职责边界（`development-optimization.md` §「第四步」与 §11 **T06** / **T09**）。**不改变**对外字符串协议（仍以 `docs/v1-string-protocol.md` 为准）。
+本文对应 **`v1.1.8`**：收紧 **Room** 与 **Battle** 的职责边界（`development-optimization.md` §「第四步」与 §11 **T06** / **T09**）。**不改变**对外字符串协议（仍以 `../history-v1/v1-string-protocol.md` 为准）。
 
 ---
 
@@ -46,6 +46,6 @@
 
 ## 5. 与其它文档的关系
 
-- **跨域编排**（顶号 kick、空房清理）：`docs/v1-cross-domain-flows.md`
-- **业务模块叙述**：`docs/v1-business-fact-source.md`
-- **逐项成熟度**：`docs/v1-maturity-matrix.md`
+- **跨域编排**（顶号 kick、空房清理）：`../history-v1/v1-cross-domain-flows.md`
+- **业务模块叙述**：`../history-v1/v1-business-fact-source.md`
+- **逐项成熟度**：`../history-v1/v1-maturity-matrix.md`

@@ -3,7 +3,7 @@
 ## 1. 文档定位
 
 - **任务**：落实 **`development-optimization.md` Persistence·Audit 路线图第三步**与 **§11 T16**：把 **player 持久化后端**、**`AUDIT_LOG` 行格式**、**replay 磁盘形态与 `ReplayPlayer` 读取契约** 写成 **「支持级别 + 字段事实」**，防止「头文件里有接口」被误读成「线上可依赖的兼容格式」。
-- **单一事实源**：**成熟度等级**仍以 **`docs/v1-maturity-matrix.md` §6 / §4.4** 为准；本文 **不升格** `experimental` / `reserved`，只补充 **实现层细节** 与 **兼容性声明**。
+- **单一事实源**：**成熟度等级**仍以 **`../history-v1/v1-maturity-matrix.md` §6 / §4.4** 为准；本文 **不升格** `experimental` / `reserved`，只补充 **实现层细节** 与 **兼容性声明**。
 - **不在本版**：持久化 / 审计 / replay 的 **自动化回归**归 **`v1.2.4`（T20）**。
 
 ---

@@ -1,6 +1,6 @@
 # 开发优先级看板
 
-> **当前阶段**：`v1.x` 维护已完成，`v2.0.0` 七大模块（M1-M7）全部落地。本文档为 `v1.x` 维护期历史记录，不再作为当前开发优先级依据。当前开发参见 `docs/v2-roadmap.md`。
+> **当前阶段**：`v1.x` 维护已完成，`v2.0.0` 七大模块（M1-M7）全部落地。本文档为 `v1.x` 维护期历史记录，不再作为当前开发优先级依据。当前开发参见 `../history-v2/v2-roadmap.md`。
 
 ## 1. 维护规则
 
@@ -11,7 +11,7 @@
 
 ## 2. v1.0.0 已完成 (P0–P7)
 
-> **历史记录**。维护期判断这些条目是否仍为 stable，以 `docs/v1-maturity-matrix.md` 为准（部分条目实际为 experimental / reserved，例如"游客账号"、"完整管理指令"、"自动分片传输"等）。
+> **历史记录**。维护期判断这些条目是否仍为 stable，以 `../history-v1/v1-maturity-matrix.md` 为准（部分条目实际为 experimental / reserved，例如"游客账号"、"完整管理指令"、"自动分片传输"等）。
 
 ### P0 — 网络层基础
 
@@ -92,13 +92,13 @@
 
 | 任务 | 版本 | 状态 |
 |---|---|---|
-| （文档）login / room / battle 模块边界与四大验收问答 | `v1.1.5` | **done**（见 `docs/v1-business-fact-source.md`） |
+| （文档）login / room / battle 模块边界与四大验收问答 | `v1.1.5` | **done**（见 `../history-v1/v1-business-fact-source.md`） |
 | T01 校准 `v1.0.0` / `develop` 能力边界与文档表述 | `v1.1.1` | **done** |
 | T02 冻结当前真实协议表，明确 1.x 主协议事实源 | `v1.1.1` / `v1.1.6` | **done**（`v1-string-protocol.md`；`kPlayerNotInBattle`/`to_string`） |
-| T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **done**（`docs/v1-governance-layers.md` §1–§5；**权限/审计留给 v1.1.11**） |
-| （文档）治理能力成熟度冻结，禁绝示例/README 误导「已实现 = 正式能力」 | `v1.1.10` | **done**（`docs/v1-governance-layers.md` **§6**；`admin_demo`/`login_demo`/`README.md`/`runtime-playbook`） |
-| T12 给配置字段补「启动生效 / 热更新生效 / 仅预留」标记 | `v1.1.1` / `v1.1.12` | **done**（矩阵 §5.1 指针 + **`docs/v1-config-maturity.md`**；标准 reload/shutdown 与 **v1.1.14** 受控语义见 **`v1-runtime-lifecycle.md`**） |
-| T14 明确 player store / replay / audit 当前定位与成熟度 | `v1.1.1` / `v1.1.15` | **done**（**v1.1.1** 矩阵基线；**v1.1.15** **`docs/v1-cross-cutting-capabilities.md`** 生命周期事实矩阵） |
+| T10 校准治理入口分层，明确 HTTP / admin 命令成熟度 | `v1.1.1` / `v1.1.9` | **done**（`../history-v1/v1-governance-layers.md` §1–§5；**权限/审计留给 v1.1.11**） |
+| （文档）治理能力成熟度冻结，禁绝示例/README 误导「已实现 = 正式能力」 | `v1.1.10` | **done**（`../history-v1/v1-governance-layers.md` **§6**；`admin_demo`/`login_demo`/`README.md`/`runtime-playbook`） |
+| T12 给配置字段补「启动生效 / 热更新生效 / 仅预留」标记 | `v1.1.1` / `v1.1.12` | **done**（矩阵 §5.1 指针 + **`../history-v1/v1-config-maturity.md`**；标准 reload/shutdown 与 **v1.1.14** 受控语义见 **`v1-runtime-lifecycle.md`**） |
+| T14 明确 player store / replay / audit 当前定位与成熟度 | `v1.1.1` / `v1.1.15` | **done**（**v1.1.1** 矩阵基线；**v1.1.15** **`../history-v1/v1-cross-cutting-capabilities.md`** 生命周期事实矩阵） |
 
 ### 批次 B：主链生命周期与边界收口
 
@@ -108,14 +108,14 @@
 | T04 固定协议增强顺序，明确分片当前未启用，修正 zlib 缺失时压缩标记位语义 | `v1.1.2` | **done** |
 | T05 前置 ingress 鉴权白名单与限频，收口入口治理 | `v1.1.3` | **done** |
 | T06 明确 `battle_started` 单一事实源，停止 room/battle 双写（第一阶段） | `v1.1.4` | **done** |
-| T06 后续：`transfer_session` / 房战边界 / `member_user_id` 等与 T09 | `v1.1.8` | **done**（`docs/v1-room-battle-boundary.md`；`RoomMember.member_user_id`） |
-| T07 收敛重复登录恢复链 | `v1.1.7` | **done**（`login_recovery.*` + `docs/v1-cross-domain-flows.md` §A） |
-| T08 收敛空房 battle 清理链 | `v1.1.7` | **done**（`room_battle_lifecycle.*` + `docs/v1-cross-domain-flows.md` §B） |
+| T06 后续：`transfer_session` / 房战边界 / `member_user_id` 等与 T09 | `v1.1.8` | **done**（`../history-v1/v1-room-battle-boundary.md`；`RoomMember.member_user_id`） |
+| T07 收敛重复登录恢复链 | `v1.1.7` | **done**（`login_recovery.*` + `../history-v1/v1-cross-domain-flows.md` §A） |
+| T08 收敛空房 battle 清理链 | `v1.1.7` | **done**（`room_battle_lifecycle.*` + `../history-v1/v1-cross-domain-flows.md` §B） |
 | T09 收紧房间态与战斗态边界，明确 `transfer_session()` 定位 | `v1.1.8` | **done**（同上 + 代码注释与矩阵 §3.2） |
-| T11 admin **调用前提**与 **`admin_invoke`** **最小审计**（文档 + handler 边界；**无运行时 ACL**） | `v1.1.11` | **done**（见 **`docs/v1-admin-audit-rules.md`**；`admin_service.cpp`） |
+| T11 admin **调用前提**与 **`admin_invoke`** **最小审计**（文档 + handler 边界；**无运行时 ACL**） | `v1.1.11` | **done**（见 **`../history-v1/v1-admin-audit-rules.md`**；`admin_service.cpp`） |
 | T13 收敛标准启动 / reload / shutdown 顺序 | `v1.1.13` / `v1.1.14` | **done**（**v1.1.13** ✅ 清单 + showcase **`io.stop()`**；**v1.1.14** ✅ **`try_load_gateway_config`** + **`v1-runtime-lifecycle.md` §6–§7**） |
-| T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | **done**（**`docs/v1-cross-cutting-lifecycle-binding.md`**：规范矩阵 **§3** + showcase **§5**） |
-| T16 冻结存储后端和审计/回放数据格式支持级别 | `v1.1.17` | **done**（**`docs/v1-cross-cutting-data-formats.md`**） |
+| T15 按登录 / 结算 / 停服节点收口横切动作 | `v1.1.16` | **done**（**`../history-v1/v1-cross-cutting-lifecycle-binding.md`**：规范矩阵 **§3** + showcase **§5**） |
+| T16 冻结存储后端和审计/回放数据格式支持级别 | `v1.1.17` | **done**（**`../history-v1/v1-cross-cutting-data-formats.md`**） |
 
 ### 批次 C：边界测试与回归面加固
 
@@ -130,7 +130,7 @@
 
 | 任务 | 版本 | 状态 |
 |---|---|---|
-| T21 评估是否正式推进 typed protocol / internal bus / battle replay 闭环 | `v1.2.0` | **done**（见 **`docs/v1-structure-upgrade-decision.md`**；结论：**当前维护分支不转正，不提前进入 2.0 结构开发**） |
+| T21 评估是否正式推进 typed protocol / internal bus / battle replay 闭环 | `v1.2.0` | **done**（见 **`../history-v1/v1-structure-upgrade-decision.md`**；结论：**当前维护分支不转正，不提前进入 2.0 结构开发**） |
 
 ---
 
@@ -172,7 +172,7 @@ v2.0.0   七大模块全部落地 ✅ 2026-05-12
 - 版本：`v2.0.0` — `v1.x` 维护期结束。七大模块（M1-M7）全部落地：Actor 模型、多核 I/O（含 SO_REUSEPORT + 核心亲和）、内存架构（BumpArena + ObjectPool + CacheLine）、分布式 S0-S4 服务拆分、数据层 v2（LruCache + WriteBehind + Snapshotable + CachedBattleDataStore）、AOI/ECS battle world、运维成熟度（DiagnosticsManager + HealthCheck + FeatureFlags + TraceContext+Span）。473 测试。
 - 历次更新：
   - `2026-05-08` `v1.2.5` — Windows CI 稳定性、Docker 依赖获取与 `gtest_discover_tests` timeout 修复
-  - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`docs/v1-structure-upgrade-decision.md`**
+  - `2026-05-07` `v1.2.4` — **`persistence_replay_audit_test.cpp`**、**`../history-v1/v1-structure-upgrade-decision.md`**
   - `2026-05-07` `v1.2.3` — **`lifecycle_assembly_test.cpp`**：`ConfigWatcher` 与 `GatewayServer::stop()`
   - `2026-05-07` `v1.2.2` — **`admin_service_test.cpp`**、**`http_management_test.cpp`**、**`gateway_integration_test.cpp`**：治理边界回归
   - `2026-05-07` `v1.2.1` — **T17**：业务边界测试（**`BattleManager`** / **`RoomManager`** 单元；**`gateway_integration_test`** 房主 / 全员就绪 / 人数 / 未开战输入）；矩阵 §8 / §10。

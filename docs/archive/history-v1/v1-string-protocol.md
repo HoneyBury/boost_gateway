@@ -4,10 +4,10 @@
 
 本文档是 **`v1.1.6`** 对 **login / room / battle** 三条业务线**当前主链**上真实使用的**字符串 body 协议**的冻结表，与 `net::protocol::ErrorCode`、`include/net/protocol.h` 消息号一致。
 
-- **主契约**：客户端 ↔ 网关之间，**以本文档 + `docs/runtime-playbook.md` §2 包格式为准**。
+- **主契约**：客户端 ↔ 网关之间，**以本文档 + `../runbooks/runtime-playbook.md` §2 包格式为准**。
 - **非契约**：`include/net/message_types.h`（`net::msg`）与 `message_serializer` 为**草案**，主链未使用；已知与字符串 body 分叉处见本文档 §5。
 
-与 `docs/v1-maturity-matrix.md` 冲突时，**以矩阵中的成熟度（stable / experimental）解释“是否可依赖”**；与**消息号、body 形态、错误码数值**冲突时，**以本文档与 `include/net/protocol.h` 为准**，并应回写修正矩阵或 playbook 中的笔误。
+与 `../history-v1/v1-maturity-matrix.md` 冲突时，**以矩阵中的成熟度（stable / experimental）解释“是否可依赖”**；与**消息号、body 形态、错误码数值**冲突时，**以本文档与 `include/net/protocol.h` 为准**，并应回写修正矩阵或 playbook 中的笔误。
 
 ---
 
@@ -145,7 +145,7 @@ room_state:{room_id}:owner={owner_user_id}:battle={0|1}:members={user_id}:{0|1};
 
 `owner` / `members` 中的 `user_id`：自 **`v1.1.8`** 起，`RoomService` 在 create/join 成功后将当前 `LoginContext.user_id` 写入 **`RoomMember.member_user_id`**，`build_room_state_body` **优先使用该缓存**；仅在缓存为空时回退 **`SessionManager::login_context_of`**（未走 `RoomService` 写入的装配兜底 `unknown`）。`battle` 仍为派生字段（`set_battle_active_query` 未绑定时恒为 0）。
 
-> 房/战状态机与 `transfer_session` 契约见 **`docs/v1-room-battle-boundary.md`**。
+> 房/战状态机与 `transfer_session` 契约见 **`../history-v1/v1-room-battle-boundary.md`**。
 
 ---
 
@@ -185,5 +185,5 @@ battle_input:{room_id}:{user_id}:{sequence}:{payload}
 ## 8. 版本与任务
 
 - **对应维护任务**：`development-optimization.md` §11 **T02**（`v1.1.1` 明确字符串为主契约；**`v1.1.6` 冻结表 + 错误码语义**）。
-- **前一版相关**：`v1.1.5` `docs/v1-business-fact-source.md`（职责边界）。
-- **当前维护版本**：`v1.2.5`。其中 `v1.2.4` 已完成 `T17`–`T20` 回归面补齐，`v1.2.5` 仅补充 CI / Docker / 发布链路稳定性修复。**结构升级决策**：`v1.2.0 / T21` 见 `docs/v1-structure-upgrade-decision.md`，当前维护分支**不默认实施**结构升级项。**横切数据格式**：`docs/v1-cross-cutting-data-formats.md`（**v1.1.17** / T16）。**横切规范**：`docs/v1-cross-cutting-lifecycle-binding.md`（**v1.1.16** / T15）；**横切事实**：`docs/v1-cross-cutting-capabilities.md`（**v1.1.15** / T14）。**装配清单与受控语义**：`docs/v1-runtime-lifecycle.md`（**v1.1.13–v1.1.14** / T13）。**配置字段成熟度**：`docs/v1-config-maturity.md`（**v1.1.12**）。**二进制 admin**：`docs/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`docs/v1-governance-layers.md` **§6**（**v1.1.10**）。
+- **前一版相关**：`v1.1.5` `../history-v1/v1-business-fact-source.md`（职责边界）。
+- **当前维护版本**：`v1.2.5`。其中 `v1.2.4` 已完成 `T17`–`T20` 回归面补齐，`v1.2.5` 仅补充 CI / Docker / 发布链路稳定性修复。**结构升级决策**：`v1.2.0 / T21` 见 `../history-v1/v1-structure-upgrade-decision.md`，当前维护分支**不默认实施**结构升级项。**横切数据格式**：`../history-v1/v1-cross-cutting-data-formats.md`（**v1.1.17** / T16）。**横切规范**：`../history-v1/v1-cross-cutting-lifecycle-binding.md`（**v1.1.16** / T15）；**横切事实**：`../history-v1/v1-cross-cutting-capabilities.md`（**v1.1.15** / T14）。**装配清单与受控语义**：`../history-v1/v1-runtime-lifecycle.md`（**v1.1.13–v1.1.14** / T13）。**配置字段成熟度**：`../history-v1/v1-config-maturity.md`（**v1.1.12**）。**二进制 admin**：`../history-v1/v1-admin-audit-rules.md`（**v1.1.11**）。**成熟度冻结**：`../history-v1/v1-governance-layers.md` **§6**（**v1.1.10**）。

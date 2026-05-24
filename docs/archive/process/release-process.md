@@ -24,8 +24,8 @@
 - `ctest --preset default`
 - Windows 预设 `windows-msvc-debug` / `windows-msvc-release` 可配置
 - GitHub Windows runner 走 `windows-ninja-debug` / `windows-ninja-release`，避免依赖固定 Visual Studio generator 名称
-- `README.md`、`CHANGELOG.md`、`docs/development-log.md`、`docs/development-priority.md` 已同步
-- `docs/v1-structure-upgrade-decision.md` 仍明确当前分支不进入 `v2.0.0`
+- `README.md`、`CHANGELOG.md`、`docs/development-log.md`、`../plans/development-priority.md` 已同步
+- `../history-v1/v1-structure-upgrade-decision.md` 仍明确当前分支不进入 `v2.0.0`
 
 ## CI
 

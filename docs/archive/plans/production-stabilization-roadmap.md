@@ -240,7 +240,7 @@ consumer、in-process business-flow、真实 gateway full-flow，以及 N4 backe
 
 交付物：
 
-- 更新后的 `docs/v3-proto-grpc-adr.md`
+- 更新后的 `../process/v3-proto-grpc-adr.md`
 - `scripts/check_v3_grpc_poc_decision.py`
 - N6 PoC decision summary
 - TCP baseline 对照和迁移风险清单

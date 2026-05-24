@@ -1,6 +1,6 @@
 # 当前网关骨架运行说明
 
-> **本文档为 v1.x 维护期运行手册**。能力成熟度（`stable` / `experimental` / `reserved` / `demo-only`）以 `docs/v1-maturity-matrix.md` 为准。两份文档冲突时以矩阵为准。
+> **本文档为 v1.x 维护期运行手册**。能力成熟度（`stable` / `experimental` / `reserved` / `demo-only`）以 `../history-v1/v1-maturity-matrix.md` 为准。两份文档冲突时以矩阵为准。
 
 ## 1. 当前能力概览
 
@@ -23,7 +23,7 @@
 
 ### 1.2 实验性能力（experimental）
 
-不应作为生产可依赖能力使用，详细成熟度见 `docs/v1-maturity-matrix.md`：
+不应作为生产可依赖能力使用，详细成熟度见 `../history-v1/v1-maturity-matrix.md`：
 
 - 大包压缩（仅在编译期带 zlib 时为真正压缩；无 zlib 时仅为长度前缀透传，标记位语义不稳定）
 - HTTP Token 校验器（同步阻塞实现，会在业务线程池里阻塞 IO）
@@ -91,7 +91,7 @@
 | 3001 | `kRoomCreateRequest` / 3002 `kRoomCreateResponse` | 房间 | |
 | 3003 | `kRoomJoinRequest` / 3004 `kRoomJoinResponse` | 房间 | response body：`room_joined:{room_id}:{player_count}` |
 | 3005 | `kRoomLeaveRequest` / 3006 `kRoomLeaveResponse` | 房间 | |
-| 3007 | `kRoomReadyRequest` / 3008 `kRoomReadyResponse` | 房间 | request 解析约定见 `docs/v1-string-protocol.md` §6.4 |
+| 3007 | `kRoomReadyRequest` / 3008 `kRoomReadyResponse` | 房间 | request 解析约定见 `../history-v1/v1-string-protocol.md` §6.4 |
 | 3009 | `kRoomStatePush` | 房间 | body：`room_state:...`（构造时回查 `SessionManager` 补全 user_id） |
 | 4001 | `kBattleStartRequest` / 4002 `kBattleStartResponse` | 战斗 | response body：`battle_started:{room_id}:{player_count}` |
 | 4003 | `kBattleInputRequest` / 4004 `kBattleInputResponse` | 战斗 | response body：`battle_input_accepted:{room_id}:{sequence}` |
@@ -102,12 +102,12 @@
 
 ### 2.4 错误码（`net::protocol::ErrorCode`）
 
-数值与默认 body 以 `include/net/protocol.h` 与 **`docs/v1-string-protocol.md` §3** 为准。**`v1.1.6`** 起：`SubmitInputResult::kPlayerNotInBattle` 使用 **`kPlayerNotInBattle (3004)`**，body **`player_not_in_battle`**，不再复用 `kAuthRequired`。
+数值与默认 body 以 `include/net/protocol.h` 与 **`../history-v1/v1-string-protocol.md` §3** 为准。**`v1.1.6`** 起：`SubmitInputResult::kPlayerNotInBattle` 使用 **`kPlayerNotInBattle (3004)`**，body **`player_not_in_battle`**，不再复用 `kAuthRequired`。
 
 ### 2.5 协议事实源约束
 
 - `v1.x` 维护期内，**字符串 body 是唯一线上协议**
-- **login / room / battle** 的请求响应与 push body **冻结明细**：`docs/v1-string-protocol.md`
+- **login / room / battle** 的请求响应与 push body **冻结明细**：`../history-v1/v1-string-protocol.md`
 - `net::msg` / `message_serializer` 仅作为协议草案保留，不应被业务 service 使用
 - 任何对线上协议的描述（README / runtime-playbook / 集成测试）必须与 **`v1-string-protocol.md`** 一致
 - 协议变更必须先更新 **`v1-string-protocol.md`** 与本节，再改实现
@@ -129,7 +129,7 @@
 - 未登录业务拦截：未登录时访问房间或战斗接口返回 `kErrorResponse: auth_required`
 - 基础限频：单连接每秒最多通过 32 条非心跳消息，超限返回 `kErrorResponse: rate_limited`
 
-> **v1.1.3 / T05**：上述策略从“业务线程池内执行”前移到“投递到线程池之前”。无有效 `Session` 的 `dispatch(nullptr, …)`（实验性内部总线）**不**跑 ingress，详见 `include/net/message_dispatcher.h` 与 `docs/v1-maturity-matrix.md` §2.4。
+> **v1.1.3 / T05**：上述策略从“业务线程池内执行”前移到“投递到线程池之前”。无有效 `Session` 的 `dispatch(nullptr, …)`（实验性内部总线）**不**跑 ingress，详见 `include/net/message_dispatcher.h` 与 `../history-v1/v1-maturity-matrix.md` §2.4。
 
 ## 4. 目录对应关系
 
@@ -189,7 +189,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 实际 `ctest` 用例数以 `ctest -N` 实际枚举为准（GoogleTest `gtest_discover_tests` 展开后）；当前 `default` preset 枚举 **93** 项。
 
-> **测试覆盖盲点**（详见 `docs/development-optimization.md` §9 各模块"测试"小节）：
+> **测试覆盖盲点**（详见 `../plans/development-optimization.md` §9 各模块"测试"小节）：
 >
 > - 登录边界：token 过期 / HTTP 鉴权超时 / 畸形 body / 登录失败频控
 > - 房间边界：`transfer_session` / 房间快照成员身份 / 空房 battle 清理 / 多成员广播排除自身
@@ -212,7 +212,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 
 若在 `config/gateway.json` 里配置了 `gateway.http_management_port`（默认 9080），服务端启动 **`net::HttpManager`**（与 TCP 网关端口并列的**独立监听**）：
 
-> **`v1.1.10`**：**文档 / 示例 / 本节选词**与同目录 **`docs/v1-governance-layers.md`** **§6** 对齐：**不得**将该端口宣称为完整、已鉴权的运维控制面。
+> **`v1.1.10`**：**文档 / 示例 / 本节选词**与同目录 **`../history-v1/v1-governance-layers.md`** **§6** 对齐：**不得**将该端口宣称为完整、已鉴权的运维控制面。
 
 | 端点 | 方法 | Content-Type | 状态 | 说明 |
 |---|---|---|---|---|
@@ -222,7 +222,7 @@ D:\Program\boost\build\windows-msvc-debug\examples\pressure\Debug\gateway_pressu
 | `/metrics/diagnostics` | GET | text/plain | stable | 便于人工排查的摘要视图，包含 per-core 统计和可选 extension |
 | `/metrics/diagnostics/json` | GET | application/json | stable | 结构化 diagnostics 视图，包含 `summary / io_balance / io_cores / extensions` |
 
-> **安全提示**：`http_management_port` **当前无任何鉴权**，监听全网卡，**仅适合内网 / 受信网络**（**不是**已认证控制面；见 **`docs/v1-governance-layers.md` §6**）。
+> **安全提示**：`http_management_port` **当前无任何鉴权**，监听全网卡，**仅适合内网 / 受信网络**（**不是**已认证控制面；见 **`../history-v1/v1-governance-layers.md` §6**）。
 
 设置 `http_management_port = 0` 则禁用 **L2 HTTP** 端点。
 
@@ -296,7 +296,7 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 
 ## 8. 当前主链已闭环的能力清单
 
-仅列 `stable` 项。`experimental` / `reserved` / `demo-only` 详见 `docs/v1-maturity-matrix.md`。
+仅列 `stable` 项。`experimental` / `reserved` / `demo-only` 详见 `../history-v1/v1-maturity-matrix.md`。
 
 ### 网络层
 - `Session`：长度头协议、异步收发、心跳超时、发包限流、最大包长校验
@@ -358,7 +358,7 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 }
 ```
 
-> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`docs/v1-config-maturity.md`**；矩阵锚点 **`docs/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`docs/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**横切接线事实**：**`docs/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。**横切应收口规范**：**`docs/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16**）。**横切数据格式与支持级别**：**`docs/v1-cross-cutting-data-formats.md`**（**v1.1.17**）。
+> **配置字段成熟度**（哪些启动生效 / 哪些热更新生效 / 哪些仅预留）：运维可读 **`../history-v1/v1-config-maturity.md`**；矩阵锚点 **`../history-v1/v1-maturity-matrix.md` §5.1**。**启动 / reload / shutdown 顺序与受控语义**：**`../history-v1/v1-runtime-lifecycle.md`**（**v1.1.13–v1.1.14**）。**横切接线事实**：**`../history-v1/v1-cross-cutting-capabilities.md`**（**v1.1.15**）。**横切应收口规范**：**`../history-v1/v1-cross-cutting-lifecycle-binding.md`**（**v1.1.16**）。**横切数据格式与支持级别**：**`../history-v1/v1-cross-cutting-data-formats.md`**（**v1.1.17**）。
 
 ### v2 login backend 生产鉴权
 
@@ -378,8 +378,8 @@ V2_LOGIN_JWT_PUBLIC_KEY="$(cat public.pem)" v2_login_backend --config config/env
 
 ## 10. v1.x 维护收束结论
 
-按 `docs/development-optimization.md` §11 的任务表，`T01`–`T20` 已完成，当前维护分支的结论是：
+按 `../plans/development-optimization.md` §11 的任务表，`T01`–`T20` 已完成，当前维护分支的结论是：
 
 - **2.0 前需要的收束工作已补齐**：事实源、边界、生命周期、横切能力、治理入口和对应回归面均已入库。
-- **`v1.2.0 / T21` 已完成决策**：见 `docs/v1-structure-upgrade-decision.md`，当前分支**不推进** `typed protocol` / `internal bus` / `battle replay` 转正。
+- **`v1.2.0 / T21` 已完成决策**：见 `../history-v1/v1-structure-upgrade-decision.md`，当前分支**不推进** `typed protocol` / `internal bus` / `battle replay` 转正。
 - **后续若进入 `v2.0.0`，必须重新立项**，而不是继续在 `v1.x` 维护分支上渐进混入 2.0 结构开发。

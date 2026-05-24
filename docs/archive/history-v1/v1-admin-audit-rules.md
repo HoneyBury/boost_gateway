@@ -5,7 +5,7 @@
 - **任务**：对齐 **`development-optimization.md`** 路线图**第三步**：在进入「可被依赖」的运维面之前，先把 **二进制 admin（L3）** 的调用前提与 **审计最小键**说清楚。
 - **范围**：`AdminService` 默认启用最小 ACL；集成方必须配置共享密钥、可信 peer，或在 demo-only 入口显式关闭 ACL。本文仍**不包含**细分业务失败响应（回调失败仍由集成方自定）。
 - **实现落点**：`AdminService::register_handlers`（`src/game/gateway/admin_service.cpp`）在每条 admin handler **入口**写 **`AUDIT_LOG("admin_invoke", …)`**。集成方 **仍可在回调里**追加业务语义审计（勿与本文 **必备键**语义冲突）。
-- **冲突处理**：成熟度子状态以 **`docs/v1-maturity-matrix.md` §4** 为准；本文是 **契约 + SHOULD**。
+- **冲突处理**：成熟度子状态以 **`../history-v1/v1-maturity-matrix.md` §4** 为准；本文是 **契约 + SHOULD**。
 
 ---
 
@@ -15,7 +15,7 @@
 
 | 条件 | 说明 |
 |------|------|
-| **注册显式化** | 仅在为 `examples/admin_demo` / `examples/login_demo` 等 showcase **手工**调用 `AdminService::register_handlers` 时出现；**默认 `GatewayServer` 不注册**（见 **`docs/v1-governance-layers.md`** §L3）。 |
+| **注册显式化** | 仅在为 `examples/admin_demo` / `examples/login_demo` 等 showcase **手工**调用 `AdminService::register_handlers` 时出现；**默认 `GatewayServer` 不注册**（见 **`../history-v1/v1-governance-layers.md`** §L3）。 |
 | **网络信任域** | 仅允许在 **内网 / 专线 / VPN** 等对端身份已保证的环境暴露业务 TCP；**不得在公网直连**且无额外控制面时使用 L3 admin。 |
 | **调用方会话** | 当前实现不要求业务登录态，但默认 ACL 会拒绝未携带共享密钥且不在可信 peer 前缀内的调用。 |
 | **推荐接入方式（SHOULD）** | 运维客户端经 **跳板 / 堡垒**、或 **Sidecar admin 连接器**专线；或由 **单独的 HTTP+mTLS / gRPC** 控制面改写为内部 `dispatch`，并配置 `AdminService::AccessControl`。 |

@@ -297,7 +297,7 @@ Source: `envelope_adapter.cpp` `kMessageTypeMappings` array (25 entries):
 
 | Decision point | Document | Status |
 |---|---|---|
-| Keep generated gRPC as experimental, not default | `docs/v3-proto-grpc-adr.md` | Accepted |
+| Keep generated gRPC as experimental, not default | `../process/v3-proto-grpc-adr.md` | Accepted |
 | gRPC PoC implemented | `docs/grpc-poc-summary.md` | Completed (Stage E) |
 | Proto schema validation CI gate | `scripts/check_v3_proto_schema.py` | Available |
 | gRPC build flag | `BOOST_BUILD_GRPC=ON` | Available |
@@ -482,7 +482,7 @@ All three communication contract metrics pass the P99 alarm threshold. The adapt
 | `tests/chaos/stability_chaos_test.cpp` | 60s stability test with random faults |
 | `proto/v3/common.proto` | `ServiceEnvelope` with oneof per domain (canonical proto contract) |
 | `proto/v3/*.proto` | Per-service type definitions (login, room, battle, match, leaderboard, gateway) |
-| `docs/v3-proto-grpc-adr.md` | ADR for proto/gRPC migration: current decision to keep experimental |
+| `../process/v3-proto-grpc-adr.md` | ADR for proto/gRPC migration: current decision to keep experimental |
 | `docs/grpc-poc-summary.md` | gRPC PoC summary: architecture, components, limitations |
 
 Note: At the time of this writing, the gateway->backend bridge (`GatewayServiceBridge::route()`) uses `message_type` string-based routing (e.g., `"login_request"`, `"room_create"`). The `message_type` value corresponds to the handler key registered on the backend `BackendServer::HandlerMap`. The v3 TypedEnvelope is used as an optional wrapper within the handler (via `decode_handler_payload()`) but is not yet the default wire format for the bridge `route()` calls.

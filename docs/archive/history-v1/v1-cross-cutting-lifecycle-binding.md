@@ -3,7 +3,7 @@
 ## 1. 文档定位
 
 - **任务**：落实 **`development-optimization.md` §11 T15** 与 **Persistence·Audit 路线图第二步**：把 **审计**、**player 持久化**、**battle replay 产出** 绑定到 **具名生命周期节点**，形成维护期 **「应收口在哪里」** 的规范表；**不是**声称主链已全部实现。
-- **与 T14 的关系**：**事实现状**（当前代码接在哪）见 **`docs/v1-cross-cutting-capabilities.md`**；本文写 **应收口 / 收敛方向**。二者冲突时以 **T14 代码事实** 为准，本文条目标记 **「主链已有」** / **「showcase 约定」** / **「reserved（待接线）」**。
+- **与 T14 的关系**：**事实现状**（当前代码接在哪）见 **`../history-v1/v1-cross-cutting-capabilities.md`**；本文写 **应收口 / 收敛方向**。二者冲突时以 **T14 代码事实** 为准，本文条目标记 **「主链已有」** / **「showcase 约定」** / **「reserved（待接线）」**。
 - **不在本版**：存储后端与日志 **格式支持级别** 的冻结归 **`v1.1.17`（T16）**；自动化回归归 **`v1.2.4`（T20）**。本文 **不改变** 矩阵 §4.4 / §6 的 **`stable` / `experimental` / `reserved` 等级**。
 
 ---
@@ -15,10 +15,10 @@
 | **N1** | **接入拒绝**：`GatewayServer` 因 **`max_connections`** / **`per_ip_connection_limit`** 拒绝新连接 |
 | **N2** | **Ingress 限频拒绝**：`GatewayService` ingress middleware 判定超限 |
 | **N3** | **登录结果**：`LoginService` 校验完成后的成功或失败路径 |
-| **N4** | **L3 二进制 Admin**：`AdminService` handler **入口**（见 **`docs/v1-admin-audit-rules.md`**） |
+| **N4** | **L3 二进制 Admin**：`AdminService` handler **入口**（见 **`../history-v1/v1-admin-audit-rules.md`**） |
 | **N5** | **战斗结算**：`BattleManager::end_battle()`（或语义等价的战斗结束边界）完成时 |
 | **N6** | **配置热更新成功**：`ConfigWatcher` 回调 **且** `try_load_gateway_config` **成功**之后（应用层可选审计） |
-| **N7** | **优雅停服**：`GracefulShutdown` 回调路径（与 **`docs/v1-runtime-lifecycle.md` §4 / §7** 一致） |
+| **N7** | **优雅停服**：`GracefulShutdown` 回调路径（与 **`../history-v1/v1-runtime-lifecycle.md` §4 / §7** 一致） |
 
 > **未单独开行的节点**（如重复登录踢旧会话、开战瞬间）在 **v1.x** 仍归 **业务编排**；若需审计 / 落盘，集成方应在 **handler / 助手** 内自行挂载，**框架不在本表单列强制项**。
 
@@ -71,5 +71,5 @@
 |------|------|
 | **`v1.1.15`**（T14） | **`v1-cross-cutting-capabilities.md`**：现状事实矩阵 |
 | **`v1.1.16`**（本文 / T15） | **应收口规范矩阵** + showcase 自检清单 |
-| **`v1.1.17`**（T16） | **`docs/v1-cross-cutting-data-formats.md`**：后端与 **audit / replay 格式** 支持级别冻结 |
+| **`v1.1.17`**（T16） | **`../history-v1/v1-cross-cutting-data-formats.md`**：后端与 **audit / replay 格式** 支持级别冻结 |
 | **`v1.2.4`**（T20） | persistence / audit / replay **回归测试** |
