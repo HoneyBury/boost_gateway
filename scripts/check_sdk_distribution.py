@@ -5,7 +5,10 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import re
+import sys
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -342,16 +345,32 @@ def main() -> int:
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": not failed,
         "passed": not failed,
+        "failed_category": "sdk_distribution" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
+        "artifacts": {
+            "summary_path": str(args.summary_path),
+            "sdk_readme": str(REPO_ROOT / "sdk/docs/README.md"),
+            "sdk_compatibility": str(REPO_ROOT / "sdk/docs/compatibility.md"),
+            "sdk_cmake": str(REPO_ROOT / "sdk/CMakeLists.txt"),
+        },
     }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 
     print(
-        f"sdk distribution: {'PASS' if summary['passed'] else 'FAIL'} "
+        f"sdk distribution: {'PASS' if summary['overall_pass'] else 'FAIL'} "
         f"({len(checks) - len(failed)}/{len(checks)} checks)"
     )
     if failed:

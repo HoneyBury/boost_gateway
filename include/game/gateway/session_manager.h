@@ -48,7 +48,7 @@ public:
     // ── Lock-free broadcast ───────────────────────────────────────────
 
     // Broadcast a packet to all authenticated sessions using an RCU-style
-    // atomic snapshot.  Does NOT block concurrent add_session /
+    // shared_ptr snapshot. Does NOT block concurrent add_session /
     // remove_session calls.
     void broadcast(std::uint16_t message_id,
                    std::uint32_t request_id,
@@ -109,7 +109,7 @@ private:
     using SessionSnapshot =
         std::shared_ptr<const std::unordered_map<SessionKey, SessionRecord>>;
 
-    std::atomic<SessionSnapshot> snapshot_{
+    SessionSnapshot snapshot_{
         std::make_shared<const std::unordered_map<SessionKey, SessionRecord>>()};
 
     // ── Backpressure ──────────────────────────────────────────────────

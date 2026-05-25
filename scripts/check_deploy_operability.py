@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
+import sys
 from pathlib import Path
 from typing import Any
+from datetime import UTC, datetime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -521,17 +524,34 @@ def main() -> int:
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": not failed,
         "passed": not failed,
+        "failed_category": "deploy_operability" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
+        "artifacts": {
+            "summary_path": str(args.summary_path),
+            "compose_file": str(REPO_ROOT / "env/docker/docker-compose.yml"),
+            "k8s_dir": str(REPO_ROOT / "env/k8s"),
+            "systemd_dir": str(REPO_ROOT / "deploy/systemd"),
+            "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
+        },
     }
 
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 
     print(
-        f"deploy operability: {'PASS' if summary['passed'] else 'FAIL'} "
+        f"deploy operability: {'PASS' if summary['overall_pass'] else 'FAIL'} "
         f"({len(checks) - len(failed)}/{len(checks)} checks)"
     )
     if failed:

@@ -20,10 +20,10 @@ namespace {
 std::size_t backend_connection_pool_size() {
     const char* raw = std::getenv("V2_BACKEND_CONNECTION_POOL_SIZE");
     if (raw == nullptr || raw[0] == '\0') {
-        return 4;
+        return 1;
     }
     const auto parsed = std::strtoul(raw, nullptr, 10);
-    return parsed > 0 ? static_cast<std::size_t>(parsed) : 4U;
+    return parsed > 0 ? static_cast<std::size_t>(parsed) : 1U;
 }
 
 struct SpanExportGuard {

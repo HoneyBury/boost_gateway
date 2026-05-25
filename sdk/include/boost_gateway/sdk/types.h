@@ -29,12 +29,26 @@ struct LoginResult {
     std::string display_name;
 };
 
+struct RegisterResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
 struct RoomResult {
     bool ok = false;
     std::int32_t error_code = 0;
     std::string error_message;
     std::string room_id;
     int member_count = 0;
+};
+
+struct RoomQueryResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
 };
 
 struct BattleStartResult {
@@ -49,6 +63,20 @@ struct BattleInputResult {
     std::int32_t error_code = 0;
     std::string error_message;
     std::uint64_t input_seq = 0;
+};
+
+struct BattleStateResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
+};
+
+struct ReplayLoadResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string response_body;
 };
 
 struct MatchResult {

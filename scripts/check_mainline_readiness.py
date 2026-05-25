@@ -80,6 +80,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     manifest = json.loads(read("docs/production-candidate-evidence-manifest.json"))
     ids = {entry.get("id") for entry in manifest.get("evidence", []) if isinstance(entry, dict)}
     for evidence_id in (
+        "long_soak_capacity",
         "fixed_runner_release_capacity",
         "preprod_recovery_drill",
         "tls_preprod_multi_run",
@@ -87,6 +88,9 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         add(checks, f"p2:manifest:{evidence_id}", evidence_id in ids, f"manifest declares {evidence_id}")
 
     for script in (
+        "scripts/check_script_inventory.py",
+        "scripts/check_validation_summary_contract.py",
+        "scripts/check_config_source_layout.py",
         "scripts/verify_fixed_runner_release_capacity.py",
         "scripts/verify_preprod_recovery_drill.py",
         "scripts/verify_tls_preprod_multi_run.py",
@@ -114,6 +118,26 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     add(checks, "p2:evidence-manifest-require-fixed-runner", "--require-fixed-runner" in evidence_runner, "evidence runner documents fixed-runner blocking mode")
 
 
+def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
+    inventory = json.loads(read("docs/script-inventory.json"))
+    public = set(inventory.get("public_entrypoints", []))
+    scripts = inventory.get("scripts", {})
+    add(checks, "p3:script-inventory-present", bool(scripts), "script inventory declares scripts")
+    for entrypoint in (
+        "scripts/verify_release_candidate.py",
+        "scripts/check_mainline_readiness.py",
+        "scripts/verify_production_candidate_evidence.py",
+        "scripts/check_production_evidence_manifest.py",
+        "scripts/run_long_soak_capacity.py",
+        "scripts/verify_sdk_enterprise_delivery.py",
+    ):
+        add(checks, f"p3:public-entrypoint:{entrypoint}", entrypoint in public, f"{entrypoint} is public")
+
+    env_readme = read("env/README.md")
+    add(checks, "p3:env-source-of-truth", "`env/` is the maintained production configuration source of truth" in env_readme, "env README declares config source of truth")
+    add(checks, "p3:legacy-config-boundary", "legacy/reference surfaces" in env_readme, "env README documents legacy config boundary")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -128,10 +152,11 @@ def main() -> int:
     validate_p0_docs(checks)
     validate_p1_mainline(checks)
     validate_p2_evidence(checks)
+    validate_p3_governance(checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
-        "summary_version": 1,
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "overall_pass": not failed,
         "passed": not failed,

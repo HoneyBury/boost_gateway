@@ -65,11 +65,18 @@ void GatewayActor::on_message(v2::actor::Message&& message) {
                           command->body);
             return;
         case GatewayCommandType::kLogin:
+        case GatewayCommandType::kRegister:
         case GatewayCommandType::kRoomCreate:
         case GatewayCommandType::kRoomJoin:
         case GatewayCommandType::kRoomReady:
         case GatewayCommandType::kRoomLeave:
+        case GatewayCommandType::kRoomList:
+        case GatewayCommandType::kRoomDetail:
+        case GatewayCommandType::kRoomKick:
+        case GatewayCommandType::kRoomTransferOwner:
         case GatewayCommandType::kBattleStart:
+        case GatewayCommandType::kBattleState:
+        case GatewayCommandType::kReplayLoad:
         case GatewayCommandType::kMatchJoin:
         case GatewayCommandType::kMatchLeave:
         case GatewayCommandType::kMatchStatus:
@@ -118,6 +125,7 @@ bool GatewayActor::is_public_message(std::uint16_t protocol_message_id) const {
     switch (protocol_message_id) {
         case net::protocol::kHeartbeatRequest:
         case net::protocol::kLoginRequest:
+        case net::protocol::kRegisterRequest:
         case net::protocol::kEchoRequest:
             return true;
         default:
@@ -143,6 +151,9 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
         case net::protocol::kLoginRequest:
             command.type = GatewayCommandType::kLogin;
             return command;
+        case net::protocol::kRegisterRequest:
+            command.type = GatewayCommandType::kRegister;
+            return command;
         case net::protocol::kRoomCreateRequest:
             command.type = GatewayCommandType::kRoomCreate;
             return command;
@@ -155,11 +166,29 @@ std::optional<GatewayCommand> GatewayActor::to_command(const ClientEnvelope& env
         case net::protocol::kRoomLeaveRequest:
             command.type = GatewayCommandType::kRoomLeave;
             return command;
+        case net::protocol::kRoomListRequest:
+            command.type = GatewayCommandType::kRoomList;
+            return command;
+        case net::protocol::kRoomDetailRequest:
+            command.type = GatewayCommandType::kRoomDetail;
+            return command;
+        case net::protocol::kRoomKickRequest:
+            command.type = GatewayCommandType::kRoomKick;
+            return command;
+        case net::protocol::kRoomTransferOwnerRequest:
+            command.type = GatewayCommandType::kRoomTransferOwner;
+            return command;
         case net::protocol::kBattleStartRequest:
             command.type = GatewayCommandType::kBattleStart;
             return command;
         case net::protocol::kBattleInputRequest:
             command.type = GatewayCommandType::kBattleInput;
+            return command;
+        case net::protocol::kBattleStateRequest:
+            command.type = GatewayCommandType::kBattleState;
+            return command;
+        case net::protocol::kReplayLoadRequest:
+            command.type = GatewayCommandType::kReplayLoad;
             return command;
         case net::protocol::kMatchJoinRequest:
             command.type = GatewayCommandType::kMatchJoin;

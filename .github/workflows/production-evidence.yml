@@ -176,6 +176,25 @@ jobs:
             --include-runtime-http \
             --summary-path runtime/validation/p2-observability-runtime-summary.json
 
+      - name: R2 fixed-runner manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_production_evidence_manifest.py \
+            --require-fixed-runner \
+            --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json || true
+
+      - name: R3 production readiness report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/render_production_readiness_report.py \
+            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
+            --output runtime/validation/r3-production-readiness-report.md \
+            --summary-path runtime/validation/r3-production-readiness-report-summary.json || true
+
       - name: Render production evidence summary
         if: always()
         shell: bash
@@ -191,6 +210,8 @@ jobs:
             runtime/validation/p6-release-baseline-summary.json \
             runtime/validation/p2-observability-runtime-summary.json \
             runtime/validation/gateway-observability-runtime-summary.json \
+            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
+            runtime/validation/r3-production-readiness-report-summary.json \
             runtime/perf/release-baseline/summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
@@ -211,6 +232,9 @@ jobs:
             runtime/validation/p6-*-summary.json
             runtime/validation/p2-observability-runtime-summary.json
             runtime/validation/gateway-observability-runtime-summary.json
+            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
+            runtime/validation/r3-production-readiness-report.md
+            runtime/validation/r3-production-readiness-report-summary.json
             runtime/perf/v2-stability-soak/**
             runtime/perf/release-baseline/**
           if-no-files-found: warn

@@ -13,6 +13,7 @@
 #include <cstdlib>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace v2::battle {
@@ -21,8 +22,22 @@ namespace {
 constexpr std::int32_t kMaxX = 1000;
 constexpr std::int32_t kMaxY = 1000;
 constexpr std::int32_t kMaxMoveDelta = 200;  // max Manhattan distance per frame
+constexpr std::int32_t kProjectileRange = 1400;
+constexpr std::int32_t kProjectileDamage = 25;
+constexpr std::int32_t kProjectileSpeed = 100;
 constexpr std::int32_t kMaxDamage = 50;
 constexpr std::int32_t kMinDamage = 1;
+
+std::pair<std::int32_t, std::int32_t> normalize_direction(std::int32_t dx,
+                                                          std::int32_t dy) {
+    if (std::abs(dx) >= std::abs(dy) && dx != 0) {
+        return {dx > 0 ? 1 : -1, 0};
+    }
+    if (dy != 0) {
+        return {0, dy > 0 ? 1 : -1};
+    }
+    return {1, 0};
+}
 }  // namespace
 
 void MovementSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
@@ -75,8 +90,15 @@ void MovementSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx
             }
 
             // ── Accept valid move ──────────────────────────────
+            const auto old_x = pos->x;
+            const auto old_y = pos->y;
             pos->x = target_x;
             pos->y = target_y;
+            if (target_x != old_x || target_y != old_y) {
+                auto [facing_dx, facing_dy] = normalize_direction(target_x - old_x, target_y - old_y);
+                participant.facing_dx = facing_dx;
+                participant.facing_dy = facing_dy;
+            }
             participant.has_pending_move = false;
         });
 }
@@ -96,6 +118,35 @@ void CombatSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) 
 
     simple_world->for_each<BattleParticipantComponent>(
         [&](v2::ecs::EntityHandle handle, BattleParticipantComponent& participant) {
+            if (participant.has_pending_fire) {
+                auto* source_pos = simple_world->get_component<PositionComponent>(handle);
+                auto* cooldown = simple_world->get_component<AttackCooldownComponent>(handle);
+                if (source_pos != nullptr &&
+                    (cooldown == nullptr || cooldown->last_attack_frame == 0 ||
+                     (current_frame - cooldown->last_attack_frame) >= cooldown->cooldown_frames)) {
+                    auto [dx, dy] = normalize_direction(participant.pending_fire_dx,
+                                                        participant.pending_fire_dy);
+                    participant.facing_dx = dx;
+                    participant.facing_dy = dy;
+                    ProjectileSystem::spawn_projectile(
+                        world,
+                        handle,
+                        participant.user_id + "_shot_" + std::to_string(current_frame),
+                        participant.user_id,
+                        {},
+                        source_pos->x,
+                        source_pos->y,
+                        std::clamp(source_pos->x + dx * kProjectileRange, 0, kMaxX),
+                        std::clamp(source_pos->y + dy * kProjectileRange, 0, kMaxY),
+                        kProjectileDamage,
+                        kProjectileSpeed);
+                    if (cooldown != nullptr) {
+                        cooldown->last_attack_frame = current_frame;
+                    }
+                }
+                participant.has_pending_fire = false;
+            }
+
             if (!participant.online || participant.pending_target_user_id.empty()) return;
 
             auto* cooldown = simple_world->get_component<AttackCooldownComponent>(handle);
@@ -198,6 +249,8 @@ ProjectileComponent& ProjectileSystem::spawn_projectile(
     proj.start_y = start_y;
     proj.target_x = target_x;
     proj.target_y = target_y;
+    proj.dir_x = (target_x > start_x) ? 1 : ((target_x < start_x) ? -1 : 0);
+    proj.dir_y = (target_y > start_y) ? 1 : ((target_y < start_y) ? -1 : 0);
     proj.damage = damage;
     proj.speed = speed;
     proj.aoe_radius = aoe_radius;
@@ -216,7 +269,59 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
         [&](v2::ecs::EntityHandle handle, ProjectileComponent& proj) {
             if (!proj.active) return;
 
+            auto* projectile_pos = simple_world->get_component<PositionComponent>(handle);
+
             proj.current_frame++;
+
+            if (proj.aoe_radius == 0 && proj.target_user_id.empty() &&
+                projectile_pos != nullptr) {
+                projectile_pos->x += proj.dir_x * proj.speed;
+                projectile_pos->y += proj.dir_y * proj.speed;
+
+                bool hit = false;
+                simple_world->for_each<BattleParticipantComponent>(
+                    [&](v2::ecs::EntityHandle target_handle,
+                        BattleParticipantComponent& participant) {
+                        if (hit || participant.user_id == proj.owner_user_id || !participant.online) {
+                            return;
+                        }
+
+                        auto* target_pos = simple_world->get_component<PositionComponent>(
+                            target_handle);
+                        auto* health = simple_world->get_component<HealthComponent>(
+                            target_handle);
+                        if (target_pos == nullptr || health == nullptr || health->hp <= 0) {
+                            return;
+                        }
+
+                        const auto dx = std::abs(target_pos->x - projectile_pos->x);
+                        const auto dy = std::abs(target_pos->y - projectile_pos->y);
+                        if (dx + dy > 60) {
+                            return;
+                        }
+
+                        const auto before = health->hp;
+                        health->hp = std::max(
+                            static_cast<std::int32_t>(0),
+                            health->hp - proj.damage);
+                        if (before != health->hp) {
+                            hit = true;
+                            simple_world->for_each<BattleParticipantComponent>(
+                                [&](v2::ecs::EntityHandle, BattleParticipantComponent& owner) {
+                                    if (owner.user_id == proj.owner_user_id) {
+                                        owner.score += (health->hp == 0) ? 5 : 1;
+                                    }
+                                });
+                        }
+                    });
+
+                const bool out_of_bounds = projectile_pos->x < 0 || projectile_pos->x > kMaxX ||
+                    projectile_pos->y < 0 || projectile_pos->y > kMaxY;
+                if (hit || out_of_bounds) {
+                    proj.active = false;
+                }
+                return;
+            }
 
             auto total_distance = static_cast<std::int64_t>(
                 std::abs(proj.target_x - proj.start_x) +
@@ -228,35 +333,44 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
             if (arrived) {
                 auto impact_x = proj.target_x;
                 auto impact_y = proj.target_y;
+                if (projectile_pos != nullptr) {
+                    projectile_pos->x = impact_x;
+                    projectile_pos->y = impact_y;
+                }
 
                 if (proj.aoe_radius == 0) {
-                    // ── Single target ────────────────────────────────
-                    if (!proj.target_user_id.empty()) {
-                        simple_world->for_each<BattleParticipantComponent>(
-                            [&](v2::ecs::EntityHandle target_handle,
-                                BattleParticipantComponent& participant) {
-                                if (participant.user_id != proj.target_user_id) return;
+                    simple_world->for_each<BattleParticipantComponent>(
+                        [&](v2::ecs::EntityHandle target_handle,
+                            BattleParticipantComponent& participant) {
+                            if (participant.user_id == proj.owner_user_id || !participant.online) {
+                                return;
+                            }
 
-                                auto* health = simple_world->get_component<HealthComponent>(
-                                    target_handle);
-                                if (health == nullptr) return;
+                            auto* target_pos = simple_world->get_component<PositionComponent>(
+                                target_handle);
+                            auto* health = simple_world->get_component<HealthComponent>(
+                                target_handle);
+                            if (target_pos == nullptr || health == nullptr) return;
 
-                                health->hp = std::max(
-                                    static_cast<std::int32_t>(0),
-                                    health->hp - proj.damage);
+                            const auto dx = std::abs(target_pos->x - impact_x);
+                            const auto dy = std::abs(target_pos->y - impact_y);
+                            if (dx + dy > 60) {
+                                return;
+                            }
 
-                                // Apply DoT if duration > 0
-                                if (proj.duration_frames > 0) {
-                                    auto& dot = world.add_component<DamageOverlayComponent>(
-                                        target_handle);
-                                    dot.source_projectile_id = proj.projectile_id;
-                                    dot.damage_per_tick = proj.damage;
-                                    dot.remaining_ticks = proj.duration_frames;
-                                    dot.interval_frames = 1;
-                                    dot.last_applied_frame = ctx.frame_number;
-                                }
-                            });
-                    }
+                            const auto before = health->hp;
+                            health->hp = std::max(
+                                static_cast<std::int32_t>(0),
+                                health->hp - proj.damage);
+                            if (before != health->hp) {
+                                simple_world->for_each<BattleParticipantComponent>(
+                                    [&](v2::ecs::EntityHandle, BattleParticipantComponent& owner) {
+                                        if (owner.user_id == proj.owner_user_id) {
+                                            owner.score += (health->hp == 0) ? 5 : 1;
+                                        }
+                                    });
+                            }
+                        });
                 } else {
                     // ── Area of effect ───────────────────────────────
                     simple_world->for_each<PositionComponent>(
@@ -295,12 +409,11 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
                                         proj.speed) /
                         static_cast<double>(total_distance));
 
-                auto* pos = simple_world->get_component<PositionComponent>(handle);
-                if (pos != nullptr) {
-                    pos->x = static_cast<std::int32_t>(
+                if (projectile_pos != nullptr) {
+                    projectile_pos->x = static_cast<std::int32_t>(
                         static_cast<double>(proj.start_x) +
                         (static_cast<double>(proj.target_x - proj.start_x) * progress));
-                    pos->y = static_cast<std::int32_t>(
+                    projectile_pos->y = static_cast<std::int32_t>(
                         static_cast<double>(proj.start_y) +
                         (static_cast<double>(proj.target_y - proj.start_y) * progress));
                 }

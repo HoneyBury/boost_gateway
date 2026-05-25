@@ -5,6 +5,22 @@ Boost Gateway game server framework. It covers Docker Compose orchestration,
 Kubernetes deployment manifests, Prometheus/Grafana monitoring, Redis caching,
 and CI/CD pipelines.
 
+## Source Of Truth
+
+`env/` is the maintained production configuration source of truth:
+
+- Docker Compose: `env/docker/docker-compose.yml`
+- Kubernetes manifests: `env/k8s/*.yaml`
+- Monitoring: `env/monitoring/*.yml` and `env/monitoring/grafana-dashboard.json`
+- Redis: `env/redis/redis.conf`
+
+The root-level `docker-compose.yml`, `docker-compose.operator.yml`,
+`prometheus/alerts.yml`, `grafana/dashboard.json`, `k8s/crds/gatewayservers.yaml`,
+`k8s/helm/gateway-server/Chart.yaml`, and `k8s/helm/gateway-server/values.yaml`
+paths are legacy/reference surfaces. Do not add
+new production deployment behavior there unless it is also mirrored into `env/`
+and covered by the operability/config-governance checks.
+
 ## Quick Start
 
 ```bash

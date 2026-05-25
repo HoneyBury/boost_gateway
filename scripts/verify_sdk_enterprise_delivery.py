@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
+import signal
 import subprocess
 import sys
 import time
@@ -42,8 +44,9 @@ def emit_text(text: str, *, stderr: bool = False) -> None:
 def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> dict[str, Any]:
     print(f"==> {name}", flush=True)
     started = time.monotonic()
+    proc: subprocess.Popen[str] | None = None
     try:
-        completed = subprocess.run(
+        proc = subprocess.Popen(
             cmd,
             cwd=ROOT,
             text=True,
@@ -51,22 +54,44 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
             errors="replace",
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
+            start_new_session=True,
         )
+        stdout, stderr = proc.communicate(timeout=timeout_seconds)
     except subprocess.TimeoutExpired as exc:
+        if proc is not None:
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                pass
+            time.sleep(0.5)
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except PermissionError:
+                pass
+            try:
+                stdout, stderr = proc.communicate(timeout=2)
+            except subprocess.TimeoutExpired:
+                stdout = exc.stdout
+                stderr = exc.stderr
+        else:
+            stdout = exc.stdout
+            stderr = exc.stderr
         return {
             "name": name,
             "category": category,
             "command": cmd,
             "status": "timeout",
             "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout),
-            "stderr_tail": tail(exc.stderr),
+            "stdout_tail": tail(stdout),
+            "stderr_tail": tail(stderr),
         }
 
-    stdout = normalize_output(completed.stdout)
-    stderr = normalize_output(completed.stderr)
+    stdout = normalize_output(stdout)
+    stderr = normalize_output(stderr)
     if stdout:
         emit_text(stdout)
     if stderr:
@@ -75,8 +100,8 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
         "name": name,
         "category": category,
         "command": cmd,
-        "status": "passed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
+        "status": "passed" if proc is not None and proc.returncode == 0 else "failed",
+        "returncode": proc.returncode if proc is not None else None,
         "duration_seconds": round(time.monotonic() - started, 3),
         "stdout_tail": tail(stdout),
         "stderr_tail": tail(stderr),
@@ -86,6 +111,7 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build/default")
+    parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-runtime-full-flow", action="store_true")
     parser.add_argument("--step-timeout-seconds", type=int, default=900)
@@ -130,6 +156,8 @@ def main() -> int:
                 str(ROOT / "scripts/verify_sdk_package_consumer.py"),
                 "--build-dir",
                 str(build_dir),
+                "--configuration",
+                args.configuration,
                 "--summary-path",
                 artifacts["package_consumer_summary_path"],
             ],
@@ -146,9 +174,11 @@ def main() -> int:
                 "--build-dir",
                 str(build_dir),
                 "--configuration",
-                "Release",
+                args.configuration,
                 "--summary-path",
                 artifacts["business_flow_summary_path"],
+                "--test-timeout-seconds",
+                str(args.step_timeout_seconds),
             ] + (["--skip-build"] if args.skip_build else [])),
             args.step_timeout_seconds,
         )
@@ -159,6 +189,10 @@ def main() -> int:
             str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
             "--build-dir",
             str(build_dir),
+            "--port",
+            "9201",
+            "--http-port",
+            "9080",
             "--summary-path",
             artifacts["full_flow_client_summary_path"],
         ]
@@ -177,6 +211,10 @@ def main() -> int:
             str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
             "--build-dir",
             str(build_dir),
+            "--port",
+            "9201",
+            "--http-port",
+            "9080",
             "--backend-tls",
             "--summary-path",
             artifacts["tls_full_flow_client_summary_path"],
@@ -198,6 +236,7 @@ def main() -> int:
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir.resolve()),
+        "configuration": args.configuration,
         "overall_pass": failed is None,
         "passed": failed is None,
         "failed_category": str(failed.get("category", "")) if failed else "",

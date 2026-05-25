@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <memory>
+#include <random>
 #include <unordered_map>
 #include <utility>
 
@@ -17,6 +18,33 @@ namespace {
 
 v2::ecs::SimpleWorld* as_simple_world(v2::ecs::World& world) {
     return dynamic_cast<v2::ecs::SimpleWorld*>(&world);
+}
+
+std::pair<std::int32_t, std::int32_t> spawn_position_for(const std::string& battle_id,
+                                                         std::size_t index) {
+    std::seed_seq seed(battle_id.begin(), battle_id.end());
+    std::mt19937 rng(seed);
+    std::uniform_int_distribution<std::int32_t> x_dist(1, 18);
+    std::uniform_int_distribution<std::int32_t> y_dist(1, 13);
+    for (std::size_t i = 0; i <= index; ++i) {
+        const auto x = x_dist(rng) * 50;
+        const auto y = y_dist(rng) * 50;
+        if (i == index) {
+            return {x, y};
+        }
+    }
+    return {50, 50};
+}
+
+std::pair<std::int32_t, std::int32_t> normalize_direction(std::int32_t dx,
+                                                          std::int32_t dy) {
+    if (std::abs(dx) >= std::abs(dy) && dx != 0) {
+        return {dx > 0 ? 1 : -1, 0};
+    }
+    if (dy != 0) {
+        return {0, dy > 0 ? 1 : -1};
+    }
+    return {1, 0};
 }
 
 }  // namespace
@@ -65,6 +93,20 @@ void BattleInputSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& 
                     participant.pending_move_y = static_cast<std::int32_t>(
                         std::strtol(y_str.c_str(), nullptr, 10));
                     participant.has_pending_move = true;
+                }
+            }
+
+            if (input.starts_with("fire:")) {
+                auto comma = input.find(',', 5);
+                if (comma != std::string::npos) {
+                    auto dx_str = std::string(input.substr(5, comma - 5));
+                    auto dy_str = std::string(input.substr(comma + 1));
+                    auto [dx, dy] = normalize_direction(
+                        static_cast<std::int32_t>(std::strtol(dx_str.c_str(), nullptr, 10)),
+                        static_cast<std::int32_t>(std::strtol(dy_str.c_str(), nullptr, 10)));
+                    participant.pending_fire_dx = dx;
+                    participant.pending_fire_dy = dy;
+                    participant.has_pending_fire = true;
                 }
             }
 
@@ -245,10 +287,12 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
         v2::ecs::SystemMetadata{.name = "CombatSystem", .dependencies = {"MovementSystem", "BattleInputSystem"}});
     executor->add_system(std::make_unique<v2::aoi::AoiSystem>(),
         v2::ecs::SystemMetadata{.name = "AoiSystem", .dependencies = {"MovementSystem"}});
+    executor->add_system(std::make_unique<ProjectileSystem>(),
+        v2::ecs::SystemMetadata{.name = "ProjectileSystem", .dependencies = {"CombatSystem"}});
 
     // Stage 3: depends on stage 2 systems
     executor->add_system(std::make_unique<BattleReplaySystem>(),
-        v2::ecs::SystemMetadata{.name = "BattleReplaySystem", .dependencies = {"BattleLifecycleSystem", "CombatSystem", "AoiSystem"}});
+        v2::ecs::SystemMetadata{.name = "BattleReplaySystem", .dependencies = {"BattleLifecycleSystem", "CombatSystem", "AoiSystem", "ProjectileSystem"}});
 
     world->set_executor(std::move(executor));
 
@@ -264,11 +308,15 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
     const auto replay_entity = world->create_entity();
     world->add_component<BattleReplayLogComponent>(replay_entity);
 
-    for (const auto& user_id : player_ids) {
+    for (std::size_t index = 0; index < player_ids.size(); ++index) {
+        const auto& user_id = player_ids[index];
         const auto entity = world->create_entity();
         auto& participant = world->add_component<BattleParticipantComponent>(entity);
         participant.user_id = user_id;
-        world->add_component<PositionComponent>(entity);
+        auto& pos = world->add_component<PositionComponent>(entity);
+        const auto [spawn_x, spawn_y] = spawn_position_for(battle_id, index);
+        pos.x = spawn_x;
+        pos.y = spawn_y;
         world->add_component<HealthComponent>(entity);
         world->add_component<AttackStateComponent>(entity);
         world->add_component<AttackCooldownComponent>(entity);
@@ -664,6 +712,8 @@ BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world) {
                 state.pos_x = pos->x;
                 state.pos_y = pos->y;
             }
+            state.facing_dx = participant.facing_dx;
+            state.facing_dy = participant.facing_dy;
             if (auto* health = simple_world->get_component<HealthComponent>(handle)) {
                 state.hp = health->hp;
                 state.max_hp = health->max_hp;
@@ -682,6 +732,36 @@ BattleWorldSnapshot battle_world_snapshot(v2::ecs::World& world) {
     for (auto& [entity_id, participant] : participants_with_ids) {
         (void)entity_id;
         snapshot.participants.push_back(std::move(participant));
+    }
+
+    std::vector<std::pair<v2::ecs::EntityId, BattleWorldProjectileState>> projectiles_with_ids;
+    simple_world->for_each<ProjectileComponent>(
+        [&](v2::ecs::EntityHandle handle, ProjectileComponent& projectile) {
+            if (!projectile.active) {
+                return;
+            }
+            BattleWorldProjectileState state{
+                .projectile_id = projectile.projectile_id,
+                .owner_user_id = projectile.owner_user_id,
+                .dir_x = projectile.dir_x,
+                .dir_y = projectile.dir_y,
+                .active = projectile.active,
+            };
+            if (auto* pos = simple_world->get_component<PositionComponent>(handle)) {
+                state.pos_x = pos->x;
+                state.pos_y = pos->y;
+            }
+            projectiles_with_ids.push_back({handle.id, std::move(state)});
+        });
+    std::sort(projectiles_with_ids.begin(),
+              projectiles_with_ids.end(),
+              [](const auto& lhs, const auto& rhs) {
+                  return lhs.first < rhs.first;
+              });
+    snapshot.projectiles.reserve(projectiles_with_ids.size());
+    for (auto& [entity_id, projectile] : projectiles_with_ids) {
+        (void)entity_id;
+        snapshot.projectiles.push_back(std::move(projectile));
     }
 
     return snapshot;

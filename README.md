@@ -16,9 +16,11 @@
 ## 快速入口
 
 - 主文档入口：`docs/README.md`
+- 服务端部署快速说明：`docs/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
 - 可靠性矩阵：`docs/reliability-matrix.md`
+- 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
 - 发布/验收门禁：`docs/v3-release-checklist.md`
 
@@ -28,6 +30,9 @@
 python scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke
 python scripts/check_current_docs_install.py
 python scripts/check_mainline_readiness.py
+python scripts/check_script_inventory.py
+python scripts/check_validation_summary_contract.py
+python scripts/check_config_source_layout.py
 python scripts/check_p3_p4_release_readiness.py
 python scripts/verify_sdk_enterprise_delivery.py --build-dir build/Release --skip-build
 python scripts/verify_production_candidate_evidence.py --build-dir build/Release --skip-build
@@ -36,6 +41,18 @@ python scripts/render_production_readiness_report.py
 ```
 
 ## 运行入口
+
+推荐优先阅读 `docs/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
+
+```bash
+docker compose -f env/docker/docker-compose.yml build
+docker compose -f env/docker/docker-compose.yml up -d
+curl http://127.0.0.1:9080/health
+```
+
+客户端连接 gateway：`127.0.0.1:9201`。
+
+本机二进制开发入口：
 
 ```bash
 # gateway

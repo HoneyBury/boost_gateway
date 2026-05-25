@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
+import socket
 import subprocess
 import sys
 import time
@@ -75,6 +77,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-production-evidence", action="store_true")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/cloud-production-closure-summary.json"))
     return parser.parse_args()
+
+
+def environment_snapshot() -> dict[str, object]:
+    return {
+        "platform": platform.platform(),
+        "system": platform.system(),
+        "release": platform.release(),
+        "machine": platform.machine(),
+        "python": sys.version.split()[0],
+        "host": socket.gethostname(),
+        "cwd": str(ROOT),
+    }
 
 
 def main() -> int:
@@ -173,21 +187,32 @@ def main() -> int:
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
         "include_compose": args.include_compose,
         "include_kind": args.include_kind,
         "include_production_evidence": args.include_production_evidence,
+        "environment": environment_snapshot(),
+        "overall_pass": failed is None,
         "passed": failed is None,
         "failed_category": "" if failed is None else str(failed.get("category")),
         "failed_step": "" if failed is None else str(failed.get("name")),
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "preflight_summary_path": str(ROOT / "runtime/validation/cloud-production-preflight-summary.json"),
+            "deploy_operability_summary_path": str(ROOT / "runtime/validation/cloud-deploy-operability-summary.json"),
+            "docker_snapshot_summary_path": str(ROOT / "runtime/perf/docker-production-snapshot/summary.json") if args.include_compose else "",
+            "control_plane_summary_path": str(ROOT / "runtime/validation/cloud-kind-control-plane-summary.json") if args.include_kind else "",
+            "production_evidence_summary_path": str(ROOT / "runtime/validation/cloud-production-evidence-summary.json") if args.include_production_evidence else "",
+        },
         "steps": steps,
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(f"summary: {summary_path}")
-    return 0 if summary["passed"] else 1
+    return 0 if summary["overall_pass"] else 1
 
 
 if __name__ == "__main__":

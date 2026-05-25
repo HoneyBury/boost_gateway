@@ -5,10 +5,11 @@
 ## 优先阅读
 
 1. `current-state.md`
-2. `architecture-overview.md`
-3. `reliability-matrix.md`
-4. `performance-baseline.md`
-5. `v3-release-checklist.md`
+2. `deployment-quickstart.md`
+3. `architecture-overview.md`
+4. `reliability-matrix.md`
+5. `performance-baseline.md`
+6. `v3-release-checklist.md`
 
 ## 当前主文档
 
@@ -17,6 +18,9 @@
 
 - `architecture-overview.md`
   当前架构分层、服务边界和主链实现概览。
+
+- `deployment-quickstart.md`
+  本机二进制、OrbStack/Docker Compose、客户端连接和部署后验证的快速入口。
 
 - `reliability-matrix.md`
   当前可靠性断言、对应代码与验证入口。

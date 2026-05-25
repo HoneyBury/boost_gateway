@@ -16,6 +16,9 @@ WriteBehindEngine::WriteBehindEngine(Options opts)
     worker_ = std::thread(&WriteBehindEngine::worker_loop, this);
 }
 
+WriteBehindEngine::WriteBehindEngine()
+    : WriteBehindEngine(Options{}) {}
+
 WriteBehindEngine::~WriteBehindEngine() {
     // Try to drain remaining work with a generous timeout.
     drain(std::chrono::seconds(5));

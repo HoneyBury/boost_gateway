@@ -1,0 +1,201 @@
+name: Long Soak Capacity
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  schedule:
+    - cron: "30 18 * * 6"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","capacity"]'
+        required: true
+        default: '["self-hosted","capacity"]'
+      configure_preset:
+        description: "CMake configure preset"
+        required: true
+        default: "release"
+      build_dir:
+        description: "CMake build directory"
+        required: true
+        default: "build/release"
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+      run_2h_soak:
+        description: "Run 2h long soak profile"
+        required: true
+        default: true
+        type: boolean
+      run_8h_soak:
+        description: "Run 8h overnight soak profile"
+        required: true
+        default: false
+        type: boolean
+      run_capacity:
+        description: "Run capacity performance profile"
+        required: true
+        default: true
+        type: boolean
+      run_business_capacity:
+        description: "Run business-capacity profile with SDK full-flow"
+        required: true
+        default: true
+        type: boolean
+      perf_repetitions:
+        description: "Repetitions per capacity case"
+        required: true
+        default: "3"
+      business_flow_clients:
+        description: "Sequential SDK full-flow passes for business-capacity evidence"
+        required: true
+        default: "3"
+      min_capacity_repetitions:
+        description: "Minimum repetitions required by R4 fixed-runner capacity gate"
+        required: true
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  long-soak-capacity:
+    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","capacity"]') }}
+    timeout-minutes: 720
+    concurrency:
+      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-capacity' }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Fixed runner preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_fixed_runner_environment.py \
+            --profile long-soak-capacity \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
+
+      - name: Configure
+        run: cmake --preset ${{ inputs.configure_preset || 'release' }}
+
+      - name: Build validation targets
+        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }}
+
+      - name: Long soak and capacity evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            scripts/run_long_soak_capacity.py
+            --build-dir "${{ inputs.build_dir || 'build/release' }}"
+            --configuration "${{ inputs.configuration || 'Release' }}"
+            --skip-build
+            --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
+            --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
+            --summary-path runtime/validation/long-soak-capacity-summary.json
+          )
+          if [ "${{ inputs.run_2h_soak || 'true' }}" = "true" ]; then
+            args+=(--run-2h-soak)
+          fi
+          if [ "${{ inputs.run_8h_soak || 'false' }}" = "true" ]; then
+            args+=(--run-8h-soak)
+          fi
+          if [ "${{ inputs.run_capacity || 'true' }}" = "true" ]; then
+            args+=(--run-capacity)
+          fi
+          if [ "${{ inputs.run_business_capacity || 'true' }}" = "true" ]; then
+            args+=(--run-business-capacity)
+          fi
+          python "${args[@]}"
+
+      - name: R4 fixed-runner release/capacity gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_fixed_runner_release_capacity.py \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --configuration "${{ inputs.configuration || 'Release' }}" \
+            --release-summary runtime/validation/capacity-baseline-summary.json \
+            --capacity-summary runtime/perf/fixed-runner-capacity/summary.json \
+            --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json \
+            --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}" \
+            --summary-path runtime/validation/fixed-runner-release-capacity-summary.json
+
+      - name: R2 fixed-runner manifest
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_production_evidence_manifest.py \
+            --require-fixed-runner \
+            --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json || true
+
+      - name: R3 production readiness report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/render_production_readiness_report.py \
+            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
+            --output runtime/validation/r3-production-readiness-report.md \
+            --summary-path runtime/validation/r3-production-readiness-report-summary.json || true
+
+      - name: Render long-soak capacity summary
+        if: always()
+        shell: bash
+        run: |
+          summaries=()
+          for path in \
+            runtime/validation/long-soak-capacity-preflight-summary.json \
+            runtime/validation/long-soak-capacity-summary.json \
+            runtime/validation/long-soak-2h-summary.json \
+            runtime/validation/long-soak-8h-summary.json \
+            runtime/validation/capacity-baseline-summary.json \
+            runtime/validation/business-capacity-baseline-summary.json \
+            runtime/validation/fixed-runner-release-capacity-summary.json \
+            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
+            runtime/validation/r3-production-readiness-report-summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload long-soak capacity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: long-soak-capacity-${{ github.run_id }}
+          path: |
+            runtime/validation/long-soak-capacity-preflight-summary.json
+            runtime/validation/long-soak-capacity-summary.json
+            runtime/validation/long-soak-2h-summary.json
+            runtime/validation/long-soak-8h-summary.json
+            runtime/validation/capacity-baseline-summary.json
+            runtime/validation/business-capacity-baseline-summary.json
+            runtime/validation/fixed-runner-release-capacity-summary.json
+            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
+            runtime/validation/r3-production-readiness-report.md
+            runtime/validation/r3-production-readiness-report-summary.json
+            runtime/perf/fixed-runner-capacity/**
+            runtime/perf/fixed-runner-business-capacity/**
+          retention-days: 90
+          if-no-files-found: warn

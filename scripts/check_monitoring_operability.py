@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import re
+import sys
 from pathlib import Path
 from typing import Any
+from datetime import UTC, datetime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -334,16 +337,34 @@ def main() -> int:
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "overall_pass": not failed,
         "passed": not failed,
+        "failed_category": "monitoring_operability" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
+        "artifacts": {
+            "summary_path": str(args.summary_path),
+            "prometheus_config": str(REPO_ROOT / "env/monitoring/prometheus.yml"),
+            "prometheus_alerts": str(REPO_ROOT / "env/monitoring/prometheus-alerts.yml"),
+            "grafana_dashboard": str(REPO_ROOT / "env/monitoring/grafana-dashboard.json"),
+            "operations_runbook": str(REPO_ROOT / "docs/production-operations-runbook.md"),
+            "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
+        },
     }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
 
     print(
-        f"monitoring operability: {'PASS' if summary['passed'] else 'FAIL'} "
+        f"monitoring operability: {'PASS' if summary['overall_pass'] else 'FAIL'} "
         f"({len(checks) - len(failed)}/{len(checks)} checks)"
     )
     if failed:

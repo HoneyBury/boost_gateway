@@ -90,6 +90,36 @@ private:
     std::unordered_map<std::string, std::string> settlements_;
 };
 
+struct CachedBattleSnapshot {
+    std::uint32_t frame_number = 0;
+    std::string payload;
+};
+
+struct ReplayFrameCacheEntry {
+    std::uint32_t frame_number = 0;
+    nlohmann::json frame;
+};
+
+struct BattleItemState {
+    bool picked = false;
+    std::string picked_by;
+};
+
+std::optional<std::string> speed_buff_user_from_snapshot(const nlohmann::json& snapshot) {
+    if (!snapshot.contains("buffs") || !snapshot["buffs"].is_array()) {
+        return std::nullopt;
+    }
+    for (const auto& buff : snapshot["buffs"]) {
+        if (buff.value("type", "") == "speed") {
+            const auto user_id = buff.value("user_id", "");
+            if (!user_id.empty()) {
+                return user_id;
+            }
+        }
+    }
+    return std::nullopt;
+}
+
 // ─── Snapshot payload helpers ───────────────────────────────────────────
 
 // Extract participant data from a snapshot payload, handling both
@@ -116,12 +146,23 @@ nlohmann::json extract_participants_from_snapshot(const std::string& payload) {
                 {"pos_y", p.value("y", 0)},
                 {"hp", p.value("hp", 0)},
                 {"max_hp", p.value("max_hp", 0)},
+                {"direction_x", p.value("direction_x", 1)},
+                {"direction_y", p.value("direction_y", 0)},
             });
         }
         return result;
     }
 
     return nlohmann::json::array();
+}
+
+std::optional<std::string> parse_pickup_input(const std::string& input_data) {
+    constexpr std::string_view prefix = "pickup:";
+    if (input_data.rfind(std::string(prefix), 0) != 0) {
+        return std::nullopt;
+    }
+    auto item_id = input_data.substr(prefix.size());
+    return item_id.empty() ? std::nullopt : std::optional<std::string>(std::move(item_id));
 }
 
 }  // namespace
@@ -162,6 +203,8 @@ public:
         v2::service::BackendServer::HandlerMap handlers;
         handlers["battle_create"] = [this](const auto& req) { return handle_battle_create(req); };
         handlers["battle_input"] = [this](const auto& req) { return handle_battle_input(req); };
+        handlers["battle_state"] = [this](const auto& req) { return handle_battle_state(req); };
+        handlers["replay_load"] = [this](const auto& req) { return handle_replay_load(req); };
         handlers["battle_finish"] = [this](const auto& req) { return handle_battle_finish(req); };
 
         server_ = std::make_unique<v2::service::BackendServer>(
@@ -216,6 +259,10 @@ private:
     // InstanceContext does not expose the current frame; the handler
     // requires it to pass the correct next_frame into tick_instance().
     std::unordered_map<std::string, std::uint32_t> instance_frames_;
+    std::unordered_map<std::string, std::int64_t> instance_last_tick_ms_;
+    std::unordered_map<std::string, CachedBattleSnapshot> latest_snapshots_;
+    std::unordered_map<std::string, std::vector<ReplayFrameCacheEntry>> replay_frames_;
+    std::unordered_map<std::string, BattleItemState> battle_items_;
     std::mutex frames_mutex_;
 
     std::uint32_t get_instance_frame(const std::string& battle_id) {
@@ -229,9 +276,146 @@ private:
         instance_frames_[battle_id] = frame;
     }
 
+    bool should_tick_instance(const std::string& battle_id, std::int64_t now_ms) {
+        constexpr std::int64_t kQueryDrivenTickIntervalMs = 50;
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto& last_tick_ms = instance_last_tick_ms_[battle_id];
+        if (last_tick_ms > 0 && now_ms - last_tick_ms < kQueryDrivenTickIntervalMs) {
+            return false;
+        }
+        last_tick_ms = now_ms;
+        return true;
+    }
+
+    void set_latest_snapshot(const std::string& battle_id,
+                             std::uint32_t frame,
+                             std::string payload) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        latest_snapshots_[battle_id] = CachedBattleSnapshot{
+            .frame_number = frame,
+            .payload = std::move(payload),
+        };
+    }
+
+    std::optional<CachedBattleSnapshot> latest_snapshot(const std::string& battle_id) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto it = latest_snapshots_.find(battle_id);
+        if (it == latest_snapshots_.end()) {
+            return std::nullopt;
+        }
+        return it->second;
+    }
+
+    void append_replay_frame(const std::string& battle_id,
+                             std::uint32_t frame,
+                             nlohmann::json replay_entry) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        replay_frames_[battle_id].push_back(ReplayFrameCacheEntry{
+            .frame_number = frame,
+            .frame = std::move(replay_entry),
+        });
+    }
+
+    std::optional<nlohmann::json> replay_doc(const std::string& battle_id) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto it = replay_frames_.find(battle_id);
+        if (it == replay_frames_.end()) {
+            return std::nullopt;
+        }
+        nlohmann::json frames = nlohmann::json::array();
+        for (const auto& entry : it->second) {
+            frames.push_back(entry.frame);
+        }
+        return nlohmann::json{
+            {"battle_id", battle_id},
+            {"frame_count", it->second.size()},
+            {"frames", std::move(frames)},
+        };
+    }
+
     void erase_instance_frame(const std::string& battle_id) {
         std::lock_guard<std::mutex> lock(frames_mutex_);
         instance_frames_.erase(battle_id);
+        instance_last_tick_ms_.erase(battle_id);
+        latest_snapshots_.erase(battle_id);
+        battle_items_.erase(battle_id);
+    }
+
+    nlohmann::json item_id_for(const std::string& battle_id) const {
+        return "boost_" + battle_id;
+    }
+
+    nlohmann::json item_snapshot_for(const std::string& battle_id,
+                                     std::optional<std::string> pickup_user_id = std::nullopt) {
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        auto& state = battle_items_[battle_id];
+        const auto item_id = item_id_for(battle_id).get<std::string>();
+        nlohmann::json items = nlohmann::json::array();
+        nlohmann::json events = nlohmann::json::array();
+        nlohmann::json buffs = nlohmann::json::array();
+
+        if (pickup_user_id.has_value() && !state.picked) {
+            state.picked = true;
+            state.picked_by = *pickup_user_id;
+            events.push_back({
+                {"type", "item_pickup"},
+                {"actor", *pickup_user_id},
+                {"item_id", item_id},
+                {"item_type", "speed"},
+                {"buff_type", "speed"},
+                {"remaining_ticks", 90},
+            });
+        }
+
+        if (!state.picked) {
+            items.push_back({
+                {"id", item_id},
+                {"type", "speed"},
+                {"x", 3},
+                {"y", 2},
+                {"remaining_ticks", 600},
+            });
+        } else {
+            buffs.push_back({
+                {"user_id", state.picked_by},
+                {"type", "speed"},
+                {"remaining_ticks", 90},
+            });
+        }
+
+        return nlohmann::json{
+            {"items", std::move(items)},
+            {"events", std::move(events)},
+            {"buffs", std::move(buffs)},
+        };
+    }
+
+    void apply_speed_buff_if_present(nlohmann::json& snapshot) {
+        const auto buff_user = speed_buff_user_from_snapshot(snapshot);
+        if (!buff_user.has_value() || !snapshot.contains("participants") ||
+            !snapshot["participants"].is_array()) {
+            return;
+        }
+        for (auto& participant : snapshot["participants"]) {
+            if (participant.value("user_id", "") == *buff_user) {
+                participant["speed_multiplier"] = 2;
+            }
+        }
+    }
+
+    void enrich_snapshot_with_items(nlohmann::json& snapshot,
+                                    const std::string& battle_id,
+                                    std::optional<std::string> pickup_user_id = std::nullopt) {
+        auto item_state = item_snapshot_for(battle_id, std::move(pickup_user_id));
+        snapshot["items"] = std::move(item_state["items"]);
+        snapshot["buffs"] = std::move(item_state["buffs"]);
+        if (snapshot.contains("events") && snapshot["events"].is_array()) {
+            for (auto& event : item_state["events"]) {
+                snapshot["events"].push_back(std::move(event));
+            }
+        } else {
+            snapshot["events"] = std::move(item_state["events"]);
+        }
     }
 
     // ─── Handler: battle_create ─────────────────────────────────────
@@ -320,6 +504,7 @@ private:
         std::string user_id = doc["user_id"].get<std::string>();
         std::string battle_id = doc["battle_id"].get<std::string>();
         std::string input_data = doc["input_data"].get<std::string>();
+        const auto pickup_item_id = parse_pickup_input(input_data);
 
         // Find instance first to check existence
         auto* instance_ctx = runtime_.find_instance(battle_id);
@@ -352,6 +537,29 @@ private:
 
         // Get snapshot from the event callback
         auto snapshot = sync_capture_.consume_snapshot(battle_id);
+        auto snapshot_json = nlohmann::json::parse(snapshot.payload, nullptr, false);
+        if (!snapshot_json.is_discarded()) {
+            const auto expected_item_id = item_id_for(battle_id).get<std::string>();
+            enrich_snapshot_with_items(snapshot_json,
+                                       battle_id,
+                                       pickup_item_id == expected_item_id
+                                           ? std::optional<std::string>(user_id)
+                                           : std::nullopt);
+            apply_speed_buff_if_present(snapshot_json);
+            snapshot.payload = snapshot_json.dump();
+            set_latest_snapshot(battle_id, tick_stats.frame_number, snapshot.payload);
+        } else if (!snapshot.payload.empty()) {
+            set_latest_snapshot(battle_id, tick_stats.frame_number, snapshot.payload);
+        }
+        nlohmann::json replay_entry = {
+            {"battle_id", battle_id},
+            {"frame_number", tick_stats.frame_number},
+            {"timestamp", now_ms},
+        };
+        if (!snapshot_json.is_discarded()) {
+            replay_entry["snapshot"] = snapshot_json;
+        }
+        append_replay_frame(battle_id, tick_stats.frame_number, replay_entry);
 
         // Build push events
         nlohmann::json pushes = nlohmann::json::array();
@@ -368,6 +576,20 @@ private:
         auto participants = extract_participants_from_snapshot(snapshot.payload);
         if (!participants.empty()) {
             frame_push["participants"] = std::move(participants);
+        }
+        if (!snapshot_json.is_discarded()) {
+            if (snapshot_json.contains("items")) {
+                frame_push["items"] = snapshot_json["items"];
+            }
+            if (snapshot_json.contains("events")) {
+                frame_push["events"] = snapshot_json["events"];
+            }
+            if (snapshot_json.contains("buffs")) {
+                frame_push["buffs"] = snapshot_json["buffs"];
+            }
+            if (snapshot_json.contains("bullets")) {
+                frame_push["bullets"] = snapshot_json["bullets"];
+            }
         }
         pushes.push_back(std::move(frame_push));
 
@@ -419,16 +641,6 @@ private:
             // Store replay frame if replay storage is configured
             if (replay_storage_) {
                 try {
-                    nlohmann::json replay_entry = {
-                        {"battle_id", battle_id},
-                        {"frame_number", tick_stats.frame_number},
-                        {"timestamp", now_ms},
-                    };
-                    auto snapshot_json = nlohmann::json::parse(
-                        snapshot.payload, nullptr, false);
-                    if (!snapshot_json.is_discarded()) {
-                        replay_entry["snapshot"] = std::move(snapshot_json);
-                    }
                     replay_storage_->store_replay(battle_id, replay_entry);
                 } catch (const std::exception& e) {
                     std::cout << "v2_battle_backend: failed to store replay for "
@@ -449,6 +661,76 @@ private:
             decoded->typed_request,
             std::move(resp),
             v3::proto::EnvelopeMessageKind::kBattleInputResponse);
+    }
+
+    // ─── Handler: battle_state ──────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_battle_state(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("battle_id")) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        const auto battle_id = doc["battle_id"].get<std::string>();
+        if (battle_id.empty()) {
+            return make_error(-1004, "empty_battle_id");
+        }
+
+        auto* instance_ctx = runtime_.find_instance(battle_id);
+        auto frame_number = get_instance_frame(battle_id);
+        std::optional<CachedBattleSnapshot> cached;
+        if (instance_ctx != nullptr) {
+            const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count();
+            if (should_tick_instance(battle_id, now_ms)) {
+                const auto next_frame = frame_number + 1;
+                const auto tick_stats = runtime_.tick_instance(battle_id, next_frame, now_ms);
+                frame_number = tick_stats.frame_number;
+                set_instance_frame(battle_id, frame_number);
+
+                auto snapshot = sync_capture_.consume_snapshot(battle_id);
+                auto payload = nlohmann::json::parse(snapshot.payload, nullptr, false);
+                if (!payload.is_discarded()) {
+                    enrich_snapshot_with_items(payload, battle_id);
+                    apply_speed_buff_if_present(payload);
+                    snapshot.payload = payload.dump();
+                    set_latest_snapshot(battle_id, frame_number, snapshot.payload);
+                } else if (!snapshot.payload.empty()) {
+                    set_latest_snapshot(battle_id, frame_number, snapshot.payload);
+                }
+            }
+        }
+        cached = latest_snapshot(battle_id);
+        if (instance_ctx == nullptr && !cached.has_value()) {
+            return make_error(-2003, "battle_not_found");
+        }
+
+        nlohmann::json state{
+            {"kind", "frame_advanced"},
+            {"battle_id", battle_id},
+            {"frame_number", frame_number},
+            {"is_resume", true},
+        };
+
+        if (cached.has_value() && !cached->payload.empty()) {
+            auto payload = nlohmann::json::parse(cached->payload, nullptr, false);
+            if (!payload.is_discarded()) {
+                enrich_snapshot_with_items(payload, battle_id);
+                apply_speed_buff_if_present(payload);
+                state["snapshot"] = std::move(payload);
+            }
+            auto participants = extract_participants_from_snapshot(cached->payload);
+            if (!participants.empty()) {
+                state["participants"] = std::move(participants);
+            }
+        }
+
+        return make_ok({
+            {"battle_id", battle_id},
+            {"frame_number", frame_number},
+            {"snapshot", std::move(state)},
+        });
     }
 
     // ─── Handler: battle_finish ─────────────────────────────────────
@@ -523,6 +805,40 @@ private:
             {"total_frames", total_frames},
             {"push_to_sessions", nlohmann::json::array({std::move(push)})},
         });
+    }
+
+    // ─── Handler: replay_load ───────────────────────────────────────
+
+    v2::service::BackendEnvelope handle_replay_load(
+        const v2::service::BackendEnvelope& request) {
+        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
+        if (doc.is_discarded() || !doc.contains("battle_id")) {
+            return make_error(-1004, "invalid_json");
+        }
+
+        const auto battle_id = doc["battle_id"].get<std::string>();
+        if (battle_id.empty()) {
+            return make_error(-1004, "empty_battle_id");
+        }
+
+        if (replay_storage_) {
+            replay_storage_->flush();
+            if (auto stored = replay_storage_->get_replay(battle_id)) {
+                return make_ok({
+                    {"battle_id", battle_id},
+                    {"replay", std::move(*stored)},
+                });
+            }
+        }
+
+        if (auto cached = replay_doc(battle_id)) {
+            return make_ok({
+                {"battle_id", battle_id},
+                {"replay", std::move(*cached)},
+            });
+        }
+
+        return make_error(-2003, "replay_not_found");
     }
 };
 

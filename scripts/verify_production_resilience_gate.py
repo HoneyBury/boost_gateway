@@ -98,7 +98,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-runtime-http", action="store_true")
     parser.add_argument("--include-release-baseline", action="store_true")
     parser.add_argument("--include-capacity-baseline", action="store_true")
-    parser.add_argument("--soak-profile", choices=["smoke", "short", "medium"], default="smoke")
+    parser.add_argument("--soak-profile", choices=["smoke", "short", "medium", "long", "overnight"], default="smoke")
     parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
     parser.add_argument("--perf-repetitions", type=int, default=1)
     parser.add_argument("--step-timeout-seconds", type=int, default=900)

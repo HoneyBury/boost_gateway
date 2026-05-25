@@ -132,6 +132,8 @@ def validate_perf_summary(
     path: Path,
     required_cases: set[str],
     require_business_flow: bool,
+    required_preset: str,
+    min_repetitions: int,
 ) -> dict[str, Any]:
     summary = load_json(path)
     if not summary:
@@ -149,11 +151,25 @@ def validate_perf_summary(
     missing_cases = sorted(required_cases - cases)
     gates_passed = perf_summary_passed(summary)
     business_passed = business_flow_passed(summary) if require_business_flow else True
-    passed = gates_passed and not missing_cases and business_passed
+    preset = str(summary.get("preset", ""))
+    repetitions_raw = summary.get("repetitions", 0)
+    try:
+        repetitions = int(repetitions_raw)
+    except (TypeError, ValueError):
+        repetitions = 0
+    preset_ok = preset == required_preset
+    repetitions_ok = repetitions >= min_repetitions
+    passed = gates_passed and not missing_cases and business_passed and preset_ok and repetitions_ok
     details = [
         f"release_gates.overall_pass={gates_passed}",
+        f"preset={preset}",
+        f"repetitions={repetitions}",
         "cases=" + ",".join(sorted(cases)),
     ]
+    if not preset_ok:
+        details.append(f"expected preset={required_preset}")
+    if not repetitions_ok:
+        details.append(f"expected repetitions>={min_repetitions}")
     if missing_cases:
         details.append("missing cases: " + ",".join(missing_cases))
     if require_business_flow:
@@ -165,8 +181,8 @@ def validate_perf_summary(
         "required": True,
         "status": "passed" if passed else "failed-summary",
         "passed": passed,
-        "preset": summary.get("preset"),
-        "repetitions": summary.get("repetitions"),
+        "preset": preset,
+        "repetitions": repetitions,
         "details": details,
     }
 
@@ -178,6 +194,7 @@ def main() -> int:
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--collect-smoke", action="store_true", help="Collect fresh smoke evidence before validating existing capacity artifacts.")
     parser.add_argument("--step-timeout-seconds", type=int, default=900)
+    parser.add_argument("--min-capacity-repetitions", type=int, default=3)
     parser.add_argument(
         "--release-summary",
         type=Path,
@@ -243,6 +260,8 @@ def main() -> int:
             capacity_summary_path,
             {"echo-1000-30s", "echo-5000-30s", "echo-10000-30s", "battle-100-30s", "battle-500-30s"},
             require_business_flow=False,
+            required_preset="capacity",
+            min_repetitions=args.min_capacity_repetitions,
         ),
         validate_perf_summary(
             "business-capacity-summary",
@@ -250,6 +269,8 @@ def main() -> int:
             business_capacity_summary_path,
             {"echo-1000-30s", "battle-100-30s", "battle-500-30s"},
             require_business_flow=True,
+            required_preset="business-capacity",
+            min_repetitions=args.min_capacity_repetitions,
         ),
     ]
 
@@ -273,6 +294,9 @@ def main() -> int:
             "capacity_required_cases": ["echo-1000-30s", "echo-5000-30s", "echo-10000-30s", "battle-100-30s", "battle-500-30s"],
             "business_capacity_required_cases": ["echo-1000-30s", "battle-100-30s", "battle-500-30s"],
             "business_flow_required": True,
+            "required_capacity_preset": "capacity",
+            "required_business_capacity_preset": "business-capacity",
+            "min_capacity_repetitions": args.min_capacity_repetitions,
         },
         "steps": steps,
         "checks": checks,

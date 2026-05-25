@@ -26,6 +26,11 @@ struct BattleParticipantComponent final : v2::ecs::Component {
     std::int32_t pending_move_x = 0;
     std::int32_t pending_move_y = 0;
     bool has_pending_move = false;
+    std::int32_t facing_dx = 1;
+    std::int32_t facing_dy = 0;
+    bool has_pending_fire = false;
+    std::int32_t pending_fire_dx = 1;
+    std::int32_t pending_fire_dy = 0;
 };
 
 struct BattleMetadataComponent final : v2::ecs::Component {
@@ -122,6 +127,8 @@ struct ProjectileComponent final : v2::ecs::Component {
     std::int32_t start_y = 0;
     std::int32_t target_x = 0;           // target position
     std::int32_t target_y = 0;
+    std::int32_t dir_x = 1;
+    std::int32_t dir_y = 0;
     std::int32_t damage = 10;            // damage on impact
     std::int32_t speed = 50;             // Manhattan distance per frame
     std::int32_t aoe_radius = 0;         // 0 = single target, >0 = AoE

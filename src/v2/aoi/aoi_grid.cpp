@@ -1,5 +1,6 @@
 #include "v2/aoi/aoi_grid.h"
 
+#include <mutex>
 #include <utility>
 
 namespace v2::aoi {
@@ -8,7 +9,7 @@ namespace v2::aoi {
 
 BOOST_HOT_PATH
 void AoiGrid::broadcast(const v2::actor::Message& message) const {
-    auto list = observers_.load(std::memory_order_acquire);
+    auto list = std::atomic_load_explicit(&observers_, std::memory_order_acquire);
     for (const auto& ref : *list) {
         if (ref.is_valid()) {
             ref.tell(message);
@@ -58,10 +59,13 @@ void AoiGrid::add_watch(v2::actor::ActorRef observer) {
     }
 
     // RCU: copy current list, append, publish.
-    auto old_list = observers_.load(std::memory_order_relaxed);
+    auto old_list = std::atomic_load_explicit(&observers_, std::memory_order_relaxed);
     auto new_list = std::make_shared<std::vector<v2::actor::ActorRef>>(*old_list);
     new_list->push_back(std::move(observer));
-    observers_.store(std::move(new_list), std::memory_order_release);
+    std::atomic_store_explicit(
+        &observers_,
+        std::static_pointer_cast<const std::vector<v2::actor::ActorRef>>(std::move(new_list)),
+        std::memory_order_release);
 }
 
 // ── remove_watch ───────────────────────────────────────────────────────
@@ -69,7 +73,7 @@ void AoiGrid::add_watch(v2::actor::ActorRef observer) {
 void AoiGrid::remove_watch(const v2::actor::ActorRef& observer) {
     std::unique_lock lock(write_mutex_);
 
-    auto old_list = observers_.load(std::memory_order_relaxed);
+    auto old_list = std::atomic_load_explicit(&observers_, std::memory_order_relaxed);
     auto new_list = std::make_shared<std::vector<v2::actor::ActorRef>>();
     new_list->reserve(old_list->size());
 
@@ -79,17 +83,20 @@ void AoiGrid::remove_watch(const v2::actor::ActorRef& observer) {
         }
     }
 
-    observers_.store(std::move(new_list), std::memory_order_release);
+    std::atomic_store_explicit(
+        &observers_,
+        std::static_pointer_cast<const std::vector<v2::actor::ActorRef>>(std::move(new_list)),
+        std::memory_order_release);
 }
 
 // ── Queries ────────────────────────────────────────────────────────────
 
 ActorRefList AoiGrid::snapshot() const {
-    return observers_.load(std::memory_order_acquire);
+    return std::atomic_load_explicit(&observers_, std::memory_order_acquire);
 }
 
 std::size_t AoiGrid::size() const noexcept {
-    auto list = observers_.load(std::memory_order_acquire);
+    auto list = std::atomic_load_explicit(&observers_, std::memory_order_acquire);
     return list->size();
 }
 

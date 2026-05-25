@@ -229,6 +229,7 @@ def main() -> int:
     lines.extend(render_r0_summary(r0_summary_path))
     lines.extend(render_r1_summary(r1_summary_path))
     required_next_evidence = {
+        "long_soak_capacity": "fixed-runner 2h/8h soak and capacity batch summary.",
         "fixed_runner_release_capacity": "fixed low-noise release/capacity baseline summary.",
         "preprod_recovery_drill": "real Docker/K8s recovery and rollback drill summary.",
         "tls_preprod_multi_run": "production-like TLS profile multi-run summary.",

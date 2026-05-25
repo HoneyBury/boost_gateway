@@ -24,14 +24,27 @@ struct BattleWorldParticipantState {
     std::uint32_t last_acked_frame = 0;
     std::int32_t pos_x = 0;
     std::int32_t pos_y = 0;
+    std::int32_t facing_dx = 1;
+    std::int32_t facing_dy = 0;
     std::int32_t hp = 100;
     std::int32_t max_hp = 100;
     std::int32_t damage = 10;
 };
 
+struct BattleWorldProjectileState {
+    std::string projectile_id;
+    std::string owner_user_id;
+    std::int32_t pos_x = 0;
+    std::int32_t pos_y = 0;
+    std::int32_t dir_x = 1;
+    std::int32_t dir_y = 0;
+    bool active = true;
+};
+
 struct BattleWorldSnapshot {
     BattleWorldClockState clock;
     std::vector<BattleWorldParticipantState> participants;
+    std::vector<BattleWorldProjectileState> projectiles;
 };
 
 // ─── Authoritative Entry Points ───────────────────────────────

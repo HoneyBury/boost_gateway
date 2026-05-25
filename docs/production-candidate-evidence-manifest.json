@@ -10,7 +10,8 @@
     "sdk_enterprise",
     "transport_tls",
     "grpc_decision",
-    "tls_readiness"
+    "tls_readiness",
+    "long_soak_capacity"
   ],
   "evidence": [
     {
@@ -75,6 +76,17 @@
       "required": false,
       "freshness_hours": 168,
       "notes": "Covers TLS full-flow, server CA verification, certificate rotation, mismatched CA expected failure, and plain-vs-TLS smoke comparison."
+    },
+    {
+      "id": "long_soak_capacity",
+      "category": "long_soak_capacity",
+      "title": "Long-soak and capacity evidence batch",
+      "path": "runtime/validation/long-soak-capacity-summary.json",
+      "required": false,
+      "fixed_runner_required": true,
+      "freshness_hours": 336,
+      "producer": "python3 scripts/run_long_soak_capacity.py --run-2h-soak --run-capacity",
+      "notes": "N1 fixed-runner evidence producer for 2h/8h soak and capacity baseline. Final approval should include at least 2h soak plus capacity; 8h soak is recommended before high-risk releases."
     },
     {
       "id": "fixed_runner_release_capacity",

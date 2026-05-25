@@ -54,14 +54,15 @@ struct GatewayFixture : public ::testing::Test {
     std::unique_ptr<v2::battle::BattleBackendService> battle_backend_;
     std::unique_ptr<v2::match::MatchmakingService> matchmaking_backend_;
     std::unique_ptr<v2::leaderboard::LeaderboardService> leaderboard_backend_;
-    std::uint16_t port_ = 19201;
+    std::uint16_t port_ = 0;
 
     void SetUp() override {
         app::logging::init("sdk_business_flow_tests");
         set_test_env("CONFIG_PATH", "/tmp/boost_gateway_sdk_business_flow_no_config.json");
+        set_test_env("V2_BACKEND_CONNECTION_POOL_SIZE", "1");
 
         login_backend_ = std::make_unique<v2::login::LoginBackendService>(0);
-        room_backend_ = std::make_unique<v2::room::RoomBackendService>(0);
+        room_backend_ = std::make_unique<v2::room::RoomBackendService>(0, 3, 300000, 50);
         battle_backend_ = std::make_unique<v2::battle::BattleBackendService>(0);
         matchmaking_backend_ = std::make_unique<v2::match::MatchmakingService>(0);
         leaderboard_backend_ = std::make_unique<v2::leaderboard::LeaderboardService>(0);
@@ -104,7 +105,7 @@ struct GatewayFixture : public ::testing::Test {
             .connect_timeout = std::chrono::milliseconds(1000),
         };
 
-        server_ = std::make_unique<v2::gateway::DemoServer>(port_, net::SessionOptions{}, std::move(options));
+        server_ = std::make_unique<v2::gateway::DemoServer>(0, net::SessionOptions{}, std::move(options));
         server_thread_ = std::make_unique<std::thread>([this]() {
             server_->start();
         });
@@ -114,6 +115,11 @@ struct GatewayFixture : public ::testing::Test {
             try {
                 boost::asio::io_context io;
                 boost::asio::ip::tcp::socket sock(io);
+                port_ = server_->local_port();
+                if (port_ == 0) {
+                    std::this_thread::sleep_for(100ms);
+                    continue;
+                }
                 sock.connect(boost::asio::ip::tcp::endpoint(
                     boost::asio::ip::make_address("127.0.0.1"), port_));
                 break;
@@ -131,6 +137,7 @@ struct GatewayFixture : public ::testing::Test {
         if (battle_backend_) battle_backend_->stop();
         if (room_backend_) room_backend_->stop();
         if (login_backend_) login_backend_->stop();
+        unset_test_env("V2_BACKEND_CONNECTION_POOL_SIZE");
         unset_test_env("CONFIG_PATH");
     }
 

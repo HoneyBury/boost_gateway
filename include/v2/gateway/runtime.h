@@ -122,7 +122,16 @@ private:
 
     [[nodiscard]] v2::actor::ActorRef get_or_create_player(const std::string& user_id);
     [[nodiscard]] std::string session_user_id(SessionId session_id) const;
+    [[nodiscard]] std::string session_room_id(SessionId session_id) const;
+    [[nodiscard]] std::string battle_id_for_room(const std::string& room_id) const;
+    [[nodiscard]] const std::unordered_map<SessionId, std::string>& session_users() const;
     [[nodiscard]] std::optional<SessionId> session_id_for_user(const std::string& user_id) const;
+    void mark_session_authenticated(SessionId session_id,
+                                    const std::string& user_id,
+                                    v2::auth::Role role);
+    void mark_session_room(SessionId session_id, const std::string& room_id);
+    void clear_session_room(SessionId session_id);
+    void mark_room_battle(const std::string& room_id, const std::string& battle_id);
     void archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement);
     void submit_battle_finished_push_to_leaderboard(const nlohmann::json& push,
                                                      const std::string& room_id);

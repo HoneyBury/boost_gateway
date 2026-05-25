@@ -19,6 +19,8 @@ constexpr std::uint16_t kSessionResumedPush = 1004;
 
 constexpr std::uint16_t kLoginRequest      = 2001;
 constexpr std::uint16_t kLoginResponse     = 2002;
+constexpr std::uint16_t kRegisterRequest   = 2003;
+constexpr std::uint16_t kRegisterResponse  = 2004;
 
 constexpr std::uint16_t kRoomCreateRequest = 3001;
 constexpr std::uint16_t kRoomCreateResponse = 3002;
@@ -29,6 +31,14 @@ constexpr std::uint16_t kRoomLeaveResponse = 3006;
 constexpr std::uint16_t kRoomReadyRequest  = 3007;
 constexpr std::uint16_t kRoomReadyResponse = 3008;
 constexpr std::uint16_t kRoomStatePush     = 3009;
+constexpr std::uint16_t kRoomListRequest   = 3010;
+constexpr std::uint16_t kRoomListResponse  = 3011;
+constexpr std::uint16_t kRoomDetailRequest = 3012;
+constexpr std::uint16_t kRoomDetailResponse = 3013;
+constexpr std::uint16_t kRoomKickRequest = 3014;
+constexpr std::uint16_t kRoomKickResponse = 3015;
+constexpr std::uint16_t kRoomTransferOwnerRequest = 3016;
+constexpr std::uint16_t kRoomTransferOwnerResponse = 3017;
 
 constexpr std::uint16_t kBattleStartRequest  = 4001;
 constexpr std::uint16_t kBattleStartResponse = 4002;
@@ -36,6 +46,10 @@ constexpr std::uint16_t kBattleInputRequest  = 4003;
 constexpr std::uint16_t kBattleInputResponse = 4004;
 constexpr std::uint16_t kBattleInputPush     = 4005;
 constexpr std::uint16_t kBattleStatePush     = 4006;
+constexpr std::uint16_t kBattleStateRequest  = 4007;
+constexpr std::uint16_t kBattleStateResponse = 4008;
+constexpr std::uint16_t kReplayLoadRequest   = 4009;
+constexpr std::uint16_t kReplayLoadResponse  = 4010;
 
 constexpr std::uint16_t kAdminKickPlayer     = 5001;
 constexpr std::uint16_t kAdminBanIp          = 5002;

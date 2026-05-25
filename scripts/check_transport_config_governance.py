@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import time
@@ -142,12 +143,17 @@ def main() -> int:
     failed = next((step for step in steps if step.get("status") != "passed"), None)
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
     summary = {
-        "summary_version": 1,
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "overall_pass": failed is None,
         "passed": failed is None,
         "failed_category": str(failed.get("category", "")) if failed else "",
         "failed_step": str(failed.get("name", "")) if failed else "",
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
         "artifacts": {
             "summary_path": str(summary_path),
             "tls_profile_summary_path": str(tls_summary),
@@ -158,9 +164,9 @@ def main() -> int:
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
-    print(f"N4 transport/config governance gate: {'PASS' if summary['passed'] else 'FAIL'}")
+    print(f"N4 transport/config governance gate: {'PASS' if summary['overall_pass'] else 'FAIL'}")
     print(f"summary: {summary_path}")
-    return 0 if summary["passed"] else 1
+    return 0 if summary["overall_pass"] else 1
 
 
 if __name__ == "__main__":

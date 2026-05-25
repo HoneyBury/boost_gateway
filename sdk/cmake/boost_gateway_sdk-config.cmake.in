@@ -13,6 +13,19 @@ endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/boost_gateway_sdk-targets.cmake")
 
+# Single-config generators export IMPORTED_LOCATION_NOCONFIG. Map common
+# multi-config names back to that location so downstream Release/Debug
+# consumers can configure cleanly from the installed package.
+foreach(_target boost_gateway::boost_gateway_sdk boost_gateway::boost_gateway_sdk_dll)
+    if(TARGET "${_target}")
+        set_target_properties("${_target}" PROPERTIES
+            MAP_IMPORTED_CONFIG_DEBUG NOCONFIG
+            MAP_IMPORTED_CONFIG_RELEASE NOCONFIG
+            MAP_IMPORTED_CONFIG_RELWITHDEBINFO NOCONFIG
+            MAP_IMPORTED_CONFIG_MINSIZEREL NOCONFIG)
+    endif()
+endforeach()
+
 set(BoostGatewaySdk_VERSION "@BOOST_GATEWAY_SDK_VERSION@")
 set(BoostGatewaySdk_VERSION_MAJOR "@BOOST_GATEWAY_SDK_VERSION_MAJOR@")
 set(BoostGatewaySdk_VERSION_MINOR "@BOOST_GATEWAY_SDK_VERSION_MINOR@")

@@ -70,12 +70,19 @@ inline void Authorizer::init_defaults() {
         1,     // kHeartbeatRequest
         1001,  // kEchoRequest
         2001,  // kLoginRequest
+        2003,  // kRegisterRequest
         3001,  // kRoomCreateRequest
         3003,  // kRoomJoinRequest
         3005,  // kRoomLeaveRequest
         3007,  // kRoomReadyRequest
+        3010,  // kRoomListRequest
+        3012,  // kRoomDetailRequest
+        3014,  // kRoomKickRequest
+        3016,  // kRoomTransferOwnerRequest
         4001,  // kBattleStartRequest
         4003,  // kBattleInputRequest
+        4007,  // kBattleStateRequest
+        4009,  // kReplayLoadRequest
         6001,  // kMatchJoinRequest
         6004,  // kMatchLeaveRequest
         6006,  // kMatchStatusRequest

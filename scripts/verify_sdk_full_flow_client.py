@@ -512,6 +512,7 @@ def main() -> int:
     processes: list[tuple[str, subprocess.Popen[str]]] = []
     try:
         base_env = os.environ.copy()
+        base_env["V2_BACKEND_CONNECTION_POOL_SIZE"] = "1"
         extra_paths = process_runtime_path_entries(required_binaries) + runtime_path_entries(args.build_dir)
         if extra_paths:
             base_env["PATH"] = os.pathsep.join(extra_paths + [base_env.get("PATH", "")])
@@ -545,13 +546,13 @@ def main() -> int:
             gateway_tls_ca_cert_path=gateway_tls_ca_cert_path,
         )
         backend_specs = [
-            ("login", login_backend, login_port, {"SERVICE_PORT": str(login_port)}),
-            ("room", room_backend, room_port, {"SERVICE_PORT": str(room_port)}),
-            ("battle", battle_backend, battle_port, {"SERVICE_PORT": str(battle_port)}),
-            ("matchmaking", match_backend, match_port, {"SERVICE_PORT": str(match_port), "MATCH_PORT": str(match_port)}),
-            ("leaderboard", leaderboard_backend, leaderboard_port, {"SERVICE_PORT": str(leaderboard_port), "LEADERBOARD_PORT": str(leaderboard_port)}),
+            ("login", login_backend, login_port, [str(login_port)], {"SERVICE_PORT": str(login_port)}),
+            ("room", room_backend, room_port, [str(room_port)], {"SERVICE_PORT": str(room_port)}),
+            ("battle", battle_backend, battle_port, [str(battle_port)], {"SERVICE_PORT": str(battle_port)}),
+            ("matchmaking", match_backend, match_port, [str(match_port)], {"SERVICE_PORT": str(match_port), "MATCH_PORT": str(match_port)}),
+            ("leaderboard", leaderboard_backend, leaderboard_port, [str(leaderboard_port)], {"SERVICE_PORT": str(leaderboard_port), "LEADERBOARD_PORT": str(leaderboard_port)}),
         ]
-        for name, executable, port, extra_env in backend_specs:
+        for name, executable, port, extra_args, extra_env in backend_specs:
             env = dict(base_env)
             env.update(extra_env)
             if args.backend_tls:
@@ -564,7 +565,7 @@ def main() -> int:
                         "BACKEND_TLS_VERIFY_MODE": args.backend_tls_verify_mode,
                     }
                 )
-            proc = start_process(name, [str(executable)], env, checks)
+            proc = start_process(name, [str(executable), *extra_args], env, checks)
             if proc is not None:
                 processes.append((name, proc))
             ready, ready_error = wait_for_process_port(
@@ -580,7 +581,7 @@ def main() -> int:
                 {
                     "name": f"{name}-backend-ready",
                     "passed": ready,
-                    "command": [str(executable)],
+                    "command": [str(executable), *extra_args],
                     "duration_seconds": 0.0,
                     "stdout": ready_stdout,
                     "stderr": "" if ready else f"{name} backend did not become ready: {ready_error}; {ready_stderr}",

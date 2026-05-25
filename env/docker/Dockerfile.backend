@@ -46,6 +46,8 @@ COPY include/ include/
 COPY src/ src/
 COPY sdk/ sdk/
 COPY examples/ examples/
+COPY demo/ demo/
+COPY proto/ proto/
 COPY tests/ tests/
 COPY third_party/ third_party/
 COPY config/ config/

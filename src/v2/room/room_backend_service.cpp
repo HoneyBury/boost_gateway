@@ -498,10 +498,6 @@ private:
             return make_error(v2::service::ServiceErrorCode::kRoomNotFound, "room_not_found");
         }
 
-        if (room->status == RoomStatus::kInInstance) {
-            return make_error(v2::service::ServiceErrorCode::kRoomInInstance, "cannot_leave_during_instance");
-        }
-
         auto& members = room->members;
         const bool was_owner = (room->owner_user_id == user_id);
 

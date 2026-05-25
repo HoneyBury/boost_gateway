@@ -256,8 +256,22 @@ v2::realtime::Snapshot BattleInstancePlugin::build_snapshot(
                 {"score", p.score},
                 {"pos_x", p.pos_x},
                 {"pos_y", p.pos_y},
+                {"direction_x", p.facing_dx},
+                {"direction_y", p.facing_dy},
                 {"hp", p.hp},
                 {"max_hp", p.max_hp},
+            });
+        }
+        nlohmann::json projectiles_json = nlohmann::json::array();
+        for (const auto& projectile : bw_snapshot.projectiles) {
+            projectiles_json.push_back({
+                {"id", projectile.projectile_id},
+                {"owner", projectile.owner_user_id},
+                {"x", projectile.pos_x},
+                {"y", projectile.pos_y},
+                {"dx", projectile.dir_x},
+                {"dy", projectile.dir_y},
+                {"active", projectile.active},
             });
         }
 
@@ -265,6 +279,7 @@ v2::realtime::Snapshot BattleInstancePlugin::build_snapshot(
         j["frame"] = bw_snapshot.clock.frame_number;
         j["trigger"] = bw_snapshot.clock.last_trigger;
         j["participants"] = std::move(participants_json);
+        j["bullets"] = std::move(projectiles_json);
 
         v2::realtime::Snapshot snap;
         snap.payload_type = "battle.snapshot";

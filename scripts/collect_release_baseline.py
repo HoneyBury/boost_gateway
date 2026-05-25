@@ -83,11 +83,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--baseline-timeout-seconds", type=int, default=60)
-    parser.add_argument("--perf-preset", choices=["smoke", "baseline", "capacity"], default="baseline")
+    parser.add_argument("--perf-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="baseline")
+    parser.add_argument("--include-business-flow", action="store_true")
+    parser.add_argument("--business-flow-clients", type=int, default=1)
     parser.add_argument("--perf-repetitions", type=int, default=3)
     parser.add_argument("--perf-timeout-seconds", type=int, default=600)
     parser.add_argument("--skip-r4", action="store_true")
     parser.add_argument("--skip-perf", action="store_true")
+    parser.add_argument("--perf-output-root", type=Path, default=None)
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/release-baseline-summary.json"))
     return parser.parse_args()
 
@@ -96,6 +99,9 @@ def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parent.parent
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
+    perf_output = args.perf_output_root if args.perf_output_root is not None else root / "runtime" / "perf" / "release-baseline"
+    if not perf_output.is_absolute():
+        perf_output = root / perf_output
     summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -117,8 +123,8 @@ def main() -> int:
         "artifacts": {
             "summary_path": str(summary_path),
             "r4_contract_summary_path": str(root / "runtime" / "validation" / "release-r4-contract-summary.json"),
-            "performance_summary_path": str(root / "runtime" / "perf" / "release-baseline" / "summary.json"),
-            "performance_report_path": str(root / "runtime" / "perf" / "release-baseline" / "report.md"),
+            "performance_summary_path": str(perf_output / "summary.json"),
+            "performance_report_path": str(perf_output / "report.md"),
         },
     }
 
@@ -194,7 +200,6 @@ def main() -> int:
         ))
 
     if not args.skip_perf:
-        perf_output = root / "runtime" / "perf" / "release-baseline"
         perf_cmd = [
             sys.executable,
             str(root / "scripts" / "collect_v2_perf_baseline.py"),
@@ -207,6 +212,8 @@ def main() -> int:
             "--output-root",
             str(perf_output),
         ]
+        if args.include_business_flow:
+            perf_cmd.extend(["--include-business-flow", "--business-flow-clients", str(args.business_flow_clients)])
         steps.append(run_step(
             "release multi-process performance baseline",
             perf_cmd,

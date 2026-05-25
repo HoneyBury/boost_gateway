@@ -11,7 +11,7 @@ namespace game::gateway {
 void SessionManager::publish_snapshot() {
     // mutex_ must be held by the caller.
     auto new_snap = std::make_shared<const std::unordered_map<SessionKey, SessionRecord>>(sessions_);
-    snapshot_.store(std::move(new_snap), std::memory_order_release);
+    std::atomic_store_explicit(&snapshot_, std::move(new_snap), std::memory_order_release);
 }
 
 void SessionManager::handle_overload(const SessionPtr& session) {
@@ -172,7 +172,7 @@ void SessionManager::broadcast(std::uint16_t message_id,
                                 std::uint8_t flags,
                                 bool high_priority) {
     // Grab the current atomically-published snapshot.
-    auto snap = snapshot_.load(std::memory_order_acquire);
+    auto snap = std::atomic_load_explicit(&snapshot_, std::memory_order_acquire);
     if (!snap || snap->empty()) {
         return;
     }
