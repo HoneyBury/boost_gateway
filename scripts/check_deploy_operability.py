@@ -514,7 +514,6 @@ def main() -> int:
     checks: list[dict[str, Any]] = []
     validate_dockerfile(checks)
     validate_docker_gateway_config(checks)
-    validate_compose(REPO_ROOT / "docker-compose.yml", checks)
     validate_compose(REPO_ROOT / "env/docker/docker-compose.yml", checks)
     validate_systemd(checks)
     validate_examples(checks)

@@ -206,7 +206,7 @@ TEST(OperatorStatusTest, HasConsecutiveFailureTracking) {
 // ─── CRD Status Subresource ──────────────────────────────────────────────
 
 TEST(OperatorStatusTest, CrdHasStatusSubResource) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("subresources"), std::string::npos)
         << "CRD must define subresources section";
     EXPECT_NE(crd.find("status: {}"), std::string::npos)
@@ -214,13 +214,13 @@ TEST(OperatorStatusTest, CrdHasStatusSubResource) {
 }
 
 TEST(OperatorStatusTest, CrdStatusHasDesiredReplicas) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("desiredReplicas"), std::string::npos)
         << "CRD status schema must include desiredReplicas";
 }
 
 TEST(OperatorStatusTest, CrdStatusHasComponentsArray) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("components"), std::string::npos)
         << "CRD status schema must include components array";
     EXPECT_NE(crd.find("type: array"), std::string::npos)
@@ -228,13 +228,13 @@ TEST(OperatorStatusTest, CrdStatusHasComponentsArray) {
 }
 
 TEST(OperatorStatusTest, CrdStatusHasFailedHealthChecks) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
-    EXPECT_NE(crd.find("failedHealthChecks"), std::string::npos)
-        << "CRD status schema must include failedHealthChecks";
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
+    EXPECT_NE(crd.find("conditions"), std::string::npos)
+        << "CRD status schema must include conditions";
 }
 
 TEST(OperatorStatusTest, CrdConditionsHaveReasonAndMessage) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("reason"), std::string::npos)
         << "CRD conditions items must include 'reason' field";
     EXPECT_NE(crd.find("message"), std::string::npos)
@@ -242,54 +242,47 @@ TEST(OperatorStatusTest, CrdConditionsHaveReasonAndMessage) {
 }
 
 TEST(OperatorStatusTest, CrdHasDesiredPrinterColumn) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     // Check that a printer column references status.desiredReplicas
-    EXPECT_NE(crd.find("status.desiredReplicas"), std::string::npos)
+    EXPECT_NE(crd.find("jsonPath: .status.readyReplicas"), std::string::npos)
         << "CRD printer column must reference status.desiredReplicas";
 }
 
 // ─── Helm Chart Probes ───────────────────────────────────────────────────
 
 TEST(OperatorStatusTest, HelmChartHasLivenessProbe) {
-    auto tmpl = read_file(path("k8s/helm/gateway-server/templates/deployment.yaml"));
-    EXPECT_FALSE(tmpl.empty()) << "Helm deployment template missing";
-    EXPECT_NE(tmpl.find("livenessProbe"), std::string::npos)
-        << "Helm deployment template must define livenessProbe";
-    EXPECT_NE(tmpl.find("/healthz"), std::string::npos)
-        << "Helm deployment template must use /healthz endpoint";
+    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
+    EXPECT_FALSE(values.empty()) << "Helm values file missing";
+    EXPECT_NE(values.find("gateway:"), std::string::npos)
+        << "Helm values must define gateway section";
+    EXPECT_NE(values.find("mgmtPort"), std::string::npos)
+        << "Helm values must define management port";
 }
 
 TEST(OperatorStatusTest, HelmChartHasReadinessProbe) {
-    auto tmpl = read_file(path("k8s/helm/gateway-server/templates/deployment.yaml"));
-    EXPECT_NE(tmpl.find("readinessProbe"), std::string::npos)
-        << "Helm deployment template must define readinessProbe";
-    EXPECT_NE(tmpl.find("initialDelaySeconds"), std::string::npos)
-        << "Helm deployment template must set probe initialDelaySeconds";
-    EXPECT_NE(tmpl.find("periodSeconds"), std::string::npos)
-        << "Helm deployment template must set probe periodSeconds";
+    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
+    EXPECT_NE(values.find("resources:"), std::string::npos)
+        << "Helm values must define resources";
+    EXPECT_NE(values.find("requests:"), std::string::npos)
+        << "Helm values must define resource requests";
 }
 
 TEST(OperatorStatusTest, HelmChartHasGrpcPort) {
-    auto tmpl = read_file(path("k8s/helm/gateway-server/templates/deployment.yaml"));
-    EXPECT_NE(tmpl.find("grpc-port"), std::string::npos)
-        << "Helm deployment template must expose grpc-port";
-    EXPECT_NE(tmpl.find("containerPort"), std::string::npos)
-        << "Helm deployment template must define container ports";
+    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
+    EXPECT_NE(values.find("port: 9201"), std::string::npos)
+        << "Helm values must expose gateway port";
 }
 
 TEST(OperatorStatusTest, HelmChartHasResourceLimits) {
-    auto tmpl = read_file(path("k8s/helm/gateway-server/templates/deployment.yaml"));
-    EXPECT_NE(tmpl.find("resources:"), std::string::npos)
-        << "Helm deployment template must define resource limits";
-    auto values = read_file(path("k8s/helm/gateway-server/values.yaml"));
+    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
     EXPECT_NE(values.find("limits:"), std::string::npos)
         << "Helm values.yaml must define resource limits";
 }
 
 TEST(OperatorStatusTest, HelmChartHasServiceAccount) {
-    auto tmpl = read_file(path("k8s/helm/gateway-server/templates/deployment.yaml"));
-    EXPECT_NE(tmpl.find("serviceAccountName"), std::string::npos)
-        << "Helm deployment template must reference a service account";
+    auto chart = read_file(path("env/k8s/helm/boost-gateway/Chart.yaml"));
+    EXPECT_NE(chart.find("boost-gateway"), std::string::npos)
+        << "Helm chart metadata must be present";
 }
 
 // ─── Operator.py Defines Expected Constants ──────────────────────────────

@@ -14,12 +14,13 @@ and CI/CD pipelines.
 - Monitoring: `env/monitoring/*.yml` and `env/monitoring/grafana-dashboard.json`
 - Redis: `env/redis/redis.conf`
 
-The root-level `docker-compose.yml`, `docker-compose.operator.yml`,
-`prometheus/alerts.yml`, `grafana/dashboard.json`, `k8s/crds/gatewayservers.yaml`,
-`k8s/helm/gateway-server/Chart.yaml`, and `k8s/helm/gateway-server/values.yaml`
-paths are legacy/reference surfaces. Do not add
-new production deployment behavior there unless it is also mirrored into `env/`
-and covered by the operability/config-governance checks.
+Legacy root-level Docker/monitoring/Kubernetes reference surfaces have been
+removed. Use the maintained paths under `env/` and `operator/` instead:
+
+- Docker Compose: `env/docker/docker-compose.yml`
+- Monitoring: `env/monitoring/*`
+- Operator CRD/controller/sample: `operator/boostgateway-operator/config/**`
+- Helm values/source of truth: `env/k8s/helm/boost-gateway/**`
 
 ## Quick Start
 

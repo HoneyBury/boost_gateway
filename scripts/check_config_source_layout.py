@@ -26,7 +26,7 @@ REQUIRED_CURRENT = [
     "env/monitoring/grafana-dashboard.json",
     "env/redis/redis.conf",
 ]
-LEGACY_PATHS = [
+REMOVED_LEGACY_PATHS = [
     "docker-compose.yml",
     "docker-compose.operator.yml",
     "prometheus/alerts.yml",
@@ -59,10 +59,13 @@ def main() -> int:
     for relative in REQUIRED_CURRENT:
         add(checks, f"current:{relative}", (ROOT / relative).exists(), "current config exists")
 
-    for relative in LEGACY_PATHS:
-        exists = (ROOT / relative).exists()
-        referenced = relative in env_readme
-        add(checks, f"legacy-documented:{relative}", (not exists) or referenced, "legacy path is documented when present")
+    for relative in REMOVED_LEGACY_PATHS:
+        add(
+            checks,
+            f"legacy-removed:{relative}",
+            not (ROOT / relative).exists(),
+            "removed legacy path must stay absent",
+        )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

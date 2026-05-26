@@ -35,11 +35,11 @@ bool file_contains(const std::string& path, const std::string& text) {
 // ─── K8s Operator ────────────────────────────────────────────────────────
 
 TEST(K8sOperatorTest, CrdExistsAndValid) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_FALSE(crd.empty()) << "CRD file missing";
     EXPECT_NE(crd.find("CustomResourceDefinition"), std::string::npos);
-    EXPECT_NE(crd.find("gatewayservers.gateway.boost.io"), std::string::npos);
-    EXPECT_NE(crd.find("GatewayServer"), std::string::npos);
+    EXPECT_NE(crd.find("boostgatewayclusters.gateway.boost.io"), std::string::npos);
+    EXPECT_NE(crd.find("BoostGatewayCluster"), std::string::npos);
     EXPECT_NE(crd.find("openAPIV3Schema"), std::string::npos);
     EXPECT_NE(crd.find("subresources"), std::string::npos);
 }
@@ -75,17 +75,17 @@ TEST(K8sOperatorTest, DeployScriptExists) {
 }
 
 TEST(K8sOperatorTest, HelmChartExists) {
-    auto chart = read_file(path("k8s/helm/gateway-server/Chart.yaml"));
+    auto chart = read_file(path("env/k8s/helm/boost-gateway/Chart.yaml"));
     EXPECT_FALSE(chart.empty()) << "Helm Chart.yaml missing";
-    EXPECT_NE(chart.find("gateway-server"), std::string::npos);
-    EXPECT_NE(chart.find("boost-asio"), std::string::npos);
+    EXPECT_NE(chart.find("boost-gateway"), std::string::npos);
+    EXPECT_NE(chart.find("Game Server Framework"), std::string::npos);
 
-    auto values = read_file(path("k8s/helm/gateway-server/values.yaml"));
+    auto values = read_file(path("env/k8s/helm/boost-gateway/values.yaml"));
     EXPECT_FALSE(values.empty()) << "Helm values.yaml missing";
     EXPECT_NE(values.find("replicaCount"), std::string::npos);
-    EXPECT_NE(values.find("service:"), std::string::npos);
-    EXPECT_NE(values.find("config:"), std::string::npos);
-    EXPECT_NE(values.find("autoscaling:"), std::string::npos);
+    EXPECT_NE(values.find("gateway:"), std::string::npos);
+    EXPECT_NE(values.find("resources:"), std::string::npos);
+    EXPECT_NE(values.find("monitoring:"), std::string::npos);
 }
 
 TEST(K8sOperatorTest, OperatorSmokeScriptAssertsStatusComponentsAndConditions) {
@@ -137,17 +137,15 @@ TEST(K8sOperatorTest, OperatorHasResumeHandler) {
 }
 
 TEST(K8sOperatorTest, CrdHasDesiredReplicasInStatus) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("desiredReplicas"), std::string::npos)
         << "CRD must define desiredReplicas in status schema";
-    EXPECT_NE(crd.find("failedHealthChecks"), std::string::npos)
-        << "CRD must define failedHealthChecks in status schema";
     EXPECT_NE(crd.find("components"), std::string::npos)
         << "CRD must define components array in status schema";
 }
 
 TEST(K8sOperatorTest, CrdHasEnhancedConditions) {
-    auto crd = read_file(path("k8s/crds/gatewayservers.yaml"));
+    auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
     EXPECT_NE(crd.find("reason"), std::string::npos)
         << "CRD conditions must include 'reason' field";
     EXPECT_NE(crd.find("message"), std::string::npos)

@@ -55,14 +55,14 @@ cmake --install build/release --prefix /usr/local
 
 ## 3. Docker Compose
 
-根目录 `docker-compose.yml` 适合从仓库根目录启动；`env/docker/docker-compose.yml` 适合只操作环境目录时显式指定。
+统一使用 `env/docker/docker-compose.yml` 作为当前 Docker Compose 入口。
 
 ```bash
-docker compose up -d --build
-docker compose ps
+docker compose -f env/docker/docker-compose.yml up -d --build
+docker compose -f env/docker/docker-compose.yml ps
 curl -fsS http://localhost:9080/health
-docker compose logs -f gateway
-docker compose down
+docker compose -f env/docker/docker-compose.yml logs -f gateway
+docker compose -f env/docker/docker-compose.yml down
 ```
 
 Compose 会显式把 gateway 后端地址设置为服务名，例如 `login-backend:9202`。不要在容器内使用默认 `127.0.0.1` 连接其他服务。

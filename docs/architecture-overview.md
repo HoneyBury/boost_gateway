@@ -167,9 +167,9 @@ Each process independent. Raft for stateful services.
 
 ### Kubernetes
 ```yaml
-# See k8s/helm/gateway-server/ for full chart
-# Operator: k8s/operator/operator.py (kopf-based)
-# CRD: k8s/crds/gatewayservers.yaml
+# Helm values/source-of-truth: env/k8s/helm/boost-gateway/
+# Operator scaffold: operator/boostgateway-operator/
+# CRD: operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml
 ```
 
 ## Testing Strategy

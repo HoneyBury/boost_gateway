@@ -1,4 +1,5 @@
 /build/
+/build_*/
 /build_temp/
 /out/
 /.cache/
@@ -6,6 +7,7 @@ __pycache__/
 /compile_commands.json
 /logs/
 /runtime/
+/Testing/
 /.idea/
 /.claude/
 
