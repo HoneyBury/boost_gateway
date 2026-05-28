@@ -14,8 +14,8 @@ and CI/CD pipelines.
 - Monitoring: `env/monitoring/*.yml` and `env/monitoring/grafana-dashboard.json`
 - Redis: `env/redis/redis.conf`
 
-Legacy root-level Docker/monitoring/Kubernetes reference surfaces have been
-removed. Use the maintained paths under `env/` and `operator/` instead:
+Legacy root-level Docker/monitoring/Kubernetes legacy/reference surfaces have
+been removed. Use the maintained paths under `env/` and `operator/` instead:
 
 - Docker Compose: `env/docker/docker-compose.yml`
 - Monitoring: `env/monitoring/*`
