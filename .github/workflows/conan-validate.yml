@@ -1,0 +1,114 @@
+name: Conan Validate
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "CMake/Conan build type"
+        required: true
+        default: "Debug"
+        type: choice
+        options:
+          - Debug
+          - Release
+      allow_public:
+        description: "Allow public conancenter remote"
+        required: true
+        default: false
+        type: boolean
+      no_remote:
+        description: "Use local Conan cache only"
+        required: true
+        default: false
+        type: boolean
+      enable_testing:
+        description: "Configure with ENABLE_TESTING=ON"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  conan-validate:
+    runs-on: ["self-hosted", "Windows", "X64"]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install conan
+          conan --version
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(python scripts/bootstrap_conan.py --reset-home)
+          if [ "${{ inputs.allow_public }}" = "true" ]; then
+            args+=(--allow-public)
+          fi
+          if [ "${{ inputs.no_remote }}" = "true" ]; then
+            args+=(--no-remote)
+          fi
+          "${args[@]}"
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . --output-folder=build/conan-${{ inputs.build_type }} --build=missing -s build_type=${{ inputs.build_type }}
+
+      - name: Configure Conan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/windows-ninja-${{ inputs.build_type }}-conan -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=${{ inputs.enable_testing && 'ON' || 'OFF' }} \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=project_v2
+          if [ "${{ inputs.enable_testing }}" = "true" ]; then
+            target=project_unit_tests
+          fi
+          cmake --build build/windows-ninja-${{ inputs.build_type }}-conan --parallel --target "$target"
+
+      - name: Upload Conan validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conan-validate-${{ github.run_id }}
+          path: |
+            build/conan-${{ inputs.build_type }}/**
+            build/windows-ninja-${{ inputs.build_type }}-conan/**
+          if-no-files-found: warn

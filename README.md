@@ -75,6 +75,15 @@ cmake --build --preset windows-ninja-debug --parallel
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。
 
+独立 Conan 流水线：
+
+- `.github/workflows/conan-validate.yml`
+- 仅手动触发
+- 支持 `Debug/Release`
+- 支持 `--allow-public`
+- 支持 `--no-remote`
+- 可选打开 `ENABLE_TESTING`
+
 ## 运行入口
 
 推荐优先阅读 `docs/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
