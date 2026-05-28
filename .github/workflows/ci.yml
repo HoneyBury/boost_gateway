@@ -34,9 +34,6 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
@@ -45,27 +42,27 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Show CMake version
+        run: cmake --version
+
       - name: Install sccache
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           choco install sccache -y --no-progress
           sccache --version
 
       - name: Install Conan
         if: env.BOOST_CONAN_VALIDATE == 'true'
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install conan
           conan --version
 
       - name: Conan dependency PoC
         if: env.BOOST_CONAN_VALIDATE == 'true'
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/bootstrap_conan.py
           # This stays opt-in because some runners may block direct conancenter access.
           conan install . --output-folder=build/conan-debug --build=missing -s build_type=Debug
@@ -73,7 +70,7 @@ jobs:
           cmake --build build/windows-ninja-debug-conan --parallel --target project_v2
 
       - name: Reset sccache stats
-        shell: bash
+        shell: pwsh
         run: sccache --zero-stats || true
 
       - name: Configure
@@ -93,7 +90,7 @@ jobs:
 
       - name: Show sccache stats
         if: always()
-        shell: bash
+        shell: pwsh
         run: sccache --show-stats || true
 
   multi-process-build:
@@ -116,16 +113,15 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
+      - name: Show CMake version
+        run: cmake --version
+
       - name: Install sccache
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           choco install sccache -y --no-progress
           sccache --version
 
@@ -151,5 +147,5 @@ jobs:
 
       - name: Show sccache stats
         if: always()
-        shell: bash
+        shell: pwsh
         run: sccache --show-stats || true
