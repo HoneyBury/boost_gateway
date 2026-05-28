@@ -13,39 +13,29 @@ permissions:
   contents: write
 
 jobs:
+  runner-matrix:
+    runs-on: ["self-hosted","Windows","X64"]
+    outputs:
+      release: ${{ steps.matrix.outputs.release }}
+      release_publish_runs_on: ${{ steps.matrix.outputs.release_publish_runs_on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read runner matrix
+        id: matrix
+        shell: bash
+        run: |
+          echo "release=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.release)" >> "$GITHUB_OUTPUT"
+          echo "release_publish_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.release_publish.runs_on)" >> "$GITHUB_OUTPUT"
+
   package:
-    runs-on: ${{ matrix.os }}
+    needs: runner-matrix
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            configure_preset: release
-            build_preset: release
-            test_preset: release
-            install_config: ""
-            archive_ext: tar.gz
-            archive_format: gnutar
-            archive_flags: cfvz
-            artifact_suffix: linux-x86_64
-          - os: macos-latest
-            configure_preset: release
-            build_preset: release
-            test_preset: release
-            install_config: ""
-            archive_ext: tar.gz
-            archive_format: gnutar
-            archive_flags: cfvz
-            artifact_suffix: macos
-          - os: windows-2022
-            configure_preset: windows-ninja-release
-            build_preset: windows-ninja-release
-            test_preset: windows-ninja-release
-            install_config: ""
-            archive_ext: zip
-            archive_format: zip
-            archive_flags: cfv
-            artifact_suffix: windows-x64
+        include: ${{ fromJSON(needs.runner-matrix.outputs.release) }}
 
     steps:
       - name: Checkout
@@ -148,8 +138,8 @@ jobs:
         run: sccache --show-stats || true
 
   publish:
-    runs-on: ubuntu-latest
-    needs: package
+    runs-on: ${{ fromJSON(needs.runner-matrix.outputs.release_publish_runs_on) }}
+    needs: [runner-matrix, package]
 
     steps:
       - name: Download packaged artifacts

@@ -14,21 +14,28 @@ permissions:
   actions: read
 
 jobs:
+  runner-matrix:
+    runs-on: ["self-hosted","Windows","X64"]
+    outputs:
+      perf_commit: ${{ steps.matrix.outputs.perf_commit }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read runner matrix
+        id: matrix
+        shell: bash
+        run: |
+          echo "perf_commit=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.perf_commit)" >> "$GITHUB_OUTPUT"
+
   perf-smoke:
     if: contains(github.event.pull_request.labels.*.name, 'perf') || github.event.action == 'labeled' && contains(github.event.pull_request.labels.*.name, 'perf')
-    runs-on: ${{ matrix.os }}
+    needs: runner-matrix
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            configure_preset: default
-            build_preset: default
-            build_dir: build/default
-          - os: windows-2022
-            configure_preset: windows-ninja-release
-            build_preset: windows-ninja-release
-            build_dir: build/windows-ninja-release
+        include: ${{ fromJSON(needs.runner-matrix.outputs.perf_commit) }}
 
     steps:
       - name: Checkout

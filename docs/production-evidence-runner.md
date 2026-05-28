@@ -4,6 +4,8 @@
 
 本文档用于收束 P2：把 P6 生产证据从本地手动命令推进到可归档的固定 runner 流水线。默认 PR/Release 仍保持有界 smoke，真实依赖、长项和容量数据必须在固定 runner 上显式开启。
 
+说明：自动触发的通用 CI/workflow 平台矩阵由 `.github/runner-matrix.json` 控制；本文件讨论的是手动或定时 fixed-runner 证据流水线口径，不替代该矩阵配置。
+
 ## N0 Summary 契约
 
 固定 runner 相关 summary 统一要求如下：

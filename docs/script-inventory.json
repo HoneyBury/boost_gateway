@@ -68,6 +68,7 @@
     "scripts/operator_kind_smoke.py": {"category": "tool", "canonical": "scripts/tools/operator_kind_smoke.py"},
     "scripts/operator_kind_smoke.sh": {"category": "platform_wrapper", "wraps": "scripts/operator_kind_smoke.py", "canonical": "scripts/wrappers/sh/operator_kind_smoke.sh"},
     "scripts/perf_analyze.py": {"category": "tool", "canonical": "scripts/tools/perf_analyze.py"},
+    "scripts/read_runner_matrix.py": {"category": "tool", "canonical": "scripts/tools/read_runner_matrix.py"},
     "scripts/render_production_readiness_report.py": {"category": "public_entrypoint"},
     "scripts/render_validation_summary.py": {"category": "tool", "canonical": "scripts/tools/render_validation_summary.py"},
     "scripts/run_bounded_process.ps1": {"category": "platform_wrapper", "canonical": "scripts/wrappers/ps1/run_bounded_process.ps1"},

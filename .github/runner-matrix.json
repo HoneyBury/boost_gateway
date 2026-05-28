@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "description": "Versioned workflow runner/matrix configuration. Edit this file in a commit to switch the active CI/CD platforms.",
+  "matrices": {
+    "ci": {
+      "build_and_test": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-debug",
+          "build_preset": "windows-ninja-debug",
+          "test_preset": "windows-ninja-debug"
+        }
+      ],
+      "multi_process": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-debug",
+          "build_preset": "windows-ninja-debug",
+          "build_dir": "build/windows-ninja-debug",
+          "binary_ext": ".exe"
+        }
+      ],
+      "nightly_stability": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-debug",
+          "build_dir": "build/windows-ninja-debug",
+          "configuration": "Debug",
+          "baseline_profile": "debug"
+        }
+      ],
+      "perf_commit": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-release",
+          "build_preset": "windows-ninja-release",
+          "build_dir": "build/windows-ninja-release"
+        }
+      ],
+      "perf_regression": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-release",
+          "build_preset": "windows-ninja-release",
+          "build_dir": "build/windows-ninja-release"
+        }
+      ],
+      "release": [
+        {
+          "name": "windows-self-hosted",
+          "platform": "windows",
+          "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]",
+          "configure_preset": "windows-ninja-release",
+          "build_preset": "windows-ninja-release",
+          "test_preset": "windows-ninja-release",
+          "install_config": "",
+          "archive_ext": "zip",
+          "archive_format": "zip",
+          "archive_flags": "cfv",
+          "artifact_suffix": "windows-x64"
+        }
+      ]
+    }
+  },
+  "jobs": {
+    "docker": {
+      "enabled": false,
+      "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]"
+    },
+    "raft_ha_weekly": {
+      "enabled": false,
+      "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]"
+    },
+    "release_publish": {
+      "runs_on": "[\"self-hosted\",\"Windows\",\"X64\"]"
+    }
+  },
+  "defaults": {
+    "release_baseline_runner": "[\"self-hosted\",\"Windows\",\"X64\"]",
+    "production_evidence_runner": "[\"self-hosted\",\"Windows\",\"X64\"]",
+    "production_resilience_runner": "[\"self-hosted\",\"Windows\",\"X64\"]",
+    "specialized_e2e_runner": "[\"self-hosted\",\"Windows\",\"X64\"]",
+    "long_soak_capacity_runner": "[\"self-hosted\",\"Windows\",\"X64\"]"
+  }
+}

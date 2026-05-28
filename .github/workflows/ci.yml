@@ -15,24 +15,37 @@ permissions:
   contents: read
 
 jobs:
+  runner-matrix:
+    runs-on: ["self-hosted","Windows","X64"]
+    outputs:
+      build_and_test: ${{ steps.matrix.outputs.build_and_test }}
+      multi_process: ${{ steps.matrix.outputs.multi_process }}
+      docker_enabled: ${{ steps.matrix.outputs.docker_enabled }}
+      docker_runs_on: ${{ steps.matrix.outputs.docker_runs_on }}
+      raft_ha_enabled: ${{ steps.matrix.outputs.raft_ha_enabled }}
+      raft_ha_runs_on: ${{ steps.matrix.outputs.raft_ha_runs_on }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read runner matrix
+        id: matrix
+        shell: bash
+        run: |
+          echo "build_and_test=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.build_and_test)" >> "$GITHUB_OUTPUT"
+          echo "multi_process=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.multi_process)" >> "$GITHUB_OUTPUT"
+          echo "docker_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.enabled)" >> "$GITHUB_OUTPUT"
+          echo "docker_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.docker.runs_on)" >> "$GITHUB_OUTPUT"
+          echo "raft_ha_enabled=$(python scripts/tools/read_runner_matrix.py --path jobs.raft_ha_weekly.enabled)" >> "$GITHUB_OUTPUT"
+          echo "raft_ha_runs_on=$(python scripts/tools/read_runner_matrix.py --path jobs.raft_ha_weekly.runs_on)" >> "$GITHUB_OUTPUT"
+
   build-and-test:
-    runs-on: ${{ matrix.os }}
+    needs: runner-matrix
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            configure_preset: default
-            build_preset: default
-            test_preset: default
-          - os: macos-latest
-            configure_preset: default
-            build_preset: default
-            test_preset: default
-          - os: windows-2022
-            configure_preset: windows-ninja-debug
-            build_preset: windows-ninja-debug
-            test_preset: windows-ninja-debug
+        include: ${{ fromJSON(needs.runner-matrix.outputs.build_and_test) }}
 
     steps:
       - name: Checkout
@@ -96,12 +109,12 @@ jobs:
         run: sccache --show-stats || true
 
   multi-process-build:
-    runs-on: ${{ matrix.os }}
-    needs: build-and-test
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
+    needs: [runner-matrix, build-and-test]
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-2022]
+        include: ${{ fromJSON(needs.runner-matrix.outputs.multi_process) }}
 
     steps:
       - name: Checkout
@@ -139,18 +152,18 @@ jobs:
           sccache --version
 
       - name: Configure
-        run: cmake --preset ${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset ${{ matrix.configure_preset }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build all targets
-        run: cmake --build --preset ${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }} --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
+        run: cmake --build --preset ${{ matrix.build_preset }} --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
 
       - name: Verify binaries exist
         run: |
           python -c "
           import os, sys
           binaries = ['v2_gateway_demo', 'v2_login_backend', 'v2_room_backend', 'v2_battle_backend', 'v2_leaderboard_backend']
-          build_dir = 'build/${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }}'
-          ext = '${{ matrix.os == 'windows-2022' && '.exe' || '' }}'
+          build_dir = '${{ matrix.build_dir }}'
+          ext = '${{ matrix.binary_ext || '' }}'
           missing = [b for b in binaries if not os.path.exists(os.path.join(build_dir, b + ext))]
           if missing:
               print(f'Missing binaries: {missing}')
@@ -164,9 +177,9 @@ jobs:
         run: sccache --show-stats || true
 
   docker:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ fromJSON(needs.runner-matrix.outputs.docker_runs_on) }}
+    needs: [runner-matrix, build-and-test]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.runner-matrix.outputs.docker_enabled == 'true'
 
     steps:
       - name: Checkout
@@ -205,8 +218,9 @@ jobs:
           docker stop boost-gateway-test
 
   raft-ha-weekly:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
+    runs-on: ${{ fromJSON(needs.runner-matrix.outputs.raft_ha_runs_on) }}
+    needs: runner-matrix
+    if: github.event_name == 'schedule' && needs.runner-matrix.outputs.raft_ha_enabled == 'true'
 
     steps:
       - name: Checkout

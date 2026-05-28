@@ -48,7 +48,7 @@ permissions:
 
 jobs:
   specialized-e2e:
-    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.SPECIALIZED_E2E_RUNNER || '["self-hosted","Windows","X64"]') }}
 
     steps:
       - name: Checkout

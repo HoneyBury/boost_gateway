@@ -29,6 +29,12 @@
 - 性能事实：`docs/performance-baseline.md`
 - 发布/验收门禁：`docs/v3-release-checklist.md`
 
+当前 CI/CD 平台选择：
+
+- 自动触发的 workflow 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。
+- 当前提交配置为 Windows-only，因此推送后默认只会触发 Windows 自托管 runner。
+- 当你切换到 macOS、Linux 或多平台联调时，只需要提交更新 `.github/runner-matrix.json`。
+
 ## 常用验证入口
 
 ```bash

@@ -86,10 +86,10 @@ permissions:
 
 jobs:
   production-resilience:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '["self-hosted","Windows","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'ubuntu-latest' }}
+      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'self-hosted-windows-x64' }}
       cancel-in-progress: false
 
     steps:

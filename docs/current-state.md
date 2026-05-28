@@ -5,6 +5,7 @@
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventory.md`。
+自动触发的 CI/CD 平台矩阵由 `.github/runner-matrix.json` 管理；当前提交配置为 Windows-only。
 
 ## 稳定能力
 

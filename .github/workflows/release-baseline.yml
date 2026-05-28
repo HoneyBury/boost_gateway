@@ -52,10 +52,10 @@ permissions:
 
 jobs:
   release-baseline:
-    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '["self-hosted","Windows","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'ubuntu-latest' }}
+      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'self-hosted-windows-x64' }}
       cancel-in-progress: false
 
     steps:

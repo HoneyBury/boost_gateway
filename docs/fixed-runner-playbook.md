@@ -56,6 +56,8 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
 
+自动触发的 CI/CD 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。建议把“当前常开机器”作为提交中的 active matrix，只在实际会在线的 runner 上开启自动流水线，避免 workflow 长时间排队等待离线 runner。
+
 ## Release Baseline
 
 手动触发 `.github/workflows/release-baseline.yml`：

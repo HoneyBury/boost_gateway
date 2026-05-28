@@ -22,22 +22,27 @@ permissions:
   contents: read
 
 jobs:
+  runner-matrix:
+    runs-on: ["self-hosted","Windows","X64"]
+    outputs:
+      nightly_stability: ${{ steps.matrix.outputs.nightly_stability }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read runner matrix
+        id: matrix
+        shell: bash
+        run: |
+          echo "nightly_stability=$(python scripts/tools/read_runner_matrix.py --path matrices.ci.nightly_stability)" >> "$GITHUB_OUTPUT"
+
   stability-soak:
-    runs-on: ${{ matrix.os }}
+    needs: runner-matrix
+    runs-on: ${{ fromJSON(matrix.runs_on) }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: ubuntu-latest
-            configure_preset: default
-            build_dir: build/default
-            configuration: Debug
-            baseline_profile: debug
-          - os: windows-2022
-            configure_preset: windows-ninja-debug
-            build_dir: build/windows-ninja-debug
-            configuration: Debug
-            baseline_profile: debug
+        include: ${{ fromJSON(needs.runner-matrix.outputs.nightly_stability) }}
 
     steps:
       - name: Checkout

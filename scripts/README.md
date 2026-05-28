@@ -16,6 +16,7 @@ Canonical groups migrated so far:
 - Tools: `scripts/tools/`
 - Producers: `scripts/producers/`
 - Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
+- CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 
 Use these stable public entrypoints first:
 
