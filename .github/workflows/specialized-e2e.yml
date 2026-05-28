@@ -59,17 +59,16 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
 
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Show CMake version
+        run: cmake --version
 
       - name: Setup Python
         if: inputs.enable_conan_validation
@@ -79,18 +78,16 @@ jobs:
 
       - name: Install Conan
         if: inputs.enable_conan_validation
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install conan
           conan --version
 
       - name: Conan validation preflight
         if: inputs.enable_conan_validation
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/bootstrap_conan.py
           conan install . --output-folder=build/conan-specialized --build=missing -s build_type=${{ inputs.configuration }}
           cmake -S . -B build/windows-ninja-specialized-conan -G Ninja \
@@ -101,59 +98,53 @@ jobs:
           cmake --build build/windows-ninja-specialized-conan --parallel --target project_v2
 
       - name: Fixed runner preflight
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          args=(
-            scripts/check_fixed_runner_environment.py
-            --profile specialized-e2e
-            --build-dir "${{ inputs.build_dir }}"
-            --summary-path runtime/validation/fixed-runner-preflight-summary.json
+          $args = @(
+            'scripts/check_fixed_runner_environment.py',
+            '--profile', 'specialized-e2e',
+            '--build-dir', '${{ inputs.build_dir }}',
+            '--summary-path', 'runtime/validation/fixed-runner-preflight-summary.json'
           )
-          if [ "${{ inputs.include_redis_live }}" = "true" ]; then
-            args+=(--require-redis)
-          fi
-          if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
-            args+=(--require-kind)
-          fi
-          python "${args[@]}"
+          if ('${{ inputs.include_redis_live }}' -eq 'true') {
+            $args += '--require-redis'
+          }
+          if ('${{ inputs.include_operator_kind }}' -eq 'true') {
+            $args += '--require-kind'
+          }
+          python @args
 
       - name: Configure
         run: cmake --preset ${{ inputs.build_preset }}
 
       - name: Specialized E2E
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          args=(
-            scripts/verify_specialized_e2e.py
-            --build-dir "${{ inputs.build_dir }}"
-            --configuration "${{ inputs.configuration }}"
-            --profile "${{ inputs.specialized_profile }}"
-            --summary-path runtime/validation/specialized-e2e-summary.json
+          $args = @(
+            'scripts/verify_specialized_e2e.py',
+            '--build-dir', '${{ inputs.build_dir }}',
+            '--configuration', '${{ inputs.configuration }}',
+            '--profile', '${{ inputs.specialized_profile }}',
+            '--summary-path', 'runtime/validation/specialized-e2e-summary.json'
           )
-          if [ "${{ inputs.include_redis_live }}" = "true" ]; then
-            args+=(--include-redis-live)
-          fi
-          if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
-            args+=(--include-operator-kind)
-          fi
-          python "${args[@]}"
+          if ('${{ inputs.include_redis_live }}' -eq 'true') {
+            $args += '--include-redis-live'
+          }
+          if ('${{ inputs.include_operator_kind }}' -eq 'true') {
+            $args += '--include-operator-kind'
+          }
+          python @args
 
       - name: Render specialized E2E summary
         if: always()
-        shell: bash
+        shell: pwsh
         run: |
-          summaries=()
-          for path in \
-            runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/specialized-e2e-summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          $summaries = @(
+            'runtime/validation/fixed-runner-preflight-summary.json',
+            'runtime/validation/specialized-e2e-summary.json'
+          ) | Where-Object { Test-Path $_ }
+          if ($summaries.Count -gt 0) {
+            python scripts/render_validation_summary.py $summaries | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           fi
 
       - name: Upload specialized E2E summary

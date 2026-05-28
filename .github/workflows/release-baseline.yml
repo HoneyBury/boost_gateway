@@ -76,12 +76,11 @@ jobs:
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
       - name: Setup MSVC environment
-        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Show CMake version
+        run: cmake --version
 
       - name: Setup Python
         if: inputs.enable_conan_validation
@@ -90,33 +89,23 @@ jobs:
           python-version: "3.12"
 
       - name: Install sccache
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            choco install sccache -y --no-progress
-          elif [ "$RUNNER_OS" = "macOS" ]; then
-            brew install sccache
-          else
-            sudo apt-get update
-            sudo apt-get install -y sccache
-          fi
+          choco install sccache -y --no-progress
           sccache --version
 
       - name: Install Conan
         if: inputs.enable_conan_validation
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python -m pip install --upgrade pip
           pip install conan
           conan --version
 
       - name: Conan validation preflight
         if: inputs.enable_conan_validation
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/bootstrap_conan.py
           conan install . --output-folder=build/conan-release-baseline --build=missing -s build_type=${{ inputs.configuration || 'Release' }}
           cmake -S . -B build/windows-ninja-release-conan -G Ninja \
@@ -127,9 +116,8 @@ jobs:
           cmake --build build/windows-ninja-release-conan --parallel --target project_v2
 
       - name: Fixed runner preflight
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/check_fixed_runner_environment.py \
             --profile release-baseline \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
@@ -139,9 +127,8 @@ jobs:
         run: cmake --preset ${{ inputs.configure_preset || 'release' }} -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Release baseline gate
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/collect_release_baseline.py \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
@@ -153,9 +140,8 @@ jobs:
 
       - name: R4 fixed-runner release/capacity gate
         if: inputs.perf_preset == 'capacity'
-        shell: bash
+        shell: pwsh
         run: |
-          set -euo pipefail
           python scripts/verify_fixed_runner_release_capacity.py \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
@@ -166,21 +152,17 @@ jobs:
 
       - name: Render release baseline summary
         if: always()
-        shell: bash
+        shell: pwsh
         run: |
-          summaries=()
-          for path in \
-            runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/release-baseline-summary.json \
-            runtime/validation/release-r4-contract-summary.json \
-            runtime/validation/fixed-runner-release-capacity-summary.json \
-            runtime/perf/release-baseline/summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          $summaries = @(
+            'runtime/validation/fixed-runner-preflight-summary.json',
+            'runtime/validation/release-baseline-summary.json',
+            'runtime/validation/release-r4-contract-summary.json',
+            'runtime/validation/fixed-runner-release-capacity-summary.json',
+            'runtime/perf/release-baseline/summary.json'
+          ) | Where-Object { Test-Path $_ }
+          if ($summaries.Count -gt 0) {
+            python scripts/render_validation_summary.py $summaries | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           fi
 
       - name: Upload release baseline artifact
@@ -199,5 +181,5 @@ jobs:
 
       - name: Show sccache stats
         if: always()
-        shell: bash
+        shell: pwsh
         run: sccache --show-stats || true
