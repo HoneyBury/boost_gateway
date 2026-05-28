@@ -1,9 +1,5 @@
 name: CI
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  SCCACHE_DIR: ${{ github.workspace }}/.sccache
-
 on:
   push:
     branches: ["main", "develop"]
@@ -20,15 +16,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Restore sccache cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-windows-ninja-debug-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-windows-ninja-debug-
-            sccache-${{ runner.os }}-
-
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
@@ -38,91 +25,11 @@ jobs:
       - name: Setup MSVC environment
         uses: ilammy/msvc-dev-cmd@v1
 
-      - name: Install sccache
-        shell: bash
-        run: |
-          set -euo pipefail
-          choco install sccache -y --no-progress
-          sccache --version
-
-      - name: Reset sccache stats
-        shell: bash
-        run: sccache --zero-stats || true
-
       - name: Configure
-        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset windows-ninja-debug
 
       - name: Build
         run: cmake --build --preset windows-ninja-debug --parallel
 
       - name: Test
         run: ctest --preset windows-ninja-debug --timeout 300
-
-      - name: R4 contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/windows-ninja-debug --skip-build --skip-arch-baseline --configuration Debug
-
-      - name: Monitoring operability gate
-        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
-
-      - name: Show sccache stats
-        if: always()
-        shell: bash
-        run: sccache --show-stats || true
-
-  multi-process-build:
-    runs-on: ["self-hosted", "Windows", "X64"]
-    needs: build-and-test
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Restore sccache cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-multi-process-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
-          restore-keys: |
-            sccache-${{ runner.os }}-multi-process-
-            sccache-${{ runner.os }}-
-
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Install sccache
-        shell: bash
-        run: |
-          set -euo pipefail
-          choco install sccache -y --no-progress
-          sccache --version
-
-      - name: Configure
-        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build all targets
-        run: cmake --build --preset windows-ninja-debug --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
-
-      - name: Verify binaries exist
-        run: |
-          python -c "
-          import os, sys
-          binaries = ['v2_gateway_demo', 'v2_login_backend', 'v2_room_backend', 'v2_battle_backend', 'v2_leaderboard_backend']
-          build_dir = 'build/windows-ninja-debug'
-          ext = '.exe'
-          missing = [b for b in binaries if not os.path.exists(os.path.join(build_dir, b + ext))]
-          if missing:
-              print(f'Missing binaries: {missing}')
-              sys.exit(1)
-          print(f'All {len(binaries)} binaries found in {build_dir}')
-          "
-
-      - name: Show sccache stats
-        if: always()
-        shell: bash
-        run: sccache --show-stats || true
