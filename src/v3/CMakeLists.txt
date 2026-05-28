@@ -5,12 +5,6 @@ target_include_directories(project_v3
     PUBLIC
         "${CMAKE_SOURCE_DIR}/include"
 )
-if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
-    target_include_directories(project_v3
-        PRIVATE
-            "${hiredis_SOURCE_DIR}"
-    )
-endif()
 target_link_libraries(project_v3
     PUBLIC
         project_app

@@ -79,6 +79,7 @@ cmake --build --preset windows-ninja-debug --parallel
 - CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`。
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - SDK 安装打包现在会同时兼容 Conan 和 fallback 两种 `nlohmann_json` 头文件来源，不再假定只能来自 `nlohmann_json_SOURCE_DIR`。
+- `project_v3` 也不再显式依赖 `hiredis_SOURCE_DIR`；Conan 与 fallback 都统一走 `hiredis` target 暴露的头文件路径。
 - 当前 Windows 本机已验证 `conan profile detect` 与 `conan install` 能进入依赖图解析阶段；如访问 `conancenter` 被宿主网络策略拦截，需要改用内网镜像、预热缓存或离线包源。
 
 独立 Conan 流水线：
