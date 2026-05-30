@@ -70,6 +70,7 @@ add_executable(project_v2_unit_tests
     unit/realtime/spi_compliance_test.cpp
     unit/parallel_system_executor_test.cpp
     unit/tank_battle_plugin_test.cpp
+    "${CMAKE_SOURCE_DIR}/demo/games/tank_battle/server/tank_plugin/tank_battle_plugin.cpp"
     unit/gateway_grpc_test.cpp
 )
 target_link_libraries(project_v2_unit_tests

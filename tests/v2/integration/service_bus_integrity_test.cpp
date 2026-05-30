@@ -1027,7 +1027,11 @@ TEST(ServiceBusIntegrity, GatewayActorMatchJoinRoundTripsThroughMatchBackend) {
     auto gateway = runtime.create_gateway_actor();
     adapter.bind_gateway(gateway);
 
-    runtime.mark_session_authenticated(1, "alice", v2::auth::Role::kPlayer);
+    runtime.push(v2::player::LoginAcceptedMsg{
+        .session_id = 1,
+        .user_id = "alice",
+        .display_name = "Alice",
+    });
 
     auto writes = adapter.handle_incoming(
         v2::gateway::ClientEnvelope{
