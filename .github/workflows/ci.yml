@@ -41,24 +41,31 @@ jobs:
           ninja --version
           python3 --version
 
-      - name: Ensure sccache
+      - name: Detect sccache
+        id: sccache
         shell: bash
         run: |
-          set -euo pipefail
           if command -v sccache >/dev/null 2>&1; then
             sccache --version
-            exit 0
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sccache not found; continuing without compiler cache"
+            echo "available=false" >> "$GITHUB_OUTPUT"
           fi
-          cargo install sccache
-          sccache --version
 
       - name: Reset sccache stats
+        if: steps.sccache.outputs.available == 'true'
         shell: bash
         run: sccache --zero-stats || true
 
       - name: Configure
         shell: bash
-        run: cmake --preset default -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: |
+          args=(cmake --preset default)
+          if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
+            args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
+          fi
+          "${args[@]}"
 
       - name: Build
         shell: bash
@@ -77,6 +84,6 @@ jobs:
         run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
       - name: Show sccache stats
-        if: always()
+        if: always() && steps.sccache.outputs.available == 'true'
         shell: bash
         run: sccache --show-stats || true
