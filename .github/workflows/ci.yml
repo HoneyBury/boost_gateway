@@ -64,7 +64,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$HOME/.local/bin:$PWD/.venv-ci/bin:$PATH"
-          python3 scripts/bootstrap_conan.py
+          python3 scripts/bootstrap_conan.py --allow-public --disable-example-internal
           conan install . \
             --profile:host conan/profiles/linux-gcc-x64 \
             --profile:build conan/profiles/linux-gcc-x64 \

@@ -30,7 +30,7 @@ def conan_env(conan_home: Path) -> dict[str, str]:
     return env
 
 
-def load_remotes(remotes_file: Path, local_remotes_file: Path, env: dict[str, str], allow_public: bool, no_remote: bool) -> list[dict[str, object]]:
+def load_remotes(remotes_file: Path, local_remotes_file: Path, env: dict[str, str], allow_public: bool, no_remote: bool, disable_example_internal: bool) -> list[dict[str, object]]:
     remotes: list[dict[str, object]] = []
     if remotes_file.exists():
         payload = json.loads(remotes_file.read_text(encoding="utf-8"))
@@ -61,6 +61,8 @@ def load_remotes(remotes_file: Path, local_remotes_file: Path, env: dict[str, st
         seen.add(name)
         item = dict(remote)
         if name == "conancenter" and not allow_public:
+            item["enabled"] = False
+        if disable_example_internal and str(item.get("url", "")).endswith("example.internal"):
             item["enabled"] = False
         normalized.append(item)
     return normalized
@@ -94,6 +96,7 @@ def main() -> int:
     parser.add_argument("--local-remotes-file", type=Path, default=DEFAULT_LOCAL_REMOTES_FILE)
     parser.add_argument("--allow-public", action="store_true", help="Enable public conancenter if present in remotes file.")
     parser.add_argument("--no-remote", action="store_true", help="Disable all Conan remotes and rely on local cache only.")
+    parser.add_argument("--disable-example-internal", action="store_true", help="Disable placeholder remotes ending in example.internal.")
     parser.add_argument("--reset-home", action="store_true", help="Delete the target Conan home before bootstrapping.")
     parser.add_argument("--skip-profile-detect", action="store_true")
     args = parser.parse_args()
@@ -112,7 +115,7 @@ def main() -> int:
     if not args.skip_profile_detect:
         run(["conan", "profile", "detect", "--force"], env)
 
-    remotes = load_remotes(remotes_file, local_remotes_file, env, allow_public=args.allow_public, no_remote=args.no_remote)
+    remotes = load_remotes(remotes_file, local_remotes_file, env, allow_public=args.allow_public, no_remote=args.no_remote, disable_example_internal=args.disable_example_internal)
     configure_remotes(conan_home, remotes)
 
     print(f"conan bootstrap complete: CONAN_HOME={conan_home}")
@@ -120,6 +123,7 @@ def main() -> int:
     print(f"local remotes file: {local_remotes_file}")
     print(f"no remote mode: {args.no_remote}")
     print(f"public remotes enabled: {args.allow_public}")
+    print(f"example internal remotes disabled: {args.disable_example_internal}")
     return 0
 
 
