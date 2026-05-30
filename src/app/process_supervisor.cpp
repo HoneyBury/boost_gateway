@@ -549,8 +549,9 @@ void ProcessSupervisor::terminate_process(
 #else
     if (state.pid <= 0) return;
 
-    // 1. Graceful signal.
-    ::kill(state.pid, SIGTERM);
+    // 1. Graceful signal the whole process group.
+    const pid_t process_group = -state.pid;
+    ::kill(process_group, SIGTERM);
 
     // 2. Wait up to 5 seconds.
     for (int i = 0; i < 50; ++i) {
@@ -562,9 +563,9 @@ void ProcessSupervisor::terminate_process(
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // 3. Force kill.
+    // 3. Force kill the whole process group.
     LOG_WARN("ProcessSupervisor: force killing '{}' (PID {})", config.name, state.pid);
-    ::kill(state.pid, SIGKILL);
+    ::kill(process_group, SIGKILL);
     waitpid(state.pid, nullptr, 0);
 #endif
 }

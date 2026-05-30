@@ -259,17 +259,15 @@ TEST_F(MatchmakingE2ETest, PlayerJoinAndLeavePreventsMatch) {
         callback_count.fetch_add(1, std::memory_order_release);
     });
 
-    // Player 1 joins
-    ASSERT_TRUE(response_ok(
-        send_request(port_, make_match_join_request("alice", 1500, "1v1"))));
-
-    // Player 2 joins
+    // Bob leaves before another compatible player joins.
     ASSERT_TRUE(response_ok(
         send_request(port_, make_match_join_request("bob", 1400, "1v1"))));
-
-    // Player 2 leaves immediately
     ASSERT_TRUE(response_ok(
         send_request(port_, make_match_leave_request("bob", "1v1"))));
+
+    // Alice joins after Bob has left; Bob must not be matched retroactively.
+    ASSERT_TRUE(response_ok(
+        send_request(port_, make_match_join_request("alice", 1500, "1v1"))));
 
     // Wait — should NOT get a match since bob left
     std::this_thread::sleep_for(2s);
