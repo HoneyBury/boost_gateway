@@ -24,14 +24,14 @@ GitHub Actions 的 `production-evidence.yml` 使用 JSON 输入解析 runner：
 
 | 场景 | `runner` 输入 | 必需能力 |
 | --- | --- | --- |
-| 有界默认证据 | `"ubuntu-latest"` 或 `["self-hosted","production-evidence"]` | CMake、Ninja、Python、可绑定本地端口 |
-| Redis live | `["self-hosted","production-evidence","redis-live"]` | Redis `127.0.0.1:6379` 可达 |
-| Operator kind | `["self-hosted","production-evidence","operator-kind"]` | Docker daemon、kind、kubectl、make 可用 |
-| Release baseline | `["self-hosted","production-evidence","release-baseline"]` | 固定 CPU/OS、低后台噪声、Release 构建目录 |
-| Ubuntu capacity source of truth | `["self-hosted","linux","x64","production-evidence","release-baseline"]` | Ubuntu LTS、固定 CPU/OS、低后台噪声、Release 构建目录、仓库内 Conan profile/lockfile 可复用 |
-| Full evidence | `["self-hosted","production-evidence","redis-live","operator-kind","release-baseline","observability"]` | 上述全部能力，且允许测试进程绑定 loopback 端口 |
+| 有界默认证据 | `"ubuntu-latest"` 或 `["self-hosted","Linux","X64"]` | CMake、Ninja、Python、可绑定本地端口 |
+| Redis live | `["self-hosted","Linux","X64"]` | Redis `127.0.0.1:6379` 可达 |
+| Operator kind | `["self-hosted","Linux","X64"]` | Docker daemon、kind、kubectl、make 可用 |
+| Release baseline | `["self-hosted","Linux","X64"]` | 固定 CPU/OS、低后台噪声、Release 构建目录 |
+| Ubuntu capacity source of truth | `["self-hosted","Linux","X64"]` | Ubuntu LTS、固定 CPU/OS、低后台噪声、Release 构建目录、仓库内 Conan profile/lockfile 可复用 |
+| Full evidence | `["self-hosted","Linux","X64"]` | 上述全部能力，且允许测试进程绑定 loopback 端口 |
 
-`runner` 输入必须是合法 JSON。单个 label 用带引号的字符串，例如 `"ubuntu-latest"`；多个 label 用数组，例如 `["self-hosted","production-evidence"]`。
+`runner` 输入必须是合法 JSON。单个 label 用带引号的字符串，例如 `"ubuntu-latest"`；多个 label 用数组，例如 `["self-hosted","Linux","X64"]`。
 
 ## Workflow 场景
 

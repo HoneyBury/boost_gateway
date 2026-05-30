@@ -86,10 +86,10 @@
     }
   },
   "defaults": {
-    "release_baseline_runner": "[\"self-hosted\",\"Linux\",\"X64\",\"release-baseline\"]",
-    "production_evidence_runner": "[\"self-hosted\",\"Linux\",\"X64\",\"production-evidence\"]",
-    "production_resilience_runner": "[\"self-hosted\",\"Linux\",\"X64\",\"production-resilience\"]",
-    "specialized_e2e_runner": "[\"self-hosted\",\"Linux\",\"X64\",\"raft-ha\"]",
-    "long_soak_capacity_runner": "[\"self-hosted\",\"Linux\",\"X64\",\"capacity\"]"
+    "release_baseline_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+    "production_evidence_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+    "production_resilience_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+    "specialized_e2e_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+    "long_soak_capacity_runner": "[\"self-hosted\",\"Linux\",\"X64\"]"
   }
 }

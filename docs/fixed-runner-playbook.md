@@ -24,7 +24,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 
 | 顺序 | Workflow | 关键输入 | 必须归档的 summary |
 | --- | --- | --- | --- |
-| 1 | `conan-validate.yml` | `runner=["self-hosted","linux","x64","release-baseline"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
+| 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release-baseline.yml` | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
@@ -82,7 +82,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Cloud production closure | `self-hosted,cloud-production` | 手动命令 | CMake、Ninja、Python、Docker、kubectl、kind、Go、systemd；用于当前云服务器生产环境收束 |
 
-GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
+GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
 
 自动触发的 CI/CD 平台矩阵由仓库内的 `.github/runner-matrix.json` 决定。建议把“当前常开机器”作为提交中的 active matrix，只在实际会在线的 runner 上开启自动流水线，避免 workflow 长时间排队等待离线 runner。
 
@@ -92,7 +92,7 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |
-| `runner` | `["self-hosted","linux","x64","release-baseline"]` | `["self-hosted","linux","x64","release-baseline"]` |
+| `runner` | `["self-hosted","Linux","X64"]` | `["self-hosted","Linux","X64"]` |
 | `configure_preset` | `release` 或 `windows-ninja-release` | 同 baseline |
 | `build_dir` | `build/release` 或 `build/windows-ninja-release` | 同 baseline |
 | `configuration` | `Release` | `Release` |
@@ -274,7 +274,7 @@ P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raf
 python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build
 ```
 
-手动触发 `.github/workflows/production-evidence.yml` 时，`runner` 建议填 `["self-hosted","production-evidence"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
+手动触发 `.github/workflows/production-evidence.yml` 时，`runner` 建议填 `["self-hosted","Linux","X64"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
 
 本机或固定 runner 已具备 Redis + Docker/kind 时：
 

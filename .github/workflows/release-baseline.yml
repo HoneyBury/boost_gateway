@@ -11,9 +11,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","linux","x64","release-baseline"]'
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","linux","x64","release-baseline"]'
+        default: '["self-hosted","Linux","X64"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -76,10 +76,10 @@ permissions:
 
 jobs:
   release-baseline:
-    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '["self-hosted","linux","x64","release-baseline"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_BASELINE_RUNNER || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'self-hosted-linux-x64-release-baseline' }}
+      group: release-baseline-${{ inputs.runner || vars.RELEASE_BASELINE_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
 
     steps:

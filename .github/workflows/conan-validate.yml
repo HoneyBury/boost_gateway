@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","linux","x64","release-baseline"]'
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","linux","x64","release-baseline"]'
+        default: '["self-hosted","Linux","X64"]'
       conan_profile:
         description: "Repository Conan profile path relative to repo root"
         required: true
@@ -58,7 +58,7 @@ permissions:
 
 jobs:
   conan-validate:
-    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","linux","x64","release-baseline"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

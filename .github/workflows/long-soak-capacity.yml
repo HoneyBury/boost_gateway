@@ -12,7 +12,7 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","capacity"]'
         required: true
-        default: '["self-hosted","linux","x64","capacity"]'
+        default: '["self-hosted","Linux","X64"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -71,10 +71,10 @@ permissions:
 
 jobs:
   long-soak-capacity:
-    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","linux","x64","capacity"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64-capacity' }}
+      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
 
     steps:

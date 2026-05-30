@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","raft-ha"]'
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","raft-ha"]'
+        default: '["self-hosted","Linux","X64"]'
       build_preset:
         description: "CMake configure preset"
         required: true
@@ -67,7 +67,7 @@ permissions:
 
 jobs:
   specialized-e2e:
-    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","raft-ha"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
