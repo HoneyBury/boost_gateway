@@ -220,7 +220,7 @@ TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsUnknownMessageType) {
         .target_service = v2::service::ServiceId::kLogin,
         .kind = v2::service::MessageKind::kRequest,
         .payload = "{}",
-        .message_type = "token_validate",
+        .message_type = "unknown_message_type",
     };
 
     EXPECT_FALSE(v2::service::to_typed_envelope(backend).has_value());

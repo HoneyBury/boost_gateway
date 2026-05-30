@@ -17,6 +17,11 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
     v2::gateway::Runtime runtime(actor_system, adapter);
     const auto gateway_actor = runtime.create_gateway_actor();
     adapter.bind_gateway(gateway_actor);
+    auto drain_runtime = [&]() {
+        for (int i = 0; i < 5; ++i) {
+            actor_system.dispatch_all();
+        }
+    };
 
     (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 100,
@@ -64,14 +69,17 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 8,
-        .body = "score=8:move:1,1",
+        .body = "score=8:attack:member",
     });
+    drain_runtime();
     (void)adapter.handle_incoming(v2::gateway::ClientEnvelope{
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 9,
         .body = "finish:surrender",
     });
+
+    drain_runtime();
 
     const auto archive = runtime.archived_battle("battle_0001");
     ASSERT_TRUE(archive.has_value());
@@ -90,7 +98,7 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
     EXPECT_EQ(*archive->result.winner_user_id, "owner");
     ASSERT_EQ(archive->result.scores.size(), 2U);
     EXPECT_EQ(archive->result.scores[0].user_id, "owner");
-    EXPECT_EQ(archive->result.scores[0].score, 8);  // "move:1,1" = 8 bytes
+    EXPECT_EQ(archive->result.scores[0].score, 8);
     EXPECT_EQ(archive->result.scores[1].user_id, "member");
     EXPECT_EQ(archive->result.scores[1].score, 0);
     EXPECT_EQ(archive->result.total_frames, 1U);
@@ -116,7 +124,7 @@ TEST(V2BattleArchiveTest, RuntimeBuildsResultSummaryAndReplayPayloadOnBattleSett
     EXPECT_EQ(frames[0].frame_number, 1U);
     ASSERT_EQ(frames[0].inputs.size(), 1U);
     EXPECT_EQ(frames[0].inputs[0].user_id, "owner");
-    EXPECT_EQ(frames[0].inputs[0].payload, "move:1,1");
+    EXPECT_EQ(frames[0].inputs[0].payload, "attack:member");
     EXPECT_TRUE(ended);
 
     std::filesystem::remove_all(replay_dir);

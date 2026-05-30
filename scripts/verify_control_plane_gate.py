@@ -133,8 +133,9 @@ def preflight_control_plane(root: Path, include_envtest: bool, include_kind: boo
     checks: list[str] = []
     warnings: list[str] = []
     errors: list[str] = []
-    require_command("go")
-    checks.append("go")
+    if include_envtest or include_kind:
+        require_command("go")
+        checks.append("go")
 
     if include_envtest:
         if not os.environ.get("KUBEBUILDER_ASSETS"):
@@ -196,6 +197,7 @@ def main() -> int:
     operator_dir = args.operator_dir if args.operator_dir.is_absolute() else root / args.operator_dir
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "operator_dir": str(operator_dir),
         "include_go_tests": args.include_go_tests,
@@ -205,10 +207,12 @@ def main() -> int:
             "build": str(go_cache_paths(root)[0]),
             "module": str(go_cache_paths(root)[1]),
         },
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {"summary_path": str(summary_path)},
     }
 
     try:
@@ -277,6 +281,7 @@ def main() -> int:
         summary["failed_category"] = str(failed.get("category", "unknown"))
         summary["failed_step"] = str(failed.get("name", "unknown"))
     else:
+        summary["overall_pass"] = True
         summary["passed"] = True
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)

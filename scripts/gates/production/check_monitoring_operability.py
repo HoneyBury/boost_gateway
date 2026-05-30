@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Validate production monitoring artifacts against the current metrics surface."""
 
 from __future__ import annotations
@@ -270,7 +270,7 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
         checks,
         "docs:gateway-only-scrape",
         "scrapes gateway `/metrics` only" in env_readme
-        and "鍚庣鏈嶅姟娌℃湁 HTTP `/metrics`" in deployment,
+        and "后端服务没有 HTTP `/metrics`" in deployment,
         "docs preserve the gateway-only scrape boundary",
     )
     add_check(

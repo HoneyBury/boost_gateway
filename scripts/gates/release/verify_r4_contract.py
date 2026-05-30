@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Run short R4 contract gates without starting long-lived services."""
 
 from __future__ import annotations
@@ -165,22 +165,25 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[3]
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path
     if not summary_path.is_absolute():
         summary_path = root / summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir),
         "configuration": args.configuration,
         "skip_build": args.skip_build,
         "skip_arch_baseline": args.skip_arch_baseline,
         "baseline_profile": args.baseline_profile,
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {"summary_path": str(summary_path)},
     }
 
     try:

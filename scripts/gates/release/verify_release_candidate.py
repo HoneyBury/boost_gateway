@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """Run bounded release-candidate gates with structured summaries."""
 
 from __future__ import annotations
@@ -84,18 +84,21 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[3]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
         "baseline_profile": args.baseline_profile,
         "soak_profile": args.soak_profile,
+        "overall_pass": False,
         "passed": False,
         "failed_category": "",
         "failed_step": "",
         "steps": [],
+        "artifacts": {"summary_path": str(summary_path)},
     }
 
     steps: list[dict[str, object]] = []
@@ -299,6 +302,7 @@ def main() -> int:
         summary["failed_category"] = str(failed["category"])
         summary["failed_step"] = str(failed["name"])
     else:
+        summary["overall_pass"] = True
         summary["passed"] = True
 
     summary_path.parent.mkdir(parents=True, exist_ok=True)
