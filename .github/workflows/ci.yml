@@ -97,6 +97,7 @@ jobs:
 
       - name: Show sccache stats (Windows)
         if: always() && runner.os == 'Windows'
+        continue-on-error: true
         shell: powershell
         run: |
           if (Get-Command sccache -ErrorAction SilentlyContinue) {
@@ -115,6 +116,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
 
       - name: Restore sccache cache
         uses: actions/cache@v4
@@ -163,6 +167,7 @@ jobs:
 
       - name: Show sccache stats (Windows)
         if: always() && runner.os == 'Windows'
+        continue-on-error: true
         shell: powershell
         run: |
           if (Get-Command sccache -ErrorAction SilentlyContinue) {
