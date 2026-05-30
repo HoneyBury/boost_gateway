@@ -60,8 +60,8 @@ def load_remotes(remotes_file: Path, local_remotes_file: Path, env: dict[str, st
             continue
         seen.add(name)
         item = dict(remote)
-        if name == "conancenter" and not allow_public:
-            item["enabled"] = False
+        if name == "conancenter":
+            item["enabled"] = bool(allow_public)
         if disable_example_internal and str(item.get("url", "")).endswith("example.internal"):
             item["enabled"] = False
         normalized.append(item)
