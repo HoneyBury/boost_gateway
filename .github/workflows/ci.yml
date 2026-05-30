@@ -46,16 +46,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m pip install --user --upgrade pip
-          python3 -m pip install --user conan
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          "$HOME/.local/bin/conan" --version
+          python3 -m venv .venv-ci
+          . .venv-ci/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install conan
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+          conan --version
 
       - name: Conan install
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$HOME/.local/bin:$PATH"
+          . .venv-ci/bin/activate
           python3 scripts/bootstrap_conan.py
           conan install . \
             --profile:host conan/profiles/linux-gcc-x64 \
