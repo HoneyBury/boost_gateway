@@ -91,9 +91,14 @@ jobs:
       - name: Monitoring operability gate
         run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
-      - name: Show sccache stats
-        if: always()
+      - name: Show sccache stats (Windows)
+        if: always() && runner.os == 'Windows'
         shell: pwsh
+        run: sccache --show-stats || true
+
+      - name: Show sccache stats (non-Windows)
+        if: always() && runner.os != 'Windows'
+        shell: bash
         run: sccache --show-stats || true
 
   multi-process-build:
@@ -148,7 +153,12 @@ jobs:
           print(f'All {len(binaries)} binaries found in {build_dir}')
           "
 
-      - name: Show sccache stats
-        if: always()
+      - name: Show sccache stats (Windows)
+        if: always() && runner.os == 'Windows'
         shell: pwsh
+        run: sccache --show-stats || true
+
+      - name: Show sccache stats (non-Windows)
+        if: always() && runner.os != 'Windows'
+        shell: bash
         run: sccache --show-stats || true
