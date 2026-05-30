@@ -41,6 +41,32 @@ jobs:
           ninja --version
           python3 --version
 
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --user --upgrade pip
+          python3 -m pip install --user conan
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          "$HOME/.local/bin/conan" --version
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PATH"
+          python3 scripts/bootstrap_conan.py
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False" \
+            --output-folder=build/conan-ci \
+            --build=missing \
+            -s build_type=Debug
+
       - name: Detect sccache
         id: sccache
         shell: bash
@@ -61,7 +87,13 @@ jobs:
       - name: Configure
         shell: bash
         run: |
-          args=(cmake --preset default)
+          args=(
+            cmake -S . -B build/default -G Ninja
+            -DBOOST_USE_CONAN_DEPS=ON
+            -DENABLE_TESTING=ON
+            -DCMAKE_BUILD_TYPE=Debug
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Debug/generators/conan_toolchain.cmake
+          )
           if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
             args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
           fi
