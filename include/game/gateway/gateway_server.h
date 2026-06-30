@@ -8,6 +8,7 @@
 #include "net/http_manager.h"
 #include "net/message_dispatcher.h"
 #include "net/session.h"
+#include "v2/gateway/packet_bridge.h"
 #include "v2/io/io_engine.h"
 
 #include <boost/asio.hpp>
@@ -29,13 +30,9 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 using error_code = boost::system::error_code;
 
-class GatewayPacketBridge {
+class GatewayPacketBridge : public v2::gateway::PacketBridge {
 public:
-    virtual ~GatewayPacketBridge() = default;
-
-    virtual void on_packet(const std::shared_ptr<net::Session>& session,
-                           const net::Session::PacketMessage& message) = 0;
-    virtual void on_close(const std::shared_ptr<net::Session>& session) = 0;
+    ~GatewayPacketBridge() override = default;
 };
 
 class GatewayServer {

@@ -73,6 +73,9 @@ jobs:
       - name: Release candidate bounded gate
         run: python scripts/verify_release_candidate.py --build-dir build/release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
+      - name: Collect release baseline (smoke)
+        run: python scripts/collect_release_baseline.py --build-dir build/release --perf-preset smoke --skip-build --output runtime/perf/release-baseline/summary.json
+
       - name: Install
         shell: bash
         run: |
@@ -87,7 +90,7 @@ jobs:
         run: |
           set -euo pipefail
           archive_basename="boost-gateway-${GITHUB_REF_NAME}-linux-x64"
-          cmake -E tar cfv "${archive_basename}.tar.gz" --format=zip "dist/${archive_basename}"
+          cmake -E tar cfv "${archive_basename}.tar.gz" --format=gnutar "dist/${archive_basename}"
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4

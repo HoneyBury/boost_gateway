@@ -101,26 +101,26 @@ install(FILES
     docs/README.md
     docs/current-state.md
     docs/project-blueprint.md
-    docs/legacy-helper-inventory.md
     docs/mainline-execution-plan.md
-    docs/v2-control-plane-preplan.md
     docs/architecture-overview.md
-    docs/reliability-matrix.md
+    docs/release-governance.md
     docs/performance-baseline.md
-    docs/production-deployment-runbook.md
-    docs/production-operations-runbook.md
-    docs/production-configuration-runbook.md
-    docs/production-evidence-runner.md
     docs/fixed-runner-playbook.md
     docs/tls-mtls-runbook.md
-    docs/v3-release-checklist.md
+    docs/ONBOARDING.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 
-install(FILES
-    docs/production-candidate-evidence-manifest.json
-    docs/production-recovery-drill-record-template.json
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
+install(DIRECTORY docs/deployment/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/deployment"
+)
+
+install(DIRECTORY docs/production/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/production"
+)
+
+install(DIRECTORY docs/legacy/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/legacy"
 )
 
 install(DIRECTORY docs/archive/

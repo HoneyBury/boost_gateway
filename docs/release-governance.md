@@ -1,6 +1,10 @@
-# 可靠性矩阵
+# 发布治理
 
-更新时间：2026-05-24
+更新时间：2026-06-30
+
+本文档合并了原 `reliability-matrix.md` 和 `v3-release-checklist.md` 的内容，作为发布门禁和可靠性要求的唯一入口。
+
+## 可靠性场景矩阵
 
 本矩阵只记录已经具备本地证据的可靠性场景。每个场景必须绑定测试、脚本或文档证据；`scripts/check_reliability_matrix.py` 会校验必需场景和证据路径。
 
@@ -74,3 +78,55 @@
 - Raft 多节点 leader/follower E2E：已有内存 RPC 与 backend recovery 聚合入口，仍需跨进程/真实网络扰动。
 - Kubernetes Operator 真实集群回滚和探针 E2E：已有 control-plane gate、production evidence workflow 与 kind status/delete smoke，仍需固定 kind runner 沉淀更长 rollout/rollback 数据。
 - 长稳 2h/8h soak；10K 连接容量基线已有 `capacity` 采集入口，但尚未沉淀固定机器实测数据。
+
+---
+
+## 发布检查清单
+
+### 必须通过的门禁
+
+发布前必须运行以下门禁并确保全部通过：
+
+1. **RC 总门禁**: `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke`
+2. **R4 契约门禁**: `python3 scripts/verify_r4_contract.py --build-dir build/release --skip-build`
+3. **稳定性 soak**: `python3 scripts/verify_stability_soak.py --soak-profile smoke`
+
+### 发布流程
+
+1. 确保 `main` 分支所有 CI workflow 通过
+2. 创建 `v*` tag 触发自动发布
+3. `release.yml` workflow 自动执行：构建 → 测试 → 门禁 → 打包 → 发布
+4. 检查 GitHub Release 页面确认 artifact 上传成功
+
+### 版本号规则
+
+- 主版本号 (X.0.0): 不兼容的 API 变更
+- 次版本号 (x.Y.0): 新功能，向后兼容
+- 补丁版本号 (x.y.Z): bug 修复
+
+### 产物清单
+
+发布包应包含：
+
+| 类别 | 内容 |
+|---|---|
+| **二进制** | v2_gateway_demo, v2_login_backend, v2_room_backend, v2_battle_backend, v2_match_backend, v2_leaderboard_backend |
+| **SDK** | libboost_gateway_sdk.a, libboost_gateway_sdk.so, 头文件, CMake config |
+| **配置** | config/ 目录下所有 JSON 配置文件 |
+| **文档** | README.md, CHANGELOG.md, docs/ 目录下当前维护的文档 |
+| **部署** | deploy/systemd/*.service, deploy/README.md |
+
+### 性能基线要求
+
+- echo smoke: P99 ≤ 50ms
+- battle smoke: P99 ≤ 250ms
+- Release baseline 三轮通过（固定 runner）
+
+### 发布阻断条件
+
+以下任何一项为 FAIL 则阻断发布：
+
+- R4 契约门禁未通过
+- 稳定性 soak 未通过
+- 任何 public entrypoint 脚本报错
+- 性能 smoke gate 未通过

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/config.h"
-#include "game/gateway/gateway_server.h"
+#include "v2/gateway/packet_bridge.h"
 #include "v2/gateway/battle_wire_parser.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
@@ -16,7 +16,7 @@
 
 namespace v2::gateway {
 
-class GatewayServerShadowBridge final : public game::gateway::GatewayPacketBridge,
+class GatewayServerShadowBridge final : public PacketBridge,
                                         public DownstreamSessionWriteSink {
 public:
     using SessionWriteTask = std::function<void()>;
