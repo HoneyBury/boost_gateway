@@ -27,9 +27,6 @@ target_link_libraries(project_unit_tests
         hiredis
 )
 apply_project_warnings(project_unit_tests)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(project_unit_tests)
-endif()
 
 include(GoogleTest)
 gtest_discover_tests(project_unit_tests

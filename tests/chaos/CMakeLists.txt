@@ -27,9 +27,6 @@ if(BOOST_BUILD_CHAOS)
             GTest::gtest_main
     )
     apply_project_warnings(chaos_gateway_tests)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(chaos_gateway_tests)
-    endif()
 
     include(GoogleTest)
     gtest_discover_tests(chaos_gateway_tests
@@ -54,9 +51,6 @@ if(BOOST_BUILD_CHAOS)
             GTest::gtest_main
     )
     apply_project_warnings(chaos_stability_tests)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(chaos_stability_tests)
-    endif()
 
     # 稳定性测试需要更长的超时时间
     gtest_discover_tests(chaos_stability_tests

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 3.4.0
+    VERSION 3.5.0
     DESCRIPTION "Enterprise-grade C++20 realtime service framework"
     LANGUAGES CXX
 )
@@ -29,30 +29,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Enable C++ exception handling on MSVC so that std::abort() is not called
-# by third-party libraries (notably nlohmann/json) when exceptions are thrown.
-if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
-endif()
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(cmake/Dependencies.cmake)
 include(cmake/CompilerWarnings.cmake)
-
-function(boost_gateway_stage_runtime_dlls target_name)
-    if(NOT WIN32)
-        return()
-    endif()
-    if(NOT TARGET "${target_name}")
-        return()
-    endif()
-    add_custom_command(TARGET "${target_name}" POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy -t "$<TARGET_FILE_DIR:${target_name}>"
-                $<TARGET_RUNTIME_DLLS:${target_name}>
-        COMMAND_EXPAND_LISTS
-    )
-endfunction()
 
 add_subdirectory(src)
 add_subdirectory(sdk)

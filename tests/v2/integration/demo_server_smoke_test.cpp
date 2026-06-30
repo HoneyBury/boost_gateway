@@ -17,10 +17,8 @@
 #include <string>
 #include <stdexcept>
 #include <thread>
-#ifndef _WIN32
 #include <sys/socket.h>
 #include <sys/time.h>
-#endif
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -62,10 +60,8 @@ public:
 
     void connect(std::uint16_t port) {
         socket_.connect(tcp::endpoint(asio::ip::make_address("127.0.0.1"), port));
-#ifndef _WIN32
         timeval timeout{.tv_sec = 5, .tv_usec = 0};
         setsockopt(socket_.native_handle(), SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
-#endif
     }
 
     void close() {
@@ -87,7 +83,6 @@ public:
     }
 
     void wait_readable() {
-#ifndef _WIN32
         fd_set read_fds;
         FD_ZERO(&read_fds);
         FD_SET(socket_.native_handle(), &read_fds);
@@ -96,7 +91,6 @@ public:
         if (rc <= 0) {
             throw std::runtime_error("timed out waiting for packet");
         }
-#endif
     }
 
     net::packet::DecodedPacket read() {

@@ -6,22 +6,16 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <sys/types.h>
 #include <thread>
 #include <unordered_map>
 #include <vector>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
-// ProcessSupervisor — manages child process lifecycle on Windows.
+// ProcessSupervisor — manages child process lifecycle on POSIX systems.
 //
-// Starts child processes via CreateProcess (or fork+exec on POSIX),
-// monitors them, and automatically restarts crashed processes up to
-// a configurable limit. Supports health checks via TCP port ping,
-// graceful shutdown, and crash event callbacks.
-//
-// On non-Windows platforms, the class compiles as a no-op stub.
+// Starts child processes via fork+exec, monitors them, and automatically
+// restarts crashed processes up to a configurable limit. Supports health
+// checks via TCP port ping, graceful shutdown, and crash event callbacks.
 
 namespace app {
 
@@ -52,7 +46,7 @@ public:
     // Start all registered processes. Returns true if all started successfully.
     bool start_all();
 
-    // Stop all managed processes gracefully (SIGTERM/Ctrl+C equivalent),
+    // Stop all managed processes gracefully (SIGTERM),
     // then forcefully terminate after a timeout.
     void stop_all();
 
@@ -75,13 +69,7 @@ private:
     // Internal per-process state.
     struct ProcessState {
         ProcessConfig config;
-#ifdef _WIN32
-        void* process_handle = nullptr;   // HANDLE (kept opaque to avoid windows.h leak)
-        void* thread_handle   = nullptr;
-        DWORD pid = 0;
-#else
         pid_t pid = -1;
-#endif
         std::atomic<bool> running{false};
         std::atomic<bool> stopping{false};
         int restart_attempts = 0;
@@ -94,13 +82,8 @@ private:
     // Monitor loop for a single process (runs in its own thread).
     void monitor_routine(std::shared_ptr<ProcessState> state);
 
-#ifdef _WIN32
-    // Start a process on Windows via CreateProcess.
-    bool spawn_windows(const ProcessConfig& config, ProcessState& state);
-#else
     // Start a process on POSIX via fork+exec.
     bool spawn_posix(const ProcessConfig& config, ProcessState& state);
-#endif
 
     // Request a process to stop gracefully, then force kill after timeout.
     void terminate_process(const ProcessConfig& config, ProcessState& state);

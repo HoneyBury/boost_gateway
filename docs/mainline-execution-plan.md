@@ -1,210 +1,106 @@
-# Mainline Execution Plan
+# v3.5.0 项目清理执行计划
 
-更新时间：2026-05-30
+更新时间：2026-06-30
 
-本文档是当前主线的执行计划，不是历史蓝图，也不是纯长期愿景。
-它用于把“已经收口的事实源”推进到“固定 runner 可复现、默认依赖路径稳定、helper 兼容层可退场”的下一阶段。
+本文档是 v3.5.0 版本的执行计划，替代了之前的 `mainline-execution-plan.md`（2026-05-30 版本）。
 
-如果本文件与 `current-state.md` 冲突：
+## 背景
 
-- 已实现事实，以 `current-state.md` 和脚本结果为准
-- 接下来 1-3 个月的执行顺序，以本文件为准
+项目从 demo 演进为企业级框架后，积累了大量 Windows 兼容代码、CI 适配逻辑、脚本和文档。本次清理的目标是：
 
-## 当前起点
+1. **暂停 Windows 支持** — 聚焦 Linux/macOS（类 Unix API 近似）
+2. **收敛杂乱面** — 合并重叠文档、整理脚本结构、精简 CI workflow
+3. **偿还技术债** — 修复 v2→v1 耦合、测试链接问题、清理遗留引用
+4. **版本号更新到 3.5.0**
 
-当前已经成立的事实：
+## 阶段状态
 
-- 默认生产主链仍是 `SDK + TCP gateway + BackendEnvelope + 五后端 + Redis`
-- `AdminService` 已明确留在 `legacy-v1` / demo-only 面
-- `gateway_metrics_exporter` 已迁入 `v2::diagnostics`
-- Windows 主线 Conan 路径已打通：
-  - `with_grpc=False`
-  - `with_sqlite=False`
-  - lockfile + `conan install` 已验证通过
-- Linux `nosqlite` lockfile 已落仓：
-  - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
-- 固定 runner / production evidence / release-capacity 默认事实源已切到 Linux/Ubuntu labels
+| 阶段 | 主题 | 状态 |
+|---|---|---|
+| Phase 1 | 删除 Windows 支持 | ✅ 已完成 |
+| Phase 2 | 整理脚本 | ⬜ 待执行 |
+| Phase 3 | 整合文档 | ⬜ 待执行 |
+| Phase 4 | 修复代码质量 | ⬜ 待执行 |
+| Phase 5 | 精简 CI/CD | ⬜ 待执行 |
 
-## 本阶段主题
+## Phase 1: 删除 Windows 支持 ✅
 
-把当前主线从“仓库内已收口”推进到“固定 runner 上可复现、可持续发布”。
+已完成：
 
-一句话目标：
+- 删除 `windows_service.h/cpp`（~500 行 Windows SCM 代码）
+- 简化 8 个双平台文件为 POSIX-only（process_supervisor、crash_handler、perf_counter、highres_timer、hot_path、audit_log、redis_client）
+- 删除 43 个 Windows 脚本（.bat 和 .ps1）
+- 删除 Windows Dockerfile（`docker/gateway-server.Dockerfile`）
+- 删除 `windows-ci.yml` workflow
+- 清理 CMake：移除 MSVC 标志、Windows preset、DLL staging 函数
+- 更新 11 个 CI workflow 为 Linux-only
+- 更新 `runner-matrix.json` 到 schema v2（全部 Linux）
+- 版本号更新到 3.5.0
+- 构建验证通过（project_app 和 project_v2 编译成功）
 
-让 `nosqlite` Conan 路径、Ubuntu fixed-runner 证据链、helper 退场准备和 gRPC 证据边界同时进入可执行状态。
+## Phase 2: 整理脚本
 
-## 阶段 1：Ubuntu Fixed-Runner 落地
+目标：减少脚本杂乱，为未分配的 gate 脚本指定 canonical 路径。
 
-目标：
+待执行任务：
 
-- 让 Ubuntu fixed-runner 成为 release/capacity/long-soak 的主事实源
+1. 为 15 个未分配 canonical path 的 gate 脚本创建子目录并移动：
+   - `scripts/gates/infrastructure/` — fixed runner 相关
+   - `scripts/gates/k8s/` — K8s operator 相关
+   - `scripts/gates/e2e/` — E2E 测试相关
+2. 合并 2 对重叠 gate 脚本
+3. 更新 `script-inventory.json`
 
-任务：
+## Phase 3: 整合文档
 
-1. 生成 Linux `nosqlite` lockfile  
-   命令：
-   ```bash
-   python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
-   ```
+目标：合并重叠文档，移动专业文档到子目录，创建开发者入门指南。
 
-2. 验证 lockfile install  
-   命令：
-   ```bash
-   conan install . \
-     --profile:host conan/profiles/linux-gcc-x64 \
-     --profile:build conan/profiles/linux-gcc-x64 \
-     --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-     -o "&:with_grpc=False" \
-     -o "&:with_sqlite=False" \
-     --output-folder=build/conan-release \
-     --build=missing \
-     -s build_type=Release
-   ```
+待执行任务：
 
-3. 刷新 fixed-runner 证据  
-   workflow：
-   - `release-baseline.yml`
-   - `long-soak-capacity.yml`
-   - `production-evidence.yml`
+1. 合并 `reliability-matrix.md` + `v3-release-checklist.md` → `release-governance.md`
+2. 合并 `production-evidence-runner.md` → `fixed-runner-playbook.md`
+3. 移动 9 个专业文档到 `docs/deployment/`、`docs/production/`、`docs/legacy/`
+4. 新建 `docs/ONBOARDING.md`（开发者入门指南）
+5. 精简 `current-state.md`（删除 Windows 引用）
+6. 更新 `project-blueprint.md`
 
-4. 归档并检查：
-   - `runtime/validation/release-baseline-summary.json`
-   - `runtime/validation/long-soak-capacity-summary.json`
-   - `runtime/validation/fixed-runner-release-capacity-summary.json`
-   - `runtime/validation/production-evidence-summary.json`
+## Phase 4: 修复代码质量
 
-退出条件：
+目标：修复 v2→v1 耦合、测试链接问题、清理遗留引用。
 
-- Linux `nosqlite` lockfile 真实存在
-- Linux fixed-runner `conan install` 通过
-- 至少 1 次 release baseline 与 1 次 long-soak/capacity summary 归档成功
+待执行任务：
 
-## 阶段 2：Conan 默认入口收口
+1. 提取 `v2::gateway::PacketBridge` 接口，解除 `GatewayServerShadowBridge` 对 v1 `game::gateway::GatewayPacketBridge` 的继承耦合
+2. 修复 `error_paths_test` 的 SDK 链接问题
+3. 清理 v2 代码中的死引用
 
-目标：
+## Phase 5: 精简 CI/CD
 
-- 让 Conan 从“opt-in PoC”推进到“主线路径默认推荐值”
+目标：合并重叠 workflow，减少 workflow 数量。
 
-任务：
+待执行任务：
 
-1. 统一文档和 workflow 默认值到：
-   - `with_grpc=False`
-   - `with_sqlite=False`
+1. 将 `release-baseline.yml` 的 baseline 采集步骤合入 `release.yml`
+2. 删除 `release-baseline.yml`
+3. 新建 `.github/README.md` 记录 CI/CD 架构
 
-2. 在固定 runner workflow 中显式消费 lockfile：
-   - `conan-validate.yml`
-   - `release-baseline.yml`
-   - `long-soak-capacity.yml`
+## 验证命令
 
-3. 把 dependency cache key 与下列输入绑定：
-   - `conanfile.py`
-   - `conan/profiles/**`
-   - `conan/remotes*.json`
-   - `conan/locks/*.lock`
+```bash
+# 检查 Windows 引用
+grep -rn "_WIN32\|WIN32\|MSVC" src/ include/ tests/ --include="*.cpp" --include="*.h"
+grep -rn "WIN32\|MSVC" --include="CMakeLists.txt" --include="*.cmake" .
+find . -name "*.ps1" -o -name "*.bat"  # 排除 third_party 和 build
+grep -rn "Windows" .github/workflows/
 
-4. 保留 fallback，但明确边界：
-   - PR/开发应优先 Conan
-   - fallback 仅用于依赖缺失或固定 runner 外环境
-
-退出条件：
-
-- 文档、workflow、脚本全部以 `nosqlite` lockfile 为主线路径
-- 至少一个固定 runner workflow 使用 lockfile 成功执行
-
-## 阶段 3：Helper / Raw JSON 退场准备
-
-目标：
-
-- 把 helper/raw JSON 兼容层从“历史存在”推进到“有明确退场前提”
-
-任务：
-
-1. 保持五个服务域的 generated schema / typed contract 覆盖矩阵持续更新
-2. 禁止新增任何 raw JSON-only 主业务 handler
-3. 把剩余 raw JSON 面收缩到 room governance / control-plane 风格消息与内部 Raft raw JSON RPC
-4. 对默认 full-flow 链路继续增加 schema-first 检查点
-5. 把 legacy raw JSON 留给兼容测试，不再承载新功能
-
-退出条件：
-
-- 每个服务域都有 typed/generated contract 状态说明
-- raw JSON 主业务新增面为 0
-- 剩余 raw JSON 面仅限 room governance / control-plane 风格消息与内部 Raft RPC
-
-## 阶段 4：gRPC 继续只做证据
-
-目标：
-
-- 保持 gRPC 作为实验层，不让它干扰默认主线
-
-任务：
-
-1. 继续补 full-flow contract coverage
-2. 基于已真实化的 `grpc_vs_tcp_perf_test.cpp` 扩展到更多非登录路径
-3. 把 gRPC gateway 从 callback stub 推进到 `GatewayServiceBridge` 驱动的真实 backend 路由
-4. 在 Ubuntu fixed-runner 上验证 `BOOST_BUILD_GRPC=ON` 的构建稳定性
-5. 不在未完成 streaming/SDK/TLS/RBAC/observability 证据前切默认链路
-
-退出条件：
-
-- `check_v3_grpc_poc_decision.py` 的证据不再依赖占位 benchmark
-- 仍明确 `defer_default_transport`
-
-## 阶段 5：发布面继续收口
-
-目标：
-
-- 让顶层 docs / install / release 只表达当前主线
-
-任务：
-
-1. 继续压缩 legacy 示例在主文档中的可见度
-2. 保证顶层 docs 与 install 清单完全一致
-3. 继续把非主线说明放到：
-   - `docs/legacy-helper-inventory.md`
-   - `docs/v2-control-plane-preplan.md`
-   - `docs/archive/`
-
-退出条件：
-
-- `check_current_docs_install.py` 持续通过
-- 顶层 docs 不把 legacy/demo/实验面误写成当前默认能力
-
-## 2026-05-30 本轮收口
-
-本轮把 1-5 执行项推进到以下状态：
-
-1. Conan/SDK 依赖兼容：`project_boost_asio` 已统一承接 SDK 与 SDK tests 的 Boost.Asio 头文件路径；Conan Boost 目标优先使用 `Boost::headers`，避免误链 `boost::boost` 聚合库。
-2. Ubuntu fixed-runner 入口：`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 均默认指向 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`。
-3. Workflow lockfile 消费：`long-soak-capacity.yml` 已从 lockfile hint 升级为真实 `conan install` + Conan CMake configure/build 预检；治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`。
-4. helper/raw JSON 退场准备：`check_legacy_helper_inventory.py` 现在要求文档明确剩余 raw JSON 仅限 room governance / control-plane 风格消息与内部 Raft raw JSON RPC，并继续禁止新增 raw JSON-only 业务 handler。
-5. gRPC 证据边界：`check_v3_grpc_poc_decision.py` 继续要求非登录路径证据作为下一步，同时保持 `defer_default_transport`。
-
-仍不能在本地伪造的退出条件：Ubuntu fixed-runner 上真实执行 lockfile-based `conan install`、release baseline、long-soak/capacity 和 production evidence，并归档对应 summary。
-
-本地治理允许用 `python3 scripts/check_validation_summary_contract.py --allow-missing` 验证 summary 契约形态；fixed-runner / 投产准入必须运行不带 `--allow-missing` 的严格检查，并要求真实 summary 存在。workflow 与 summary 归档计划由 `python3 scripts/check_fixed_runner_evidence_plan.py` 阻断漂移，它只验证仓库内 wiring，不替代 Ubuntu fixed-runner 真实执行。
+# 构建验证
+cmake --preset default
+cmake --build build/default --parallel
+```
 
 ## 当前明确不做
 
-- 不把 `AdminService` 迁入主线
-- 不把 `sqlite3` 作为 Conan 默认主线路径的一部分
+- 不恢复 Windows 支持（大后期再考虑）
+- 不扩展功能面
 - 不把 gRPC 接入默认生产链路
 - 不扩 demo 业务面
-
-## 执行顺序
-
-1. Ubuntu fixed-runner 生成并消费 Linux `nosqlite` lockfile
-2. 刷新 release/capacity/long-soak 固定 runner 证据
-3. 将 Conan lockfile 绑定到更多固定 runner workflow
-4. 补 helper/generated contract 覆盖矩阵
-5. 继续保持 gRPC 为证据层，不切主链
-
-## 通过判据
-
-当以下条件同时满足时，本阶段可以认为完成：
-
-1. Windows 与 Ubuntu `nosqlite` Conan lockfile 均存在
-2. Windows 与 Ubuntu 的 lockfile-based `conan install` 均通过
-3. Ubuntu fixed-runner 上有 release baseline 与 long-soak/capacity 真实 summary
-4. helper/raw JSON 剩余面收缩到 room governance / control-plane 与内部 Raft RPC
-5. 顶层 docs/install/release 面继续只表达当前默认主线

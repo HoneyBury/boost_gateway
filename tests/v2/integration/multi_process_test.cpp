@@ -11,13 +11,6 @@
 #include <stdexcept>
 #include <thread>
 
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#include <windows.h>
-#include <process.h>
-#else
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <signal.h>
@@ -26,7 +19,6 @@
 #include <stdlib.h>
 
 extern "C" char **environ;
-#endif
 
 namespace v2_test {
 
@@ -36,70 +28,14 @@ using tcp = asio::ip::tcp;
 // ─── ProcessGuard internals (native OS processes, no boost::process) ──
 
 struct ProcessGuard::ChildHandle {
-#ifdef _WIN32
-    PROCESS_INFORMATION pi;
-    bool terminated = false;
-
-    ChildHandle() { ZeroMemory(&pi, sizeof(pi)); }
-    ~ChildHandle() {
-        if (pi.hProcess != nullptr) CloseHandle(pi.hProcess);
-        if (pi.hThread != nullptr) CloseHandle(pi.hThread);
-    }
-#else
     pid_t pid = -1;
     bool terminated = false;
-#endif
 };
 
 ProcessGuard::ProcessGuard(const std::string& binary,
                            const std::vector<std::string>& args) {
     child_ = std::make_unique<ChildHandle>();
 
-#ifdef _WIN32
-    // Build command line: binary + space-separated args
-    std::string cmd_line = binary;
-    for (const auto& arg : args) {
-        cmd_line += " " + arg;
-    }
-
-    STARTUPINFOA si;
-    ZeroMemory(&si, sizeof(si));
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    PROCESS_INFORMATION pi;
-    ZeroMemory(&pi, sizeof(pi));
-
-    BOOL ok = CreateProcessA(
-        nullptr,                   // application name (use command line)
-        cmd_line.data(),           // command line
-        nullptr,                   // process security
-        nullptr,                   // thread security
-        FALSE,                     // inherit handles
-        CREATE_NO_WINDOW,          // creation flags
-        nullptr,                   // environment
-        nullptr,                   // current directory
-        &si,                       // startup info
-        &pi                        // process info
-    );
-
-    if (!ok) {
-        DWORD err = GetLastError();
-        LPSTR msg_buf = nullptr;
-        FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-                       nullptr, err, 0, (LPSTR)&msg_buf, 0, nullptr);
-        startup_error_ = msg_buf ? msg_buf : "CreateProcess failed";
-        if (msg_buf) LocalFree(msg_buf);
-        return;
-    }
-
-    child_->pi = pi;
-    // Close the thread handle immediately — we only need the process handle.
-    CloseHandle(pi.hThread);
-    child_->pi.hThread = nullptr;
-    started_ = true;
-#else
     // Use fork+exec instead of posix_spawnp because on macOS 14+,
     // posix_spawnp returns EBADF when closing kernel-managed fds.
     std::vector<const char*> argv;
@@ -126,7 +62,6 @@ ProcessGuard::ProcessGuard(const std::string& binary,
 
     child_->pid = pid;
     started_ = true;
-#endif
 }
 
 ProcessGuard::~ProcessGuard() noexcept {
@@ -158,26 +93,6 @@ void ProcessGuard::terminate() {
     if (!child_ || child_->terminated) return;
     child_->terminated = true;
 
-#ifdef _WIN32
-    if (child_->pi.hProcess == nullptr) return;
-
-    // 1. Graceful: send Ctrl+C event (if possible on console processes)
-    //    For GUI/windowless processes, go straight to TerminateProcess.
-    //    On POSIX we'd send SIGTERM; Windows equivalent is limited.
-    //    Send WM_CLOSE-like behavior via GenerateConsoleCtrlEvent is unreliable
-    //    for non-console processes, so we go to TerminateProcess directly
-    //    with the 5-second wait.
-
-    // 2. Wait up to 5 seconds
-    DWORD wait_result = WaitForSingleObject(child_->pi.hProcess, 5000);
-    if (wait_result == WAIT_OBJECT_0) {
-        return;  // Process exited on its own
-    }
-
-    // 3. Force kill
-    TerminateProcess(child_->pi.hProcess, 1);
-    WaitForSingleObject(child_->pi.hProcess, 5000);
-#else
     if (child_->pid <= 0) return;
 
     // 1. Graceful signal
@@ -195,35 +110,20 @@ void ProcessGuard::terminate() {
     // 3. Force kill
     ::kill(child_->pid, SIGKILL);
     waitpid(child_->pid, nullptr, 0);
-#endif
 }
 
 bool ProcessGuard::is_running() const {
     if (!child_ || child_->terminated || !started_) return false;
-#ifdef _WIN32
-    if (child_->pi.hProcess == nullptr) return false;
-    DWORD exit_code = 0;
-    if (!GetExitCodeProcess(child_->pi.hProcess, &exit_code)) return false;
-    return exit_code == STILL_ACTIVE;
-#else
     if (child_->pid <= 0) return false;
     int status = 0;
     pid_t result = waitpid(child_->pid, &status, WNOHANG);
     if (result == 0) return true;    // still running
     if (result == child_->pid) return false; // exited
     return false;  // error
-#endif
 }
 
 std::optional<int> ProcessGuard::exit_code() const {
     if (!child_ || !started_) return std::nullopt;
-#ifdef _WIN32
-    if (child_->pi.hProcess == nullptr) return std::nullopt;
-    DWORD code = 0;
-    if (!GetExitCodeProcess(child_->pi.hProcess, &code)) return std::nullopt;
-    if (code == STILL_ACTIVE) return std::nullopt;
-    return static_cast<int>(code);
-#else
     if (child_->pid <= 0) return std::nullopt;
     int status = 0;
     pid_t result = waitpid(child_->pid, &status, WNOHANG);
@@ -231,7 +131,6 @@ std::optional<int> ProcessGuard::exit_code() const {
     if (WIFEXITED(status)) return WEXITSTATUS(status);
     if (WIFSIGNALED(status)) return -WTERMSIG(status);
     return std::nullopt;
-#endif
 }
 
 // ─── TestClient ────────────────────────────────────────────────────

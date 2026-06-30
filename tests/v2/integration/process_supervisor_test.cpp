@@ -25,23 +25,16 @@ namespace {
 // Returns (executable, {args}) for a process that runs for a very long
 // time and only exits when killed.
 std::pair<std::string, std::vector<std::string>> long_running_process() {
-#ifdef _WIN32
-    // timeout /t 9999 /nobreak  runs for 9999 seconds
-    return {"cmd.exe", {"/c", "timeout", "/t", "9999", "/nobreak"}};
-#else
     // sleep 9999
     return {"/bin/sh", {"-c", "sleep 9999"}};
-#endif
+
 }
 
 // Returns (executable, {args}) for a process that exits immediately
 // with a non-zero exit code.
 std::pair<std::string, std::vector<std::string>> failing_process() {
-#ifdef _WIN32
-    return {"cmd.exe", {"/c", "exit", "/b", "42"}};
-#else
     return {"/bin/sh", {"-c", "exit 42"}};
-#endif
+
 }
 
 // Wait for process state to settle (e.g., for crash detection).

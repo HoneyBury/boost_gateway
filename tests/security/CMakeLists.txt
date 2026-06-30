@@ -23,9 +23,6 @@ if(BOOST_BUILD_SECURITY_TESTS)
             GTest::gtest_main
     )
     apply_project_warnings(security_tests)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(security_tests)
-    endif()
 
     include(GoogleTest)
     gtest_discover_tests(security_tests

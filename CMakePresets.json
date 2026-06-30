@@ -8,51 +8,11 @@
   "configurePresets": [
     {
       "name": "default",
-      "displayName": "Default",
+      "displayName": "Default (Debug)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/default",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
-        "ENABLE_TESTING": "ON"
-      }
-    },
-    {
-      "name": "windows-msvc-debug",
-      "displayName": "Windows MSVC Debug",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/windows-msvc-debug",
-      "cacheVariables": {
-        "ENABLE_TESTING": "ON"
-      }
-    },
-    {
-      "name": "windows-msvc-release",
-      "displayName": "Windows MSVC Release",
-      "generator": "Visual Studio 17 2022",
-      "architecture": "x64",
-      "binaryDir": "${sourceDir}/build/windows-msvc-release",
-      "cacheVariables": {
-        "ENABLE_TESTING": "ON"
-      }
-    },
-    {
-      "name": "windows-ninja-debug",
-      "displayName": "Windows Ninja Debug",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/windows-ninja-debug",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "ENABLE_TESTING": "ON"
-      }
-    },
-    {
-      "name": "windows-ninja-release",
-      "displayName": "Windows Ninja Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/windows-ninja-release",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
         "ENABLE_TESTING": "ON"
       }
     },
@@ -75,24 +35,6 @@
     {
       "name": "release",
       "configurePreset": "release"
-    },
-    {
-      "name": "windows-msvc-debug",
-      "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug"
-    },
-    {
-      "name": "windows-msvc-release",
-      "configurePreset": "windows-msvc-release",
-      "configuration": "Release"
-    },
-    {
-      "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug"
-    },
-    {
-      "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release"
     }
   ],
   "testPresets": [
@@ -104,38 +46,8 @@
       }
     },
     {
-      "name": "windows-msvc-debug",
-      "configurePreset": "windows-msvc-debug",
-      "configuration": "Debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
       "name": "release",
       "configurePreset": "release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-msvc-release",
-      "configurePreset": "windows-msvc-release",
-      "configuration": "Release",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-ninja-debug",
-      "configurePreset": "windows-ninja-debug",
-      "output": {
-        "outputOnFailure": true
-      }
-    },
-    {
-      "name": "windows-ninja-release",
-      "configurePreset": "windows-ninja-release",
       "output": {
         "outputOnFailure": true
       }

@@ -4,6 +4,5 @@ target_sources(project_app
         config.cpp
         crash_handler.cpp
         logging.cpp
-        windows_service.cpp
         process_supervisor.cpp
 )

@@ -14,22 +14,15 @@
 // ============================================================================
 // Hot / Cold path annotations
 //
-// BOOST_HOT_PATH  — annotate a function that resides on the hot execution path
-//                    (called frequently in the render/tick loop).
-//                    MSVC: [[msvc::forceinline_calls]] (forces inlining of calls
-//                    made from within the function).
+// BOOST_HOT_PATH  — annotate a function on the hot execution path.
 //                    GCC/Clang: __attribute__((hot)).
 //
 // BOOST_COLD_PATH — annotate a rarely-executed path (error handling,
 //                    configuration, teardown).
-//                    MSVC: [[msvc::noinline]] (discourages inlining).
 //                    GCC/Clang: __attribute__((cold)).
 // ============================================================================
 
-#if defined(_MSC_VER)
-#define BOOST_HOT_PATH  [[msvc::forceinline_calls]]
-#define BOOST_COLD_PATH [[msvc::noinline]]
-#elif defined(__GNUC__) || defined(__clang__)
+#if defined(__GNUC__) || defined(__clang__)
 #define BOOST_HOT_PATH  __attribute__((hot))
 #define BOOST_COLD_PATH __attribute__((cold))
 #else
@@ -40,8 +33,7 @@
 namespace v2::perf {
 
 // ============================================================================
-// PerfCounter — thread-local microsecond-resolution performance counter with
-//               TSC (__rdtsc) fallback on MSVC.
+// PerfCounter — thread-local microsecond-resolution performance counter.
 //
 // Usage:
 //   static thread_local PerfCounter counter("aoi_broadcast");

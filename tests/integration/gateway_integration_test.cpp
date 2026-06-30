@@ -39,20 +39,13 @@
 #include <vector>
 
 #ifdef PROJECT_ECHO_SERVER_PATH
-#  ifdef _WIN32
-#    ifndef WIN32_LEAN_AND_MEAN
-#      define WIN32_LEAN_AND_MEAN
-#    endif
-#    include <windows.h>
-#  else
-#    include <sys/types.h>
-#    include <sys/wait.h>
-#    include <signal.h>
-#    include <unistd.h>
-#    include <spawn.h>
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#  include <signal.h>
+#  include <unistd.h>
+#  include <spawn.h>
 
 extern "C" char **environ;
-#  endif
 #endif
 
 #include <gtest/gtest.h>
@@ -440,38 +433,6 @@ public:
     NativeChildProcess& operator=(const NativeChildProcess&) = delete;
 
     bool start(const std::string& exe_path, const std::string& arg) {
-#ifdef _WIN32
-        std::string cmd_line = exe_path + " \"" + arg + "\"";
-
-        STARTUPINFOA si;
-        ZeroMemory(&si, sizeof(si));
-        si.cb = sizeof(si);
-        si.dwFlags = STARTF_USESHOWWINDOW;
-        si.wShowWindow = SW_HIDE;
-
-        PROCESS_INFORMATION pi;
-        ZeroMemory(&pi, sizeof(pi));
-
-        BOOL ok = CreateProcessA(
-            nullptr, const_cast<char*>(cmd_line.c_str()),
-            nullptr, nullptr, FALSE,
-            CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
-
-        if (!ok) {
-            DWORD err = GetLastError();
-            LPSTR msg_buf = nullptr;
-            FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-                           nullptr, err, 0, reinterpret_cast<LPSTR>(&msg_buf), 0, nullptr);
-            startup_error_ = msg_buf ? msg_buf : "CreateProcess failed";
-            if (msg_buf) LocalFree(msg_buf);
-            return false;
-        }
-
-        process_handle_ = pi.hProcess;
-        CloseHandle(pi.hThread);
-        started_ = true;
-        return true;
-#else
         posix_spawnattr_t attr;
         posix_spawnattr_init(&attr);
         posix_spawnattr_setpgroup(&attr, 0);
@@ -498,35 +459,20 @@ public:
         pid_ = pid;
         started_ = true;
         return true;
-#endif
+
     }
 
     bool running() const {
         if (!started_) return false;
-#ifdef _WIN32
-        if (process_handle_ == nullptr) return false;
-        DWORD exit_code = 0;
-        if (!GetExitCodeProcess(process_handle_, &exit_code)) return false;
-        return exit_code == STILL_ACTIVE;
-#else
         if (pid_ <= 0) return false;
         int status = 0;
         return waitpid(pid_, &status, WNOHANG) == 0;
-#endif
+
     }
 
     void stop() {
         if (!started_) return;
         started_ = false;
-#ifdef _WIN32
-        if (process_handle_ == nullptr) return;
-        if (running()) {
-            TerminateProcess(process_handle_, 1);
-            WaitForSingleObject(process_handle_, 5000);
-        }
-        CloseHandle(process_handle_);
-        process_handle_ = nullptr;
-#else
         if (pid_ <= 0) return;
         if (running()) {
             kill(pid_, SIGTERM);
@@ -539,17 +485,14 @@ public:
             }
         }
         pid_ = -1;
-#endif
+
     }
 
     [[nodiscard]] const std::string& startup_error() const noexcept { return startup_error_; }
 
 private:
-#ifdef _WIN32
-    HANDLE process_handle_ = nullptr;
-#else
     pid_t pid_ = -1;
-#endif
+
     bool started_ = false;
     std::string startup_error_;
 };

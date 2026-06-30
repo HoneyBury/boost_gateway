@@ -1,5 +1,2 @@
 add_executable(v2_room_backend main.cpp)
 target_link_libraries(v2_room_backend PRIVATE project_v2)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(v2_room_backend)
-endif()

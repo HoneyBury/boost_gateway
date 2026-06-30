@@ -1,5 +1,37 @@
 # 更新日志
 
+## v3.5.0 — 项目清理与平台收束（2026-06-30）
+
+> **范围**：暂停 Windows 支持，聚焦 Linux/macOS 平台。删除所有 Windows 特有代码和工具，清理 CI/CD 流水线，更新项目版本到 3.5.0。
+
+### 删除
+
+- **Windows 源码**：`windows_service.h/cpp`（~500 行 SCM 集成）、`windows_platform_test.cpp`
+- **Windows 脚本**：43 个 `.bat` 和 `.ps1` 文件
+- **Windows CI**：`windows-ci.yml` workflow
+- **Windows Docker**：`docker/gateway-server.Dockerfile`（nanoserver 镜像）
+
+### 简化
+
+- **双平台文件 → POSIX-only**：`process_supervisor`（删除 CreateProcess 路径）、`crash_handler`（删除 SEH 异常过滤器）、`perf_counter`（统一 `steady_clock`）、`highres_timer`（变为空 RAII）、`hot_path`（删除 MSVC 注解）、`audit_log`（统一 `localtime_r`）、`redis_client`（删除 winsock2 include）
+- **CMake**：移除 MSVC `/EHsc`、`boost_gateway_stage_runtime_dlls()` 函数、Windows preset（4 个 configure + 4 个 build + 4 个 test）、SDK DLL 命名 workaround
+- **CI workflows**：11 个 workflow 全部改为 Linux-only，删除 MSVC 条件分支和 choco install 步骤
+- **Runner matrix**：schema v2，所有 runner 指向 Linux，标记 Windows 为 deprecated
+
+### 构建
+
+- `CMakeLists.txt`：版本号 3.4.0 → 3.5.0
+- `CMakePresets.json`：仅保留 `default`（Debug）和 `release`（Release）两个 preset
+
+### 后续计划
+
+- Phase 2: 整理脚本（15 个 gate 分配 canonical 路径）
+- Phase 3: 整合文档（合并重叠文档、新建 ONBOARDING.md）
+- Phase 4: 修复代码质量（v2→v1 耦合解耦、测试链接修复）
+- Phase 5: 精简 CI/CD（合并 release-baseline 到 release）
+
+---
+
 ## v3.4.0 — P0 性能优化 + R7 模块收束（2026-05-23）
 
 > **范围**：P0 性能优化轮次（连接池扩容、战斗路由线程卸载、断路器线程安全、Windows 高精度定时器）与 R7 模块收束（持久化层编译接入、内存架构 ECS 集成、诊断/鉴权注入），并将版本口径统一到 3.4.0。

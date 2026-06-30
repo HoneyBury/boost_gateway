@@ -15,7 +15,7 @@ permissions:
 jobs:
   perf-smoke:
     if: contains(github.event.pull_request.labels.*.name, 'perf') || github.event.action == 'labeled' && contains(github.event.pull_request.labels.*.name, 'perf')
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
       - name: Checkout
@@ -25,9 +25,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-windows-ninja-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-perf-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-perf-windows-ninja-release-
+            sccache-${{ runner.os }}-perf-release-
             sccache-${{ runner.os }}-
 
       - name: Setup Ninja
@@ -35,22 +35,18 @@ jobs:
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
-          choco install sccache -y --no-progress
+          sccache --version || sudo apt-get install -y sccache
           sccache --version
 
       - name: Configure (Release)
-        run: cmake --preset windows-ninja-release -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset release -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build (Release)
-        run: cmake --build --preset windows-ninja-release --parallel
+        run: cmake --build --preset release --parallel
 
       - name: Run smoke performance test
         id: perf
@@ -64,7 +60,7 @@ jobs:
         run: |
           OUTPUT_DIR="runtime/perf/ci-commit-check-$(date +%Y%m%d-%H%M%S)"
           python scripts/collect_v2_perf_baseline.py \
-            --build-dir build/windows-ninja-release \
+            --build-dir build/release \
             --run-preset smoke \
             --repetitions 1 \
             --output-root "$OUTPUT_DIR" \

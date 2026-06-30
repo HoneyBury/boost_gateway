@@ -155,43 +155,6 @@ TEST_F(SessionCloseTest, HighPriorityWritesKeepFifoBeforeQueuedPushes) {
         return net::packet::decode_payload(payload);
     };
 
-#ifdef _WIN32
-    // On Windows IOCP, write completion ordering can differ from POSIX due to
-    // the IOCP completion port dispatching model. Use a relaxed check:
-    // verify all 4 packets arrive and that high-priority responses
-    // appear before the second normal-priority push.
-    std::vector<net::packet::DecodedPacket> packets;
-    packets.reserve(4);
-    for (int i = 0; i < 4; ++i) {
-        packets.push_back(read_packet());
-    }
-
-    session->stop();
-    server_io.stop();
-    if (io_thread.joinable()) {
-        io_thread.join();
-    }
-
-    // All 4 packets must arrive regardless of order
-    ASSERT_EQ(packets.size(), 4U);
-
-    // push-1 must be first (only packet queued before the high-priority responses)
-    EXPECT_EQ(packets[0].request_id, 1U);
-    EXPECT_EQ(packets[0].body, "push-1");
-
-    // High-priority responses must arrive before push-2
-    int push2_idx = -1, resp1_idx = -1, resp2_idx = -1;
-    for (int i = 0; i < 4; ++i) {
-        if (packets[i].request_id == 4) push2_idx = i;
-        if (packets[i].request_id == 2) resp1_idx = i;
-        if (packets[i].request_id == 3) resp2_idx = i;
-    }
-    EXPECT_GT(resp1_idx, 0) << "response-1 (id=2) missing";
-    EXPECT_GT(resp2_idx, 0) << "response-2 (id=3) missing";
-    EXPECT_GT(push2_idx, 0) << "push-2 (id=4) missing";
-    EXPECT_LT(resp1_idx, push2_idx) << "response-1 must arrive before push-2";
-    EXPECT_LT(resp2_idx, push2_idx) << "response-2 must arrive before push-2";
-#else
     const auto first = read_packet();
     const auto second = read_packet();
     const auto third = read_packet();
@@ -211,5 +174,5 @@ TEST_F(SessionCloseTest, HighPriorityWritesKeepFifoBeforeQueuedPushes) {
     EXPECT_EQ(third.body, "response-2");
     EXPECT_EQ(fourth.request_id, 4U);
     EXPECT_EQ(fourth.body, "push-2");
-#endif
+
 }

@@ -9,9 +9,6 @@ if(BOOST_BUILD_V1_LEGACY_EXAMPLES)
     )
     apply_project_warnings(echo_server)
     set_target_properties(echo_server PROPERTIES FOLDER "legacy/v1")
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(echo_server)
-    endif()
 endif()
 
 add_executable(echo_client
@@ -22,6 +19,3 @@ target_link_libraries(echo_client
         project_net
 )
 apply_project_warnings(echo_client)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(echo_client)
-endif()

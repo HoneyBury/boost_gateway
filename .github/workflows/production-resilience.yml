@@ -104,11 +104,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
-
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'default' }}
 

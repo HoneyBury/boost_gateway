@@ -93,13 +93,6 @@ add_library(boost_gateway_sdk_dll SHARED
 set_target_properties(boost_gateway_sdk_dll PROPERTIES
     OUTPUT_NAME boost_gateway_sdk
 )
-if(WIN32)
-    # Keep the runtime DLL name stable for Python/C# while avoiding a
-    # boost_gateway_sdk.lib collision with the static library.
-    set_target_properties(boost_gateway_sdk_dll PROPERTIES
-        ARCHIVE_OUTPUT_NAME boost_gateway_sdk_dll
-    )
-endif()
 target_compile_definitions(boost_gateway_sdk_dll PRIVATE BOOST_GATEWAY_SDK_EXPORTS)
 target_link_libraries(boost_gateway_sdk_dll
     PRIVATE
@@ -122,9 +115,6 @@ else()
             BOOST_ERROR_CODE_HEADER_ONLY
     )
 endif()
-if(WIN32)
-    target_compile_definitions(boost_gateway_sdk_dll PRIVATE _WIN32_WINNT=0x0A00)
-endif()
 
 target_include_directories(boost_gateway_sdk
     PUBLIC
@@ -146,9 +136,6 @@ else()
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
     target_compile_definitions(boost_gateway_sdk PUBLIC
         BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
-endif()
-if(WIN32)
-    target_compile_definitions(boost_gateway_sdk PUBLIC _WIN32_WINNT=0x0A00)
 endif()
 
 add_library(boost_gateway::sdk ALIAS boost_gateway_sdk)

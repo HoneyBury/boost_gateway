@@ -14,7 +14,7 @@ permissions:
 
 jobs:
   package:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
       - name: Checkout
@@ -24,9 +24,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-windows-ninja-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-release-windows-ninja-release-
+            sccache-${{ runner.os }}-release-release-
             sccache-${{ runner.os }}-
 
       - name: Setup Ninja
@@ -39,28 +39,24 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
-          choco install sccache -y --no-progress
+          sccache --version || sudo apt-get install -y sccache
           sccache --version
 
       - name: Configure
-        run: cmake --preset windows-ninja-release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Build
-        run: cmake --build --preset windows-ninja-release --parallel
+        run: cmake --build --preset release --parallel
 
       - name: Test
-        run: ctest --preset windows-ninja-release --timeout 300
+        run: ctest --preset release --timeout 300
 
       - name: R4 release contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/windows-ninja-release --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
+        run: python scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
 
       - name: Security release gate
         run: python scripts/check_security_release_gate.py
@@ -69,20 +65,20 @@ jobs:
         run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/release-monitoring-operability-summary.json
 
       - name: Observability release gate
-        run: python scripts/verify_observability_gate.py --build-dir build/windows-ninja-release --configuration Release --skip-build
+        run: python scripts/verify_observability_gate.py --build-dir build/release --configuration Release --skip-build
 
       - name: Control-plane operator gate
         run: python scripts/verify_control_plane_gate.py
 
       - name: Release candidate bounded gate
-        run: python scripts/verify_release_candidate.py --build-dir build/windows-ninja-release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
+        run: python scripts/verify_release_candidate.py --build-dir build/release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
       - name: Install
         shell: bash
         run: |
           set -euo pipefail
-          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${GITHUB_REF_NAME}-windows-x64"
-          cmake --install "build/windows-ninja-release" --prefix "$install_dir"
+          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${GITHUB_REF_NAME}-linux-x64"
+          cmake --install "build/release" --prefix "$install_dir"
           cp README.md "$install_dir/"
           cp CHANGELOG.md "$install_dir/"
 
@@ -90,14 +86,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive_basename="boost-gateway-${GITHUB_REF_NAME}-windows-x64"
-          cmake -E tar cfv "${archive_basename}.zip" --format=zip "dist/${archive_basename}"
+          archive_basename="boost-gateway-${GITHUB_REF_NAME}-linux-x64"
+          cmake -E tar cfv "${archive_basename}.tar.gz" --format=zip "dist/${archive_basename}"
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
-          name: boost-gateway-windows-x64
-          path: boost-gateway-${{ github.ref_name }}-windows-x64.zip
+          name: boost-gateway-linux-x64
+          path: boost-gateway-${{ github.ref_name }}-linux-x64.tar.gz
 
       - name: Show sccache stats
         if: always()
@@ -105,7 +101,7 @@ jobs:
         run: sccache --show-stats || true
 
   publish:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ["self-hosted", "Linux", "X64"]
     needs: package
 
     steps:
@@ -125,5 +121,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            dist/**/*.zip
+            dist/**/*.tar.gz
             dist/SHA256SUMS.txt

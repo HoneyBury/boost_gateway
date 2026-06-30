@@ -15,9 +15,6 @@ endif()
 if(COMMAND apply_project_warnings)
     apply_project_warnings(sdk_tests)
 endif()
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(sdk_tests)
-endif()
 include(GoogleTest)
 gtest_discover_tests(sdk_tests
     DISCOVERY_TIMEOUT 10
@@ -48,9 +45,6 @@ else()
             BOOST_ERROR_CODE_HEADER_ONLY
     )
 endif()
-if(WIN32)
-    target_compile_definitions(sdk_business_flow_tests PRIVATE _WIN32_WINNT=0x0A00)
-endif()
 target_link_libraries(sdk_business_flow_tests
     PRIVATE
         boost_gateway_sdk_dll
@@ -60,9 +54,6 @@ target_link_libraries(sdk_business_flow_tests
 )
 if(COMMAND apply_project_warnings)
     apply_project_warnings(sdk_business_flow_tests)
-endif()
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(sdk_business_flow_tests)
 endif()
 gtest_discover_tests(sdk_business_flow_tests
     DISCOVERY_TIMEOUT 10

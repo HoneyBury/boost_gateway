@@ -21,7 +21,7 @@ permissions:
 
 jobs:
   stability-soak:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
       - name: Checkout
@@ -32,24 +32,20 @@ jobs:
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
-          choco install sccache -y --no-progress
+          sccache --version || sudo apt-get install -y sccache
           sccache --version
 
       - name: Configure
-        run: cmake --preset windows-ninja-debug -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        run: cmake --preset default -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Stability soak
         run: >
           python scripts/verify_stability_soak.py
-          --build-dir build/windows-ninja-debug
+          --build-dir build/default
           --configuration Debug
           --baseline-profile debug
           --soak-profile ${{ inputs.soak_profile || 'short' }}

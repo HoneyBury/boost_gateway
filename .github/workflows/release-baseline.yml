@@ -108,11 +108,6 @@ jobs:
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        if: runner.os == 'Windows'
-
       - name: Show CMake version
         run: cmake --version
 
@@ -124,13 +119,11 @@ jobs:
 
       - name: Install sccache
         shell: pwsh
-        if: runner.os == 'Windows'
         run: |
-          choco install sccache -y --no-progress
+          sccache --version || sudo apt-get install -y sccache
           sccache --version
 
       - name: Install sccache (Linux)
-        if: runner.os != 'Windows'
         shell: bash
         run: |
           set -euo pipefail

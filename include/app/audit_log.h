@@ -31,11 +31,7 @@ inline std::string now_iso() {
     const auto now = std::chrono::system_clock::now();
     const auto time = std::chrono::system_clock::to_time_t(now);
     std::tm tm_buf{};
-#ifdef _WIN32
-    localtime_s(&tm_buf, &time);
-#else
     localtime_r(&time, &tm_buf);
-#endif
     char buf[64];
     std::snprintf(buf, sizeof(buf), "%04d-%02d-%02dT%02d:%02d:%02d",
                   tm_buf.tm_year + 1900, tm_buf.tm_mon + 1, tm_buf.tm_mday,

@@ -30,7 +30,7 @@ permissions:
 
 jobs:
   perf-regression:
-    runs-on: ["self-hosted", "Windows", "X64"]
+    runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
       - name: Checkout
@@ -41,15 +41,11 @@ jobs:
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure (Release)
-        run: cmake --preset windows-ninja-release -DCMAKE_BUILD_TYPE=Release
+        run: cmake --preset release -DCMAKE_BUILD_TYPE=Release
 
       - name: Build (Release)
-        run: cmake --build --preset windows-ninja-release --parallel
+        run: cmake --build --preset release --parallel
 
       - name: Run performance baseline
         id: perf
@@ -63,7 +59,7 @@ jobs:
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
           python scripts/collect_v2_perf_baseline.py \
-            --build-dir build/windows-ninja-release \
+            --build-dir build/release \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
             --output-root "$OUTPUT_DIR" \
