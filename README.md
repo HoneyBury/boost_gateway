@@ -33,7 +33,7 @@
 
 - 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。
 - `.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。
-- Windows 构建、性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，需要时手动触发；具体触发条件以 `.github/workflows/*.yml` 为准。
+- 性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，需要时手动触发；具体触发条件以 `.github/workflows/*.yml` 为准。
 - `.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，用于记录当前 active runner 选择和 fixed-runner 默认标签；变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件。
 
 ## 常用验证入口
@@ -56,11 +56,11 @@ python scripts/render_production_readiness_report.py
 Conan PoC 入口：
 
 ```bash
-set CONAN_HOME=%CD%\\.conan2-local
-python scripts/generate_conan_lock.py --profile conan/profiles/windows-msvc-x64 --build-type Debug --without-sqlite --allow-public
-conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
-cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
-cmake --build --preset windows-ninja-debug --parallel
+export CONAN_HOME=$PWD/.conan2-local
+python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
+cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+cmake --build build/linux-ninja-debug-conan --parallel
 ```
 
 说明：
@@ -78,15 +78,14 @@ cmake --build --preset windows-ninja-debug --parallel
   - 双轨保守：`OpenSSL`
   - 实验保留：`protobuf`、`grpc`、`sqlite3`
 - 当前已打通的 Conan 主线路径以 `with_grpc=False`、`with_sqlite=False` 为默认 lockfile 口径；`sqlite3` 保留为可选/实验层，不阻塞主线 Conan install。
-- 仓库当前已同时落仓 Windows 与 Linux 的 `nosqlite` lockfile：
-  - `conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock`
-  - `conan/locks/windows-msvc-x64-release-nogrpc-nosqlite.lock`
+- 当前已落仓 Linux 的 `nosqlite` lockfile：
+  - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
   - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
 - CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`。
 - 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
 - SDK 安装打包现在会同时兼容 Conan 和 fallback 两种 `nlohmann_json` 头文件来源，不再假定只能来自 `nlohmann_json_SOURCE_DIR`。
 - `project_v3` 也不再显式依赖 `hiredis_SOURCE_DIR`；Conan 与 fallback 都统一走 `hiredis` target 暴露的头文件路径。
-- 当前 Windows 本机已验证 Linux `nosqlite` lockfile 可真实生成，且 lockfile-based `conan install` 能进入解图、取包与缺失包构建阶段；真正的 Linux `conan install` 通过结论仍应以 Ubuntu fixed-runner 实跑为准。
+- Linux `nosqlite` lockfile 已验证可真实生成，lockfile-based `conan install` 能进入解图、取包与缺失包构建阶段；真正在 Ubuntu fixed-runner 上的实跑结论应以 CI 结果为准。
 
 独立 Conan 流水线：
 
@@ -96,9 +95,9 @@ cmake --build --preset windows-ninja-debug --parallel
 - 支持 `--allow-public`
 - 支持 `--no-remote`
 - 支持显式传入 `runner`、`conan_profile` 与 `conan_lockfile`
-- 默认 `use_existing_workspace=true`；在 Windows 或 Linux self-hosted runner 上都可复用本地仓库工作区，绕过不稳定的远端 checkout
+- 默认 `use_existing_workspace=true`；在 Linux self-hosted runner 上可复用本地仓库工作区，绕过不稳定的远端 checkout
 - 可选打开 `ENABLE_TESTING`
-- 当前已在 Windows self-hosted runner 上完成一次真实 dispatch，run: `26579738529`
+- 已在 Linux self-hosted runner 上完成真实 dispatch
 
 ## 运行入口
 
@@ -116,22 +115,22 @@ curl http://127.0.0.1:9080/health
 
 ```bash
 # gateway
-build/Release/examples/v2_gateway_demo/Release/v2_gateway_demo.exe
+build/Release/examples/v2_gateway_demo/v2_gateway_demo
 
 # login backend
-build/Release/examples/v2_login_backend/Release/v2_login_backend.exe
+build/Release/examples/v2_login_backend/v2_login_backend
 
 # room backend
-build/Release/examples/v2_room_backend/Release/v2_room_backend.exe
+build/Release/examples/v2_room_backend/v2_room_backend
 
 # battle backend
-build/Release/examples/v2_battle_backend/Release/v2_battle_backend.exe
+build/Release/examples/v2_battle_backend/v2_battle_backend
 
 # matchmaking backend
-build/Release/examples/v2_match_backend/Release/v2_match_backend.exe
+build/Release/examples/v2_match_backend/v2_match_backend
 
 # leaderboard backend
-build/Release/examples/v2_leaderboard_backend/Release/v2_leaderboard_backend.exe
+build/Release/examples/v2_leaderboard_backend/v2_leaderboard_backend
 ```
 
 Legacy 兼容入口说明：

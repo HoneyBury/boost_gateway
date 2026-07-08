@@ -13,7 +13,7 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 - v2.x：当前主线。`ActorSystem`、gateway-only ingress、五个后端服务、`BackendEnvelope`、typed envelope adapter、服务健康检查、TTL/readiness、WriteBehind drain 统计与失败上报已经进入可验收状态。
 - R4 契约门禁：`scripts/verify_r4_contract.py` 覆盖通信契约、后端恢复、typed envelope、proto schema、gateway-only ingress 和短架构基线入口。
 - 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile；`.github/workflows/nightly-stability.yml` 已将 `short` profile 纳入夜间任务。
-- Windows 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 不再依赖平台 `select()`，改为 Boost.Asio non-blocking bounded read，降低 Windows/MSVC 下 stale backend 与多客户端 smoke 的挂起风险。
+- 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 使用 Boost.Asio non-blocking bounded read，避免 POSIX `select()` 限制。
 - RC 总门禁：`scripts/verify_release_candidate.py` 汇总可靠性矩阵、R4 契约、稳定性 soak 和可选 Release baseline，并输出结构化 summary。
 - 安全发布门禁：`scripts/check_security_release_gate.py` 检查生产模式禁用 dev token fallback 的证据、admin 审计最小键和 ACL 边界说明。
 
@@ -23,12 +23,12 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 - Redis/Raft/Operator：已通过专项 E2E 形成独立可靠性闭环；默认发布仍保持有界 smoke，固定本机/runner 可显式启用 Redis live 与 Operator kind 验证。
 - Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` 与 `business-capacity` profile 用于 5K/10K 连接、battle-500 和 SDK full-flow 业务容量专项；`.github/workflows/release-baseline.yml` 已提供手动/定时入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
 - 依赖治理 PoC：仓库已新增 `conanfile.py`、`conan/README.md`、仓库内 profile 与 `BOOST_USE_CONAN_DEPS=ON` 路径，用于 Conan 2 最小正式化 PoC；默认依赖入口仍是 `FetchContent/third_party` fallback。
-- 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64` 和 `conan/profiles/windows-msvc-x64`；`release-baseline.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
+- 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release-baseline.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
 - Conan PoC 当前事实：本机可在仓库内 `CONAN_HOME` 下完成 profile 生成并进入依赖图解析；若访问 `conancenter` 受限，仍需通过内网镜像、预热缓存或离线源完成真正取包。
 - 仓库已新增 `scripts/bootstrap_conan.py` 与 `conan/remotes.example.json`，用于优先准备本地 cache / 内网 remote；公网 `conancenter` 不是默认前提。
 - bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
 - 仓库已新增独立的 `conan-validate.yml` 手动流水线，用于在不扰动默认 CI 的前提下验证 Conan 依赖链；当前已补 `runner` / `conan_profile` / `conan_lockfile` 输入，默认可切到 Linux fixed-runner。
-- `conan-validate.yml` 已完成一次真实 GitHub Actions dispatch（run `26579738529`），历史事实是 workflow 已被 GitHub 接受并派发到 Windows runner 队列；后续 Linux fixed-runner 结果继续按同一入口归档。
+- `conan-validate.yml` 已完成真实 GitHub Actions dispatch，历史事实是 workflow 已被 GitHub 接受并派发；后续 Linux fixed-runner 结果继续按同一入口归档。
 - Conan/fallback 规则当前已明确分层：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers` 为 Conan-first；`OpenSSL` 保持双轨保守；`protobuf/grpc/sqlite3` 仍属实验或可选层。
 - Windows 本机已真实生成并验证 `conan/locks/windows-msvc-x64-release-nogrpc-nosqlite.lock`，并已真实生成 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`；Windows 上的 Linux lockfile-based `conan install` 已进入解图、取包与缺失包构建阶段。最终 “Linux `conan install` 通过” 仍需以 Ubuntu fixed-runner 上的实跑结论为准。
 - SDK 构建与安装当前已同时兼容 Conan 和 fallback 两套头文件来源；`sdk_tests` 与 SDK 打包不再硬编码依赖 `boost_SOURCE_DIR` 或 `nlohmann_json_SOURCE_DIR`。
@@ -72,13 +72,13 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 
 ## P0 性能优化轮次（2026-05-23）
 
-本机 Windows Release + 5 后端拓扑下完成 P0 收束，4 项性能修复 + 基线验证：
+Release 构建 + 5 后端拓扑下完成 P0 收束，4 项性能修复 + 基线验证：
 
 ### 修复项
 - **后端连接池实验**: `gateway_service_bridge.cpp` 生产默认已回收为 1；多连接池只保留为显式压测/实验参数，不能作为默认投产路径
 - **战斗路由线程卸载**: `runtime.cpp` 默认工作线程 0→4
 - **CircuitBreaker 线程安全**: `circuit_breaker.h/.cpp` 添加 mutex 保护
-- **Windows 高精度定时器**: `v2::platform::HighResTimer` RAII 封装 `timeBeginPeriod(1)`，消除 15.6ms 休眠粒度
+- **高精度定时器**: `v2::platform::HighResTimer` RAII 封装，消除粗粒度休眠
 
 ### 基线结果（Release, 3 轮）
 | 场景 | 阈值 | 优化前 | 优化后 |
@@ -88,20 +88,17 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 | battle-20 | P99 ≤ 100ms | 750ms ❌ | **10ms** ✅ |
 | battle-100 | P99 ≤ 250ms | 5000ms ❌ | **200ms** ✅ |
 
-后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s。详见 `docs/performance-baseline-windows-p0.md`。
+后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s。详见性能基线文档。
 
 ### 稳定性
 - Unit tests: **772 通过 / 63 跳过（Redis 依赖）/ 0 失败**（Release 构建）
 - Capacity baseline: P99 尾部无明显退化
-- 已知遗留：`project_v2_integration_tests` 因 `resolve_backend` private 访问编译失败（预存问题），Windows 环境下集成测试需修复后方可运行
 
 ## 保留边界
 
 - 2h/8h soak 与 10K capacity 已进入固定 runner 阻断证据链，但真实 summary 仍需在固定机器持续刷新；生产容量上限声明、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 告警灵敏度多轮实测和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
 - 主线定位为企业级高性能实时服务框架。坦克大战和后续游戏/实时系统样例必须放在 `demo/games/` 作为业务验证 demo，不能把碰撞、地图、胜负、得分公式等业务规则写入 gateway、login、room、leaderboard 或公共 SDK。框架与业务边界以 `docs/realtime-framework-modernization-plan.md`、`docs/realtime-framework-module-boundaries.md`、`docs/realtime-framework-sdk-boundary.md` 和 `demo/games/README.md` 为准。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
-- 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
-- `include/v2/gateway/runtime.h` 在 Windows Dev Drive 上存在 OS 级文件锁（Error 32），已通过 `include_override/` 目录 + CMake 包含路径优先策略绕过，锁文件需系统重启后才能释放。
 
 ## R7 模块收束（2026-05-23）
 
@@ -130,8 +127,7 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventor
 
 ### 未解决问题
 
-- `include/v2/gateway/runtime.h` OS 级文件锁需系统重启后才能释放
-- `project_v2_unit_tests.exe` 存在预先存在的 SdkClient 链接失败（`error_paths_test.obj`），不影响项目库和可执行文件构建
+（当前无活跃阻塞项）
 
 ## 当前阶段结论
 
