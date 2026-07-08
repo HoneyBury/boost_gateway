@@ -11,7 +11,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
-INVENTORY = ROOT / "docs/legacy-helper-inventory.md"
+INVENTORY = ROOT / "docs/legacy/legacy-helper-inventory.md"
 
 REQUIRED_DOC_TOKENS = (
     "legacy raw JSON",

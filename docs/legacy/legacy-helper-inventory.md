@@ -1,6 +1,6 @@
 # Legacy / Helper Inventory
 
-更新时间：2026-05-30
+更新时间：2026-07-08
 
 本文档记录当前仓库仍保留的 legacy 兼容面、helper 迁移层和默认主线之外的过渡入口。它不是未来规划文档，而是当前事实清单；未来规划仍以 `docs/project-blueprint.md` 为准。
 
