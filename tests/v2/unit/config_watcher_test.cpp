@@ -4,6 +4,7 @@
 #include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <random>
 #include <string>
 #include <thread>
 
@@ -12,7 +13,9 @@
 class V2ConfigWatcherTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        temp_dir_ = std::filesystem::temp_directory_path() / "v2_config_watcher_test";
+        static std::mt19937 rng{std::random_device{}()};
+        auto suffix = std::to_string(std::uniform_int_distribution<int>(1, 999999)(rng));
+        temp_dir_ = std::filesystem::temp_directory_path() / ("v2_config_watcher_test_" + suffix);
         std::filesystem::create_directories(temp_dir_);
         config_path_ = temp_dir_ / "test.json";
     }
@@ -48,6 +51,9 @@ TEST_F(V2ConfigWatcherTest, CallbackFiresOnFileChange) {
 
         // Wait for initial poll to capture baseline
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+        // Ensure 1s+ has elapsed since initial file creation (APFS 1s timestamp granularity)
+        std::this_thread::sleep_for(std::chrono::seconds(1));
 
         // Modify the file
         write_json("{\"value\": 1}");

@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <filesystem>
+#include <random>
 
 #include <nlohmann/json.hpp>
 
@@ -10,7 +11,6 @@
 #include "v2/data/replay_format.h"
 #include "v2/gateway/battle_data_store.h"
 #include "v2/gateway/runtime.h"
-
 namespace fs = std::filesystem;
 
 // ─── Replay Format: Encode/Decode Round-Trip ──────────────────
@@ -99,7 +99,9 @@ TEST(V2DataLayerTest, DecodeHeaderRejectsTruncated) {
 class V2DataStoreTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        dir_ = fs::temp_directory_path() / "v2_data_layer_test";
+        static std::mt19937 rng{std::random_device{}()};
+        dir_ = fs::temp_directory_path() /
+               ("v2_data_layer_test_" + std::to_string(rng()));
         store_ = std::make_unique<v2::gateway::JsonFileBattleDataStore>(dir_);
     }
 

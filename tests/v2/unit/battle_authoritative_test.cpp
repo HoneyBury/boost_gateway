@@ -100,6 +100,15 @@ TEST(V2BattleAuthoritativeTest, HandleDisconnectMarksOfflineAndSuggestsFinish) {
 TEST(V2BattleAuthoritativeTest, InputFromOfflinePlayerNotProcessed) {
     auto world = v2::battle::create_battle_world("auth_08", "r8", {"alice"}, 5);
 
+    // Reset position to origin so the position assertion is deterministic
+    auto* sw = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    ASSERT_NE(sw, nullptr);
+    sw->for_each<v2::battle::PositionComponent>(
+        [](v2::ecs::EntityHandle, v2::battle::PositionComponent& pos) {
+            pos.x = 0;
+            pos.y = 0;
+        });
+
     (void)v2::battle::battle_world_mark_offline(*world, "alice");
 
     auto result = v2::battle::battle_world_process_input(
@@ -127,6 +136,15 @@ TEST(V2BattleAuthoritativeTest, DisconnectWhenNotRunningDoesNothing) {
 
 TEST(V2BattleAuthoritativeTest, SnapshotIncludesAllParticipantsWithHealthAndPosition) {
     auto world = v2::battle::create_battle_world("auth_10", "r10", {"alice", "bob", "charlie"}, 5);
+
+    // Reset positions to origin for deterministic assertions
+    auto* sw = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    ASSERT_NE(sw, nullptr);
+    sw->for_each<v2::battle::PositionComponent>(
+        [](v2::ecs::EntityHandle, v2::battle::PositionComponent& pos) {
+            pos.x = 0;
+            pos.y = 0;
+        });
 
     auto snapshot = v2::battle::battle_world_snapshot(*world);
     ASSERT_EQ(snapshot.participants.size(), 3U);

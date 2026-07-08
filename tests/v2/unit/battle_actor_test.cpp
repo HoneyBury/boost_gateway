@@ -67,7 +67,7 @@ TEST(V2BattleActorTest, SubmitInputEmitsAcceptedEvent) {
     input.payload = v2::battle::SubmitBattleInputMsg{
         .user_id = "owner",
         .request_id = 77,
-        .input_data = "move:1,2",
+        .input_data = "attack:nonexistent",
     };
     actor_ref.tell(std::move(input));
 
@@ -100,7 +100,7 @@ TEST(V2BattleActorTest, DuplicateSubmittedFrameIsIgnoredAndAckStillEmitsEvent) {
     first_input.payload = v2::battle::SubmitBattleInputMsg{
         .user_id = "owner",
         .request_id = 77,
-        .input_data = "move:1,2",
+        .input_data = "attack:nonexistent",
         .submitted_frame = 2,
     };
     actor_ref.tell(std::move(first_input));
@@ -110,7 +110,7 @@ TEST(V2BattleActorTest, DuplicateSubmittedFrameIsIgnoredAndAckStillEmitsEvent) {
     duplicate_input.payload = v2::battle::SubmitBattleInputMsg{
         .user_id = "owner",
         .request_id = 78,
-        .input_data = "move:3,4",
+        .input_data = "attack:other",
         .submitted_frame = 2,
     };
     actor_ref.tell(std::move(duplicate_input));
@@ -250,7 +250,7 @@ TEST(V2BattleActorTest, TickAdvancesFrameAndCanFinishNormally) {
     input.payload = v2::battle::SubmitBattleInputMsg{
         .user_id = "owner",
         .request_id = 90,
-        .input_data = "move:1,2",
+        .input_data = "attack:nonexistent",
         .score = 5,
         .submitted_frame = 1,
     };

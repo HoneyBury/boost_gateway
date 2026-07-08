@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,7 +28,10 @@ public:
         (void)world;
         (void)ctx;
         ran_ = true;
-        run_order_.push_back(id_);
+        {
+            std::lock_guard lock(run_order_mutex_);
+            run_order_.push_back(id_);
+        }
         if (sleep_duration_.count() > 0) {
             std::this_thread::sleep_for(sleep_duration_);
         }
@@ -38,6 +42,7 @@ public:
 
     // Shared run-order list across systems.
     static std::vector<std::string> run_order_;
+    static std::mutex run_order_mutex_;
     static void reset_run_order() { run_order_.clear(); }
 
 private:
@@ -47,6 +52,7 @@ private:
 };
 
 std::vector<std::string> TestSystem::run_order_;
+std::mutex TestSystem::run_order_mutex_;
 
 // ─── Test 1: Two independent systems run in parallel ───────────────────
 // Verifies total wall-clock time is less than sequential execution.

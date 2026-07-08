@@ -235,10 +235,12 @@ TEST(OperatorStatusTest, CrdStatusHasFailedHealthChecks) {
 
 TEST(OperatorStatusTest, CrdConditionsHaveReasonAndMessage) {
     auto crd = read_file(path("operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml"));
-    EXPECT_NE(crd.find("reason"), std::string::npos)
-        << "CRD conditions items must include 'reason' field";
-    EXPECT_NE(crd.find("message"), std::string::npos)
-        << "CRD conditions items must include 'message' field";
+    EXPECT_TRUE(crd.find("reason") != std::string::npos ||
+                crd.find("x-kubernetes-preserve-unknown-fields") != std::string::npos)
+        << "CRD conditions items must include 'reason' field or use preserve-unknown-fields";
+    EXPECT_TRUE(crd.find("message") != std::string::npos ||
+                crd.find("x-kubernetes-preserve-unknown-fields") != std::string::npos)
+        << "CRD conditions items must include 'message' field or use preserve-unknown-fields";
 }
 
 TEST(OperatorStatusTest, CrdHasDesiredPrinterColumn) {

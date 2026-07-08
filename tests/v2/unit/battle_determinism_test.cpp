@@ -72,6 +72,15 @@ TEST(V2BattleDeterminismTest, IdenticalInputSequencesProduceIdenticalReplayLogs)
 TEST(V2BattleDeterminismTest, MovementSystemAppliesMoveAuthoritatively) {
     auto world = v2::battle::create_battle_world("det_03", "r3", {"alice"}, 3);
 
+    // Reset position to origin so the move (42,77) is within kMaxMoveDelta=200
+    auto* sw = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    ASSERT_NE(sw, nullptr);
+    sw->for_each<v2::battle::PositionComponent>(
+        [](v2::ecs::EntityHandle, v2::battle::PositionComponent& pos) {
+            pos.x = 0;
+            pos.y = 0;
+        });
+
     auto input_result = v2::battle::battle_world_process_input(
         *world, "alice", "move:42,77", 0, 1);
     EXPECT_TRUE(input_result.accepted);
