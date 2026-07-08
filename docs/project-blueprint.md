@@ -47,7 +47,7 @@
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS/Windows，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
 | G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 开发者可能只开启 1-2 台 runner，如果 workflow 固定全平台会导致无意义排队 | 短期引入仓库内版本化 runner matrix，按当前活跃机器提交配置 |
 | G7 | 测试分层命名和执行策略仍偏脚本聚合 | 已有大量 gate，但 unit/integration/e2e/perf/nightly/capacity 的开发者入口仍需要更清晰 | 长期形成开发者指南和贡献者验证矩阵 |
-| G8 | 默认构建/安装面仍包含 v1 风格遗留模块 | `project_game`、`include/game`、`src/game`、老 `examples/*_demo`、`login_server/room_server/battle_server/gateway_pressure` 仍默认构建并安装 | 短期冻结并标注 legacy，中期移出默认构建/安装面，完成替代测试后删除 |
+| G8 | 默认构建/安装面仍包含 v1 风格遗留模块 | `project_game`、`include/game`、`src/game`、老 `examples/*_demo`、`login_server/room_server/battle_server/gateway_pressure` 已通过 `BOOST_BUILD_V1_LEGACY_*` 默认关闭 | 继续监控，当文档和 CI 完全不再引用后移出仓库或归档 |
 
 ## 总体原则
 
