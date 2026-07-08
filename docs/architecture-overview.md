@@ -1,6 +1,6 @@
 # Boost Gateway Architecture Overview
 
-**Version**: 3.4.0
+**Version**: 3.5.0
 
 ## High-Level Architecture
 
@@ -53,7 +53,7 @@ Each backend runs as an independent process with its own port:
 - **Matchmaking** (:9104): MMR-based matching, Raft consensus for fault tolerance
 - **Leaderboard** (:9105): Score submission/query, Raft consensus for consistency
 
-### Realtime Instance Runtime (v3.4.0+)
+### Realtime Instance Runtime (v3.5.0+)
 The Realtime Instance Framework provides a generic tick-based game loop runtime that decouples business logic from lifecycle management.
 
 - **InstanceRuntime** (`v2::realtime::InstanceRuntime`): Manages instance lifecycle (creating/waiting/running/finishing/finished/closed), tick scheduling (`tick_instance()`/`tick_all()`), input queue with per-player ordering, snapshot push, resume support (`get_resume_snapshot()`), and backpressure

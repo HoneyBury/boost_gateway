@@ -2,7 +2,7 @@
   "schema_version": 1,
   "name": "production-candidate-evidence-manifest",
   "description": "R2 production candidate evidence manifest. Local bounded evidence is required; fixed-runner/pre-production entries become required only when check_production_evidence_manifest.py is run with --require-fixed-runner.",
-  "generated_for": "BoostAsioDemo v3.3.2 production candidate",
+  "generated_for": "BoostGateway v3.5.0 production candidate",
   "required_categories": [
     "production_candidate",
     "production_resilience",

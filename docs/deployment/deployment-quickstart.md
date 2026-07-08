@@ -19,7 +19,7 @@ gateway 地址。当前服务端主链包含：
 命令与 Docker Compose 一致。
 
 ```bash
-cd /Users/honeybury/workspace/BoostAsioDemo
+cd /Users/honeybury/workspace/boost_gateway
 
 docker compose -f env/docker/docker-compose.yml build
 docker compose -f env/docker/docker-compose.yml up -d
@@ -60,7 +60,7 @@ docker compose -f env/docker/docker-compose.yml down -v
 适合修改服务端代码、客户端 live gate 和快速定位问题。
 
 ```bash
-cd /Users/honeybury/workspace/BoostAsioDemo
+cd /Users/honeybury/workspace/boost_gateway
 
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --target \
@@ -80,8 +80,8 @@ cmake --build build --target \
 cd /Users/honeybury/workspace/BoostGatewayTankClient
 
 ./scripts/run-live-gate.sh \
-  --server-root /Users/honeybury/workspace/BoostAsioDemo \
-  --server-build-dir /Users/honeybury/workspace/BoostAsioDemo/build
+  --server-root /Users/honeybury/workspace/boost_gateway \
+  --server-build-dir /Users/honeybury/workspace/boost_gateway/build
 ```
 
 如果要手动启动固定端口，请确保 gateway 指向五个 backend：
@@ -131,8 +131,8 @@ BGTC_GATEWAY_HOST=127.0.0.1 BGTC_GATEWAY_PORT=9201 ./scripts/run-headless-gate.s
 
 ```bash
 ./scripts/run-live-gate.sh \
-  --server-root /Users/honeybury/workspace/BoostAsioDemo \
-  --server-build-dir /Users/honeybury/workspace/BoostAsioDemo/build
+  --server-root /Users/honeybury/workspace/boost_gateway \
+  --server-build-dir /Users/honeybury/workspace/boost_gateway/build
 ```
 
 当前 headless/live gate 覆盖：

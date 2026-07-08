@@ -57,7 +57,7 @@ grafana:3000 -> dashboard backed by Prometheus
 
 ```bash
 git clone <repo>
-cd BoostAsioDemo
+cd boost_gateway
 docker compose up -d --build
 docker compose ps
 curl -fsS http://localhost:9080/health

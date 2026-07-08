@@ -2,11 +2,11 @@
 
 更新时间：2026-05-28
 
-本文档用于指导 BoostAsioDemo 后续 6 个月以上的开发、维护和取舍。当前实现事实仍以 `docs/current-state.md` 为准；本文档在该事实基线上定义未来规划、差距和验收门禁。若本文档与 `current-state.md` 对“已经实现”的判断冲突，以 `current-state.md` 和可执行验证脚本结果为准；若涉及未来方向，以本文档为优先规划依据。当前 1-3 个月的主线执行顺序与收口动作，已单独整理到 `docs/mainline-execution-plan.md`。
+本文档用于指导 BoostGateway 后续 6 个月以上的开发、维护和取舍。当前实现事实仍以 `docs/current-state.md` 为准；本文档在该事实基线上定义未来规划、差距和验收门禁。若本文档与 `current-state.md` 对”已经实现”的判断冲突，以 `current-state.md` 和可执行验证脚本结果为准；若涉及未来方向，以本文档为优先规划依据。当前 1-3 个月的主线执行顺序与收口动作，已单独整理到 `docs/mainline-execution-plan.md`。
 
 ## 一句话定位
 
-将 BoostAsioDemo 从“高工程化 C++ 实时服务 demo 仓库”收敛为“企业级、高性能、跨平台实时服务框架”。坦克大战等业务只作为 `demo/games/` 下的验证样例，不能反向污染 gateway、login、room、battle、matchmaking、leaderboard、SDK 或协议公共层。
+将 BoostGateway 从”高工程化 C++ 实时服务 demo 仓库”收敛为”企业级、高性能、跨平台实时服务框架”。坦克大战等业务只作为 `demo/games/` 下的验证样例，不能反向污染 gateway、login、room、battle、matchmaking、leaderboard、SDK 或协议公共层。
 
 建议后续对外名称收敛为：
 
@@ -14,7 +14,7 @@
 - CMake project：`boost_gateway`
 - 描述：`Enterprise-grade C++20 realtime service framework`
 
-`BoostAsioDemo` 可以作为历史仓库名保留一段兼容期，但 README、安装包、文档标题、release artifact 和默认二进制命名应逐步切到企业级框架定位。
+`BoostAsioDemo` 已作为历史仓库名进入迁移期，当前仓库和远端已逐步切到 `boost_gateway` / `BoostGateway` 命名。README、安装包、文档标题、release artifact 和默认二进制命名应保持企业级框架定位。
 
 ## 当前事实基线
 
@@ -39,7 +39,7 @@
 
 | 编号 | 问题 | 当前事实 | 规划要求 |
 | --- | --- | --- | --- |
-| G1 | 项目命名仍带 demo 色彩 | 根 README 标题仍是 `BoostAsioDemo`，CMake 描述仍偏 game server | 短期完成命名和描述收敛，明确企业级框架定位 |
+| G1 | 项目命名仍带 demo 色彩 | 根 README 标题已改为 `BoostGateway`，CMake 描述已收敛为企业级框架定位 | 本地目录和远端仓库已进入迁移期，文档引用已完成统一 |
 | G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 虽已覆盖 Room/Battle/Match/Leaderboard 的基础 RPC，但仍缺 streaming/push、SDK-integrated full-flow、TLS、RBAC 和 observability 证据 | 中期完成 generated proto/gRPC full-flow 和性能对照，再决定是否进入默认链路 |
 | G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；主业务 typed 覆盖已扩到 login/room/battle 第二批消息，但 room governance / control-plane 风格消息与内部 Raft RPC 仍保留 raw JSON 路径 | 先完成剩余 control-plane / governance 面与内部 RPC 的边界收束，再逐步移除 legacy raw payload |
 | G4 | 依赖治理正在从 fallback 迁向 Conan lockfile | `third_party/`、FetchContent、系统包探测仍作为 fallback 并存；Conan profile/lock 入口、Linux/Windows `nosqlite` lockfile 和 fixed-runner workflow 预检已落地，但仍缺 Ubuntu fixed-runner 真实 summary 作为默认推荐依据 | 短期优先完成 Ubuntu fixed-runner lockfile install、release baseline、long-soak/capacity 和 production evidence；通过后把 Conan `nosqlite` 提升为主线推荐路径 |
@@ -117,7 +117,7 @@
 
 - 将 README 主标题和项目描述调整为 `BoostGateway` / `Enterprise-grade C++20 realtime service framework`。
 - 将 CMake `project()` 描述、安装文档、release artifact 描述和部署文档中的 demo 表述统一为框架表述。
-- 保留 `BoostAsioDemo` 历史说明，避免破坏仓库、路径和历史引用。
+- 保留 `BoostAsioDemo` 历史说明，避免破坏仓库路径和历史引用。当前本地目录和远端仓库名已进入迁移期。
 - 增加命名迁移说明：哪些名字立即切换，哪些二进制/路径保持兼容。
 
 验收：

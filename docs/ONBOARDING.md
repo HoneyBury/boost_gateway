@@ -21,8 +21,8 @@
 ### 克隆和构建
 
 ```bash
-git clone <repo-url> BoostAsioDemo
-cd BoostAsioDemo
+git clone <repo-url> boost_gateway
+cd boost_gateway
 
 # Debug 构建（默认）
 cmake --preset default
@@ -57,7 +57,7 @@ curl http://127.0.0.1:9080/health
 ## 项目结构
 
 ```
-BoostAsioDemo/
+boost_gateway/
 ├── include/              # 公共头文件
 │   ├── v2/               # 主线 v2 框架头文件
 │   │   ├── actor/        # Actor 模型
