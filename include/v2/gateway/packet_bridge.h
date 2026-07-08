@@ -7,8 +7,8 @@
 namespace v2::gateway {
 
 /// Abstract interface for packet handling in the gateway.
-/// This is the v2 canonical interface; legacy v1 code
-/// (game::gateway::GatewayPacketBridge) inherits from this.
+/// v1 legacy code (game::gateway::GatewayPacketBridge) also inherits from this
+/// to bridge the old gateway into the v2 pipeline.
 class PacketBridge {
 public:
     virtual ~PacketBridge() = default;

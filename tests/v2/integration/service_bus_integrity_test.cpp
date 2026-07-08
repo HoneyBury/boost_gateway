@@ -442,7 +442,7 @@ TEST(ServiceBusIntegrity, ServiceRegistryPurgeExpired) {
     registry->register_instance(v2::service::ServiceId::kBattle, "127.0.0.1", 9303);
     EXPECT_GE(registry->instance_count(), 1U);
 
-    auto purged = registry->purge_expired();
+    [[maybe_unused]] auto purged = registry->purge_expired();
     EXPECT_GE(registry->instance_count(), 0U);  // purge removes expired entries
 }
 
