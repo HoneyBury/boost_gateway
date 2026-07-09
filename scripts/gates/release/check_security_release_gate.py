@@ -42,15 +42,17 @@ def check_source_contracts(root: Path, errors: list[str]) -> None:
     login_main = root / "examples" / "v2_login_backend" / "main.cpp"
     config_source = root / "src" / "app" / "config.cpp"
     admin_doc = root / "docs" / "archive" / "history-v1" / "v1-admin-audit-rules.md"
-    admin_source = root / "src" / "game" / "gateway" / "admin_service.cpp"
+    current_state_doc = root / "docs" / "current-state.md"
+    release_governance_doc = root / "docs" / "release-governance.md"
 
     required_snippets = {
         login_header: ["production_auth_required"],
         login_source: ["jwt_required", "production auth requires"],
         login_main: ["resolve_backend_config_path", "load_backend_service_config"],
         config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_SECRET", "V2_LOGIN_JWT_PUBLIC_KEY"],
-    admin_doc: ["admin_invoke", "admin_denied", "ACL"],
-    admin_source: ["AUDIT_LOG(\"admin_invoke\"", "admin_denied", "is_authorized", "payload_excerpt"],
+        admin_doc: ["admin_invoke", "admin_denied", "ACL"],
+        release_governance_doc: ["legacy demo admin surface", "不代表当前 v2 主线提供正式 admin 控制面"],
+        current_state_doc: ["admin_service", "legacy-v1 / demo-only", "不进入默认 gate"],
     }
     for path, snippets in required_snippets.items():
         if not path.exists():
@@ -98,4 +100,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
