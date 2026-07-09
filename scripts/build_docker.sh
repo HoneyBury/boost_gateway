@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec "$(dirname "$0")/wrappers/sh/build_docker.sh" "$@"
+exec "$(dirname "$0")/tools/build_docker.sh" "$@"

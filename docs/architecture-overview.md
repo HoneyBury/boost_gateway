@@ -192,6 +192,6 @@ Each process independent. Raft for stateful services.
 - [Current State](current-state.md)
 - [Docs Index](README.md)
 - [Performance Baseline](performance-baseline.md)
-- [Reliability Matrix](reliability-matrix.md)
+- [Release Governance](release-governance.md)
 - [Production Deployment Runbook](production-deployment-runbook.md)
 - [TLS / mTLS Runbook](tls-mtls-runbook.md)

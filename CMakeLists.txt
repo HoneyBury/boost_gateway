@@ -13,10 +13,7 @@ option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
 option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
-option(BOOST_BUILD_V1_LEGACY_EXAMPLES "Build legacy v1 example and showcase binaries" OFF)
-option(BOOST_BUILD_V1_LEGACY_CORE "Build legacy v1 core libraries under src/game" OFF)
-option(BOOST_BUILD_V1_LEGACY_TESTS "Build legacy v1-root unit/integration tests" OFF)
-option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" OFF)
+option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" ON)
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
 find_package(gRPC QUIET)
@@ -63,21 +60,6 @@ install(TARGETS
     echo_client
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
-
-if(BOOST_BUILD_V1_LEGACY_EXAMPLES)
-    install(TARGETS
-        echo_server
-        gateway_pressure
-        login_server
-        room_server
-        battle_server
-        login_demo
-        room_demo
-        battle_demo
-        admin_demo
-        RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
-    )
-endif()
 
 install(DIRECTORY config/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/config"

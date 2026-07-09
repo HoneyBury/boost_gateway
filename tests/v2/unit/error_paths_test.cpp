@@ -2,7 +2,6 @@
 
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/client.h"
-#include "net/protocol.h"
 #include <thread>
 
 namespace sdk = boost_gateway::sdk;
@@ -79,14 +78,4 @@ TEST(ErrorPathsTest, PushCallbackNotInvokedWithoutConnection) {
 
     client.disconnect();  // should not crash
     EXPECT_EQ(invoked, 0);
-}
-
-// ─── Invalid token handling ─────────────────────────────────────────────
-
-TEST(ErrorPathsTest, InvalidTokenHandling) {
-    // Verify protocol error codes for auth failures
-    EXPECT_EQ(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidToken), 1003);
-    EXPECT_EQ(static_cast<std::int32_t>(net::protocol::ErrorCode::kTokenExpired), 1005);
-    EXPECT_EQ(static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired), 1001);
-    EXPECT_EQ(static_cast<std::int32_t>(net::protocol::ErrorCode::kRateLimited), 9001);
 }

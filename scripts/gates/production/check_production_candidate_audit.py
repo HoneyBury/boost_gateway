@@ -18,10 +18,8 @@ REQUIRED_FILES = {
     "operations-runbook": "docs/production-operations-runbook.md",
     "sdk-runbook": "sdk/docs/README.md",
     "sdk-compatibility-matrix": "sdk/docs/compatibility.md",
-    "release-checklist": "docs/v3-release-checklist.md",
-    "reliability-matrix": "docs/reliability-matrix.md",
     "fixed-runner-playbook": "docs/fixed-runner-playbook.md",
-    "production-evidence-runner": "docs/production-evidence-runner.md",
+    "release-governance": "docs/release-governance.md",
     "production-candidate-hardening-plan": "docs/archive/plans/production-candidate-hardening-plan.md",
     "p5-resilience-release": "docs/archive/releases/v3.3.2-p5-production-resilience.md",
     "p6-production-evidence-release": "docs/archive/releases/v3.3.2-p6-production-evidence.md",
@@ -61,13 +59,11 @@ REQUIRED_TEXT = {
         "BOOST_GATEWAY_SDK_LIBRARY",
         "disconnect callback",
     ],
-    "docs/v3-release-checklist.md": [
+    "docs/release-governance.md": [
         "verify_production_resilience_gate.py",
         "verify_production_evidence_gate.py",
         "verify_production_candidate_evidence.py",
         "verify_preprod_recovery_drill.py",
-    ],
-    "docs/reliability-matrix.md": [
         "production_resilience_gate",
         "production_evidence_gate",
         "monitoring_operability_gate",
@@ -75,10 +71,6 @@ REQUIRED_TEXT = {
     ],
     "docs/fixed-runner-playbook.md": [
         "production-resilience.yml",
-        "production-evidence.yml",
-        "p6-candidate-audit-summary.json",
-    ],
-    "docs/production-evidence-runner.md": [
         "production-evidence.yml",
         "p6-candidate-audit-summary.json",
     ],

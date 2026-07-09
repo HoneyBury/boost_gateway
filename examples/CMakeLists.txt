@@ -9,17 +9,6 @@ add_subdirectory(v2_arch_benchmark)
 add_subdirectory(v2_match_backend)
 add_subdirectory(v2_leaderboard_backend)
 
-if(BOOST_BUILD_V1_LEGACY_EXAMPLES)
-    add_subdirectory(pressure)
-    add_subdirectory(login)
-    add_subdirectory(room)
-    add_subdirectory(battle)
-    add_subdirectory(login_demo)
-    add_subdirectory(room_demo)
-    add_subdirectory(battle_demo)
-    add_subdirectory(admin_demo)
-endif()
-
 # ─── Optional demo plugins (not in default build) ────────────────────
 option(BOOST_BUILD_ECHO_PLUGIN_DEMO "Build realtime_echo_plugin demo" OFF)
 if(BOOST_BUILD_ECHO_PLUGIN_DEMO)

@@ -75,7 +75,9 @@ bool GatewayServerShadowBridge::should_emit(std::uint16_t message_id, std::strin
     return true;
 }
 
-void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& session,
+// ─── v2 PacketBridge overrides ───────────────────────────────────────────
+
+void GatewayServerShadowBridge::on_packet(SessionHandle session,
                                           const net::Session::PacketMessage& message) {
     if (!should_forward(message.message_id)) {
         return;
@@ -85,7 +87,7 @@ void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& s
     mirrored_packets_.fetch_add(1, std::memory_order_relaxed);
 
     (void)adapter_.handle_incoming(ClientEnvelope{
-        .session_id = get_or_create_session_id(session),
+        .session_id = static_cast<SessionId>(session),
         .protocol_message_id = message.message_id,
         .request_id = message.request_id,
         .error_code = message.error_code,
@@ -94,17 +96,11 @@ void GatewayServerShadowBridge::on_packet(const std::shared_ptr<net::Session>& s
     });
 }
 
-void GatewayServerShadowBridge::on_close(const std::shared_ptr<net::Session>& session) {
-    std::scoped_lock lock(state_mutex_);
-    auto it = session_ids_by_ptr_.find(session.get());
-    if (it == session_ids_by_ptr_.end()) {
-        return;
-    }
-
-    runtime_.on_session_closed(it->second);
-    sessions_by_id_.erase(it->second);
-    session_ids_by_ptr_.erase(it);
+void GatewayServerShadowBridge::on_close(SessionHandle session) {
+    runtime_.on_session_closed(static_cast<SessionId>(session));
 }
+
+// ─── Write scheduling ────────────────────────────────────────────────────
 
 void GatewayServerShadowBridge::set_write_scheduler(SessionWriteScheduler scheduler) {
     std::scoped_lock lock(scheduler_mutex_);

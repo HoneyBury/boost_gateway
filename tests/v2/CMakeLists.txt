@@ -1,7 +1,6 @@
 add_executable(project_v2_unit_tests
     unit/actor_runtime_test.cpp
     unit/actor_snapshot_test.cpp
-    unit/battle_archive_test.cpp
     unit/lru_cache_test.cpp
     unit/battle_actor_test.cpp
     unit/battle_runtime_world_test.cpp
@@ -25,7 +24,6 @@ add_executable(project_v2_unit_tests
     unit/gateway_response_parser_test.cpp
     unit/io_engine_test.cpp
     unit/json_file_store_test.cpp
-    unit/legacy_persistence_bridge_test.cpp
     unit/player_actor_test.cpp
     unit/room_actor_test.cpp
     unit/service_boundary_test.cpp

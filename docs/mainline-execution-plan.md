@@ -18,10 +18,10 @@
 | 阶段 | 主题 | 状态 |
 |---|---|---|
 | Phase 1 | 删除 Windows 支持 | ✅ 已完成 |
-| Phase 2 | 整理脚本 | ⬜ 待执行 |
-| Phase 3 | 整合文档 | ⬜ 待执行 |
-| Phase 4 | 修复代码质量 | ⬜ 待执行 |
-| Phase 5 | 精简 CI/CD | ⬜ 待执行 |
+| Phase 2 | 整理脚本 | ✅ 已完成 |
+| Phase 3 | 整合文档 | ✅ 已完成 |
+| Phase 4 | 修复代码质量 | ✅ 已完成 |
+| Phase 5 | 精简 CI/CD | ✅ 已完成 |
 
 ## Phase 1: 删除 Windows 支持 ✅
 
@@ -38,51 +38,48 @@
 - 版本号更新到 3.5.0
 - 构建验证通过（project_app 和 project_v2 编译成功）
 
-## Phase 2: 整理脚本
+## Phase 2: 整理脚本 ✅
 
 目标：减少脚本杂乱，为未分配的 gate 脚本指定 canonical 路径。
 
-待执行任务：
+已完成：
 
-1. 为 15 个未分配 canonical path 的 gate 脚本创建子目录并移动：
-   - `scripts/gates/infrastructure/` — fixed runner 相关
-   - `scripts/gates/k8s/` — K8s operator 相关
-   - `scripts/gates/e2e/` — E2E 测试相关
-2. 合并 2 对重叠 gate 脚本
-3. 更新 `script-inventory.json`
+- 为 15 个未分配 canonical path 的 gate 脚本创建子目录并移动至 `scripts/gates/infrastructure/`、`scripts/gates/k8s/`、`scripts/gates/e2e/`
+- 合并 2 对重叠 gate 脚本
+- 更新 `script-inventory.json`
 
-## Phase 3: 整合文档
+## Phase 3: 整合文档 ✅
 
 目标：合并重叠文档，移动专业文档到子目录，创建开发者入门指南。
 
-待执行任务：
+已完成：
 
-1. 合并 `reliability-matrix.md` + `v3-release-checklist.md` → `release-governance.md`
-2. 合并 `production-evidence-runner.md` → `fixed-runner-playbook.md`
-3. 移动 9 个专业文档到 `docs/deployment/`、`docs/production/`、`docs/legacy/`
-4. 新建 `docs/ONBOARDING.md`（开发者入门指南）
-5. 精简 `current-state.md`（删除 Windows 引用）
-6. 更新 `project-blueprint.md`
+- 合并 `reliability-matrix.md` + `v3-release-checklist.md` → `release-governance.md`
+- 合并 `production-evidence-runner.md` → `fixed-runner-playbook.md`
+- 移动 9 个专业文档到 `docs/deployment/`、`docs/production/`、`docs/legacy/`
+- 新建 `docs/ONBOARDING.md`（开发者入门指南）
+- 精简 `current-state.md`（删除 Windows 引用）
+- 更新 `project-blueprint.md`
 
-## Phase 4: 修复代码质量
+## Phase 4: 修复代码质量 ✅
 
 目标：修复 v2→v1 耦合、测试链接问题、清理遗留引用。
 
-待执行任务：
+已完成：
 
-1. 提取 `v2::gateway::PacketBridge` 接口，解除 `GatewayServerShadowBridge` 对 v1 `game::gateway::GatewayPacketBridge` 的继承耦合
-2. 修复 `error_paths_test` 的 SDK 链接问题
-3. 清理 v2 代码中的死引用
+- 提取 `v2::gateway::PacketBridge` 接口，`GatewayServerShadowBridge` 不再继承 v1 `GatewayPacketBridge`
+- `error_paths_test` 链接问题已处理（Windows 自动链接场景，Windows 支持已删除）
+- 清理 v2 代码中的死引用
 
-## Phase 5: 精简 CI/CD
+## Phase 5: 精简 CI/CD ✅
 
 目标：合并重叠 workflow，减少 workflow 数量。
 
-待执行任务：
+已完成：
 
-1. 将 `release-baseline.yml` 的 baseline 采集步骤合入 `release.yml`
-2. 删除 `release-baseline.yml`
-3. 新建 `.github/README.md` 记录 CI/CD 架构
+- 将 `release-baseline.yml` 的 baseline 采集步骤合入 `release.yml`
+- 删除 `release-baseline.yml`
+- 新建 `.github/README.md` 记录 CI/CD 架构
 
 ## 验证命令
 

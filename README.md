@@ -24,10 +24,9 @@
 - 服务端部署快速说明：`docs/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
-- 可靠性矩阵：`docs/reliability-matrix.md`
+- 可靠性矩阵与发布门禁：`docs/release-governance.md`
 - 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
-- 发布/验收门禁：`docs/v3-release-checklist.md`
 
 当前 CI/CD 平台选择：
 
@@ -65,7 +64,7 @@ cmake --build build/linux-ninja-debug-conan --parallel
 
 说明：
 
-- 当前仓库提供 `conanfile.py` 形式的 Conan 2 PoC。
+- 当前仓库 `conanfile.py` 已将 Conan 2 依赖管理提升为主线默认路径（`BOOST_USE_CONAN_DEPS=ON`）；缺失 Conan 时自动回退到 `FetchContent/third_party`。
 - 推荐把 `CONAN_HOME` 指到仓库内目录（例如 `.conan2-local`），避免受用户主目录权限影响。
 - `python scripts/bootstrap_conan.py` 会优先准备仓库内 Conan home，并按 `conan/remotes.example.json` 配置 remote。
 - 如果存在 `conan/remotes.local.json`，它会覆盖示例 remote 配置，适合内网落地。
@@ -78,11 +77,11 @@ cmake --build build/linux-ninja-debug-conan --parallel
   - 双轨保守：`OpenSSL`
   - 实验保留：`protobuf`、`grpc`、`sqlite3`
 - 当前已打通的 Conan 主线路径以 `with_grpc=False`、`with_sqlite=False` 为默认 lockfile 口径；`sqlite3` 保留为可选/实验层，不阻塞主线 Conan install。
-- 当前已落仓 Linux 的 `nosqlite` lockfile：
+- 当前已落仓的 lockfile：
   - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
-  - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
-- CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`。
-- 如果 Conan 依赖未准备好或未启用，项目仍回退到现有 `FetchContent/third_party` 路径。
+  - `conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock`
+- CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`（同时给出 warning）。
+- 如果 Conan 依赖未准备好或未启用，项目会回退到现有 `FetchContent/third_party` 路径。
 - SDK 安装打包现在会同时兼容 Conan 和 fallback 两种 `nlohmann_json` 头文件来源，不再假定只能来自 `nlohmann_json_SOURCE_DIR`。
 - `project_v3` 也不再显式依赖 `hiredis_SOURCE_DIR`；Conan 与 fallback 都统一走 `hiredis` target 暴露的头文件路径。
 - Linux `nosqlite` lockfile 已验证可真实生成，lockfile-based `conan install` 能进入解图、取包与缺失包构建阶段；真正在 Ubuntu fixed-runner 上的实跑结论应以 CI 结果为准。
@@ -132,13 +131,6 @@ build/Release/examples/v2_match_backend/v2_match_backend
 # leaderboard backend
 build/Release/examples/v2_leaderboard_backend/v2_leaderboard_backend
 ```
-
-Legacy 兼容入口说明：
-
-- `echo_server` 已降级为 legacy bridge，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
-- v1 `login_server` / `room_server` / `battle_server` / `gateway_pressure` 和 `*_demo` showcase 也已降级为 legacy，仅在 `-DBOOST_BUILD_V1_LEGACY_EXAMPLES=ON` 时显式构建。
-- `src/game` / `project_game` 与根级 `tests/unit` / `tests/integration` 也已视为 legacy-v1 surface；如需兼容排查，分别显式打开 `-DBOOST_BUILD_V1_LEGACY_CORE=ON` 与 `-DBOOST_BUILD_V1_LEGACY_TESTS=ON`。
-- `tank_battle_demo` 与 `realtime_echo_plugin` 继续保持默认关闭，仅作为 demo/plugin 样例。
 
 ## 文档策略
 

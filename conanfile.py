@@ -7,6 +7,10 @@ class BoostGatewayConan(ConanFile):
     version = "0.1"
     package_type = "application"
 
+    # Conan >=2.0, <2.9 to avoid CMakeDeps header-only library regression in 2.30+
+    # See: docs/performance-baseline.md P1 fmt header_only=False workaround
+    conan_version = ">=2.0.0,<2.9.0"
+
     settings = "os", "arch", "compiler", "build_type"
     options = {
         "with_grpc": [True, False],

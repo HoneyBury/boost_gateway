@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec "$(dirname "$0")/wrappers/sh/inspect_dependency_layout.sh" "$@"
+exec "$(dirname "$0")/tools/inspect_dependency_layout.sh" "$@"

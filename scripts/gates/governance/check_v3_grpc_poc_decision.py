@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def read_text(path: Path) -> str:
@@ -107,15 +107,13 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
     add(checks, "grpc benchmark remains login-only scope", "make_login_backend()" in grpc_benchmark and "GatewayGrpcServer" in grpc_benchmark, "grpc benchmark is real I/O but still limited to the currently implemented login path")
     add(checks, "grpc non-login coverage documented as next evidence", "扩展到更多非登录路径" in read_text(ROOT / "docs/mainline-execution-plan.md") and "defer_default_transport" in read_text(ROOT / "docs/mainline-execution-plan.md"), "mainline plan requires non-login gRPC evidence while keeping default transport deferred")
     conan_validate = read_text(ROOT / ".github/workflows/conan-validate.yml")
-    release_baseline = read_text(ROOT / ".github/workflows/release-baseline.yml")
     production_evidence = read_text(ROOT / ".github/workflows/production-evidence.yml")
     add(
         checks,
         "grpc workflow still opt-in",
         '-o "&:with_grpc=False"' in conan_validate
-        and '-o "&:with_grpc=False"' in release_baseline
         and '-o "&:with_grpc=False"' in production_evidence,
-        "fixed-runner Conan workflows keep gRPC disabled in the default dependency graph",
+        "Conan-using fixed-runner workflows keep gRPC disabled in the default dependency graph",
     )
     add(
         checks,

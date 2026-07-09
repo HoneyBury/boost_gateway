@@ -84,9 +84,11 @@ public:
         adapter_.bind_gateway(gateway_actor_);
     }
 
-    void on_packet(const std::shared_ptr<net::Session>& session,
+    // v2 PacketBridge overrides — called from v2 pipeline
+    void on_packet(SessionHandle session,
                    const net::Session::PacketMessage& message) override;
-    void on_close(const std::shared_ptr<net::Session>& session) override;
+    void on_close(SessionHandle session) override;
+
     void deliver(SessionWrite write) override;
     void set_write_scheduler(SessionWriteScheduler scheduler);
 

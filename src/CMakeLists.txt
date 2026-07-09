@@ -45,24 +45,3 @@ add_subdirectory(hello)
 add_subdirectory(net)
 add_subdirectory(v3)
 add_subdirectory(v2)
-
-if(BOOST_BUILD_V1_LEGACY_CORE OR BOOST_BUILD_V1_LEGACY_EXAMPLES OR BOOST_BUILD_V1_LEGACY_TESTS)
-    add_library(project_game STATIC)
-    target_include_directories(project_game
-        PUBLIC
-            "${CMAKE_SOURCE_DIR}/include"
-    )
-    target_link_libraries(project_game
-        PUBLIC
-            project_net
-            nlohmann_json::nlohmann_json
-    )
-    apply_project_warnings(project_game)
-
-    add_subdirectory(game)
-
-    target_link_libraries(project_game
-        PUBLIC
-            project_v2
-    )
-endif()

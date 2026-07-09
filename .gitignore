@@ -31,3 +31,4 @@ sdk/python/__pycache__/
 demo/games/tank_battle/logs/
 include_override/
 /.conan2-local/
+/.conan2-lock-*/

@@ -38,11 +38,11 @@
     "scripts/read_runner_matrix.py": {"category": "tool", "canonical": "scripts/tools/read_runner_matrix.py"},
     "scripts/render_validation_summary.py": {"category": "tool", "canonical": "scripts/tools/render_validation_summary.py"},
 
-    "scripts/build_docker.sh": {"category": "tool"},
-    "scripts/deploy_k8s.sh": {"category": "tool"},
-    "scripts/gen_certs.sh": {"category": "tool"},
-    "scripts/inspect_dependency_layout.sh": {"category": "tool"},
-    "scripts/operator_kind_smoke.sh": {"category": "tool"},
+    "scripts/build_docker.sh": {"category": "tool", "canonical": "scripts/tools/build_docker.sh"},
+    "scripts/deploy_k8s.sh": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.sh"},
+    "scripts/gen_certs.sh": {"category": "tool", "canonical": "scripts/tools/gen_certs.sh"},
+    "scripts/inspect_dependency_layout.sh": {"category": "tool", "canonical": "scripts/tools/inspect_dependency_layout.sh"},
+    "scripts/operator_kind_smoke.sh": {"category": "tool", "canonical": "scripts/tools/operator_kind_smoke.sh"},
 
     "scripts/collect_docker_production_perf_snapshot.py": {"category": "producer", "canonical": "scripts/producers/collect_docker_production_perf_snapshot.py"},
     "scripts/collect_release_baseline.py": {"category": "producer", "canonical": "scripts/producers/collect_release_baseline.py"},
@@ -50,10 +50,10 @@
     "scripts/collect_v2_perf_baseline.py": {"category": "producer", "canonical": "scripts/producers/collect_v2_perf_baseline.py"},
     "scripts/run_cloud_production_closure.py": {"category": "producer", "canonical": "scripts/producers/run_cloud_production_closure.py"},
 
-    "scripts/check_mainline_readiness.py": {"category": "public_entrypoint"},
-    "scripts/check_production_evidence_manifest.py": {"category": "public_entrypoint"},
-    "scripts/render_production_readiness_report.py": {"category": "public_entrypoint"},
-    "scripts/run_long_soak_capacity.py": {"category": "public_entrypoint"},
+    "scripts/check_mainline_readiness.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/check_mainline_readiness.py"},
+    "scripts/check_production_evidence_manifest.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/check_production_evidence_manifest.py"},
+    "scripts/render_production_readiness_report.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/render_production_readiness_report.py"},
+    "scripts/run_long_soak_capacity.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/run_long_soak_capacity.py"},
 
     "scripts/check_config_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_config_governance.py"},
     "scripts/check_config_source_layout.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_config_source_layout.py"},

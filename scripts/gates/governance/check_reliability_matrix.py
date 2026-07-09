@@ -49,7 +49,7 @@ REQUIRED_SCENARIOS = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--matrix", type=Path, default=Path("docs/reliability-matrix.md"))
+    parser.add_argument("--matrix", type=Path, default=Path("docs/release-governance.md"))
     return parser.parse_args()
 
 

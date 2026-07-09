@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-exec "$(dirname "$0")/wrappers/sh/deploy_k8s.sh" "$@"
+exec "$(dirname "$0")/tools/deploy_k8s.sh" "$@"

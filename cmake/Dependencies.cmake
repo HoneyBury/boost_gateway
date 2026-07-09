@@ -213,23 +213,23 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
     endif()
 
     # ---------------------------------------------------------------------------
-    # googletest v1.17.0
+    # googletest v1.15.0
     # ---------------------------------------------------------------------------
     project_resolve_source_dir("googletest" "CMakeLists.txt" GOOGLETEST_SOURCE_DIR)
     if(GOOGLETEST_SOURCE_DIR)
         FetchContent_Declare(googletest
             SOURCE_DIR "${GOOGLETEST_SOURCE_DIR}"
         )
-    elseif(EXISTS "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz")
-        message(STATUS "Using local archive: googletest-1.17.0.tar.gz")
+    elseif(EXISTS "${THIRD_PARTY_DIR}/googletest-1.15.0.tar.gz")
+        message(STATUS "Using local archive: googletest-1.15.0.tar.gz")
         FetchContent_Declare(googletest
-            URL "${THIRD_PARTY_DIR}/googletest-1.17.0.tar.gz"
+            URL "${THIRD_PARTY_DIR}/googletest-1.15.0.tar.gz"
             DOWNLOAD_EXTRACT_TIMESTAMP ON
         )
     else()
         FetchContent_Declare(googletest
             GIT_REPOSITORY https://github.com/google/googletest.git
-            GIT_TAG v1.17.0
+            GIT_TAG v1.15.0
         )
     endif()
 
@@ -285,7 +285,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
     message(STATUS "  crypto:  ${OPENSSL_CRYPTO_LIBRARY}")
 
     # ---------------------------------------------------------------------------
-    # Boost 1.90.0
+    # Boost 1.86.0
     # ---------------------------------------------------------------------------
     project_resolve_source_dir("boost" "boost/version.hpp" BOOST_SOURCE_CACHE_DIR)
     if(BOOST_SOURCE_CACHE_DIR)
@@ -297,17 +297,17 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(Boost
             SOURCE_DIR "/usr/include"
         )
-    elseif(EXISTS "${THIRD_PARTY_DIR}/boost_1_90_0.zip")
-        message(STATUS "Using local archive: boost_1_90_0.zip")
+    elseif(EXISTS "${THIRD_PARTY_DIR}/boost_1_86_0.zip")
+        message(STATUS "Using local archive: boost_1_86_0.zip")
         FetchContent_Declare(Boost
-            URL "${THIRD_PARTY_DIR}/boost_1_90_0.zip"
-            URL_HASH SHA256=bdc79f179d1a4a60c10fe764172946d0eeafad65e576a8703c4d89d49949973c
+            URL "${THIRD_PARTY_DIR}/boost_1_86_0.zip"
+            URL_HASH SHA256=cd20a5694e753683e1dc2ee10e2d1bb11704e65893ebcc6ced234ba68e5d8646
             DOWNLOAD_EXTRACT_TIMESTAMP ON
         )
     else()
         FetchContent_Declare(Boost
-            URL https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip
-            URL_HASH SHA256=bdc79f179d1a4a60c10fe764172946d0eeafad65e576a8703c4d89d49949973c
+            URL https://archives.boost.io/release/1.86.0/source/boost_1_86_0.zip
+            URL_HASH SHA256=cd20a5694e753683e1dc2ee10e2d1bb11704e65893ebcc6ced234ba68e5d8646
             DOWNLOAD_EXTRACT_TIMESTAMP ON
         )
     endif()

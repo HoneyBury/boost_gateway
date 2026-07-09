@@ -64,9 +64,9 @@ def main() -> int:
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
-    add(checks, "inventory-schema-version", inventory.get("schema_version") == 1, "schema_version is 1")
+    add(checks, "inventory-schema-version", inventory.get("schema_version") == 2, "schema_version is 2")
     add(checks, "all-scripts-declared", actual <= declared, "all top-level scripts are declared")
-    add(checks, "no-missing-declared-scripts", declared <= actual, "all declared scripts exist")
+    add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
 
     if isinstance(scripts, dict):
         for path_text, meta in sorted(scripts.items()):

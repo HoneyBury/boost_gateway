@@ -36,8 +36,7 @@ def main() -> int:
     rc = read_text(root, "scripts/gates/release/verify_release_candidate.py")
     data = read_text(root, "scripts/verify_data_recovery_gate.py")
     obs = read_text(root, "scripts/verify_observability_gate.py")
-    checklist = read_text(root, "docs/v3-release-checklist.md")
-    reliability = read_text(root, "docs/reliability-matrix.md")
+    governance = read_text(root, "docs/release-governance.md")
     current = read_text(root, "docs/current-state.md")
 
     try:
@@ -89,18 +88,18 @@ def main() -> int:
     )
     add(
         "docs:release-checklist-p3",
-        "verify_data_recovery_gate.py" in checklist,
-        "release checklist documents the P3 gate",
+        "verify_data_recovery_gate.py" in governance,
+        "release governance docs reference the P3 gate",
     )
     add(
         "docs:release-checklist-p4",
-        "verify_observability_gate.py" in checklist,
-        "release checklist documents the P4 gate",
+        "verify_observability_gate.py" in governance,
+        "release governance docs reference the P4 gate",
     )
     add(
         "docs:reliability-p3-p4",
-        "verify_data_recovery_gate.py" in reliability and "verify_observability_gate.py" in reliability,
-        "reliability matrix documents both P3 and P4",
+        "verify_data_recovery_gate.py" in governance and "verify_observability_gate.py" in governance,
+        "release governance docs reference both P3 and P4",
     )
     add(
         "docs:current-state-p3-p4",

@@ -61,8 +61,8 @@ endif()
 if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
     FetchContent_Declare(Boost
-        URL https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip
-        URL_HASH SHA256=bdc79f179d1a4a60c10fe764172946d0eeafad65e576a8703c4d89d49949973c
+        URL https://archives.boost.io/release/1.86.0/source/boost_1_86_0.zip
+        URL_HASH SHA256=cd20a5694e753683e1dc2ee10e2d1bb11704e65893ebcc6ced234ba68e5d8646
     )
     FetchContent_GetProperties(Boost)
     if(NOT boost_POPULATED)

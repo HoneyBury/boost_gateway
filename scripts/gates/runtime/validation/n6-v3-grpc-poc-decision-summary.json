@@ -1,0 +1,179 @@
+{
+  "artifacts": {
+    "adr": "/Users/honeybury/workspace/boost_gateway/scripts/gates/docs/archive/process/v3-proto-grpc-adr.md",
+    "summary_path": "/Users/honeybury/workspace/boost_gateway/scripts/gates/runtime/validation/n6-v3-grpc-poc-decision-summary.json",
+    "tcp_baseline_summary_path": "/Users/honeybury/workspace/boost_gateway/scripts/gates/runtime/perf/release-baseline/summary.json"
+  },
+  "checks": [
+    {
+      "category": "decision",
+      "detail": "ADR must not approve gRPC as default transport",
+      "name": "adr default transport deferred",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "ADR must preserve default TCP + BackendEnvelope chain",
+      "name": "adr names tcp baseline",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "ADR must record continue/pause criteria",
+      "name": "adr has decision criteria",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "proto README must document generated boundary",
+      "name": "proto readme documents generated boundary",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "current-state must keep default chain explicit",
+      "name": "current state keeps grpc out of default chain",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "CMake target check_v3_proto_schema exists",
+      "name": "cmake exposes proto schema target",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "CMake target check_v3_proto_transport_contract exists",
+      "name": "cmake exposes transport contract target",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "CMake target generate_v3_proto_cpp exists",
+      "name": "cmake exposes generation target",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "experimental gateway gRPC scope now includes room create/join/leave/ready",
+      "name": "grpc scope includes room base flows",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "experimental gateway gRPC scope now includes match and leaderboard base flows",
+      "name": "grpc scope includes match and leaderboard base flows",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "experimental gateway gRPC scope now includes battle create/input/state/finish",
+      "name": "grpc scope includes battle base flows",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "grpc adapter routes requests via GatewayServiceBridge-backed callbacks instead of the old allow-all-only stub path",
+      "name": "grpc adapter uses real backend bridge routing",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "gRPC gateway still lacks streaming, SDK-integrated full-flow, RBAC, and TLS production-path coverage",
+      "name": "grpc full-flow still incomplete",
+      "passed": true
+    },
+    {
+      "category": "decision",
+      "detail": "grpc vs tcp perf test uses real TCP backend requests",
+      "name": "grpc benchmark uses real tcp io",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "grpc vs tcp perf test uses real gRPC RequestLogin calls",
+      "name": "grpc benchmark uses real grpc io",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "grpc benchmark is real I/O but still limited to the currently implemented login path",
+      "name": "grpc benchmark remains login-only scope",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "mainline plan requires non-login gRPC evidence while keeping default transport deferred",
+      "name": "grpc non-login coverage documented as next evidence",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "fixed-runner Conan workflows keep gRPC disabled in the default dependency graph",
+      "name": "grpc workflow still opt-in",
+      "passed": false
+    },
+    {
+      "category": "decision",
+      "detail": "root CMake keeps BOOST_BUILD_GRPC default OFF",
+      "name": "grpc not default cmake option",
+      "passed": false
+    },
+    {
+      "category": "baseline",
+      "detail": "missing local baseline summary does not promote gRPC; decision remains deferred",
+      "name": "tcp baseline evidence optional for local decision gate",
+      "passed": true
+    }
+  ],
+  "decision": {
+    "default_transport": "sdk_tcp_gateway_backend_envelope",
+    "grpc_profile": "experimental_only",
+    "next_action": "continue_poc_only_after_generated_transport_full_flow_and_benchmark_exist",
+    "status": "defer_default_transport"
+  },
+  "environment": {
+    "host": "HoneyBurydeMacBook-Pro.local",
+    "platform": "macOS-26.5-arm64-arm-64bit-Mach-O",
+    "python": "3.14.4"
+  },
+  "failed_category": "decision",
+  "failed_step": "adr default transport deferred",
+  "generated_at": "2026-07-08T08:18:26Z",
+  "overall_pass": false,
+  "passed": false,
+  "steps": [
+    {
+      "category": "proto_contract",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/honeybury/workspace/boost_gateway/scripts/gates/scripts/check_v3_proto_schema.py",
+        "--proto-dir",
+        "proto/v3"
+      ],
+      "duration_seconds": 0.018,
+      "name": "v3 proto schema contract",
+      "returncode": 2,
+      "status": "failed",
+      "stderr_tail": "/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Users/honeybury/workspace/boost_gateway/scripts/gates/scripts/check_v3_proto_schema.py': [Errno 2] No such file or directory\n",
+      "stdout_tail": ""
+    },
+    {
+      "category": "proto_contract",
+      "command": [
+        "/opt/homebrew/opt/python@3.14/bin/python3.14",
+        "/Users/honeybury/workspace/boost_gateway/scripts/gates/scripts/check_v3_proto_schema.py",
+        "--proto-dir",
+        "proto/v3",
+        "--require-transport-contract"
+      ],
+      "duration_seconds": 0.016,
+      "name": "v3 transport contract",
+      "returncode": 2,
+      "status": "failed",
+      "stderr_tail": "/opt/homebrew/Cellar/python@3.14/3.14.4_1/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python: can't open file '/Users/honeybury/workspace/boost_gateway/scripts/gates/scripts/check_v3_proto_schema.py': [Errno 2] No such file or directory\n",
+      "stdout_tail": ""
+    }
+  ],
+  "summary_version": 2
+}
