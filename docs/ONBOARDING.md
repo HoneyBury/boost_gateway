@@ -154,3 +154,171 @@ python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repeti
 | [性能基线](performance-baseline.md) | 性能数据和归档口径 |
 | [TLS/mTLS](tls-mtls-runbook.md) | 传输安全配置 |
 | [部署运维](deployment/) | 部署、运维、配置 Runbook |
+| [贡献指南](../.github/PULL_REQUEST_TEMPLATE.md) | PR 提交清单与要求 |
+| [提交规范](../.github/COMMIT_CONVENTION.md) | Git 提交消息格式与约定 |
+
+---
+
+## 编码规范
+
+### 文件与目录组织
+
+- 公共头文件放 `include/v2/`（框架主线）或 `include/v3/`（协议演进层）
+- 实现文件放 `src/v2/`，目录结构镜像 `include/v2/`
+- 每个 `.h` 对应一个 `.cpp`（模板或 header-only 除外）
+- 测试文件命名 `*_test.cpp`，放在 `tests/v2/unit/` 或 `tests/v2/integration/`
+
+### 命名约定
+
+| 种类 | 风格 | 示例 |
+|------|------|------|
+| 文件名 | `snake_case` | `backend_metrics.h`, `gateway_service_bridge.cpp` |
+| 类 / 结构体 / 枚举 | `PascalCase` | `SessionManager`, `DecodedHandlerPayload` |
+| 函数 / 方法 | `snake_case` | `decode_handler_payload()`, `record_latency()` |
+| 变量 / 参数 | `snake_case` | `connection_pool_size`, `max_pending` |
+| 宏 / 常量 | `UPPER_SNAKE` | `V2_RATE_LIMIT_CONNECTION`, `BOOST_USE_CONAN_DEPS` |
+| 命名空间 | `snake_case` | `v2::gateway`, `v3::cluster` |
+
+### 代码风格
+
+- 使用 `.clang-format`（LLVM 风格，4 空格，100 列限制）统一格式：
+  ```bash
+  clang-format -i <changed-files>
+  ```
+- 禁止 `using namespace std;` 或 `using namespace boost;`
+- 头文件使用前向声明而非直接 `#include`，仅在需要完整类型时包含
+- 公共 API 优先使用 typed contract（`DecodedHandlerPayload`、`TypedEnvelope`），不扩展 raw JSON
+- 禁止把业务规则写入 `include/v2/` 或 `src/v2/` 公共框架层；业务 demo 放在 `demo/games/`
+
+### C++ 标准
+
+- 项目使用 **C++20**，可使用的特性包括 `std::span`、`concepts`、`std::midpoint`、三路比较运算符
+- 新代码应优先使用标准库设施而非 Boost 对应组件（Boost 1.86 作为后备）
+
+## 测试政策
+
+### 测试分层
+
+| 层级 | 位置 | 执行时间 | 触发方式 |
+|------|------|---------|---------|
+| **单元测试** | `tests/v2/unit/` | 秒级 | 每次本地构建 / PR CI |
+| **集成测试** | `tests/v2/integration/` | 分钟级 | PR CI / nightly |
+| **E2E 多进程** | `tests/v2/integration/` (multi_process) | 分钟级 | PR CI / nightly |
+| **性能 Smoke** | `tests/perf/` (可选构建) | 30s | per-commit (perf label) |
+| **模糊测试** | `tests/fuzz/` (可选构建) | 自定义 | 手动 |
+| **安全测试** | `tests/security/` (可选构建) | 分钟级 | 手动 |
+
+### 运行命令
+
+```bash
+# 全部测试
+ctest --preset default --timeout 300
+
+# 分层运行
+ctest --preset default -R project_v2_unit_tests
+ctest --preset default -R project_v2_integration_tests
+ctest --preset default -R project_v2_multi_process_tests
+
+# 仅 SDK 测试
+ctest --preset default -R sdk
+
+# Release 模式（性能相关）
+cmake --build --preset release
+ctest --preset release
+```
+
+### 测试要求
+
+- **新增代码必须附带单元测试**，覆盖核心逻辑分支
+- **修改公共接口**（handler 签名、消息格式、配置结构）必须更新集成测试
+- **性能敏感路径**需要 smoke 覆盖（通过 `collect_v2_perf_baseline.py --run-preset smoke`）
+- 测试命名：测试套件使用 `PascalCase`（`HealthCheckTest`），用例使用 `snake_case`（`all_pass_when_backends_healthy`）
+- 框架使用 Google Test + `gtest_discover_tests()` CMake 集成
+
+## Benchmark 政策
+
+| 预设 | 用途 | 时长 | 触发 |
+|------|------|------|------|
+| `smoke` | PR 性能验证 | ~30s | `perf` label 触发 per-commit check |
+| `baseline` | Release 准入 | ~30min | 手动 `release.yml` + `perf-preset=baseline` |
+| `capacity` | 容量基线 | ~60min | 固定 runner / 手动 |
+| `business-capacity` | 业务闭环容量 | ~60min | 固定 runner / 手动 |
+
+```bash
+# PR smoke
+python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
+
+# 完整基线
+python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3
+```
+
+性能门禁见 `config/perf/v2_arch_baseline_gates.json`，CI 自动判定退化。
+
+## 协议开发指南
+
+添加新的消息类型的完整路径：
+
+1. **定义 proto schema**（可选，长期方向）: 在 `proto/v3/` 中添加 `.proto` 定义
+2. **添加 typed envelope**（当前主线方式）: 在 `include/v2/service/` 中定义请求/响应类型，添加 `HandlerPayloadEncoding` 枚举
+3. **实现后端 handler**: 在对应 `src/v2/<service>/<service>_backend_service.cpp` 中使用 `decode_handler_payload<T>()` 和 `wrap_typed_response_if_needed()`
+4. **添加测试**: 在 `tests/v2/unit/service_boundary_test.cpp` 中验证 typed encode/decode
+
+**规则**:
+- 新消息必须走 typed / proto，不得扩展 legacy raw JSON
+- raw JSON 路径已收缩到内部 Raft RPC，不适用于业务消息
+- 参考现有 handler 实现（如 `room_create`、`match_join`）作为模板
+
+## SDK 扩展指南
+
+SDK 版本独立管理（当前 `4.1.0`），支持 C++ / C ABI / Python / C#。
+
+### 新增 API 的路径
+
+1. **C++ API** → `sdk/include/boost_gateway/sdk/client.h` + `sdk/src/client.cpp`
+2. **C ABI** → `sdk/include/boost_gateway/sdk/c_api.h` + `sdk/src/c_api.cpp`
+3. **Python 绑定** → `sdk/python/`
+4. **C# 绑定** → `sdk/csharp/SdkClient.cs`
+5. **测试** → `sdk/tests/unit/` + `sdk/tests/sdk_integration_test.cpp`
+6. **示例** → `sdk/examples/`
+
+### 规则
+
+- 新增 SDK API 必须绑定协议 schema 和测试
+- SDK 保持向后 ABI 兼容（不删除或重命名公开符号）
+- Python/C# 绑定通过 C ABI 间接调用，避免直接依赖 C++ ABI
+
+## Demo / Plugin 开发指南
+
+Demo（如 `demo/games/tank_battle/`）用于在框架能力之上验证业务逻辑，不构建在默认主线路径中。
+
+### 规则
+
+- 新 demo 必须通过 `BOOST_BUILD_*_DEMO=ON` 可选项控制构建
+- Demo 代码不得修改 `include/v2/`、`src/v2/`、`sdk/` 框架层（bug 修复除外）
+- 框架提供 SPI 和运行时 hook，demo 通过 SPI 扩展行为
+- 参考 `demo/games/tank_battle/` 作为最小 demo 骨架
+
+## 安全披露
+
+### 提交前检查
+
+- 不提交 `.env`、`credentials.json`、`*.key`、`*.pem`（测试证书例外）等敏感文件
+- 不硬编码生产地址、令牌或密钥
+- CI 日志中不输出连接字符串或凭据
+
+### 报告安全问题
+
+如有安全漏洞或敏感信息泄露，通过 GitHub Issues 报告（不公开细节）或联系仓库维护者。本项目暂无公开的 CVE 编号分配流程。
+
+---
+
+## 已完成的治理工作
+
+这些是该项目当前的治理基础设施，新开发者应了解：
+
+| 领域 | 状态 | 关键文件 |
+|------|------|---------|
+| **G3 Legacy Raw JSON 收束** | 全部 5 服务域 31 个业务 handler 已接入 typed envelope；raw JSON 仅保留在内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `docs/legacy-helper-inventory.md` |
+| **G4 Conan 依赖治理** | `BOOST_USE_CONAN_DEPS=ON` 默认开启；lockfile/profile/workflow 已落地；自动降级到 FetchContent | `conan/README.md`, `conanfile.py`, `conan/locks/` |
+| **G5 CI 构建缓存** | 5/10 workflow 启用 sccache；每次 CI 运行归档构建耗时与缓存命中率至 `runtime/perf/build-times/` | `.github/workflows/ci.yml`, `docs/performance-baseline.md` |
+| **G8 v1 遗留模块退场** | v1 game/examples/tests 已移除，CMake 选项已清理 | ✅ 已完成 |

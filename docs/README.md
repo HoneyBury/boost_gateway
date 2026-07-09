@@ -8,11 +8,19 @@
 
 | 文档 | 用途 |
 |---|---|
-| [开发者入门](ONBOARDING.md) | **新贡献者从这里开始** — 环境搭建、构建、测试、开发工作流 |
+| [开发者入门](ONBOARDING.md) | **新贡献者从这里开始** — 环境搭建、构建、测试、开发工作流、编码规范、协议/SDK/demo 开发指南 |
 | [当前状态](current-state.md) | 已实现能力的权威事实源 |
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
+
+## 贡献入口
+
+| 资源 | 用途 |
+|---|---|
+| [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md) | 提交 PR 时的检查清单 |
+| [Bug 报告](../.github/ISSUE_TEMPLATE/bug_report.md) | 报告可复现的缺陷 |
+| [功能请求](../.github/ISSUE_TEMPLATE/feature_request.md) | 提议新能力或改进 |
 
 ## 发布与可靠性
 
