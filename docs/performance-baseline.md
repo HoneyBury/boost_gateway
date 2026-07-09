@@ -35,7 +35,7 @@
 
 **治理脚本结果**:
 - `check_conan_lockfile_workflows.py` — PASS (27/27 checks)
-- `check_fixed_runner_evidence_plan.py` — 40/44 checks (4 项因 `production-candidate-evidence-manifest.json` 尚未落仓而预期失败)
+- `check_fixed_runner_evidence_plan.py` — 40/44 checks (4 项因 `docs/production/production-candidate-evidence-manifest.json` 尚未落仓而预期失败)
 - `check_fixed_runner_environment.py` — `fixed runner preflight passed`
 
 **已知问题**: OpenSSL/3.3.2 在 x86_64 模拟环境下构建依赖 `perl` 完整安装包（`FindBin.pm`）；已在 `Dockerfile.conan` 中固定包含 `perl`。
@@ -43,7 +43,7 @@
 **下一步**: 
 - 将 lockfile 验证整合到 CI 常规流程中 ✅ CI 中已运行 conan install 与 lockfile
 - 锁定 Conan 版本至 2.8.x 以避免新版 CMakeDeps 生成的兼容性问题（fmt header-only 依赖需 `-o fmt/*:header_only=False` 做静态编译）✅ conanfile.py + 所有 workflow + Dockerfile 已锁定 `>=2.0,<2.9`
-- 落仓 `production-candidate-evidence-manifest.json` 以通过全部 44 项门禁 ✅ 已就位于 `docs/production/`
+- 落仓 `docs/production/production-candidate-evidence-manifest.json` 以通过全部 44 项门禁 ✅ 已就位
 
 ### 构建时间基线 (S3)
 

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -137,7 +137,7 @@ def main() -> int:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "docs/production-candidate-evidence-manifest.json",
+        default=REPO_ROOT / "docs/production/production-candidate-evidence-manifest.json",
     )
     parser.add_argument("--require-fixed-runner", action="store_true")
     parser.add_argument(

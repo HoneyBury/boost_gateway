@@ -34,20 +34,20 @@ def main() -> int:
         checks.append({"name": name, "passed": bool(passed), "detail": detail})
 
     rc = read_text(root, "scripts/gates/release/verify_release_candidate.py")
-    data = read_text(root, "scripts/verify_data_recovery_gate.py")
-    obs = read_text(root, "scripts/verify_observability_gate.py")
+    data = read_text(root, "scripts/gates/production/verify_data_recovery_gate.py")
+    obs = read_text(root, "scripts/gates/production/verify_observability_gate.py")
     governance = read_text(root, "docs/release-governance.md")
     current = read_text(root, "docs/current-state.md")
 
     try:
         ast.parse(data)
-        add("p3:script-syntax", True, "verify_data_recovery_gate.py parses")
+        add("p3:script-syntax", True, "canonical verify_data_recovery_gate.py parses")
     except SyntaxError as exc:
         add("p3:script-syntax", False, f"syntax error: {exc}")
 
     try:
         ast.parse(obs)
-        add("p4:script-syntax", True, "verify_observability_gate.py parses")
+        add("p4:script-syntax", True, "canonical verify_observability_gate.py parses")
     except SyntaxError as exc:
         add("p4:script-syntax", False, f"syntax error: {exc}")
 
@@ -126,4 +126,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
