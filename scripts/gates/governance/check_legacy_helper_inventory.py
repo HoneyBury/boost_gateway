@@ -16,13 +16,8 @@ INVENTORY = ROOT / "docs/legacy/legacy-helper-inventory.md"
 REQUIRED_DOC_TOKENS = (
     "legacy raw JSON",
     "compatibility-only",
-    "BOOST_BUILD_V1_LEGACY_EXAMPLES",
-    "BOOST_BUILD_V1_LEGACY_CORE",
-    "BOOST_BUILD_V1_LEGACY_TESTS",
-    "echo_server",
     "generated proto",
     "generated protobuf / gRPC stub",
-    "project_game",
     "login/room/battle/match/leaderboard",
     "服务级 handler coverage matrix",
     "typed response wrap",
@@ -102,25 +97,20 @@ def main() -> int:
         "envelope adapter exports the legacy raw JSON compatibility-only policy notice",
     )
 
-    examples_cmake = read(ROOT / "examples/CMakeLists.txt")
     root_cmake = read(ROOT / "CMakeLists.txt")
     add(
         checks,
-        "build:legacy-examples-option",
-        "BOOST_BUILD_V1_LEGACY_EXAMPLES" in root_cmake and "if(BOOST_BUILD_V1_LEGACY_EXAMPLES)" in examples_cmake,
-        "legacy example build surface is behind BOOST_BUILD_V1_LEGACY_EXAMPLES",
+        "build:legacy-v1-options-removed",
+        "BOOST_BUILD_V1_LEGACY_EXAMPLES" not in root_cmake
+        and "BOOST_BUILD_V1_LEGACY_CORE" not in root_cmake
+        and "BOOST_BUILD_V1_LEGACY_TESTS" not in root_cmake,
+        "v1 legacy build options have been removed from CMakeLists.txt",
     )
     add(
         checks,
-        "build:legacy-core-option",
-        "BOOST_BUILD_V1_LEGACY_CORE" in root_cmake,
-        "legacy v1 core build surface is behind BOOST_BUILD_V1_LEGACY_CORE",
-    )
-    add(
-        checks,
-        "build:legacy-tests-option",
-        "BOOST_BUILD_V1_LEGACY_TESTS" in root_cmake,
-        "legacy v1-root tests are behind BOOST_BUILD_V1_LEGACY_TESTS",
+        "build:legacy-game-dir-removed",
+        not (ROOT / "include/game").exists() and not (ROOT / "src/game").exists(),
+        "include/game and src/game directories no longer exist",
     )
 
     service_sources = {

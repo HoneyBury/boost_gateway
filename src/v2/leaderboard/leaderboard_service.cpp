@@ -366,11 +366,19 @@ private:
 
         if (raft_node_) {
             if (!raft_node_->is_leader()) {
-                return make_error(-1003, "not_raft_leader:" + get_leader_hint());
+                auto resp = make_error(-1003, "not_raft_leader:" + get_leader_hint());
+                return v2::service::wrap_typed_response_if_needed(
+                    decoded->typed_request,
+                    std::move(resp),
+                    v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
             if (!raft_node_->append_command(
                     make_submit_command(user_id, display_name, score))) {
-                return make_error(-1005, "raft_commit_failed");
+                auto resp = make_error(-1005, "raft_commit_failed");
+                return v2::service::wrap_typed_response_if_needed(
+                    decoded->typed_request,
+                    std::move(resp),
+                    v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
         } else {
             apply_submit(user_id, display_name, score);

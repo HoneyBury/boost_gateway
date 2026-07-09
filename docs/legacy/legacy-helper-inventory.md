@@ -15,9 +15,8 @@
 1. 默认主线仍是 `SDK + TCP gateway + BackendEnvelope + typed envelope helper + 五后端 + Redis`。
 2. `legacy raw JSON` 只允许作为兼容测试和迁移窗口保留，不得承载新增主功能。
 3. `generated proto` / `generated protobuf / gRPC stub` 已经存在生成入口，但还不是默认唯一传输路径。
-4. v1 example/showcase 只作为显式 legacy 兼容面保留，不再属于默认构建/安装面。
+4. v1 风格 legacy 模块（`include/game`、`src/game`、老示例、v1 测试）已从仓库移除。
 5. 新增 legacy/helper surface 时，必须同时更新本文档、相关测试和治理脚本。
-6. `src/game` 与根级 `project_unit_tests` / `project_integration_tests` 也属于 legacy-v1 surface，默认必须关闭。
 
 ## Helper 兼容层
 
@@ -34,7 +33,7 @@
 | 服务域 | 当前 handler 路径 | typed envelope | legacy raw JSON | generated proto 备注 |
 | --- | --- | --- | --- | --- |
 | login | `src/v2/login/login_backend_service.cpp` | 已接入，含 token/session/token_refresh 第一批 typed request/response | compatibility-only 仅剩兼容窗口语义，不再新增 raw JSON-only 主业务 handler | schema 已存在，未替换默认 transport |
-| room | `src/v2/room/room_backend_service.cpp` | 已接入，含 room create/join/ready/leave/start battle | compatibility-only 现主要收缩到 room governance / control-plane 风格消息 | schema 已存在，未替换默认 transport |
+| room | `src/v2/room/room_backend_service.cpp` | 已接入，含所有 11 个 handler | N/A — 全部 handler 已接入 typed envelope | schema 已存在，未替换默认 transport |
 | battle | `src/v2/battle/battle_backend_service.cpp` | 已接入，含 battle create/input/state/finish/replay_load | compatibility-only 现主要收缩到回放/状态附带 JSON 结构，不再新增 raw JSON-only 主业务 handler | schema 已存在，未替换默认 transport |
 | matchmaking | `src/v2/matchmaking/matchmaking_service.cpp` | 已接入 | compatibility-only | schema 已存在，未替换默认 transport |
 | leaderboard | `src/v2/leaderboard/leaderboard_service.cpp` | 已接入 | compatibility-only | schema 已存在，未替换默认 transport |
@@ -44,7 +43,7 @@
 | 服务域 | typed request decode | typed response wrap | raw JSON compatibility-only scope |
 | --- | --- | --- | --- |
 | login | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | 无新增 raw JSON-only 主业务路径；仅保留 legacy raw JSON 兼容输入窗口 |
-| room | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle` | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle` | `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` 仍保留 raw JSON-only 兼容路径，当前更接近 room governance / control-plane 面 |
+| room | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | N/A — 所有 11 个 handler 均已接入 typed envelope |
 | battle | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | 无新增 raw JSON-only 主业务路径；保留 snapshot/replay payload JSON 结构作为实现细节 |
 | matchmaking | `match_join`, `match_leave`, `match_status` | `match_join`, `match_leave`, `match_status` | `raft_request_vote`, `raft_append_entries` 为内部 Raft raw JSON RPC，不属于新的业务 handler 扩展面 |
 | leaderboard | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | `raft_request_vote`, `raft_append_entries` 为内部 Raft raw JSON RPC，不属于新的业务 handler 扩展面 |
@@ -53,11 +52,11 @@
 - 新增业务 handler 必须至少接入 `decode_handler_payload()`
 - 新增 typed request handler 必须同时接入 `wrap_typed_response_if_needed()`
 - 不得新增新的 raw JSON-only 业务消息类型；仅允许在上表列出的兼容窗口内继续保留既有路径
-- 后续 raw JSON 退场的主剩余面已收敛到 room governance / control-plane 风格消息与内部 Raft raw JSON RPC
+- 后续 raw JSON 退场的主剩余面已收敛到内部 Raft raw JSON RPC
 
 退场推进顺序：
 
-1. room governance / control-plane 风格消息先补 typed/generated contract 状态说明，不新增 raw JSON-only handler。
+1. ✅ room governance / control-plane 风格消息已全部接入 typed envelope，共 6 个 handler（`room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished`）。
 2. 内部 Raft raw JSON RPC 继续作为内部 RPC 边界保留，迁移前必须有等价集群/恢复测试。
 3. 默认 full-flow 新增检查点必须优先走 schema-first/typed envelope，不得以 legacy raw JSON 作为新功能入口。
 4. 当五个服务域的剩余兼容窗口都有 typed/generated 替代和 full-flow 证据后，再评估默认禁用 legacy raw JSON 输入。
@@ -66,21 +65,16 @@
 
 | 入口/模块 | 当前状态 | 默认状态 | 备注 |
 | --- | --- | --- | --- |
-| `project_game` / `include/game` / `src/game` | v1 风格单进程旧主链 | `BOOST_BUILD_V1_LEGACY_CORE=OFF` | 冻结，不新增能力 |
-| `tests/unit` / `tests/integration` | 根级 v1-root 测试面 | `BOOST_BUILD_V1_LEGACY_TESTS=OFF` | 仅兼容回归与迁移排查保留 |
-| `tests/unit/admin_service_test.cpp` | 仍直接覆盖 `src/game` legacy gateway admin surface | `BOOST_BUILD_V1_LEGACY_TESTS=OFF` | 刻意保留为 legacy-v1 ACL/审计兼容测试；当前不迁入主线，不进入默认 gate |
-| `examples/echo` / `echo_server` | v1/v2 桥接入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | 仅 legacy external shadow-bridge 测试仍依赖 |
-| `examples/login` / `room` / `battle` | v1 独立入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy-v1 |
-| `examples/pressure` / `gateway_pressure` | v1 压测入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy-v1 |
-| `examples/login_demo` / `room_demo` / `battle_demo` / `admin_demo` | showcase 入口 | `BOOST_BUILD_V1_LEGACY_EXAMPLES=OFF` | legacy showcase |
+| ~~`project_game` / `include/game` / `src/game`~~ | ~~v1 风格单进程旧主链~~ | ~~已移除~~ | ✅ 已完成退场 |
+| ~~`tests/unit` / `tests/integration`~~ | ~~根级 v1-root 测试面~~ | ~~已移除~~ | ✅ 已完成退场 |
+| ~~`examples/login` / `room` / `battle` / `pressure`~~ | ~~v1 独立入口~~ | ~~已移除~~ | ✅ 已完成退场 |
+| ~~`examples/*_demo` / `echo_server` / `admin_demo`~~ | ~~showcase 入口~~ | ~~已移除~~ | ✅ 已完成退场 |
 | `demo/games/tank_battle/` | 业务 demo | `BOOST_BUILD_TANK_DEMO=OFF` | 不属于默认生产主线 |
 | `examples/realtime_echo_plugin` | demo/plugin 样例 | `BOOST_BUILD_ECHO_PLUGIN_DEMO=OFF` | 不属于默认生产主线 |
 
 ## 禁止新增的行为
 
 - 不得新增仅支持 `legacy raw JSON` 的 handler 或 payload。
-- 不得把 `login_server` / `room_server` / `battle_server` / `gateway_pressure` / `*_demo` 重新放回默认安装面。
-- 不得把 `project_game`、`src/game`、`tests/unit`、`tests/integration` 重新放回默认主链构建面。
 - 不得把 demo 业务规则写回 `gateway`、公共 runtime、公共 SDK 或公共协议层。
 - 不得把当前 `AdminService` 以原样迁移方式接入默认 v2 主链。
 
@@ -88,7 +82,6 @@
 
 - helper 或 proto 迁移必须有对应的 schema、typed contract 测试和 full-flow 证据。
 - legacy raw JSON 真正退场前，五个服务域都必须完成 generated/typed contract 覆盖。
-- `echo_server` 彻底退场前，剩余 legacy external shadow-bridge 测试必须迁移到 `v2_gateway_demo` + v2 backend 组合。
 
 ## 治理入口
 
