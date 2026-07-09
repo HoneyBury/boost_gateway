@@ -22,7 +22,7 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-i
 
 - v3 proto/gRPC：schema 校验、CMake target 和 release checklist 已存在，当前定位为传输契约与构建入口，不作为默认生产链路。
 - Redis/Raft/Operator：已通过专项 E2E 形成独立可靠性闭环；默认发布仍保持有界 smoke，固定本机/runner 可显式启用 Redis live 与 Operator kind 验证。
-- Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` 与 `business-capacity` profile 用于 5K/10K 连接、battle-500 和 SDK full-flow 业务容量专项；`.github/workflows/release.yml` 已提供手动/定时入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
+- Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` 与 `business-capacity` profile 用于 5K/10K 连接、battle-500 和 SDK full-flow 业务容量专项；`.github/workflows/release.yml` 已提供手动/定时入口，当前也可在 GitHub-hosted `ubuntu-latest` 上做 bounded validation，但 fixed-runner 接入与最终证据口径仍以 `docs/fixed-runner-playbook.md` 为准。
 - 依赖治理 PoC：仓库已新增 `conanfile.py`、`conan/README.md`、仓库内 profile 与 `BOOST_USE_CONAN_DEPS=ON` 路径，用于 Conan 2 最小正式化 PoC；默认依赖入口仍是 `FetchContent/third_party` fallback。
 - 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
 - Conan PoC 当前事实：本机可在仓库内 `CONAN_HOME` 下完成 profile 生成并进入依赖图解析；若访问 `conancenter` 受限，仍需通过内网镜像、预热缓存或离线源完成真正取包。

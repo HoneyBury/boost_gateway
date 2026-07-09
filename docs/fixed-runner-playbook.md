@@ -8,7 +8,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-2026-07-09 的当前事实是：`.github/workflows/ci.yml` 已在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 跑通主线 Conan build/test/gate，用于“无 self-hosted runner 时的主线回归兜底”。但它不是 fixed-runner 证据替代物；release baseline、capacity、production evidence 和 long soak 仍必须回到在线 Linux fixed runner 刷新。
+2026-07-09 的当前事实是：`.github/workflows/ci.yml` 已在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 跑通主线 Conan build/test/gate，用于“无 self-hosted runner 时的主线回归兜底”。`.github/workflows/release.yml` 现在也可手动切到 GitHub-hosted `ubuntu-latest` 做 bounded build/test/baseline 验证。但它们都不是 fixed-runner 证据替代物；release baseline、capacity、production evidence 和 long soak 仍必须回到在线 Linux fixed runner 刷新。
 
 同日 GitHub 仓库 Actions runner inventory 的实际状态是：仅看到一个离线的 Windows self-hosted runner `MyDesktop-Win`，还没有在线的 Linux `["self-hosted","Linux","X64"]` runner。因此 `conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 如果继续按 Linux fixed-runner 默认值 dispatch，只会停留在 queued；要执行第 2 项真实证据刷新，必须先注册或恢复在线 Linux runner。
 
