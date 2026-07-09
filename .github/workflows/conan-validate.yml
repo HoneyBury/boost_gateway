@@ -58,7 +58,7 @@ permissions:
 
 jobs:
   conan-validate:
-    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.CONAN_VALIDATE_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-05-24
+更新时间：2026-07-09
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
 
@@ -29,6 +29,7 @@ legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-i
 - bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
 - 仓库已新增独立的 `conan-validate.yml` 手动流水线，用于在不扰动默认 CI 的前提下验证 Conan 依赖链；当前已补 `runner` / `conan_profile` / `conan_lockfile` 输入，默认可切到 Linux fixed-runner。
 - `conan-validate.yml` 已完成真实 GitHub Actions dispatch，历史事实是 workflow 已被 GitHub 接受并派发；后续 Linux fixed-runner 结果继续按同一入口归档。
+- 2026-07-09 已在 GitHub-hosted `ubuntu-latest` 上通过 `.github/workflows/ci.yml` 的 `workflow_dispatch` 主线验证，确认当前 `develop` 分支在无 self-hosted runner 参与时也能完成 Conan install、Build、CTest、R4 contract、monitoring operability 和 legacy/helper inventory gate。对应回归修复包含：`TcpTransport::receive()` 断连保护、login/guest typed response kind 纠正，以及 Linux 下测试夹具 `EchoServer` 停机路径收口。
 - Conan/fallback 规则当前已明确分层：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers` 为 Conan-first；`OpenSSL` 保持双轨保守；`protobuf/grpc/sqlite3` 仍属实验或可选层。
 - SDK 构建与安装当前已同时兼容 Conan 和 fallback 两套头文件来源；`sdk_tests` 与 SDK 打包不再硬编码依赖 `boost_SOURCE_DIR` 或 `nlohmann_json_SOURCE_DIR`。
 - `project_v3` 当前也已去掉对 `hiredis_SOURCE_DIR` 的显式 include 假设，Conan 与 fallback 都统一依赖 `hiredis` target。
@@ -162,9 +163,10 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 下一阶段执行优先级概括为：
 
-1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速 ✅（5/10 workflow 已启用，构建耗时与命中率已归档）、性能测试分层进入标准流水线 ✅。
-2. 中期：Ubuntu fixed-runner 容量事实沉淀、vcpkg/Conan 依赖治理、generated proto/gRPC full-flow 与真实性能对照、helper 兼容层退场。
-3. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。
+1. 短期：固定 runner 可用性治理与 GitHub-hosted fallback 固化。当前 GitHub-hosted `ubuntu-latest` 主 CI 已跑通，但 fixed-runner 证据链仍依赖“在线且标签匹配”的 Linux runner；优先把 runner inventory、默认标签、无效排队处理和手动 fallback 流程固化到文档与 workflow 操作手册。
+2. 中期：Ubuntu fixed-runner 容量事实沉淀与 Conan 主线路径升格。目标是在 fixed-runner 上补齐 lockfile install、release baseline、long-soak/capacity、production evidence，并在证据稳定后把 Conan `nosqlite` 路径提升为唯一推荐依赖入口。
+3. 中期：generated proto/gRPC 从 login-only 对照扩展到非登录 full-flow 证据。重点不是扩大 PoC 面，而是补 Room/Battle/Match/Leaderboard 非登录路径、真实性能对照、TLS/RBAC/observability 证据。
+4. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：
 

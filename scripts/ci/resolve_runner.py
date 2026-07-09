@@ -28,6 +28,8 @@ KNOWN_WORKFLOWS = [
     "long-soak-capacity",
     "specialized-e2e",
 ]
+SELF_HOSTED_LINUX_X64 = ["self-hosted", "Linux", "X64"]
+GITHUB_HOSTED_UBUNTU = "ubuntu-latest"
 
 
 def load_matrix(path=None):
@@ -81,6 +83,14 @@ def cmd_validate(matrix):
     default = matrix.get("default_runner")
     if not default:
         errors.append("default_runner is required")
+    else:
+        try:
+            if json.loads(default) != SELF_HOSTED_LINUX_X64:
+                errors.append(
+                    "default_runner should remain ['self-hosted', 'Linux', 'X64'] for fixed-runner evidence workflows"
+                )
+        except json.JSONDecodeError:
+            errors.append(f"default_runner is not valid JSON: {default}")
 
     workflows = matrix.get("workflows", {})
     if not workflows:
@@ -99,9 +109,25 @@ def cmd_validate(matrix):
         runner = entry.get("runner")
         if runner:
             try:
-                json.loads(runner)
+                parsed_runner = json.loads(runner)
             except json.JSONDecodeError:
                 errors.append(f"workflow '{name}' runner is not valid JSON: {runner}")
+                parsed_runner = None
+            if name == "ci" and parsed_runner != GITHUB_HOSTED_UBUNTU:
+                errors.append("workflow 'ci' should default to GitHub-hosted ubuntu-latest fallback")
+            if name in {"release", "conan-validate", "specialized-e2e"} and parsed_runner != SELF_HOSTED_LINUX_X64:
+                errors.append(f"workflow '{name}' should default to ['self-hosted', 'Linux', 'X64']")
+        if name == "ci":
+            if entry.get("vars_hint") != "CI_RUNNER":
+                errors.append("workflow 'ci' should expose vars_hint=CI_RUNNER")
+            if not entry.get("capabilities", {}).get("github_hosted_fallback"):
+                errors.append("workflow 'ci' should declare capabilities.github_hosted_fallback=true")
+        if name == "release" and entry.get("vars_hint") != "RELEASE_RUNNER":
+            errors.append("workflow 'release' should expose vars_hint=RELEASE_RUNNER")
+        if name == "conan-validate" and entry.get("vars_hint") != "CONAN_VALIDATE_RUNNER":
+            errors.append("workflow 'conan-validate' should expose vars_hint=CONAN_VALIDATE_RUNNER")
+        if name == "specialized-e2e" and entry.get("vars_hint") != "SPECIALIZED_E2E_RUNNER":
+            errors.append("workflow 'specialized-e2e' should expose vars_hint=SPECIALIZED_E2E_RUNNER")
 
     deprecated = matrix.get("deprecated_platforms", {})
     for plat in deprecated:

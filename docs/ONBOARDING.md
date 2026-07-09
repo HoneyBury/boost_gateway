@@ -110,11 +110,12 @@ clang-format -i <changed-files>
 
 ### CI 门禁
 
-PR 合入前需要通过以下门禁：
+当前默认 CI 触发方式已经收敛：`ci.yml` 只在 `v*` tag push 或手动 `workflow_dispatch` 下运行；开发分支日常验证以本地命令和手动 GitHub-hosted dispatch 为主。
 
 | 门禁 | 命令 | 触发方式 |
 |---|---|---|
-| 构建+测试 | `cmake --preset default && ctest --preset default` | 自动 |
+| 本地构建+测试 | `cmake --preset default && ctest --preset default --timeout 300` | 本地 |
+| GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref develop -f runner='"ubuntu-latest"'` | 手动 |
 | RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | v* tag |
 
 ## 常见任务
@@ -269,7 +270,7 @@ python3 scripts/run_tests.py --list                    # 列出可用层级
 
 | CI 场景 | 触发方式 | 执行的测试层 |
 |---------|---------|-------------|
-| PR CI（v* tag push） | 自动 | unit + integration + e2e |
+| 主 CI（`v*` tag push / `workflow_dispatch`） | 自动 / 手动 | unit + integration + e2e |
 | Per-commit 性能 | `workflow_dispatch`（带 perf label） | perf smoke |
 | Release 构建 | v* tag push / 手动 | unit + integration + e2e + perf baseline |
 | Nightly 稳定性 | 手动 | e2e（长稳 profile） |

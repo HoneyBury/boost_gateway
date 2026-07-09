@@ -1,6 +1,6 @@
 # 项目蓝图规划
 
-更新时间：2026-07-08
+更新时间：2026-07-09
 
 本文档用于指导 BoostGateway 后续 6 个月以上的开发、维护和取舍。当前实现事实仍以 `docs/current-state.md` 为准；本文档在该事实基线上定义未来规划、差距和验收门禁。若本文档与 `current-state.md` 对”已经实现”的判断冲突，以 `current-state.md` 和可执行验证脚本结果为准；若涉及未来方向，以本文档为优先规划依据。当前 1-3 个月的主线执行顺序与收口动作，已单独整理到 `docs/mainline-execution-plan.md`。
 
@@ -27,11 +27,11 @@
 | 服务闭环 | `gateway + login + room + battle + matchmaking + leaderboard` 已作为主线闭环 | `src/v2/`, `examples/v2_*`, `README.md` |
 | 协议演进 | v3 proto schema、CMake target、schema check 和 gRPC PoC gate 已存在；gRPC gateway 当前已覆盖 login/logout/health 以及 room/match/leaderboard/battle 的基础 RPC，并开始通过 `GrpcGatewayAdapter` 落到真实 `GatewayServiceBridge` 路由，但 generated gRPC 仍是实验能力，不进入默认生产链路 | `proto/README.md`, `proto/CMakeLists.txt`, `src/v2/CMakeLists.txt`, `src/v2/grpc/`, `scripts/check_v3_grpc_poc_decision.py` |
 | helper/legacy 状态 | typed envelope helper 已接入主线；全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；legacy raw JSON 兼容窗口仍存在但已收缩到仅内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy/legacy-helper-inventory.md`, `proto/README.md` |
-| CI 平台 | 主 CI 已包含 Ubuntu、macOS matrix，并使用 Ninja/CMake preset | `.github/workflows/ci.yml`, `CMakePresets.json` |
+| CI 平台 | 默认主 CI 是 Linux Conan 主线验证；`ci.yml` 仅在 `v*` tag 或 `workflow_dispatch` 下运行，并支持通过 `runner` 输入切换到 GitHub-hosted `ubuntu-latest` 或 self-hosted Linux labels；固定 runner 证据 workflow 仍依赖在线 Linux runner | `.github/workflows/ci.yml`, `.github/runner-matrix.json`, `docs/current-state.md` |
 | 性能门禁 | perf label 触发 per-commit smoke；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-commit-check.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml` |
 | 依赖管理 | Conan 2 `nosqlite` lockfile/profile 路径已经落仓，`BOOST_USE_CONAN_DEPS=ON` 是默认值，自动回退到 FetchContent/third_party；`release.yml` 已接入 Conan lockfile 预检步骤；Ubuntu fixed-runner 实跑结果可提升为默认推荐依据 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-evidence.yml` |
 | 编译缓存 | 主流程已启用 `sccache` + `actions/cache`，每次 CI 运行归档 build-time.json + sccache-stats.json | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/perf-commit-check.yml` |
-| 近期代码趋势 | 最近提交集中在 battle tick/projectile、room lifecycle、SDK API、部署文档和 Docker 构建修复 | `git log --oneline -n 8` |
+| 近期代码趋势 | 最近提交集中在 runner 治理、CTest label 统一、release-governance 文档对齐、login schema 闭环，以及 Linux CI 回归修复 | `git log --oneline -n 6` |
 
 ## 已知冲突与未实现项
 
@@ -45,7 +45,7 @@
 | G4 | 依赖治理正在从 fallback 迁向 Conan lockfile | `BOOST_USE_CONAN_DEPS=ON` 已是默认值；Conan profile/lock 入口、Linux `nosqlite` lockfile、fixed-runner workflow 预检均已落地；`release.yml` 已接入 Conan lockfile preflight；仍需 Ubuntu fixed-runner 真实 summary 作为默认推荐依据 | 短期优先完成 Ubuntu fixed-runner lockfile install、release baseline、long-soak/capacity 和 production evidence；通过后把 Conan `nosqlite` 提升为主线唯一推荐路径 |
 | G5 | 编译加速尚未系统化收口 | sccache 已在 5/10 工作流中启用，剩余 5 个辅助工作流无需缓存；每次 CI 运行已结构化归档构建耗时与 sccache 统计至 `runtime/perf/build-times/` | build-time 基线基础设施已完成，待 CI 实际运行积累数据后可视需要扩大 sccache 覆盖 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
-| G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 开发者可能只开启 1-2 台 runner，如果 workflow 固定全平台会导致无意义排队 | 短期引入仓库内版本化 runner matrix，按当前活跃机器提交配置 |
+| G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 仓库内版本化 runner matrix 与统一 runner 解析已经落地，但 self-hosted runner 离线或标签不匹配时仍会出现无效排队；当前 GitHub-hosted `ubuntu-latest` 只作为手动 fallback，不是固定 runner 证据替代物 | 短期把在线 runner inventory、标签治理、无效 run 处理和 GitHub-hosted fallback 流程写成标准操作，并补真实 Linux runner 证据 |
 | G7 | 测试分层命名和执行策略仍偏脚本聚合 | 已有大量 gate，但 unit/integration/e2e/perf/nightly/capacity 的开发者入口仍需要更清晰 | 长期形成开发者指南和贡献者验证矩阵 |
 | G8 | v1 风格遗留模块已完成退场 | `include/game`、`src/game`、老 `examples/*_demo`、`login_server/room_server/battle_server/gateway_pressure` 已从仓库移除；`BOOST_BUILD_V1_LEGACY_*` 选项已清理 | ✅ 已移除 |
 
@@ -205,6 +205,23 @@
 - ✅ `docs/release-governance.md` 性能触发描述已与 workflow 实际触发条件对齐，G8 已删除文件引用已清理
 - ✅ release readiness report 通过 `--manifest-summary`（local）和 `--fixed-runner-summary` 两个独立来源区分证据
 - ✅ `docs/release-governance.md` 分层门禁验证矩阵已通过一致性审计
+
+### S5 Runner 可用性治理与 GitHub-hosted fallback 固化
+
+目标：把“workflow 能被触发”和“证据链 runner 真正可用”区分开，避免 self-hosted runner 离线或标签不匹配造成无意义排队，同时保留 GitHub-hosted `ubuntu-latest` 作为主线回归兜底入口。
+
+任务：
+
+- 把 `.github/runner-matrix.json`、workflow `runner` 输入、`vars.CI_RUNNER`、fixed-runner 文档之间的默认值与标签来源统一写清。
+- 将“GitHub-hosted 主线回归”和“fixed-runner 证据采集”定义为两个不同场景，分别说明适用 workflow、证据级别和失败处理方式。
+- 为 self-hosted runner 离线、标签不匹配、无效排队、手动取消无效 run 补标准操作。
+- 在文档中明确 2026-07-09 的事实基线：`ci.yml` 已在 GitHub-hosted `ubuntu-latest` 跑通；fixed-runner 证据仍需在线 Linux runner 刷新。
+
+验收：
+
+- `docs/current-state.md`、`docs/ONBOARDING.md`、`docs/fixed-runner-playbook.md` 与 workflow 真实触发条件一致。
+- 开发者可以只依靠文档判断：何时用 GitHub-hosted `ci.yml` 做主线回归，何时必须等待 fixed-runner 证据。
+- 无在线 self-hosted runner 时，不再默认派发会长期排队的无效 run。
 
 ## 中期规划：突破平台限制，完成协议演进
 

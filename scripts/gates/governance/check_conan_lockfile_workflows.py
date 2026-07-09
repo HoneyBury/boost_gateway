@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Conan nosqlite lockfile workflow wiring for fixed runners."""
+"""Validate Conan nosqlite lockfile workflow wiring for mainline and fixed-runner flows."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "con
 
 
 WORKFLOWS = {
+    "ci": ".github/workflows/ci.yml",
     "conan_validate": ".github/workflows/conan-validate.yml",
+    "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "production_evidence": ".github/workflows/production-evidence.yml",
 }
@@ -86,7 +88,14 @@ def main() -> int:
         workflow_checks(checks, name, path, contents[name])
 
     long_soak = contents["long_soak_capacity"]
+    release = contents["release"]
     production_evidence = contents["production_evidence"]
+    add(
+        checks,
+        "workflow:release:conan-preflight-toggle",
+        "enable_conan_validation" in release and "conan-preflight" in release,
+        "release workflow exposes lockfile-based Conan preflight before release baseline collection",
+    )
     add(
         checks,
         "workflow:long-soak:real-conan-validation-build",

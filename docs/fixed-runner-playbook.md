@@ -1,14 +1,16 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-05-30（N0-N3 + Conan fixed-runner）
+更新时间：2026-07-09（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
-容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
+2026-07-09 的当前事实是：`.github/workflows/ci.yml` 已在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 跑通主线 Conan build/test/gate，用于“无 self-hosted runner 时的主线回归兜底”。但它不是 fixed-runner 证据替代物；release baseline、capacity、production evidence 和 long soak 仍必须回到在线 Linux fixed runner 刷新。
+
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
 手动命令：
 
@@ -89,17 +91,13 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 ## Release Baseline
 
-手动触发 `.github/workflows/release.yml`：
+手动触发 `.github/workflows/release.yml`。当前 workflow 的构建目录和配置固定为 `build/release` / `Release`，手动可配输入只有下表这些：
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |
 | `runner` | `["self-hosted","Linux","X64"]` | `["self-hosted","Linux","X64"]` |
-| `configure_preset` | `release` 或 `windows-ninja-release` | 同 baseline |
-| `build_dir` | `build/release` 或 `build/windows-ninja-release` | 同 baseline |
-| `configuration` | `Release` | `Release` |
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
-| `perf_timeout_seconds` | `900` | `1800` |
 | `enable_conan_validation` | `true` | `true` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 
@@ -107,7 +105,7 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 - `runtime/validation/release-baseline-summary.json` 中 `passed=true`。
 - `runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`。
-- Conan validation preflight 中 lockfile-based `conan install` 和 `project_v2` 构建通过。
+- Conan validation preflight 中 lockfile-based `conan install` 通过，且后续 Release build/test/gate 全链路通过。
 - GitHub Step Summary 显示 R4、业务性能步骤均为 `PASS`。
 
 ## Specialized E2E

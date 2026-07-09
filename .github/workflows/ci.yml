@@ -14,14 +14,14 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","Linux","X64"]'
+        default: '"ubuntu-latest"'
 
 permissions:
   contents: read
 
 jobs:
   linux-build-and-test:
-    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout
@@ -34,7 +34,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-

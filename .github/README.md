@@ -1,6 +1,9 @@
 # CI/CD Architecture
 
-BoostGateway 使用 GitHub Actions 进行持续集成和发布。所有 workflow 运行在 Linux self-hosted runner 上。
+BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和固定 runner 证据是两个不同场景：
+
+- `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
+- release/capacity/production evidence/long soak 仍以 Linux self-hosted runner 作为证据事实源。
 
 ## Workflow 总览
 
@@ -19,8 +22,8 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。所有 workflow
 
 ## Runner 要求
 
-- **平台**: Linux (Ubuntu 22.04+)
-- **标签**: `["self-hosted", "Linux", "X64"]`
+- **主线回归兜底**: GitHub-hosted `ubuntu-latest`
+- **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
@@ -41,3 +44,4 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。所有 workflow
 
 - Runner 标签和默认值: `.github/runner-matrix.json`
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
+- 推荐策略: `ci.yml` 默认使用 GitHub-hosted `ubuntu-latest`；fixed-runner 证据 workflow 默认使用 self-hosted Linux labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 覆盖
