@@ -7,6 +7,10 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
       perf_preset:
         description: "Performance baseline preset"
         required: true
@@ -31,7 +35,7 @@ permissions:
 
 jobs:
   perf-regression:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.PERF_REGRESSION_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

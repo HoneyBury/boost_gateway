@@ -7,6 +7,10 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
       soak_profile:
         description: "Stability soak profile"
         required: true
@@ -22,7 +26,7 @@ permissions:
 
 jobs:
   stability-soak:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.NIGHTLY_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

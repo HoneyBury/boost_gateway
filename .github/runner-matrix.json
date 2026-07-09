@@ -1,99 +1,81 @@
 {
-  "schema_version": 2,
-  "description": "Versioned workflow runner/matrix configuration. Linux/macOS only — Windows support deferred.",
-  "matrices": {
+  "schema_version": 3,
+  "description": "Versioned workflow runner matrix. Each workflow entry defines which runner labels to use and required capabilities. Set enabled=false to force workflows to fall back to default_runner. Repository-level GitHub Variables (vars.XXX_RUNNER) override these values at runtime.",
+  "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+  "workflows": {
     "ci": {
-      "build_and_test": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "release",
-          "build_preset": "release",
-          "test_preset": "release",
-          "conan_profile": "conan/profiles/linux-gcc-x64",
-          "conan_lockfile": "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
-        }
-      ],
-      "multi_process": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "default",
-          "build_preset": "default",
-          "build_dir": "build/default"
-        }
-      ],
-      "nightly_stability": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "default",
-          "build_dir": "build/default",
-          "configuration": "Debug",
-          "baseline_profile": "debug"
-        }
-      ],
-      "perf_commit": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "release",
-          "build_preset": "release",
-          "build_dir": "build/release"
-        }
-      ],
-      "perf_regression": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "release",
-          "build_preset": "release",
-          "build_dir": "build/release"
-        }
-      ],
-      "release": [
-        {
-          "name": "linux-self-hosted",
-          "platform": "linux",
-          "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]",
-          "configure_preset": "release",
-          "build_preset": "release",
-          "test_preset": "release",
-          "install_config": "",
-          "archive_ext": "tar.gz",
-          "archive_format": "tgz",
-          "archive_flags": "czf",
-          "artifact_suffix": "linux-x64"
-        }
-      ]
-    }
-  },
-  "jobs": {
-    "docker": {
-      "enabled": false,
-      "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]"
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "CI_RUNNER"
     },
-    "raft_ha_weekly": {
-      "enabled": false,
-      "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]"
+    "release": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "RELEASE_RUNNER"
     },
-    "release_publish": {
-      "runs_on": "[\"self-hosted\",\"Linux\",\"X64\"]"
+    "perf-commit-check": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "PERF_COMMIT_RUNNER"
+    },
+    "perf-regression": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "PERF_REGRESSION_RUNNER"
+    },
+    "nightly-stability": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "NIGHTLY_RUNNER"
+    },
+    "conan-validate": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "CONAN_VALIDATE_RUNNER"
+    },
+    "production-evidence": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "large_disk": true },
+      "vars_hint": "PRODUCTION_EVIDENCE_RUNNER"
+    },
+    "production-resilience": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "kind": true },
+      "vars_hint": "PRODUCTION_RESILIENCE_RUNNER"
+    },
+    "long-soak-capacity": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "large_disk": true, "dedicated": true },
+      "vars_hint": "LONG_SOAK_CAPACITY_RUNNER"
+    },
+    "specialized-e2e": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "kind": true },
+      "vars_hint": "SPECIALIZED_E2E_RUNNER"
     }
-  },
-  "defaults": {
-    "release_baseline_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-    "production_evidence_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-    "production_resilience_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-    "specialized_e2e_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-    "long_soak_capacity_runner": "[\"self-hosted\",\"Linux\",\"X64\"]"
   },
   "deprecated_platforms": {
-    "windows": "Support deferred. Restore from git history if needed."
+    "windows": "Support deferred. Restore from git history if needed.",
+    "macos": "CI smoke target. No capacity/long-soak commitments."
   }
 }

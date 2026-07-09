@@ -6,6 +6,11 @@ env:
 
 on:
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
 
 permissions:
   contents: read
@@ -14,7 +19,7 @@ permissions:
 
 jobs:
   perf-smoke:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.PERF_COMMIT_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

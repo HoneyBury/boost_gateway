@@ -10,13 +10,18 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
 
 permissions:
   contents: read
 
 jobs:
   linux-build-and-test:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout

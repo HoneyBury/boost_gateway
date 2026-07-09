@@ -32,7 +32,7 @@ permissions:
 
 jobs:
   package:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
@@ -176,7 +176,7 @@ jobs:
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
 
   publish:
-    runs-on: ["self-hosted", "Linux", "X64"]
+    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_RUNNER || '["self-hosted","Linux","X64"]') }}
     needs: package
 
     steps:
