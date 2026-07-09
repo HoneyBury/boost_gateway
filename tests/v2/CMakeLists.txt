@@ -94,6 +94,7 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(project_v2_unit_tests
+    PROPERTIES LABELS "unit"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE POST_BUILD
 )
@@ -117,6 +118,7 @@ target_link_libraries(project_v2_integration_tests
 apply_project_warnings(project_v2_integration_tests)
 
 gtest_discover_tests(project_v2_integration_tests
+    PROPERTIES LABELS "integration"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE PRE_TEST
 )
@@ -152,6 +154,7 @@ target_link_libraries(project_v2_multi_process_tests
 )
 apply_project_warnings(project_v2_multi_process_tests)
 gtest_discover_tests(project_v2_multi_process_tests
+    PROPERTIES LABELS "e2e"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE POST_BUILD
 )

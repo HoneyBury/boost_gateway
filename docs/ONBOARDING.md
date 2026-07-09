@@ -235,6 +235,57 @@ ctest --preset release
 - 测试命名：测试套件使用 `PascalCase`（`HealthCheckTest`），用例使用 `snake_case`（`all_pass_when_backends_healthy`）
 - 框架使用 Google Test + `gtest_discover_tests()` CMake 集成
 
+### 统一测试入口
+
+`scripts/run_tests.py` 封装了 ctest 的分层过滤：
+
+```bash
+# 运行全部测试（等同 ctest --preset default）
+python3 scripts/run_tests.py
+
+# 按层级运行
+python3 scripts/run_tests.py unit          # 单元测试
+python3 scripts/run_tests.py integration   # 集成测试
+python3 scripts/run_tests.py e2e           # 多进程 E2E
+python3 scripts/run_tests.py sdk           # SDK 测试
+
+# 可选构建层（需要 CMake 选项）
+python3 scripts/run_tests.py perf          # 性能基准测试
+python3 scripts/run_tests.py fuzz          # 模糊测试
+python3 scripts/run_tests.py security      # 安全测试
+
+# 选项
+python3 scripts/run_tests.py unit --preset release     # Release 模式
+python3 scripts/run_tests.py unit --timeout 120        # 超时控制
+python3 scripts/run_tests.py unit --parallel 4         # 并行数
+python3 scripts/run_tests.py --list                    # 列出可用层级
+```
+
+内部通过 CTest label（`-L unit`）过滤，与 `gtest_discover_tests(PROPERTIES LABELS ...)` 配合。
+
+### 验证矩阵
+
+各 CI 场景执行的测试层：
+
+| CI 场景 | 触发方式 | 执行的测试层 |
+|---------|---------|-------------|
+| PR CI（v* tag push） | 自动 | unit + integration + e2e |
+| Per-commit 性能 | `workflow_dispatch`（带 perf label） | perf smoke |
+| Release 构建 | v* tag push / 手动 | unit + integration + e2e + perf baseline |
+| Nightly 稳定性 | 手动 | e2e（长稳 profile） |
+| 固定 Runner 容量 | 手动 | e2e + perf capacity |
+| 本地开发 | `python3 scripts/run_tests.py` | unit + integration（默认） |
+
+### 测试层级选择指南
+
+新增测试文件时按以下规则选择层级：
+
+- **单元测试**（`tests/v2/unit/`）: 纯逻辑、无外部依赖（数据库、网络、文件系统）。单文件单职责，命名 `*_test.cpp`。秒级完成。
+- **集成测试**（`tests/v2/integration/`）: 涉及服务间通信、配置加载、进程启动/停止。依赖 `project_v2` 框架对象。分钟级。
+- **E2E 多进程**（`tests/v2/integration/`，`project_v2_multi_process_tests` 目标）: 启动真实 OS 进程做全链路验证。需要编译好的 service binary。分钟级。
+- **SDK 测试**（`sdk/tests/`）: 分 unit（纯 SDK 逻辑）和 business flow（与 server 交互）。按 `-L sdk` 过滤。
+- **性能/模糊/安全**（可选构建）: 不影响默认构建路径，通过 CMake option 单独开启。
+
 ## Benchmark 政策
 
 | 预设 | 用途 | 时长 | 触发 |

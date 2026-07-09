@@ -17,6 +17,7 @@ if(COMMAND apply_project_warnings)
 endif()
 include(GoogleTest)
 gtest_discover_tests(sdk_tests
+    PROPERTIES LABELS "unit;sdk"
     DISCOVERY_TIMEOUT 10
     DISCOVERY_MODE POST_BUILD
 )
@@ -56,6 +57,7 @@ if(COMMAND apply_project_warnings)
     apply_project_warnings(sdk_business_flow_tests)
 endif()
 gtest_discover_tests(sdk_business_flow_tests
+    PROPERTIES LABELS "integration;sdk"
     DISCOVERY_TIMEOUT 10
     DISCOVERY_MODE PRE_TEST
 )
