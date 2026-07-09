@@ -47,6 +47,13 @@ jobs:
           ninja --version
           python3 --version
 
+      - name: Install sccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          sccache --version || sudo apt-get install -y sccache
+          mkdir -p "$SCCACHE_DIR"
+          sccache --version
 
       - name: Ensure Conan
         shell: bash
@@ -81,37 +88,20 @@ jobs:
             --build=missing \
             -s build_type=Release
 
-      - name: Detect sccache
-        id: sccache
-        shell: bash
-        run: |
-          if command -v sccache >/dev/null 2>&1; then
-            sccache --version
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "sccache not found; continuing without compiler cache"
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Reset sccache stats
-        if: steps.sccache.outputs.available == 'true'
         shell: bash
         run: sccache --zero-stats || true
 
       - name: Configure
         shell: bash
         run: |
-          args=(
-            cmake -S . -B build/release -G Ninja
-            -DBOOST_USE_CONAN_DEPS=ON
-            -DENABLE_TESTING=ON
-            -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake
-          )
-          if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
-            args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
-          fi
-          "${args[@]}"
+          cmake -S . -B build/release -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
       - name: Record build start time
         shell: bash
@@ -142,7 +132,7 @@ jobs:
         run: python3 scripts/gates/governance/check_legacy_helper_inventory.py
 
       - name: Show sccache stats
-        if: always() && steps.sccache.outputs.available == 'true'
+        if: always()
         shell: bash
         run: sccache --show-stats || true
 

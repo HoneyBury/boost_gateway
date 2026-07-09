@@ -5,7 +5,7 @@
 ## 工程效率与固定 Runner 口径
 
 - PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
-- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
+- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间；其中 `ci.yml` 现已与其他 hosted Ubuntu workflow 对齐为“显式安装 + 目录预创建 + 强制 launcher”模式，不再依赖“检测到才启用”的条件逻辑。
 - Conan 2 依赖治理已从 PoC 阶段提升为主线默认依赖路径（`BOOST_USE_CONAN_DEPS=ON`）；性能基线结论以 Conan 构建链为准，缺失 Conan 时会自动回退到 FetchContent/third_party。
 - Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
@@ -51,7 +51,7 @@
 
 | 工作流 | CMake Preset | 编译器 | sccache | 缓存键模式 | 备注 |
 |--------|-------------|--------|---------|-----------|------|
-| `ci.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-` | 全量单元测试 + 多个治理门禁；条件性启用 sccache |
+| `ci.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-` | 全量单元测试 + 多个治理门禁；GitHub-hosted Ubuntu 上显式安装并统一启用 sccache |
 | `release.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-`（与 ci.yml 同键） | 发布包构建 + 合约门禁 |
 | `perf-commit-check.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-release-` | 性能冒烟 + 基线对比 |
 | `nightly-stability.yml` | `default` / `release` | GCC 12 (Linux), AppleClang | 是（Linux） | `sccache-Linux-nightly-` | 夜间稳定性浸泡 |
