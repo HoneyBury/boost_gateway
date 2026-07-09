@@ -133,6 +133,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
+      - name: Workflow Python CLI contract gate
+        shell: bash
+        run: python3 scripts/check_workflow_python_cli_contracts.py
+
       - name: Legacy/helper inventory gate
         shell: bash
         run: python3 scripts/gates/governance/check_legacy_helper_inventory.py

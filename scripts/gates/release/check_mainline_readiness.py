@@ -158,6 +158,7 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     linux_lockfile = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
     add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_evidence_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
     add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
+    add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
     add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
     add(checks, "p3:long-soak-consumes-conan-lockfile", "build/conan-long-soak-capacity-cmake" in long_soak_workflow and "--lockfile" in long_soak_workflow, "long-soak-capacity workflow performs lockfile-based Conan configure/build preflight")
     add(checks, "p3:production-evidence-consumes-conan-lockfile", "build/conan-production-evidence-cmake" in production_evidence_workflow and "--lockfile" in production_evidence_workflow, "production-evidence workflow performs lockfile-based Conan configure/build preflight")
@@ -168,6 +169,13 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         and "runtime/validation/fixed-runner-release-capacity-summary.json" in long_soak_workflow
         and "runtime/validation/production-evidence-summary.json" in production_evidence_workflow,
         "fixed-runner workflows upload the required long-soak/capacity/production evidence summaries",
+    )
+    ci_workflow = read(".github/workflows/ci.yml")
+    add(
+        checks,
+        "p3:ci-runs-workflow-python-cli-contract-gate",
+        "Workflow Python CLI contract gate" in ci_workflow and "scripts/check_workflow_python_cli_contracts.py" in ci_workflow,
+        "CI runs the workflow Python CLI contract governance gate",
     )
 
     root_cmake = read("CMakeLists.txt")
