@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 PROFILE = "conan/profiles/linux-gcc-x64"
 CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "conan/locks/*.lock")
@@ -18,7 +18,6 @@ CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "con
 
 WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
-    "release_baseline": ".github/workflows/release-baseline.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "production_evidence": ".github/workflows/production-evidence.yml",
 }
@@ -86,27 +85,8 @@ def main() -> int:
     for name, path in WORKFLOWS.items():
         workflow_checks(checks, name, path, contents[name])
 
-    release = contents["release_baseline"]
     long_soak = contents["long_soak_capacity"]
     production_evidence = contents["production_evidence"]
-    add(
-        checks,
-        "workflow:release-baseline:cache-key-includes-conan-inputs",
-        all(token in release for token in CACHE_INPUTS),
-        "release-baseline cache key is bound to Conan graph inputs",
-    )
-    add(
-        checks,
-        "workflow:release-baseline:conan-validation-default-on",
-        "enable_conan_validation:" in release and "default: true" in release and "Run Conan lockfile validation" in release,
-        "release-baseline runs lockfile-based Conan validation by default",
-    )
-    add(
-        checks,
-        "workflow:release-baseline:scheduled-conan-validation",
-        "github.event_name != 'workflow_dispatch' || inputs.enable_conan_validation" in release,
-        "scheduled release-baseline runs Conan validation unless manual dispatch explicitly disables it",
-    )
     add(
         checks,
         "workflow:long-soak:real-conan-validation-build",

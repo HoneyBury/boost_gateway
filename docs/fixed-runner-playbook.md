@@ -4,11 +4,11 @@
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
-P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs/production-evidence-runner.md`。
+P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release-baseline.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
 手动命令：
 
@@ -25,7 +25,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | 顺序 | Workflow | 关键输入 | 必须归档的 summary |
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
-| 2 | `release-baseline.yml` | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
+| 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
 
@@ -71,8 +71,8 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 
 | 用途 | 建议 label | Workflow | 必需能力 |
 | --- | --- | --- | --- |
-| Ubuntu release/capacity baseline | `self-hosted,linux,x64,release-baseline` | `release-baseline.yml` | Ubuntu LTS、稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
-| Release baseline | `self-hosted,release-baseline` | `release-baseline.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
+| Ubuntu release/capacity baseline | `self-hosted,linux,x64,release-baseline` | `release.yml` | Ubuntu LTS、稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
+| Release baseline | `self-hosted,release-baseline` | `release.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
 | Redis live | `self-hosted,redis-live` | `specialized-e2e.yml` | Redis `127.0.0.1:6379` 可达，CMake、Ninja、Python；`specialized_profile=redis-live` |
 | Raft HA | `self-hosted,raft-ha` | `specialized-e2e.yml` | CMake、Ninja、Python；`specialized_profile=raft-ha` |
 | Operator kind | `self-hosted,operator-kind` | `specialized-e2e.yml` | Docker、kind、kubectl、make、CMake、Ninja、Python |
@@ -89,7 +89,7 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 ## Release Baseline
 
-手动触发 `.github/workflows/release-baseline.yml`：
+手动触发 `.github/workflows/release.yml`：
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |

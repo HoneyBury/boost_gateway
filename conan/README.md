@@ -1,11 +1,12 @@
 # Conan Governance
 
-This repository keeps Conan as an opt-in dependency provider until the
-lockfile/profile flow is fully proven across fixed-runner and offline builds.
+This repository prefers Conan as the dependency provider with automatic
+fallback to FetchContent/third_party when Conan packages are unavailable.
+The lockfile/profile flow is ready for fixed-runner validation.
 
 Current rules:
 
-- Default build path remains `FetchContent/third_party` fallback.
+- Default build path prefers Conan (`BOOST_USE_CONAN_DEPS=ON`), falling back to `FetchContent/third_party` when Conan packages are unavailable.
 - `BOOST_USE_CONAN_DEPS=ON` is the only supported switch for enabling Conan.
 - Prefer repository-local `CONAN_HOME=.conan2-local`.
 - Prefer repository-managed profiles and remotes under `conan/`.

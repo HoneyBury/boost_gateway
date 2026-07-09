@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 LINUX_LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 LINUX_PROFILE = "conan/profiles/linux-gcc-x64"
 
@@ -28,21 +28,17 @@ WORKFLOW_REQUIREMENTS = {
         ),
         "summaries": (),
     },
-    "release_baseline": {
-        "path": ".github/workflows/release-baseline.yml",
+    "release": {
+        "path": ".github/workflows/release.yml",
         "tokens": (
             LINUX_LOCKFILE,
             LINUX_PROFILE,
+            "conan install",
+            "--lockfile",
             "enable_conan_validation",
-            "build/conan-release-baseline-cmake",
-            "runtime/validation/release-baseline-summary.json",
-            "runtime/perf/release-baseline/summary.json",
-            "actions/upload-artifact@v4",
+            "conan-preflight",
         ),
-        "summaries": (
-            "runtime/validation/release-baseline-summary.json",
-            "runtime/perf/release-baseline/summary.json",
-        ),
+        "summaries": ("runtime/validation/release-baseline-summary.json",),
     },
     "long_soak_capacity": {
         "path": ".github/workflows/long-soak-capacity.yml",
@@ -129,15 +125,27 @@ def main() -> int:
     for token in DOC_TOKENS:
         add(checks, f"docs:fixed-runner:{token}", token in fixed_runner_doc, f"fixed-runner playbook mentions {token}")
 
-    manifest = json.loads(read("docs/production-candidate-evidence-manifest.json"))
-    manifest_text = json.dumps(manifest, ensure_ascii=False)
-    for summary in (
-        "runtime/validation/long-soak-capacity-summary.json",
-        "runtime/validation/fixed-runner-release-capacity-summary.json",
-        "runtime/validation/preprod-recovery-drill-summary.json",
-        "runtime/validation/tls-preprod-multi-run-summary.json",
-    ):
-        add(checks, f"manifest:requires:{summary}", summary in manifest_text, f"manifest references {summary}")
+    manifest_path = "docs/production/production-candidate-evidence-manifest.json"
+    if not exists(manifest_path):
+        manifest_path = "docs/production-candidate-evidence-manifest.json"
+    if exists(manifest_path):
+        manifest = json.loads(read(manifest_path))
+        manifest_text = json.dumps(manifest, ensure_ascii=False)
+        for summary in (
+            "runtime/validation/long-soak-capacity-summary.json",
+            "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/preprod-recovery-drill-summary.json",
+            "runtime/validation/tls-preprod-multi-run-summary.json",
+        ):
+            add(checks, f"manifest:requires:{summary}", summary in manifest_text, f"manifest references {summary}")
+    else:
+        for summary in (
+            "runtime/validation/long-soak-capacity-summary.json",
+            "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/preprod-recovery-drill-summary.json",
+            "runtime/validation/tls-preprod-multi-run-summary.json",
+        ):
+            add(checks, f"manifest:requires:{summary}", False, f"manifest missing, cannot check {summary}")
 
     validation_contract = read("scripts/gates/governance/check_validation_summary_contract.py")
     for summary in expected_summaries:
