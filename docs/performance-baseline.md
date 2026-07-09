@@ -5,11 +5,73 @@
 ## 工程效率与固定 Runner 口径
 
 - PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
-- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`release-baseline.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
-- Conan 2 依赖治理当前仍处于 PoC 阶段，尚未作为默认 CI 依赖来源；性能基线结论仍以现有 fallback 构建链为准。
+- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
+- Conan 2 依赖治理已从 PoC 阶段提升为主线默认依赖路径（`BOOST_USE_CONAN_DEPS=ON`）；性能基线结论以 Conan 构建链为准，缺失 Conan 时会自动回退到 FetchContent/third_party。
 - Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
+
+### P1 Conan 依赖治理验证（已升级为主线默认路径）
+
+**验证时间**: 2026-07-08
+**验证环境**: Orbstack Docker, `--platform linux/amd64`, Ubuntu 24.04, GCC 13.3.0
+**验证目的**: 证明 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 可在 Ubuntu x86_64 环境中成功安装并用于项目构建。
+
+**Conan lockfile 安装结果 (`conan install`)**:
+
+| 依赖 | 版本 | 构建状态 |
+|------|------|---------|
+| zlib | 1.3.1 | header-only, 无需编译 |
+| bzip2 | 1.0.8 | 从源码构建 |
+| fmt | 11.1.0 | 静态库 (`-o fmt/*:header_only=False`) |
+| spdlog | 1.15.2 | 从源码构建 |
+| nlohmann_json | 3.11.3 | header-only |
+| OpenSSL | 3.3.2 | 从源码构建 |
+| hiredis | 1.2.0 | 从源码构建 |
+| GTest | 1.16.0 | 从源码构建 |
+| Boost | 1.86.0 | 从源码构建（46 静态库） |
+
+**`project_v2` 构建结果**: `[77/77] Linking CXX static library src/v2/libproject_v2.a` ✅
+
+**治理脚本结果**:
+- `check_conan_lockfile_workflows.py` — PASS (27/27 checks)
+- `check_fixed_runner_evidence_plan.py` — 40/44 checks (4 项因 `production-candidate-evidence-manifest.json` 尚未落仓而预期失败)
+- `check_fixed_runner_environment.py` — `fixed runner preflight passed`
+
+**已知问题**: OpenSSL/3.3.2 在 x86_64 模拟环境下构建依赖 `perl` 完整安装包（`FindBin.pm`）；已在 `Dockerfile.conan` 中固定包含 `perl`。
+
+**下一步**: 
+- 将 lockfile 验证整合到 CI 常规流程中 ✅ CI 中已运行 conan install 与 lockfile
+- 锁定 Conan 版本至 2.8.x 以避免新版 CMakeDeps 生成的兼容性问题（fmt header-only 依赖需 `-o fmt/*:header_only=False` 做静态编译）✅ conanfile.py + 所有 workflow + Dockerfile 已锁定 `>=2.0,<2.9`
+- 落仓 `production-candidate-evidence-manifest.json` 以通过全部 44 项门禁 ✅ 已就位于 `docs/production/`
+
+### 构建时间基线 (S3)
+
+当前 CI 使用 CMake preset + Ninja 构建系统，5 个 workflow 已启用 sccache，配置如下：
+
+| 工作流 | CMake Preset | 编译器 | sccache | 缓存键模式 | 备注 |
+|--------|-------------|--------|---------|-----------|------|
+| `ci.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-` | 全量单元测试 + 多个治理门禁；条件性启用 sccache |
+| `release.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-`（与 ci.yml 同键） | 发布包构建 + 合约门禁 |
+| `perf-commit-check.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-release-` | 性能冒烟 + 基线对比 |
+| `nightly-stability.yml` | `default` / `release` | GCC 12 (Linux), AppleClang | 是（Linux） | `sccache-Linux-nightly-` | 夜间稳定性浸泡 |
+| `perf-regression.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-regression-` | 多轮回归基线 |
+
+**sccache 缓存键策略:**
+
+- `ci.yml` 与 `release.yml` 共享精确缓存键 `sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}`，两者之间可复现 exact-match 缓存命中。
+- 其余 workflow 使用独立缓存键分段（`perf-release`、`perf-regression`、`nightly`），通过 `sccache-${{ runner.os }}-` fallback restore key 跨 workflow 共享。
+- hashFiles 输入因 workflow 而异：ci/release/perf-commit-check 使用 5 个文件/目录模式；nightly/perf-regression 使用 3 个。
+- 所有 workflow 的 `restore-keys` 均以 `sccache-${{ runner.os }}-` 结尾，允许精确键未命中时回退到同一 OS 的任意历史缓存。
+
+**构建时间测量方法:**
+
+- 每次 CI 运行在 `Build` 步骤前记录 `BUILD_START_EPOCH`，在 `Show sccache stats` 后计算持续时长，输出到 `runtime/perf/build-times/build-time.json`。
+- 同时以 JSON 格式归档 sccache 统计数据至 `runtime/perf/build-times/sccache-stats.json`（包含缓存命中/未命中次数、缓存大小等）。
+- 数据随 workflow artifact 一起上传，可在 CI 运行完成后下载分析。
+- 基线格式与字段说明见 `runtime/perf/build-times/BASELINE_TEMPLATE.json`。
+
+> **当前状态**: 构建时间数据采集基础设施已就位。5 个 sccache workflow 每次 CI 运行自动归档 `build-time.json` + `sccache-stats.json` 至 `runtime/perf/build-times/`。cold/warm 数据在 CI 实际运行后自动积累，待多轮数据后可汇总分析。
 
 > **基线版本**: `8387a13dcb` (P0 优化收束)
 > **测量日期**: 2026-05-23
@@ -369,7 +431,7 @@ CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 g
 
 > CI 基线入口：
 > - 每周一 06:00 UTC 自动运行：`.github/workflows/perf-regression.yml`
-> - 手动触发 release baseline：`.github/workflows/release-baseline.yml`
+> - 手动触发 release baseline：`.github/workflows/release.yml`
 > - 每日夜间稳定性：`.github/workflows/nightly-stability.yml`
 
 ---

@@ -8,6 +8,24 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      enable_conan_validation:
+        description: "Run Conan lockfile-based dependency preflight"
+        type: boolean
+        default: true
+      conan_lockfile:
+        description: "Conan lockfile path for dependency preflight"
+        type: string
+        default: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+      perf_preset:
+        description: "Performance baseline preset (smoke/baseline/capacity)"
+        type: string
+        default: smoke
+      perf_repetitions:
+        description: "Performance test repetitions for baseline"
+        type: number
+        default: 3
 
 permissions:
   contents: write
@@ -24,9 +42,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
           restore-keys: |
-            sccache-${{ runner.os }}-release-release-
+            sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-
 
       - name: Setup Ninja
@@ -46,8 +64,26 @@ jobs:
           sccache --version || sudo apt-get install -y sccache
           sccache --version
 
+      - name: Conan lockfile preflight
+        if: ${{ inputs.enable_conan_validation != 'false' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan --version
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}" \
+            -o "&:with_grpc=False" -o "&:with_sqlite=False" \
+            --output-folder=build/conan-preflight \
+            --build=missing -s build_type=Release
+
       - name: Configure
         run: cmake --preset release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Record build start time
+        shell: bash
+        run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Build
         run: cmake --build --preset release --parallel
@@ -73,8 +109,26 @@ jobs:
       - name: Release candidate bounded gate
         run: python scripts/verify_release_candidate.py --build-dir build/release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
-      - name: Collect release baseline (smoke)
-        run: python scripts/collect_release_baseline.py --build-dir build/release --perf-preset smoke --skip-build --output runtime/perf/release-baseline/summary.json
+      - name: Collect release baseline
+        run: |
+          python scripts/collect_release_baseline.py \
+            --build-dir build/release \
+            --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
+            --skip-build \
+            --output runtime/perf/release-baseline/summary.json
+          mkdir -p runtime/validation
+          cp runtime/perf/release-baseline/summary.json runtime/validation/release-baseline-summary.json
+
+      - name: Upload release baseline
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-perf-baseline
+          path: |
+            runtime/perf/release-baseline/**
+            runtime/validation/release-baseline-summary.json
+            runtime/perf/build-times/**
+          if-no-files-found: warn
 
       - name: Install
         shell: bash
@@ -102,6 +156,24 @@ jobs:
         if: always()
         shell: bash
         run: sccache --show-stats || true
+
+      - name: Capture build metrics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p runtime/perf/build-times
+          now=$(date +%s)
+          iso_now=$(date -Iseconds)
+          duration=$(( now - BUILD_START_EPOCH ))
+          cat > runtime/perf/build-times/build-time.json << EOF
+          {
+            "workflow": "release",
+            "runner_os": "${{ runner.os }}",
+            "timestamp": "${iso_now}",
+            "build_duration_seconds": ${duration}
+          }
+          EOF
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
 
   publish:
     runs-on: ["self-hosted", "Linux", "X64"]

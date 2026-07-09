@@ -14,7 +14,6 @@ permissions:
 
 jobs:
   perf-smoke:
-    if: contains(github.event.pull_request.labels.*.name, 'perf') || github.event.action == 'labeled' && contains(github.event.pull_request.labels.*.name, 'perf')
     runs-on: ["self-hosted", "Linux", "X64"]
 
     steps:
@@ -44,6 +43,10 @@ jobs:
 
       - name: Configure (Release)
         run: cmake --preset release -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Record build start time
+        shell: bash
+        run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Build (Release)
         run: cmake --build --preset release --parallel
@@ -143,7 +146,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const os = 'windows';
+            const os = 'linux';
             const comparison = JSON.parse(fs.readFileSync('comparison_result.json', 'utf8'));
 
             let table = '| Case | P99 (us) | Throughput | Warning | Critical | Status |\n';
@@ -158,7 +161,7 @@ jobs:
             const header = allPassed
               ? '## Performance Smoke Check (PASS)'
               : '## Performance Smoke Check (REGRESSION DETECTED)';
-            const body = `${header}\\n\\n**Platform**: ${os}\\n**Commit**: ${{ github.sha }}\\n\\n${table}\\n\\n_This check runs the smoke preset (~30s). Triggered by the \\`perf\\` label._`;
+            const body = `${header}\\n\\n**Platform**: ${os}\\n**Commit**: ${{ github.sha }}\\n\\n${table}\\n\\n_This check runs the smoke preset (~30s). Triggered via workflow_dispatch._`;
 
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -187,7 +190,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: perf-smoke-windows
+          name: perf-smoke
           path: |
             runtime/perf/**
             perf_smoke.log
@@ -197,3 +200,21 @@ jobs:
         if: always()
         shell: bash
         run: sccache --show-stats || true
+
+      - name: Capture build metrics
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p runtime/perf/build-times
+          now=$(date +%s)
+          iso_now=$(date -Iseconds)
+          duration=$(( now - BUILD_START_EPOCH ))
+          cat > runtime/perf/build-times/build-time.json << EOF
+          {
+            "workflow": "perf-commit-check",
+            "runner_os": "${{ runner.os }}",
+            "timestamp": "${iso_now}",
+            "build_duration_seconds": ${duration}
+          }
+          EOF
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
