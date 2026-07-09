@@ -409,7 +409,7 @@ CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 g
 ### 7.3 已知问题
 
 1. **battle-100 P99 尾部抖动**: 约 1.5% 消息落在 200-300ms 区间，由 actor 线程广播推送造成。后续可将广播推送卸载到工作线程。
-2. **集成测试编译失败**: `cluster_router_e2e_test.cpp` 和 `windows_platform_test.cpp` 有编译问题，需修复测试代码。
+2. **集成测试编译失败**: `cluster_router_e2e_test.cpp` 有编译问题，需修复测试代码。
 3. **hiredis.dll 部署**: Release 构建后需手动复制 hiredis.dll 到各后端目录。
 
 ---
@@ -447,4 +447,4 @@ CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 g
 | `runtime/perf/p0-capacity-local/` | P0 capacity 专项 (echo-5K/10K, battle-500) |
 | `runtime/perf/p0-business-capacity-local-r2/` | P0 业务闭环容量 (含 SDK full-flow) |
 | `runtime/perf/gateway-arch-priority-route4-push10/` | P1 response/push 优先级隔离专项 |
-| `docs/performance-baseline-windows-p0.md` | P0 优化验收报告 |
+| ~~`docs/performance-baseline-windows-p0.md`~~ | ~~P0 优化验收报告~~（文件已随 G8 删除）|

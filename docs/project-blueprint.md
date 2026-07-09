@@ -185,7 +185,7 @@
 - ✅ Ubuntu build cache 命中可观测（`sccache-stats.json` 归档）。
 - ✅ `docs/performance-baseline.md` 已记录构建时间基线。
 
-### S4 性能测试分层进入标准流水线
+### S4 性能测试分层进入标准流水线 ✅ 已完成
 
 目标：把关键性能反馈接入 CI/CD，但避免把长任务放进 PR 默认路径。
 
@@ -200,6 +200,11 @@
 
 - `docs/release-governance.md` 的分层门禁与 workflow 实际触发条件一致。
 - release readiness report 能区分 bounded local evidence 和 fixed-runner evidence。
+
+已完成的工作：
+- ✅ `docs/release-governance.md` 性能触发描述已与 workflow 实际触发条件对齐，G8 已删除文件引用已清理
+- ✅ release readiness report 通过 `--manifest-summary`（local）和 `--fixed-runner-summary` 两个独立来源区分证据
+- ✅ `docs/release-governance.md` 分层门禁验证矩阵已通过一致性审计
 
 ## 中期规划：突破平台限制，完成协议演进
 

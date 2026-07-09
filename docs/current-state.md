@@ -162,7 +162,7 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 下一阶段执行优先级概括为：
 
-1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速 ✅（5/10 workflow 已启用，构建耗时与命中率已归档）、性能测试分层进入标准流水线。
+1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速 ✅（5/10 workflow 已启用，构建耗时与命中率已归档）、性能测试分层进入标准流水线 ✅。
 2. 中期：Ubuntu fixed-runner 容量事实沉淀、vcpkg/Conan 依赖治理、generated proto/gRPC full-flow 与真实性能对照、helper 兼容层退场。
 3. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。
 
