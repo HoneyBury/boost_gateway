@@ -4,6 +4,7 @@
 #include <boost/system/error_code.hpp>
 
 #include <array>
+#include <algorithm>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -41,11 +42,41 @@ struct NetworkPartitionSimulator::Impl {
             return;
         }
         running_.store(true);
+        total_bytes_.store(0);
 
         boost::system::error_code ec;
-        acceptor_ = std::make_unique<tcp::acceptor>(
-            io_, tcp::endpoint(tcp::v4(), listen_port_));
-        acceptor_->set_option(tcp::acceptor::reuse_address(true));
+        acceptor_ = std::make_unique<tcp::acceptor>(io_);
+        acceptor_->open(tcp::v4(), ec);
+        if (ec) {
+            running_.store(false);
+            acceptor_.reset();
+            return;
+        }
+        acceptor_->set_option(tcp::acceptor::reuse_address(true), ec);
+        if (ec) {
+            running_.store(false);
+            acceptor_.reset();
+            return;
+        }
+        acceptor_->bind(tcp::endpoint(tcp::v4(), listen_port_), ec);
+        if (ec) {
+            running_.store(false);
+            acceptor_.reset();
+            return;
+        }
+        acceptor_->listen(boost::asio::socket_base::max_listen_connections, ec);
+        if (ec) {
+            running_.store(false);
+            acceptor_.reset();
+            return;
+        }
+        acceptor_->non_blocking(true, ec);
+        if (ec) {
+            running_.store(false);
+            acceptor_->close();
+            acceptor_.reset();
+            return;
+        }
 
         listen_port_ = acceptor_->local_endpoint().port();
 
@@ -60,12 +91,25 @@ struct NetworkPartitionSimulator::Impl {
             boost::system::error_code ec;
             acceptor_->cancel(ec);
             acceptor_->close(ec);
-            acceptor_.reset();
         }
+        close_active_sockets();
         if (acceptor_thread_ && acceptor_thread_->joinable()) {
             acceptor_thread_->join();
             acceptor_thread_.reset();
         }
+        acceptor_.reset();
+        std::vector<std::thread> relay_threads;
+        {
+            std::lock_guard<std::mutex> lock(connection_mutex_);
+            relay_threads.swap(relay_threads_);
+        }
+        for (auto& relay_thread : relay_threads) {
+            if (relay_thread.joinable()) {
+                relay_thread.join();
+            }
+        }
+        std::lock_guard<std::mutex> lock(connection_mutex_);
+        active_sockets_.clear();
     }
 
     uint16_t listen_port_{0};
@@ -84,7 +128,15 @@ private:
             boost::system::error_code ec;
 
             auto client = std::make_shared<tcp::socket>(io_);
+            if (!acceptor_) {
+                break;
+            }
             acceptor_->accept(*client, ec);
+            if (ec == boost::asio::error::would_block ||
+                ec == boost::asio::error::try_again) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
             if (ec || !running_.load()) {
                 break;
             }
@@ -107,24 +159,32 @@ private:
                 continue;
             }
 
+            register_socket(client);
+            register_socket(upstream);
+
             // Spawn two relay threads — one for each direction.
             // Each holds a shared_ptr to both sockets so that both sockets
             // remain alive until both relay threads have exited.
             auto client_holder = client;
             auto upstream_holder = upstream;
 
-            std::thread([this, client, upstream]() {
-                relay_direction(*client, *upstream, client, upstream);
-            }).detach();
+            {
+                std::lock_guard<std::mutex> lock(connection_mutex_);
+                relay_threads_.emplace_back([this, client, upstream]() {
+                    relay_direction(*client, *upstream, client, upstream);
+                });
+            }
 
-            std::thread(
-                [this, source = std::move(upstream),
-                 dest = std::move(client_holder),
-                 closer_a = std::move(client),
-                 closer_b = std::move(upstream_holder)]() {
-                    relay_direction(*source, *dest, closer_a, closer_b);
-                })
-                .detach();
+            {
+                std::lock_guard<std::mutex> lock(connection_mutex_);
+                relay_threads_.emplace_back(
+                    [this, source = std::move(upstream),
+                     dest = std::move(client_holder),
+                     closer_a = std::move(client),
+                     closer_b = std::move(upstream_holder)]() {
+                        relay_direction(*source, *dest, closer_a, closer_b);
+                    });
+            }
         }
     }
 
@@ -167,15 +227,62 @@ private:
 
         // Close both sockets so the relay thread running in the opposite
         // direction also exits.
-        boost::system::error_code ignore;
-        closer_a->close(ignore);
-        closer_b->close(ignore);
+        close_socket(closer_a);
+        close_socket(closer_b);
+        unregister_socket(closer_a);
+        unregister_socket(closer_b);
+    }
+
+    void close_active_sockets() {
+        std::vector<std::shared_ptr<tcp::socket>> sockets;
+        {
+            std::lock_guard<std::mutex> lock(connection_mutex_);
+            sockets = active_sockets_;
+        }
+        for (const auto& socket : sockets) {
+            close_socket(socket);
+        }
+    }
+
+    void close_socket(const std::shared_ptr<tcp::socket>& socket) {
+        if (!socket) {
+            return;
+        }
+
+        boost::system::error_code ec;
+        socket->cancel(ec);
+        socket->shutdown(tcp::socket::shutdown_both, ec);
+        socket->close(ec);
+    }
+
+    void register_socket(const std::shared_ptr<tcp::socket>& socket) {
+        std::lock_guard<std::mutex> lock(connection_mutex_);
+        active_sockets_.push_back(socket);
+    }
+
+    void unregister_socket(const std::shared_ptr<tcp::socket>& socket) {
+        if (!socket) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(connection_mutex_);
+        active_sockets_.erase(
+            std::remove_if(
+                active_sockets_.begin(),
+                active_sockets_.end(),
+                [&](const std::shared_ptr<tcp::socket>& candidate) {
+                    return candidate.get() == socket.get();
+                }),
+            active_sockets_.end());
     }
 
     // I/O objects must be declared before the thread that uses them.
     boost::asio::io_context io_;
     std::unique_ptr<tcp::acceptor> acceptor_;
     std::unique_ptr<std::thread> acceptor_thread_;
+    std::mutex connection_mutex_;
+    std::vector<std::shared_ptr<tcp::socket>> active_sockets_;
+    std::vector<std::thread> relay_threads_;
 
     std::mt19937 rng_;
     std::uniform_real_distribution<double> drop_dist_;

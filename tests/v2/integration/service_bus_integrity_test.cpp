@@ -1112,6 +1112,37 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginBackend) {
     service.stop();
 }
 
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughGuestLoginBackend) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 3001;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kGuestLoginRequest,
+        {{"display_name", "Guest Alice"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "guest_login";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kGuestLoginResponse);
+    EXPECT_EQ(decoded->payload.value("status", ""), "ok");
+    EXPECT_EQ(decoded->payload.value("display_name", ""), "Guest Alice");
+    EXPECT_FALSE(decoded->payload.value("token", "").empty());
+
+    service.stop();
+}
+
 TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginTokenValidate) {
     v2::login::LoginBackendService service(0);
     service.start();

@@ -11,6 +11,7 @@
 #include <random>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace v2::test {
 
