@@ -74,6 +74,10 @@ TEST(ProtoSchemaTest, LoginProtoHasAllMessages) {
     auto c = read_file(proto_path("proto/v3/login.proto"));
     EXPECT_TRUE(proto_has_message(c, "LoginRequest"));
     EXPECT_TRUE(proto_has_message(c, "LoginResponse"));
+    EXPECT_TRUE(proto_has_message(c, "RegisterAccountRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RegisterAccountResponse"));
+    EXPECT_TRUE(proto_has_message(c, "GuestLoginRequest"));
+    EXPECT_TRUE(proto_has_message(c, "GuestLoginResponse"));
     EXPECT_TRUE(proto_has_message(c, "TokenValidateRequest"));
     EXPECT_TRUE(proto_has_message(c, "TokenValidateResponse"));
     EXPECT_TRUE(proto_has_message(c, "SessionBindResponse"));
@@ -82,7 +86,16 @@ TEST(ProtoSchemaTest, LoginProtoHasAllMessages) {
     EXPECT_TRUE(proto_has_message(c, "TokenRefreshResponse"));
     EXPECT_TRUE(proto_has_field(c, "user_id"));
     EXPECT_TRUE(proto_has_field(c, "token"));
+    EXPECT_TRUE(proto_has_field(c, "credential"));
     EXPECT_TRUE(proto_has_field(c, "role"));
+}
+
+TEST(ProtoSchemaTest, CommonProtoCarriesExtendedLoginTransportFields) {
+    auto c = read_file(proto_path("proto/v3/common.proto"));
+    EXPECT_TRUE(proto_has_field(c, "register_account"));
+    EXPECT_TRUE(proto_has_field(c, "register_account_response"));
+    EXPECT_TRUE(proto_has_field(c, "guest_login"));
+    EXPECT_TRUE(proto_has_field(c, "guest_login_response"));
 }
 
 // ─── Room.proto schema ───────────────────────────────────────────────────
@@ -203,6 +216,10 @@ TEST(ProtoSchemaTest, EnvelopeCodecSupportsLoginRoomAndBattleKinds) {
         meta,
         v3::proto::EnvelopeMessageKind::kLoginRequest,
         {{"user_id", "alice"}, {"token", "t1"}, {"display_name", "Alice"}});
+    const auto register_account = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRegisterAccountRequest,
+        {{"user_id", "alice"}, {"credential", "secret"}, {"display_name", "Alice"}});
     const auto room = v3::proto::encode_typed_envelope(
         meta,
         v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
@@ -213,13 +230,17 @@ TEST(ProtoSchemaTest, EnvelopeCodecSupportsLoginRoomAndBattleKinds) {
         {{"user_id", "alice"}, {"input_data", "move:1,2"}, {"submitted_frame", 1}});
 
     auto login_decoded = v3::proto::decode_typed_envelope(login);
+    auto register_decoded = v3::proto::decode_typed_envelope(register_account);
     auto room_decoded = v3::proto::decode_typed_envelope(room);
     auto battle_decoded = v3::proto::decode_typed_envelope(battle);
 
     ASSERT_TRUE(login_decoded.has_value());
+    ASSERT_TRUE(register_decoded.has_value());
     ASSERT_TRUE(room_decoded.has_value());
     ASSERT_TRUE(battle_decoded.has_value());
     EXPECT_EQ(login_decoded->message_kind, v3::proto::EnvelopeMessageKind::kLoginRequest);
+    EXPECT_EQ(register_decoded->message_kind,
+              v3::proto::EnvelopeMessageKind::kRegisterAccountRequest);
     EXPECT_EQ(room_decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateRequest);
     EXPECT_EQ(battle_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputRequest);
 }
@@ -228,6 +249,10 @@ TEST(ProtoSchemaTest, EveryTypedKindMapsToConcreteDomain) {
     const std::vector<v3::proto::EnvelopeMessageKind> kinds = {
         v3::proto::EnvelopeMessageKind::kLoginRequest,
         v3::proto::EnvelopeMessageKind::kLoginResponse,
+        v3::proto::EnvelopeMessageKind::kRegisterAccountRequest,
+        v3::proto::EnvelopeMessageKind::kRegisterAccountResponse,
+        v3::proto::EnvelopeMessageKind::kGuestLoginRequest,
+        v3::proto::EnvelopeMessageKind::kGuestLoginResponse,
         v3::proto::EnvelopeMessageKind::kTokenValidateRequest,
         v3::proto::EnvelopeMessageKind::kTokenValidateResponse,
         v3::proto::EnvelopeMessageKind::kSessionBindRequest,

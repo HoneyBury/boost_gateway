@@ -12,6 +12,9 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 INVENTORY = ROOT / "docs/legacy/legacy-helper-inventory.md"
+ENVELOPE_ADAPTER = ROOT / "src/v2/service/envelope_adapter.cpp"
+ENVELOPE_CODEC = ROOT / "include/v3/proto/envelope_codec.h"
+SERVICE_BOUNDARY_TEST = ROOT / "tests/v2/unit/service_boundary_test.cpp"
 
 REQUIRED_DOC_TOKENS = (
     "legacy raw JSON",
@@ -24,6 +27,9 @@ REQUIRED_DOC_TOKENS = (
     "room governance / control-plane",
     "内部 Raft raw JSON RPC",
     "不得新增新的 raw JSON-only 业务消息类型",
+    "29 个业务 handler",
+    "29 个 handler 已具备 `EnvelopeMessageKind` / schema-backed typed contract",
+    "已进入 `EnvelopeMessageKind` / `proto/v3/login.proto`",
 )
 
 BUSINESS_SERVICE_SOURCES = (
@@ -37,6 +43,9 @@ BUSINESS_SERVICE_SOURCES = (
 
 REQUIRED_REFERENCES = (
     "include/v2/service/envelope_adapter.h",
+    "src/v2/service/envelope_adapter.cpp",
+    "include/v3/proto/envelope_codec.h",
+    "proto/v3/login.proto",
     "tests/v2/unit/service_boundary_test.cpp",
     "proto/README.md",
     "conan/README.md",
@@ -46,6 +55,69 @@ REQUIRED_REFERENCES = (
     "src/v2/leaderboard/leaderboard_service.cpp",
 )
 
+SCHEMA_TYPED_HANDLERS = {
+    "login": (
+        "register_account",
+        "login_request",
+        "guest_login",
+        "token_validate",
+        "session_bind",
+        "session_close",
+        "token_refresh",
+    ),
+    "room": (
+        "room_create",
+        "room_join",
+        "room_ready",
+        "room_leave",
+        "room_start_battle",
+        "room_list",
+        "room_detail",
+        "room_kick",
+        "room_transfer_owner",
+        "room_state_push",
+        "room_battle_finished",
+    ),
+    "battle": (
+        "battle_create",
+        "battle_input",
+        "battle_state",
+        "battle_finish",
+        "replay_load",
+    ),
+    "matchmaking": (
+        "match_join",
+        "match_leave",
+        "match_status",
+    ),
+    "leaderboard": (
+        "leaderboard_submit",
+        "leaderboard_top",
+        "leaderboard_rank",
+    ),
+}
+
+PUSH_ONLY_HANDLERS = {
+    "room_state_push",
+}
+
+ADAPTER_RESPONSE_NAME_OVERRIDES = {
+    "login_request": "login_response",
+}
+
+CODEC_REQUEST_NAME_OVERRIDES = {
+    "leaderboard_submit": "submit",
+    "leaderboard_top": "top",
+    "leaderboard_rank": "rank",
+}
+
+CODEC_RESPONSE_NAME_OVERRIDES = {
+    "login_request": "login_response",
+    "leaderboard_submit": "submit_response",
+    "leaderboard_top": "top_response",
+    "leaderboard_rank": "rank_response",
+}
+
 
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
@@ -53,6 +125,24 @@ def read(path: Path) -> str:
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def response_mapping_name(handler: str) -> str:
+    if handler in PUSH_ONLY_HANDLERS:
+        return handler
+    if handler in ADAPTER_RESPONSE_NAME_OVERRIDES:
+        return ADAPTER_RESPONSE_NAME_OVERRIDES[handler]
+    return f"{handler}_response"
+
+
+def codec_request_name(handler: str) -> str:
+    return CODEC_REQUEST_NAME_OVERRIDES.get(handler, handler)
+
+
+def codec_response_name(handler: str) -> str:
+    if handler in PUSH_ONLY_HANDLERS:
+        return codec_request_name(handler)
+    return CODEC_RESPONSE_NAME_OVERRIDES.get(handler, f"{handler}_response")
 
 
 def main() -> int:
@@ -84,6 +174,9 @@ def main() -> int:
     )
 
     envelope_adapter = read(ROOT / "include/v2/service/envelope_adapter.h")
+    envelope_adapter_impl = read(ENVELOPE_ADAPTER)
+    envelope_codec = read(ENVELOPE_CODEC)
+    service_boundary_test = read(SERVICE_BOUNDARY_TEST)
     add(
         checks,
         "code:deprecation-notice",
@@ -95,6 +188,14 @@ def main() -> int:
         "code:policy-notice",
         "legacy raw JSON is compatibility-only and must not be used for new handlers" in envelope_adapter,
         "envelope adapter exports the legacy raw JSON compatibility-only policy notice",
+    )
+    add(
+        checks,
+        "test:deprecation-notice-asserted",
+        "legacy_raw_json_deprecation_notice()" in service_boundary_test
+        and "legacy_raw_json_policy_notice()" in service_boundary_test
+        and "DecodeHandlerPayloadMarksLegacyRawJsonDeprecated" in service_boundary_test,
+        "service boundary test asserts deprecation and compatibility-only notices",
     )
 
     root_cmake = read(ROOT / "CMakeLists.txt")
@@ -160,6 +261,51 @@ def main() -> int:
             not any(marker in source for marker in forbidden_new_raw_markers),
             f"{relative} must not contain markers for new raw JSON-only business handlers",
         )
+
+    for service_name, handlers in SCHEMA_TYPED_HANDLERS.items():
+        source = read(service_sources[service_name])
+        for handler in handlers:
+            add(
+                checks,
+                f"inventory:{service_name}:schema-handler-documented:{handler}",
+                f"`{handler}`" in content,
+                f"inventory documents schema-backed handler {handler}",
+            )
+            add(
+                checks,
+                f"service:{service_name}:handler-registered:{handler}",
+                f'"{handler}"' in source,
+                f"{service_name} service registers handler {handler}",
+            )
+            add(
+                checks,
+                f"adapter:mapping-request:{handler}",
+                f'"{handler}"' in envelope_adapter_impl,
+                f"envelope adapter maps request kind for {handler}",
+            )
+            response_name = response_mapping_name(handler)
+            add(
+                checks,
+                f"adapter:mapping-response:{response_name}",
+                f'"{response_name}"' in envelope_adapter_impl,
+                f"envelope adapter maps response/push kind for {handler}",
+            )
+            add(
+                checks,
+                f"codec:kind-string:{codec_request_name(handler)}",
+                f'return "{codec_request_name(handler)}";' in envelope_codec
+                or f'if (kind == "{codec_request_name(handler)}")' in envelope_codec,
+                f"envelope codec exposes string form for {handler}",
+            )
+            if handler not in PUSH_ONLY_HANDLERS:
+                codec_response = codec_response_name(handler)
+                add(
+                    checks,
+                    f"codec:kind-string:{codec_response}",
+                    f'return "{codec_response}";' in envelope_codec
+                    or f'if (kind == "{codec_response}")' in envelope_codec,
+                    f"envelope codec exposes string form for {response_name}",
+                )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

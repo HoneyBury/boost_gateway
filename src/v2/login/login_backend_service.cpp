@@ -280,7 +280,7 @@ private:
         return v2::service::wrap_typed_response_if_needed(
             decoded->typed_request,
             std::move(response),
-            v3::proto::EnvelopeMessageKind::kLoginResponse);
+            v3::proto::EnvelopeMessageKind::kRegisterAccountResponse);
     }
 
     v2::service::BackendEnvelope handle_login_request(
@@ -375,7 +375,7 @@ private:
         return v2::service::wrap_typed_response_if_needed(
             decoded->typed_request,
             std::move(response),
-            v3::proto::EnvelopeMessageKind::kLoginResponse);
+            v3::proto::EnvelopeMessageKind::kGuestLoginResponse);
     }
 
     v2::service::BackendEnvelope handle_token_validate(

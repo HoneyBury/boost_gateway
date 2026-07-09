@@ -14,9 +14,13 @@ struct MessageTypeMapping {
     EnvelopeMessageKind typed_kind;
 };
 
-constexpr std::array<MessageTypeMapping, 59> kMessageTypeMappings{{
+constexpr std::array<MessageTypeMapping, 63> kMessageTypeMappings{{
     {"login_request", EnvelopeMessageKind::kLoginRequest},
     {"login_response", EnvelopeMessageKind::kLoginResponse},
+    {"register_account", EnvelopeMessageKind::kRegisterAccountRequest},
+    {"register_account_response", EnvelopeMessageKind::kRegisterAccountResponse},
+    {"guest_login", EnvelopeMessageKind::kGuestLoginRequest},
+    {"guest_login_response", EnvelopeMessageKind::kGuestLoginResponse},
     {"token_validate", EnvelopeMessageKind::kTokenValidateRequest},
     {"token_validate_response", EnvelopeMessageKind::kTokenValidateResponse},
     {"session_bind", EnvelopeMessageKind::kSessionBindRequest},

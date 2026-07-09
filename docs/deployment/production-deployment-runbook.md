@@ -200,7 +200,7 @@ Prometheus 告警：
 
 运维排障：
 
-- `docs/production-operations-runbook.md`
+- `docs/deployment/production-operations-runbook.md`
 
 当前限制：
 
@@ -250,7 +250,7 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 ```
 
 固定 runner 或真实环境可在此基础上追加 Docker Compose / Kubernetes 实操演练和 SDK full-flow。
-真实演练完成后，复制 `docs/production-recovery-drill-record-template.json`，将
+真实演练完成后，复制 `docs/production/production-recovery-drill-record-template.json`，将
 `template` 改为 `false`，填入本次环境、故障注入、RTO/RPO、观测和验证 summary，并执行：
 
 ```bash
@@ -302,7 +302,7 @@ python3 scripts/check_recovery_drill_record.py --record runtime/validation/<dril
 
 ```bash
 python3 scripts/check_production_recovery_gate.py --summary-path runtime/validation/production-recovery-summary.json
-python3 scripts/check_recovery_drill_record.py --record docs/production-recovery-drill-record-template.json --allow-template --summary-path runtime/validation/recovery-drill-record-template-check-summary.json
+python3 scripts/check_recovery_drill_record.py --record docs/production/production-recovery-drill-record-template.json --allow-template --summary-path runtime/validation/recovery-drill-record-template-check-summary.json
 python3 -m py_compile scripts/deploy_k8s.py scripts/check_deploy_operability.py
 python3 scripts/check_deploy_operability.py --build-dir build/release --summary-path runtime/validation/p0-deploy-operability-summary.json
 python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/monitoring-operability-summary.json

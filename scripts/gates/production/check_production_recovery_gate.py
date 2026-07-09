@@ -13,6 +13,12 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
+OPERATIONS_RUNBOOK = "docs/deployment/production-operations-runbook.md"
+DRILL_RECORD_TEMPLATE = "docs/production/production-recovery-drill-record-template.json"
+DEPLOY_K8S_TOOL = "scripts/tools/deploy_k8s.py"
+K8S_FULL_FLOW_GATE = "scripts/gates/k8s/verify_k8s_full_flow.py"
+DRILL_RECORD_VALIDATOR = "scripts/gates/production/check_recovery_drill_record.py"
 
 APP_MANIFESTS = [
     "gateway-deployment.yaml",
@@ -50,8 +56,8 @@ def contains(relative: str, token: str) -> bool:
 
 def validate_compose_recovery(checks: list[dict[str, Any]]) -> None:
     compose = read_text("env/docker/docker-compose.yml")
-    deployment = read_text("docs/production-deployment-runbook.md")
-    operations = read_text("docs/production-operations-runbook.md")
+    deployment = read_text(DEPLOYMENT_RUNBOOK)
+    operations = read_text(OPERATIONS_RUNBOOK)
 
     services = ["gateway", *BACKEND_SERVICES, "redis", "prometheus", "grafana", "alertmanager"]
     for service in services:
@@ -73,8 +79,8 @@ def validate_compose_recovery(checks: list[dict[str, Any]]) -> None:
 
 def validate_k8s_recovery(checks: list[dict[str, Any]]) -> None:
     k8s_dir = REPO_ROOT / "env/k8s"
-    operations = read_text("docs/production-operations-runbook.md")
-    deployment = read_text("docs/production-deployment-runbook.md")
+    operations = read_text(OPERATIONS_RUNBOOK)
+    deployment = read_text(DEPLOYMENT_RUNBOOK)
 
     for manifest_name in APP_MANIFESTS:
         relative = f"env/k8s/{manifest_name}"
@@ -99,18 +105,18 @@ def validate_k8s_recovery(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_scripts(checks: list[dict[str, Any]]) -> None:
-    deploy = read_text("scripts/deploy_k8s.py")
-    k8s_flow = read_text("scripts/verify_k8s_full_flow.py")
+    deploy = read_text(DEPLOY_K8S_TOOL)
+    k8s_flow = read_text(K8S_FULL_FLOW_GATE)
     resilience = read_text("scripts/gates/production/verify_production_resilience_gate.py")
     hardening = read_text("scripts/gates/production/check_production_hardening_gate.py")
-    drill_record = read_text("scripts/check_recovery_drill_record.py")
+    drill_record = read_text(DRILL_RECORD_VALIDATOR)
 
     add(checks, "script:deploy-k8s:dry-run", "--dry-run" in deploy and "--validate=false" in deploy, "deploy_k8s supports client-side dry-run")
     add(checks, "script:deploy-k8s:delete", "--delete" in deploy and "--ignore-not-found=true" in deploy, "deploy_k8s supports idempotent delete")
     add(checks, "script:k8s-full-flow:rollout", "rollout" in k8s_flow and "status" in k8s_flow, "K8s full-flow gate waits for rollout")
     add(checks, "script:k8s-full-flow:port-forward", "port-forward" in k8s_flow and "sdk_full_flow_client" in k8s_flow, "K8s full-flow gate validates real SDK traffic")
     add(checks, "script:resilience:n3-recovery", "check_production_recovery_gate.py" in resilience, "production resilience gate includes N3 recovery evidence")
-    add(checks, "script:drill-record:exists", exists("scripts/check_recovery_drill_record.py"), "recovery drill record validator exists")
+    add(checks, "script:drill-record:exists", exists(DRILL_RECORD_VALIDATOR), "recovery drill record validator exists")
     add(checks, "script:drill-record:scenario", "ALLOWED_SCENARIOS" in drill_record and "gateway_restart" in drill_record, "drill record validator constrains scenario names")
     add(checks, "script:drill-record:rto-rpo", "rto_seconds" in drill_record and "rpo_seconds" in drill_record, "drill record validator checks RTO/RPO")
     add(checks, "script:drill-record:summaries", "SUMMARY_FIELDS" in drill_record and "sdk_full_flow_summary" in drill_record, "drill record validator checks validation summary paths")
@@ -118,8 +124,8 @@ def validate_scripts(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_runbooks(checks: list[dict[str, Any]]) -> None:
-    deployment = read_text("docs/production-deployment-runbook.md")
-    operations = read_text("docs/production-operations-runbook.md")
+    deployment = read_text(DEPLOYMENT_RUNBOOK)
+    operations = read_text(OPERATIONS_RUNBOOK)
     roadmap = read_text("docs/archive/plans/production-stabilization-roadmap.md")
 
     add(checks, "runbook:n3-section", "check_production_recovery_gate.py" in deployment and "check_production_recovery_gate.py" in operations, "N3 recovery section exists in runbooks")
@@ -132,7 +138,7 @@ def validate_runbooks(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_drill_record_assets(checks: list[dict[str, Any]]) -> None:
-    template_path = REPO_ROOT / "docs/production-recovery-drill-record-template.json"
+    template_path = REPO_ROOT / DRILL_RECORD_TEMPLATE
     add(checks, "drill-template:exists", template_path.exists(), "recovery drill record template exists")
     if not template_path.exists():
         return
@@ -182,9 +188,9 @@ def main() -> int:
         "checks": checks,
         "artifacts": {
             "summary_path": str(summary_path),
-            "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
-            "operations_runbook": str(REPO_ROOT / "docs/production-operations-runbook.md"),
-            "drill_record_template": str(REPO_ROOT / "docs/production-recovery-drill-record-template.json"),
+            "deployment_runbook": str(REPO_ROOT / DEPLOYMENT_RUNBOOK),
+            "operations_runbook": str(REPO_ROOT / OPERATIONS_RUNBOOK),
+            "drill_record_template": str(REPO_ROOT / DRILL_RECORD_TEMPLATE),
         },
     }
 
@@ -201,4 +207,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

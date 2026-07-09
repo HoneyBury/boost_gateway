@@ -349,7 +349,7 @@ kubectl -n boost-gateway exec deploy/redis -- redis-cli ping
 1. 先恢复 Redis 服务和数据卷/PVC。
 2. 再重启 leaderboard backend，确认 Redis 连接重新建立。
 3. 检查 `gateway_backend_leaderboard_errors_total` 和 `gateway_backend_leaderboard_timeouts_total` 不再增长。
-4. 如果 Redis 数据有损坏风险，按 `docs/production-deployment-runbook.md` 的备份/恢复流程处理。
+4. 如果 Redis 数据有损坏风险，按 `docs/deployment/production-deployment-runbook.md` 的备份/恢复流程处理。
 5. 恢复后运行 `python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default`，确认 `battle finish -> leaderboard settlement -> top/rank` 仍可查询。
 
 Redis / Raft HA 细节见 `docs/redis-raft-ha-runbook.md`。默认生产配置不启用 Raft；matchmaking/leaderboard 三节点样例位于 `config/environments/ha/`，只在 `raft-ha` profile 或正式 HA 部署中显式启用。
@@ -506,7 +506,7 @@ python3 scripts/check_production_recovery_gate.py --summary-path runtime/validat
 4. 执行 SDK full-flow，确认 login、room、battle、leaderboard 业务闭环恢复。
 5. 如涉及 Redis，记录备份来源、恢复动作、RPO 风险和 leaderboard 查询结果。
 6. 如涉及回滚，记录旧/新镜像 tag、回滚命令、rollout 状态和最终验证 summary。
-7. 复制 `docs/production-recovery-drill-record-template.json` 作为本次演练记录，将 `template` 改为 `false` 后归档。
+7. 复制 `docs/production/production-recovery-drill-record-template.json` 作为本次演练记录，将 `template` 改为 `false` 后归档。
 8. 运行记录校验：
 
 ```bash

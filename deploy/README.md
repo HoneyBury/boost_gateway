@@ -138,4 +138,4 @@ python3 scripts/check_deploy_operability.py --build-dir build/default
 runtime/validation/deploy-operability-summary.json
 ```
 
-完整生产部署、回滚、监控和发布后验证流程见 `docs/production-deployment-runbook.md`。
+完整生产部署、回滚、监控和发布后验证流程见 `docs/deployment/production-deployment-runbook.md`。

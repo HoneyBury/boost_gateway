@@ -85,10 +85,10 @@ Docker Compose 默认给每个进程注入对应 `CONFIG_PATH=/app/config/enviro
 
 代码入口：
 
-- [config.h](/Users/honeybury/workspace/BoostAsioDemo/include/app/config.h)
-- [config.cpp](/Users/honeybury/workspace/BoostAsioDemo/src/app/config.cpp)
-- [demo_server.cpp](/Users/honeybury/workspace/BoostAsioDemo/src/v2/gateway/demo_server.cpp)
-- [config_watcher.cpp](/Users/honeybury/workspace/BoostAsioDemo/src/v2/config/config_watcher.cpp)
+- `include/app/config.h`
+- `src/app/config.cpp`
+- `src/v2/gateway/demo_server.cpp`
+- `src/v2/config/config_watcher.cpp`
 
 ## Backend 配置
 

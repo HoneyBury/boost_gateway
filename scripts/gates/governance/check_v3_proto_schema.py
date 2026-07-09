@@ -11,7 +11,15 @@ from pathlib import Path
 
 PROTO_FILES = {
     "common.proto": ["ServiceEnvelope", "LoginPayload", "RoomPayload", "BattlePayload"],
-    "login.proto": ["LoginRequest", "LoginResponse", "TokenValidateRequest"],
+    "login.proto": [
+        "LoginRequest",
+        "LoginResponse",
+        "RegisterAccountRequest",
+        "RegisterAccountResponse",
+        "GuestLoginRequest",
+        "GuestLoginResponse",
+        "TokenValidateRequest",
+    ],
     "room.proto": ["RoomCreateRequest", "RoomJoinRequest", "RoomReadyRequest"],
     "battle.proto": ["BattleCreateRequest", "BattleInputRequest", "BattleInputResponse"],
     "match.proto": ["MatchJoinRequest", "MatchStatusRequest", "MatchFoundPush"],
@@ -25,7 +33,14 @@ PROTO_FILES = {
 
 TRANSPORT_CONTRACT = {
     "ServiceEnvelope": ["login", "room", "battle", "match", "leaderboard"],
-    "LoginPayload": ["login_request", "login_response"],
+    "LoginPayload": [
+        "login_request",
+        "login_response",
+        "register_account",
+        "register_account_response",
+        "guest_login",
+        "guest_login_response",
+    ],
     "RoomPayload": ["room_create", "room_create_response", "room_join", "room_join_response", "room_ready", "room_ready_response"],
     "BattlePayload": ["battle_input", "battle_input_response"],
     "MatchPayload": ["match_join", "match_join_response", "match_status", "match_status_response"],

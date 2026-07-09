@@ -14,6 +14,8 @@ from datetime import UTC, datetime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+OPERATIONS_RUNBOOK = "docs/deployment/production-operations-runbook.md"
+DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
 
 BACKEND_TARGETS = {
     "login-backend:9202",
@@ -258,8 +260,8 @@ def validate_dashboard(checks: list[dict[str, Any]]) -> None:
 
 def validate_docs(checks: list[dict[str, Any]]) -> None:
     env_readme = read_text("env/README.md")
-    runbook = read_text("docs/production-operations-runbook.md")
-    deployment = read_text("docs/production-deployment-runbook.md")
+    runbook = read_text(OPERATIONS_RUNBOOK)
+    deployment = read_text(DEPLOYMENT_RUNBOOK)
     add_check(
         checks,
         "docs:env-alert-path",
@@ -356,8 +358,8 @@ def main() -> int:
             "prometheus_config": str(REPO_ROOT / "env/monitoring/prometheus.yml"),
             "prometheus_alerts": str(REPO_ROOT / "env/monitoring/prometheus-alerts.yml"),
             "grafana_dashboard": str(REPO_ROOT / "env/monitoring/grafana-dashboard.json"),
-            "operations_runbook": str(REPO_ROOT / "docs/production-operations-runbook.md"),
-            "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
+            "operations_runbook": str(REPO_ROOT / OPERATIONS_RUNBOOK),
+            "deployment_runbook": str(REPO_ROOT / DEPLOYMENT_RUNBOOK),
         },
     }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -377,4 +379,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
