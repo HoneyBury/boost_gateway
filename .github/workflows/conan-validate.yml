@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(python scripts/bootstrap_conan.py --reset-home)
+          args=(python scripts/bootstrap_conan.py --reset-home --disable-example-internal)
           if [ "${{ inputs.allow_public }}" = "true" ]; then
             args+=(--allow-public)
           fi
