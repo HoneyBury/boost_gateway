@@ -75,6 +75,11 @@ TEST(ProtoSchemaTest, LoginProtoHasAllMessages) {
     EXPECT_TRUE(proto_has_message(c, "LoginRequest"));
     EXPECT_TRUE(proto_has_message(c, "LoginResponse"));
     EXPECT_TRUE(proto_has_message(c, "TokenValidateRequest"));
+    EXPECT_TRUE(proto_has_message(c, "TokenValidateResponse"));
+    EXPECT_TRUE(proto_has_message(c, "SessionBindResponse"));
+    EXPECT_TRUE(proto_has_message(c, "SessionCloseResponse"));
+    EXPECT_TRUE(proto_has_message(c, "TokenRefreshRequest"));
+    EXPECT_TRUE(proto_has_message(c, "TokenRefreshResponse"));
     EXPECT_TRUE(proto_has_field(c, "user_id"));
     EXPECT_TRUE(proto_has_field(c, "token"));
     EXPECT_TRUE(proto_has_field(c, "role"));
@@ -87,8 +92,20 @@ TEST(ProtoSchemaTest, RoomProtoHasAllMessages) {
     EXPECT_TRUE(proto_has_message(c, "RoomCreateRequest"));
     EXPECT_TRUE(proto_has_message(c, "RoomJoinRequest"));
     EXPECT_TRUE(proto_has_message(c, "RoomLeaveRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomLeaveResponse"));
     EXPECT_TRUE(proto_has_message(c, "RoomReadyRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomStartBattleResponse"));
     EXPECT_TRUE(proto_has_message(c, "RoomStatePush"));
+    EXPECT_TRUE(proto_has_message(c, "RoomListRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomListResponse"));
+    EXPECT_TRUE(proto_has_message(c, "RoomDetailRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomDetailResponse"));
+    EXPECT_TRUE(proto_has_message(c, "RoomKickRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomKickResponse"));
+    EXPECT_TRUE(proto_has_message(c, "RoomTransferOwnerRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomTransferOwnerResponse"));
+    EXPECT_TRUE(proto_has_message(c, "RoomBattleFinishedRequest"));
+    EXPECT_TRUE(proto_has_message(c, "RoomBattleFinishedResponse"));
 }
 
 // ─── Battle.proto schema ─────────────────────────────────────────────────
@@ -96,8 +113,14 @@ TEST(ProtoSchemaTest, RoomProtoHasAllMessages) {
 TEST(ProtoSchemaTest, BattleProtoHasAllMessages) {
     auto c = read_file(proto_path("proto/v3/battle.proto"));
     EXPECT_TRUE(proto_has_message(c, "BattleCreateRequest"));
+    EXPECT_TRUE(proto_has_message(c, "BattleCreateResponse"));
     EXPECT_TRUE(proto_has_message(c, "BattleInputRequest"));
+    EXPECT_TRUE(proto_has_message(c, "BattleStateRequest"));
+    EXPECT_TRUE(proto_has_message(c, "BattleStateResponse"));
     EXPECT_TRUE(proto_has_message(c, "BattleStatePush"));
+    EXPECT_TRUE(proto_has_message(c, "BattleFinishResponse"));
+    EXPECT_TRUE(proto_has_message(c, "ReplayLoadRequest"));
+    EXPECT_TRUE(proto_has_message(c, "ReplayLoadResponse"));
     EXPECT_TRUE(proto_has_field(c, "input_data"));
     EXPECT_TRUE(proto_has_field(c, "kind"));
     EXPECT_TRUE(proto_has_field(c, "frame_number"));
@@ -205,14 +228,46 @@ TEST(ProtoSchemaTest, EveryTypedKindMapsToConcreteDomain) {
     const std::vector<v3::proto::EnvelopeMessageKind> kinds = {
         v3::proto::EnvelopeMessageKind::kLoginRequest,
         v3::proto::EnvelopeMessageKind::kLoginResponse,
+        v3::proto::EnvelopeMessageKind::kTokenValidateRequest,
+        v3::proto::EnvelopeMessageKind::kTokenValidateResponse,
+        v3::proto::EnvelopeMessageKind::kSessionBindRequest,
+        v3::proto::EnvelopeMessageKind::kSessionBindResponse,
+        v3::proto::EnvelopeMessageKind::kSessionCloseRequest,
+        v3::proto::EnvelopeMessageKind::kSessionCloseResponse,
+        v3::proto::EnvelopeMessageKind::kTokenRefreshRequest,
+        v3::proto::EnvelopeMessageKind::kTokenRefreshResponse,
         v3::proto::EnvelopeMessageKind::kRoomCreateRequest,
         v3::proto::EnvelopeMessageKind::kRoomCreateResponse,
         v3::proto::EnvelopeMessageKind::kRoomJoinRequest,
         v3::proto::EnvelopeMessageKind::kRoomJoinResponse,
+        v3::proto::EnvelopeMessageKind::kRoomLeaveRequest,
+        v3::proto::EnvelopeMessageKind::kRoomLeaveResponse,
         v3::proto::EnvelopeMessageKind::kRoomReadyRequest,
         v3::proto::EnvelopeMessageKind::kRoomReadyResponse,
+        v3::proto::EnvelopeMessageKind::kRoomStartBattleRequest,
+        v3::proto::EnvelopeMessageKind::kRoomStartBattleResponse,
+        v3::proto::EnvelopeMessageKind::kRoomStatePush,
+        v3::proto::EnvelopeMessageKind::kRoomListRequest,
+        v3::proto::EnvelopeMessageKind::kRoomListResponse,
+        v3::proto::EnvelopeMessageKind::kRoomDetailRequest,
+        v3::proto::EnvelopeMessageKind::kRoomDetailResponse,
+        v3::proto::EnvelopeMessageKind::kRoomKickRequest,
+        v3::proto::EnvelopeMessageKind::kRoomKickResponse,
+        v3::proto::EnvelopeMessageKind::kRoomTransferOwnerRequest,
+        v3::proto::EnvelopeMessageKind::kRoomTransferOwnerResponse,
+        v3::proto::EnvelopeMessageKind::kRoomBattleFinishedRequest,
+        v3::proto::EnvelopeMessageKind::kRoomBattleFinishedResponse,
+        v3::proto::EnvelopeMessageKind::kBattleCreateRequest,
+        v3::proto::EnvelopeMessageKind::kBattleCreateResponse,
         v3::proto::EnvelopeMessageKind::kBattleInputRequest,
         v3::proto::EnvelopeMessageKind::kBattleInputResponse,
+        v3::proto::EnvelopeMessageKind::kBattleStateRequest,
+        v3::proto::EnvelopeMessageKind::kBattleStateResponse,
+        v3::proto::EnvelopeMessageKind::kBattleStatePush,
+        v3::proto::EnvelopeMessageKind::kBattleFinishRequest,
+        v3::proto::EnvelopeMessageKind::kBattleFinishResponse,
+        v3::proto::EnvelopeMessageKind::kReplayLoadRequest,
+        v3::proto::EnvelopeMessageKind::kReplayLoadResponse,
         v3::proto::EnvelopeMessageKind::kMatchJoinRequest,
         v3::proto::EnvelopeMessageKind::kMatchJoinResponse,
         v3::proto::EnvelopeMessageKind::kMatchLeaveRequest,

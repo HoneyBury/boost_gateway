@@ -49,6 +49,12 @@ message RoomStartBattleRequest {
   string room_id = 2;
 }
 
+message RoomStartBattleResponse {
+  string room_id = 1;
+  repeated string player_ids = 2;
+  uint32 version = 3;
+}
+
 message RoomStatePush {
   string room_id = 1;
   string owner_id = 2;
@@ -56,4 +62,61 @@ message RoomStatePush {
   repeated string ready_members = 4;
   bool in_battle = 5;
   string battle_id = 6;
+}
+
+message RoomListRequest {
+  string visibility = 1;
+  string status = 2;
+  uint32 page = 3;
+  uint32 page_size = 4;
+}
+
+message RoomListResponse {
+  uint32 total = 1;
+  uint32 page = 2;
+  uint32 page_size = 3;
+  uint32 total_pages = 4;
+}
+
+message RoomDetailRequest {
+  string room_id = 1;
+}
+
+message RoomDetailResponse {
+  string room_id = 1;
+}
+
+message RoomKickRequest {
+  string user_id = 1;
+  string room_id = 2;
+  string target_user_id = 3;
+}
+
+message RoomKickResponse {
+  string room_id = 1;
+  string kicked_user_id = 2;
+  uint32 member_count = 3;
+}
+
+message RoomTransferOwnerRequest {
+  string user_id = 1;
+  string room_id = 2;
+  string new_owner_id = 3;
+}
+
+message RoomTransferOwnerResponse {
+  string room_id = 1;
+  string new_owner_id = 2;
+  uint32 version = 3;
+}
+
+message RoomBattleFinishedRequest {
+  string room_id = 1;
+  string battle_id = 2;
+}
+
+message RoomBattleFinishedResponse {
+  string room_id = 1;
+  string battle_id = 2;
+  uint32 version = 3;
 }

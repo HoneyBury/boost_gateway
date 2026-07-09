@@ -1,95 +1,52 @@
-# Docs Index
+# 文档索引
 
-`docs/` 顶层只保留当前仍需要维护的主文档。历史版本文档、阶段计划、交付记录、旧 runbook 已迁入 `docs/archive/`。
+更新时间：2026-06-30
 
-## 优先阅读
+本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
 
-1. `current-state.md`
-2. `deployment-quickstart.md`
-3. `architecture-overview.md`
-4. `reliability-matrix.md`
-5. `performance-baseline.md`
-6. `v3-release-checklist.md`
+## 核心文档
 
-## 当前主文档
+| 文档 | 用途 |
+|---|---|
+| [开发者入门](ONBOARDING.md) | **新贡献者从这里开始** — 环境搭建、构建、测试、开发工作流、编码规范、协议/SDK/demo 开发指南 |
+| [当前状态](current-state.md) | 已实现能力的权威事实源 |
+| [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
+| [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
+| [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
 
-- `current-state.md`
-  当前项目事实源。先看这个。
+## 贡献入口
 
-- `architecture-overview.md`
-  当前架构分层、服务边界和主链实现概览。
+| 资源 | 用途 |
+|---|---|
+| [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md) | 提交 PR 时的检查清单 |
+| [Bug 报告](../.github/ISSUE_TEMPLATE/bug_report.md) | 报告可复现的缺陷 |
+| [功能请求](../.github/ISSUE_TEMPLATE/feature_request.md) | 提议新能力或改进 |
 
-- `deployment-quickstart.md`
-  本机二进制、OrbStack/Docker Compose、客户端连接和部署后验证的快速入口。
+## 发布与可靠性
 
-- `reliability-matrix.md`
-  当前可靠性断言、对应代码与验证入口。
+| 文档 | 用途 |
+|---|---|
+| [发布治理](release-governance.md) | 可靠性矩阵 + 发布检查清单 |
+| [性能基线](performance-baseline.md) | 性能数据和归档口径 |
+| [固定 Runner 手册](fixed-runner-playbook.md) | 固定 runner 操作指南 |
 
-- `performance-baseline.md`
-  当前性能事实、基线口径、容量边界和 soak 策略。
+## 安全与传输
 
-- `production-deployment-runbook.md`
-  生产部署方式、发布动作和部署后验证。
+| 文档 | 用途 |
+|---|---|
+| [TLS/mTLS Runbook](tls-mtls-runbook.md) | 传输安全配置和运维 |
 
-- `production-operations-runbook.md`
-  运维排障、告警响应、恢复与回滚流程。
+## 子目录
 
-- `production-configuration-runbook.md`
-  生产配置口径和修改边界。
+| 目录 | 内容 |
+|---|---|
+| [deployment/](deployment/) | 部署快速入门、生产部署/运维/配置 Runbook |
+| [production/](production/) | 生产候选证据 manifest、恢复演练模板 |
+| [legacy/](legacy/) | Legacy helper 清单、控制面预案、脚本整合计划 |
+| [archive/](archive/) | 历史版本文档（仅供参考，不作为当前事实源） |
 
-- `tls-mtls-runbook.md`
-  TLS/mTLS profile、证书与启用前提。
+## 文档优先级规则
 
-- `fixed-runner-playbook.md`
-  固定 runner 的执行口径、环境要求和证据沉淀方式。
-
-- `production-evidence-runner.md`
-  生产证据 workflow 的 runner 输入与归档方式。
-
-- `production-candidate-evidence-manifest.json`
-  R2 证据 manifest。
-
-- `production-recovery-drill-record-template.json`
-  预发恢复演练记录模板。
-
-- `v3-release-checklist.md`
-  当前 release gate 与最终发布检查口径。
-
-## P0/P1/P2 收口门禁
-
-- `scripts/check_current_docs_install.py`
-  校验顶层主文档、归档目录和 CMake install 清单是否一致。
-
-- `scripts/check_mainline_readiness.py`
-  校验默认生产主链边界、gRPC/Tank demo 边界和固定 runner 证据入口。
-
-- `scripts/check_p3_p4_release_readiness.py`
-  校验 P3 data recovery 与 P4 observability 已接入 RC 总门禁，并使用统一 summary 契约。
-
-- `scripts/check_production_evidence_manifest.py --require-fixed-runner`
-  投产前把 R4/R5/R6 固定 runner 或预发证据提升为阻断项。
-
-## 归档文档
-
-- `archive/history-v1/`
-  v1 维护期文档。
-
-- `archive/history-v2/`
-  v2 阶段文档、阶段验收和旧事实文档。
-
-- `archive/plans/`
-  各阶段 roadmap、plan、development log、实施计划。
-
-- `archive/runbooks/`
-  已退出主维护面的旧 runbook。
-
-- `archive/process/`
-  工程流程、发布流程、环境参考、第三方治理等过程型文档。
-
-- `archive/releases/`
-  阶段性交付记录和 release 说明。
-
-## 使用规则
-
-- 顶层文档与归档文档冲突时，以 `current-state.md` 为准。
-- 需要看历史背景时再进入 `archive/`，不要把归档文档当成当前实施依据。
+1. 如果本文档与其他文档冲突，以 `current-state.md` 为准
+2. 蓝图规划以 `project-blueprint.md` 为准
+3. 归档文档 (`archive/`) 仅用于历史追溯，不代表当前实现

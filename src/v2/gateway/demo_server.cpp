@@ -173,7 +173,9 @@ DemoServer::DemoServer(std::uint16_t port,
     runtime_.set_archive_sink(archive_store_.get());
 }
 
-DemoServer::~DemoServer() = default;
+DemoServer::~DemoServer() {
+    stop();
+}
 
 void DemoServer::start() {
     start_gateway_worker();

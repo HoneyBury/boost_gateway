@@ -23,8 +23,14 @@ else()
     set(BoostGatewaySdk_VERSION "${BOOST_GATEWAY_SDK_VERSION}")
 endif()
 
+if(PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
+    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "conan")
+else()
+    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "fetchcontent_fallback")
+endif()
+
 # ── Dependencies ────────────────────────────────────────────────────
-if(NOT TARGET nlohmann_json::nlohmann_json)
+if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
     FetchContent_Declare(nlohmann_json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -33,11 +39,30 @@ if(NOT TARGET nlohmann_json::nlohmann_json)
     FetchContent_MakeAvailable(nlohmann_json)
 endif()
 
-if(NOT DEFINED boost_SOURCE_DIR)
+set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "")
+foreach(_boost_gateway_sdk_json_candidate IN LISTS nlohmann_json_INCLUDE_DIRS nlohmann_json_INCLUDE_DIR)
+    if(EXISTS "${_boost_gateway_sdk_json_candidate}/nlohmann/json.hpp")
+        set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${_boost_gateway_sdk_json_candidate}")
+        break()
+    endif()
+endforeach()
+if(NOT BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT AND DEFINED nlohmann_json_SOURCE_DIR AND EXISTS "${nlohmann_json_SOURCE_DIR}/include/nlohmann/json.hpp")
+    set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${nlohmann_json_SOURCE_DIR}/include")
+elseif(NOT BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT AND TARGET nlohmann_json::nlohmann_json)
+    get_target_property(_boost_gateway_sdk_json_include_dirs nlohmann_json::nlohmann_json INTERFACE_INCLUDE_DIRECTORIES)
+    foreach(_boost_gateway_sdk_json_dir IN LISTS _boost_gateway_sdk_json_include_dirs)
+        if(EXISTS "${_boost_gateway_sdk_json_dir}/nlohmann/json.hpp")
+            set(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT "${_boost_gateway_sdk_json_dir}")
+            break()
+        endif()
+    endforeach()
+endif()
+
+if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND NOT BOOST_USE_CONAN_DEPS)
     include(FetchContent)
     FetchContent_Declare(Boost
-        URL https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip
-        URL_HASH SHA256=bdc79f179d1a4a60c10fe764172946d0eeafad65e576a8703c4d89d49949973c
+        URL https://archives.boost.io/release/1.86.0/source/boost_1_86_0.zip
+        URL_HASH SHA256=cd20a5694e753683e1dc2ee10e2d1bb11704e65893ebcc6ced234ba68e5d8646
     )
     FetchContent_GetProperties(Boost)
     if(NOT boost_POPULATED)
@@ -77,15 +102,18 @@ target_include_directories(boost_gateway_sdk_dll
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_BINARY_DIR}/include
-        ${boost_SOURCE_DIR}
 )
-target_compile_definitions(boost_gateway_sdk_dll
-    PRIVATE
-        BOOST_ALL_NO_LIB
-        BOOST_ERROR_CODE_HEADER_ONLY
-)
-if(WIN32)
-    target_compile_definitions(boost_gateway_sdk_dll PRIVATE _WIN32_WINNT=0x0A00)
+if(TARGET project_boost_asio)
+    target_link_libraries(boost_gateway_sdk_dll PRIVATE project_boost_asio)
+elseif(TARGET boost::headers)
+    target_link_libraries(boost_gateway_sdk_dll PRIVATE boost::headers)
+else()
+    target_include_directories(boost_gateway_sdk_dll PRIVATE ${boost_SOURCE_DIR})
+    target_compile_definitions(boost_gateway_sdk_dll
+        PRIVATE
+            BOOST_ALL_NO_LIB
+            BOOST_ERROR_CODE_HEADER_ONLY
+    )
 endif()
 
 target_include_directories(boost_gateway_sdk
@@ -96,13 +124,18 @@ target_include_directories(boost_gateway_sdk
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway>
 )
 
-target_include_directories(boost_gateway_sdk PUBLIC
-    $<BUILD_INTERFACE:${boost_SOURCE_DIR}>
-    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
-target_compile_definitions(boost_gateway_sdk PUBLIC
-    BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
-if(WIN32)
-    target_compile_definitions(boost_gateway_sdk PUBLIC _WIN32_WINNT=0x0A00)
+if(TARGET project_boost_asio)
+    target_link_libraries(boost_gateway_sdk PRIVATE $<BUILD_INTERFACE:project_boost_asio>)
+    target_compile_definitions(boost_gateway_sdk PUBLIC
+        BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
+elseif(TARGET boost::headers)
+    target_link_libraries(boost_gateway_sdk PUBLIC boost::headers)
+else()
+    target_include_directories(boost_gateway_sdk PUBLIC
+        $<BUILD_INTERFACE:${boost_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
+    target_compile_definitions(boost_gateway_sdk PUBLIC
+        BOOST_ALL_NO_LIB BOOST_ERROR_CODE_HEADER_ONLY)
 endif()
 
 add_library(boost_gateway::sdk ALIAS boost_gateway_sdk)
@@ -112,8 +145,12 @@ include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
 
 # nlohmann_json — header-only dependency, co-installed so the SDK package is self-contained.
-install(DIRECTORY "${nlohmann_json_SOURCE_DIR}/include/nlohmann"
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
+if(BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT)
+    install(DIRECTORY "${BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT}/nlohmann"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/nlohmann)
+else()
+    message(WARNING "Could not resolve nlohmann_json include root for SDK install packaging")
+endif()
 
 # Library
 install(TARGETS boost_gateway_sdk EXPORT boost_gateway_sdk-targets

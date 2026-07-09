@@ -2,14 +2,15 @@ name: Specialized E2E
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   workflow_dispatch:
     inputs:
       runner:
-        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","raft-ha"]'
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","Linux","X64"]'
       build_preset:
         description: "CMake configure preset"
         required: true
@@ -42,32 +43,91 @@ on:
         required: true
         default: false
         type: boolean
+      enable_conan_validation:
+        description: "Run an opt-in Conan dependency validation before specialized E2E"
+        required: true
+        default: false
+        type: boolean
+      conan_profile:
+        description: "Repository Conan profile path used when Conan validation is enabled"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+      use_existing_workspace:
+        description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
   specialized-e2e:
-    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
+        if: inputs.use_existing_workspace != true
         uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
+
+      - name: Verify existing workspace
+        if: inputs.use_existing_workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .git
+          git rev-parse --short HEAD
+          git status --short --branch
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
+      - name: Show CMake version
+        run: cmake --version
 
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup Python
+        if: inputs.enable_conan_validation
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Conan validation preflight
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          args=(conan install . --output-folder=build/conan-specialized --build=missing -s build_type=${{ inputs.configuration }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+          cmake -S . -B build/conan-specialized-cmake -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.configuration }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-specialized/build/${{ inputs.configuration }}/generators/conan_toolchain.cmake
+          cmake --build build/conan-specialized-cmake --parallel --target project_v2
 
       - name: Fixed runner preflight
         shell: bash
@@ -113,6 +173,7 @@ jobs:
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
           summaries=()
           for path in \
             runtime/validation/fixed-runner-preflight-summary.json \
@@ -129,7 +190,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: specialized-e2e-${{ inputs.runner }}
+          name: specialized-e2e-${{ github.run_id }}
           path: |
             runtime/validation/fixed-runner-preflight-summary.json
             runtime/validation/specialized-e2e-summary.json

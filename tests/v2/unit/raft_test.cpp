@@ -87,6 +87,7 @@ TEST(RaftTest, AppendEntriesFromLeaderResetsElectionTimeout) {
         .node_id = "follower-1",
         .election_timeout_min = std::chrono::milliseconds(500),
         .election_timeout_max = std::chrono::milliseconds(1000),
+        .peers = {{"follower-1", "", 0}, {"leader-1", "", 0}},
     });
     node.start();
     std::this_thread::sleep_for(std::chrono::milliseconds(50));

@@ -9,6 +9,12 @@ message BattleCreateRequest {
   uint32 max_frames = 4;
 }
 
+message BattleCreateResponse {
+  string battle_id = 1;
+  string room_id = 2;
+  repeated string player_ids = 3;
+}
+
 message BattleInputRequest {
   string user_id = 1;
   uint32 request_id = 2;
@@ -34,10 +40,33 @@ message BattleStatePush {
   string triggering_user_id = 6;
 }
 
+message BattleStateRequest {
+  string battle_id = 1;
+}
+
+message BattleStateResponse {
+  string battle_id = 1;
+  uint32 frame_number = 2;
+}
+
 message BattleFinishRequest {
   string user_id = 1;
   string battle_id = 2;
   string reason = 3;           // "surrender", "timeout", "finished"
+}
+
+message BattleFinishResponse {
+  string battle_id = 1;
+  string reason = 2;
+  uint32 total_frames = 3;
+}
+
+message ReplayLoadRequest {
+  string battle_id = 1;
+}
+
+message ReplayLoadResponse {
+  string battle_id = 1;
 }
 
 message BattleParticipantState {

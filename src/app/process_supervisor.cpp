@@ -1,14 +1,3 @@
-#ifdef _WIN32
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#define _WIN32_WINNT 0x0600
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <windows.h>
-#include <process.h>
-#endif
-
 #include "app/process_supervisor.h"
 
 #include "app/logging.h"
@@ -22,8 +11,6 @@
 #include <stdexcept>
 #include <system_error>
 
-#ifdef _WIN32
-#else
 #include <csignal>
 #include <cerrno>
 #include <sys/types.h>
@@ -36,7 +23,6 @@
 #include <spawn.h>
 
 extern "C" char** environ;
-#endif
 
 namespace app {
 
@@ -46,59 +32,6 @@ namespace app {
 
 namespace {
 
-#ifdef _WIN32
-// RAII wrapper for TCP socket on Windows.
-class TcpSocket {
-public:
-    TcpSocket() : sock_(INVALID_SOCKET) {
-        WSADATA wsa_data;
-        if (WSAStartup(MAKEWORD(2, 2), &wsa_data) != 0) {
-            sock_ = INVALID_SOCKET;
-        }
-    }
-    ~TcpSocket() {
-        if (sock_ != INVALID_SOCKET) closesocket(sock_);
-        WSACleanup();
-    }
-
-    bool connect(const std::string& host, std::uint16_t port, int timeout_ms) {
-        sock_ = socket(AF_INET, SOCK_STREAM, 0);
-        if (sock_ == INVALID_SOCKET) return false;
-
-        // Set non-blocking for timeout support.
-        u_long mode = 1;
-        ioctlsocket(sock_, FIONBIO, &mode);
-
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_port = htons(port);
-        inet_pton(AF_INET, host.c_str(), &addr.sin_addr);
-
-        ::connect(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
-
-        // Wait for connection with select() timeout.
-        fd_set write_set;
-        FD_ZERO(&write_set);
-        FD_SET(sock_, &write_set);
-
-        timeval tv{};
-        tv.tv_sec = timeout_ms / 1000;
-        tv.tv_usec = (timeout_ms % 1000) * 1000;
-
-        int ret = select(static_cast<int>(sock_ + 1), nullptr, &write_set, nullptr, &tv);
-        if (ret <= 0) return false;
-
-        // Check for SO_ERROR.
-        int so_error = 0;
-        socklen_t len = sizeof(so_error);
-        getsockopt(sock_, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&so_error), &len);
-        return so_error == 0;
-    }
-
-private:
-    SOCKET sock_;
-};
-#else
 // RAII wrapper for TCP socket on POSIX.
 class TcpSocket {
 public:
@@ -120,7 +53,7 @@ public:
 
         ::connect(sock_, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
 
-        // Wait with poll() / select().
+        // Wait with select().
         fd_set write_set;
         FD_ZERO(&write_set);
         FD_SET(sock_, &write_set);
@@ -141,7 +74,6 @@ public:
 private:
     int sock_;
 };
-#endif
 
 }  // anonymous namespace
 
@@ -165,7 +97,7 @@ ProcessSupervisor::~ProcessSupervisor() {
 void ProcessSupervisor::add_process(const ProcessConfig& config) {
     auto state = std::make_shared<ProcessState>();
     state->config = config;
-    state->pid = 0;
+    state->pid = -1;
     processes_.push_back(std::move(state));
     LOG_INFO("ProcessSupervisor: registered process '{}' ({})",
              config.name, config.executable);
@@ -181,7 +113,6 @@ void ProcessSupervisor::set_crash_callback(CrashCallback cb) {
 
 bool ProcessSupervisor::health_check(const ProcessConfig& config) {
     if (config.health_check_port == 0) {
-        // No health check port configured — assume healthy.
         return true;
     }
 
@@ -212,11 +143,7 @@ bool ProcessSupervisor::start_all() {
         state->stopping.store(false);
         state->restart_attempts = 0;
 
-#ifdef _WIN32
-        bool started = spawn_windows(state->config, *state);
-#else
         bool started = spawn_posix(state->config, *state);
-#endif
 
         if (!started) {
             LOG_ERROR("ProcessSupervisor: failed to start '{}'", state->config.name);
@@ -229,7 +156,6 @@ bool ProcessSupervisor::start_all() {
                  state->config.name,
                  state->pid);
 
-        // Start monitor thread.
         state->monitor_thread = std::thread(&ProcessSupervisor::monitor_routine,
                                              this, state);
     }
@@ -251,7 +177,6 @@ void ProcessSupervisor::stop_all() {
         terminate_process(state->config, *state);
     }
 
-    // Join all monitor threads.
     for (auto& state : processes_) {
         if (state->monitor_thread.joinable()) {
             state->monitor_thread.join();
@@ -268,7 +193,6 @@ void ProcessSupervisor::stop_all() {
 void ProcessSupervisor::wait() {
     LOG_INFO("ProcessSupervisor: waiting for all processes to exit");
 
-    // Check if any process is still running and wait for them.
     bool any_running = true;
     while (any_running) {
         any_running = false;
@@ -283,7 +207,6 @@ void ProcessSupervisor::wait() {
         }
     }
 
-    // Join monitor threads.
     for (auto& state : processes_) {
         if (state->monitor_thread.joinable()) {
             state->monitor_thread.join();
@@ -301,7 +224,6 @@ bool ProcessSupervisor::restart_process(const std::string& name) {
     for (auto& state : processes_) {
         if (state->config.name != name) continue;
 
-        // Stop the process.
         state->stopping.store(true);
         terminate_process(state->config, *state);
 
@@ -309,16 +231,11 @@ bool ProcessSupervisor::restart_process(const std::string& name) {
             state->monitor_thread.join();
         }
 
-        // Reset state and restart.
         state->running.store(false);
         state->stopping.store(false);
         state->restart_attempts = 0;
 
-#ifdef _WIN32
-        bool started = spawn_windows(state->config, *state);
-#else
         bool started = spawn_posix(state->config, *state);
-#endif
 
         if (!started) {
             LOG_ERROR("ProcessSupervisor: failed to restart '{}'", name);
@@ -363,7 +280,7 @@ int ProcessSupervisor::restart_count(const std::string& name) const {
 }
 
 // ===================================================================
-// Monitor routine (runs in a background thread per process)
+// Monitor routine
 // ===================================================================
 
 void ProcessSupervisor::monitor_routine(std::shared_ptr<ProcessState> state) {
@@ -371,76 +288,10 @@ void ProcessSupervisor::monitor_routine(std::shared_ptr<ProcessState> state) {
     LOG_DEBUG("ProcessSupervisor: monitor started for '{}'", config.name);
 
     while (!state->stopping.load() && !supervisor_stopping_.load()) {
-#ifdef _WIN32
-        DWORD wait_result = WaitForSingleObject(
-            state->process_handle, 1000);
-
-        if (wait_result == WAIT_OBJECT_0) {
-            // Process exited.
-            DWORD exit_code = 0;
-            GetExitCodeProcess(state->process_handle, &exit_code);
-
-            LOG_WARN("ProcessSupervisor: '{}' exited with code {}",
-                     config.name, static_cast<int>(exit_code));
-
-            state->running.store(false);
-
-            // Notify crash callback.
-            if (crash_callback_) {
-                crash_callback_(config.name, static_cast<int>(exit_code));
-            }
-
-            // Auto-restart logic.
-            if (!state->stopping.load() && !supervisor_stopping_.load()) {
-                state->restart_attempts++;
-
-                if (config.max_restarts > 0 &&
-                    state->restart_attempts > config.max_restarts) {
-                    LOG_ERROR("ProcessSupervisor: '{}' exceeded max restarts ({})",
-                              config.name, config.max_restarts);
-                    break;
-                }
-
-                LOG_INFO("ProcessSupervisor: restarting '{}' in {} ms (attempt {}/{})",
-                         config.name, config.restart_delay_ms,
-                         state->restart_attempts,
-                         config.max_restarts > 0 ? config.max_restarts : -1);
-
-                std::this_thread::sleep_for(
-                    std::chrono::milliseconds(config.restart_delay_ms));
-
-                if (state->stopping.load() || supervisor_stopping_.load()) break;
-
-#ifdef _WIN32
-                bool restarted = spawn_windows(config, *state);
-#else
-                bool restarted = spawn_posix(config, *state);
-#endif
-                if (restarted) {
-                    state->running.store(true);
-                    LOG_INFO("ProcessSupervisor: restarted '{}' (PID {})",
-                             config.name, state->pid);
-                } else {
-                    LOG_ERROR("ProcessSupervisor: restart failed for '{}'",
-                              config.name);
-                    break;
-                }
-            } else {
-                break;
-            }
-        } else if (wait_result == WAIT_FAILED) {
-            LOG_ERROR("ProcessSupervisor: WaitForSingleObject failed for '{}' (error {})",
-                      config.name, GetLastError());
-            break;
-        }
-        // WAIT_TIMEOUT means the process is still running — continue monitoring.
-#else
-        // POSIX: waitpid with WNOHANG
         int status = 0;
         pid_t result = waitpid(state->pid, &status, WNOHANG);
 
         if (result == state->pid) {
-            // Process exited.
             int exit_code = -1;
             if (WIFEXITED(status)) {
                 exit_code = WEXITSTATUS(status);
@@ -496,25 +347,10 @@ void ProcessSupervisor::monitor_routine(std::shared_ptr<ProcessState> state) {
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
-#endif
     }
 
-    // Process is no longer running.
     state->running.store(false);
-
-    // Close handles.
-#ifdef _WIN32
-    if (state->process_handle) {
-        CloseHandle(state->process_handle);
-        state->process_handle = nullptr;
-    }
-    if (state->thread_handle) {
-        CloseHandle(state->thread_handle);
-        state->thread_handle = nullptr;
-    }
-#else
     state->pid = -1;
-#endif
 
     LOG_DEBUG("ProcessSupervisor: monitor stopped for '{}'", config.name);
 }
@@ -528,29 +364,11 @@ void ProcessSupervisor::terminate_process(
 
     LOG_INFO("ProcessSupervisor: terminating '{}'", config.name);
 
-#ifdef _WIN32
-    if (state.process_handle == nullptr) return;
-
-    // 1. Graceful: post a WM_CLOSE via console event (limited).
-    //    For non-console apps, use TerminateProcess directly after timeout.
-
-    // 2. Wait up to 5 seconds for graceful exit.
-    DWORD wait_result = WaitForSingleObject(state.process_handle, 5000);
-    if (wait_result == WAIT_OBJECT_0) {
-        LOG_INFO("ProcessSupervisor: '{}' exited gracefully", config.name);
-        return;
-    }
-
-    // 3. Force kill.
-    LOG_WARN("ProcessSupervisor: force terminating '{}'", config.name);
-    TerminateProcess(state.process_handle, 1);
-    WaitForSingleObject(state.process_handle, 3000);
-
-#else
     if (state.pid <= 0) return;
 
-    // 1. Graceful signal.
-    ::kill(state.pid, SIGTERM);
+    // 1. Graceful signal the whole process group.
+    const pid_t process_group = -state.pid;
+    ::kill(process_group, SIGTERM);
 
     // 2. Wait up to 5 seconds.
     for (int i = 0; i < 50; ++i) {
@@ -562,76 +380,15 @@ void ProcessSupervisor::terminate_process(
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
-    // 3. Force kill.
+    // 3. Force kill the whole process group.
     LOG_WARN("ProcessSupervisor: force killing '{}' (PID {})", config.name, state.pid);
-    ::kill(state.pid, SIGKILL);
+    ::kill(process_group, SIGKILL);
     waitpid(state.pid, nullptr, 0);
-#endif
 }
 
 // ===================================================================
-// Platform-specific process spawning
+// Process spawning (POSIX)
 // ===================================================================
-
-#ifdef _WIN32
-
-bool ProcessSupervisor::spawn_windows(
-    const ProcessConfig& config, ProcessState& state) {
-
-    // Build command line.
-    std::string cmd_line = config.executable;
-    // Quote the executable path if it contains spaces.
-    if (cmd_line.find(' ') != std::string::npos) {
-        cmd_line = "\"" + cmd_line + "\"";
-    }
-    for (const auto& arg : config.args) {
-        cmd_line += " ";
-        if (arg.find(' ') != std::string::npos) {
-            cmd_line += "\"" + arg + "\"";
-        } else {
-            cmd_line += arg;
-        }
-    }
-
-    STARTUPINFOA si{};
-    si.cb = sizeof(si);
-    si.dwFlags = STARTF_USESHOWWINDOW;
-    si.wShowWindow = SW_HIDE;
-
-    PROCESS_INFORMATION pi{};
-
-    BOOL ok = CreateProcessA(
-        nullptr,                    // application name
-        cmd_line.data(),            // command line
-        nullptr,                    // process security
-        nullptr,                    // thread security
-        FALSE,                      // inherit handles
-        CREATE_NO_WINDOW,           // creation flags
-        nullptr,                    // environment (inherit parent)
-        nullptr,                    // current directory (inherit parent)
-        &si,                        // startup info
-        &pi                         // process info
-    );
-
-    if (!ok) {
-        DWORD err = GetLastError();
-        LOG_ERROR("ProcessSupervisor: CreateProcess failed for '{}' (error {})",
-                  config.name, err);
-        return false;
-    }
-
-    // Close thread handle — we only need the process handle.
-    CloseHandle(pi.hThread);
-
-    state.process_handle = pi.hProcess;
-    state.thread_handle = nullptr;
-    state.pid = pi.dwProcessId;
-
-    LOG_DEBUG("ProcessSupervisor: spawned '{}' (PID {})", config.name, state.pid);
-    return true;
-}
-
-#else  // _WIN32
 
 bool ProcessSupervisor::spawn_posix(
     const ProcessConfig& config, ProcessState& state) {
@@ -665,7 +422,5 @@ bool ProcessSupervisor::spawn_posix(
     LOG_DEBUG("ProcessSupervisor: spawned '{}' (PID {})", config.name, state.pid);
     return true;
 }
-
-#endif  // _WIN32
 
 }  // namespace app

@@ -81,14 +81,14 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 8,
-        .body = "move:1,2",
+        .body = "attack:target",
     });
     ASSERT_EQ(battle_input.size(), 4U);
     EXPECT_EQ(battle_input[0].envelope.protocol_message_id, net::protocol::kBattleInputResponse);
     EXPECT_EQ(battle_input[0].envelope.body, "input_seq:seq=1");
     EXPECT_EQ(battle_input[1].envelope.protocol_message_id, net::protocol::kBattleInputPush);
     EXPECT_EQ(battle_input[1].envelope.session_id, 200U);
-    EXPECT_EQ(battle_input[1].envelope.body, "battle_input:user_id=owner:seq=1:input=move:1,2");
+    EXPECT_EQ(battle_input[1].envelope.body, "battle_input:user_id=owner:seq=1:input=attack:target");
     EXPECT_EQ(battle_input[2].envelope.protocol_message_id, net::protocol::kBattleStatePush);
     EXPECT_EQ(battle_input[2].envelope.body,
               "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=1:trigger=input:owner:1");
@@ -98,11 +98,11 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 9,
-        .body = "move:2,2",
+        .body = "attack:other",
     });
     ASSERT_EQ(second_input.size(), 4U);
     EXPECT_EQ(second_input[0].envelope.body, "input_seq:seq=2");
-    EXPECT_EQ(second_input[1].envelope.body, "battle_input:user_id=owner:seq=2:input=move:2,2");
+    EXPECT_EQ(second_input[1].envelope.body, "battle_input:user_id=owner:seq=2:input=attack:other");
     EXPECT_EQ(second_input[2].envelope.body,
               "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=2:trigger=input:owner:2");
 
@@ -110,11 +110,11 @@ TEST(V2ConnectedFlowTest, LoginCreateJoinReadyStartAndInputFlowThroughActors) {
         .session_id = 100,
         .protocol_message_id = net::protocol::kBattleInputRequest,
         .request_id = 10,
-        .body = "move:3,2",
+        .body = "attack:someone",
     });
     ASSERT_EQ(third_input.size(), 8U);
     EXPECT_EQ(third_input[0].envelope.body, "input_seq:seq=3");
-    EXPECT_EQ(third_input[1].envelope.body, "battle_input:user_id=owner:seq=3:input=move:3,2");
+    EXPECT_EQ(third_input[1].envelope.body, "battle_input:user_id=owner:seq=3:input=attack:someone");
     EXPECT_EQ(third_input[2].envelope.body,
               "battle_state:kind=frame:room_id=room_alpha:battle_id=battle_0001:frame=3:trigger=input:owner:3");
     EXPECT_EQ(third_input[4].envelope.protocol_message_id, net::protocol::kBattleStatePush);

@@ -67,12 +67,19 @@ struct FakeOtlpCollector {
 
     void stop() {
         running = false;
-        boost::system::error_code ec;
-        acceptor.close(ec);
-        io_context.stop();
+        boost::system::error_code ignored_ec;
+        if (acceptor.is_open()) {
+            tcp::socket wake_socket(io_context);
+            wake_socket.connect(
+                tcp::endpoint(asio::ip::make_address("127.0.0.1"), port()),
+                ignored_ec);
+            wake_socket.close(ignored_ec);
+        }
         if (thread.joinable()) {
             thread.join();
         }
+        acceptor.close(ignored_ec);
+        io_context.stop();
     }
 
     std::uint16_t port() const {

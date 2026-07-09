@@ -28,15 +28,15 @@ struct InstanceEvent {
         kError,
     };
 
-    Type type;
+    Type type = Type::kError;
     std::string instance_id;
     std::string user_id;
 
     // For kSnapshotAvailable
-    Snapshot snapshot;
+    Snapshot snapshot{};
 
     // For kInstanceFinished
-    SettlementContext settlement;
+    SettlementContext settlement{};
 };
 
 using InstanceEventCallback = std::function<void(const InstanceEvent&)>;

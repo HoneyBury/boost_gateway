@@ -53,8 +53,8 @@ public:
 
     ServiceRegistrar(const ServiceRegistrar&) = delete;
     ServiceRegistrar& operator=(const ServiceRegistrar&) = delete;
-    ServiceRegistrar(ServiceRegistrar&&) = default;
-    ServiceRegistrar& operator=(ServiceRegistrar&&) = default;
+    ServiceRegistrar(ServiceRegistrar&&) = delete;
+    ServiceRegistrar& operator=(ServiceRegistrar&&) = delete;
 
     /// Register with ClusterRouter and start the heartbeat thread.
     void start();

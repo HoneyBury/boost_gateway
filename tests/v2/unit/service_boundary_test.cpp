@@ -220,10 +220,88 @@ TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsUnknownMessageType) {
         .target_service = v2::service::ServiceId::kLogin,
         .kind = v2::service::MessageKind::kRequest,
         .payload = "{}",
-        .message_type = "token_validate",
+        .message_type = "unknown_message_type",
     };
 
     EXPECT_FALSE(v2::service::to_typed_envelope(backend).has_value());
+}
+
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsNewTypedKinds) {
+    v2::service::BackendEnvelope backend{
+        .correlation_id = 1,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kRoom,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"user_id":"alice","room_id":"room_1"})",
+        .message_type = "room_leave",
+    };
+    const auto typed = v2::service::to_typed_envelope(backend);
+    ASSERT_TRUE(typed.has_value());
+    EXPECT_EQ(typed->message_kind, v3::proto::EnvelopeMessageKind::kRoomLeaveRequest);
+
+    v3::proto::TypedEnvelope response{
+        .meta = {
+            .correlation_id = 1,
+            .source_service = "room",
+            .target_service = "gateway",
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kRoomLeaveResponse,
+        .payload = {{"room_id", "room_1"}, {"was_owner", true}, {"new_owner_id", "bob"}},
+    };
+    const auto backend_response = v2::service::to_backend_envelope(response, v2::service::MessageKind::kResponse);
+    EXPECT_EQ(backend_response.message_type, "room_leave_response");
+}
+
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsTokenRefreshAndReplayLoadKinds) {
+    v2::service::BackendEnvelope refresh_request{
+        .correlation_id = 2,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"user_id":"alice","token":"token:alice"})",
+        .message_type = "token_refresh",
+    };
+    const auto typed_refresh = v2::service::to_typed_envelope(refresh_request);
+    ASSERT_TRUE(typed_refresh.has_value());
+    EXPECT_EQ(typed_refresh->message_kind, v3::proto::EnvelopeMessageKind::kTokenRefreshRequest);
+
+    v3::proto::TypedEnvelope replay_response{
+        .meta = {
+            .correlation_id = 3,
+            .source_service = "battle",
+            .target_service = "gateway",
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kReplayLoadResponse,
+        .payload = {{"battle_id", "battle_1"}, {"replay", nlohmann::json::object()}},
+    };
+    const auto backend_response = v2::service::to_backend_envelope(replay_response, v2::service::MessageKind::kResponse);
+    EXPECT_EQ(backend_response.message_type, "replay_load_response");
+}
+
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsRoomGovernanceKinds) {
+    v2::service::BackendEnvelope list_request{
+        .correlation_id = 4,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kRoom,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"visibility":"public","page":1,"page_size":20})",
+        .message_type = "room_list",
+    };
+    const auto typed_list = v2::service::to_typed_envelope(list_request);
+    ASSERT_TRUE(typed_list.has_value());
+    EXPECT_EQ(typed_list->message_kind, v3::proto::EnvelopeMessageKind::kRoomListRequest);
+
+    v3::proto::TypedEnvelope kick_response{
+        .meta = {
+            .correlation_id = 5,
+            .source_service = "room",
+            .target_service = "gateway",
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kRoomKickResponse,
+        .payload = {{"room_id", "room_1"}, {"kicked_user_id", "bob"}, {"member_count", 1}},
+    };
+    const auto backend_response = v2::service::to_backend_envelope(kick_response, v2::service::MessageKind::kResponse);
+    EXPECT_EQ(backend_response.message_type, "room_kick_response");
 }
 
 TEST(V2ServiceBoundaryTest, EnvelopeAdapterRejectsMalformedJsonPayload) {
@@ -286,6 +364,8 @@ TEST(V2ServiceBoundaryTest, DecodeHandlerPayloadMarksLegacyRawJsonDeprecated) {
     EXPECT_EQ(decoded->encoding, v2::service::HandlerPayloadEncoding::kLegacyRawJson);
     EXPECT_EQ(v2::service::legacy_raw_json_deprecation_notice(),
               "legacy raw JSON backend payload is deprecated; use typed envelope");
+    EXPECT_EQ(v2::service::legacy_raw_json_policy_notice(),
+              "legacy raw JSON is compatibility-only and must not be used for new handlers");
 }
 
 TEST(V2ServiceBoundaryTest, WrapTypedResponseLeavesLegacyPayloadRaw) {

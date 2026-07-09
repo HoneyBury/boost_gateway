@@ -1,7 +1,6 @@
 add_executable(project_v2_unit_tests
     unit/actor_runtime_test.cpp
     unit/actor_snapshot_test.cpp
-    unit/battle_archive_test.cpp
     unit/lru_cache_test.cpp
     unit/battle_actor_test.cpp
     unit/battle_runtime_world_test.cpp
@@ -52,6 +51,7 @@ add_executable(project_v2_unit_tests
     unit/battle_replay_test.cpp
     unit/reconnect_test.cpp
     unit/redis_persistence_test.cpp
+    unit/runtime_metrics_exporter_test.cpp
     unit/proto_schema_test.cpp
     unit/cluster_router_test.cpp
     unit/remote_actor_test.cpp
@@ -68,6 +68,7 @@ add_executable(project_v2_unit_tests
     unit/realtime/spi_compliance_test.cpp
     unit/parallel_system_executor_test.cpp
     unit/tank_battle_plugin_test.cpp
+    "${CMAKE_SOURCE_DIR}/demo/games/tank_battle/server/tank_plugin/tank_battle_plugin.cpp"
     unit/gateway_grpc_test.cpp
 )
 target_link_libraries(project_v2_unit_tests
@@ -81,9 +82,6 @@ target_compile_definitions(project_v2_unit_tests
         PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
 )
 apply_project_warnings(project_v2_unit_tests)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(project_v2_unit_tests)
-endif()
 
 # ─── gRPC test dependencies (optional) ──────────────────────────────
 if(BOOST_BUILD_GRPC)
@@ -96,6 +94,7 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(project_v2_unit_tests
+    PROPERTIES LABELS "unit"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE POST_BUILD
 )
@@ -110,7 +109,6 @@ add_executable(project_v2_integration_tests
     integration/process_supervisor_test.cpp
     integration/cluster_router_e2e_test.cpp
     integration/matchmaking_e2e_test.cpp
-    integration/windows_platform_test.cpp
 )
 target_link_libraries(project_v2_integration_tests
     PRIVATE
@@ -118,11 +116,9 @@ target_link_libraries(project_v2_integration_tests
         GTest::gtest_main
 )
 apply_project_warnings(project_v2_integration_tests)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(project_v2_integration_tests)
-endif()
 
 gtest_discover_tests(project_v2_integration_tests
+    PROPERTIES LABELS "integration"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE PRE_TEST
 )
@@ -157,10 +153,8 @@ target_link_libraries(project_v2_multi_process_tests
         GTest::gtest_main
 )
 apply_project_warnings(project_v2_multi_process_tests)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(project_v2_multi_process_tests)
-endif()
 gtest_discover_tests(project_v2_multi_process_tests
+    PROPERTIES LABELS "e2e"
     DISCOVERY_TIMEOUT ${PROJECT_GTEST_DISCOVERY_TIMEOUT}
     DISCOVERY_MODE POST_BUILD
 )

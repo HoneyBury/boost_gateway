@@ -2,16 +2,15 @@ name: Production Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
-  schedule:
-    - cron: "50 19 * * 4"
   workflow_dispatch:
     inputs:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","production-evidence"]'
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","Linux","X64"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -81,16 +80,31 @@ on:
         description: "Timeout for each P6 sub-gate"
         required: true
         default: "1200"
+      conan_profile:
+        description: "Repository Conan profile path for fixed-runner reproducibility preflight"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Conan lockfile path relative to repo root for reproducible fixed-runner preflight"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+      conan_build_type:
+        description: "Conan preflight build type; keep Release for the Linux nosqlite lockfile"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Release
 
 permissions:
   contents: read
 
 jobs:
   production-evidence:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'ubuntu-latest' }}
+      group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
 
     steps:
@@ -107,10 +121,18 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
 
       - name: Fixed runner preflight
         shell: bash
@@ -129,6 +151,31 @@ jobs:
             args+=(--require-kind)
           fi
           python "${args[@]}"
+
+      - name: Conan lockfile install preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          args=(conan install . --output-folder=build/conan-production-evidence --build=missing -s build_type=${{ inputs.conan_build_type || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            test -f "${{ inputs.conan_lockfile }}"
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+
+      - name: Configure Conan validation build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/conan-production-evidence-cmake -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.conan_build_type || 'Release' }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-production-evidence/build/${{ inputs.conan_build_type || 'Release' }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        run: cmake --build build/conan-production-evidence-cmake --parallel --target project_v2
 
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'default' }}

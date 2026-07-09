@@ -1,87 +1,15 @@
 #!/usr/bin/env python3
-"""Validate reliability-matrix evidence references against local files."""
+"""Compatibility shim for the canonical reliability-matrix gate."""
 
 from __future__ import annotations
 
-import argparse
-import re
+import runpy
 import sys
 from pathlib import Path
 
 
-REQUIRED_SCENARIOS = {
-    "backend_timeout_recovery",
-    "circuit_breaker_half_open",
-    "readiness_heartbeat_recovery",
-    "writebehind_drain_failure",
-    "proto_transport_contract",
-    "production_auth_audit_gate",
-    "data_recovery_gate",
-    "rate_limit_key_paths",
-    "observability_release_gate",
-    "control_plane_operator_gate",
-    "stability_soak_gate",
-    "fixed_runner_preflight",
-    "validation_summary_rendering",
-    "monitoring_operability_gate",
-    "fixed_runner_evidence_matrix",
-    "performance_capacity_evidence",
-    "monitoring_slo_operability",
-    "sdk_enterprise_client_gate",
-    "production_resilience_gate",
-    "production_recovery_gate",
-    "transport_config_governance_gate",
-    "v3_grpc_poc_decision_gate",
-    "production_evidence_gate",
-    "production_hardening_gate",
-    "production_candidate_evidence_manifest",
-    "production_readiness_report",
-    "script_inventory_governance",
-    "validation_summary_contract",
-    "config_source_layout",
-    "fixed_runner_release_capacity_gate",
-    "preprod_recovery_drill_gate",
-    "tls_preprod_multi_run_gate",
-}
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--matrix", type=Path, default=Path("docs/reliability-matrix.md"))
-    return parser.parse_args()
-
-
-def main() -> int:
-    args = parse_args()
-    root = Path(__file__).resolve().parent.parent
-    matrix = args.matrix if args.matrix.is_absolute() else root / args.matrix
-    if not matrix.is_file():
-        print(f"missing matrix: {matrix}", file=sys.stderr)
-        return 1
-
-    content = matrix.read_text(encoding="utf-8")
-    missing = [name for name in sorted(REQUIRED_SCENARIOS) if name not in content]
-    paths = re.findall(r"`([^`]+\.(?:py|ps1|cpp|h|md|json))`", content)
-    broken: list[str] = []
-    for path_text in paths:
-        if "*" in path_text or "<" in path_text:
-            continue
-        if path_text.startswith("runtime/"):
-            continue
-        path = root / Path(path_text.replace("\\", "/"))
-        if not path.exists():
-            broken.append(path_text)
-
-    if missing or broken:
-        if missing:
-            print("missing scenarios: " + ", ".join(missing), file=sys.stderr)
-        if broken:
-            print("broken evidence paths: " + ", ".join(sorted(set(broken))), file=sys.stderr)
-        return 1
-
-    print(f"validated reliability matrix: {matrix}")
-    return 0
-
-
 if __name__ == "__main__":
-    raise SystemExit(main())
+    repo_root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(repo_root))
+    target = Path(__file__).resolve().parent / "gates" / "governance" / "check_reliability_matrix.py"
+    runpy.run_path(str(target), run_name="__main__")

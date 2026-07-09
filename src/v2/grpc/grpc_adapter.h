@@ -24,8 +24,10 @@
 #include <thread>
 
 #include <grpcpp/grpcpp.h>
+#include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
+#include "v2/gateway/gateway_service_bridge.h"
 #include "v2/grpc/gateway_grpc_server.h"
 
 namespace v2::grpc {
@@ -40,10 +42,20 @@ namespace v2::grpc {
 // -------------------------------------------------------------------
 class GrpcGatewayAdapter {
  public:
+  struct BackendOptions {
+    std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> login_backend_config;
+    std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> room_backend_config;
+    std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> battle_backend_config;
+    std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> matchmaking_backend_config;
+    std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> leaderboard_backend_config;
+  };
+
   /// Construct a gRPC gateway adapter.
   /// @param port  gRPC server port (default 50051).
-  explicit GrpcGatewayAdapter(std::uint16_t port = 50051)
-      : port_(port) {}
+  explicit GrpcGatewayAdapter(std::uint16_t port = 50051,
+                              BackendOptions backend_options = {})
+      : port_(port),
+        backend_options_(std::move(backend_options)) {}
 
   ~GrpcGatewayAdapter() {
     stop();
@@ -62,21 +74,292 @@ class GrpcGatewayAdapter {
 
     SPDLOG_INFO("GrpcGatewayAdapter: starting gRPC gateway on port {}", port_);
 
+    bridge_ = std::make_unique<v2::gateway::GatewayServiceBridge>(
+        backend_options_.login_backend_config,
+        backend_options_.room_backend_config,
+        backend_options_.battle_backend_config,
+        backend_options_.matchmaking_backend_config,
+        backend_options_.leaderboard_backend_config);
+
     // Create and start the server
     grpc_server_ = std::make_unique<GatewayGrpcServer>(
         port_,
-        // Default login auth callback (always allow)
-        [](const std::string& user_id,
-           const std::string& token,
-           std::string& /*out_error*/) -> bool {
-          SPDLOG_DEBUG("GrpcGatewayAdapter: login auth user={} token={}",
-                       user_id, token);
-          return true;  // Accept all; real auth would validate the token
+        [this](const std::string& user_id,
+               const std::string& token,
+               std::string& out_error) -> bool {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(
+              v2::service::ServiceId::kLogin,
+              "login_request",
+              nlohmann::json{
+                  {"user_id", user_id},
+                  {"token", token},
+                  {"display_name", user_id},
+              }.dump(),
+              user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "login_request_failed" : result.response_payload;
+            return false;
+          }
+          return true;
         },
-        // Default logout callback
-        [](const std::string& user_id, const std::string& session_id) {
-          SPDLOG_INFO("GrpcGatewayAdapter: logout user={} session={}",
-                      user_id, session_id);
+        [this](const std::string& user_id, const std::string& /*session_id*/) {
+          if (!bridge_) {
+            return;
+          }
+          (void)bridge_->route(
+              v2::service::ServiceId::kLogin,
+              "session_close",
+              nlohmann::json{{"user_id", user_id}}.dump(),
+              user_id);
+        },
+        [this](const std::string& user_id, const std::string& room_id, std::int32_t& out_member_count, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_create",
+                                       nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "room_create_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_member_count = doc.is_discarded() ? 0 : doc.value("member_count", 0);
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& room_id, std::int32_t& out_member_count, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_join",
+                                       nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "room_join_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_member_count = doc.is_discarded() ? 0 : doc.value("member_count", 0);
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& room_id, bool& out_was_owner, std::string& out_new_owner_id, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_leave",
+                                       nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "room_leave_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_was_owner = !doc.is_discarded() && doc.value("was_owner", false);
+          out_new_owner_id = doc.is_discarded() ? std::string{} : doc.value("new_owner_id", std::string{});
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& room_id, bool ready, bool& out_all_ready, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_ready",
+                                       nlohmann::json{{"user_id", user_id}, {"room_id", room_id}, {"ready", ready}}.dump(), room_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "room_ready_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_all_ready = !doc.is_discarded() && doc.value("all_ready", false);
+          return true;
+        },
+        [this](const std::string& user_id, std::int64_t mmr, const std::string& mode, bool& out_queued, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_join",
+                                       nlohmann::json{{"user_id", user_id}, {"mmr", mmr}, {"mode", mode}}.dump(), user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "match_join_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_queued = !doc.is_discarded() && doc.value("queued", false);
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& mode, bool& out_left, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_leave",
+                                       nlohmann::json{{"user_id", user_id}, {"mode", mode}}.dump(), user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "match_leave_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_left = !doc.is_discarded() && doc.value("left", false);
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& mode, bool& out_matched, std::string& out_match_id, std::int64_t& out_avg_mmr, std::int32_t& out_queue_size, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_status",
+                                       nlohmann::json{{"user_id", user_id}, {"mode", mode}}.dump(), user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "match_status_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded()) {
+            out_error = "match_status_invalid_json";
+            return false;
+          }
+          out_matched = doc.value("matched", false);
+          out_match_id = doc.value("match_id", std::string{});
+          out_avg_mmr = doc.value("avg_mmr", std::int64_t{0});
+          out_queue_size = static_cast<std::int32_t>(doc.value("queue_size", 0));
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& display_name, std::int64_t score, std::int64_t& out_rank, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_submit",
+                                       nlohmann::json{{"user_id", user_id}, {"display_name", display_name}, {"score", score}}.dump(), user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "leaderboard_submit_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          out_rank = doc.is_discarded() ? 0 : doc.value("rank", std::int64_t{0});
+          return true;
+        },
+        [this](std::int32_t k, std::vector<boost::gateway::v3::LeaderboardEntry>& out_entries, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_top",
+                                       nlohmann::json{{"k", k}}.dump());
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "leaderboard_top_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded() || !doc.contains("entries") || !doc["entries"].is_array()) {
+            out_error = "leaderboard_top_invalid_json";
+            return false;
+          }
+          for (const auto& entry_doc : doc["entries"]) {
+            boost::gateway::v3::LeaderboardEntry entry;
+            entry.set_rank(entry_doc.value("rank", std::int64_t{0}));
+            entry.set_user_id(entry_doc.value("user_id", std::string{}));
+            entry.set_display_name(entry_doc.value("display_name", std::string{}));
+            entry.set_score(entry_doc.value("score", std::int64_t{0}));
+            out_entries.push_back(std::move(entry));
+          }
+          return true;
+        },
+        [this](const std::string& user_id, std::int64_t& out_rank, std::int64_t& out_score, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_rank",
+                                       nlohmann::json{{"user_id", user_id}}.dump(), user_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "leaderboard_rank_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded()) {
+            out_error = "leaderboard_rank_invalid_json";
+            return false;
+          }
+          out_rank = doc.value("rank", std::int64_t{0});
+          out_score = doc.value("score", std::int64_t{0});
+          return true;
+        },
+        [this](const std::string& battle_id, const std::string& room_id, const std::vector<std::string>& player_ids, std::uint32_t max_frames, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_create",
+                                       nlohmann::json{{"battle_id", battle_id}, {"room_id", room_id}, {"player_ids", player_ids}, {"max_frames", max_frames}}.dump(), room_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "battle_create_failed" : result.response_payload;
+            return false;
+          }
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& battle_id, const std::string& input_data, std::uint32_t submitted_frame, std::uint64_t& out_input_seq, std::uint32_t& out_frame_number, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_input",
+                                       nlohmann::json{{"user_id", user_id}, {"battle_id", battle_id}, {"input_data", input_data}, {"submitted_frame", submitted_frame}}.dump(), battle_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "battle_input_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded()) {
+            out_error = "battle_input_invalid_json";
+            return false;
+          }
+          out_input_seq = doc.value("input_seq", std::uint64_t{0});
+          out_frame_number = doc.value("frame_number", std::uint32_t{0});
+          return true;
+        },
+        [this](const std::string& battle_id, std::uint32_t& out_frame_number, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_state",
+                                       nlohmann::json{{"battle_id", battle_id}}.dump(), battle_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "battle_state_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded()) {
+            out_error = "battle_state_invalid_json";
+            return false;
+          }
+          out_frame_number = doc.value("frame_number", std::uint32_t{0});
+          return true;
+        },
+        [this](const std::string& user_id, const std::string& battle_id, const std::string& reason, std::uint32_t& out_total_frames, std::string& out_error) {
+          if (!bridge_) {
+            out_error = "grpc_bridge_not_configured";
+            return false;
+          }
+          auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_finish",
+                                       nlohmann::json{{"user_id", user_id}, {"battle_id", battle_id}, {"reason", reason}}.dump(), battle_id);
+          if (!result.success) {
+            out_error = result.response_payload.empty() ? "battle_finish_failed" : result.response_payload;
+            return false;
+          }
+          auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
+          if (doc.is_discarded()) {
+            out_error = "battle_finish_invalid_json";
+            return false;
+          }
+          out_total_frames = doc.value("total_frames", std::uint32_t{0});
+          return true;
         });
 
     if (!grpc_server_->start()) {
@@ -141,6 +424,7 @@ class GrpcGatewayAdapter {
     }
 
     grpc_server_.reset();
+    bridge_.reset();
     SPDLOG_INFO("GrpcGatewayAdapter: gRPC gateway stopped");
   }
 
@@ -159,7 +443,9 @@ class GrpcGatewayAdapter {
 
  private:
   std::uint16_t port_;
+  BackendOptions backend_options_;
   std::unique_ptr<GatewayGrpcServer> grpc_server_;
+  std::unique_ptr<v2::gateway::GatewayServiceBridge> bridge_;
   std::thread poll_thread_;
   std::atomic<bool> running_{false};
 };

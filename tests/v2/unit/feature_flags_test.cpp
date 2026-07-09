@@ -13,19 +13,13 @@
 namespace {
 
 void set_test_env(const char* name, const char* value) {
-#ifdef _WIN32
-    _putenv_s(name, value);
-#else
     setenv(name, value, 1);
-#endif
+
 }
 
 void unset_test_env(const char* name) {
-#ifdef _WIN32
-    _putenv_s(name, "");
-#else
     unsetenv(name);
-#endif
+
 }
 
 }  // namespace

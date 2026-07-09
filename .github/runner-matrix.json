@@ -1,0 +1,81 @@
+{
+  "schema_version": 3,
+  "description": "Versioned workflow runner matrix. Each workflow entry defines which runner labels to use and required capabilities. Set enabled=false to force workflows to fall back to default_runner. Repository-level GitHub Variables (vars.XXX_RUNNER) override these values at runtime.",
+  "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+  "workflows": {
+    "ci": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "CI_RUNNER"
+    },
+    "release": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "RELEASE_RUNNER"
+    },
+    "perf-commit-check": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "PERF_COMMIT_RUNNER"
+    },
+    "perf-regression": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "PERF_REGRESSION_RUNNER"
+    },
+    "nightly-stability": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "NIGHTLY_RUNNER"
+    },
+    "conan-validate": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": {},
+      "vars_hint": "CONAN_VALIDATE_RUNNER"
+    },
+    "production-evidence": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "large_disk": true },
+      "vars_hint": "PRODUCTION_EVIDENCE_RUNNER"
+    },
+    "production-resilience": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "kind": true },
+      "vars_hint": "PRODUCTION_RESILIENCE_RUNNER"
+    },
+    "long-soak-capacity": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "large_disk": true, "dedicated": true },
+      "vars_hint": "LONG_SOAK_CAPACITY_RUNNER"
+    },
+    "specialized-e2e": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "redis": true, "kind": true },
+      "vars_hint": "SPECIALIZED_E2E_RUNNER"
+    }
+  },
+  "deprecated_platforms": {
+    "windows": "Support deferred. Restore from git history if needed.",
+    "macos": "CI smoke target. No capacity/long-soak commitments."
+  }
+}

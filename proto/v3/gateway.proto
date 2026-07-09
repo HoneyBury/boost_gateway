@@ -13,6 +13,26 @@ service Gateway {
 
   // Liveness probe for health-check endpoints.
   rpc Health(HealthRequest) returns (HealthResponse);
+
+  // Room management PoC.
+  rpc RequestRoomCreate(RoomCreateRequest) returns (RoomCreateResponse);
+  rpc RequestRoomJoin(RoomJoinRequest) returns (RoomJoinResponse);
+  rpc RequestRoomLeave(RoomLeaveRequest) returns (RoomLeaveResponse);
+  rpc RequestRoomReady(RoomReadyRequest) returns (RoomReadyResponse);
+
+  // Matchmaking and leaderboard PoC.
+  rpc RequestMatchJoin(MatchJoinRequest) returns (MatchJoinResponse);
+  rpc RequestMatchLeave(MatchLeaveRequest) returns (MatchLeaveResponse);
+  rpc RequestMatchStatus(MatchStatusRequest) returns (MatchStatusResponse);
+  rpc RequestLeaderboardSubmit(LeaderboardSubmitRequest) returns (LeaderboardSubmitResponse);
+  rpc RequestLeaderboardTop(LeaderboardTopRequest) returns (LeaderboardTopResponse);
+  rpc RequestLeaderboardRank(LeaderboardRankRequest) returns (LeaderboardRankResponse);
+
+  // Battle PoC.
+  rpc RequestBattleCreate(BattleCreateRequest) returns (BattleCreateResponse);
+  rpc RequestBattleInput(BattleInputRequest) returns (BattleInputResponse);
+  rpc RequestBattleState(BattleStateRequest) returns (BattleStateResponse);
+  rpc RequestBattleFinish(BattleFinishRequest) returns (BattleFinishResponse);
 }
 
 message LoginRequest {
@@ -49,4 +69,190 @@ message HealthResponse {
   uint64 uptime_seconds = 2;
   uint32 active_sessions = 3;
   string version = 4;
+}
+
+message RoomCreateRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomCreateResponse {
+  string room_id = 1;
+  int32 member_count = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message RoomJoinRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomJoinResponse {
+  string room_id = 1;
+  int32 member_count = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message RoomLeaveRequest {
+  string user_id = 1;
+  string room_id = 2;
+}
+
+message RoomLeaveResponse {
+  string room_id = 1;
+  bool was_owner = 2;
+  string new_owner_id = 3;
+  int32 error_code = 4;
+  string error_message = 5;
+}
+
+message RoomReadyRequest {
+  string user_id = 1;
+  string room_id = 2;
+  bool ready = 3;
+}
+
+message RoomReadyResponse {
+  string room_id = 1;
+  bool all_ready = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message MatchJoinRequest {
+  string user_id = 1;
+  int64 mmr = 2;
+  string mode = 3;
+}
+
+message MatchJoinResponse {
+  bool queued = 1;
+  string mode = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message MatchLeaveRequest {
+  string user_id = 1;
+  string mode = 2;
+}
+
+message MatchLeaveResponse {
+  bool left = 1;
+  int32 error_code = 2;
+  string error_message = 3;
+}
+
+message MatchStatusRequest {
+  string user_id = 1;
+  string mode = 2;
+}
+
+message MatchStatusResponse {
+  bool matched = 1;
+  string match_id = 2;
+  string mode = 3;
+  int64 avg_mmr = 4;
+  int32 queue_size = 5;
+  int32 error_code = 6;
+  string error_message = 7;
+}
+
+message LeaderboardSubmitRequest {
+  string user_id = 1;
+  string display_name = 2;
+  int64 score = 3;
+}
+
+message LeaderboardSubmitResponse {
+  string user_id = 1;
+  int64 rank = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message LeaderboardTopRequest {
+  int32 k = 1;
+}
+
+message LeaderboardEntry {
+  int64 rank = 1;
+  string user_id = 2;
+  string display_name = 3;
+  int64 score = 4;
+}
+
+message LeaderboardTopResponse {
+  repeated LeaderboardEntry entries = 1;
+  int32 error_code = 2;
+  string error_message = 3;
+}
+
+message LeaderboardRankRequest {
+  string user_id = 1;
+}
+
+message LeaderboardRankResponse {
+  string user_id = 1;
+  int64 rank = 2;
+  int64 score = 3;
+  int32 error_code = 4;
+  string error_message = 5;
+}
+
+message BattleCreateRequest {
+  string battle_id = 1;
+  string room_id = 2;
+  repeated string player_ids = 3;
+  uint32 max_frames = 4;
+}
+
+message BattleCreateResponse {
+  string battle_id = 1;
+  string room_id = 2;
+  repeated string player_ids = 3;
+  int32 error_code = 4;
+  string error_message = 5;
+}
+
+message BattleInputRequest {
+  string user_id = 1;
+  string battle_id = 2;
+  string input_data = 3;
+  uint32 submitted_frame = 4;
+}
+
+message BattleInputResponse {
+  string battle_id = 1;
+  uint64 input_seq = 2;
+  uint32 frame_number = 3;
+  int32 error_code = 4;
+  string error_message = 5;
+}
+
+message BattleStateRequest {
+  string battle_id = 1;
+}
+
+message BattleStateResponse {
+  string battle_id = 1;
+  uint32 frame_number = 2;
+  int32 error_code = 3;
+  string error_message = 4;
+}
+
+message BattleFinishRequest {
+  string user_id = 1;
+  string battle_id = 2;
+  string reason = 3;
+}
+
+message BattleFinishResponse {
+  string battle_id = 1;
+  string reason = 2;
+  uint32 total_frames = 3;
+  int32 error_code = 4;
+  string error_message = 5;
 }

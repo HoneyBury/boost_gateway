@@ -1,0 +1,149 @@
+name: Conan Validate
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+      conan_profile:
+        description: "Repository Conan profile path relative to repo root"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      build_type:
+        description: "CMake/Conan build type"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Debug
+          - Release
+      allow_public:
+        description: "Allow public conancenter remote"
+        required: true
+        default: false
+        type: boolean
+      no_remote:
+        description: "Use local Conan cache only"
+        required: true
+        default: false
+        type: boolean
+      use_existing_workspace:
+        description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
+        required: true
+        default: true
+        type: boolean
+      enable_testing:
+        description: "Configure with ENABLE_TESTING=ON"
+        required: true
+        default: false
+        type: boolean
+      with_sqlite:
+        description: "Enable sqlite optional dependency in Conan graph"
+        required: true
+        default: false
+        type: boolean
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  conan-validate:
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
+
+    steps:
+      - name: Checkout
+        if: inputs.use_existing_workspace != true
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
+
+      - name: Verify existing workspace
+        if: inputs.use_existing_workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .git
+          git rev-parse --short HEAD
+          git status --short --branch
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(python scripts/bootstrap_conan.py --reset-home)
+          if [ "${{ inputs.allow_public }}" = "true" ]; then
+            args+=(--allow-public)
+          fi
+          if [ "${{ inputs.no_remote }}" = "true" ]; then
+            args+=(--no-remote)
+          fi
+          "${args[@]}"
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(conan install . --output-folder=build/conan-${{ inputs.build_type }} --build=missing -s build_type=${{ inputs.build_type }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=${{ inputs.with_sqlite && 'True' || 'False' }}")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+
+      - name: Configure Conan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/conan-validate-${{ inputs.build_type }} -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=${{ inputs.enable_testing && 'ON' || 'OFF' }} \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        shell: bash
+        run: |
+          set -euo pipefail
+          target=project_v2
+          if [ "${{ inputs.enable_testing }}" = "true" ]; then
+            target=project_v2_unit_tests
+          fi
+          cmake --build build/conan-validate-${{ inputs.build_type }} --parallel --target "$target"
+
+      - name: Upload Conan validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: conan-validate-${{ github.run_id }}
+          path: |
+            build/conan-${{ inputs.build_type }}/**
+            build/conan-validate-${{ inputs.build_type }}/**
+          if-no-files-found: warn

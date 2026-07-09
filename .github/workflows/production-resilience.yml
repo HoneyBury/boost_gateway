@@ -4,14 +4,12 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 on:
-  schedule:
-    - cron: "20 19 * * 2"
   workflow_dispatch:
     inputs:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","production-resilience"]'
         required: true
-        default: '"ubuntu-latest"'
+        default: '["self-hosted","Linux","X64"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -86,10 +84,10 @@ permissions:
 
 jobs:
   production-resilience:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'ubuntu-latest' }}
+      group: production-resilience-${{ inputs.runner || vars.PRODUCTION_RESILIENCE_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
 
     steps:
@@ -106,11 +104,6 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
-
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'default' }}
 

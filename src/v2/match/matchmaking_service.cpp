@@ -55,12 +55,12 @@ auto make_raft_rpc_sender() {
             return {};
         }
 
-        v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
-            .host = target.host,
-            .port = target.port,
-            .timeout = std::chrono::milliseconds(1000),
-            .connect_timeout = std::chrono::milliseconds(500),
-        });
+        v2::service::BackendConnectionOptions options;
+        options.host = target.host;
+        options.port = target.port;
+        options.timeout = std::chrono::milliseconds(1000);
+        options.connect_timeout = std::chrono::milliseconds(500);
+        v2::service::BackendConnection conn(std::move(options));
         if (!conn.connect()) {
             return {};
         }

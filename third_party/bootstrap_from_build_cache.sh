@@ -34,6 +34,12 @@ copy_dep nlohmann_json
 copy_dep boost
 copy_dep hiredis
 
+if [[ -d "${CACHE_DIR}/openssl-src" ]]; then
+    copy_dep openssl
+else
+    echo "[info] openssl-src not found in cache; provide OpenSSL via Conan, system package, or third_party/openssl"
+fi
+
 echo
 echo "=== Done ==="
 echo "CMake will now prefer third_party/*-src before remote fetches."

@@ -17,8 +17,8 @@ struct SchemaField {
     std::string name;
     std::string type;     // "string", "integer", "boolean", "array"
     bool required = true;
-    std::optional<std::int64_t> min_value;
-    std::optional<std::int64_t> max_value;
+    std::optional<std::int64_t> min_value = std::nullopt;
+    std::optional<std::int64_t> max_value = std::nullopt;
 };
 
 struct MessageSchema {

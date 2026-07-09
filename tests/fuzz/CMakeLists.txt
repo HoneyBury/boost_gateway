@@ -14,34 +14,15 @@ option(BOOST_BUILD_FUZZ "Build fuzz targets" OFF)
 
 if(BOOST_BUILD_FUZZ)
     # ── 编译器 / 链接器 sanitizer 标志 ──────────────────────────────
-    # 注意：MSVC 对 libfuzzer 的支持有限。这里同时设置 address 和 undefined
-    # sanitizer。如果编译器不支持其中某个，构建会失败（这正是我们想要的——不
-    # 会在没有正确 sanitizer 的情况下运行 fuzz）。
-    if(MSVC)
-        set(FUZZ_COMPILE_OPTIONS
-            /fsanitize=fuzzer
-            /fsanitize=address
-            /fsanitize=undefined
-            /Od
-            /Z7
-        )
-        set(FUZZ_LINK_OPTIONS
-            /fsanitize=fuzzer
-            /fsanitize=address
-            /fsanitize=undefined
-            /INCREMENTAL:NO
-        )
-    else()
-        set(FUZZ_COMPILE_OPTIONS
-            -fsanitize=fuzzer,address,undefined
-            -g
-            -O1
-            -fno-omit-frame-pointer
-        )
-        set(FUZZ_LINK_OPTIONS
-            -fsanitize=fuzzer,address,undefined
-        )
-    endif()
+    set(FUZZ_COMPILE_OPTIONS
+        -fsanitize=fuzzer,address,undefined
+        -g
+        -O1
+        -fno-omit-frame-pointer
+    )
+    set(FUZZ_LINK_OPTIONS
+        -fsanitize=fuzzer,address,undefined
+    )
 
     # ── Helper: add_fuzz_target ─────────────────────────────────────
     function(add_fuzz_target target_name source_file)

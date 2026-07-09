@@ -162,10 +162,10 @@ v2::realtime::InputResult BattleInstancePlugin::on_input(
         };
     }
 
-    return v2::realtime::InputResult{
-        .accepted = true,
-        .ack_seq = result.input_seq,
-    };
+    v2::realtime::InputResult input_result;
+    input_result.accepted = true;
+    input_result.ack_seq = result.input_seq;
+    return input_result;
 }
 
 // ─── Tick / simulation ──────────────────────────────────────────────────

@@ -53,10 +53,10 @@ public:
 private:
     struct WriteCommand {
         enum class Kind { kReplay, kResult, kSnapshot, kPersist };
-        Kind kind;
+        Kind kind = Kind::kReplay;
         std::string battle_id;
         std::string json;
-        v2::gateway::Runtime::BattleArchive archive;
+        v2::gateway::Runtime::BattleArchive archive{};
     };
 
     void worker_loop();

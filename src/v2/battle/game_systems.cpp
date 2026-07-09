@@ -184,7 +184,9 @@ void CombatSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) 
         auto damage = source_attack->damage;
         static thread_local v2::security::AntiCheatManager ac_manager;
         if (!ac_manager.validate_damage(damage, kMinDamage, kMaxDamage)) {
-            for (auto& report : ac_manager.pending_reports()) {
+            for (std::size_t report_index = 0;
+                 report_index < ac_manager.pending_reports().size();
+                 ++report_index) {
                 AUDIT_LOG("cheat_damage", "player=<unknown> damage=" + std::to_string(damage));
             }
             continue;
@@ -346,6 +348,12 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
                                 return;
                             }
 
+                            // When target_user_id is set, only damage the matching entity
+                            if (!proj.target_user_id.empty() &&
+                                participant.user_id != proj.target_user_id) {
+                                return;
+                            }
+
                             auto* target_pos = simple_world->get_component<PositionComponent>(
                                 target_handle);
                             auto* health = simple_world->get_component<HealthComponent>(
@@ -369,6 +377,17 @@ void ProjectileSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& c
                                             owner.score += (health->hp == 0) ? 5 : 1;
                                         }
                                     });
+
+                                // Apply DoT if duration > 0
+                                if (proj.duration_frames > 0) {
+                                    auto& dot = world.add_component<DamageOverlayComponent>(
+                                        target_handle);
+                                    dot.source_projectile_id = proj.projectile_id;
+                                    dot.damage_per_tick = proj.damage;
+                                    dot.remaining_ticks = proj.duration_frames;
+                                    dot.interval_frames = 1;
+                                    dot.last_applied_frame = ctx.frame_number;
+                                }
                             }
                         });
                 } else {

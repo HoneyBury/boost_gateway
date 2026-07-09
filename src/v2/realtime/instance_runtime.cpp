@@ -121,10 +121,10 @@ public:
                   "instance_id=" + instance_id + " type=" + instance_type +
                   " players=" + std::to_string(players.size()));
 
-        emit_event(InstanceEvent{
-            .type = InstanceEvent::Type::kInstanceCreated,
-            .instance_id = instance_id,
-        });
+        InstanceEvent created_event;
+        created_event.type = InstanceEvent::Type::kInstanceCreated;
+        created_event.instance_id = instance_id;
+        emit_event(created_event);
 
         return instance_id;
     }
@@ -167,10 +167,10 @@ public:
         inst->input_queue.push(input);
         inst->ack_seq_counter++;
 
-        return InputResult{
-            .accepted = true,
-            .ack_seq = inst->ack_seq_counter,
-        };
+        InputResult input_result;
+        input_result.accepted = true;
+        input_result.ack_seq = inst->ack_seq_counter;
+        return input_result;
     }
 
     void finish_instance(const std::string& instance_id,
@@ -216,11 +216,11 @@ public:
                   " reason=" + to_string(reason) +
                   " frames=" + std::to_string(inst->current_frame));
 
-        emit_event(InstanceEvent{
-            .type = InstanceEvent::Type::kInstanceFinished,
-            .instance_id = instance_id,
-            .settlement = std::move(settlement_ctx),
-        });
+        InstanceEvent finished_event;
+        finished_event.type = InstanceEvent::Type::kInstanceFinished;
+        finished_event.instance_id = instance_id;
+        finished_event.settlement = std::move(settlement_ctx);
+        emit_event(finished_event);
     }
 
     Snapshot get_resume_snapshot(const std::string& instance_id,
@@ -376,11 +376,11 @@ public:
         }
         snapshot.frame_number = frame_number;
 
-        emit_event(InstanceEvent{
-            .type = InstanceEvent::Type::kSnapshotAvailable,
-            .instance_id = instance_id,
-            .snapshot = std::move(snapshot),
-        });
+        InstanceEvent snapshot_event;
+        snapshot_event.type = InstanceEvent::Type::kSnapshotAvailable;
+        snapshot_event.instance_id = instance_id;
+        snapshot_event.snapshot = std::move(snapshot);
+        emit_event(snapshot_event);
 
         // Handle finish request from plugin — release lock to avoid re-entrancy
         if (tick_result.should_finish) {

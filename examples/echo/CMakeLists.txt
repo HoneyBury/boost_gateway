@@ -1,16 +1,3 @@
-add_executable(echo_server
-    server_main.cpp
-)
-target_link_libraries(echo_server
-    PRIVATE
-        project_game
-        project_v2
-)
-apply_project_warnings(echo_server)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(echo_server)
-endif()
-
 add_executable(echo_client
     client_main.cpp
 )
@@ -19,6 +6,3 @@ target_link_libraries(echo_client
         project_net
 )
 apply_project_warnings(echo_client)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(echo_client)
-endif()

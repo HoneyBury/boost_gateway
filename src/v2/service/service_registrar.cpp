@@ -53,7 +53,7 @@ void ServiceRegistrar::start() {
 }
 
 void ServiceRegistrar::stop() {
-    const bool was_running = running_.exchange(false, std::memory_order_acq_rel);
+    running_.store(false, std::memory_order_release);
     if (heartbeat_thread_.joinable()) {
         heartbeat_thread_.join();
     }

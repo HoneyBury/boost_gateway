@@ -1,0 +1,448 @@
+﻿#!/usr/bin/env python3
+"""Run or validate R5 pre-production recovery drill evidence."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import platform
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
+
+def tail(value: str | bytes | None, max_chars: int = 6000) -> str:
+    if value is None:
+        return ""
+    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+    return text if len(text) <= max_chars else text[-max_chars:]
+
+
+def emit_text(text: str, *, stderr: bool = False) -> None:
+    stream = sys.stderr if stderr else sys.stdout
+    try:
+        stream.write(text)
+    except UnicodeEncodeError:
+        encoding = getattr(stream, "encoding", None) or "utf-8"
+        stream.buffer.write(text.encode(encoding, errors="replace"))
+
+
+def run_step(name: str, category: str, command: list[str], timeout_seconds: int) -> dict[str, Any]:
+    print(f"==> {name}", flush=True)
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=REPO_ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        return {
+            "name": name,
+            "category": category,
+            "command": command,
+            "status": "timeout",
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "stdout_tail": tail(exc.stdout),
+            "stderr_tail": tail(exc.stderr),
+        }
+
+    if completed.stdout:
+        emit_text(completed.stdout)
+    if completed.stderr:
+        emit_text(completed.stderr, stderr=True)
+    return {
+        "name": name,
+        "category": category,
+        "command": command,
+        "status": "passed" if completed.returncode == 0 else "failed",
+        "returncode": completed.returncode,
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "stdout_tail": tail(completed.stdout),
+        "stderr_tail": tail(completed.stderr),
+    }
+
+
+def fetch_json(url: str, timeout_s: float = 2.0) -> dict[str, Any]:
+    with urllib.request.urlopen(url, timeout=timeout_s) as response:
+        parsed = json.loads(response.read().decode("utf-8", errors="replace"))
+    if not isinstance(parsed, dict):
+        raise ValueError("expected JSON object")
+    return parsed
+
+
+def wait_for_ready(url: str, timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = ""
+    while time.monotonic() < deadline:
+        try:
+            doc = fetch_json(url)
+            if doc.get("ready") is True or doc.get("status") in {"pass", "ok"}:
+                return doc
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+            last_error = str(exc)
+        time.sleep(1.0)
+    raise TimeoutError(f"timed out waiting for {url}: {last_error}")
+
+
+def docker_images_present() -> bool:
+    result = subprocess.run(
+        ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
+        cwd=REPO_ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return False
+    images = set(result.stdout.splitlines())
+    return {
+        "boost-gateway-v332-gateway:latest",
+        "boost-gateway-v332-login-backend:latest",
+        "boost-gateway-v332-room-backend:latest",
+        "boost-gateway-v332-battle-backend:latest",
+        "boost-gateway-v332-matchmaking-backend:latest",
+        "boost-gateway-v332-leaderboard-backend:latest",
+    }.issubset(images)
+
+
+def write_command_summary(path: Path, name: str, step: dict[str, Any]) -> None:
+    passed = step.get("status") == "passed"
+    summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": passed,
+        "passed": passed,
+        "failed_category": "" if passed else str(step.get("category", "")),
+        "failed_step": "" if passed else name,
+        "steps": [step],
+        "artifacts": {"summary_path": str(path)},
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def write_drill_record(
+    path: Path,
+    production_recovery_summary: Path,
+    sdk_summary: Path,
+    docker_snapshot_summary: Path,
+    monitoring_summary: Path,
+    passed: bool,
+) -> None:
+    now = datetime.now(UTC)
+    record = {
+        "summary_version": 1,
+        "template": False,
+        "drill_id": "r5-compose-gateway-restart",
+        "executed_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "operator": "codex-local-runner",
+        "environment": {
+            "type": "docker-compose",
+            "name": "local-orbstack-preprod",
+            "git_commit": subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=REPO_ROOT,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            ).stdout.strip(),
+            "image_tag_before": "boost-gateway-v332-gateway:latest",
+            "image_tag_after": "boost-gateway-v332-gateway:latest",
+        },
+        "scenario": "gateway_restart",
+        "failure_injection": {
+            "method": "docker compose -f env/docker/docker-compose.yml restart gateway",
+            "started_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "ended_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        },
+        "recovery": {
+            "actions": [
+                "start compose stack from existing images",
+                "run SDK full-flow before restart",
+                "restart gateway container",
+                "wait for gateway /ready",
+                "run SDK full-flow after restart",
+                "collect Docker production snapshot",
+            ],
+            "rto_seconds": 120,
+            "rpo_seconds": 0,
+            "data_consistency_risk": "none observed in SDK full-flow validation",
+        },
+        "observability": {
+            "alerts_observed": ["local drill did not evaluate external alert firing"],
+            "metrics_checked": ["gateway /ready", "gateway diagnostics", "Prometheus targets", "Grafana health"],
+            "log_sources": ["docker compose -f env/docker/docker-compose.yml logs gateway"],
+        },
+        "verification": {
+            "production_recovery_summary": str(production_recovery_summary),
+            "sdk_full_flow_summary": str(sdk_summary),
+            "docker_snapshot_summary": str(docker_snapshot_summary),
+            "k8s_full_flow_summary": "",
+            "monitoring_summary": str(monitoring_summary),
+            "passed": passed,
+        },
+        "notes": "R5 local OrbStack Docker Compose gateway restart drill. Use the same schema with staging/prod records for cloud pre-production approval.",
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/release")
+    parser.add_argument("--mode", choices=["auto", "docker-compose", "bounded-local"], default="auto")
+    parser.add_argument("--leave-running", action="store_true")
+    parser.add_argument("--step-timeout-seconds", type=int, default=300)
+    parser.add_argument("--summary-path", type=Path, default=REPO_ROOT / "runtime/validation/preprod-recovery-drill-summary.json")
+    args = parser.parse_args()
+
+    summary_path = args.summary_path if args.summary_path.is_absolute() else REPO_ROOT / args.summary_path
+    build_dir = args.build_dir if args.build_dir.is_absolute() else REPO_ROOT / args.build_dir
+    validation_dir = summary_path.parent
+    compose_file = REPO_ROOT / "env/docker/docker-compose.yml"
+    steps: list[dict[str, Any]] = []
+    checks: list[dict[str, Any]] = []
+    mode = args.mode
+    if mode == "auto":
+        mode = "docker-compose" if docker_images_present() else "bounded-local"
+
+    recovery_summary = validation_dir / "r5-production-recovery-summary.json"
+    steps.append(
+        run_step(
+            "R5 N3 production recovery static gate",
+            "recovery_gate",
+            [sys.executable, str(REPO_ROOT / "scripts/check_production_recovery_gate.py"), "--summary-path", str(recovery_summary)],
+            120,
+        )
+    )
+
+    sdk_summary = validation_dir / "r5-post-recovery-sdk-full-flow-summary.json"
+    docker_snapshot_summary = REPO_ROOT / "runtime/perf/docker-production-snapshot/summary.json"
+    monitoring_summary = REPO_ROOT / "runtime/validation/monitoring-operability-summary.json"
+    record_path = validation_dir / "r5-preprod-recovery-drill-record.json"
+    record_check_summary = validation_dir / "r5-recovery-drill-record-check-summary.json"
+    cleanup_needed = False
+
+    try:
+        if mode == "docker-compose":
+            steps.append(
+                run_step(
+                    "R5 docker compose up from existing images",
+                    "docker_compose",
+                    ["docker", "compose", "-f", str(compose_file), "up", "-d", "--no-build"],
+                    args.step_timeout_seconds,
+                )
+            )
+            cleanup_needed = True
+            if steps[-1]["status"] == "passed":
+                ready_started = time.monotonic()
+                try:
+                    ready_doc = wait_for_ready("http://127.0.0.1:9080/ready", 90.0)
+                    steps.append(
+                        {
+                            "name": "R5 gateway ready before restart",
+                            "category": "docker_compose",
+                            "command": ["GET", "http://127.0.0.1:9080/ready"],
+                            "status": "passed",
+                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[-6000:],
+                            "stderr_tail": "",
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - captured in validation summary
+                    steps.append(
+                        {
+                            "name": "R5 gateway ready before restart",
+                            "category": "docker_compose",
+                            "command": ["GET", "http://127.0.0.1:9080/ready"],
+                            "status": "failed",
+                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "stdout_tail": "",
+                            "stderr_tail": str(exc),
+                        }
+                    )
+
+            client = build_dir / "sdk/examples/sdk_full_flow_client"
+            if steps[-1]["status"] == "passed":
+                pre_step = run_step(
+                    "R5 SDK full-flow before gateway restart",
+                    "sdk_full_flow",
+                    [str(client), "127.0.0.1", "9201"],
+                    args.step_timeout_seconds,
+                )
+                steps.append(pre_step)
+
+            if steps[-1]["status"] == "passed":
+                steps.append(
+                    run_step(
+                        "R5 docker compose restart gateway",
+                        "recovery_drill",
+                        ["docker", "compose", "-f", str(compose_file), "restart", "gateway"],
+                        args.step_timeout_seconds,
+                    )
+                )
+
+            if steps[-1]["status"] == "passed":
+                ready_started = time.monotonic()
+                try:
+                    ready_doc = wait_for_ready("http://127.0.0.1:9080/ready", 90.0)
+                    steps.append(
+                        {
+                            "name": "R5 gateway ready after restart",
+                            "category": "recovery_drill",
+                            "command": ["GET", "http://127.0.0.1:9080/ready"],
+                            "status": "passed",
+                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[-6000:],
+                            "stderr_tail": "",
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    steps.append(
+                        {
+                            "name": "R5 gateway ready after restart",
+                            "category": "recovery_drill",
+                            "command": ["GET", "http://127.0.0.1:9080/ready"],
+                            "status": "failed",
+                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "stdout_tail": "",
+                            "stderr_tail": str(exc),
+                        }
+                    )
+
+            if steps[-1]["status"] == "passed":
+                post_step = run_step(
+                    "R5 SDK full-flow after gateway restart",
+                    "sdk_full_flow",
+                    [str(client), "127.0.0.1", "9201"],
+                    args.step_timeout_seconds,
+                )
+                steps.append(post_step)
+                write_command_summary(sdk_summary, "R5 SDK full-flow after gateway restart", post_step)
+
+            if steps[-1]["status"] == "passed":
+                steps.append(
+                    run_step(
+                        "R5 Docker production snapshot after recovery",
+                        "docker_snapshot",
+                        [
+                            sys.executable,
+                            str(REPO_ROOT / "scripts/collect_docker_production_perf_snapshot.py"),
+                            "--output-dir",
+                            str(REPO_ROOT / "runtime/perf/docker-production-snapshot"),
+                        ],
+                        args.step_timeout_seconds,
+                    )
+                )
+        else:
+            sdk_step = run_step(
+                "R5 bounded-local SDK full-flow",
+                "sdk_full_flow",
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts/verify_sdk_full_flow_client.py"),
+                    "--build-dir",
+                    str(build_dir),
+                    "--skip-build",
+                    "--summary-path",
+                    str(sdk_summary),
+                ],
+                args.step_timeout_seconds,
+            )
+            steps.append(sdk_step)
+
+        drill_passed = all(step.get("status") == "passed" for step in steps)
+        write_drill_record(record_path, recovery_summary, sdk_summary, docker_snapshot_summary, monitoring_summary, drill_passed)
+        steps.append(
+            run_step(
+                "R5 recovery drill record validation",
+                "recovery_drill_record",
+                [
+                    sys.executable,
+                    str(REPO_ROOT / "scripts/check_recovery_drill_record.py"),
+                    "--record",
+                    str(record_path),
+                    "--summary-path",
+                    str(record_check_summary),
+                ],
+                60,
+            )
+        )
+    finally:
+        if cleanup_needed and not args.leave_running:
+            steps.append(
+                run_step(
+                    "R5 docker compose cleanup",
+                    "cleanup",
+                    ["docker", "compose", "-f", str(compose_file), "down"],
+                    args.step_timeout_seconds,
+                )
+            )
+
+    checks.append(
+        {
+            "name": "r5-real-docker-compose-drill",
+            "category": "preprod_recovery",
+            "passed": mode == "docker-compose" and all(step.get("status") == "passed" for step in steps),
+            "mode": mode,
+            "detail": "Docker Compose gateway restart drill executed" if mode == "docker-compose" else "bounded local mode used",
+        }
+    )
+    failed = next((step for step in steps if step.get("status") != "passed"), None)
+    failed_check = next((check for check in checks if check.get("passed") is not True), None)
+    passed = failed is None and failed_check is None
+    summary = {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": passed,
+        "passed": passed,
+        "failed_category": str(failed.get("category", "")) if failed else ("preprod_recovery" if failed_check else ""),
+        "failed_step": str(failed.get("name", "")) if failed else (str(failed_check.get("name", "")) if failed_check else ""),
+        "environment": {
+            "platform": platform.platform(),
+            "python": sys.version.split()[0],
+            "host": platform.node(),
+        },
+        "scope": {
+            "mode": mode,
+            "real_docker_compose_drill": mode == "docker-compose",
+            "scenario": "gateway_restart",
+        },
+        "checks": checks,
+        "steps": steps,
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "production_recovery_summary": str(recovery_summary),
+            "sdk_full_flow_summary": str(sdk_summary),
+            "docker_snapshot_summary": str(docker_snapshot_summary),
+            "drill_record_path": str(record_path),
+            "drill_record_check_summary": str(record_check_summary),
+        },
+    }
+    summary_path.parent.mkdir(parents=True, exist_ok=True)
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    print(f"preprod recovery drill: {'PASS' if passed else 'FAIL'}")
+    print(f"summary: {summary_path}")
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "app/config.h"
-#include "game/gateway/gateway_server.h"
+#include "v2/gateway/packet_bridge.h"
 #include "v2/gateway/battle_wire_parser.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
@@ -16,7 +16,7 @@
 
 namespace v2::gateway {
 
-class GatewayServerShadowBridge final : public game::gateway::GatewayPacketBridge,
+class GatewayServerShadowBridge final : public PacketBridge,
                                         public DownstreamSessionWriteSink {
 public:
     using SessionWriteTask = std::function<void()>;
@@ -84,9 +84,11 @@ public:
         adapter_.bind_gateway(gateway_actor_);
     }
 
-    void on_packet(const std::shared_ptr<net::Session>& session,
+    // v2 PacketBridge overrides — called from v2 pipeline
+    void on_packet(SessionHandle session,
                    const net::Session::PacketMessage& message) override;
-    void on_close(const std::shared_ptr<net::Session>& session) override;
+    void on_close(SessionHandle session) override;
+
     void deliver(SessionWrite write) override;
     void set_write_scheduler(SessionWriteScheduler scheduler);
 

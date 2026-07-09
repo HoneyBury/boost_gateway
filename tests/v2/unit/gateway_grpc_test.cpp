@@ -29,17 +29,59 @@ struct GatewayGrpcTest : ::testing::Test {
     static std::string last_logout_user;
     static std::string last_logout_session;
     static int logout_call_count;
+    static int room_member_count;
+    static bool room_all_ready;
+    static bool room_last_leave_was_owner;
+    static std::string room_last_new_owner;
+    static bool match_join_queued;
+    static bool match_leave_left;
+    static bool match_status_matched;
+    static std::string match_status_id;
+    static std::int64_t leaderboard_submit_rank;
+    static std::int64_t leaderboard_rank_value;
+    static std::int64_t leaderboard_score_value;
+    static std::uint64_t battle_input_seq;
+    static std::uint32_t battle_frame_number;
+    static std::uint32_t battle_total_frames;
 
     static void SetUpTestSuite() {
         last_logout_user.clear();
         last_logout_session.clear();
         logout_call_count = 0;
+        room_member_count = 0;
+        room_all_ready = false;
+        room_last_leave_was_owner = false;
+        room_last_new_owner.clear();
+        match_join_queued = false;
+        match_leave_left = false;
+        match_status_matched = false;
+        match_status_id.clear();
+        leaderboard_submit_rank = 0;
+        leaderboard_rank_value = 0;
+        leaderboard_score_value = 0;
+        battle_input_seq = 0;
+        battle_frame_number = 0;
+        battle_total_frames = 0;
     }
 
     void SetUp() override {
         last_logout_user.clear();
         last_logout_session.clear();
         logout_call_count = 0;
+        room_member_count = 0;
+        room_all_ready = false;
+        room_last_leave_was_owner = false;
+        room_last_new_owner.clear();
+        match_join_queued = false;
+        match_leave_left = false;
+        match_status_matched = false;
+        match_status_id.clear();
+        leaderboard_submit_rank = 0;
+        leaderboard_rank_value = 0;
+        leaderboard_score_value = 0;
+        battle_input_seq = 0;
+        battle_frame_number = 0;
+        battle_total_frames = 0;
 
         server = std::make_unique<v2::grpc::GatewayGrpcServer>(
             0,
@@ -60,6 +102,88 @@ struct GatewayGrpcTest : ::testing::Test {
                 last_logout_user = user_id;
                 last_logout_session = session_id;
                 ++logout_call_count;
+            },
+            [](const std::string&, const std::string&, std::int32_t& out_member_count, std::string&) {
+                room_member_count = 1;
+                out_member_count = room_member_count;
+                return true;
+            },
+            [](const std::string&, const std::string&, std::int32_t& out_member_count, std::string&) {
+                room_member_count = 2;
+                out_member_count = room_member_count;
+                return true;
+            },
+            [](const std::string&, const std::string&, bool& out_was_owner, std::string& out_new_owner_id, std::string&) {
+                room_last_leave_was_owner = true;
+                room_last_new_owner = "bob";
+                out_was_owner = room_last_leave_was_owner;
+                out_new_owner_id = room_last_new_owner;
+                return true;
+            },
+            [](const std::string&, const std::string&, bool, bool& out_all_ready, std::string&) {
+                room_all_ready = true;
+                out_all_ready = room_all_ready;
+                return true;
+            },
+            [](const std::string&, std::int64_t, const std::string&, bool& out_queued, std::string&) {
+                match_join_queued = true;
+                out_queued = match_join_queued;
+                return true;
+            },
+            [](const std::string&, const std::string&, bool& out_left, std::string&) {
+                match_leave_left = true;
+                out_left = match_leave_left;
+                return true;
+            },
+            [](const std::string&, const std::string&, bool& out_matched, std::string& out_match_id, std::int64_t& out_avg_mmr, std::int32_t& out_queue_size, std::string&) {
+                match_status_matched = true;
+                match_status_id = "match_1";
+                out_matched = match_status_matched;
+                out_match_id = match_status_id;
+                out_avg_mmr = 1200;
+                out_queue_size = 1;
+                return true;
+            },
+            [](const std::string&, const std::string&, std::int64_t, std::int64_t& out_rank, std::string&) {
+                leaderboard_submit_rank = 7;
+                out_rank = leaderboard_submit_rank;
+                return true;
+            },
+            [](std::int32_t, std::vector<boost::gateway::v3::LeaderboardEntry>& out_entries, std::string&) {
+                boost::gateway::v3::LeaderboardEntry entry;
+                entry.set_rank(1);
+                entry.set_user_id("alice");
+                entry.set_display_name("Alice");
+                entry.set_score(1200);
+                out_entries.push_back(entry);
+                return true;
+            },
+            [](const std::string& user_id, std::int64_t& out_rank, std::int64_t& out_score, std::string&) {
+                leaderboard_rank_value = 3;
+                leaderboard_score_value = 900;
+                out_rank = leaderboard_rank_value;
+                out_score = leaderboard_score_value;
+                return user_id == "alice";
+            },
+            [](const std::string&, const std::string&, const std::vector<std::string>&, std::uint32_t, std::string&) {
+                return true;
+            },
+            [](const std::string&, const std::string&, const std::string&, std::uint32_t, std::uint64_t& out_input_seq, std::uint32_t& out_frame_number, std::string&) {
+                battle_input_seq = 11;
+                battle_frame_number = 3;
+                out_input_seq = battle_input_seq;
+                out_frame_number = battle_frame_number;
+                return true;
+            },
+            [](const std::string&, std::uint32_t& out_frame_number, std::string&) {
+                battle_frame_number = 4;
+                out_frame_number = battle_frame_number;
+                return true;
+            },
+            [](const std::string&, const std::string&, const std::string&, std::uint32_t& out_total_frames, std::string&) {
+                battle_total_frames = 9;
+                out_total_frames = battle_total_frames;
+                return true;
             });
 
         ASSERT_TRUE(server->start());
@@ -125,6 +249,20 @@ struct GatewayGrpcTest : ::testing::Test {
 std::string GatewayGrpcTest::last_logout_user;
 std::string GatewayGrpcTest::last_logout_session;
 int GatewayGrpcTest::logout_call_count;
+int GatewayGrpcTest::room_member_count;
+bool GatewayGrpcTest::room_all_ready;
+bool GatewayGrpcTest::room_last_leave_was_owner;
+std::string GatewayGrpcTest::room_last_new_owner;
+bool GatewayGrpcTest::match_join_queued;
+bool GatewayGrpcTest::match_leave_left;
+bool GatewayGrpcTest::match_status_matched;
+std::string GatewayGrpcTest::match_status_id;
+std::int64_t GatewayGrpcTest::leaderboard_submit_rank;
+std::int64_t GatewayGrpcTest::leaderboard_rank_value;
+std::int64_t GatewayGrpcTest::leaderboard_score_value;
+std::uint64_t GatewayGrpcTest::battle_input_seq;
+std::uint32_t GatewayGrpcTest::battle_frame_number;
+std::uint32_t GatewayGrpcTest::battle_total_frames;
 
 // ─── Login tests ──────────────────────────────────────────────────────
 
@@ -255,6 +393,187 @@ TEST_F(GatewayGrpcTest, ConcurrentLogins) {
         t.join();
 
     EXPECT_EQ(success_count.load(), kNumClients);
+}
+
+TEST_F(GatewayGrpcTest, RoomCreateSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::RoomCreateRequest req;
+    req.set_user_id("alice");
+    req.set_room_id("room_1");
+    boost::gateway::v3::RoomCreateResponse resp;
+    auto status = stub->RequestRoomCreate(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.room_id(), "room_1");
+    EXPECT_EQ(resp.member_count(), 1);
+}
+
+TEST_F(GatewayGrpcTest, RoomJoinSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::RoomJoinRequest req;
+    req.set_user_id("bob");
+    req.set_room_id("room_1");
+    boost::gateway::v3::RoomJoinResponse resp;
+    auto status = stub->RequestRoomJoin(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.member_count(), 2);
+}
+
+TEST_F(GatewayGrpcTest, RoomLeaveSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::RoomLeaveRequest req;
+    req.set_user_id("alice");
+    req.set_room_id("room_1");
+    boost::gateway::v3::RoomLeaveResponse resp;
+    auto status = stub->RequestRoomLeave(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_TRUE(resp.was_owner());
+    EXPECT_EQ(resp.new_owner_id(), "bob");
+}
+
+TEST_F(GatewayGrpcTest, RoomReadySuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::RoomReadyRequest req;
+    req.set_user_id("alice");
+    req.set_room_id("room_1");
+    req.set_ready(true);
+    boost::gateway::v3::RoomReadyResponse resp;
+    auto status = stub->RequestRoomReady(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_TRUE(resp.all_ready());
+}
+
+TEST_F(GatewayGrpcTest, MatchJoinSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::MatchJoinRequest req;
+    req.set_user_id("alice");
+    req.set_mmr(1200);
+    req.set_mode("1v1");
+    boost::gateway::v3::MatchJoinResponse resp;
+    auto status = stub->RequestMatchJoin(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_TRUE(resp.queued());
+}
+
+TEST_F(GatewayGrpcTest, MatchLeaveSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::MatchLeaveRequest req;
+    req.set_user_id("alice");
+    req.set_mode("1v1");
+    boost::gateway::v3::MatchLeaveResponse resp;
+    auto status = stub->RequestMatchLeave(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_TRUE(resp.left());
+}
+
+TEST_F(GatewayGrpcTest, MatchStatusSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::MatchStatusRequest req;
+    req.set_user_id("alice");
+    req.set_mode("1v1");
+    boost::gateway::v3::MatchStatusResponse resp;
+    auto status = stub->RequestMatchStatus(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_TRUE(resp.matched());
+    EXPECT_EQ(resp.match_id(), "match_1");
+}
+
+TEST_F(GatewayGrpcTest, LeaderboardSubmitSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::LeaderboardSubmitRequest req;
+    req.set_user_id("alice");
+    req.set_display_name("Alice");
+    req.set_score(1200);
+    boost::gateway::v3::LeaderboardSubmitResponse resp;
+    auto status = stub->RequestLeaderboardSubmit(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.rank(), 7);
+}
+
+TEST_F(GatewayGrpcTest, LeaderboardTopSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::LeaderboardTopRequest req;
+    req.set_k(5);
+    boost::gateway::v3::LeaderboardTopResponse resp;
+    auto status = stub->RequestLeaderboardTop(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    ASSERT_EQ(resp.entries_size(), 1);
+    EXPECT_EQ(resp.entries(0).user_id(), "alice");
+}
+
+TEST_F(GatewayGrpcTest, LeaderboardRankSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::LeaderboardRankRequest req;
+    req.set_user_id("alice");
+    boost::gateway::v3::LeaderboardRankResponse resp;
+    auto status = stub->RequestLeaderboardRank(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.rank(), 3);
+    EXPECT_EQ(resp.score(), 900);
+}
+
+TEST_F(GatewayGrpcTest, BattleCreateSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::BattleCreateRequest req;
+    req.set_battle_id("battle_1");
+    req.set_room_id("room_1");
+    req.add_player_ids("alice");
+    req.add_player_ids("bob");
+    req.set_max_frames(3);
+    boost::gateway::v3::BattleCreateResponse resp;
+    auto status = stub->RequestBattleCreate(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.battle_id(), "battle_1");
+    EXPECT_EQ(resp.player_ids_size(), 2);
+}
+
+TEST_F(GatewayGrpcTest, BattleInputSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::BattleInputRequest req;
+    req.set_user_id("alice");
+    req.set_battle_id("battle_1");
+    req.set_input_data("move:1,2");
+    req.set_submitted_frame(1);
+    boost::gateway::v3::BattleInputResponse resp;
+    auto status = stub->RequestBattleInput(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.input_seq(), 11);
+    EXPECT_EQ(resp.frame_number(), 3);
+}
+
+TEST_F(GatewayGrpcTest, BattleStateSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::BattleStateRequest req;
+    req.set_battle_id("battle_1");
+    boost::gateway::v3::BattleStateResponse resp;
+    auto status = stub->RequestBattleState(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.frame_number(), 4);
+}
+
+TEST_F(GatewayGrpcTest, BattleFinishSuccess) {
+    grpc::ClientContext ctx;
+    boost::gateway::v3::BattleFinishRequest req;
+    req.set_user_id("alice");
+    req.set_battle_id("battle_1");
+    req.set_reason("finished");
+    boost::gateway::v3::BattleFinishResponse resp;
+    auto status = stub->RequestBattleFinish(&ctx, req, &resp);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(resp.error_code(), 0);
+    EXPECT_EQ(resp.total_frames(), 9);
 }
 
 }  // anonymous namespace

@@ -13,6 +13,9 @@
 #include "app/logging.h"
 #include "net/protocol.h"
 #include "v2/gateway/demo_server.h"
+#ifdef BOOST_BUILD_GRPC
+#include "v2/grpc/grpc_adapter.h"
+#endif
 #include "v2/io/io_engine.h"
 #include "v2/gateway/runtime.h"
 #include "v2/gateway/session_adapter.h"
@@ -89,6 +92,18 @@ std::uint16_t parse_gateway_port(int argc, char* argv[]) {
         }
     }
     return 9201;
+}
+
+std::optional<std::uint16_t> parse_grpc_port(int argc, char* argv[]) {
+    for (int i = 1; i + 1 < argc; ++i) {
+        if (std::string(argv[i]) == "--grpc-port") {
+            const auto parsed = std::atoi(argv[i + 1]);
+            if (parsed > 0) {
+                return static_cast<std::uint16_t>(parsed);
+            }
+        }
+    }
+    return std::nullopt;
 }
 
 bool has_flag(int argc, char* argv[], const char* flag) {
@@ -243,6 +258,8 @@ int main(int argc, char* argv[]) {
 
         const auto io_cores = parse_io_cores(argc, argv);
         const auto gateway_port = parse_gateway_port(argc, argv);
+        const auto grpc_port = parse_grpc_port(argc, argv);
+        const auto enable_grpc = has_flag(argc, argv, "--enable-grpc") || grpc_port.has_value();
         const auto acceptor_core = parse_acceptor_core(argc, argv);
         const auto http_port = parse_http_port(argc, argv);
         const auto login_backend_config = parse_backend_config(
@@ -269,6 +286,23 @@ int main(int argc, char* argv[]) {
                                            .leaderboard_backend_config = leaderboard_backend_config,
                                        },
                                        std::move(io_engine));
+#ifdef BOOST_BUILD_GRPC
+        std::unique_ptr<v2::grpc::GrpcGatewayAdapter> grpc_adapter;
+        if (enable_grpc) {
+            grpc_adapter = std::make_unique<v2::grpc::GrpcGatewayAdapter>(
+                grpc_port.value_or(50051),
+                v2::grpc::GrpcGatewayAdapter::BackendOptions{
+                    .login_backend_config = login_backend_config,
+                    .room_backend_config = room_backend_config,
+                    .battle_backend_config = battle_backend_config,
+                    .matchmaking_backend_config = matchmaking_backend_config,
+                    .leaderboard_backend_config = leaderboard_backend_config,
+                });
+            if (!grpc_adapter->start()) {
+                throw std::runtime_error("failed to start gRPC gateway adapter");
+            }
+        }
+#endif
         server.start();
         std::signal(SIGINT, handle_signal);
         std::signal(SIGTERM, handle_signal);
@@ -295,10 +329,20 @@ int main(int argc, char* argv[]) {
         if (print_diagnostics_json) {
             fmt::print("{}\n", server.diagnostics_json());
         }
+#ifdef BOOST_BUILD_GRPC
+        if (enable_grpc && grpc_adapter) {
+            fmt::print("v2 gateway grpc listening on port {}\n", grpc_adapter->port());
+        }
+#endif
         while (g_keep_running.load(std::memory_order_relaxed)) {
             std::this_thread::sleep_for(std::chrono::seconds(1));
         }
         server.stop();
+#ifdef BOOST_BUILD_GRPC
+        if (grpc_adapter) {
+            grpc_adapter->stop();
+        }
+#endif
         return 0;
     } catch (const std::exception& ex) {
         fmt::print(stderr, "v2_gateway_demo failed: {}\n", ex.what());

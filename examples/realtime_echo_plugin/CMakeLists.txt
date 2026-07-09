@@ -20,6 +20,3 @@ target_link_libraries(realtime_echo_plugin
         nlohmann_json::nlohmann_json
 )
 apply_project_warnings(realtime_echo_plugin)
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(realtime_echo_plugin)
-endif()

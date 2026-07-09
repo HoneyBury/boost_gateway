@@ -91,3 +91,14 @@ Gateway -> ServiceEnvelope -> Leaderboard Backend
 - generated protobuf / gRPC 已经有生成入口，但还不是默认唯一传输路径
 
 下一步目标不是再发明第三套协议，而是把现有 helper 契约稳定迁移到 generated stub。
+
+## 退场边界
+
+当前不得把 generated gRPC 作为默认生产 transport。继续推进 PoC 前必须补齐以下证据：
+
+- 非登录路径的 gRPC vs TCP benchmark，至少覆盖 room、battle、match、leaderboard 的基础 RPC。
+- SDK-integrated full-flow，不只验证单个 gRPC RPC。
+- streaming/push、TLS、RBAC、observability 的独立 profile 证据。
+- Ubuntu fixed-runner 上 `BOOST_BUILD_GRPC=ON` 的构建和测试 summary。
+
+在这些证据完成前，生产默认链路继续保持 `SDK + TCP gateway + BackendEnvelope + typed helper + 五后端`，决策状态保持 `defer_default_transport`。

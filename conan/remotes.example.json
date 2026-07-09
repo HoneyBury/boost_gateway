@@ -1,0 +1,16 @@
+{
+  "remotes": [
+    {
+      "name": "conancenter",
+      "url": "https://center2.conan.io",
+      "verify_ssl": true,
+      "enabled": false
+    },
+    {
+      "name": "company-conan",
+      "url": "https://conan.example.internal",
+      "verify_ssl": true,
+      "enabled": true
+    }
+  ]
+}

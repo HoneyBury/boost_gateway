@@ -24,6 +24,10 @@ struct DecodedHandlerPayload {
     return "legacy raw JSON backend payload is deprecated; use typed envelope";
 }
 
+[[nodiscard]] constexpr std::string_view legacy_raw_json_policy_notice() {
+    return "legacy raw JSON is compatibility-only and must not be used for new handlers";
+}
+
 [[nodiscard]] std::optional<v3::proto::EnvelopeMessageKind>
 message_kind_from_backend_type(std::string_view message_type);
 

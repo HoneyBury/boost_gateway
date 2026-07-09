@@ -51,7 +51,7 @@ std::optional<ParsedLoginCommandBody> parse_login_command_body(std::string_view 
         return std::nullopt;
     }
 
-    ParsedLoginCommandBody parsed;
+    ParsedLoginCommandBody parsed{};
     parsed.user_id = parts.front();
     if (parts.size() >= 2) {
         parsed.token = parts[1];

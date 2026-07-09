@@ -57,7 +57,8 @@ bool JsonFileBattleDataStore::save_replay(const std::string& battle_id,
         return false;
     }
     output.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
-    return true;
+    output.flush();
+    return output.good();
 }
 
 std::optional<std::string> JsonFileBattleDataStore::load_replay(const std::string& battle_id) {
@@ -91,7 +92,8 @@ bool JsonFileBattleDataStore::save_result(const std::string& battle_id,
         return false;
     }
     output.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
-    return true;
+    output.flush();
+    return output.good();
 }
 
 std::optional<std::string> JsonFileBattleDataStore::load_result(const std::string& battle_id) {
@@ -123,7 +125,8 @@ bool JsonFileBattleDataStore::save_snapshot(const std::string& battle_id,
         return false;
     }
     output.write(encoded.data(), static_cast<std::streamsize>(encoded.size()));
-    return true;
+    output.flush();
+    return output.good();
 }
 
 std::optional<std::string> JsonFileBattleDataStore::load_snapshot(const std::string& battle_id) {

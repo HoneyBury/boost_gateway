@@ -177,7 +177,7 @@ void BattleActor::on_message(v2::actor::Message&& message) {
         if (world_ == nullptr) {
             return;
         }
-        battle_world_handle_disconnect(*world_, disconnected->user_id);
+        static_cast<void>(battle_world_handle_disconnect(*world_, disconnected->user_id));
 
         if (disconnect_grace_timers_.count(disconnected->user_id) > 0) {
             return;

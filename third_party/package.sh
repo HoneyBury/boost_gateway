@@ -23,6 +23,7 @@ REQUIRED=(
     "spdlog-1.15.3.tar.gz"
     "nlohmann_json-3.12.0.tar.gz"
     "boost_1_90_0.zip"
+    "hiredis-1.2.0.tar.gz"
 )
 
 MISSING=()
@@ -31,6 +32,11 @@ for f in "${REQUIRED[@]}"; do
         MISSING+=("$f")
     fi
 done
+
+if [ ! -d "$SCRIPT_DIR/openssl" ] && [ ! -d "$SCRIPT_DIR/openssl-src" ]; then
+    echo "WARN: no local OpenSSL install found under third_party/openssl or third_party/openssl-src"
+    echo "      Consumers must provide OpenSSL via Conan, system packages, or OPENSSL_ROOT_DIR."
+fi
 
 if [ ${#MISSING[@]} -gt 0 ]; then
     echo "ERROR: Missing archives:"

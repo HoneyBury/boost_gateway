@@ -14,7 +14,11 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
 BackendServer::BackendServer(std::uint16_t port, HandlerMap handlers)
-    : BackendServer(BackendServerOptions{.port = port}, std::move(handlers)) {}
+    : BackendServer([port] {
+          BackendServerOptions options;
+          options.port = port;
+          return options;
+      }(), std::move(handlers)) {}
 
 BackendServer::BackendServer(BackendServerOptions options, HandlerMap handlers)
     : options_(std::move(options)), handlers_(std::move(handlers)) {}

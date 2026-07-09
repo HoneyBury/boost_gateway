@@ -15,7 +15,7 @@ struct TlsCertificateConfig {
     std::string cert_chain_path;     // PEM certificate chain
     std::string private_key_path;    // PEM private key
     std::string ca_cert_path;        // CA certificate for mTLS verification
-    std::optional<std::string> private_key_password;  // if encrypted
+    std::optional<std::string> private_key_password = std::nullopt;  // if encrypted
 };
 
 // ── TLS peer verification ───────────────────────────────────────────────

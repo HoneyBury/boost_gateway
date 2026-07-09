@@ -2,8 +2,11 @@
 
 #include <filesystem>
 #include <fstream>
+#include <functional>
+#include <mutex>
 #include <random>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "v2/gateway/battle_data_store.h"
@@ -14,8 +17,16 @@ namespace {
 class JsonFileStoreTest : public ::testing::Test {
 protected:
     void SetUp() override {
+        static std::mutex rng_mtx;
+        static std::mt19937 rng{std::random_device{}()};
+        std::uint64_t tid;
+        {
+            std::lock_guard lock(rng_mtx);
+            tid = static_cast<std::uint64_t>(
+                std::hash<std::thread::id>{}(std::this_thread::get_id()));
+        }
         auto tmp = std::filesystem::temp_directory_path();
-        dir_ = tmp / ("json_store_test_" + std::to_string(++counter_));
+        dir_ = tmp / ("json_store_test_" + std::to_string(tid) + "_" + std::to_string(rng()));
         std::filesystem::create_directories(dir_);
         store_ = std::make_unique<v2::gateway::JsonFileBattleDataStore>(dir_);
     }
@@ -27,7 +38,6 @@ protected:
 
     std::filesystem::path dir_;
     std::unique_ptr<v2::gateway::JsonFileBattleDataStore> store_;
-    static inline int counter_ = 0;
 };
 
 // ─── Save+Load Round-Trip Tests ─────────────────────────────────────

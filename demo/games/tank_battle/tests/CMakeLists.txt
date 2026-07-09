@@ -15,9 +15,6 @@ if(ENABLE_TESTING AND BOOST_BUILD_TANK_DEMO)
             nlohmann_json::nlohmann_json
     )
     apply_project_warnings(tank_battle_simulation_test)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(tank_battle_simulation_test)
-    endif()
     gtest_discover_tests(tank_battle_simulation_test
         DISCOVERY_TIMEOUT 30
     )
@@ -39,9 +36,6 @@ if(ENABLE_TESTING AND BOOST_BUILD_TANK_DEMO)
             nlohmann_json::nlohmann_json
     )
     apply_project_warnings(tank_battle_perf_test)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(tank_battle_perf_test)
-    endif()
 
     # E2E closed-loop test (GTest)
     add_executable(tank_battle_e2e_test
@@ -61,9 +55,6 @@ if(ENABLE_TESTING AND BOOST_BUILD_TANK_DEMO)
             nlohmann_json::nlohmann_json
     )
     apply_project_warnings(tank_battle_e2e_test)
-    if(COMMAND boost_gateway_stage_runtime_dlls)
-        boost_gateway_stage_runtime_dlls(tank_battle_e2e_test)
-    endif()
     gtest_discover_tests(tank_battle_e2e_test
         DISCOVERY_TIMEOUT 30
     )

@@ -4,6 +4,7 @@
 
 - 压缩包：`fmt-11.2.0.tar.gz`、`boost_1_90_0.zip` 等
 - 源码目录：`fmt-src/`、`googletest-src/`、`spdlog-src/`、`nlohmann_json-src/`、`boost-src/`、`hiredis-src/`
+- 本地安装目录：`openssl/`，要求包含 `include/openssl/ssl.h` 和 `lib/` 或 `lib64/` 下的 `libssl` / `libcrypto`
 
 `cmake/Dependencies.cmake` 的依赖查找优先级：
 
@@ -12,6 +13,10 @@
 3. `build/<preset>/_deps/*-src`
 4. `third_party/*.tar.gz|*.zip`
 5. 远程下载
+
+OpenSSL 是例外：它不通过 FetchContent 从源码编译，查找顺序为 Conan config package、系统安装、
+`OPENSSL_ROOT_DIR` 显式路径、本目录下的 `openssl/` 或 `openssl-src/` 本地安装目录。这样可以同时支持
+Conan、系统包和内网预装 OpenSSL。
 
 ## 依赖列表
 
@@ -23,6 +28,7 @@
 | `nlohmann_json-3.12.0.tar.gz` / `nlohmann_json-src/` | v3.12.0 | https://github.com/nlohmann/json |
 | `boost_1_90_0.zip` / `boost-src/` | 1.90.0 | https://archives.boost.io |
 | `hiredis-1.2.0.tar.gz` / `hiredis-src/` | v1.2.0 | https://github.com/redis/hiredis |
+| `openssl/` / `openssl-src/` | 3.0+ | https://www.openssl.org |
 
 ## 外网机器
 

@@ -380,10 +380,11 @@ private:
 
     v2::service::BackendEnvelope handle_token_validate(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("token")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() || !decoded->payload.contains("token")) {
             return make_error_response(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string token = doc["token"].get<std::string>();
 
@@ -398,7 +399,10 @@ private:
                     response.kind = v2::service::MessageKind::kResponse;
                     nlohmann::json body{{"valid", false}};
                     response.payload = body.dump();
-                    return response;
+                    return v2::service::wrap_typed_response_if_needed(
+                        decoded->typed_request,
+                        std::move(response),
+                        v3::proto::EnvelopeMessageKind::kTokenValidateResponse);
                 }
             }
         }
@@ -414,15 +418,19 @@ private:
         response.kind = v2::service::MessageKind::kResponse;
         nlohmann::json body{{"valid", valid}};
         response.payload = body.dump();
-        return response;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kTokenValidateResponse);
     }
 
     v2::service::BackendEnvelope handle_session_bind(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("user_id")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() || !decoded->payload.contains("user_id")) {
             return make_error_response(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string user_id = doc["user_id"].get<std::string>();
 
@@ -452,15 +460,19 @@ private:
         v2::service::BackendEnvelope response;
         response.kind = v2::service::MessageKind::kResponse;
         response.payload = R"({"status":"ok","action":"session_bound"})";
-        return response;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kSessionBindResponse);
     }
 
     v2::service::BackendEnvelope handle_session_close(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("user_id")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() || !decoded->payload.contains("user_id")) {
             return make_error_response(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string user_id = doc["user_id"].get<std::string>();
 
@@ -470,15 +482,20 @@ private:
         v2::service::BackendEnvelope response;
         response.kind = v2::service::MessageKind::kResponse;
         response.payload = R"({"status":"ok","action":"session_closed"})";
-        return response;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kSessionCloseResponse);
     }
 
     v2::service::BackendEnvelope handle_token_refresh(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("user_id") || !doc.contains("token")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() ||
+            !decoded->payload.contains("user_id") || !decoded->payload.contains("token")) {
             return make_error_response(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string user_id = doc["user_id"].get<std::string>();
         std::string token = doc["token"].get<std::string>();
@@ -558,7 +575,10 @@ private:
             {"expires_at", expires_at},
         };
         response.payload = body.dump();
-        return response;
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(response),
+            v3::proto::EnvelopeMessageKind::kTokenRefreshResponse);
     }
 
     v2::service::BackendEnvelope handle_guest_login(

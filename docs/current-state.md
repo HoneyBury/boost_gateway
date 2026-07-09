@@ -2,15 +2,18 @@
 
 更新时间：2026-05-24
 
-本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `BoostAsioDemo VERSION 3.4.0` 为准；提交状态以 `git HEAD` 为准。
+本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
+
+legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy-helper-inventory.md`。
+普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源；固定 runner / production evidence / release-capacity 默认事实源按同一文件的 `defaults` 收敛到 Linux/Ubuntu labels。性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
 
 ## 稳定能力
 
-- v1.x：维护期能力已经收束，主要保留历史协议、业务边界、运行手册和发布记录。
+- v1.x：维护期能力已经收束，v1 代码已从仓库移除（`include/game`、`src/game`、老示例、v1 测试）。
 - v2.x：当前主线。`ActorSystem`、gateway-only ingress、五个后端服务、`BackendEnvelope`、typed envelope adapter、服务健康检查、TTL/readiness、WriteBehind drain 统计与失败上报已经进入可验收状态。
 - R4 契约门禁：`scripts/verify_r4_contract.py` 覆盖通信契约、后端恢复、typed envelope、proto schema、gateway-only ingress 和短架构基线入口。
 - 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile；`.github/workflows/nightly-stability.yml` 已将 `short` profile 纳入夜间任务。
-- Windows 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 不再依赖平台 `select()`，改为 Boost.Asio non-blocking bounded read，降低 Windows/MSVC 下 stale backend 与多客户端 smoke 的挂起风险。
+- 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 使用 Boost.Asio non-blocking bounded read，避免 POSIX `select()` 限制。
 - RC 总门禁：`scripts/verify_release_candidate.py` 汇总可靠性矩阵、R4 契约、稳定性 soak 和可选 Release baseline，并输出结构化 summary。
 - 安全发布门禁：`scripts/check_security_release_gate.py` 检查生产模式禁用 dev token fallback 的证据、admin 审计最小键和 ACL 边界说明。
 
@@ -18,7 +21,18 @@
 
 - v3 proto/gRPC：schema 校验、CMake target 和 release checklist 已存在，当前定位为传输契约与构建入口，不作为默认生产链路。
 - Redis/Raft/Operator：已通过专项 E2E 形成独立可靠性闭环；默认发布仍保持有界 smoke，固定本机/runner 可显式启用 Redis live 与 Operator kind 验证。
-- Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` 与 `business-capacity` profile 用于 5K/10K 连接、battle-500 和 SDK full-flow 业务容量专项；`.github/workflows/release-baseline.yml` 已提供手动/定时入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
+- Release baseline：`scripts/collect_release_baseline.py` 现在聚合 R4 release contract 与 v2 多进程 `echo/battle` 性能采集；默认 `baseline` profile 适合固定机器执行，`capacity` 与 `business-capacity` profile 用于 5K/10K 连接、battle-500 和 SDK full-flow 业务容量专项；`.github/workflows/release.yml` 已提供手动/定时入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
+- 依赖治理 PoC：仓库已新增 `conanfile.py`、`conan/README.md`、仓库内 profile 与 `BOOST_USE_CONAN_DEPS=ON` 路径，用于 Conan 2 最小正式化 PoC；默认依赖入口仍是 `FetchContent/third_party` fallback。
+- 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
+- Conan PoC 当前事实：本机可在仓库内 `CONAN_HOME` 下完成 profile 生成并进入依赖图解析；若访问 `conancenter` 受限，仍需通过内网镜像、预热缓存或离线源完成真正取包。
+- 仓库已新增 `scripts/bootstrap_conan.py` 与 `conan/remotes.example.json`，用于优先准备本地 cache / 内网 remote；公网 `conancenter` 不是默认前提。
+- bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
+- 仓库已新增独立的 `conan-validate.yml` 手动流水线，用于在不扰动默认 CI 的前提下验证 Conan 依赖链；当前已补 `runner` / `conan_profile` / `conan_lockfile` 输入，默认可切到 Linux fixed-runner。
+- `conan-validate.yml` 已完成真实 GitHub Actions dispatch，历史事实是 workflow 已被 GitHub 接受并派发；后续 Linux fixed-runner 结果继续按同一入口归档。
+- Conan/fallback 规则当前已明确分层：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers` 为 Conan-first；`OpenSSL` 保持双轨保守；`protobuf/grpc/sqlite3` 仍属实验或可选层。
+- SDK 构建与安装当前已同时兼容 Conan 和 fallback 两套头文件来源；`sdk_tests` 与 SDK 打包不再硬编码依赖 `boost_SOURCE_DIR` 或 `nlohmann_json_SOURCE_DIR`。
+- `project_v3` 当前也已去掉对 `hiredis_SOURCE_DIR` 的显式 include 假设，Conan 与 fallback 都统一依赖 `hiredis` target。
+- helper/generated contract 收口补充：主业务 typed request/typed response 已覆盖全部 5 服务域的 31 个 handler，包括 room governance / control-plane 风格消息（`room_list`、`room_detail`、`room_kick`、`room_transfer_owner`、`room_state_push`、`room_battle_finished`）。剩余 raw JSON-only 面已收敛到仅内部 Raft raw JSON RPC。
 - P1 性能事实：macOS Release baseline 三轮已刷新，`runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`；capacity 单轮已暴露当前退化点，5K/10K echo 存在连接建立失败，battle-500 存在 rejected 与 P99 500ms，详见 `docs/archive/releases/v3.3.2-p1-performance-stabilization.md`。
 - 专项 E2E：`scripts/verify_specialized_e2e.py` 聚合 Raft 集群/恢复、Redis 降级与可选 Redis live / Operator kind smoke，作为 Redis/Raft/Operator 独立验收入口；`.github/workflows/specialized-e2e.yml` 提供手动触发入口，固定 runner 接入见 `docs/fixed-runner-playbook.md`。
 - P3 数据恢复：`scripts/verify_data_recovery_gate.py` 聚合 replay/result/snapshot、WriteBehind flush/drain、Redis degraded、Raft committed restart replay 和持久化 round trip；Redis live 与 settlement replay 通过显式参数接入固定环境。
@@ -26,14 +40,15 @@
 - P5 控制面：`scripts/verify_control_plane_gate.py` 聚合 Operator manifest 静态契约、fake-client Go 测试，并接入 RC 总门禁；Go build/module cache 固定到仓库 `runtime/go-cache`，避免依赖用户 HOME 权限；固定 runner 可通过 `--include-envtest` / `--include-kind` 验证 envtest、kind status/components 和样例 CR 删除路径。
 - P5 长稳/故障/回滚：`scripts/verify_production_resilience_gate.py` 聚合固定 runner 预检、stability soak、data recovery、Redis/Raft/Operator specialized E2E，并可显式追加 Redis live、Operator kind、runtime HTTP observability、release/capacity baseline；默认入口保持有界，summary 写入 `runtime/validation/production-resilience-summary.json`。
 - P6 生产证据聚合：`scripts/verify_production_evidence_gate.py` 将 stability soak、P3 data recovery、Redis/Raft/Operator specialized E2E、生产候选完整性审核与可选 release/capacity baseline 聚合为一个固定 runner 入口；默认模式保持有界，长稳、Redis live、Operator kind、settlement replay、capacity baseline 通过显式参数启用。本机 P6 收束验证已覆盖 Release 构建、Redis live、Operator kind 和 3 轮 Release baseline，交付记录见 `docs/archive/releases/v3.3.2-p6-production-evidence.md`。
-- P2 固定 runner 证据：`.github/workflows/production-evidence.yml` 已支持 JSON runner 输入、preflight summary 归档、Redis/kind 真实依赖、runtime HTTP observability、release baseline/capacity baseline，以及 R2/R3 fixed-runner 准入报告归档；`.github/workflows/long-soak-capacity.yml` 已补 N1 长稳/容量专用定时入口，配置说明见 `docs/production-evidence-runner.md`。
-- N0 固定 runner 常态化：`release-baseline.yml`、`specialized-e2e.yml` 已补齐 JSON runner、preflight summary 归档和统一 Step Summary 渲染；`check_fixed_runner_environment.py`、`render_validation_summary.py` 与各聚合 gate summary 已统一到 `summary_version=2`、`overall_pass`、`failed_category`、`environment`、`artifacts` 契约。本地收束证据见 `runtime/validation/n0-release-baseline-preflight-summary.json`、`runtime/validation/n0-specialized-preflight-summary.json`、`runtime/validation/n0-specialized-raft-ha-summary.json`。
+- P2 固定 runner 证据：`.github/workflows/production-evidence.yml` 已支持 JSON runner 输入、preflight summary 归档、Redis/kind 真实依赖、runtime HTTP observability、release baseline/capacity baseline，以及 R2/R3 fixed-runner 准入报告归档；`.github/workflows/long-soak-capacity.yml` 已补 N1 长稳/容量专用定时入口，配置说明见 `docs/fixed-runner-playbook.md`。
+- N0 固定 runner 常态化：`release.yml`、`specialized-e2e.yml` 已补齐 JSON runner、preflight summary 归档和统一 Step Summary 渲染；`check_fixed_runner_environment.py`、`render_validation_summary.py` 与各聚合 gate summary 已统一到 `summary_version=2`、`overall_pass`、`failed_category`、`environment`、`artifacts` 契约。本地收束证据见 `runtime/validation/n0-release-baseline-preflight-summary.json`、`runtime/validation/n0-specialized-preflight-summary.json`、`runtime/validation/n0-specialized-raft-ha-summary.json`。
 - N1 性能证据索引：`docs/performance-baseline.md` 已补 baseline / capacity / bounded soak / long soak / business-flow perf / business-capacity / docker snapshot 统一归档口径，`verify_stability_soak.py` 已支持 `long` / `overnight` profile，`verify_production_resilience_gate.py` 与 `run_long_soak_capacity.py` 已打通 2h=`long`、8h=`overnight` 的固定 runner 链路；`collect_release_baseline.py` 与 `run_long_soak_capacity.py` 已支持独立归档 capacity 与 business-capacity。R2 fixed-runner manifest 现在会阻断缺失的 `long_soak_capacity`，但生产容量上限声明仍需后续 sustained-capacity/resource-slope 专项，不把 30s 短样本误宣称为生产上限。
 - N2 监控 SLO：Prometheus alerts 已新增 `BoostGatewayHighRouteLatency`、`BoostGatewayBusinessFlowFailure`，Grafana dashboard 已新增 route latency 与 business-flow success 面板；`docs/production-operations-runbook.md` 已明确 SLI/SLO 口径和告警响应流程。`check_monitoring_operability.py` 已统一输出 `summary_version=2`、`overall_pass`、`environment`、`artifacts`；本地收束验证见 `runtime/validation/monitoring-operability-summary.json`、`runtime/validation/n2-monitoring-operability-summary.json` 与 `runtime/validation/n2-observability-summary.json`。2026-05-24 已再次刷新 `n2-monitoring-operability-summary.json`，当前为 `PASS`。
 - N3 部署恢复/回滚：`scripts/check_production_recovery_gate.py` 已补默认有界静态门禁，覆盖 Docker Compose、Kubernetes rollout/rollback、Redis volume/PVC、RTO/RPO、SDK full-flow 恢复验证和运维记录模板，并接入 `scripts/verify_production_resilience_gate.py` 默认步骤；`check_deploy_operability.py` 与 `run_cloud_production_closure.py` 已统一到 `summary_version=2` fixed-runner 契约。`docs/production-recovery-drill-record-template.json` 与 `scripts/check_recovery_drill_record.py` 已将真实演练记录固化为可校验 JSON。当前 macOS + OrbStack Docker 环境已形成本机预演证据；2026-05-24 已再次刷新 `runtime/validation/n3-deploy-operability-summary.json` 与 `runtime/validation/preprod-recovery-drill-summary.json`，当前均为 `PASS`，云端固定 runner / K8s 继续按同一 summary 契约持续归档。
 - N4 传输安全与配置治理：`scripts/check_transport_config_governance.py` 已聚合 TLS/mTLS profile 边界和配置漂移检查；backend 服务端 opt-in TLS listener、五个 backend 入口配置接入、Docker/K8s/Helm Secret/volume profile、backend TLS request/response 实测和本机 TLS profile SDK full-flow 已补齐。默认生产结论仍是 plain TCP，TLS transport 上线需要固定 runner / 预发多轮演练、证书轮换和性能损耗额外证据。
 - N5 SDK 企业交付：`scripts/verify_sdk_enterprise_delivery.py` 已聚合 SDK distribution、package consumer、in-process business-flow、真实 gateway full-flow 和 backend TLS profile 下的真实 gateway full-flow；`sdk/docs/compatibility.md` 已补 C++/C ABI/Python/C# 客户端兼容矩阵，`sdk/docs/README.md` 已补生产客户端接入清单和 plain TCP / backend TLS profile 的客户端边界。2026-05-24 最后一轮已修复 SDK full-flow 动态端口、package consumer Debug/NOCONFIG 映射、business-flow 进程组 timeout 与 fixture 动态端口/teardown 收束，`runtime/validation/n5-sdk-enterprise-delivery-summary.json` 当前为 `PASS`。
 - N6 gRPC/proto 取舍：`scripts/check_v3_grpc_poc_decision.py` 已补 v3 proto/gRPC PoC 决策门禁，验证 schema/transport contract、CMake target、TCP baseline 对照和 ADR 边界；当前结论是 generated gRPC 保留实验，不进入默认生产链路。
+- N6 gRPC/proto 取舍补充：`tests/perf/grpc_vs_tcp_perf_test.cpp` 已不再是 placeholder，当前已基于真实 TCP backend request 与 gRPC `RequestLogin` RPC 生成 benchmark 数据；`gateway.proto` 与 `GatewayGrpcServer` 当前已覆盖 login/logout/health，以及 room/match/leaderboard/battle 的基础 RPC，`GrpcGatewayAdapter` 也已从 allow-all stub 收口到 `GatewayServiceBridge` 驱动的真实 backend 路由。但 streaming/push、SDK-integrated full-flow、TLS/RBAC/observability 的 gRPC profile 证据仍未完成，因此结论继续保持 `defer_default_transport`。
 - R0 生产候选证据聚合：`scripts/verify_production_candidate_evidence.py` 已聚合 fixed-runner preflight、P5 production resilience、P6 production evidence、N5 SDK enterprise delivery，并可显式追加 N4 TLS full-flow 与 N6 gRPC PoC decision；summary 写入 `runtime/validation/r0-production-candidate-evidence-summary.json`。
 - R1 TLS 上线前置证据：`scripts/verify_tls_production_readiness.py` 已覆盖 TLS profile full-flow、server CA 校验、证书轮换 full-flow、CA 不匹配 expected failure 诊断和 plain/TLS 单次业务闭环耗时对比；默认生产仍是 plain TCP，R1 只作为启用 backend TLS profile 前的前置证据。
 - R2 生产候选证据 Manifest：`docs/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py` 已将 R0/R1 本机有界证据、固定 runner long-soak/capacity、release/capacity、预发恢复演练和 TLS 预发多轮证据统一成可校验 manifest；默认校验 R0/R1，`--require-fixed-runner` 用于投产前阻断缺失的固定 runner / 预发 summary。
@@ -42,6 +57,8 @@
 - R5 预发恢复 / 回滚演练证据：`scripts/verify_preprod_recovery_drill.py` 已将 N3 recovery gate、Docker Compose gateway restart、SDK full-flow、Docker production snapshot 和 recovery drill record validator 串成 `runtime/validation/preprod-recovery-drill-summary.json` producer。2026-05-20 已在当前 macOS + OrbStack 环境完成真实复测并通过；本轮同时固化了 Docker builder 补 `python3`、gateway backend pool 默认收敛到 `1`、以及 leaderboard 自动结算可用性修复。
 - R6 TLS 预发多轮证据：`scripts/verify_tls_preprod_multi_run.py` 已多轮聚合 R1 TLS readiness，覆盖 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。2026-05-20 已在当前授权环境完成 2 轮预发多轮验证并通过。
 - 脚本与配置治理：`docs/script-inventory.json` 已将顶层脚本划分为 public entrypoint、aggregate gate、producer、tool、platform wrapper 和 legacy；`scripts/check_script_inventory.py`、`scripts/check_validation_summary_contract.py`、`scripts/check_config_source_layout.py` 已用于阻断脚本索引、summary v2 契约和 `env/` 配置事实源漂移。后续如需物理移动脚本，必须先保留顶层 shim 并更新 inventory / reliability matrix。
+- 默认主线测试面为 `tests/v2`、SDK 和对应 gate。
+- 其中 `admin_service` 已明确留在 legacy-v1 / demo-only 面，不进入默认 gate，也不作为当前 v2 生产控制面承诺。后续如需评估新的 v2 控制面，参考 `docs/v2-control-plane-preplan.md`。
 - P3 监控运维：Prometheus 已加载 `env/monitoring/prometheus-alerts.yml`，Grafana dashboard 已对齐当前 gateway `/metrics` 真实指标，`scripts/check_monitoring_operability.py` 会阻断后端 HTTP scrape、旧指标名和 runbook 漂移；运维流程见 `docs/production-operations-runbook.md`。
 - P4 SDK 企业级封装：C++ SDK heartbeat 已实作，disconnect callback 可由 heartbeat failure 触发；C ABI 暴露 heartbeat 控制，Python/C# wrapper 增加 native 版本校验和加载/分配诊断；SDK business-flow 与 full-flow client 验证覆盖 login、room、ready、battle、push、reconnect、heartbeat。
 - H0-H5 生产候选硬化：`scripts/check_production_hardening_gate.py` 聚合固定 runner 定时入口、长稳/容量/K8s/观测/SDK 企业接入证据；`production-resilience.yml` 与 `production-evidence.yml` 已具备 weekly schedule 和 runner fallback。
@@ -54,13 +71,13 @@
 
 ## P0 性能优化轮次（2026-05-23）
 
-本机 Windows Release + 5 后端拓扑下完成 P0 收束，4 项性能修复 + 基线验证：
+Release 构建 + 5 后端拓扑下完成 P0 收束，4 项性能修复 + 基线验证：
 
 ### 修复项
 - **后端连接池实验**: `gateway_service_bridge.cpp` 生产默认已回收为 1；多连接池只保留为显式压测/实验参数，不能作为默认投产路径
 - **战斗路由线程卸载**: `runtime.cpp` 默认工作线程 0→4
 - **CircuitBreaker 线程安全**: `circuit_breaker.h/.cpp` 添加 mutex 保护
-- **Windows 高精度定时器**: `v2::platform::HighResTimer` RAII 封装 `timeBeginPeriod(1)`，消除 15.6ms 休眠粒度
+- **高精度定时器**: `v2::platform::HighResTimer` RAII 封装，消除粗粒度休眠
 
 ### 基线结果（Release, 3 轮）
 | 场景 | 阈值 | 优化前 | 优化后 |
@@ -70,20 +87,17 @@
 | battle-20 | P99 ≤ 100ms | 750ms ❌ | **10ms** ✅ |
 | battle-100 | P99 ≤ 250ms | 5000ms ❌ | **200ms** ✅ |
 
-后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s。详见 `docs/performance-baseline-windows-p0.md`。
+后端正向延迟从 ~30ms 降至 ~2.5ms，echo 吞吐最高 17,846/s，battle 吞吐 1,424/s。详见性能基线文档。
 
 ### 稳定性
 - Unit tests: **772 通过 / 63 跳过（Redis 依赖）/ 0 失败**（Release 构建）
 - Capacity baseline: P99 尾部无明显退化
-- 已知遗留：`project_v2_integration_tests` 因 `resolve_backend` private 访问编译失败（预存问题），Windows 环境下集成测试需修复后方可运行
 
 ## 保留边界
 
 - 2h/8h soak 与 10K capacity 已进入固定 runner 阻断证据链，但真实 summary 仍需在固定机器持续刷新；生产容量上限声明、跨节点 Redis/Raft、更完整 Operator rollback/probe E2E、更完整角色化 RBAC、外部 OTel collector 长稳、Prometheus P99 告警灵敏度多轮实测和 generated gRPC transport PoC 仍属于固定 runner/后续专项；默认生产主链仍是 SDK + TCP gateway + BackendEnvelope + 五后端 + Redis。
 - 主线定位为企业级高性能实时服务框架。坦克大战和后续游戏/实时系统样例必须放在 `demo/games/` 作为业务验证 demo，不能把碰撞、地图、胜负、得分公式等业务规则写入 gateway、login、room、leaderboard 或公共 SDK。框架与业务边界以 `docs/realtime-framework-modernization-plan.md`、`docs/realtime-framework-module-boundaries.md`、`docs/realtime-framework-sdk-boundary.md` 和 `demo/games/README.md` 为准。
 - 默认 CI/release workflow 使用有界 smoke 门禁，避免长时间占用终端或 runner。
-- 文档出现编码显示异常时，以 UTF-8 文件内容和 CI 校验结果为准，PowerShell 控制台乱码不代表文件编码错误。
-- `include/v2/gateway/runtime.h` 在 Windows Dev Drive 上存在 OS 级文件锁（Error 32），已通过 `include_override/` 目录 + CMake 包含路径优先策略绕过，锁文件需系统重启后才能释放。
 
 ## R7 模块收束（2026-05-23）
 
@@ -112,8 +126,7 @@
 
 ### 未解决问题
 
-- `include/v2/gateway/runtime.h` OS 级文件锁需系统重启后才能释放
-- `project_v2_unit_tests.exe` 存在预先存在的 SdkClient 链接失败（`error_paths_test.obj`），不影响项目库和可执行文件构建
+（当前无活跃阻塞项）
 
 ## 当前阶段结论
 
@@ -142,23 +155,18 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 ## 下一阶段优先级
 
-当前“生产数据沉淀与风险燃尽”以本文档、`docs/fixed-runner-playbook.md`、`docs/production-evidence-runner.md` 和 `docs/reliability-matrix.md` 为事实源，默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。
+后续长期开发以 `docs/project-blueprint.md` 为规划依据。本文档继续作为”已经实现/当前默认链路”的事实源；`docs/fixed-runner-playbook.md`、`docs/release-governance.md` 和各 runtime summary 继续作为生产候选证据事实源。
+当前 1-3 个月的实际主线执行顺序，见 `docs/mainline-execution-plan.md`。
 
-业务验证型下一阶段以”框架与业务隔离”为前提：`docs/realtime-framework-modernization-plan.md` 的 M0-M5 已全部完成，identity、lobby/room、realtime instance、business plugin SPI、SDK 通用 API 和 demo gate 边界均已固化。
+当前默认有界收束已经完成；长稳 2h/8h、10K 固定机器容量、TLS 预发多轮性能、真实 gRPC transport profile 等继续作为固定 runner 或后续专项持续沉淀。业务验证型后续工作必须继续遵守“框架与业务隔离”：demo 只放在 `demo/games/` 或后续 demo 目录，不能把坦克大战等具体业务规则写入公共框架主链。
 
-近期服务端实施已完成既定 P0-P7 checkpoint，包含坦克大战 demo 的运行、结算、断线重连和性能回归门禁。相关阶段计划已归档到 `docs/archive/plans/`，当前阶段不实现正式客户端。
+下一阶段执行优先级概括为：
 
-1. N0 固定 Runner 与证据自动化常态化。
-2. N1 长稳压测与容量基线。
-3. N2 生产监控 SLO 与告警闭环。
-4. N3 部署恢复、回滚与灾备演练。
-5. N4 传输安全与配置治理升级。
-6. N5 SDK 企业交付与客户端兼容矩阵。
-7. N6 gRPC / 协议演进 PoC 与生产取舍。
-8. R0 生产候选证据聚合。
-9. R1 TLS 上线前置证据。
-10. R2 生产候选证据 Manifest 与预发准入。
-11. R3 生产 Readiness Report。
-12. R4 固定 Runner Release / Capacity 证据。
-13. R5 预发恢复 / 回滚演练证据。
-14. R6 TLS 预发多轮证据。
+1. 短期：命名与描述收敛、legacy/helper 债务清单、sccache 构建加速 ✅（5/10 workflow 已启用，构建耗时与命中率已归档）、性能测试分层进入标准流水线 ✅。
+2. 中期：Ubuntu fixed-runner 容量事实沉淀、vcpkg/Conan 依赖治理、generated proto/gRPC full-flow 与真实性能对照、helper 兼容层退场。
+3. 长期：Developer Guide 与贡献路径、通用实时服务 plugin 生态、macOS ARM64 等更多平台、固定/高性能 runner 趋势化容量报告。
+
+当前命名与默认维护面状态：
+
+- 对外产品/框架名称按 `BoostGateway` 收敛。
+- 仓库历史名 `BoostAsioDemo` 暂时保留，用于兼容历史引用与路径。

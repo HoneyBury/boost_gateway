@@ -422,11 +422,13 @@ private:
 
     v2::service::BackendEnvelope handle_battle_create(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("battle_id") ||
-            !doc.contains("room_id") || !doc.contains("player_ids")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() ||
+            !decoded->payload.contains("battle_id") ||
+            !decoded->payload.contains("room_id") || !decoded->payload.contains("player_ids")) {
             return make_error(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string battle_id = doc["battle_id"].get<std::string>();
         std::string room_id = doc["room_id"].get<std::string>();
@@ -442,8 +444,9 @@ private:
 
         std::vector<v2::realtime::PlayerContext> players;
         for (const auto& pid : player_ids_json) {
-            players.push_back(
-                v2::realtime::PlayerContext{.user_id = pid.get<std::string>()});
+            v2::realtime::PlayerContext player;
+            player.user_id = pid.get<std::string>();
+            players.push_back(std::move(player));
         }
 
         // Create the instance via InstanceRuntime
@@ -480,12 +483,16 @@ private:
             {"player_ids", player_ids_json},
         };
 
-        return make_ok({
+        auto resp = make_ok({
             {"battle_id", battle_id},
             {"room_id", room_id},
             {"player_ids", player_ids_json},
             {"push_to_sessions", nlohmann::json::array({std::move(push)})},
         });
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kBattleCreateResponse);
     }
 
     // ─── Handler: battle_input ──────────────────────────────────────
@@ -667,10 +674,11 @@ private:
 
     v2::service::BackendEnvelope handle_battle_state(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("battle_id")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() || !decoded->payload.contains("battle_id")) {
             return make_error(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         const auto battle_id = doc["battle_id"].get<std::string>();
         if (battle_id.empty()) {
@@ -726,22 +734,28 @@ private:
             }
         }
 
-        return make_ok({
+        auto resp = make_ok({
             {"battle_id", battle_id},
             {"frame_number", frame_number},
             {"snapshot", std::move(state)},
         });
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kBattleStateResponse);
     }
 
     // ─── Handler: battle_finish ─────────────────────────────────────
 
     v2::service::BackendEnvelope handle_battle_finish(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("user_id") ||
-            !doc.contains("battle_id")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() ||
+            !decoded->payload.contains("user_id") ||
+            !decoded->payload.contains("battle_id")) {
             return make_error(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         std::string user_id = doc["user_id"].get<std::string>();
         std::string battle_id = doc["battle_id"].get<std::string>();
@@ -799,22 +813,27 @@ private:
             }
         }
 
-        return make_ok({
+        auto resp = make_ok({
             {"battle_id", battle_id},
             {"reason", push["reason"]},
             {"total_frames", total_frames},
             {"push_to_sessions", nlohmann::json::array({std::move(push)})},
         });
+        return v2::service::wrap_typed_response_if_needed(
+            decoded->typed_request,
+            std::move(resp),
+            v3::proto::EnvelopeMessageKind::kBattleFinishResponse);
     }
 
     // ─── Handler: replay_load ───────────────────────────────────────
 
     v2::service::BackendEnvelope handle_replay_load(
         const v2::service::BackendEnvelope& request) {
-        auto doc = nlohmann::json::parse(request.payload, nullptr, false);
-        if (doc.is_discarded() || !doc.contains("battle_id")) {
+        auto decoded = v2::service::decode_handler_payload(request);
+        if (!decoded.has_value() || !decoded->payload.is_object() || !decoded->payload.contains("battle_id")) {
             return make_error(-1004, "invalid_json");
         }
+        const auto& doc = decoded->payload;
 
         const auto battle_id = doc["battle_id"].get<std::string>();
         if (battle_id.empty()) {
@@ -824,18 +843,26 @@ private:
         if (replay_storage_) {
             replay_storage_->flush();
             if (auto stored = replay_storage_->get_replay(battle_id)) {
-                return make_ok({
+                auto resp = make_ok({
                     {"battle_id", battle_id},
                     {"replay", std::move(*stored)},
                 });
+                return v2::service::wrap_typed_response_if_needed(
+                    decoded->typed_request,
+                    std::move(resp),
+                    v3::proto::EnvelopeMessageKind::kReplayLoadResponse);
             }
         }
 
         if (auto cached = replay_doc(battle_id)) {
-            return make_ok({
+            auto resp = make_ok({
                 {"battle_id", battle_id},
                 {"replay", std::move(*cached)},
             });
+            return v2::service::wrap_typed_response_if_needed(
+                decoded->typed_request,
+                std::move(resp),
+                v3::proto::EnvelopeMessageKind::kReplayLoadResponse);
         }
 
         return make_error(-2003, "replay_not_found");

@@ -26,8 +26,13 @@ message LoginPayload {
     LoginRequest login_request = 1;
     LoginResponse login_response = 2;
     TokenValidateRequest token_validate = 3;
-    SessionBindRequest session_bind = 4;
-    SessionCloseRequest session_close = 5;
+    TokenValidateResponse token_validate_response = 4;
+    SessionBindRequest session_bind = 5;
+    SessionBindResponse session_bind_response = 6;
+    SessionCloseRequest session_close = 7;
+    SessionCloseResponse session_close_response = 8;
+    TokenRefreshRequest token_refresh = 9;
+    TokenRefreshResponse token_refresh_response = 10;
   }
 }
 
@@ -42,17 +47,34 @@ message RoomPayload {
     RoomReadyRequest room_ready = 7;
     RoomReadyResponse room_ready_response = 8;
     RoomStartBattleRequest room_start_battle = 9;
-    RoomStatePush room_state_push = 10;
+    RoomStartBattleResponse room_start_battle_response = 10;
+    RoomStatePush room_state_push = 11;
+    RoomListRequest room_list = 12;
+    RoomListResponse room_list_response = 13;
+    RoomDetailRequest room_detail = 14;
+    RoomDetailResponse room_detail_response = 15;
+    RoomKickRequest room_kick = 16;
+    RoomKickResponse room_kick_response = 17;
+    RoomTransferOwnerRequest room_transfer_owner = 18;
+    RoomTransferOwnerResponse room_transfer_owner_response = 19;
+    RoomBattleFinishedRequest room_battle_finished = 20;
+    RoomBattleFinishedResponse room_battle_finished_response = 21;
   }
 }
 
 message BattlePayload {
   oneof kind {
     BattleCreateRequest battle_create = 1;
-    BattleInputRequest battle_input = 2;
-    BattleInputResponse battle_input_response = 3;
-    BattleStatePush battle_state_push = 4;
-    BattleFinishRequest battle_finish = 5;
+    BattleCreateResponse battle_create_response = 2;
+    BattleInputRequest battle_input = 3;
+    BattleInputResponse battle_input_response = 4;
+    BattleStateRequest battle_state = 5;
+    BattleStateResponse battle_state_response = 6;
+    BattleStatePush battle_state_push = 7;
+    BattleFinishRequest battle_finish = 8;
+    BattleFinishResponse battle_finish_response = 9;
+    ReplayLoadRequest replay_load = 10;
+    ReplayLoadResponse replay_load_response = 11;
   }
 }
 

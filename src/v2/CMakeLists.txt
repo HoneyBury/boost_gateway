@@ -11,6 +11,7 @@ add_library(project_v2 STATIC
     common/module_marker.cpp
     diagnostics/diagnostics_manager.cpp
     diagnostics/health_check.cpp
+    diagnostics/runtime_metrics_exporter.cpp
     data/replay_format.cpp
     data/write_behind_store.cpp
     data/cached_data_store.cpp
@@ -73,9 +74,9 @@ target_link_libraries(project_v2
 )
 apply_project_warnings(project_v2)
 
-# SQLite-backed persistence (disabled by default)
+# SQLite-backed persistence (opt-in)
 # Enable with: cmake -B build -DBOOST_BUILD_SQLITE=ON
-# Batch C: SQLite auto-detect — enabled by default, gracefully degrades if not found
+# Batch C: SQLite auto-detect — when enabled, gracefully degrades if not found
 if(BOOST_BUILD_SQLITE)
   find_package(sqlite3 QUIET)
   if(sqlite3_FOUND)

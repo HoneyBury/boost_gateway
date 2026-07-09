@@ -2,171 +2,168 @@ name: CI
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  SCCACHE_DIR: ${{ github.workspace }}/.sccache
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   push:
-    branches: ["main", "develop"]
-  pull_request:
-  schedule:
-    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
 
 permissions:
   contents: read
 
 jobs:
-  build-and-test:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            configure_preset: default
-            build_preset: default
-            test_preset: default
-          - os: macos-latest
-            configure_preset: default
-            build_preset: default
-            test_preset: default
-          - os: windows-2022
-            configure_preset: windows-ninja-debug
-            build_preset: windows-ninja-debug
-            test_preset: windows-ninja-debug
+  linux-build-and-test:
+    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
+      - name: Restore sccache cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          restore-keys: |
+            sccache-${{ runner.os }}-release-
+            sccache-${{ runner.os }}-
 
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
+      - name: Show tool versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --version
+          ninja --version
+          python3 --version
 
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Ensure Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/bin:$PATH"
+          if command -v conan >/dev/null 2>&1; then
+            conan --version
+            exit 0
+          fi
+          python3 -m venv .venv-ci
+          . .venv-ci/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install "conan>=2.0,<2.9"
+          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
+          conan --version
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.local/bin:$PWD/.venv-ci/bin:$PATH"
+          python3 scripts/bootstrap_conan.py --allow-public --disable-example-internal
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False" \
+            --output-folder=build/conan-ci \
+            --build=missing \
+            -s build_type=Release
+
+      - name: Detect sccache
+        id: sccache
+        shell: bash
+        run: |
+          if command -v sccache >/dev/null 2>&1; then
+            sccache --version
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "sccache not found; continuing without compiler cache"
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Reset sccache stats
+        if: steps.sccache.outputs.available == 'true'
+        shell: bash
+        run: sccache --zero-stats || true
 
       - name: Configure
-        run: cmake --preset ${{ matrix.configure_preset }}
+        shell: bash
+        run: |
+          args=(
+            cmake -S . -B build/release -G Ninja
+            -DBOOST_USE_CONAN_DEPS=ON
+            -DENABLE_TESTING=ON
+            -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake
+          )
+          if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
+            args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
+          fi
+          "${args[@]}"
+
+      - name: Record build start time
+        shell: bash
+        run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Build
-        run: cmake --build --preset ${{ matrix.build_preset }} --parallel
+        shell: bash
+        run: cmake --build build/release --parallel
 
       - name: Test
-        run: ctest --preset ${{ matrix.test_preset }} --timeout 300
+        shell: bash
+        run: ctest --test-dir build/release --output-on-failure --timeout 300
 
       - name: R4 contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/${{ matrix.configure_preset }} --skip-build --skip-arch-baseline --configuration Debug
+        shell: bash
+        run: python3 scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release
 
       - name: Monitoring operability gate
-        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
+        shell: bash
+        run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
-  multi-process-build:
-    runs-on: ${{ matrix.os }}
-    needs: build-and-test
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-2022]
+      - name: Legacy/helper inventory gate
+        shell: bash
+        run: python3 scripts/gates/governance/check_legacy_helper_inventory.py
 
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Show sccache stats
+        if: always() && steps.sccache.outputs.available == 'true'
+        shell: bash
+        run: sccache --show-stats || true
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-
-      - name: Configure
-        run: cmake --preset ${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }}
-
-      - name: Build all targets
-        run: cmake --build --preset ${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }} --parallel --target v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend v2_leaderboard_backend
-
-      - name: Verify binaries exist
+      - name: Capture build metrics
+        if: always()
+        shell: bash
         run: |
-          python -c "
-          import os, sys
-          binaries = ['v2_gateway_demo', 'v2_login_backend', 'v2_room_backend', 'v2_battle_backend', 'v2_leaderboard_backend']
-          build_dir = 'build/${{ matrix.os == 'windows-2022' && 'windows-ninja-debug' || 'default' }}'
-          ext = '${{ matrix.os == 'windows-2022' && '.exe' || '' }}'
-          missing = [b for b in binaries if not os.path.exists(os.path.join(build_dir, b + ext))]
-          if missing:
-              print(f'Missing binaries: {missing}')
-              sys.exit(1)
-          print(f'All {len(binaries)} binaries found in {build_dir}')
-          "
+          mkdir -p runtime/perf/build-times
+          now=$(date +%s)
+          iso_now=$(date -Iseconds)
+          duration=$(( now - BUILD_START_EPOCH ))
+          cat > runtime/perf/build-times/build-time.json << EOF
+          {
+            "workflow": "ci",
+            "runner_os": "${{ runner.os }}",
+            "timestamp": "${iso_now}",
+            "build_duration_seconds": ${duration}
+          }
+          EOF
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
 
-  docker:
-    runs-on: ubuntu-latest
-    needs: build-and-test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Prepare third-party archives
-        run: bash third_party/download_deps.sh
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: false
-          load: true
-          tags: boost-gateway:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Smoke test container
-        run: |
-          docker run -d --name boost-gateway-test -p 9201:9201 -p 9081:9080 boost-gateway:latest --io-cores 1 --management-port 9080
-          sleep 5
-          curl -f http://localhost:9081/health || (docker logs boost-gateway-test && exit 1)
-          docker stop boost-gateway-test
-
-  raft-ha-weekly:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Configure
-        run: cmake --preset default
-
-      - name: Build
-        run: cmake --build --preset default --parallel
-
-      - name: Run Raft HA specialized E2E
-        run: |
-          python scripts/verify_specialized_e2e.py \
-            --build-dir build/default \
-            --filter raft_integration \
-            --skip-build
-
-      - name: Upload Raft test results
+      - name: Upload build metrics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: raft-ha-weekly-results
-          path: build/default/test-results/
-          retention-days: 30
+          name: build-metrics
+          path: runtime/perf/build-times/**
+          if-no-files-found: warn

@@ -9,17 +9,6 @@
 
 #include <spdlog/spdlog.h>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
-
 namespace v2::perf {
 
 // ============================================================================
@@ -89,54 +78,14 @@ PerfCounter::PerfCounter(const char* name) noexcept
 }
 
 std::uint64_t PerfCounter::record() noexcept {
-#if defined(_MSC_VER)
-    return __rdtsc();
-#else
     return static_cast<std::uint64_t>(
         std::chrono::steady_clock::now().time_since_epoch().count());
-#endif
 }
 
 double PerfCounter::latency_us(std::uint64_t start) const noexcept {
-#if defined(_MSC_VER)
-    // TSC-based timing: convert ticks to microseconds.
-    // We use a simple calibration: assume ~2-3 GHz typical, but for accurate
-    // results we query the actual frequency.
-    static const double ticks_per_us = []() -> double {
-        LARGE_INTEGER freq;
-        if (QueryPerformanceFrequency(&freq)) {
-            // TSC is typically invariant on modern Windows, but we fall back
-            // to QPC for calibration. We measure the TSC delta over a known
-            // QPC interval.
-            auto qpc_start = std::chrono::steady_clock::now();
-            auto tsc_start = __rdtsc();
-            // Busy-wait ~1ms
-            volatile std::uint64_t dummy = 0;
-            auto qpc_now = std::chrono::steady_clock::now();
-            while (std::chrono::duration_cast<std::chrono::microseconds>(
-                       qpc_now - qpc_start)
-                       .count() < 1000) {
-                dummy += __rdtsc();
-                qpc_now = std::chrono::steady_clock::now();
-            }
-            auto tsc_end = __rdtsc();
-            auto elapsed_us = std::chrono::duration_cast<std::chrono::microseconds>(
-                                  qpc_now - qpc_start)
-                                  .count();
-            if (elapsed_us > 0) {
-                return static_cast<double>(tsc_end - tsc_start) /
-                       static_cast<double>(elapsed_us);
-            }
-        }
-        return 2500.0;  // fallback: assume 2.5 GHz
-    }();
-    auto delta = __rdtsc() - start;
-    return static_cast<double>(delta) / ticks_per_us;
-#else
     auto now = std::chrono::steady_clock::now().time_since_epoch().count();
     auto delta = now - static_cast<std::int64_t>(start);
     return static_cast<double>(delta) / 1000.0;
-#endif
 }
 
 void PerfCounter::sample(double elapsed_us) noexcept {

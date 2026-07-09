@@ -66,12 +66,11 @@ v2::service::BackendConnectionOptions make_options(
     const GatewayServiceBridge::BackendConfig& config,
     const std::optional<v3::cluster::SecurityPolicy>& security_policy,
     v2::service::ServiceId service) {
-    v2::service::BackendConnectionOptions opts{
-        .host = config.host,
-        .port = config.port,
-        .timeout = config.timeout,
-        .connect_timeout = config.connect_timeout,
-    };
+    v2::service::BackendConnectionOptions opts;
+    opts.host = config.host;
+    opts.port = config.port;
+    opts.timeout = config.timeout;
+    opts.connect_timeout = config.connect_timeout;
     if (security_policy.has_value() && security_policy->require_tls) {
         auto tls = security_policy->tls_config;
         auto svc_name = service_name_for(service);

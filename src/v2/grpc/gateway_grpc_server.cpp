@@ -25,6 +25,20 @@ enum class RpcTagType : std::uintptr_t {
   kLoginRequest = 0x1000,
   kLogoutRequest = 0x2000,
   kHealthRequest = 0x3000,
+  kRoomCreateRequest = 0x4000,
+  kRoomJoinRequest = 0x5000,
+  kRoomLeaveRequest = 0x6000,
+  kRoomReadyRequest = 0x7000,
+  kMatchJoinRequest = 0x8000,
+  kMatchLeaveRequest = 0x9000,
+  kMatchStatusRequest = 0xA000,
+  kLeaderboardSubmitRequest = 0xB000,
+  kLeaderboardTopRequest = 0xC000,
+  kLeaderboardRankRequest = 0xD000,
+  kBattleCreateRequest = 0xE000,
+  kBattleInputRequest = 0xF000,
+  kBattleStateRequest = 0x11000,
+  kBattleFinishRequest = 0x12000,
 };
 
 }  // namespace
@@ -223,6 +237,706 @@ class HealthCallData final : public GatewayGrpcServer::CallData {
   CallStatus status_;
 };
 
+class RoomCreateCallData final : public GatewayGrpcServer::CallData {
+ public:
+  RoomCreateCallData(GatewayGrpcServer* server,
+                     boost::gateway::v3::Gateway::AsyncService* service,
+                     grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_),
+        status_(CREATE) {
+    service_->RequestRequestRoomCreate(&ctx_, &request_, &responder_, cq_, cq_,
+                                       reinterpret_cast<void*>(RpcTagType::kRoomCreateRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::int32_t member_count = 0;
+      if (!server_->room_create_cb_ ||
+          !server_->room_create_cb_(request_.user_id(), request_.room_id(), member_count, error)) {
+        response_.set_room_id(request_.room_id());
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId));
+        response_.set_error_message(error.empty() ? "room_create_failed" : error);
+      } else {
+        response_.set_room_id(request_.room_id());
+        response_.set_member_count(member_count);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kRoomCreateRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new RoomCreateCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::RoomCreateRequest request_;
+  boost::gateway::v3::RoomCreateResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::RoomCreateResponse> responder_;
+  CallStatus status_;
+};
+
+class RoomJoinCallData final : public GatewayGrpcServer::CallData {
+ public:
+  RoomJoinCallData(GatewayGrpcServer* server,
+                   boost::gateway::v3::Gateway::AsyncService* service,
+                   grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_),
+        status_(CREATE) {
+    service_->RequestRequestRoomJoin(&ctx_, &request_, &responder_, cq_, cq_,
+                                     reinterpret_cast<void*>(RpcTagType::kRoomJoinRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::int32_t member_count = 0;
+      if (!server_->room_join_cb_ ||
+          !server_->room_join_cb_(request_.user_id(), request_.room_id(), member_count, error)) {
+        response_.set_room_id(request_.room_id());
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId));
+        response_.set_error_message(error.empty() ? "room_join_failed" : error);
+      } else {
+        response_.set_room_id(request_.room_id());
+        response_.set_member_count(member_count);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kRoomJoinRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new RoomJoinCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::RoomJoinRequest request_;
+  boost::gateway::v3::RoomJoinResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::RoomJoinResponse> responder_;
+  CallStatus status_;
+};
+
+class RoomLeaveCallData final : public GatewayGrpcServer::CallData {
+ public:
+  RoomLeaveCallData(GatewayGrpcServer* server,
+                    boost::gateway::v3::Gateway::AsyncService* service,
+                    grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_),
+        status_(CREATE) {
+    service_->RequestRequestRoomLeave(&ctx_, &request_, &responder_, cq_, cq_,
+                                      reinterpret_cast<void*>(RpcTagType::kRoomLeaveRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      bool was_owner = false;
+      std::string new_owner_id;
+      if (!server_->room_leave_cb_ ||
+          !server_->room_leave_cb_(request_.user_id(), request_.room_id(), was_owner, new_owner_id, error)) {
+        response_.set_room_id(request_.room_id());
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId));
+        response_.set_error_message(error.empty() ? "room_leave_failed" : error);
+      } else {
+        response_.set_room_id(request_.room_id());
+        response_.set_was_owner(was_owner);
+        response_.set_new_owner_id(new_owner_id);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kRoomLeaveRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new RoomLeaveCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::RoomLeaveRequest request_;
+  boost::gateway::v3::RoomLeaveResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::RoomLeaveResponse> responder_;
+  CallStatus status_;
+};
+
+class RoomReadyCallData final : public GatewayGrpcServer::CallData {
+ public:
+  RoomReadyCallData(GatewayGrpcServer* server,
+                    boost::gateway::v3::Gateway::AsyncService* service,
+                    grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_),
+        status_(CREATE) {
+    service_->RequestRequestRoomReady(&ctx_, &request_, &responder_, cq_, cq_,
+                                      reinterpret_cast<void*>(RpcTagType::kRoomReadyRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      bool all_ready = false;
+      if (!server_->room_ready_cb_ ||
+          !server_->room_ready_cb_(request_.user_id(), request_.room_id(), request_.ready(), all_ready, error)) {
+        response_.set_room_id(request_.room_id());
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidRoomId));
+        response_.set_error_message(error.empty() ? "room_ready_failed" : error);
+      } else {
+        response_.set_room_id(request_.room_id());
+        response_.set_all_ready(all_ready);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kRoomReadyRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new RoomReadyCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::RoomReadyRequest request_;
+  boost::gateway::v3::RoomReadyResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::RoomReadyResponse> responder_;
+  CallStatus status_;
+};
+
+class MatchJoinCallData final : public GatewayGrpcServer::CallData {
+ public:
+  MatchJoinCallData(GatewayGrpcServer* server,
+                    boost::gateway::v3::Gateway::AsyncService* service,
+                    grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestMatchJoin(&ctx_, &request_, &responder_, cq_, cq_,
+                                      reinterpret_cast<void*>(RpcTagType::kMatchJoinRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      bool queued = false;
+      if (!server_->match_join_cb_ ||
+          !server_->match_join_cb_(request_.user_id(), request_.mmr(), request_.mode(), queued, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "match_join_failed" : error);
+      } else {
+        response_.set_queued(queued);
+        response_.set_mode(request_.mode());
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kMatchJoinRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new MatchJoinCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::MatchJoinRequest request_;
+  boost::gateway::v3::MatchJoinResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::MatchJoinResponse> responder_;
+  CallStatus status_;
+};
+
+class MatchLeaveCallData final : public GatewayGrpcServer::CallData {
+ public:
+  MatchLeaveCallData(GatewayGrpcServer* server,
+                     boost::gateway::v3::Gateway::AsyncService* service,
+                     grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestMatchLeave(&ctx_, &request_, &responder_, cq_, cq_,
+                                       reinterpret_cast<void*>(RpcTagType::kMatchLeaveRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      bool left = false;
+      if (!server_->match_leave_cb_ ||
+          !server_->match_leave_cb_(request_.user_id(), request_.mode(), left, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "match_leave_failed" : error);
+      } else {
+        response_.set_left(left);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kMatchLeaveRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new MatchLeaveCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::MatchLeaveRequest request_;
+  boost::gateway::v3::MatchLeaveResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::MatchLeaveResponse> responder_;
+  CallStatus status_;
+};
+
+class MatchStatusCallData final : public GatewayGrpcServer::CallData {
+ public:
+  MatchStatusCallData(GatewayGrpcServer* server,
+                      boost::gateway::v3::Gateway::AsyncService* service,
+                      grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestMatchStatus(&ctx_, &request_, &responder_, cq_, cq_,
+                                        reinterpret_cast<void*>(RpcTagType::kMatchStatusRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      bool matched = false;
+      std::string match_id;
+      std::int64_t avg_mmr = 0;
+      std::int32_t queue_size = 0;
+      if (!server_->match_status_cb_ ||
+          !server_->match_status_cb_(request_.user_id(), request_.mode(), matched, match_id, avg_mmr, queue_size, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "match_status_failed" : error);
+      } else {
+        response_.set_matched(matched);
+        response_.set_match_id(match_id);
+        response_.set_mode(request_.mode());
+        response_.set_avg_mmr(avg_mmr);
+        response_.set_queue_size(queue_size);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kMatchStatusRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new MatchStatusCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::MatchStatusRequest request_;
+  boost::gateway::v3::MatchStatusResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::MatchStatusResponse> responder_;
+  CallStatus status_;
+};
+
+class LeaderboardSubmitCallData final : public GatewayGrpcServer::CallData {
+ public:
+  LeaderboardSubmitCallData(GatewayGrpcServer* server,
+                            boost::gateway::v3::Gateway::AsyncService* service,
+                            grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestLeaderboardSubmit(&ctx_, &request_, &responder_, cq_, cq_,
+                                              reinterpret_cast<void*>(RpcTagType::kLeaderboardSubmitRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::int64_t rank = 0;
+      if (!server_->leaderboard_submit_cb_ ||
+          !server_->leaderboard_submit_cb_(request_.user_id(), request_.display_name(), request_.score(), rank, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "leaderboard_submit_failed" : error);
+      } else {
+        response_.set_user_id(request_.user_id());
+        response_.set_rank(rank);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kLeaderboardSubmitRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new LeaderboardSubmitCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::LeaderboardSubmitRequest request_;
+  boost::gateway::v3::LeaderboardSubmitResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::LeaderboardSubmitResponse> responder_;
+  CallStatus status_;
+};
+
+class LeaderboardTopCallData final : public GatewayGrpcServer::CallData {
+ public:
+  LeaderboardTopCallData(GatewayGrpcServer* server,
+                         boost::gateway::v3::Gateway::AsyncService* service,
+                         grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestLeaderboardTop(&ctx_, &request_, &responder_, cq_, cq_,
+                                           reinterpret_cast<void*>(RpcTagType::kLeaderboardTopRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::vector<boost::gateway::v3::LeaderboardEntry> entries;
+      if (!server_->leaderboard_top_cb_ ||
+          !server_->leaderboard_top_cb_(request_.k(), entries, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "leaderboard_top_failed" : error);
+      } else {
+        for (const auto& entry : entries) {
+          *response_.add_entries() = entry;
+        }
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kLeaderboardTopRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new LeaderboardTopCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::LeaderboardTopRequest request_;
+  boost::gateway::v3::LeaderboardTopResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::LeaderboardTopResponse> responder_;
+  CallStatus status_;
+};
+
+class LeaderboardRankCallData final : public GatewayGrpcServer::CallData {
+ public:
+  LeaderboardRankCallData(GatewayGrpcServer* server,
+                          boost::gateway::v3::Gateway::AsyncService* service,
+                          grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestLeaderboardRank(&ctx_, &request_, &responder_, cq_, cq_,
+                                            reinterpret_cast<void*>(RpcTagType::kLeaderboardRankRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::int64_t rank = 0;
+      std::int64_t score = 0;
+      if (!server_->leaderboard_rank_cb_ ||
+          !server_->leaderboard_rank_cb_(request_.user_id(), rank, score, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kInvalidUserId));
+        response_.set_error_message(error.empty() ? "leaderboard_rank_failed" : error);
+      } else {
+        response_.set_user_id(request_.user_id());
+        response_.set_rank(rank);
+        response_.set_score(score);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kLeaderboardRankRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new LeaderboardRankCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::LeaderboardRankRequest request_;
+  boost::gateway::v3::LeaderboardRankResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::LeaderboardRankResponse> responder_;
+  CallStatus status_;
+};
+
+class BattleCreateCallData final : public GatewayGrpcServer::CallData {
+ public:
+  BattleCreateCallData(GatewayGrpcServer* server,
+                       boost::gateway::v3::Gateway::AsyncService* service,
+                       grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestBattleCreate(&ctx_, &request_, &responder_, cq_, cq_,
+                                         reinterpret_cast<void*>(RpcTagType::kBattleCreateRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::vector<std::string> player_ids;
+      player_ids.reserve(static_cast<size_t>(request_.player_ids_size()));
+      for (const auto& player_id : request_.player_ids()) {
+        player_ids.push_back(player_id);
+      }
+      if (!server_->battle_create_cb_ ||
+          !server_->battle_create_cb_(request_.battle_id(), request_.room_id(), player_ids, request_.max_frames(), error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleAlreadyStarted));
+        response_.set_error_message(error.empty() ? "battle_create_failed" : error);
+      } else {
+        response_.set_battle_id(request_.battle_id());
+        response_.set_room_id(request_.room_id());
+        for (const auto& player_id : request_.player_ids()) {
+          response_.add_player_ids(player_id);
+        }
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kBattleCreateRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new BattleCreateCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::BattleCreateRequest request_;
+  boost::gateway::v3::BattleCreateResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::BattleCreateResponse> responder_;
+  CallStatus status_;
+};
+
+class BattleInputCallData final : public GatewayGrpcServer::CallData {
+ public:
+  BattleInputCallData(GatewayGrpcServer* server,
+                      boost::gateway::v3::Gateway::AsyncService* service,
+                      grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestBattleInput(&ctx_, &request_, &responder_, cq_, cq_,
+                                        reinterpret_cast<void*>(RpcTagType::kBattleInputRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::uint64_t input_seq = 0;
+      std::uint32_t frame_number = 0;
+      if (!server_->battle_input_cb_ ||
+          !server_->battle_input_cb_(request_.user_id(), request_.battle_id(), request_.input_data(), request_.submitted_frame(), input_seq, frame_number, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+        response_.set_error_message(error.empty() ? "battle_input_failed" : error);
+      } else {
+        response_.set_battle_id(request_.battle_id());
+        response_.set_input_seq(input_seq);
+        response_.set_frame_number(frame_number);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kBattleInputRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new BattleInputCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::BattleInputRequest request_;
+  boost::gateway::v3::BattleInputResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::BattleInputResponse> responder_;
+  CallStatus status_;
+};
+
+class BattleStateCallData final : public GatewayGrpcServer::CallData {
+ public:
+  BattleStateCallData(GatewayGrpcServer* server,
+                      boost::gateway::v3::Gateway::AsyncService* service,
+                      grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestBattleState(&ctx_, &request_, &responder_, cq_, cq_,
+                                        reinterpret_cast<void*>(RpcTagType::kBattleStateRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::uint32_t frame_number = 0;
+      if (!server_->battle_state_cb_ ||
+          !server_->battle_state_cb_(request_.battle_id(), frame_number, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+        response_.set_error_message(error.empty() ? "battle_state_failed" : error);
+      } else {
+        response_.set_battle_id(request_.battle_id());
+        response_.set_frame_number(frame_number);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kBattleStateRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new BattleStateCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::BattleStateRequest request_;
+  boost::gateway::v3::BattleStateResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::BattleStateResponse> responder_;
+  CallStatus status_;
+};
+
+class BattleFinishCallData final : public GatewayGrpcServer::CallData {
+ public:
+  BattleFinishCallData(GatewayGrpcServer* server,
+                       boost::gateway::v3::Gateway::AsyncService* service,
+                       grpc::ServerCompletionQueue* cq)
+      : server_(server), service_(service), cq_(cq), responder_(&ctx_), status_(CREATE) {
+    service_->RequestRequestBattleFinish(&ctx_, &request_, &responder_, cq_, cq_,
+                                         reinterpret_cast<void*>(RpcTagType::kBattleFinishRequest));
+    status_ = PROCESS;
+  }
+
+  void proceed(bool /*ok*/) override {
+    if (status_ == PROCESS) {
+      std::string error;
+      std::uint32_t total_frames = 0;
+      if (!server_->battle_finish_cb_ ||
+          !server_->battle_finish_cb_(request_.user_id(), request_.battle_id(), request_.reason(), total_frames, error)) {
+        response_.set_error_code(static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted));
+        response_.set_error_message(error.empty() ? "battle_finish_failed" : error);
+      } else {
+        response_.set_battle_id(request_.battle_id());
+        response_.set_reason(request_.reason());
+        response_.set_total_frames(total_frames);
+        response_.set_error_code(0);
+      }
+      responder_.Finish(response_, grpc::Status::OK,
+                        reinterpret_cast<void*>(RpcTagType::kBattleFinishRequest));
+      status_ = FINISH;
+    } else {
+      if (server_->server_) {
+        auto* replacement = new BattleFinishCallData(server_, service_, cq_);
+        (void)replacement;
+      }
+      delete this;
+    }
+  }
+
+ private:
+  enum CallStatus { CREATE, PROCESS, FINISH };
+  GatewayGrpcServer* server_;
+  boost::gateway::v3::Gateway::AsyncService* service_;
+  grpc::ServerCompletionQueue* cq_;
+  grpc::ServerContext ctx_;
+  boost::gateway::v3::BattleFinishRequest request_;
+  boost::gateway::v3::BattleFinishResponse response_;
+  grpc::ServerAsyncResponseWriter<boost::gateway::v3::BattleFinishResponse> responder_;
+  CallStatus status_;
+};
+
 // ===================================================================
 // GatewayGrpcServer implementation
 // ===================================================================
@@ -230,10 +944,38 @@ class HealthCallData final : public GatewayGrpcServer::CallData {
 GatewayGrpcServer::GatewayGrpcServer(
     std::uint16_t port,
     LoginAuthCallback login_auth,
-    LogoutCallback logout_cb)
+    LogoutCallback logout_cb,
+    RoomCreateCallback room_create_cb,
+    RoomJoinCallback room_join_cb,
+    RoomLeaveCallback room_leave_cb,
+    RoomReadyCallback room_ready_cb,
+    MatchJoinCallback match_join_cb,
+    MatchLeaveCallback match_leave_cb,
+    MatchStatusCallback match_status_cb,
+    LeaderboardSubmitCallback leaderboard_submit_cb,
+    LeaderboardTopCallback leaderboard_top_cb,
+    LeaderboardRankCallback leaderboard_rank_cb,
+    BattleCreateCallback battle_create_cb,
+    BattleInputCallback battle_input_cb,
+    BattleStateCallback battle_state_cb,
+    BattleFinishCallback battle_finish_cb)
     : GrpcServer("GatewayGrpc", port),
       login_auth_(std::move(login_auth)),
-      logout_cb_(std::move(logout_cb)) {}
+      logout_cb_(std::move(logout_cb)),
+      room_create_cb_(std::move(room_create_cb)),
+      room_join_cb_(std::move(room_join_cb)),
+      room_leave_cb_(std::move(room_leave_cb)),
+      room_ready_cb_(std::move(room_ready_cb)),
+      match_join_cb_(std::move(match_join_cb)),
+      match_leave_cb_(std::move(match_leave_cb)),
+      match_status_cb_(std::move(match_status_cb)),
+      leaderboard_submit_cb_(std::move(leaderboard_submit_cb)),
+      leaderboard_top_cb_(std::move(leaderboard_top_cb)),
+      leaderboard_rank_cb_(std::move(leaderboard_rank_cb)),
+      battle_create_cb_(std::move(battle_create_cb)),
+      battle_input_cb_(std::move(battle_input_cb)),
+      battle_state_cb_(std::move(battle_state_cb)),
+      battle_finish_cb_(std::move(battle_finish_cb)) {}
 
 GatewayGrpcServer::~GatewayGrpcServer() {
   shutdown();
@@ -254,14 +996,42 @@ void GatewayGrpcServer::seed_completion_queue() {
   auto* login = new LoginCallData(this, &service_, cq_.get());
   auto* logout = new LogoutCallData(this, &service_, cq_.get());
   auto* health = new HealthCallData(this, &service_, cq_.get());
+  auto* room_create = new RoomCreateCallData(this, &service_, cq_.get());
+  auto* room_join = new RoomJoinCallData(this, &service_, cq_.get());
+  auto* room_leave = new RoomLeaveCallData(this, &service_, cq_.get());
+  auto* room_ready = new RoomReadyCallData(this, &service_, cq_.get());
+  auto* match_join = new MatchJoinCallData(this, &service_, cq_.get());
+  auto* match_leave = new MatchLeaveCallData(this, &service_, cq_.get());
+  auto* match_status = new MatchStatusCallData(this, &service_, cq_.get());
+  auto* leaderboard_submit = new LeaderboardSubmitCallData(this, &service_, cq_.get());
+  auto* leaderboard_top = new LeaderboardTopCallData(this, &service_, cq_.get());
+  auto* leaderboard_rank = new LeaderboardRankCallData(this, &service_, cq_.get());
+  auto* battle_create = new BattleCreateCallData(this, &service_, cq_.get());
+  auto* battle_input = new BattleInputCallData(this, &service_, cq_.get());
+  auto* battle_state = new BattleStateCallData(this, &service_, cq_.get());
+  auto* battle_finish = new BattleFinishCallData(this, &service_, cq_.get());
 
   // Suppress unused-variable warnings — the CallData objects register
   // themselves with the AsyncService in their constructors.
   (void)login;
   (void)logout;
   (void)health;
+  (void)room_create;
+  (void)room_join;
+  (void)room_leave;
+  (void)room_ready;
+  (void)match_join;
+  (void)match_leave;
+  (void)match_status;
+  (void)leaderboard_submit;
+  (void)leaderboard_top;
+  (void)leaderboard_rank;
+  (void)battle_create;
+  (void)battle_input;
+  (void)battle_state;
+  (void)battle_finish;
 
-  SPDLOG_DEBUG("GatewayGrpc: CQ seeded with Login/Logout/Health handlers");
+  SPDLOG_DEBUG("GatewayGrpc: CQ seeded with Login/Logout/Health/Room/Match/Leaderboard/Battle handlers");
 }
 
 }  // namespace v2::grpc

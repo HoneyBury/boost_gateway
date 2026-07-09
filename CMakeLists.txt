@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 3.4.0
-    DESCRIPTION "A high-performance C++ game server framework"
+    VERSION 3.5.0
+    DESCRIPTION "Enterprise-grade C++20 realtime service framework"
     LANGUAGES CXX
 )
 
@@ -12,7 +12,8 @@ include(GNUInstallDirs)
 option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
-option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" ON)
+option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
+option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" ON)
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
 find_package(gRPC QUIET)
@@ -25,30 +26,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-# Enable C++ exception handling on MSVC so that std::abort() is not called
-# by third-party libraries (notably nlohmann/json) when exceptions are thrown.
-if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /EHsc")
-endif()
-
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 include(cmake/Dependencies.cmake)
 include(cmake/CompilerWarnings.cmake)
-
-function(boost_gateway_stage_runtime_dlls target_name)
-    if(NOT WIN32)
-        return()
-    endif()
-    if(NOT TARGET "${target_name}")
-        return()
-    endif()
-    add_custom_command(TARGET "${target_name}" POST_BUILD
-        COMMAND "${CMAKE_COMMAND}" -E copy -t "$<TARGET_FILE_DIR:${target_name}>"
-                $<TARGET_RUNTIME_DLLS:${target_name}>
-        COMMAND_EXPAND_LISTS
-    )
-endfunction()
 
 add_subdirectory(src)
 add_subdirectory(sdk)
@@ -65,17 +46,6 @@ install(DIRECTORY include/
 )
 
 install(TARGETS
-    example_hello_world
-    echo_server
-    echo_client
-    gateway_pressure
-    login_server
-    room_server
-    battle_server
-    login_demo
-    room_demo
-    battle_demo
-    admin_demo
     v2_gateway_demo
     v2_battle_backend
     v2_room_backend
@@ -86,6 +56,8 @@ install(TARGETS
     v2_arch_benchmark
     sdk_echo_client
     sdk_full_flow_client
+    example_hello_world
+    echo_client
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 
@@ -110,23 +82,27 @@ endif()
 install(FILES
     docs/README.md
     docs/current-state.md
+    docs/project-blueprint.md
+    docs/mainline-execution-plan.md
     docs/architecture-overview.md
-    docs/reliability-matrix.md
+    docs/release-governance.md
     docs/performance-baseline.md
-    docs/production-deployment-runbook.md
-    docs/production-operations-runbook.md
-    docs/production-configuration-runbook.md
-    docs/production-evidence-runner.md
     docs/fixed-runner-playbook.md
     docs/tls-mtls-runbook.md
-    docs/v3-release-checklist.md
+    docs/ONBOARDING.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
 )
 
-install(FILES
-    docs/production-candidate-evidence-manifest.json
-    docs/production-recovery-drill-record-template.json
-    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
+install(DIRECTORY docs/deployment/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/deployment"
+)
+
+install(DIRECTORY docs/production/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/production"
+)
+
+install(DIRECTORY docs/legacy/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/legacy"
 )
 
 install(DIRECTORY docs/archive/

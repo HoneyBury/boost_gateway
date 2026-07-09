@@ -69,6 +69,24 @@ else
         "https://archives.boost.io/release/1.90.0/source/boost_1_90_0.zip"
 fi
 
+# --- hiredis v1.2.0 ---
+HIREDIS_ARCHIVE="hiredis-1.2.0.tar.gz"
+if [ -f "$HIREDIS_ARCHIVE" ]; then
+    echo "[skip] $HIREDIS_ARCHIVE already exists"
+else
+    echo "[fetch] $HIREDIS_ARCHIVE"
+    curl -fSL -o "$HIREDIS_ARCHIVE" \
+        "https://github.com/redis/hiredis/archive/refs/tags/v1.2.0.tar.gz"
+fi
+
+cat <<'EOF'
+
+[info] OpenSSL is not downloaded as source by this script. Provide it via one of:
+  - Conan: BOOST_USE_CONAN_DEPS=ON with the repository conanfile/lockfile
+  - system package: libssl-dev / openssl-devel
+  - local install: third_party/openssl/{include,lib} or OPENSSL_ROOT_DIR
+EOF
+
 echo ""
 echo "=== All dependencies downloaded to third_party/ ==="
 echo "Next: run 'bash third_party/package.sh' to create a distributable archive."

@@ -18,13 +18,43 @@ message LoginResponse {
 
 message TokenValidateRequest {
   string token = 1;
+  string user_id = 2;
+}
+
+message TokenValidateResponse {
+  bool valid = 1;
 }
 
 message SessionBindRequest {
-  uint64 session_id = 1;
-  uint64 connection_id = 2;
+  string user_id = 1;
+  uint64 session_id = 2;
+  uint64 connection_id = 3;
+}
+
+message SessionBindResponse {
+  string status = 1;
+  string action = 2;
 }
 
 message SessionCloseRequest {
-  uint64 session_id = 1;
+  string user_id = 1;
+  uint64 session_id = 2;
+}
+
+message SessionCloseResponse {
+  string status = 1;
+  string action = 2;
+}
+
+message TokenRefreshRequest {
+  string user_id = 1;
+  string token = 2;
+}
+
+message TokenRefreshResponse {
+  string status = 1;
+  string user_id = 2;
+  string new_token = 3;
+  string refresh_token = 4;
+  uint64 expires_at = 5;
 }

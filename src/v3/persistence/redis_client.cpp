@@ -2,10 +2,11 @@
 
 #include "v3/persistence/redis_client.h"
 
-#ifdef _WIN32
-#include <winsock2.h>
-#endif
+#if __has_include(<hiredis/hiredis.h>)
+#include <hiredis/hiredis.h>
+#else
 #include <hiredis.h>
+#endif
 
 #include <chrono>
 

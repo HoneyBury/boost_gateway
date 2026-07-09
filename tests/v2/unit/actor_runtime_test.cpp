@@ -158,7 +158,7 @@ public:
     void set_actor_system(v2::runtime::ActorSystem*) override {}
 
     std::optional<std::uint32_t> current_core_id_;
-    std::vector<std::vector<v2::actor::Message>> mailboxes_{2};
+    std::vector<std::vector<v2::actor::Message>> mailboxes_{3};
 };
 
 class OwnerInspectingActor final : public v2::actor::Actor {
@@ -992,8 +992,13 @@ TEST(V2ActorRuntimeTest, SpscQueueFullBehaviorDropsMessages) {
         EXPECT_EQ(*text, "msg-" + std::to_string(i));
     }
 
-    // After drain, enqueue works again.
-    EXPECT_TRUE(queue.try_enqueue(std::move(overflow)));
+    // After drain, enqueue works again.  Recreate overflow since the first
+    // try_enqueue move-constructed from overflow (then returned false),
+    // leaving overflow in a moved-from state.
+    v2::actor::Message overflow2;
+    overflow2.header.kind = v2::actor::MessageKind::kUser;
+    overflow2.payload = std::string("overflow");
+    EXPECT_TRUE(queue.try_enqueue(std::move(overflow2)));
     EXPECT_EQ(queue.size(), 1U);
 
     auto post_drain = queue.drain();

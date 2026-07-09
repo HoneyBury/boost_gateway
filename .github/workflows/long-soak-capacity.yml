@@ -2,16 +2,15 @@ name: Long Soak Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
-  schedule:
-    - cron: "30 18 * * 6"
   workflow_dispatch:
     inputs:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","capacity"]'
         required: true
-        default: '["self-hosted","capacity"]'
+        default: '["self-hosted","Linux","X64"]'
       configure_preset:
         description: "CMake configure preset"
         required: true
@@ -56,16 +55,24 @@ on:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
         default: "3"
+      conan_profile:
+        description: "Repository Conan profile path for fixed-runner reproducibility notes"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root for reproducible fixed-runner builds"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 permissions:
   contents: read
 
 jobs:
   long-soak-capacity:
-    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","capacity"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
     timeout-minutes: 720
     concurrency:
-      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-capacity' }}
+      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
 
     steps:
@@ -77,10 +84,18 @@ jobs:
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Setup MSVC environment
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
 
       - name: Fixed runner preflight
         shell: bash
@@ -90,6 +105,31 @@ jobs:
             --profile long-soak-capacity \
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
+
+      - name: Conan lockfile install preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=missing -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            test -f "${{ inputs.conan_lockfile }}"
+            args+=(--lockfile "${{ inputs.conan_lockfile }}")
+          fi
+          "${args[@]}"
+
+      - name: Configure Conan validation build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/conan-long-soak-capacity-cmake -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=OFF \
+            -DCMAKE_BUILD_TYPE=${{ inputs.configuration || 'Release' }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake
+
+      - name: Build Conan validation target
+        run: cmake --build build/conan-long-soak-capacity-cmake --parallel --target project_v2
 
       - name: Configure
         run: cmake --preset ${{ inputs.configure_preset || 'release' }}

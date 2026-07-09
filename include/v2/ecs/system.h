@@ -12,7 +12,7 @@ class World;
 
 struct SystemMetadata {
     std::string name;
-    std::vector<std::string> dependencies;  // stage dependency names
+    std::vector<std::string> dependencies{};  // stage dependency names
 };
 
 class System {

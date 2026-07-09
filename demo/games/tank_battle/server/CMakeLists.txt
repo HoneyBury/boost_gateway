@@ -30,9 +30,6 @@ target_include_directories(tank_battle_demo
         "${CMAKE_CURRENT_SOURCE_DIR}/../.."
 )
 
-if(COMMAND boost_gateway_stage_runtime_dlls)
-    boost_gateway_stage_runtime_dlls(tank_battle_demo)
-endif()
 
 # gRPC adapter (optional, linked when BOOST_BUILD_GRPC=ON)
 if(BOOST_BUILD_GRPC)

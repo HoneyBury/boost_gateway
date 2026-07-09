@@ -31,14 +31,46 @@ enum class EnvelopeMessageKind : std::uint16_t {
     kUnknown = 0,
     kLoginRequest,
     kLoginResponse,
+    kTokenValidateRequest,
+    kTokenValidateResponse,
+    kSessionBindRequest,
+    kSessionBindResponse,
+    kSessionCloseRequest,
+    kSessionCloseResponse,
+    kTokenRefreshRequest,
+    kTokenRefreshResponse,
     kRoomCreateRequest,
     kRoomCreateResponse,
     kRoomJoinRequest,
     kRoomJoinResponse,
+    kRoomLeaveRequest,
+    kRoomLeaveResponse,
     kRoomReadyRequest,
     kRoomReadyResponse,
+    kRoomStartBattleRequest,
+    kRoomStartBattleResponse,
+    kRoomStatePush,
+    kRoomListRequest,
+    kRoomListResponse,
+    kRoomDetailRequest,
+    kRoomDetailResponse,
+    kRoomKickRequest,
+    kRoomKickResponse,
+    kRoomTransferOwnerRequest,
+    kRoomTransferOwnerResponse,
+    kRoomBattleFinishedRequest,
+    kRoomBattleFinishedResponse,
+    kBattleCreateRequest,
+    kBattleCreateResponse,
     kBattleInputRequest,
     kBattleInputResponse,
+    kBattleStateRequest,
+    kBattleStateResponse,
+    kBattleStatePush,
+    kBattleFinishRequest,
+    kBattleFinishResponse,
+    kReplayLoadRequest,
+    kReplayLoadResponse,
     kMatchJoinRequest,
     kMatchJoinResponse,
     kMatchLeaveRequest,
@@ -105,14 +137,46 @@ inline std::string to_string(EnvelopeMessageKind kind) {
     switch (kind) {
         case EnvelopeMessageKind::kLoginRequest: return "login_request";
         case EnvelopeMessageKind::kLoginResponse: return "login_response";
+        case EnvelopeMessageKind::kTokenValidateRequest: return "token_validate";
+        case EnvelopeMessageKind::kTokenValidateResponse: return "token_validate_response";
+        case EnvelopeMessageKind::kSessionBindRequest: return "session_bind";
+        case EnvelopeMessageKind::kSessionBindResponse: return "session_bind_response";
+        case EnvelopeMessageKind::kSessionCloseRequest: return "session_close";
+        case EnvelopeMessageKind::kSessionCloseResponse: return "session_close_response";
+        case EnvelopeMessageKind::kTokenRefreshRequest: return "token_refresh";
+        case EnvelopeMessageKind::kTokenRefreshResponse: return "token_refresh_response";
         case EnvelopeMessageKind::kRoomCreateRequest: return "room_create";
         case EnvelopeMessageKind::kRoomCreateResponse: return "room_create_response";
         case EnvelopeMessageKind::kRoomJoinRequest: return "room_join";
         case EnvelopeMessageKind::kRoomJoinResponse: return "room_join_response";
+        case EnvelopeMessageKind::kRoomLeaveRequest: return "room_leave";
+        case EnvelopeMessageKind::kRoomLeaveResponse: return "room_leave_response";
         case EnvelopeMessageKind::kRoomReadyRequest: return "room_ready";
         case EnvelopeMessageKind::kRoomReadyResponse: return "room_ready_response";
+        case EnvelopeMessageKind::kRoomStartBattleRequest: return "room_start_battle";
+        case EnvelopeMessageKind::kRoomStartBattleResponse: return "room_start_battle_response";
+        case EnvelopeMessageKind::kRoomStatePush: return "room_state_push";
+        case EnvelopeMessageKind::kRoomListRequest: return "room_list";
+        case EnvelopeMessageKind::kRoomListResponse: return "room_list_response";
+        case EnvelopeMessageKind::kRoomDetailRequest: return "room_detail";
+        case EnvelopeMessageKind::kRoomDetailResponse: return "room_detail_response";
+        case EnvelopeMessageKind::kRoomKickRequest: return "room_kick";
+        case EnvelopeMessageKind::kRoomKickResponse: return "room_kick_response";
+        case EnvelopeMessageKind::kRoomTransferOwnerRequest: return "room_transfer_owner";
+        case EnvelopeMessageKind::kRoomTransferOwnerResponse: return "room_transfer_owner_response";
+        case EnvelopeMessageKind::kRoomBattleFinishedRequest: return "room_battle_finished";
+        case EnvelopeMessageKind::kRoomBattleFinishedResponse: return "room_battle_finished_response";
+        case EnvelopeMessageKind::kBattleCreateRequest: return "battle_create";
+        case EnvelopeMessageKind::kBattleCreateResponse: return "battle_create_response";
         case EnvelopeMessageKind::kBattleInputRequest: return "battle_input";
         case EnvelopeMessageKind::kBattleInputResponse: return "battle_input_response";
+        case EnvelopeMessageKind::kBattleStateRequest: return "battle_state";
+        case EnvelopeMessageKind::kBattleStateResponse: return "battle_state_response";
+        case EnvelopeMessageKind::kBattleStatePush: return "battle_state_push";
+        case EnvelopeMessageKind::kBattleFinishRequest: return "battle_finish";
+        case EnvelopeMessageKind::kBattleFinishResponse: return "battle_finish_response";
+        case EnvelopeMessageKind::kReplayLoadRequest: return "replay_load";
+        case EnvelopeMessageKind::kReplayLoadResponse: return "replay_load_response";
         case EnvelopeMessageKind::kMatchJoinRequest: return "match_join";
         case EnvelopeMessageKind::kMatchJoinResponse: return "match_join_response";
         case EnvelopeMessageKind::kMatchLeaveRequest: return "match_leave";
@@ -135,14 +199,46 @@ inline std::string to_string(EnvelopeMessageKind kind) {
 inline std::optional<EnvelopeMessageKind> kind_from_string(const std::string& kind) {
     if (kind == "login_request") return EnvelopeMessageKind::kLoginRequest;
     if (kind == "login_response") return EnvelopeMessageKind::kLoginResponse;
+    if (kind == "token_validate") return EnvelopeMessageKind::kTokenValidateRequest;
+    if (kind == "token_validate_response") return EnvelopeMessageKind::kTokenValidateResponse;
+    if (kind == "session_bind") return EnvelopeMessageKind::kSessionBindRequest;
+    if (kind == "session_bind_response") return EnvelopeMessageKind::kSessionBindResponse;
+    if (kind == "session_close") return EnvelopeMessageKind::kSessionCloseRequest;
+    if (kind == "session_close_response") return EnvelopeMessageKind::kSessionCloseResponse;
+    if (kind == "token_refresh") return EnvelopeMessageKind::kTokenRefreshRequest;
+    if (kind == "token_refresh_response") return EnvelopeMessageKind::kTokenRefreshResponse;
     if (kind == "room_create") return EnvelopeMessageKind::kRoomCreateRequest;
     if (kind == "room_create_response") return EnvelopeMessageKind::kRoomCreateResponse;
     if (kind == "room_join") return EnvelopeMessageKind::kRoomJoinRequest;
     if (kind == "room_join_response") return EnvelopeMessageKind::kRoomJoinResponse;
+    if (kind == "room_leave") return EnvelopeMessageKind::kRoomLeaveRequest;
+    if (kind == "room_leave_response") return EnvelopeMessageKind::kRoomLeaveResponse;
     if (kind == "room_ready") return EnvelopeMessageKind::kRoomReadyRequest;
     if (kind == "room_ready_response") return EnvelopeMessageKind::kRoomReadyResponse;
+    if (kind == "room_start_battle") return EnvelopeMessageKind::kRoomStartBattleRequest;
+    if (kind == "room_start_battle_response") return EnvelopeMessageKind::kRoomStartBattleResponse;
+    if (kind == "room_state_push") return EnvelopeMessageKind::kRoomStatePush;
+    if (kind == "room_list") return EnvelopeMessageKind::kRoomListRequest;
+    if (kind == "room_list_response") return EnvelopeMessageKind::kRoomListResponse;
+    if (kind == "room_detail") return EnvelopeMessageKind::kRoomDetailRequest;
+    if (kind == "room_detail_response") return EnvelopeMessageKind::kRoomDetailResponse;
+    if (kind == "room_kick") return EnvelopeMessageKind::kRoomKickRequest;
+    if (kind == "room_kick_response") return EnvelopeMessageKind::kRoomKickResponse;
+    if (kind == "room_transfer_owner") return EnvelopeMessageKind::kRoomTransferOwnerRequest;
+    if (kind == "room_transfer_owner_response") return EnvelopeMessageKind::kRoomTransferOwnerResponse;
+    if (kind == "room_battle_finished") return EnvelopeMessageKind::kRoomBattleFinishedRequest;
+    if (kind == "room_battle_finished_response") return EnvelopeMessageKind::kRoomBattleFinishedResponse;
+    if (kind == "battle_create") return EnvelopeMessageKind::kBattleCreateRequest;
+    if (kind == "battle_create_response") return EnvelopeMessageKind::kBattleCreateResponse;
     if (kind == "battle_input") return EnvelopeMessageKind::kBattleInputRequest;
     if (kind == "battle_input_response") return EnvelopeMessageKind::kBattleInputResponse;
+    if (kind == "battle_state") return EnvelopeMessageKind::kBattleStateRequest;
+    if (kind == "battle_state_response") return EnvelopeMessageKind::kBattleStateResponse;
+    if (kind == "battle_state_push") return EnvelopeMessageKind::kBattleStatePush;
+    if (kind == "battle_finish") return EnvelopeMessageKind::kBattleFinishRequest;
+    if (kind == "battle_finish_response") return EnvelopeMessageKind::kBattleFinishResponse;
+    if (kind == "replay_load") return EnvelopeMessageKind::kReplayLoadRequest;
+    if (kind == "replay_load_response") return EnvelopeMessageKind::kReplayLoadResponse;
     if (kind == "match_join") return EnvelopeMessageKind::kMatchJoinRequest;
     if (kind == "match_join_response") return EnvelopeMessageKind::kMatchJoinResponse;
     if (kind == "match_leave") return EnvelopeMessageKind::kMatchLeaveRequest;
@@ -165,16 +261,48 @@ inline std::optional<EnvelopeDomain> domain_for_kind(EnvelopeMessageKind kind) {
     switch (kind) {
         case EnvelopeMessageKind::kLoginRequest:
         case EnvelopeMessageKind::kLoginResponse:
+        case EnvelopeMessageKind::kTokenValidateRequest:
+        case EnvelopeMessageKind::kTokenValidateResponse:
+        case EnvelopeMessageKind::kSessionBindRequest:
+        case EnvelopeMessageKind::kSessionBindResponse:
+        case EnvelopeMessageKind::kSessionCloseRequest:
+        case EnvelopeMessageKind::kSessionCloseResponse:
+        case EnvelopeMessageKind::kTokenRefreshRequest:
+        case EnvelopeMessageKind::kTokenRefreshResponse:
             return EnvelopeDomain::kLogin;
         case EnvelopeMessageKind::kRoomCreateRequest:
         case EnvelopeMessageKind::kRoomCreateResponse:
         case EnvelopeMessageKind::kRoomJoinRequest:
         case EnvelopeMessageKind::kRoomJoinResponse:
+        case EnvelopeMessageKind::kRoomLeaveRequest:
+        case EnvelopeMessageKind::kRoomLeaveResponse:
         case EnvelopeMessageKind::kRoomReadyRequest:
         case EnvelopeMessageKind::kRoomReadyResponse:
+        case EnvelopeMessageKind::kRoomStartBattleRequest:
+        case EnvelopeMessageKind::kRoomStartBattleResponse:
+        case EnvelopeMessageKind::kRoomStatePush:
+        case EnvelopeMessageKind::kRoomListRequest:
+        case EnvelopeMessageKind::kRoomListResponse:
+        case EnvelopeMessageKind::kRoomDetailRequest:
+        case EnvelopeMessageKind::kRoomDetailResponse:
+        case EnvelopeMessageKind::kRoomKickRequest:
+        case EnvelopeMessageKind::kRoomKickResponse:
+        case EnvelopeMessageKind::kRoomTransferOwnerRequest:
+        case EnvelopeMessageKind::kRoomTransferOwnerResponse:
+        case EnvelopeMessageKind::kRoomBattleFinishedRequest:
+        case EnvelopeMessageKind::kRoomBattleFinishedResponse:
             return EnvelopeDomain::kRoom;
+        case EnvelopeMessageKind::kBattleCreateRequest:
+        case EnvelopeMessageKind::kBattleCreateResponse:
         case EnvelopeMessageKind::kBattleInputRequest:
         case EnvelopeMessageKind::kBattleInputResponse:
+        case EnvelopeMessageKind::kBattleStateRequest:
+        case EnvelopeMessageKind::kBattleStateResponse:
+        case EnvelopeMessageKind::kBattleStatePush:
+        case EnvelopeMessageKind::kBattleFinishRequest:
+        case EnvelopeMessageKind::kBattleFinishResponse:
+        case EnvelopeMessageKind::kReplayLoadRequest:
+        case EnvelopeMessageKind::kReplayLoadResponse:
             return EnvelopeDomain::kBattle;
         case EnvelopeMessageKind::kMatchJoinRequest:
         case EnvelopeMessageKind::kMatchJoinResponse:

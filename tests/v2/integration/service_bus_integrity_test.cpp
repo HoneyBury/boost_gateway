@@ -442,7 +442,7 @@ TEST(ServiceBusIntegrity, ServiceRegistryPurgeExpired) {
     registry->register_instance(v2::service::ServiceId::kBattle, "127.0.0.1", 9303);
     EXPECT_GE(registry->instance_count(), 1U);
 
-    auto purged = registry->purge_expired();
+    [[maybe_unused]] auto purged = registry->purge_expired();
     EXPECT_GE(registry->instance_count(), 0U);  // purge removes expired entries
 }
 
@@ -1027,7 +1027,11 @@ TEST(ServiceBusIntegrity, GatewayActorMatchJoinRoundTripsThroughMatchBackend) {
     auto gateway = runtime.create_gateway_actor();
     adapter.bind_gateway(gateway);
 
-    runtime.mark_session_authenticated(1, "alice", v2::auth::Role::kPlayer);
+    runtime.push(v2::player::LoginAcceptedMsg{
+        .session_id = 1,
+        .user_id = "alice",
+        .display_name = "Alice",
+    });
 
     auto writes = adapter.handle_incoming(
         v2::gateway::ClientEnvelope{
@@ -1108,6 +1112,64 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginBackend) {
     service.stop();
 }
 
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginTokenValidate) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 301;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kTokenValidateRequest,
+        {{"user_id", "alice"}, {"token", "token:alice"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "token_validate";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kTokenValidateResponse);
+    EXPECT_TRUE(decoded->payload.contains("valid"));
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginTokenRefresh) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 302;
+    meta.source_service = "gateway";
+    meta.target_service = "login";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kTokenRefreshRequest,
+        {{"user_id", "alice"}, {"token", "token:alice"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "token_refresh";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kTokenRefreshResponse);
+    EXPECT_EQ(decoded->payload.value("status", ""), "ok");
+
+    service.stop();
+}
+
 TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomBackend) {
     v2::room::RoomBackendService service(0);
     service.start();
@@ -1133,6 +1195,88 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomBackend) {
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomCreateResponse);
     EXPECT_EQ(decoded->payload.value("room_id", ""), "room_42");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomLeave) {
+    v2::room::RoomBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto create_req = payload_envelope(R"({"user_id":"alice","room_id":"room_leave_1"})");
+    create_req.message_type = "room_create";
+    ASSERT_TRUE(conn.send_request(create_req).has_value());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 401;
+    meta.source_service = "gateway";
+    meta.target_service = "room";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomLeaveRequest,
+        {{"user_id", "alice"}, {"room_id", "room_leave_1"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "room_leave";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomLeaveResponse);
+    EXPECT_EQ(decoded->payload.value("room_id", ""), "room_leave_1");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughRoomGovernanceRequests) {
+    v2::room::RoomBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto create_req = payload_envelope(R"({"user_id":"alice","room_id":"room_gov_1"})");
+    create_req.message_type = "room_create";
+    ASSERT_TRUE(conn.send_request(create_req).has_value());
+
+    auto join_req = payload_envelope(R"({"user_id":"bob","room_id":"room_gov_1"})");
+    join_req.message_type = "room_join";
+    ASSERT_TRUE(conn.send_request(join_req).has_value());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 402;
+    meta.source_service = "gateway";
+    meta.target_service = "room";
+
+    auto list_encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomListRequest,
+        {{"visibility", "public"}, {"page", 1}, {"page_size", 20}});
+    auto list_req = payload_envelope(list_encoded);
+    list_req.message_type = "room_list";
+    auto list_resp = conn.send_request(list_req);
+    ASSERT_TRUE(list_resp.has_value());
+    auto list_decoded = v3::proto::decode_typed_envelope(list_resp->payload);
+    ASSERT_TRUE(list_decoded.has_value());
+    EXPECT_EQ(list_decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomListResponse);
+
+    auto kick_encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kRoomKickRequest,
+        {{"user_id", "alice"}, {"room_id", "room_gov_1"}, {"target_user_id", "bob"}});
+    auto kick_req = payload_envelope(kick_encoded);
+    kick_req.message_type = "room_kick";
+    auto kick_resp = conn.send_request(kick_req);
+    ASSERT_TRUE(kick_resp.has_value());
+    auto kick_decoded = v3::proto::decode_typed_envelope(kick_resp->payload);
+    ASSERT_TRUE(kick_decoded.has_value());
+    EXPECT_EQ(kick_decoded->message_kind, v3::proto::EnvelopeMessageKind::kRoomKickResponse);
+    EXPECT_EQ(kick_decoded->payload.value("kicked_user_id", ""), "bob");
 
     service.stop();
 }
@@ -1167,6 +1311,84 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleBackend) {
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputResponse);
     EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_1");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleCreateAndFinish) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 501;
+    meta.source_service = "gateway";
+    meta.target_service = "battle";
+    auto create_encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kBattleCreateRequest,
+        {{"battle_id", "battle_typed_1"}, {"room_id", "room_typed_1"}, {"player_ids", nlohmann::json::array({"alice", "bob"})}, {"max_frames", 3}});
+
+    auto create_req = payload_envelope(create_encoded);
+    create_req.message_type = "battle_create";
+    auto create_resp = conn.send_request(create_req);
+    ASSERT_TRUE(create_resp.has_value());
+    auto create_decoded = v3::proto::decode_typed_envelope(create_resp->payload);
+    ASSERT_TRUE(create_decoded.has_value());
+    EXPECT_EQ(create_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleCreateResponse);
+
+    auto finish_encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kBattleFinishRequest,
+        {{"user_id", "alice"}, {"battle_id", "battle_typed_1"}, {"reason", "finished"}});
+
+    auto finish_req = payload_envelope(finish_encoded);
+    finish_req.message_type = "battle_finish";
+    auto finish_resp = conn.send_request(finish_req);
+    ASSERT_TRUE(finish_resp.has_value());
+    auto finish_decoded = v3::proto::decode_typed_envelope(finish_resp->payload);
+    ASSERT_TRUE(finish_decoded.has_value());
+    EXPECT_EQ(finish_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleFinishResponse);
+    EXPECT_EQ(finish_decoded->payload.value("battle_id", ""), "battle_typed_1");
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughReplayLoad) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto create_req = payload_envelope(R"({"battle_id":"battle_replay_1","room_id":"room_replay_1","player_ids":["alice","bob"],"max_frames":3})");
+    create_req.message_type = "battle_create";
+    ASSERT_TRUE(conn.send_request(create_req).has_value());
+
+    v3::proto::EnvelopeMeta meta;
+    meta.correlation_id = 502;
+    meta.source_service = "gateway";
+    meta.target_service = "battle";
+    auto encoded = v3::proto::encode_typed_envelope(
+        meta,
+        v3::proto::EnvelopeMessageKind::kReplayLoadRequest,
+        {{"battle_id", "battle_replay_1"}});
+
+    auto req = payload_envelope(encoded);
+    req.message_type = "replay_load";
+    auto resp = conn.send_request(req);
+    ASSERT_TRUE(resp.has_value());
+    EXPECT_TRUE(resp->kind == v2::service::MessageKind::kResponse || resp->kind == v2::service::MessageKind::kError);
+    if (resp->kind == v2::service::MessageKind::kResponse) {
+        auto decoded = v3::proto::decode_typed_envelope(resp->payload);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kReplayLoadResponse);
+        EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_replay_1");
+    }
 
     service.stop();
 }

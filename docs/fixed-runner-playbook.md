@@ -1,10 +1,41 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-05-24（N0-N3）
+更新时间：2026-05-30（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
-P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs/production-evidence-runner.md`。
+P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
+
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
+
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
+
+手动命令：
+
+```bash
+python scripts/bootstrap_conan.py
+python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
+```
+
+## Ubuntu Fixed-Runner 第一批执行矩阵
+
+当前 1-3 个月主线的第一批真实证据按以下顺序刷新。它们不能用本机 smoke 或 `--allow-missing` 结果替代。
+
+| 顺序 | Workflow | 关键输入 | 必须归档的 summary |
+| --- | --- | --- | --- |
+| 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
+| 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
+| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
+| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
+
+通过判据：
+
+- 每个 workflow 的 Conan lockfile install/build 预检通过。
+- `release-baseline-summary.json`、`long-soak-capacity-summary.json`、`fixed-runner-release-capacity-summary.json`、`production-evidence-summary.json` 均为 `overall_pass=true`。
+- 投产准入检查必须运行不带 `--allow-missing` 的 `python scripts/check_validation_summary_contract.py`，并运行 `python scripts/check_production_evidence_manifest.py --require-fixed-runner`。
+- 如 fixed runner 缺 Redis、kind 或外部网络，summary 必须明确失败在 `preflight` 或 Conan remote/cache 阶段，不得把缺失环境解释为业务通过。
+- 仓库内 wiring 变更必须先通过 `python scripts/check_fixed_runner_evidence_plan.py`；该脚本只校验 workflow/summary 归档计划，不能替代 fixed-runner 真实执行。
 
 ## N0 统一约定
 
@@ -40,7 +71,8 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 
 | 用途 | 建议 label | Workflow | 必需能力 |
 | --- | --- | --- | --- |
-| Release baseline | `self-hosted,release-baseline` | `release-baseline.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
+| Ubuntu release/capacity baseline | `self-hosted,linux,x64,release-baseline` | `release.yml` | Ubuntu LTS、稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
+| Release baseline | `self-hosted,release-baseline` | `release.yml` | 稳定 CPU、固定 OS、CMake、Ninja、Python、可绑定本地端口 |
 | Redis live | `self-hosted,redis-live` | `specialized-e2e.yml` | Redis `127.0.0.1:6379` 可达，CMake、Ninja、Python；`specialized_profile=redis-live` |
 | Raft HA | `self-hosted,raft-ha` | `specialized-e2e.yml` | CMake、Ninja、Python；`specialized_profile=raft-ha` |
 | Operator kind | `self-hosted,operator-kind` | `specialized-e2e.yml` | Docker、kind、kubectl、make、CMake、Ninja、Python |
@@ -51,26 +83,31 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见 `docs
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Cloud production closure | `self-hosted,cloud-production` | 手动命令 | CMake、Ninja、Python、Docker、kubectl、kind、Go、systemd；用于当前云服务器生产环境收束 |
 
-GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-evidence"]`。
+GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
+
+普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；其它固定 runner、性能、稳定性和专项验证入口保留 `workflow_dispatch`，需要时手动触发。`.github/runner-matrix.json` 是版本化 runner/默认标签配置源，变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件，避免真实触发行为和文档配置漂移。
 
 ## Release Baseline
 
-手动触发 `.github/workflows/release-baseline.yml`：
+手动触发 `.github/workflows/release.yml`：
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |
-| `runner` | `["self-hosted","release-baseline"]` | `["self-hosted","release-baseline"]` |
+| `runner` | `["self-hosted","Linux","X64"]` | `["self-hosted","Linux","X64"]` |
 | `configure_preset` | `release` 或 `windows-ninja-release` | 同 baseline |
 | `build_dir` | `build/release` 或 `build/windows-ninja-release` | 同 baseline |
 | `configuration` | `Release` | `Release` |
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
 | `perf_timeout_seconds` | `900` | `1800` |
+| `enable_conan_validation` | `true` | `true` |
+| `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 
 通过标准：
 
 - `runtime/validation/release-baseline-summary.json` 中 `passed=true`。
 - `runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`。
+- Conan validation preflight 中 lockfile-based `conan install` 和 `project_v2` 构建通过。
 - GitHub Step Summary 显示 R4、业务性能步骤均为 `PASS`。
 
 ## Specialized E2E
@@ -238,7 +275,7 @@ P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raf
 python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build
 ```
 
-手动触发 `.github/workflows/production-evidence.yml` 时，`runner` 建议填 `["self-hosted","production-evidence"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
+手动触发 `.github/workflows/production-evidence.yml` 时，`runner` 建议填 `["self-hosted","Linux","X64"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
 
 本机或固定 runner 已具备 Redis + Docker/kind 时：
 

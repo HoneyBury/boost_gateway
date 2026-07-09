@@ -1,11 +1,15 @@
 /build/
+/build_*/
 /build_temp/
 /out/
 /.cache/
 __pycache__/
+.DS_Store
 /compile_commands.json
+/CMakeUserPresets.json
 /logs/
 /runtime/
+/Testing/
 /.idea/
 /.claude/
 
@@ -27,3 +31,5 @@ sdk/python/__pycache__/
 /build_p0_p7/
 demo/games/tank_battle/logs/
 include_override/
+/.conan2-local/
+/.conan2-lock-*/
