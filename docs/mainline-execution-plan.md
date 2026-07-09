@@ -119,3 +119,5 @@ cmake --build build/default --parallel
 1. 现在最该做的不是新增功能，而是把 runner 与 CI 拓扑说明白。原因很直接：GitHub-hosted 主线回归已经可用，但 fixed-runner 证据仍可能因为离线或标签不匹配而无效排队。
 2. 第二优先级是 fixed-runner 上的 Conan / baseline / production evidence 真实结果。只有这一步稳定，`BOOST_USE_CONAN_DEPS=ON` 才能从“默认值”升级为“唯一推荐路径”。
 3. gRPC/proto 继续保持中期项。当前 schema-backed typed contract 已覆盖 29/29 handler，短期收益更高的是把非登录 full-flow 证据补齐，而不是扩大默认链路承诺。
+
+当前已确认的现实阻断是：GitHub 仓库内唯一 self-hosted runner `MyDesktop-Win` 处于离线状态，且没有在线 Linux `self-hosted/Linux/X64` runner。换句话说，第 1 项的治理已经明确了 fallback 和无效排队处理方式，但第 2 项在仓库侧 runner inventory 修复前无法真正开始。
