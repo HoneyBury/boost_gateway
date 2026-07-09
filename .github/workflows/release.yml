@@ -149,9 +149,8 @@ jobs:
             --build-dir build/release \
             --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
             --skip-build \
-            --output runtime/perf/release-baseline/summary.json
-          mkdir -p runtime/validation
-          cp runtime/perf/release-baseline/summary.json runtime/validation/release-baseline-summary.json
+            --perf-output-root runtime/perf/release-baseline \
+            --summary-path runtime/validation/release-baseline-summary.json
 
       - name: Upload release baseline
         if: always()
