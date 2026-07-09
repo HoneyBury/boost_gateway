@@ -14,6 +14,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parents[3]
+
 
 def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
     if text is None:
@@ -193,7 +195,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = REPO_ROOT
     operator_dir = args.operator_dir if args.operator_dir.is_absolute() else root / args.operator_dir
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
