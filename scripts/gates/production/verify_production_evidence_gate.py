@@ -103,7 +103,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[3]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
         "summary_version": 2,
@@ -269,4 +269,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
