@@ -143,8 +143,18 @@ jobs:
           mkdir -p runtime/perf/build-times
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
+      - name: List tests
+        shell: bash
+        run: |
+          mkdir -p runtime/validation
+          ctest --preset release -N | tee runtime/validation/release-ctest-list.log
+
       - name: Test
-        run: ctest --preset release --timeout 300
+        shell: bash
+        run: |
+          mkdir -p runtime/validation
+          ctest --preset release --progress --output-on-failure --timeout 300 \
+            | tee runtime/validation/release-ctest.log
 
       - name: R4 release contract gate
         run: python scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
@@ -181,6 +191,7 @@ jobs:
           path: |
             runtime/perf/release-baseline/**
             runtime/validation/release-baseline-summary.json
+            runtime/validation/release-ctest*.log
             runtime/perf/build-times/**
           if-no-files-found: warn
 
