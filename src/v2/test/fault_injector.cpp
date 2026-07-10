@@ -249,6 +249,14 @@ private:
             return;
         }
 
+        // stop() and both relay directions may attempt to tear down the same
+        // socket pair concurrently. Serialize shutdown/close so Boost.Asio
+        // never sees overlapping operations on the same native handle.
+        std::lock_guard<std::mutex> lock(socket_close_mutex_);
+        if (!socket->is_open()) {
+            return;
+        }
+
         boost::system::error_code ec;
         socket->cancel(ec);
         socket->shutdown(tcp::socket::shutdown_both, ec);
@@ -287,6 +295,7 @@ private:
     std::mt19937 rng_;
     std::uniform_real_distribution<double> drop_dist_;
     std::mutex drop_mutex_;
+    std::mutex socket_close_mutex_;
 };
 
 // ============================================================================
