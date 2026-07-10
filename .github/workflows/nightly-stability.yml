@@ -85,6 +85,7 @@ jobs:
             --configuration Debug \
             --baseline-profile debug \
             --soak-profile ${{ inputs.soak_profile || 'short' }} \
+            --build-timeout-seconds 300 \
             --summary-path runtime/validation/nightly-stability-soak-summary.json
           mkdir -p runtime/perf/build-times
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
