@@ -58,7 +58,7 @@ jobs:
         shell: bash
         run: |
           : "${SCCACHE_BIN:?missing sccache path}"
-          rg -n --fixed-strings "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
+          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
         shell: bash
