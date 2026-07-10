@@ -73,6 +73,8 @@ jobs:
         run: |
           set -euo pipefail
           sccache --version || sudo apt-get install -y sccache
+          echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
+          mkdir -p "$SCCACHE_DIR"
           sccache --version
 
       - name: Ensure Conan
@@ -113,7 +115,16 @@ jobs:
             --build=missing -s build_type=Release
 
       - name: Configure
-        run: cmake --preset release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        shell: bash
+        run: |
+          : "${SCCACHE_BIN:?missing sccache path}"
+          cmake --preset release -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+
+      - name: Verify sccache wiring
+        shell: bash
+        run: |
+          : "${SCCACHE_BIN:?missing sccache path}"
+          rg -n --fixed-strings "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
         shell: bash
