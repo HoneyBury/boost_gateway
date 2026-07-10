@@ -72,13 +72,16 @@ jobs:
         run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Stability soak
-        run: >
-          python scripts/verify_stability_soak.py
-          --build-dir build/default
-          --configuration Debug
-          --baseline-profile debug
-          --soak-profile ${{ inputs.soak_profile || 'short' }}
-          --summary-path runtime/validation/nightly-stability-soak-summary.json
+        shell: bash
+        run: |
+          python scripts/verify_stability_soak.py \
+            --build-dir build/default \
+            --configuration Debug \
+            --baseline-profile debug \
+            --soak-profile ${{ inputs.soak_profile || 'short' }} \
+            --summary-path runtime/validation/nightly-stability-soak-summary.json
+          mkdir -p runtime/perf/build-times
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
       - name: Render stability summary
         if: always()
@@ -102,7 +105,12 @@ jobs:
       - name: Show sccache stats
         if: always()
         shell: bash
-        run: sccache --show-stats || true
+        run: |
+          if [ -f runtime/perf/build-times/sccache-stats.json ]; then
+            cat runtime/perf/build-times/sccache-stats.json
+          else
+            sccache --show-stats || true
+          fi
 
       - name: Capture build metrics
         if: always()
@@ -120,4 +128,3 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
