@@ -26,11 +26,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Restore sccache cache
-        uses: actions/cache@v4
+        id: restore-sccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-perf-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}-${{ github.sha }}
           restore-keys: |
+            sccache-${{ runner.os }}-perf-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}-
             sccache-${{ runner.os }}-perf-release-
             sccache-${{ runner.os }}-
 
@@ -242,3 +244,10 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
+
+      - name: Save sccache cache
+        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-perf-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}-${{ github.sha }}

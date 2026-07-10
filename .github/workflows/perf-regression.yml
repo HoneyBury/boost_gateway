@@ -57,11 +57,13 @@ jobs:
           sccache --version
 
       - name: Restore sccache cache
-        uses: actions/cache@v4
+        id: restore-sccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
           restore-keys: |
+            sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
             sccache-${{ runner.os }}-perf-regression-
             sccache-${{ runner.os }}-
 
@@ -232,3 +234,10 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
+
+      - name: Save sccache cache
+        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
