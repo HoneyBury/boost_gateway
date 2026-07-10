@@ -8,6 +8,7 @@
 - `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间；其中 `ci.yml` 现已与其他 hosted Ubuntu workflow 对齐为“显式安装 + 目录预创建 + 强制 launcher”模式，不再依赖“检测到才启用”的条件逻辑。
 - Conan 2 依赖治理已从 PoC 阶段提升为主线默认依赖路径（`BOOST_USE_CONAN_DEPS=ON`）；性能基线结论以 Conan 构建链为准，缺失 Conan 时会自动回退到 FetchContent/third_party。
 - Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
+- 2026-07-10 对 GitHub-hosted `ci.yml` 的两轮回归已确认：`.sccache` 的 `actions/cache` exact-match restore 正常，但在 fresh `CONAN_HOME` 下 Conan 重新生成了不同的 `.conan2-local/p/b/*` package 目录，导致 warm run 的编译输入路径漂移，`sccache` 仍然 184/184 miss；后续需要把 Conan 本地 cache 与 `sccache` 一起纳入 hosted baseline 验证。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
 
@@ -72,6 +73,8 @@
 - 基线格式与字段说明见 `runtime/perf/build-times/BASELINE_TEMPLATE.json`。
 
 > **当前状态**: 构建时间数据采集基础设施已就位。5 个 sccache workflow 每次 CI 运行自动归档 `build-time.json` + `sccache-stats.json` 至 `runtime/perf/build-times/`。cold/warm 数据在 CI 实际运行后自动积累，待多轮数据后可汇总分析。
+
+> **2026-07-10 hosted 调查补充**: `ci.yml` 已确认 exact cache restore 可用，但 warm run 仍出现 `compile_requests=184 / cache_hits=0 / cache_misses=184`。根因不是 `sccache` launcher 失效，而是每次 fresh Conan home 都会生成新的 `.conan2-local/p/b/<hash>/p` 依赖前缀；在未恢复 Conan cache 的前提下，主项目编译命令中的依赖绝对路径无法稳定，导致 `sccache` 失去跨 run 复用价值。
 
 > **基线版本**: `8387a13dcb` (P0 优化收束)
 > **测量日期**: 2026-05-23

@@ -108,7 +108,7 @@ cmake --build build/default --parallel
 
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 进行中 | 版本化 runner 解析已落地，`ci.yml` 已在 GitHub-hosted `ubuntu-latest` 跑通，且新增 workflow Python CLI drift 门禁与 hosted `sccache` 显式安装；下一步是把在线 runner inventory、标签治理、无效排队处理和 fallback 操作写成标准流程 |
+| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 进行中 | 版本化 runner 解析已落地，`ci.yml` 已在 GitHub-hosted `ubuntu-latest` 跑通，且新增 workflow Python CLI drift 门禁与 hosted `sccache` 显式安装；2026-07-10 进一步确认 `actions/cache` 可恢复 `.sccache`，但 warm run 仍全 miss，根因是 fresh `CONAN_HOME` 令 Conan package 绝对路径每次漂移，下一步要把 hosted Conan cache 恢复/量化与 runner inventory、标签治理、无效排队处理一起收口成标准流程 |
 | 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 待开始 | fixed-runner 仍是 release/capacity/production evidence 的最终事实源，需要补真实 Linux runner summary，而不是只停留在 workflow 可 dispatch |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
 | 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
@@ -116,7 +116,7 @@ cmake --build build/default --parallel
 
 ### 当前优先级判断
 
-1. 现在最该做的不是新增功能，而是把 runner 与 CI 拓扑说明白。GitHub-hosted 主线回归已经可用，workflow 脚本参数漂移和 hosted `sccache` 漏装也已补上，剩余不确定性主要集中在 fixed-runner inventory、标签匹配和无效排队治理。
+1. 现在最该做的不是新增功能，而是把 runner 与 CI 拓扑说明白。GitHub-hosted 主线回归已经可用，workflow 脚本参数漂移和 hosted `sccache` 漏装也已补上；新暴露的不确定性是 hosted warm-cache 仍被 Conan 本地路径漂移抵消，因此 runner inventory、标签匹配、无效排队处理与 Conan cache 恢复策略需要一起固化。
 2. 第二优先级是 fixed-runner 上的 Conan / baseline / production evidence 真实结果。只有这一步稳定，`BOOST_USE_CONAN_DEPS=ON` 才能从“默认值”升级为“唯一推荐路径”。
 3. gRPC/proto 继续保持中期项。当前 schema-backed typed contract 已覆盖 29/29 handler，短期收益更高的是把非登录 full-flow 证据补齐，而不是扩大默认链路承诺。
 

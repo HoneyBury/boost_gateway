@@ -39,6 +39,15 @@ jobs:
             sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-
 
+      - name: Restore Conan cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+          restore-keys: |
+            conan-home-${{ runner.os }}-release-
+            conan-home-${{ runner.os }}-
+
       - name: Show tool versions
         shell: bash
         run: |
