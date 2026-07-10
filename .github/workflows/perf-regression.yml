@@ -67,6 +67,10 @@ jobs:
             sccache-${{ runner.os }}-perf-regression-
             sccache-${{ runner.os }}-
 
+      - name: Reset sccache stats
+        shell: bash
+        run: sccache --zero-stats || true
+
       - name: Configure (Release)
         shell: bash
         run: |

@@ -50,6 +50,10 @@ jobs:
           mkdir -p "$SCCACHE_DIR"
           sccache --version
 
+      - name: Reset sccache stats
+        shell: bash
+        run: sccache --zero-stats || true
+
       - name: Configure (Release)
         shell: bash
         run: |

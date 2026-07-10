@@ -57,6 +57,10 @@ jobs:
             sccache-${{ runner.os }}-nightly-
             sccache-${{ runner.os }}-
 
+      - name: Reset sccache stats
+        shell: bash
+        run: sccache --zero-stats || true
+
       - name: Configure
         shell: bash
         run: |
