@@ -223,6 +223,11 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    if (config_watcher_) {
+        config_watcher_->stop();
+        config_watcher_.reset();
+    }
+
     stop_gateway_worker();
 
     // Stop health check thread and service registrars first
