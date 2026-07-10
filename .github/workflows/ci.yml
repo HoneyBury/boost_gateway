@@ -31,7 +31,8 @@ jobs:
           fetch-depth: 0
 
       - name: Restore sccache cache
-        uses: actions/cache@v4
+        id: restore-sccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
@@ -40,7 +41,8 @@ jobs:
             sccache-${{ runner.os }}-
 
       - name: Restore Conan cache
-        uses: actions/cache@v4
+        id: restore-conan
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
@@ -185,3 +187,17 @@ jobs:
           name: build-metrics
           path: runtime/perf/build-times/**
           if-no-files-found: warn
+
+      - name: Save Conan cache
+        if: always() && steps.restore-conan.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+
+      - name: Save sccache cache
+        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
