@@ -35,8 +35,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
           restore-keys: |
+            sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-
             sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-
 
@@ -200,4 +201,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
