@@ -13,9 +13,9 @@ WriteBehindDataStore::WriteBehindDataStore(
 }
 
 WriteBehindDataStore::~WriteBehindDataStore() {
-    flush();
     running_ = false;
     cv_.notify_all();
+    flush();
     if (worker_.joinable()) {
         worker_.join();
     }
@@ -114,7 +114,7 @@ WriteBehindDataStore::Stats WriteBehindDataStore::stats() const {
 // ─── Worker ──────────────────────────────────────────────────────
 
 void WriteBehindDataStore::worker_loop() {
-    while (running_) {
+    while (true) {
         WriteCommand cmd;
         {
             std::unique_lock lock(mutex_);
