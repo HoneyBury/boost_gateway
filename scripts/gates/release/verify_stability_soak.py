@@ -227,6 +227,20 @@ def arch_baseline_command(
     ]
 
 
+def failed_arch_checks(summary_path: Path) -> list[dict[str, object]]:
+    try:
+        parsed = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    gates = parsed.get("release_gates")
+    if not isinstance(gates, dict):
+        return []
+    checks = gates.get("checks")
+    if not isinstance(checks, list):
+        return []
+    return [check for check in checks if isinstance(check, dict) and check.get("passed") is False]
+
+
 def run_sustained_arch_baseline(
     root: Path,
     build_dir: Path,
@@ -240,6 +254,8 @@ def run_sustained_arch_baseline(
     started = time.monotonic()
     completed_runs = 0
     last_run: dict[str, object] = {}
+    failures: dict[str, dict[str, object]] = {}
+    summary_path = output_root / "summary.json"
     while completed_runs == 0 or time.monotonic() - started < minimum_duration_seconds:
         completed_runs += 1
         last_run = run_step(
@@ -253,6 +269,23 @@ def run_sustained_arch_baseline(
             emit_output=completed_runs == 1,
         )
         if last_run["status"] != "passed":
+            sample_failures = failed_arch_checks(summary_path)
+            # A benchmark gate failure is evidence to aggregate across the full soak,
+            # while a missing/invalid summary or process failure must stop immediately.
+            if last_run.get("returncode") == 2 and sample_failures:
+                for check in sample_failures:
+                    name_key = str(check.get("name", "unknown"))
+                    entry = failures.setdefault(name_key, {
+                        "name": name_key,
+                        "metric": check.get("metric"),
+                        "threshold": check.get("threshold"),
+                        "direction": check.get("direction"),
+                        "failed_runs": 0,
+                        "last_observed": None,
+                    })
+                    entry["failed_runs"] = int(entry["failed_runs"]) + 1
+                    entry["last_observed"] = check.get("value")
+                continue
             if completed_runs > 1:
                 if last_run.get("stdout_tail"):
                     print(last_run["stdout_tail"], end="")
@@ -266,15 +299,18 @@ def run_sustained_arch_baseline(
                 "minimum_duration_seconds": minimum_duration_seconds,
                 "completed_runs": completed_runs,
                 "last_run": last_run,
+                "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
             }
+    status = "failed" if failures else "passed"
     return {
         "name": name,
         "category": "baseline",
-        "status": "passed",
+        "status": status,
         "duration_seconds": round(time.monotonic() - started, 3),
         "minimum_duration_seconds": minimum_duration_seconds,
         "completed_runs": completed_runs,
         "last_run": last_run,
+        "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
     }
 
 

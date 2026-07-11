@@ -195,6 +195,7 @@ jobs:
             runtime/validation/long-soak-capacity-summary.json \
             runtime/validation/long-soak-2h-summary.json \
             runtime/validation/long-soak-8h-summary.json \
+            runtime/validation/p5-long-soak-summary.json \
             runtime/validation/capacity-baseline-summary.json \
             runtime/validation/business-capacity-baseline-summary.json \
             runtime/validation/fixed-runner-release-capacity-summary.json; do
@@ -216,10 +217,12 @@ jobs:
             runtime/validation/long-soak-capacity-summary.json
             runtime/validation/long-soak-2h-summary.json
             runtime/validation/long-soak-8h-summary.json
+            runtime/validation/p5-*-summary.json
             runtime/validation/capacity-baseline-summary.json
             runtime/validation/business-capacity-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
+            runtime/perf/v2-stability-soak/**
           retention-days: 90
           if-no-files-found: warn

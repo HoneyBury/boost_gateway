@@ -40,6 +40,7 @@
 | `production-evidence.yml` | `29146018657` | `ecf624c` | success |
 | `production-candidate-evidence.yml` | `29152333112` | `8cadbef` | success: R0/P5/P6/N5 summaries all passed |
 | `long-soak-capacity.yml` | `29146495724` | `ea05045` | failure: long profile recorded 13.952s, not 2h; battle-500 P99=750ms; business-capacity UTF-8 decode failure |
+| `long-soak-capacity.yml` | `29153158335` | `f5516be` | failure: Conan and SDK business flow passed; second sustained baseline gate failed after 209s; battle-500 P99=750ms persists |
 
 上述 bounded workflow、专项 E2E、生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍未通过。
 
