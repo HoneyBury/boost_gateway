@@ -124,7 +124,19 @@ jobs:
         shell: bash
         run: |
           : "${SCCACHE_BIN:?missing sccache path}"
-          cmake --preset release -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+          cmake --preset release \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-preflight/build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+
+      - name: Verify Conan dependency provider
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -F "BOOST_USE_CONAN_DEPS:BOOL=ON" build/release/CMakeCache.txt
+          grep -F "CMAKE_TOOLCHAIN_FILE:FILEPATH=" build/release/CMakeCache.txt \
+            | grep -F "build/conan-preflight/build/Release/generators/conan_toolchain.cmake"
 
       - name: Verify sccache wiring
         shell: bash
