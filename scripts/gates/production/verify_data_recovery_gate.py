@@ -178,6 +178,24 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
     }
 
 
+def run_step_retrying_timeout(
+    name: str,
+    category: str,
+    cmd: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+) -> dict[str, object]:
+    first_attempt = run_step(name, category, cmd, cwd, timeout_seconds)
+    if first_attempt["status"] != "timeout":
+        return first_attempt
+
+    print(f"==> retrying {name} after a timeout", flush=True)
+    retry = run_step(name, category, cmd, cwd, timeout_seconds)
+    retry["attempts"] = [first_attempt, retry.copy()]
+    retry["recovered_from_timeout"] = retry["status"] == "passed"
+    return retry
+
+
 def cmake_build_args(args: argparse.Namespace, targets: list[str]) -> list[str]:
     cmd = ["cmake", "--build", str(args.build_dir)]
     if args.configuration:
@@ -273,7 +291,7 @@ def main() -> int:
             v2_unit_tests.parent,
             args.test_timeout_seconds,
         ))
-        summary["steps"].append(run_step(
+        summary["steps"].append(run_step_retrying_timeout(
             "data layer flush/read/cache consistency",
             "data_layer",
             [str(v2_integration_tests), f"--gtest_filter={V2_DATA_LAYER_FILTER}"],

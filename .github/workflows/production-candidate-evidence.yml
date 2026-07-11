@@ -216,6 +216,8 @@ jobs:
           name: production-candidate-evidence-${{ github.run_id }}
           path: |
             runtime/validation/r0-*-summary.json
+            runtime/validation/p5-*-summary.json
+            runtime/validation/p6-*-summary.json
             runtime/validation/n5-*-summary.json
             runtime/validation/r0-fixed-runner-preflight-summary.json
             runtime/validation/r0-configure.log
