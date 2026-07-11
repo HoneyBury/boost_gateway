@@ -171,8 +171,12 @@ jobs:
           cmake --preset "${{ inputs.configure_preset || 'default' }}" \
             -DBOOST_USE_CONAN_DEPS=ON \
             -DCMAKE_TOOLCHAIN_FILE="build/conan-production-candidate-main/build/${build_type}/generators/conan_toolchain.cmake" \
-            2>&1 | tee runtime/validation/r0-configure.log
+          2>&1 | tee runtime/validation/r0-configure.log
           grep -F "Using Conan-provided dependency graph" runtime/validation/r0-configure.log
+
+      - name: Build validation targets
+        shell: bash
+        run: cmake --build "${{ inputs.build_dir || 'build/default' }}" --config "${{ inputs.configuration || 'Debug' }}" --parallel
 
       - name: R0 production candidate aggregate
         shell: bash

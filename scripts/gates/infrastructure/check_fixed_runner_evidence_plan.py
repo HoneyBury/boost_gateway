@@ -78,6 +78,7 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_LOCKFILE,
             LINUX_PROFILE,
             "build/conan-production-candidate-cmake",
+            "cmake --build",
             "scripts/verify_production_candidate_evidence.py",
             "runtime/validation/r0-production-candidate-evidence-summary.json",
             "actions/upload-artifact@v4",
