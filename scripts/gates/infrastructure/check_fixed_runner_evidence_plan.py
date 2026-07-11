@@ -83,6 +83,7 @@ DOC_TOKENS = (
     "python3 scripts/check_fixed_runner_evidence_plan.py",
     "Linux `nosqlite` lockfile",
     "overall_pass=true",
+    "docs/runner-inventory.md",
 )
 
 README_TOKENS = (
@@ -227,6 +228,30 @@ def main() -> int:
     github_readme = read(".github/README.md")
     for token in README_TOKENS:
         add(checks, f"docs:github-readme:{token}", token in github_readme, f".github/README.md mentions {token}")
+
+    runner_inventory_path = "docs/runner-inventory.md"
+    add(checks, "docs:runner-inventory:exists", exists(runner_inventory_path), f"{runner_inventory_path} exists")
+    runner_inventory = read(runner_inventory_path) if exists(runner_inventory_path) else ""
+    for token in (
+        "MyDesktop-Win",
+        '["self-hosted","Linux","X64"]',
+        "gh api repos/HoneyBury/boost_gateway/actions/runners",
+        "单一事实源",
+    ):
+        add(
+            checks,
+            f"docs:runner-inventory:{token}",
+            token in runner_inventory,
+            f"{runner_inventory_path} mentions {token}",
+        )
+
+    current_state = read("docs/current-state.md")
+    add(
+        checks,
+        "docs:current-state:references-runner-inventory",
+        "docs/runner-inventory.md" in current_state,
+        "docs/current-state.md references docs/runner-inventory.md",
+    )
 
     manifest_path = "docs/production/production-candidate-evidence-manifest.json"
     if not exists(manifest_path):

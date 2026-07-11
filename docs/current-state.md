@@ -1,12 +1,12 @@
 # 当前项目事实源
 
-更新时间：2026-07-10
+更新时间：2026-07-11
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-inventory.md`。
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源；固定 runner / production evidence / release-capacity 默认事实源按同一文件的 `default_runner` / workflow runner 配置收敛到 Linux labels。性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
-2026-07-09 的 GitHub 仓库 runner inventory 实际状态是：仅存在离线 Windows self-hosted runner `MyDesktop-Win`，尚无在线 Linux `self-hosted/Linux/X64` runner；因此 fixed-runner evidence workflow 当前能被 dispatch，但不会真正开始执行，直到 Linux runner 注册并上线。
+GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，仓库内仍仅存在离线 Windows self-hosted runner `MyDesktop-Win`，尚无在线 Linux `self-hosted/Linux/X64` runner；因此 fixed-runner evidence workflow 当前能被 dispatch，但不会真正开始执行，直到 Linux runner 注册并上线。
 
 ## 稳定能力
 

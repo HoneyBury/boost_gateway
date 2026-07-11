@@ -1,6 +1,6 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-07-09（N0-N3 + Conan fixed-runner）
+更新时间：2026-07-11（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
@@ -10,7 +10,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文
 
 2026-07-09 的当前事实是：`.github/workflows/ci.yml` 已在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 跑通主线 Conan build/test/gate，用于“无 self-hosted runner 时的主线回归兜底”。`.github/workflows/release.yml` 现在也可手动切到 GitHub-hosted `ubuntu-latest` 做 bounded build/test/baseline 验证。但它们都不是 fixed-runner 证据替代物；release baseline、capacity、production evidence 和 long soak 仍必须回到在线 Linux fixed runner 刷新。
 
-同日 GitHub 仓库 Actions runner inventory 的实际状态是：仅看到一个离线的 Windows self-hosted runner `MyDesktop-Win`，还没有在线的 Linux `["self-hosted","Linux","X64"]` runner。因此 `conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 如果继续按 Linux fixed-runner 默认值 dispatch，只会停留在 queued；要执行第 2 项真实证据刷新，必须先注册或恢复在线 Linux runner。
+GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，仓库内仍只看到一个离线的 Windows self-hosted runner `MyDesktop-Win`，还没有在线的 Linux `["self-hosted","Linux","X64"]` runner。因此 `conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 如果继续按 Linux fixed-runner 默认值 dispatch，只会停留在 queued；要执行第 2 项真实证据刷新，必须先注册或恢复在线 Linux runner。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 

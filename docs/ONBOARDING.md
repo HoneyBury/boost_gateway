@@ -151,6 +151,7 @@ python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repeti
 |---|---|
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [当前状态](current-state.md) | 已实现能力的权威事实源 |
+| [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
 | [发布治理](release-governance.md) | 可靠性矩阵和发布检查清单 |
 | [性能基线](performance-baseline.md) | 性能数据和归档口径 |
 | [TLS/mTLS](tls-mtls-runbook.md) | 传输安全配置 |
