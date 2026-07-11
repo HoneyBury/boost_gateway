@@ -3,6 +3,7 @@ name: Nightly Stability
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -43,6 +44,32 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False" \
+            --output-folder=build/conan-nightly \
+            --build=missing \
+            -s build_type=Debug
+
       - name: Install sccache
         shell: bash
         run: |
@@ -70,8 +97,20 @@ jobs:
       - name: Configure
         shell: bash
         run: |
+          set -euo pipefail
           : "${SCCACHE_BIN:?missing sccache path}"
-          cmake --preset default -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+          mkdir -p runtime/validation
+          cmake --preset default \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-nightly/build/Debug/generators/conan_toolchain.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            2>&1 | tee runtime/validation/nightly-configure.log
+
+      - name: Verify Conan dependency provider
+        shell: bash
+        run: |
+          grep -F "Using Conan-provided dependency graph" runtime/validation/nightly-configure.log
 
       - name: Verify sccache wiring
         shell: bash

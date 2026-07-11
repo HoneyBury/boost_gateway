@@ -2,6 +2,7 @@ name: Production Resilience
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -110,8 +111,42 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False" \
+            --output-folder=build/conan-production-resilience \
+            --build=missing \
+            -s build_type=Debug
+
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset || 'default' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          cmake --preset "${{ inputs.configure_preset || 'default' }}" \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-production-resilience/build/Debug/generators/conan_toolchain.cmake \
+            2>&1 | tee runtime/validation/production-resilience-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/production-resilience-configure.log
 
       - name: Production resilience gate
         shell: bash

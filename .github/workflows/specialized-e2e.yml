@@ -46,7 +46,7 @@ on:
       enable_conan_validation:
         description: "Run an opt-in Conan dependency validation before specialized E2E"
         required: true
-        default: false
+        default: true
         type: boolean
       conan_profile:
         description: "Repository Conan profile path used when Conan validation is enabled"
@@ -55,7 +55,7 @@ on:
       conan_lockfile:
         description: "Optional Conan lockfile path relative to repo root"
         required: true
-        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+        default: "conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock"
       use_existing_workspace:
         description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
         required: true
@@ -147,7 +147,18 @@ jobs:
           python "${args[@]}"
 
       - name: Configure
-        run: cmake --preset ${{ inputs.build_preset }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ inputs.enable_conan_validation }}" = "true" ]; then
+            cmake --preset "${{ inputs.build_preset }}" \
+              -DBOOST_USE_CONAN_DEPS=ON \
+              -DCMAKE_TOOLCHAIN_FILE=build/conan-specialized/build/${{ inputs.configuration }}/generators/conan_toolchain.cmake \
+              2>&1 | tee runtime/validation/specialized-e2e-configure.log
+            grep -F "Using Conan-provided dependency graph" runtime/validation/specialized-e2e-configure.log
+          else
+            cmake --preset "${{ inputs.build_preset }}"
+          fi
 
       - name: Specialized E2E
         shell: bash

@@ -177,8 +177,35 @@ jobs:
       - name: Build Conan validation target
         run: cmake --build build/conan-production-evidence-cmake --parallel --target project_v2
 
+      - name: Conan install for main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_type="${{ inputs.configuration || 'Debug' }}"
+          lockfile=conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock
+          if [ "$build_type" = "Release" ]; then
+            lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+          fi
+          conan install . \
+            --output-folder=build/conan-production-main \
+            --build=missing \
+            -s build_type="$build_type" \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "$lockfile" \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False"
+
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset || 'default' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_type="${{ inputs.configuration || 'Debug' }}"
+          cmake --preset "${{ inputs.configure_preset || 'default' }}" \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="build/conan-production-main/build/${build_type}/generators/conan_toolchain.cmake" \
+            2>&1 | tee runtime/validation/production-evidence-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/production-evidence-configure.log
 
       - name: Production evidence gate
         shell: bash
