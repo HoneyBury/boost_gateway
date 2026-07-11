@@ -38,9 +38,9 @@
 | `specialized-e2e.yml` | `29145172304` | `e8ea86f` | success |
 | `production-resilience.yml` | `29145497642` | `cbed12d` | success |
 | `production-evidence.yml` | `29146018657` | `ecf624c` | success |
-| `long-soak-capacity.yml` | `29146495724` | `ea05045` | in progress |
+| `long-soak-capacity.yml` | `29146495724` | `ea05045` | failure: 2h pass; capacity/business-capacity failed |
 
-上述 bounded workflow 以及专项 E2E、生产 resilience/evidence 已形成真实 fixed-runner 事实；`long-soak-capacity.yml` 仍在执行，R0/R2/R3 最终准入尚未通过。
+上述 bounded workflow 以及专项 E2E、生产 resilience/evidence 已形成真实 fixed-runner 事实；long-soak 已证明 2h 稳定性通过，但 capacity/business-capacity 仍失败，R0/R2/R3 最终准入尚未通过。
 
 ## 受影响的默认 fixed-runner workflow
 

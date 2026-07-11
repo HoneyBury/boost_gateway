@@ -109,7 +109,7 @@ cmake --build build/default --parallel
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
 | 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | P5/P6 bounded summary 已成功；long-soak/capacity `29146495724` 正在执行。完成后仍需生成 R0 aggregate，并以 R2 `--require-fixed-runner` 与 R3 readiness report 形成连续准入事实链 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | P5/P6 bounded summary 已成功；long-soak `29146495724` 的 2h soak 通过，但 battle-500 P99 和 business-capacity UTF-8 解码仍需修复。完成后再用 `production-readiness.yml` 生成 R2/R3 连续准入事实链 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
 | 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
 | 5 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
