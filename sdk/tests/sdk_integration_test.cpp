@@ -16,12 +16,19 @@
 #include <chrono>
 #include <atomic>
 #include <cstdlib>
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <thread>
 
 #include <future>
 #include <gtest/gtest.h>
+
+#ifdef _WIN32
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 namespace sdk = boost_gateway::sdk;
 using namespace std::chrono_literals;
@@ -36,6 +43,12 @@ void set_test_env(const char* key, const char* value) {
 void unset_test_env(const char* key) {
     _putenv_s(key, "");
 }
+
+std::filesystem::path test_config_path() {
+    return std::filesystem::temp_directory_path() /
+           ("boost_gateway_sdk_business_flow_no_config_" +
+            std::to_string(static_cast<unsigned long long>(_getpid())) + ".json");
+}
 #else
 void set_test_env(const char* key, const char* value) {
     setenv(key, value, 1);
@@ -43,6 +56,12 @@ void set_test_env(const char* key, const char* value) {
 
 void unset_test_env(const char* key) {
     unsetenv(key);
+}
+
+std::filesystem::path test_config_path() {
+    return std::filesystem::temp_directory_path() /
+           ("boost_gateway_sdk_business_flow_no_config_" +
+            std::to_string(static_cast<unsigned long long>(getpid())) + ".json");
 }
 #endif
 
@@ -55,10 +74,14 @@ struct GatewayFixture : public ::testing::Test {
     std::unique_ptr<v2::match::MatchmakingService> matchmaking_backend_;
     std::unique_ptr<v2::leaderboard::LeaderboardService> leaderboard_backend_;
     std::uint16_t port_ = 0;
+    std::filesystem::path test_config_path_;
 
     void SetUp() override {
         app::logging::init("sdk_business_flow_tests");
-        set_test_env("CONFIG_PATH", "/tmp/boost_gateway_sdk_business_flow_no_config.json");
+        test_config_path_ = test_config_path();
+        std::error_code remove_ec;
+        std::filesystem::remove(test_config_path_, remove_ec);
+        set_test_env("CONFIG_PATH", test_config_path_.c_str());
         set_test_env("V2_BACKEND_CONNECTION_POOL_SIZE", "1");
 
         login_backend_ = std::make_unique<v2::login::LoginBackendService>(0);
@@ -139,6 +162,8 @@ struct GatewayFixture : public ::testing::Test {
         if (login_backend_) login_backend_->stop();
         unset_test_env("V2_BACKEND_CONNECTION_POOL_SIZE");
         unset_test_env("CONFIG_PATH");
+        std::error_code remove_ec;
+        std::filesystem::remove(test_config_path_, remove_ec);
     }
 
     sdk::SdkClient make_client() { return sdk::SdkClient(); }
