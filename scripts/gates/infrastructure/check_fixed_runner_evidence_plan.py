@@ -253,6 +253,13 @@ def main() -> int:
         all(token in stability_soak for token in ("\"long\": {\"build\": 1800, \"test\": 300, \"baseline\": 10800}", "\"overnight\": {\"build\": 1800, \"test\": 300, \"baseline\": 32400}")),
         "verify_stability_soak.py carries explicit long/overnight timeout profiles",
     )
+    specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
+    add(
+        checks,
+        "workflow:specialized-e2e:canonical-root",
+        "Path(__file__).resolve().parents[3]" in specialized_gate,
+        "verify_specialized_e2e.py resolves paths from the repository root",
+    )
 
     fixed_runner_doc = read("docs/fixed-runner-playbook.md")
     for token in DOC_TOKENS:

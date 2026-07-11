@@ -171,7 +171,7 @@ def main() -> int:
         args.include_redis_live = True
     if args.profile == "all":
         args.include_operator_kind = True
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[3]
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
