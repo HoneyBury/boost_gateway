@@ -31,6 +31,10 @@ enum class EnvelopeMessageKind : std::uint16_t {
     kUnknown = 0,
     kLoginRequest,
     kLoginResponse,
+    kRegisterAccountRequest,
+    kRegisterAccountResponse,
+    kGuestLoginRequest,
+    kGuestLoginResponse,
     kTokenValidateRequest,
     kTokenValidateResponse,
     kSessionBindRequest,
@@ -137,6 +141,10 @@ inline std::string to_string(EnvelopeMessageKind kind) {
     switch (kind) {
         case EnvelopeMessageKind::kLoginRequest: return "login_request";
         case EnvelopeMessageKind::kLoginResponse: return "login_response";
+        case EnvelopeMessageKind::kRegisterAccountRequest: return "register_account";
+        case EnvelopeMessageKind::kRegisterAccountResponse: return "register_account_response";
+        case EnvelopeMessageKind::kGuestLoginRequest: return "guest_login";
+        case EnvelopeMessageKind::kGuestLoginResponse: return "guest_login_response";
         case EnvelopeMessageKind::kTokenValidateRequest: return "token_validate";
         case EnvelopeMessageKind::kTokenValidateResponse: return "token_validate_response";
         case EnvelopeMessageKind::kSessionBindRequest: return "session_bind";
@@ -199,6 +207,10 @@ inline std::string to_string(EnvelopeMessageKind kind) {
 inline std::optional<EnvelopeMessageKind> kind_from_string(const std::string& kind) {
     if (kind == "login_request") return EnvelopeMessageKind::kLoginRequest;
     if (kind == "login_response") return EnvelopeMessageKind::kLoginResponse;
+    if (kind == "register_account") return EnvelopeMessageKind::kRegisterAccountRequest;
+    if (kind == "register_account_response") return EnvelopeMessageKind::kRegisterAccountResponse;
+    if (kind == "guest_login") return EnvelopeMessageKind::kGuestLoginRequest;
+    if (kind == "guest_login_response") return EnvelopeMessageKind::kGuestLoginResponse;
     if (kind == "token_validate") return EnvelopeMessageKind::kTokenValidateRequest;
     if (kind == "token_validate_response") return EnvelopeMessageKind::kTokenValidateResponse;
     if (kind == "session_bind") return EnvelopeMessageKind::kSessionBindRequest;
@@ -261,6 +273,10 @@ inline std::optional<EnvelopeDomain> domain_for_kind(EnvelopeMessageKind kind) {
     switch (kind) {
         case EnvelopeMessageKind::kLoginRequest:
         case EnvelopeMessageKind::kLoginResponse:
+        case EnvelopeMessageKind::kRegisterAccountRequest:
+        case EnvelopeMessageKind::kRegisterAccountResponse:
+        case EnvelopeMessageKind::kGuestLoginRequest:
+        case EnvelopeMessageKind::kGuestLoginResponse:
         case EnvelopeMessageKind::kTokenValidateRequest:
         case EnvelopeMessageKind::kTokenValidateResponse:
         case EnvelopeMessageKind::kSessionBindRequest:

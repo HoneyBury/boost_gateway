@@ -15,13 +15,14 @@ Current rules:
 - `scripts/generate_conan_lock.py` now defaults to a profile-specific temporary
   `CONAN_HOME` to avoid cross-runner and cross-profile state collisions.
 
-Recommended entrypoints:
+Recommended entrypoints (Linux/macOS mainline):
 
 ```bash
-python scripts/generate_conan_lock.py --profile conan/profiles/windows-msvc-x64 --build-type Debug --without-sqlite --allow-public
-conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
-cmake -S . -B build/windows-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
-cmake --build build/windows-ninja-debug-conan --parallel --target project_v2_unit_tests
+export CONAN_HOME=$PWD/.conan2-local
+python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
+cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_tests
 ```
 
 Linux fixed-runner example:
@@ -46,6 +47,8 @@ Lockfile policy:
 - `--no-remote` can only generate lockfiles after the local Conan cache has been
   pre-warmed with all required packages. Otherwise lock generation must use an
   internal/public remote.
+- Windows profile/lockfile examples remain in git history only; current mainline
+  no longer treats Windows as an active Conan validation target.
 - Typical blocking signals:
   - internal mirror DNS failure such as `getaddrinfo failed`
-  - public `conancenter` socket policy failure such as Windows `WinError 10013`
+  - public `conancenter` socket policy failure or offline registry access denial

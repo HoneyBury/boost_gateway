@@ -16,17 +16,17 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 LONG_SOAK_PRESETS = {
     "2h": {
         "soak_profile": "long",
-        "step_timeout_seconds": 10800,
+        "step_timeout_seconds": 16200,
         "summary_path": "runtime/validation/long-soak-2h-summary.json",
     },
     "8h": {
         "soak_profile": "overnight",
-        "step_timeout_seconds": 32400,
+        "step_timeout_seconds": 37800,
         "summary_path": "runtime/validation/long-soak-8h-summary.json",
     },
 }

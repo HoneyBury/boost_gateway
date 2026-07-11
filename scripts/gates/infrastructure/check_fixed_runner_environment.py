@@ -79,6 +79,7 @@ def parse_args() -> argparse.Namespace:
             "control-plane",
             "production-resilience",
             "production-evidence",
+            "long-soak-capacity",
             "cloud-production",
         ],
         required=True,
@@ -105,12 +106,12 @@ def main() -> int:
 
     if args.profile == "release-baseline":
         checks.append(check_command("ninja", False, errors, warnings))
-    elif args.profile in {"production-resilience", "production-evidence"}:
+    elif args.profile in {"production-resilience", "production-evidence", "long-soak-capacity"}:
         checks.append(check_command("ninja", False, errors, warnings))
-        if args.profile == "production-resilience":
-            warnings.append("production-resilience profile uses bounded default soak; 2h/8h soak must run on a fixed runner with an expanded timeout")
+        if args.profile in {"production-resilience", "long-soak-capacity"}:
+            warnings.append("long soak/capacity evidence must run on a fixed runner with an expanded timeout")
             checks.append({
-                "name": "resilience:long-soak-runner",
+                "name": f"{args.profile}:long-soak-runner",
                 "required": False,
                 "status": "warning",
                 "message": warnings[-1],

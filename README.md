@@ -20,8 +20,8 @@
 
 - 主文档入口：`docs/README.md`
 - 项目蓝图规划：`docs/project-blueprint.md`
-- legacy/helper 清单：`docs/legacy-helper-inventory.md`
-- 服务端部署快速说明：`docs/deployment-quickstart.md`
+- legacy/helper 清单：`docs/legacy/legacy-helper-inventory.md`
+- 服务端部署快速说明：`docs/deployment/deployment-quickstart.md`
 - 当前事实源：`docs/current-state.md`
 - 架构总览：`docs/architecture-overview.md`
 - 可靠性矩阵与发布门禁：`docs/release-governance.md`
@@ -100,7 +100,7 @@ cmake --build build/linux-ninja-debug-conan --parallel
 
 ## 运行入口
 
-推荐优先阅读 `docs/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
+推荐优先阅读 `docs/deployment/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
 
 ```bash
 docker compose -f env/docker/docker-compose.yml build

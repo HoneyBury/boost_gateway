@@ -1,13 +1,13 @@
 {
   "schema_version": 3,
-  "description": "Versioned workflow runner matrix. Each workflow entry defines which runner labels to use and required capabilities. Set enabled=false to force workflows to fall back to default_runner. Repository-level GitHub Variables (vars.XXX_RUNNER) override these values at runtime.",
+  "description": "Versioned workflow runner matrix. Mainline CI may default to GitHub-hosted ubuntu-latest when self-hosted Linux runners are unavailable; fixed-runner evidence workflows continue to default to self-hosted Linux labels. Repository-level GitHub Variables (vars.XXX_RUNNER) override these values at runtime.",
   "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
   "workflows": {
     "ci": {
       "enabled": true,
-      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-      "labels": { "os": "linux", "arch": "x64" },
-      "capabilities": {},
+      "runner": "\"ubuntu-latest\"",
+      "labels": { "os": "linux", "arch": "x64", "mode": "github-hosted-fallback" },
+      "capabilities": { "github_hosted_fallback": true },
       "vars_hint": "CI_RUNNER"
     },
     "release": {

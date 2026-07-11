@@ -278,6 +278,40 @@ TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsTokenRefreshAndReplayLoadKind
     EXPECT_EQ(backend_response.message_type, "replay_load_response");
 }
 
+TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsRegisterAndGuestLoginKinds) {
+    v2::service::BackendEnvelope register_request{
+        .correlation_id = 6,
+        .source_service = v2::service::ServiceId::kGateway,
+        .target_service = v2::service::ServiceId::kLogin,
+        .kind = v2::service::MessageKind::kRequest,
+        .payload = R"({"user_id":"alice","credential":"secret","display_name":"Alice"})",
+        .message_type = "register_account",
+    };
+    const auto typed_register = v2::service::to_typed_envelope(register_request);
+    ASSERT_TRUE(typed_register.has_value());
+    EXPECT_EQ(typed_register->message_kind,
+              v3::proto::EnvelopeMessageKind::kRegisterAccountRequest);
+
+    v3::proto::TypedEnvelope guest_response{
+        .meta = {
+            .correlation_id = 7,
+            .source_service = "login",
+            .target_service = "gateway",
+        },
+        .message_kind = v3::proto::EnvelopeMessageKind::kGuestLoginResponse,
+        .payload = {
+            {"status", "ok"},
+            {"user_id", "guest_001"},
+            {"display_name", "Guest_001"},
+            {"token", "guest_token:guest_001"},
+        },
+    };
+    const auto backend_response = v2::service::to_backend_envelope(
+        guest_response,
+        v2::service::MessageKind::kResponse);
+    EXPECT_EQ(backend_response.message_type, "guest_login_response");
+}
+
 TEST(V2ServiceBoundaryTest, EnvelopeAdapterSupportsRoomGovernanceKinds) {
     v2::service::BackendEnvelope list_request{
         .correlation_id = 4,
@@ -384,6 +418,38 @@ TEST(V2ServiceBoundaryTest, WrapTypedResponseLeavesLegacyPayloadRaw) {
 
     EXPECT_EQ(wrapped.payload, response.payload);
     EXPECT_FALSE(v3::proto::decode_typed_envelope(wrapped.payload).has_value());
+}
+
+TEST(V2ServiceBoundaryTest, WrapTypedResponseUsesRegisterAccountResponseKind) {
+    v3::proto::EnvelopeMeta meta{
+        .correlation_id = 79,
+        .source_service = "gateway",
+        .target_service = "login",
+    };
+    const auto request = v3::proto::decode_typed_envelope(
+        v3::proto::encode_typed_envelope(
+            meta,
+            v3::proto::EnvelopeMessageKind::kRegisterAccountRequest,
+            {{"user_id", "alice"}, {"credential", "secret"}}));
+    ASSERT_TRUE(request.has_value());
+
+    v2::service::BackendEnvelope response{
+        .correlation_id = 79,
+        .source_service = v2::service::ServiceId::kLogin,
+        .target_service = v2::service::ServiceId::kGateway,
+        .kind = v2::service::MessageKind::kResponse,
+        .payload = R"({"status":"ok","user_id":"alice","display_name":"Alice"})",
+    };
+
+    const auto wrapped = v2::service::wrap_typed_response_if_needed(
+        request,
+        response,
+        v3::proto::EnvelopeMessageKind::kRegisterAccountResponse);
+    const auto decoded = v3::proto::decode_typed_envelope(wrapped.payload);
+    ASSERT_TRUE(decoded.has_value());
+    EXPECT_EQ(decoded->message_kind,
+              v3::proto::EnvelopeMessageKind::kRegisterAccountResponse);
+    EXPECT_EQ(decoded->payload.value("status", std::string{}), "ok");
 }
 
 TEST(V2ServiceBoundaryTest, IsValidRejectsZeroCorrelationId) {

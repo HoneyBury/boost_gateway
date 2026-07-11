@@ -1,6 +1,6 @@
 # Legacy / Helper Inventory
 
-更新时间：2026-07-08
+更新时间：2026-07-09
 
 本文档记录当前仓库仍保留的 legacy 兼容面、helper 迁移层和默认主线之外的过渡入口。它不是未来规划文档，而是当前事实清单；未来规划仍以 `docs/project-blueprint.md` 为准。
 
@@ -32,17 +32,23 @@
 
 | 服务域 | 当前 handler 路径 | typed envelope | legacy raw JSON | generated proto 备注 |
 | --- | --- | --- | --- | --- |
-| login | `src/v2/login/login_backend_service.cpp` | 已接入，含 token/session/token_refresh 第一批 typed request/response | compatibility-only 仅剩兼容窗口语义，不再新增 raw JSON-only 主业务 handler | schema 已存在，未替换默认 transport |
+| login | `src/v2/login/login_backend_service.cpp` | 已统一接入 adapter；`register_account` / `login_request` / `guest_login` / `token_validate` / `session_bind` / `session_close` / `token_refresh` 均已具备 schema-backed typed request/response | compatibility-only 仅保留 legacy raw JSON 兼容窗口语义，不再新增 raw JSON-only 主业务 handler | `register_account` / `guest_login` 已进入 `EnvelopeMessageKind` / `proto/v3/login.proto` |
 | room | `src/v2/room/room_backend_service.cpp` | 已接入，含所有 11 个 handler | N/A — 全部 handler 已接入 typed envelope | schema 已存在，未替换默认 transport |
 | battle | `src/v2/battle/battle_backend_service.cpp` | 已接入，含 battle create/input/state/finish/replay_load | compatibility-only 现主要收缩到回放/状态附带 JSON 结构，不再新增 raw JSON-only 主业务 handler | schema 已存在，未替换默认 transport |
 | matchmaking | `src/v2/matchmaking/matchmaking_service.cpp` | 已接入 | compatibility-only | schema 已存在，未替换默认 transport |
 | leaderboard | `src/v2/leaderboard/leaderboard_service.cpp` | 已接入 | compatibility-only | schema 已存在，未替换默认 transport |
 
+当前覆盖事实：
+
+- 全部 5 服务域共有 29 个业务 handler 已统一接入 `decode_handler_payload()` / `wrap_typed_response_if_needed()` adapter 路径。
+- 其中 29 个 handler 已具备 `EnvelopeMessageKind` / schema-backed typed contract。
+- login 域的 `register_account` 与 `guest_login` 已进入 `proto/v3/login.proto` 与 `include/v3/proto/envelope_codec.h`。
+
 ## 服务级 handler coverage matrix
 
 | 服务域 | typed request decode | typed response wrap | raw JSON compatibility-only scope |
 | --- | --- | --- | --- |
-| login | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | 无新增 raw JSON-only 主业务路径；仅保留 legacy raw JSON 兼容输入窗口 |
+| login | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | 全部 7 个 handler 已具备 schema-backed typed contract；legacy raw JSON 仅保留兼容窗口语义 |
 | room | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | N/A — 所有 11 个 handler 均已接入 typed envelope |
 | battle | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | 无新增 raw JSON-only 主业务路径；保留 snapshot/replay payload JSON 结构作为实现细节 |
 | matchmaking | `match_join`, `match_leave`, `match_status` | `match_join`, `match_leave`, `match_status` | `raft_request_vote`, `raft_append_entries` 为内部 Raft raw JSON RPC，不属于新的业务 handler 扩展面 |
@@ -91,8 +97,7 @@ python scripts/check_mainline_readiness.py
 python scripts/check_script_inventory.py
 ```
 
-Conan 依赖治理兼容入口：
+Conan 依赖治理入口：
 
 - `conan/README.md`
 - `conan/profiles/linux-gcc-x64`
-- `conan/profiles/windows-msvc-x64`

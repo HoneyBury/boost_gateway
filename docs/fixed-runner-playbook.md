@@ -1,14 +1,18 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-05-30（N0-N3 + Conan fixed-runner）
+更新时间：2026-07-11（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
-容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。Windows/macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642` 和 production evidence `29146018657`；长稳/容量批次 `29146495724` 正在执行。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 都必须在正式门禁前执行 lockfile-based `conan install` + `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
+GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
+
+GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，`aoi-omen-gaming-laptop-16-am0xxx` 已作为在线 Linux runner 匹配 `["self-hosted","Linux","X64"]`；`MyDesktop-Win` 仍离线。第一批真实证据刷新已解除 runner 不可用阻断，但仍需按下表执行并归档 summary。
+
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
 手动命令：
 
@@ -26,8 +30,10 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
-| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
-| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
+| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 已完成：2h soak 通过；capacity 的 battle-500 P99=750ms 超过 500ms，business-capacity 有 UTF-8 解码失败，不能作为通过证据 |
+| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
+| 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁 | `runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0 子 summary |
+| 6 | `production-readiness.yml` | `production_candidate_run_id` + `long_soak_run_id`，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
 
 通过判据：
 
@@ -89,17 +95,13 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 ## Release Baseline
 
-手动触发 `.github/workflows/release.yml`：
+手动触发 `.github/workflows/release.yml`。当前 workflow 的构建目录和配置固定为 `build/release` / `Release`，手动可配输入只有下表这些：
 
 | 输入 | baseline 建议值 | capacity 建议值 |
 | --- | --- | --- |
 | `runner` | `["self-hosted","Linux","X64"]` | `["self-hosted","Linux","X64"]` |
-| `configure_preset` | `release` 或 `windows-ninja-release` | 同 baseline |
-| `build_dir` | `build/release` 或 `build/windows-ninja-release` | 同 baseline |
-| `configuration` | `Release` | `Release` |
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
-| `perf_timeout_seconds` | `900` | `1800` |
 | `enable_conan_validation` | `true` | `true` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 
@@ -107,7 +109,7 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 
 - `runtime/validation/release-baseline-summary.json` 中 `passed=true`。
 - `runtime/perf/release-baseline/summary.json` 中 `release_gates.overall_pass=true`。
-- Conan validation preflight 中 lockfile-based `conan install` 和 `project_v2` 构建通过。
+- Conan validation preflight 中 lockfile-based `conan install` 通过，且后续 Release build/test/gate 全链路通过。
 - GitHub Step Summary 显示 R4、业务性能步骤均为 `PASS`。
 
 ## Specialized E2E
@@ -304,6 +306,20 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json`、`p6-candidate-audit-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
+## R2/R3 cross-workflow aggregation
+
+`production-candidate-evidence.yml` 和 `long-soak-capacity.yml` 在独立运行中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。使用 `production-readiness.yml` 传入两个已完成的 run ID，将 artifact 汇聚到同一 workspace，再运行 R2 `--require-fixed-runner` 和 R3 readiness report：
+
+```bash
+gh workflow run production-readiness.yml --ref develop \
+  -f runner='"ubuntu-latest"' \
+  -f production_candidate_run_id=<production-candidate-run-id> \
+  -f long_soak_run_id=<long-soak-capacity-run-id> \
+  -f require_fixed_runner=true
+```
+
+该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；缺少 R5/R6 或其他固定 runner summary 时应失败并列出 blocker。
+
 ## R4/R5/R6 production blocking evidence
 
 Before final production approval, refresh these fixed-runner or pre-production producers and consume them with `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner`:

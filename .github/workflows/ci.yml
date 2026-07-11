@@ -14,14 +14,14 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","Linux","X64"]'
+        default: '"ubuntu-latest"'
 
 permissions:
   contents: read
 
 jobs:
   linux-build-and-test:
-    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '"ubuntu-latest"') }}
 
     steps:
       - name: Checkout
@@ -31,13 +31,25 @@ jobs:
           fetch-depth: 0
 
       - name: Restore sccache cache
-        uses: actions/cache@v4
+        id: restore-sccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
           restore-keys: |
+            sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-
             sccache-${{ runner.os }}-release-
             sccache-${{ runner.os }}-
+
+      - name: Restore Conan cache
+        id: restore-conan
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+          restore-keys: |
+            conan-home-${{ runner.os }}-release-
+            conan-home-${{ runner.os }}-
 
       - name: Show tool versions
         shell: bash
@@ -47,6 +59,14 @@ jobs:
           ninja --version
           python3 --version
 
+      - name: Install sccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          sccache --version || sudo apt-get install -y sccache
+          echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
+          mkdir -p "$SCCACHE_DIR"
+          sccache --version
 
       - name: Ensure Conan
         shell: bash
@@ -81,37 +101,31 @@ jobs:
             --build=missing \
             -s build_type=Release
 
-      - name: Detect sccache
-        id: sccache
-        shell: bash
-        run: |
-          if command -v sccache >/dev/null 2>&1; then
-            sccache --version
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "sccache not found; continuing without compiler cache"
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Reset sccache stats
-        if: steps.sccache.outputs.available == 'true'
         shell: bash
         run: sccache --zero-stats || true
 
       - name: Configure
         shell: bash
         run: |
-          args=(
-            cmake -S . -B build/release -G Ninja
-            -DBOOST_USE_CONAN_DEPS=ON
-            -DENABLE_TESTING=ON
-            -DCMAKE_BUILD_TYPE=Release
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake
-          )
-          if [ "${{ steps.sccache.outputs.available }}" = "true" ]; then
-            args+=(-DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache)
-          fi
-          "${args[@]}"
+          set -euo pipefail
+          : "${SCCACHE_BIN:?missing sccache path}"
+          mkdir -p runtime/validation
+          cmake -S . -B build/release -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            2>&1 | tee runtime/validation/ci-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/ci-configure.log
+
+      - name: Verify sccache wiring
+        shell: bash
+        run: |
+          : "${SCCACHE_BIN:?missing sccache path}"
+          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
         shell: bash
@@ -119,7 +133,10 @@ jobs:
 
       - name: Build
         shell: bash
-        run: cmake --build build/release --parallel
+        run: |
+          cmake --build build/release --parallel
+          mkdir -p runtime/perf/build-times
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
       - name: Test
         shell: bash
@@ -133,14 +150,23 @@ jobs:
         shell: bash
         run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
+      - name: Workflow Python CLI contract gate
+        shell: bash
+        run: python3 scripts/check_workflow_python_cli_contracts.py
+
       - name: Legacy/helper inventory gate
         shell: bash
         run: python3 scripts/gates/governance/check_legacy_helper_inventory.py
 
       - name: Show sccache stats
-        if: always() && steps.sccache.outputs.available == 'true'
+        if: always()
         shell: bash
-        run: sccache --show-stats || true
+        run: |
+          if [ -f runtime/perf/build-times/sccache-stats.json ]; then
+            cat runtime/perf/build-times/sccache-stats.json
+          else
+            sccache --show-stats || true
+          fi
 
       - name: Capture build metrics
         if: always()
@@ -158,7 +184,6 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
 
       - name: Upload build metrics
         if: always()
@@ -167,3 +192,17 @@ jobs:
           name: build-metrics
           path: runtime/perf/build-times/**
           if-no-files-found: warn
+
+      - name: Save Conan cache
+        if: always() && steps.restore-conan.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+
+      - name: Save sccache cache
+        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}

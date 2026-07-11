@@ -21,10 +21,12 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -40,6 +42,48 @@ namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 constexpr const char* kGatewayHost = "127.0.0.1";
+
+class DisableRedisAutoConnectForTest {
+public:
+    DisableRedisAutoConnectForTest() {
+        if (const char* value = std::getenv("BOOST_DISABLE_REDIS_AUTO_CONNECT")) {
+            previous_value_ = value;
+        }
+        set_environment_variable("BOOST_DISABLE_REDIS_AUTO_CONNECT", "1");
+    }
+
+    ~DisableRedisAutoConnectForTest() {
+        if (previous_value_.has_value()) {
+            set_environment_variable("BOOST_DISABLE_REDIS_AUTO_CONNECT",
+                                     previous_value_->c_str());
+        } else {
+            unset_environment_variable("BOOST_DISABLE_REDIS_AUTO_CONNECT");
+        }
+    }
+
+    DisableRedisAutoConnectForTest(const DisableRedisAutoConnectForTest&) = delete;
+    DisableRedisAutoConnectForTest& operator=(
+        const DisableRedisAutoConnectForTest&) = delete;
+
+private:
+    static void set_environment_variable(const char* name, const char* value) {
+#if defined(_WIN32)
+        _putenv_s(name, value);
+#else
+        setenv(name, value, 1);
+#endif
+    }
+
+    static void unset_environment_variable(const char* name) {
+#if defined(_WIN32)
+        _putenv_s(name, "");
+#else
+        unsetenv(name);
+#endif
+    }
+
+    std::optional<std::string> previous_value_;
+};
 
 struct FakeOtlpCollector {
     asio::io_context io_context;
@@ -2142,6 +2186,7 @@ TEST(V2BackendRoutingTest, MatchmakingServicesElectSingleLeaderOverBackendRpc) {
 
 TEST(V2BackendRoutingTest, LeaderboardReplicatesCommittedScoresAcrossRaftFollowers) {
     app::logging::init("project_tests");
+    DisableRedisAutoConnectForTest redis_guard;
 
     constexpr std::uint16_t kPort1 = 19441;
     constexpr std::uint16_t kPort2 = 19442;
@@ -2523,6 +2568,7 @@ TEST(V2BackendRoutingTest, MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers
 
 TEST(V2BackendRoutingTest, LeaderboardRestoresCommittedScoresAfterRestart) {
     app::logging::init("project_tests");
+    DisableRedisAutoConnectForTest redis_guard;
 
     const auto storage_root =
         std::filesystem::temp_directory_path() / "boost_lb_restart_test";
@@ -2720,6 +2766,7 @@ TEST(V2BackendRoutingTest, MatchmakingRestoresCommittedMatchAfterRestart) {
 
 TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     app::logging::init("project_tests");
+    DisableRedisAutoConnectForTest redis_guard;
 
     constexpr std::uint16_t kPort1 = 19491;
     constexpr std::uint16_t kPort2 = 19492;

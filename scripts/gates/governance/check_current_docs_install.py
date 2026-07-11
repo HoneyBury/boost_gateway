@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 REQUIRED_TOP_LEVEL_DOCS = [
     "docs/README.md",
     "docs/current-state.md",
+    "docs/runner-inventory.md",
     "docs/project-blueprint.md",
     "docs/legacy/legacy-helper-inventory.md",
     "docs/architecture-overview.md",

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -53,6 +53,13 @@ def collect_artifact_paths(summary: dict[str, Any]) -> set[str]:
     if not isinstance(artifacts, dict):
         return set()
     return {str(value) for value in artifacts.values() if value}
+
+
+def artifact_path_matches(candidate: str, relative_path: str, absolute_path: str) -> bool:
+    normalized = candidate.replace("\\", "/")
+    relative = relative_path.replace("\\", "/").lstrip("/")
+    absolute = absolute_path.replace("\\", "/")
+    return normalized in {relative, absolute} or normalized.endswith("/" + relative)
 
 
 def check_evidence(
@@ -122,7 +129,7 @@ def check_evidence(
     if isinstance(artifact_of, str) and artifact_of:
         parent_paths = parent_artifacts.get(artifact_of, set())
         absolute = str(path)
-        if relative_path not in parent_paths and absolute not in parent_paths:
+        if not any(artifact_path_matches(candidate, relative_path, absolute) for candidate in parent_paths):
             check["passed"] = False
             check["status"] = "artifact-mismatch"
             check["details"].append(f"summary is not listed as an artifact of {artifact_of}")
@@ -137,7 +144,7 @@ def main() -> int:
     parser.add_argument(
         "--manifest",
         type=Path,
-        default=REPO_ROOT / "docs/production-candidate-evidence-manifest.json",
+        default=REPO_ROOT / "docs/production/production-candidate-evidence-manifest.json",
     )
     parser.add_argument("--require-fixed-runner", action="store_true")
     parser.add_argument(

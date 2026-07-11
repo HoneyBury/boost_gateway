@@ -1,6 +1,6 @@
 # v3.5.0 项目清理执行计划
 
-更新时间：2026-06-30
+更新时间：2026-07-11
 
 本文档是 v3.5.0 版本的执行计划，替代了之前的 `mainline-execution-plan.md`（2026-05-30 版本）。
 
@@ -101,3 +101,21 @@ cmake --build build/default --parallel
 - 不扩展功能面
 - 不把 gRPC 接入默认生产链路
 - 不扩 demo 业务面
+
+## 清理收官后的主线顺序（2026-07-09）
+
+`v3.5.0` 清理阶段已经完成，后续 1-3 个月主线不再是“继续删旧代码”，而是把已经完成的治理项变成稳定、可重复的工程事实。
+
+| 顺序 | 主题 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | P5/P6 bounded summary 已成功；long-soak `29146495724` 的 2h soak 通过，但 battle-500 P99 和 business-capacity UTF-8 解码仍需修复。完成后再用 `production-readiness.yml` 生成 R2/R3 连续准入事实链 |
+| 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
+| 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
+| 5 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
+
+### 当前优先级判断
+
+1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
+2. 等待 long-soak/capacity 完成，随后补齐 R0 aggregate，再重跑 R2 `--require-fixed-runner` 与 R3 readiness report；只有连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
+3. 实际代码的下一项生产风险是 login backend 的 placeholder 密码哈希和 token 重签发；应先明确并实现生产身份凭证方案，再推进非登录 gRPC full-flow。gRPC/proto 仍保持中期实验项。

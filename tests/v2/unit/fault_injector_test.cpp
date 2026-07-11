@@ -4,6 +4,8 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -48,10 +50,18 @@ public:
     void stop() {
         running_ = false;
         boost::system::error_code ec;
-        acceptor_.close(ec);
+        close_active_client();
+        if (acceptor_.is_open()) {
+            tcp::socket wake_socket(io_);
+            wake_socket.connect(
+                tcp::endpoint(boost::asio::ip::address_v4::loopback(), port_),
+                ec);
+            wake_socket.close(ec);
+        }
         if (thread_.joinable()) {
             thread_.join();
         }
+        acceptor_.close(ec);
     }
 
     uint16_t port() const { return port_; }
@@ -65,29 +75,58 @@ private:
             if (ec || !running_) {
                 break;
             }
-            echo_client(std::move(sock));
+            auto client = std::make_shared<tcp::socket>(std::move(sock));
+            {
+                std::lock_guard<std::mutex> lock(client_mutex_);
+                active_client_ = client;
+            }
+            echo_client(client);
+            {
+                std::lock_guard<std::mutex> lock(client_mutex_);
+                if (active_client_ == client) {
+                    active_client_.reset();
+                }
+            }
         }
     }
 
-    void echo_client(tcp::socket sock) {
+    void echo_client(const std::shared_ptr<tcp::socket>& sock) {
         std::array<char, 4096> buf;
         boost::system::error_code ec;
-        while (running_) {
-            auto len = sock.read_some(boost::asio::buffer(buf), ec);
+        while (running_ && sock && sock->is_open()) {
+            auto len = sock->read_some(boost::asio::buffer(buf), ec);
             if (ec) {
                 break;
             }
-            boost::asio::write(sock, boost::asio::buffer(buf, len), ec);
+            boost::asio::write(*sock, boost::asio::buffer(buf, len), ec);
             if (ec) {
                 break;
             }
         }
+    }
+
+    void close_active_client() {
+        std::shared_ptr<tcp::socket> client;
+        {
+            std::lock_guard<std::mutex> lock(client_mutex_);
+            client = active_client_;
+        }
+        if (!client) {
+            return;
+        }
+
+        boost::system::error_code ec;
+        client->cancel(ec);
+        client->shutdown(tcp::socket::shutdown_both, ec);
+        client->close(ec);
     }
 
     boost::asio::io_context io_;
     tcp::acceptor acceptor_;
     uint16_t port_{0};
     std::atomic<bool> running_{false};
+    std::mutex client_mutex_;
+    std::shared_ptr<tcp::socket> active_client_;
     std::thread thread_;
 };
 

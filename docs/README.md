@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-06-30
+更新时间：2026-07-11
 
 本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
 
@@ -13,6 +13,8 @@
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
+| [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
+| [Legacy / Helper 清单](legacy/legacy-helper-inventory.md) | 当前保留的 legacy/helper 兼容面与治理边界 |
 
 ## 贡献入口
 
@@ -29,6 +31,7 @@
 | [发布治理](release-governance.md) | 可靠性矩阵 + 发布检查清单 |
 | [性能基线](performance-baseline.md) | 性能数据和归档口径 |
 | [固定 Runner 手册](fixed-runner-playbook.md) | 固定 runner 操作指南 |
+| [Runner Inventory](runner-inventory.md) | runner 在线状态与默认 fixed-runner 阻断说明 |
 
 ## 安全与传输
 
@@ -43,7 +46,7 @@
 | [deployment/](deployment/) | 部署快速入门、生产部署/运维/配置 Runbook |
 | [production/](production/) | 生产候选证据 manifest、恢复演练模板 |
 | [legacy/](legacy/) | Legacy helper 清单、控制面预案、脚本整合计划 |
-| [archive/](archive/) | 历史版本文档（仅供参考，不作为当前事实源） |
+| [archive/](archive/) | 历史版本文档（仓库路径 `docs/archive/`，仅供参考，不作为当前事实源） |
 
 ## 文档优先级规则
 

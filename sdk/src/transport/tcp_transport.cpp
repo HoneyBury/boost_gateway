@@ -55,6 +55,10 @@ public:
     }
 
     std::vector<char> receive(std::chrono::milliseconds timeout) override {
+        if (!connected_.load() || !socket_.is_open()) {
+            return {};
+        }
+
         // Wait for data with select() for portable timeout.
         int fd = socket_.native_handle();
         fd_set read_fds;
@@ -75,8 +79,7 @@ public:
         std::size_t available = 0;
         {
             boost::system::error_code ec2;
-            socket_.available(ec2);
-            if (!ec2) available = socket_.available();
+            available = socket_.available(ec2);
         }
         if (available == 0) available = 4096;
         std::vector<char> buf(available);

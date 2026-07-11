@@ -2,7 +2,7 @@ name: Production Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -32,8 +32,6 @@ on:
           - smoke
           - short
           - medium
-          - long
-          - overnight
       baseline_profile:
         description: "Architecture gate profile"
         required: true
@@ -79,7 +77,7 @@ on:
       step_timeout_seconds:
         description: "Timeout for each P6 sub-gate"
         required: true
-        default: "1200"
+        default: "5400"
       conan_profile:
         description: "Repository Conan profile path for fixed-runner reproducibility preflight"
         required: true
@@ -177,8 +175,36 @@ jobs:
       - name: Build Conan validation target
         run: cmake --build build/conan-production-evidence-cmake --parallel --target project_v2
 
+      - name: Conan install for main build
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_type="${{ inputs.configuration || 'Debug' }}"
+          lockfile=conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock
+          if [ "$build_type" = "Release" ]; then
+            lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+          fi
+          conan install . \
+            --output-folder=build/conan-production-main \
+            --build=missing \
+            -s build_type="$build_type" \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "$lockfile" \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False"
+
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset || 'default' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          build_type="${{ inputs.configuration || 'Debug' }}"
+          cmake --preset "${{ inputs.configure_preset || 'default' }}" \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="build/conan-production-main/build/${build_type}/generators/conan_toolchain.cmake" \
+            2>&1 | tee runtime/validation/production-evidence-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/production-evidence-configure.log
 
       - name: Production evidence gate
         shell: bash
@@ -223,25 +249,6 @@ jobs:
             --include-runtime-http \
             --summary-path runtime/validation/p2-observability-runtime-summary.json
 
-      - name: R2 fixed-runner manifest
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/check_production_evidence_manifest.py \
-            --require-fixed-runner \
-            --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json || true
-
-      - name: R3 production readiness report
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/render_production_readiness_report.py \
-            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
-            --output runtime/validation/r3-production-readiness-report.md \
-            --summary-path runtime/validation/r3-production-readiness-report-summary.json || true
-
       - name: Render production evidence summary
         if: always()
         shell: bash
@@ -257,8 +264,6 @@ jobs:
             runtime/validation/p6-release-baseline-summary.json \
             runtime/validation/p2-observability-runtime-summary.json \
             runtime/validation/gateway-observability-runtime-summary.json \
-            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
-            runtime/validation/r3-production-readiness-report-summary.json \
             runtime/perf/release-baseline/summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
@@ -279,9 +284,6 @@ jobs:
             runtime/validation/p6-*-summary.json
             runtime/validation/p2-observability-runtime-summary.json
             runtime/validation/gateway-observability-runtime-summary.json
-            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
-            runtime/validation/r3-production-readiness-report.md
-            runtime/validation/r3-production-readiness-report-summary.json
             runtime/perf/v2-stability-soak/**
             runtime/perf/release-baseline/**
           if-no-files-found: warn

@@ -13,6 +13,7 @@ from datetime import UTC, datetime
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
 PROJECT_VERSION = "3.3.2"
 
 BACKENDS = {
@@ -413,7 +414,7 @@ def validate_k8s(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "k8s:gateway:http-health-probe-documented",
-        "gateway `/health` is a liveness stub" in read_text("docs/production-deployment-runbook.md"),
+        "gateway `/health` is a liveness stub" in read_text(DEPLOYMENT_RUNBOOK),
         "gateway HTTP health probe limitation is documented in the production runbook",
     )
     add_check(
@@ -542,7 +543,7 @@ def main() -> int:
             "compose_file": str(REPO_ROOT / "env/docker/docker-compose.yml"),
             "k8s_dir": str(REPO_ROOT / "env/k8s"),
             "systemd_dir": str(REPO_ROOT / "deploy/systemd"),
-            "deployment_runbook": str(REPO_ROOT / "docs/production-deployment-runbook.md"),
+            "deployment_runbook": str(REPO_ROOT / DEPLOYMENT_RUNBOOK),
         },
     }
 
@@ -563,4 +564,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

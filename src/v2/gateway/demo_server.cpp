@@ -223,6 +223,11 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    if (config_watcher_) {
+        config_watcher_->stop();
+        config_watcher_.reset();
+    }
+
     stop_gateway_worker();
 
     // Stop health check thread and service registrars first
@@ -644,7 +649,7 @@ void DemoServer::do_accept() {
                 enqueue_packet(session_id, std::move(message));
             });
         session_ref->set_close_handler([this, session_id]() {
-            runtime_.on_session_closed(session_id);
+            enqueue_session_closed(session_id);
             std::optional<std::uint32_t> session_core_id;
             {
                 std::scoped_lock lock(sessions_mutex_);
@@ -689,7 +694,18 @@ void DemoServer::enqueue_packet(SessionId session_id,
                                 v2::io::IoSession::PacketMessage message) {
     {
         std::scoped_lock lock(gateway_queue_mutex_);
-        gateway_queue_.emplace_back(session_id, std::move(message));
+        gateway_queue_.push_back(GatewayQueueItem{
+            .session_id = session_id,
+            .message = std::move(message),
+        });
+    }
+    gateway_queue_cv_.notify_one();
+}
+
+void DemoServer::enqueue_session_closed(SessionId session_id) {
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        gateway_queue_.push_back(GatewayQueueItem{.session_id = session_id});
     }
     gateway_queue_cv_.notify_one();
 }
@@ -702,7 +718,7 @@ void DemoServer::start_gateway_worker() {
     gateway_worker_ = std::make_unique<std::thread>([this]() {
         for (;;) {
             try {
-                std::pair<SessionId, v2::io::IoSession::PacketMessage> item;
+                GatewayQueueItem item;
                 {
                     std::unique_lock lock(gateway_queue_mutex_);
                     gateway_queue_cv_.wait(lock, [this]() {
@@ -718,10 +734,15 @@ void DemoServer::start_gateway_worker() {
                     gateway_queue_.pop_front();
                 }
 
-                auto& message = item.second;
                 std::scoped_lock handle_lock(gateway_handle_mutex_);
+                if (!item.message.has_value()) {
+                    runtime_.on_session_closed(item.session_id);
+                    continue;
+                }
+
+                auto& message = *item.message;
                 (void)adapter_.handle_incoming(ClientEnvelope{
-                    .session_id = item.first,
+                    .session_id = item.session_id,
                     .protocol_message_id = message.message_id,
                     .request_id = message.request_id,
                     .error_code = message.error_code,

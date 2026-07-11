@@ -20,12 +20,14 @@ Canonical groups migrated so far:
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
 - Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
 - Conan lockfile workflow gate: `scripts/check_conan_lockfile_workflows.py`
+- Workflow Python CLI contract gate: `scripts/check_workflow_python_cli_contracts.py`
 
 Use these stable public entrypoints first:
 
 - `verify_release_candidate.py` for local/PR bounded release checks.
 - `check_mainline_readiness.py` for docs, script, config, and evidence governance checks.
 - `check_legacy_helper_inventory.py` for legacy/helper compatibility-surface governance.
+- `check_workflow_python_cli_contracts.py` for workflow-to-script CLI drift governance before pushing CI changes.
 - `verify_production_candidate_evidence.py` for R0 production-candidate aggregation.
 - `check_production_evidence_manifest.py` and `render_production_readiness_report.py` for R2/R3 production readiness.
 - `run_long_soak_capacity.py` for fixed-runner N1 long-soak/capacity evidence.

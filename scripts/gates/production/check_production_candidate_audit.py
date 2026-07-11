@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 REQUIRED_FILES = {
-    "deployment-runbook": "docs/production-deployment-runbook.md",
-    "operations-runbook": "docs/production-operations-runbook.md",
+    "deployment-runbook": "docs/deployment/production-deployment-runbook.md",
+    "operations-runbook": "docs/deployment/production-operations-runbook.md",
     "sdk-runbook": "sdk/docs/README.md",
     "sdk-compatibility-matrix": "sdk/docs/compatibility.md",
     "fixed-runner-playbook": "docs/fixed-runner-playbook.md",
@@ -188,5 +188,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
 

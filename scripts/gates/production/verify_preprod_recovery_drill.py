@@ -99,6 +99,68 @@ def wait_for_ready(url: str, timeout_seconds: float) -> dict[str, Any]:
     raise TimeoutError(f"timed out waiting for {url}: {last_error}")
 
 
+def wait_for_prometheus_targets_up(compose_file: Path, timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    last_error = ""
+    while time.monotonic() < deadline:
+        completed = subprocess.run(
+            [
+                "docker",
+                "compose",
+                "-f",
+                str(compose_file),
+                "exec",
+                "-T",
+                "prometheus",
+                "wget",
+                "-qO-",
+                "http://127.0.0.1:9090/api/v1/targets?state=active",
+            ],
+            cwd=REPO_ROOT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=20,
+            check=False,
+        )
+        if completed.returncode == 0:
+            try:
+                doc = json.loads(completed.stdout)
+                targets = doc.get("data", {}).get("activeTargets", [])
+                if isinstance(targets, list) and targets:
+                    if all(target.get("health") == "up" for target in targets):
+                        return {
+                            "active_target_count": len(targets),
+                            "targets": [
+                                {
+                                    "job": target.get("labels", {}).get("job"),
+                                    "health": target.get("health"),
+                                }
+                                for target in targets
+                            ],
+                        }
+                    last_error = json.dumps(
+                        [
+                            {
+                                "job": target.get("labels", {}).get("job"),
+                                "health": target.get("health"),
+                            }
+                            for target in targets
+                        ],
+                        ensure_ascii=False,
+                    )
+                else:
+                    last_error = "no active targets returned"
+            except json.JSONDecodeError as exc:
+                last_error = f"invalid prometheus JSON: {exc}"
+        else:
+            last_error = tail(completed.stderr or completed.stdout)
+        time.sleep(2.0)
+    raise TimeoutError(f"timed out waiting for Prometheus targets to become healthy: {last_error}")
+
+
 def docker_images_present() -> bool:
     result = subprocess.run(
         ["docker", "images", "--format", "{{.Repository}}:{{.Tag}}"],
@@ -338,6 +400,37 @@ def main() -> int:
                 write_command_summary(sdk_summary, "R5 SDK full-flow after gateway restart", post_step)
 
             if steps[-1]["status"] == "passed":
+                prometheus_started = time.monotonic()
+                try:
+                    prometheus_doc = wait_for_prometheus_targets_up(
+                        compose_file,
+                        min(float(args.step_timeout_seconds), 90.0),
+                    )
+                    steps.append(
+                        {
+                            "name": "R5 Prometheus targets healthy before snapshot",
+                            "category": "docker_snapshot",
+                            "command": ["GET", "http://127.0.0.1:9090/api/v1/targets?state=active"],
+                            "status": "passed",
+                            "duration_seconds": round(time.monotonic() - prometheus_started, 3),
+                            "stdout_tail": json.dumps(prometheus_doc, ensure_ascii=False, sort_keys=True)[-6000:],
+                            "stderr_tail": "",
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 - captured in validation summary
+                    steps.append(
+                        {
+                            "name": "R5 Prometheus targets healthy before snapshot",
+                            "category": "docker_snapshot",
+                            "command": ["GET", "http://127.0.0.1:9090/api/v1/targets?state=active"],
+                            "status": "failed",
+                            "duration_seconds": round(time.monotonic() - prometheus_started, 3),
+                            "stdout_tail": "",
+                            "stderr_tail": str(exc),
+                        }
+                    )
+
+            if steps[-1]["status"] == "passed":
                 steps.append(
                     run_step(
                         "R5 Docker production snapshot after recovery",
@@ -445,4 +538,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

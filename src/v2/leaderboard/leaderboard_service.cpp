@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cstdlib>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -260,6 +261,13 @@ public:
     // Batch C: Try auto-connect Redis on startup, fallback to in-memory.
     void try_auto_connect_redis() {
         if (redis_lb_) return;  // already configured explicitly
+
+        const char* disable_env = std::getenv("BOOST_DISABLE_REDIS_AUTO_CONNECT");
+        if (disable_env && std::string(disable_env) != "0") {
+            SPDLOG_INFO("LeaderboardService: Redis auto-connect disabled, "
+                        "using in-memory storage");
+            return;
+        }
 
         const char* host_env = std::getenv("BOOST_REDIS_HOST");
         const char* port_env = std::getenv("BOOST_REDIS_PORT");

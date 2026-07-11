@@ -33,6 +33,10 @@ message LoginPayload {
     SessionCloseResponse session_close_response = 8;
     TokenRefreshRequest token_refresh = 9;
     TokenRefreshResponse token_refresh_response = 10;
+    RegisterAccountRequest register_account = 11;
+    RegisterAccountResponse register_account_response = 12;
+    GuestLoginRequest guest_login = 13;
+    GuestLoginResponse guest_login_response = 14;
   }
 }
 

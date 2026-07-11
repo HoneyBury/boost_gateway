@@ -114,7 +114,7 @@ def append_if(args: argparse.Namespace, cmd: list[str], flag_name: str, option: 
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[3]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     summary: dict[str, object] = {
         "summary_version": 2,
@@ -184,6 +184,7 @@ def main() -> int:
     transport_config_cmd = [
         sys.executable,
         str(root / "scripts" / "check_transport_config_governance.py"),
+        "--generate-dev-certs",
         "--summary-path",
         str(root / "runtime" / "validation" / "p5-transport-config-governance-summary.json"),
     ]
@@ -315,4 +316,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

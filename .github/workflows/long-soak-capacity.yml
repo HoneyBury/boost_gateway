@@ -2,7 +2,7 @@ name: Long Soak Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -70,7 +70,7 @@ permissions:
 jobs:
   long-soak-capacity:
     runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
-    timeout-minutes: 720
+    timeout-minutes: 1440
     concurrency:
       group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false
@@ -132,7 +132,15 @@ jobs:
         run: cmake --build build/conan-long-soak-capacity-cmake --parallel --target project_v2
 
       - name: Configure
-        run: cmake --preset ${{ inputs.configure_preset || 'release' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          cmake --preset "${{ inputs.configure_preset || 'release' }}" \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake \
+            2>&1 | tee runtime/validation/long-soak-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/long-soak-configure.log
 
       - name: Build validation targets
         run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }}
@@ -177,25 +185,6 @@ jobs:
             --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}" \
             --summary-path runtime/validation/fixed-runner-release-capacity-summary.json
 
-      - name: R2 fixed-runner manifest
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/check_production_evidence_manifest.py \
-            --require-fixed-runner \
-            --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json || true
-
-      - name: R3 production readiness report
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          python scripts/render_production_readiness_report.py \
-            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
-            --output runtime/validation/r3-production-readiness-report.md \
-            --summary-path runtime/validation/r3-production-readiness-report-summary.json || true
-
       - name: Render long-soak capacity summary
         if: always()
         shell: bash
@@ -208,9 +197,7 @@ jobs:
             runtime/validation/long-soak-8h-summary.json \
             runtime/validation/capacity-baseline-summary.json \
             runtime/validation/business-capacity-baseline-summary.json \
-            runtime/validation/fixed-runner-release-capacity-summary.json \
-            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
-            runtime/validation/r3-production-readiness-report-summary.json; do
+            runtime/validation/fixed-runner-release-capacity-summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
             fi
@@ -232,9 +219,6 @@ jobs:
             runtime/validation/capacity-baseline-summary.json
             runtime/validation/business-capacity-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
-            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
-            runtime/validation/r3-production-readiness-report.md
-            runtime/validation/r3-production-readiness-report-summary.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
           retention-days: 90

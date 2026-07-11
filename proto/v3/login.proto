@@ -16,6 +16,29 @@ message LoginResponse {
   string room_id = 5;          // for session resume
 }
 
+message RegisterAccountRequest {
+  string user_id = 1;
+  string credential = 2;
+  string display_name = 3;
+}
+
+message RegisterAccountResponse {
+  string status = 1;
+  string user_id = 2;
+  string display_name = 3;
+}
+
+message GuestLoginRequest {
+  string display_name = 1;
+}
+
+message GuestLoginResponse {
+  string status = 1;
+  string user_id = 2;
+  string display_name = 3;
+  string token = 4;
+}
+
 message TokenValidateRequest {
   string token = 1;
   string user_id = 2;

@@ -3,6 +3,7 @@ name: Performance Regression
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -47,31 +48,96 @@ jobs:
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@v2
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . \
+            --profile:host conan/profiles/linux-gcc-x64 \
+            --profile:build conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False" \
+            --output-folder=build/conan-perf-regression \
+            --build=missing \
+            -s build_type=Release
+
       - name: Install sccache
         shell: bash
         run: |
           set -euo pipefail
           sccache --version || sudo apt-get install -y sccache
+          echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
+          mkdir -p "$SCCACHE_DIR"
           sccache --version
 
       - name: Restore sccache cache
-        uses: actions/cache@v4
+        id: restore-sccache
+        uses: actions/cache/restore@v4
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}
+          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
           restore-keys: |
+            sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
             sccache-${{ runner.os }}-perf-regression-
             sccache-${{ runner.os }}-
 
+      - name: Reset sccache stats
+        shell: bash
+        run: sccache --zero-stats || true
+
       - name: Configure (Release)
-        run: cmake --preset release -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SCCACHE_BIN:?missing sccache path}"
+          mkdir -p runtime/validation
+          cmake --preset release \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-perf-regression/build/Release/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            2>&1 | tee runtime/validation/perf-regression-configure.log
+
+      - name: Verify Conan dependency provider
+        shell: bash
+        run: |
+          grep -F "Using Conan-provided dependency graph" runtime/validation/perf-regression-configure.log
+
+      - name: Verify sccache wiring
+        shell: bash
+        run: |
+          : "${SCCACHE_BIN:?missing sccache path}"
+          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
         shell: bash
         run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
 
       - name: Build (Release)
-        run: cmake --build --preset release --parallel
+        shell: bash
+        run: |
+          cmake --build --preset release --parallel
+          mkdir -p runtime/perf/build-times
+          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
       - name: Run performance baseline
         id: perf
@@ -194,7 +260,12 @@ jobs:
       - name: Show sccache stats
         if: always()
         shell: bash
-        run: sccache --show-stats || true
+        run: |
+          if [ -f runtime/perf/build-times/sccache-stats.json ]; then
+            cat runtime/perf/build-times/sccache-stats.json
+          else
+            sccache --show-stats || true
+          fi
 
       - name: Capture build metrics
         if: always()
@@ -212,4 +283,10 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-          sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json 2>/dev/null || true
+
+      - name: Save sccache cache
+        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}

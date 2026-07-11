@@ -2,7 +2,7 @@ name: Conan Validate
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -58,7 +58,7 @@ permissions:
 
 jobs:
   conan-validate:
-    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || vars.CONAN_VALIDATE_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
@@ -99,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(python scripts/bootstrap_conan.py --reset-home)
+          args=(python scripts/bootstrap_conan.py --disable-example-internal)
           if [ "${{ inputs.allow_public }}" = "true" ]; then
             args+=(--allow-public)
           fi
@@ -122,11 +122,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p runtime/validation
           cmake -S . -B build/conan-validate-${{ inputs.build_type }} -G Ninja \
             -DBOOST_USE_CONAN_DEPS=ON \
             -DENABLE_TESTING=${{ inputs.enable_testing && 'ON' || 'OFF' }} \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake \
+            2>&1 | tee runtime/validation/conan-validate-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/conan-validate-configure.log
 
       - name: Build Conan validation target
         shell: bash

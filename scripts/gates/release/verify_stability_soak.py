@@ -74,6 +74,14 @@ SOAK_PROFILES = {
     },
 }
 
+PROFILE_TIMEOUTS = {
+    "smoke": {"build": 300, "test": 120, "baseline": 120},
+    "short": {"build": 1800, "test": 300, "baseline": 1800},
+    "medium": {"build": 1800, "test": 300, "baseline": 3600},
+    "long": {"build": 1800, "test": 300, "baseline": 10800},
+    "overnight": {"build": 1800, "test": 300, "baseline": 32400},
+}
+
 
 def exe_name(base: str) -> str:
     return f"{base}.exe" if os.name == "nt" else base
@@ -168,9 +176,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--build-dir", type=Path, default=Path("build/windows-msvc-debug"))
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--build-timeout-seconds", type=int, default=120)
-    parser.add_argument("--test-timeout-seconds", type=int, default=60)
-    parser.add_argument("--baseline-timeout-seconds", type=int, default=45)
+    parser.add_argument("--build-timeout-seconds", type=int)
+    parser.add_argument("--test-timeout-seconds", type=int)
+    parser.add_argument("--baseline-timeout-seconds", type=int)
     parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
     parser.add_argument("--soak-profile", choices=sorted(SOAK_PROFILES), default="smoke")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/stability-soak-summary.json"))
@@ -179,6 +187,13 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    profile_timeouts = PROFILE_TIMEOUTS[args.soak_profile]
+    if args.build_timeout_seconds is None:
+        args.build_timeout_seconds = profile_timeouts["build"]
+    if args.test_timeout_seconds is None:
+        args.test_timeout_seconds = profile_timeouts["test"]
+    if args.baseline_timeout_seconds is None:
+        args.baseline_timeout_seconds = profile_timeouts["baseline"]
     root = Path(__file__).resolve().parents[3]
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
@@ -288,4 +303,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

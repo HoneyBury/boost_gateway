@@ -211,7 +211,7 @@ def check_helm_drift(checks: list[dict[str, Any]]) -> None:
 
 
 def check_docs(checks: list[dict[str, Any]]) -> None:
-    runbook = text(ROOT / "docs/production-configuration-runbook.md")
+    runbook = text(ROOT / "docs/deployment/production-configuration-runbook.md")
     runbook_lower = runbook.lower()
     for token in (
         "python3 scripts/check_config_governance.py",
@@ -264,4 +264,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

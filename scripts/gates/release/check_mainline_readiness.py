@@ -31,7 +31,7 @@ def validate_p0_docs(checks: list[dict[str, Any]]) -> None:
     current = read("docs/current-state.md")
     root_cmake = read("CMakeLists.txt")
     add(checks, "p0:docs-index-current-state", "current-state.md" in docs, "docs index points to current-state")
-    add(checks, "p0:docs-index-archive-policy", "docs/archive/" in docs and "current-state.md" in docs, "docs index documents archive policy")
+    add(checks, "p0:docs-index-archive-policy", "docs/archive/" in docs and "不作为当前事实源" in docs, "docs index documents archive policy")
     add(checks, "p0:current-state-default-chain", "默认生产主链仍是 SDK + TCP gateway" in current, "current-state states the default production chain")
     add(checks, "p0:readme-boostgateway-title", "# BoostGateway" in readme, "README uses BoostGateway title")
     add(checks, "p0:cmake-framework-description", 'DESCRIPTION "Enterprise-grade C++20 realtime service framework"' in root_cmake, "CMake description matches framework positioning")
@@ -82,7 +82,10 @@ def validate_p1_mainline(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
-    manifest_raw = read("docs/production-candidate-evidence-manifest.json") if exists("docs/production-candidate-evidence-manifest.json") else "{}"
+    manifest_path = "docs/production/production-candidate-evidence-manifest.json"
+    if not exists(manifest_path) and exists("docs/production-candidate-evidence-manifest.json"):
+        manifest_path = "docs/production-candidate-evidence-manifest.json"
+    manifest_raw = read(manifest_path) if exists(manifest_path) else "{}"
     manifest = json.loads(manifest_raw)
     ids = {entry.get("id") for entry in manifest.get("evidence", []) if isinstance(entry, dict)}
     for evidence_id in (
@@ -155,6 +158,7 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     linux_lockfile = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
     add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_evidence_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
     add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
+    add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
     add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
     add(checks, "p3:long-soak-consumes-conan-lockfile", "build/conan-long-soak-capacity-cmake" in long_soak_workflow and "--lockfile" in long_soak_workflow, "long-soak-capacity workflow performs lockfile-based Conan configure/build preflight")
     add(checks, "p3:production-evidence-consumes-conan-lockfile", "build/conan-production-evidence-cmake" in production_evidence_workflow and "--lockfile" in production_evidence_workflow, "production-evidence workflow performs lockfile-based Conan configure/build preflight")
@@ -165,6 +169,13 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         and "runtime/validation/fixed-runner-release-capacity-summary.json" in long_soak_workflow
         and "runtime/validation/production-evidence-summary.json" in production_evidence_workflow,
         "fixed-runner workflows upload the required long-soak/capacity/production evidence summaries",
+    )
+    ci_workflow = read(".github/workflows/ci.yml")
+    add(
+        checks,
+        "p3:ci-runs-workflow-python-cli-contract-gate",
+        "Workflow Python CLI contract gate" in ci_workflow and "scripts/check_workflow_python_cli_contracts.py" in ci_workflow,
+        "CI runs the workflow Python CLI contract governance gate",
     )
 
     root_cmake = read("CMakeLists.txt")

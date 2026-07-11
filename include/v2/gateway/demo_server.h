@@ -90,9 +90,15 @@ public:
     [[nodiscard]] net::HttpMetricsSnapshot metrics_snapshot() const;
 
 private:
+    struct GatewayQueueItem {
+        SessionId session_id = 0;
+        std::optional<v2::io::IoSession::PacketMessage> message;
+    };
+
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
     void enqueue_packet(SessionId session_id, v2::io::IoSession::PacketMessage message);
+    void enqueue_session_closed(SessionId session_id);
     void start_gateway_worker();
     void stop_gateway_worker();
     void load_gateway_config();
@@ -140,7 +146,9 @@ private:
     std::vector<std::shared_ptr<v2::service::ServiceRegistrar>> service_registrars_;
     std::mutex gateway_queue_mutex_;
     std::condition_variable gateway_queue_cv_;
-    std::deque<std::pair<SessionId, v2::io::IoSession::PacketMessage>> gateway_queue_;
+    // Runtime and ActorSystem state are owned exclusively by gateway_worker_.
+    // I/O callbacks enqueue both packets and close notifications here.
+    std::deque<GatewayQueueItem> gateway_queue_;
     std::unique_ptr<std::thread> gateway_worker_;
     bool gateway_worker_stopping_ = false;
     std::mutex gateway_handle_mutex_;

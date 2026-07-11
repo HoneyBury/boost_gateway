@@ -1,13 +1,14 @@
 # v2.0.2 性能基线报告 — Windows Release P0 实测版
 
-更新时间：2026-05-28
+更新时间：2026-07-11
 
 ## 工程效率与固定 Runner 口径
 
 - PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
-- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间。
+- `ci.yml`、`perf-commit-check.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间；其中 `ci.yml` 现已与其他 hosted Ubuntu workflow 对齐为“显式安装 + 目录预创建 + 强制 launcher”模式，不再依赖“检测到才启用”的条件逻辑。
 - Conan 2 依赖治理已从 PoC 阶段提升为主线默认依赖路径（`BOOST_USE_CONAN_DEPS=ON`）；性能基线结论以 Conan 构建链为准，缺失 Conan 时会自动回退到 FetchContent/third_party。
 - Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
+- 2026-07-10/11 对 GitHub-hosted workflow 的连续回归已完成 hosted warm-cache 与 workflow 行为闭环验证：run `29106845147` 证明 Conan cache 恢复后路径漂移问题已解除，但旧版 `sccache` key 因“配置哈希固定 + exact-hit 后不再 save”被冻结在早期缓存，仍出现 `compile_requests=184 / cache_hits=0 / cache_misses=184`；提交 `28bda13` 将 `ci.yml` 调整为“配置哈希前缀 restore + commit exact key save”后，run `29108671173` 已在 GitHub-hosted `ubuntu-latest` 上达到 `compile_requests=184 / cache_hits=184 / cache_misses=0`。随后 `perf-regression.yml` 在 run `29112908106` 上取得 `compile_requests=202 / cache_hits=199 / cache_misses=3`，并成功写出自己的 workflow exact key；`perf-commit-check.yml`、`nightly-stability.yml`、`release.yml` 则分别在 run `29112908805`、`29112908489`、`29112907891` 上暴露出 dispatch-only PR comment 假设、stability build timeout 过紧和 release test 可观测性不足，最终由提交 `8127391` / `f365125` 收口，修复后 runs `29113691995`、`29113691508`、`29114301198` 全部通过。当前 hosted 侧剩余重点已不再是 workflow 自身可用性，而是 fixed-runner 口径。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
 
@@ -35,7 +36,7 @@
 
 **治理脚本结果**:
 - `check_conan_lockfile_workflows.py` — PASS (27/27 checks)
-- `check_fixed_runner_evidence_plan.py` — 40/44 checks (4 项因 `production-candidate-evidence-manifest.json` 尚未落仓而预期失败)
+- `check_fixed_runner_evidence_plan.py` — 40/44 checks (4 项因 `docs/production/production-candidate-evidence-manifest.json` 尚未落仓而预期失败)
 - `check_fixed_runner_environment.py` — `fixed runner preflight passed`
 
 **已知问题**: OpenSSL/3.3.2 在 x86_64 模拟环境下构建依赖 `perl` 完整安装包（`FindBin.pm`）；已在 `Dockerfile.conan` 中固定包含 `perl`。
@@ -43,7 +44,7 @@
 **下一步**: 
 - 将 lockfile 验证整合到 CI 常规流程中 ✅ CI 中已运行 conan install 与 lockfile
 - 锁定 Conan 版本至 2.8.x 以避免新版 CMakeDeps 生成的兼容性问题（fmt header-only 依赖需 `-o fmt/*:header_only=False` 做静态编译）✅ conanfile.py + 所有 workflow + Dockerfile 已锁定 `>=2.0,<2.9`
-- 落仓 `production-candidate-evidence-manifest.json` 以通过全部 44 项门禁 ✅ 已就位于 `docs/production/`
+- 落仓 `docs/production/production-candidate-evidence-manifest.json` 以通过全部 44 项门禁 ✅ 已就位
 
 ### 构建时间基线 (S3)
 
@@ -51,18 +52,18 @@
 
 | 工作流 | CMake Preset | 编译器 | sccache | 缓存键模式 | 备注 |
 |--------|-------------|--------|---------|-----------|------|
-| `ci.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-` | 全量单元测试 + 多个治理门禁；条件性启用 sccache |
-| `release.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-`（与 ci.yml 同键） | 发布包构建 + 合约门禁 |
-| `perf-commit-check.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-release-` | 性能冒烟 + 基线对比 |
-| `nightly-stability.yml` | `default` / `release` | GCC 12 (Linux), AppleClang | 是（Linux） | `sccache-Linux-nightly-` | 夜间稳定性浸泡 |
-| `perf-regression.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-regression-` | 多轮回归基线 |
+| `ci.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-<config-hash>-<git-sha>` | 全量单元测试 + 多个治理门禁；GitHub-hosted Ubuntu 上显式安装并统一启用 sccache，已验证 warm-cache 命中 |
+| `release.yml` | `release` | GCC 12 | 是 | `sccache-Linux-release-<config-hash>-<git-sha>` | 发布包构建 + 合约门禁；经 `f365125` 增补 `ctest` 可观测性后，run `29114301198` 已完成 hosted 全链路验证 |
+| `perf-commit-check.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-release-<config-hash>-<git-sha>` | 性能冒烟 + 基线对比；run `29112908805` 已验证缓存命中，但暴露 dispatch-only PR comment 假设，修复后 run `29113691995` 通过 |
+| `nightly-stability.yml` | `default` / `release` | GCC 12 (Linux), AppleClang | 是（Linux） | `sccache-Linux-nightly-<config-hash>-<git-sha>` | 夜间稳定性浸泡；run `29112908489` 暴露 hosted Debug build timeout 过紧，修复后 run `29113691508` 通过 |
+| `perf-regression.yml` | `release` | GCC 12 | 是 | `sccache-Linux-perf-regression-<config-hash>-<git-sha>` | 多轮回归基线；run `29112908106` 已验证 warm-cache 命中并保存 workflow exact key |
 
 **sccache 缓存键策略:**
 
-- `ci.yml` 与 `release.yml` 共享精确缓存键 `sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt') }}`，两者之间可复现 exact-match 缓存命中。
-- 其余 workflow 使用独立缓存键分段（`perf-release`、`perf-regression`、`nightly`），通过 `sccache-${{ runner.os }}-` fallback restore key 跨 workflow 共享。
-- hashFiles 输入因 workflow 而异：ci/release/perf-commit-check 使用 5 个文件/目录模式；nightly/perf-regression 使用 3 个。
-- 所有 workflow 的 `restore-keys` 均以 `sccache-${{ runner.os }}-` 结尾，允许精确键未命中时回退到同一 OS 的任意历史缓存。
+- `ci.yml` 当前使用“配置哈希前缀 restore + commit exact key save”模式：restore key 为 `sccache-${{ runner.os }}-release-${{ config_hash }}-${{ github.sha }}`，并以前缀 `sccache-${{ runner.os }}-release-${{ config_hash }}-` 回退；这样新提交会复用最近一次同配置缓存，同时在 run 末尾写出自己的 exact key，不再因 exact-hit 跳过 save 而冻结。
+- `release.yml`、`perf-commit-check.yml`、`nightly-stability.yml`、`perf-regression.yml` 现已同步到与 `ci.yml` 一致的“配置哈希前缀 restore + commit exact key save”模式，避免旧 exact-hit 长期阻断新缓存保存。
+- hashFiles 输入因 workflow 而异：`ci.yml` / `release.yml` 已纳入 Conan lock/profile/remotes；`perf-commit-check.yml`、`nightly-stability.yml`、`perf-regression.yml` 继续采用与各自构建入口匹配的 CMake-only 分段模式，但 save 语义已统一为 per-commit exact key。
+- 所有 workflow 的 `restore-keys` 仍以 `sccache-${{ runner.os }}-` 结尾，允许精确键未命中时回退到同一 OS 的任意历史缓存；当前 `ci.yml`、`perf-regression.yml`、`perf-commit-check.yml`、`nightly-stability.yml`、`release.yml` 都已有 hosted 实跑证据，其中最直接的 warm-cache 量化结果来自 `ci.yml` 的 `184/184` 与 `perf-regression.yml` / `perf-commit-check.yml` 的 `202/199/3`。
 
 **构建时间测量方法:**
 
@@ -72,6 +73,15 @@
 - 基线格式与字段说明见 `runtime/perf/build-times/BASELINE_TEMPLATE.json`。
 
 > **当前状态**: 构建时间数据采集基础设施已就位。5 个 sccache workflow 每次 CI 运行自动归档 `build-time.json` + `sccache-stats.json` 至 `runtime/perf/build-times/`。cold/warm 数据在 CI 实际运行后自动积累，待多轮数据后可汇总分析。
+
+> **2026-07-10/11 hosted 调查补充**:
+> - run `29106845147`: prefix restore 旧 `sccache` key，`compile_requests=184 / cache_hits=0 / cache_misses=184`，并首次保存 commit key `...-28bda13...`
+> - run `29108671173`: exact-hit `...-28bda13...`，`compile_requests=184 / cache_hits=184 / cache_misses=0`，总时长收敛到 18m31s
+> - run `29112908106`: `perf-regression.yml` 通过 workflow-prefix fallback restore `release` warm cache，获得 `compile_requests=202 / cache_hits=199 / cache_misses=3`，并保存 `perf-regression` exact key
+> - run `29112908805`: `perf-commit-check.yml` 同样获得 `compile_requests=202 / cache_hits=199 / cache_misses=3`，但失败点仅是 `workflow_dispatch` 下 PR comment 404；修复后 run `29113691995` 已通过
+> - run `29112908489` / `29113691508`: `nightly-stability.yml` 首轮暴露 hosted Debug build timeout 过紧，提升到 300s 后通过
+> - run `29112907891` / `29114301198`: `release.yml` 首轮暴露 `ctest` 可观测性不足，补 `List tests` 与 `ctest --progress --output-on-failure` 后通过 release gate、baseline 与打包全链路
+> - 最终结论：当前 hosted warm-cache 失效根因不是 Conan 路径漂移，也不是 launcher 失效，而是旧 `sccache` key 策略导致缓存冻结；修复后链路已闭环，后续重点转向 fixed-runner 事实源
 
 > **基线版本**: `8387a13dcb` (P0 优化收束)
 > **测量日期**: 2026-05-23
