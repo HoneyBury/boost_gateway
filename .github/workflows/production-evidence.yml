@@ -2,6 +2,7 @@ name: Production Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -101,8 +102,6 @@ permissions:
 jobs:
   production-evidence:
     runs-on: ${{ fromJSON(inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || '["self-hosted","Linux","X64"]') }}
-    env:
-      CONAN_HOME: ${{ runner.workspace }}/.conan2-local
     timeout-minutes: 720
     concurrency:
       group: production-evidence-${{ inputs.runner || vars.PRODUCTION_EVIDENCE_RUNNER || 'self-hosted-linux-x64' }}
