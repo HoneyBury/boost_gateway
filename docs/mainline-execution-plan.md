@@ -108,7 +108,7 @@ cmake --build build/default --parallel
 
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 进行中 | 版本化 runner 解析已落地，`ci.yml` 已在 GitHub-hosted `ubuntu-latest` 跑通，且新增 workflow Python CLI drift 门禁与 hosted `sccache` 显式安装；2026-07-10 已进一步完成 hosted 缓存根因收口：`CONAN_HOME` 恢复后 Conan package 绝对路径已稳定，但 `ci.yml` 旧版 `sccache` key 会因 exact-hit 后不再 save 而冻结。提交 `28bda13` 改为“配置哈希前缀 restore + commit exact key save”后，run `29108671173` 已验证 `184/184` 命中；同一策略现已同步到 release/perf/nightly 工作流，下一步是补齐这些 workflow 的 hosted/fixed-runner 命中证据，并把 runner inventory、标签治理、无效排队处理一起固化成标准流程 |
+| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 进行中 | 版本化 runner 解析已落地，`ci.yml` 已在 GitHub-hosted `ubuntu-latest` 跑通，且新增 workflow Python CLI drift 门禁与 hosted `sccache` 显式安装；2026-07-10 已进一步完成 hosted 缓存根因收口：`CONAN_HOME` 恢复后 Conan package 绝对路径已稳定，但 `ci.yml` 旧版 `sccache` key 会因 exact-hit 后不再 save 而冻结。提交 `28bda13` 改为“配置哈希前缀 restore + commit exact key save”后，run `29108671173` 已验证 `184/184` 命中；同一策略随后已在 `perf-regression.yml`（run `29112908106`）、`perf-commit-check.yml`（修复后 run `29113691995`）、`nightly-stability.yml`（修复后 run `29113691508`）和 `release.yml`（修复后 run `29114301198`）完成 hosted 验证，下一步从“workflow 自身可用性”转为 runner inventory、标签治理、无效排队处理与 fixed-runner 事实源固化 |
 | 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 待开始 | fixed-runner 仍是 release/capacity/production evidence 的最终事实源，需要补真实 Linux runner summary，而不是只停留在 workflow 可 dispatch |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
 | 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
@@ -116,8 +116,8 @@ cmake --build build/default --parallel
 
 ### 当前优先级判断
 
-1. 现在最该做的不是新增功能，而是把 runner 与 CI 拓扑说明白。GitHub-hosted 主线回归已经可用，workflow 脚本参数漂移、hosted `sccache` 漏装和 `ci.yml` 的缓存冻结问题都已补上；四个关联 workflow 也已同步到同一套 per-commit `sccache` save 策略，短期新的最高收益点变成“实际跑证据补齐”，包括 hosted/fixed-runner 的命中率、排队状态和 runner inventory 文档。
-2. 第二优先级是 fixed-runner 上的 Conan / baseline / production evidence 真实结果。只有这一步稳定，`BOOST_USE_CONAN_DEPS=ON` 才能从“默认值”升级为“唯一推荐路径”；但它已经不再依赖“先解决 hosted warm-cache 失效”，而是依赖仓库侧 Linux runner inventory、预发环境事实源以及已迁移 workflow 的实跑数据。
+1. 现在最该做的不是新增功能，而是把 runner 与 CI 拓扑说明白。GitHub-hosted 主线回归已经可用，workflow 脚本参数漂移、hosted `sccache` 漏装和 `ci.yml` 的缓存冻结问题都已补上；四个关联 workflow 也已完成 hosted 实跑收口，短期新的最高收益点已从“继续修 hosted workflow”转为“补 fixed-runner 事实源”，包括 hosted/fixed-runner 命中率口径、排队状态和 runner inventory 文档。
+2. 第二优先级是 fixed-runner 上的 Conan / baseline / production evidence 真实结果。只有这一步稳定，`BOOST_USE_CONAN_DEPS=ON` 才能从“默认值”升级为“唯一推荐路径”；它现在的前置条件不再是 hosted CI 可用性，而是仓库侧 Linux runner inventory、预发环境事实源以及线上 workflow 已完成的 hosted 对照证据。
 3. gRPC/proto 继续保持中期项。当前 schema-backed typed contract 已覆盖 29/29 handler，短期收益更高的是把非登录 full-flow 证据补齐，而不是扩大默认链路承诺。
 
 当前已确认的现实阻断是：GitHub 仓库内唯一 self-hosted runner `MyDesktop-Win` 处于离线状态，且没有在线 Linux `self-hosted/Linux/X64` runner。换句话说，第 1 项的治理已经明确了 fallback 和无效排队处理方式，但第 2 项在仓库侧 runner inventory 修复前无法真正开始。
