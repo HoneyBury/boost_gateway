@@ -297,13 +297,17 @@ TEST_F(GatewayFixture, SdkLeaderboardRoundTripThroughBackend) {
 
     auto top = alice.leaderboard_top(2, 5s);
     ASSERT_TRUE(top.ok) << top.error_message << " body=" << top.response_body;
-    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_bob\""), std::string::npos);
-    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_alice\""), std::string::npos);
+    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_bob\""), std::string::npos)
+        << "leaderboard top body=" << top.response_body;
+    EXPECT_NE(top.response_body.find("\"user_id\":\"lb_alice\""), std::string::npos)
+        << "leaderboard top body=" << top.response_body;
 
     auto rank = alice.leaderboard_rank("lb_alice", 5s);
     ASSERT_TRUE(rank.ok) << rank.error_message << " body=" << rank.response_body;
-    EXPECT_NE(rank.response_body.find("\"rank\":2"), std::string::npos);
-    EXPECT_NE(rank.response_body.find("\"score\":9001"), std::string::npos);
+    EXPECT_NE(rank.response_body.find("\"rank\":2"), std::string::npos)
+        << "leaderboard rank body=" << rank.response_body;
+    EXPECT_NE(rank.response_body.find("\"score\":9001"), std::string::npos)
+        << "leaderboard rank body=" << rank.response_body;
 
     alice.disconnect();
     bob.disconnect();
