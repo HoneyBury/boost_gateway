@@ -3,7 +3,7 @@ name: CI
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   push:
