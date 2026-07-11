@@ -57,9 +57,9 @@ on:
         required: true
         default: "conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock"
       use_existing_workspace:
-        description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
+        description: "Reuse an already-clean workspace at the workflow commit"
         required: true
-        default: true
+        default: false
         type: boolean
 
 permissions:
@@ -74,7 +74,6 @@ jobs:
         if: inputs.use_existing_workspace != true
         uses: actions/checkout@v4
         with:
-          clean: false
           fetch-depth: 0
 
       - name: Verify existing workspace
@@ -83,8 +82,8 @@ jobs:
         run: |
           set -euo pipefail
           test -d .git
-          git rev-parse --short HEAD
-          git status --short --branch
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5

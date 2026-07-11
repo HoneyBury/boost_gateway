@@ -220,6 +220,39 @@ def main() -> int:
         "vars.SPECIALIZED_E2E_RUNNER" in specialized_e2e_workflow,
         ".github/workflows/specialized-e2e.yml keeps SPECIALIZED_E2E_RUNNER override",
     )
+    add(
+        checks,
+        "workflow:specialized-e2e:fresh-checkout-default",
+        "default: false" in specialized_e2e_workflow and "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in specialized_e2e_workflow,
+        ".github/workflows/specialized-e2e.yml defaults to a checked-out workflow commit",
+    )
+
+    for workflow_name, workflow_path in (
+        ("production-evidence", ".github/workflows/production-evidence.yml"),
+        ("production-resilience", ".github/workflows/production-resilience.yml"),
+    ):
+        workflow_content = read(workflow_path)
+        add(
+            checks,
+            f"workflow:{workflow_name}:bounded-soak-choices",
+            "          - long\n" not in workflow_content and "          - overnight\n" not in workflow_content,
+            f"{workflow_path} exposes only profiles supported by its bounded gate",
+        )
+
+    long_soak_workflow = read(".github/workflows/long-soak-capacity.yml")
+    add(
+        checks,
+        "workflow:long-soak-capacity:extended-job-timeout",
+        "timeout-minutes: 1440" in long_soak_workflow,
+        ".github/workflows/long-soak-capacity.yml allows the advertised soak/capacity combination to finish",
+    )
+    stability_soak = read("scripts/gates/release/verify_stability_soak.py")
+    add(
+        checks,
+        "workflow:long-soak-capacity:profile-timeouts",
+        all(token in stability_soak for token in ("\"long\": {\"build\": 1800, \"test\": 300, \"baseline\": 10800}", "\"overnight\": {\"build\": 1800, \"test\": 300, \"baseline\": 32400}")),
+        "verify_stability_soak.py carries explicit long/overnight timeout profiles",
+    )
 
     fixed_runner_doc = read("docs/fixed-runner-playbook.md")
     for token in DOC_TOKENS:

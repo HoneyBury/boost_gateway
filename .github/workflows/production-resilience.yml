@@ -32,8 +32,6 @@ on:
           - smoke
           - short
           - medium
-          - long
-          - overnight
       baseline_profile:
         description: "Architecture gate profile"
         required: true
@@ -74,7 +72,7 @@ on:
       step_timeout_seconds:
         description: "Timeout for each P5 sub-gate"
         required: true
-        default: "1200"
+        default: "5400"
       kind_timeout_seconds:
         description: "Timeout for kind rollout/delete checks"
         required: true

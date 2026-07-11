@@ -70,7 +70,7 @@ permissions:
 jobs:
   long-soak-capacity:
     runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
-    timeout-minutes: 720
+    timeout-minutes: 1440
     concurrency:
       group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
       cancel-in-progress: false

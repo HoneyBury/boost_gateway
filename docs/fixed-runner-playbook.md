@@ -8,9 +8,9 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文
 
 容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
 
-2026-07-09 的当前事实是：`.github/workflows/ci.yml` 已在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 跑通主线 Conan build/test/gate，用于“无 self-hosted runner 时的主线回归兜底”。`.github/workflows/release.yml` 现在也可手动切到 GitHub-hosted `ubuntu-latest` 做 bounded build/test/baseline 验证。但它们都不是 fixed-runner 证据替代物；release baseline、capacity、production evidence 和 long soak 仍必须回到在线 Linux fixed runner 刷新。
+GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
 
-GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，仓库内仍只看到一个离线的 Windows self-hosted runner `MyDesktop-Win`，还没有在线的 Linux `["self-hosted","Linux","X64"]` runner。因此 `conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 如果继续按 Linux fixed-runner 默认值 dispatch，只会停留在 queued；要执行第 2 项真实证据刷新，必须先注册或恢复在线 Linux runner。
+GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，`aoi-omen-gaming-laptop-16-am0xxx` 已作为在线 Linux runner 匹配 `["self-hosted","Linux","X64"]`；`MyDesktop-Win` 仍离线。第一批真实证据刷新已解除 runner 不可用阻断，但仍需按下表执行并归档 summary。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
