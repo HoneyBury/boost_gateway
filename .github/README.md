@@ -17,6 +17,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `perf-commit-check.yml` | 手动 | 性能 smoke 检测 |
 | `perf-regression.yml` | 手动 | 性能回归分析 |
 | `production-evidence.yml` | 手动 | 生产证据聚合 |
+| `production-readiness.yml` | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `production-resilience.yml` | 定时 | 生产韧性验证 |
 | `release.yml` | v* tag / 手动 | 构建 → 测试 → 门禁 → baseline；仅 tag push 进入发布 |
 | `specialized-e2e.yml` | 手动 | Raft/Redis/Operator 专项 E2E |

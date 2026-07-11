@@ -1,0 +1,127 @@
+name: Production Readiness
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '"ubuntu-latest"'
+      production_evidence_run_id:
+        description: "Production evidence run ID whose artifact contains the R0/P6 summaries"
+        required: true
+      long_soak_run_id:
+        description: "Long soak/capacity run ID whose artifact contains fixed-runner summaries"
+        required: true
+      require_fixed_runner:
+        description: "Require all fixed-runner and pre-production manifest entries"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  production-readiness:
+    runs-on: ${{ fromJSON(inputs.runner || '"ubuntu-latest"') }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Import production evidence artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRODUCTION_EVIDENCE_RUN_ID: ${{ inputs.production_evidence_run_id }}
+          LONG_SOAK_RUN_ID: ${{ inputs.long_soak_run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation runtime/readiness-import/production runtime/readiness-import/long-soak
+          gh run download "$PRODUCTION_EVIDENCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "production-evidence-$PRODUCTION_EVIDENCE_RUN_ID" \
+            --dir runtime/readiness-import/production
+          gh run download "$LONG_SOAK_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "long-soak-capacity-$LONG_SOAK_RUN_ID" \
+            --dir runtime/readiness-import/long-soak
+          find runtime/readiness-import -type f \( -name '*.json' -o -name '*.md' \) -print0 |
+            while IFS= read -r -d '' path; do
+              case "$path" in
+                *.json) cp "$path" runtime/validation/"$(basename "$path")" ;;
+              esac
+            done
+          test -f runtime/validation/r0-production-candidate-evidence-summary.json
+          test -f runtime/validation/long-soak-capacity-summary.json
+          test -f runtime/validation/fixed-runner-release-capacity-summary.json
+
+      - name: R2 fixed-runner manifest
+        id: r2
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(
+            scripts/check_production_evidence_manifest.py
+            --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
+          )
+          if [ "${{ inputs.require_fixed_runner }}" = "true" ]; then
+            args+=(--require-fixed-runner)
+          fi
+          python "${args[@]}"
+
+      - name: R3 production readiness report
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/render_production_readiness_report.py \
+            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
+            --r0-summary runtime/validation/r0-production-candidate-evidence-summary.json \
+            --output runtime/validation/r3-production-readiness-report.md \
+            --summary-path runtime/validation/r3-production-readiness-report-summary.json
+
+      - name: Evaluate readiness decision
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("runtime/validation/r3-production-readiness-report-summary.json")
+          summary = json.loads(path.read_text(encoding="utf-8"))
+          print(json.dumps({
+              "overall_pass": summary.get("overall_pass"),
+              "final_production_ready": summary.get("final_production_ready"),
+              "failed_step": summary.get("failed_step", ""),
+          }, sort_keys=True))
+          raise SystemExit(0 if summary.get("final_production_ready") is True else 1)
+          PY
+
+      - name: Upload production readiness evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-readiness-${{ github.run_id }}
+          path: |
+            runtime/validation/r0-*-summary.json
+            runtime/validation/long-soak-*-summary.json
+            runtime/validation/*capacity*summary.json
+            runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
+            runtime/validation/r3-production-readiness-report.md
+            runtime/validation/r3-production-readiness-report-summary.json
+          retention-days: 90
+          if-no-files-found: warn

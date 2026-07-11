@@ -15,6 +15,7 @@ DEFAULT_SUMMARIES = [
     "runtime/validation/release-baseline-summary.json",
     "runtime/validation/long-soak-capacity-summary.json",
     "runtime/validation/production-evidence-summary.json",
+    "runtime/validation/r0-production-candidate-evidence-summary.json",
     "runtime/validation/r2-production-evidence-manifest-summary.json",
     "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
     "runtime/validation/r3-production-readiness-report-summary.json",
@@ -98,4 +99,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

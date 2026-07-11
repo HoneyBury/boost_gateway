@@ -31,7 +31,8 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 正在执行；完成后必须核对 `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
-| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过；R2 fixed-runner manifest 仍待 R0/long-soak 条目齐全 |
+| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过；R0 aggregate 随 artifact 归档 |
+| 5 | `production-readiness.yml` | `production_evidence_run_id` + `long_soak_run_id`，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
 
 通过判据：
 
@@ -304,6 +305,20 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json`、`p6-candidate-audit-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
+## R2/R3 cross-workflow aggregation
+
+`production-evidence.yml` 和 `long-soak-capacity.yml` 在独立运行中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。使用 `production-readiness.yml` 传入两个已完成的 run ID，将 artifact 汇聚到同一 workspace，再运行 R2 `--require-fixed-runner` 和 R3 readiness report：
+
+```bash
+gh workflow run production-readiness.yml --ref develop \
+  -f runner='"ubuntu-latest"' \
+  -f production_evidence_run_id=<production-evidence-run-id> \
+  -f long_soak_run_id=<long-soak-capacity-run-id> \
+  -f require_fixed_runner=true
+```
+
+该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；缺少 R5/R6 或其他固定 runner summary 时应失败并列出 blocker。
+
 ## R4/R5/R6 production blocking evidence
 
 Before final production approval, refresh these fixed-runner or pre-production producers and consume them with `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner`:

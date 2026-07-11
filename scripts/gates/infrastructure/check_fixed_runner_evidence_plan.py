@@ -66,13 +66,28 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_PROFILE,
             "build/conan-production-evidence-cmake",
             "runtime/validation/production-evidence-summary.json",
+            "runtime/validation/r0-production-candidate-evidence-summary.json",
+            "actions/upload-artifact@v4",
+        ),
+        "summaries": (
+            "runtime/validation/production-evidence-summary.json",
+            "runtime/validation/r0-production-candidate-evidence-summary.json",
+        ),
+    },
+    "production_readiness": {
+        "path": ".github/workflows/production-readiness.yml",
+        "tokens": (
+            "production_evidence_run_id",
+            "long_soak_run_id",
+            "gh run download",
+            "--require-fixed-runner",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
             "runtime/validation/r3-production-readiness-report-summary.json",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
-            "runtime/validation/production-evidence-summary.json",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
+            "runtime/validation/r3-production-readiness-report-summary.json",
         ),
     },
 }
@@ -266,6 +281,13 @@ def main() -> int:
         "workflow:long-soak-capacity:canonical-root",
         "Path(__file__).resolve().parents[3]" in long_soak_gate,
         "run_long_soak_capacity.py resolves paths from the repository root",
+    )
+    readiness_report = read("scripts/gates/production/render_production_readiness_report.py")
+    add(
+        checks,
+        "workflow:readiness-report:canonical-root",
+        "Path(__file__).resolve().parents[3]" in readiness_report,
+        "render_production_readiness_report.py resolves paths from the repository root",
     )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(
