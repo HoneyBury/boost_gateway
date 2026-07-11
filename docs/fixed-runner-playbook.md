@@ -6,7 +6,7 @@
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
-容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642` 和 production evidence `29146018657`；长稳/容量批次 `29146495724` 正在执行。
 
 GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
 
@@ -30,8 +30,8 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
-| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
-| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `runtime/validation/production-evidence-summary.json`、`runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json` |
+| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 正在执行；完成后必须核对 `runtime/validation/long-soak-capacity-summary.json`、`runtime/validation/fixed-runner-release-capacity-summary.json` |
+| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过；R2 fixed-runner manifest 仍待 R0/long-soak 条目齐全 |
 
 通过判据：
 

@@ -35,8 +35,12 @@
 | `ci.yml` | `29143332897` | `cb1c853` | success |
 | `perf-regression.yml` | `29143057517` | `cb1c853` | success |
 | `perf-commit-check.yml` | `29144040776` | `cb1c853` | success |
+| `specialized-e2e.yml` | `29145172304` | `e8ea86f` | success |
+| `production-resilience.yml` | `29145497642` | `cbed12d` | success |
+| `production-evidence.yml` | `29146018657` | `ecf624c` | success |
+| `long-soak-capacity.yml` | `29146495724` | `ea05045` | in progress |
 
-上述六个有界 workflow 已在 `cb1c853` 上成功；它们不替代固定 runner 的 long-soak/capacity 与 production evidence。
+上述 bounded workflow 以及专项 E2E、生产 resilience/evidence 已形成真实 fixed-runner 事实；`long-soak-capacity.yml` 仍在执行，R0/R2/R3 最终准入尚未通过。
 
 ## 受影响的默认 fixed-runner workflow
 

@@ -108,14 +108,14 @@ cmake --build build/default --parallel
 
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 基础完成 | 在线 Linux runner 已匹配默认标签；`cb1c853` 上 release `29142235214`、Conan validation `29142663279`、nightly `29142649741`、CI `29143332897`、perf regression `29143057517` 已成功。剩余是 specialized/production/long-soak workflow 的输入、时限与证据语义收口 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | bounded Conan/release 基线已成功；仍需 long-soak/capacity、production resilience/evidence 及 R2/R3 的真实 Linux summary，不能以有界 smoke 替代 |
+| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | P5/P6 bounded summary 已成功；long-soak/capacity `29146495724` 正在执行。完成后仍需生成 R0 aggregate，并以 R2 `--require-fixed-runner` 与 R3 readiness report 形成连续准入事实链 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
 | 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
 | 5 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
 
 ### 当前优先级判断
 
-1. 在线 runner 与 bounded 主线已经验证，当前最高收益点是先修正剩余 workflow 的可验证性：specialized E2E 默认复用 workspace、production evidence 的 soak profile 选项与脚本不一致、production resilience/long-soak 的内部超时与 long/overnight profile 不一致。
-2. 随后执行 long-soak/capacity、production resilience/evidence，并以 R2/R3 summary 形成连续的固定 runner 事实链。只有这一步稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
+1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
+2. 等待 long-soak/capacity 完成，随后补齐 R0 aggregate，再重跑 R2 `--require-fixed-runner` 与 R3 readiness report；只有连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
 3. 实际代码的下一项生产风险是 login backend 的 placeholder 密码哈希和 token 重签发；应先明确并实现生产身份凭证方案，再推进非登录 gRPC full-flow。gRPC/proto 仍保持中期实验项。
