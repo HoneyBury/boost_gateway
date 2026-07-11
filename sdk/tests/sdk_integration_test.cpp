@@ -83,6 +83,7 @@ struct GatewayFixture : public ::testing::Test {
         std::filesystem::remove(test_config_path_, remove_ec);
         set_test_env("CONFIG_PATH", test_config_path_.c_str());
         set_test_env("V2_BACKEND_CONNECTION_POOL_SIZE", "1");
+        set_test_env("BOOST_DISABLE_REDIS_AUTO_CONNECT", "1");
 
         login_backend_ = std::make_unique<v2::login::LoginBackendService>(0);
         room_backend_ = std::make_unique<v2::room::RoomBackendService>(0, 3, 300000, 50);
@@ -160,6 +161,7 @@ struct GatewayFixture : public ::testing::Test {
         if (battle_backend_) battle_backend_->stop();
         if (room_backend_) room_backend_->stop();
         if (login_backend_) login_backend_->stop();
+        unset_test_env("BOOST_DISABLE_REDIS_AUTO_CONNECT");
         unset_test_env("V2_BACKEND_CONNECTION_POOL_SIZE");
         unset_test_env("CONFIG_PATH");
         std::error_code remove_ec;
