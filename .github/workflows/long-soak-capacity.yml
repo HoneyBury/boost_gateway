@@ -173,6 +173,7 @@ jobs:
           python "${args[@]}"
 
       - name: R4 fixed-runner release/capacity gate
+        if: inputs.run_capacity && inputs.run_business_capacity
         shell: bash
         run: |
           set -euo pipefail
