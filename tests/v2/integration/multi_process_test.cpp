@@ -336,11 +336,13 @@ void MultiProcessFixture::SetUp() {
     battle_port_ = reserve_free_port();
     leaderboard_port_ = reserve_free_port();
     setenv("CONFIG_PATH", "/tmp/boost_gateway_multi_process_no_config.json", 1);
+    setenv("BOOST_DISABLE_REDIS_AUTO_CONNECT", "1", 1);
 }
 
 void MultiProcessFixture::TearDown() {
     stop_all();
     services_.clear();
+    unsetenv("BOOST_DISABLE_REDIS_AUTO_CONNECT");
     unsetenv("CONFIG_PATH");
 }
 

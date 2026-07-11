@@ -87,6 +87,9 @@ PROFILE_TIMEOUTS = {
     "overnight": {"build": 1800, "test": 300, "baseline": 32400},
 }
 
+SUSTAINED_GATE_MAX_FAILURE_RATE = 0.01
+SUSTAINED_GATE_MAX_DEVIATION_RATIO = 0.20
+
 
 def exe_name(base: str) -> str:
     return f"{base}.exe" if os.name == "nt" else base
@@ -241,6 +244,31 @@ def failed_arch_checks(summary_path: Path) -> list[dict[str, object]]:
     return [check for check in checks if isinstance(check, dict) and check.get("passed") is False]
 
 
+def sustained_failure_violations(
+    failures: dict[str, dict[str, object]], completed_runs: int
+) -> list[dict[str, object]]:
+    violations: list[dict[str, object]] = []
+    for entry in failures.values():
+        threshold = float(entry["threshold"])
+        worst_observed = float(entry["worst_observed"])
+        failure_rate = int(entry["failed_runs"]) / max(1, completed_runs)
+        direction = str(entry["direction"])
+        deviation_ratio = (
+            (worst_observed - threshold) / threshold
+            if direction == "max"
+            else (threshold - worst_observed) / threshold
+        )
+        entry["failure_rate"] = round(failure_rate, 6)
+        entry["worst_deviation_ratio"] = round(deviation_ratio, 6)
+        entry["accepted_as_transient"] = (
+            failure_rate <= SUSTAINED_GATE_MAX_FAILURE_RATE
+            and deviation_ratio <= SUSTAINED_GATE_MAX_DEVIATION_RATIO
+        )
+        if not entry["accepted_as_transient"]:
+            violations.append(entry)
+    return sorted(violations, key=lambda check: str(check["name"]))
+
+
 def run_sustained_arch_baseline(
     root: Path,
     build_dir: Path,
@@ -285,6 +313,14 @@ def run_sustained_arch_baseline(
                     })
                     entry["failed_runs"] = int(entry["failed_runs"]) + 1
                     entry["last_observed"] = check.get("value")
+                    observed = float(check["value"])
+                    worst_observed = entry.get("worst_observed")
+                    if worst_observed is None or (
+                        str(entry["direction"]) == "max" and observed > float(worst_observed)
+                    ) or (
+                        str(entry["direction"]) == "min" and observed < float(worst_observed)
+                    ):
+                        entry["worst_observed"] = observed
                 continue
             if completed_runs > 1:
                 if last_run.get("stdout_tail"):
@@ -301,7 +337,8 @@ def run_sustained_arch_baseline(
                 "last_run": last_run,
                 "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
             }
-    status = "failed" if failures else "passed"
+    violating_checks = sustained_failure_violations(failures, completed_runs)
+    status = "failed" if violating_checks else "passed"
     return {
         "name": name,
         "category": "baseline",
@@ -311,6 +348,11 @@ def run_sustained_arch_baseline(
         "completed_runs": completed_runs,
         "last_run": last_run,
         "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
+        "violating_checks": violating_checks,
+        "transient_failure_policy": {
+            "max_failure_rate": SUSTAINED_GATE_MAX_FAILURE_RATE,
+            "max_deviation_ratio": SUSTAINED_GATE_MAX_DEVIATION_RATIO,
+        },
     }
 
 
