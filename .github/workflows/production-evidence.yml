@@ -198,6 +198,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p runtime/validation
           build_type="${{ inputs.configuration || 'Debug' }}"
           cmake --preset "${{ inputs.configure_preset || 'default' }}" \
             -DBOOST_USE_CONAN_DEPS=ON \
