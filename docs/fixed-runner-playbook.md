@@ -14,6 +14,21 @@ GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-invent
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
+### 新机器的 Conan 缓存初始化（必须执行）
+
+固定 runner 的 Conan 缓存放在 checkout 同级目录
+`${GITHUB_WORKSPACE}/../.conan2-local`，workflow 中的实际配置是
+`${{ github.workspace }}/../.conan2-local`。换新机器后，第一次运行允许从已配置的远端完整下载依赖；该次 `conan install` 成功后，必须把填充后的 `.conan2-local` 复制到这个固定位置，并在 runner 清理 checkout、重新注册 workspace 或重启服务时保留该目录。后续 fixed-runner workflow 才能复用本地包，避免重复远程下载。
+
+```bash
+export RUNNER_CONAN_HOME="$GITHUB_WORKSPACE/../.conan2-local"
+mkdir -p "$RUNNER_CONAN_HOME"
+rsync -a /path/to/seeded/.conan2-local/ "$RUNNER_CONAN_HOME/"
+export CONAN_HOME="$RUNNER_CONAN_HOME"
+```
+
+固定 runner 的 Conan 路径由 `scripts/check_conan_lockfile_workflows.py` 持续检查。`ci.yml` 是有意保留的例外：它面向 GitHub-hosted runner，使用 checkout 内 `.conan2-local` 和 `actions/cache`；`production-readiness.yml` 只汇聚已有 artifact，不执行 Conan。
+
 手动命令：
 
 ```bash

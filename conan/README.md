@@ -8,7 +8,9 @@ Current rules:
 
 - Default build path prefers Conan (`BOOST_USE_CONAN_DEPS=ON`), falling back to `FetchContent/third_party` when Conan packages are unavailable.
 - `BOOST_USE_CONAN_DEPS=ON` is the only supported switch for enabling Conan.
-- Prefer repository-local `CONAN_HOME=.conan2-local`.
+- For local development, `CONAN_HOME=.conan2-local` is convenient. Fixed-runner
+  workflows deliberately use `${{ github.workspace }}/../.conan2-local`, which
+  survives checkout replacement and is pre-warmed on the runner.
 - Prefer repository-managed profiles and remotes under `conan/`.
 - Public `conancenter` is not a default requirement; internal mirror, warm cache,
   or `--no-remote` must remain supported.
@@ -31,6 +33,27 @@ Linux fixed-runner example:
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
 ```
+
+### 新 runner 的 Conan 缓存初始化
+
+固定 runner 的 Conan home 是 checkout 的同级目录：
+`${GITHUB_WORKSPACE}/../.conan2-local`（Actions 中对应
+`${{ github.workspace }}/../.conan2-local`）。换新机器时，先让第一次
+`conan install` 从配置的远端完整拉取依赖；成功后把这个已填充的 Conan
+home 复制到该固定路径，并确保 runner 清理 checkout 时不要删除它。之后
+`conan-validate.yml`、`release.yml`、长稳、性能和 production evidence
+工作流都会复用这份缓存，避免每个 workflow 重复从远端下载。
+
+```bash
+export RUNNER_CONAN_HOME="$GITHUB_WORKSPACE/../.conan2-local"
+mkdir -p "$RUNNER_CONAN_HOME"
+rsync -a /path/to/seeded/.conan2-local/ "$RUNNER_CONAN_HOME/"
+export CONAN_HOME="$RUNNER_CONAN_HOME"
+```
+
+`ci.yml` 是有意保留的例外：它运行在 GitHub-hosted runner 上，使用
+checkout 内的 `.conan2-local` 和 `actions/cache`；`production-readiness.yml`
+只下载并汇聚已有 artifact，不执行 Conan。
 
 The repository-managed Linux profile intentionally pins `compiler.version` so
 the fixed-runner lockfile stays reproducible. If the Ubuntu runner image moves

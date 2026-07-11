@@ -25,6 +25,24 @@ WORKFLOWS = {
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
 }
 
+# Fixed runners keep the Conan home outside the checkout so a fresh checkout
+# does not invalidate the dependency cache.  ``ci.yml`` is intentionally
+# different: it targets GitHub-hosted runners and restores a checkout-local
+# home through actions/cache.
+FIXED_RUNNER_CONAN_WORKFLOWS = {
+    "conan_validate": ".github/workflows/conan-validate.yml",
+    "release": ".github/workflows/release.yml",
+    "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
+    "nightly_stability": ".github/workflows/nightly-stability.yml",
+    "perf_commit_check": ".github/workflows/perf-commit-check.yml",
+    "perf_regression": ".github/workflows/perf-regression.yml",
+    "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
+    "production_evidence": ".github/workflows/production-evidence.yml",
+    "production_resilience": ".github/workflows/production-resilience.yml",
+    "specialized_e2e": ".github/workflows/specialized-e2e.yml",
+}
+FIXED_RUNNER_CONAN_HOME = "CONAN_HOME: ${{ github.workspace }}/../.conan2-local"
+
 
 def read(relative: str) -> str:
     return (ROOT / relative).read_text(encoding="utf-8")
@@ -91,7 +109,6 @@ def main() -> int:
     long_soak = contents["long_soak_capacity"]
     release = contents["release"]
     production_evidence = contents["production_evidence"]
-    production_candidate_evidence = contents["production_candidate_evidence"]
     add(
         checks,
         "workflow:release:conan-preflight-toggle",
@@ -110,12 +127,14 @@ def main() -> int:
         "build/conan-production-evidence-cmake" in production_evidence and "--target project_v2" in production_evidence,
         "production-evidence performs a lockfile-based Conan configure/build preflight",
     )
-    add(
-        checks,
-        "workflow:production-candidate:fixed-conan-home",
-        "CONAN_HOME: ${{ github.workspace }}/../.conan2-local" in production_candidate_evidence,
-        "production-candidate-evidence reuses the fixed runner Conan home outside the checkout",
-    )
+    for name, path in FIXED_RUNNER_CONAN_WORKFLOWS.items():
+        content = read(path) if exists(path) else ""
+        add(
+            checks,
+            f"workflow:{name}:fixed-conan-home",
+            FIXED_RUNNER_CONAN_HOME in content,
+            f"{path} reuses {FIXED_RUNNER_CONAN_HOME} outside the checkout",
+        )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

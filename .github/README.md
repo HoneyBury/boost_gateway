@@ -30,6 +30,16 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
+### Conan fixed-runner 缓存
+
+固定 runner 上的 Conan home 必须保存在 checkout 同级目录
+`${{ github.workspace }}/../.conan2-local`。新机器第一次运行时允许
+`conan install` 从远端拉取完整依赖，成功后将填充后的 `.conan2-local`
+复制到该路径，并在 runner 清理或重建 checkout 时保留它。这样后续
+workflow 会直接复用本地包缓存。`ci.yml` 运行在 GitHub-hosted runner，
+是唯一使用 checkout 内 `.conan2-local` + Actions cache 的例外；
+`production-readiness.yml` 不运行 Conan。
+
 ## 产物命名约定
 
 - Release 包: `boost-gateway-{version}-linux-x64.tar.gz`

@@ -27,6 +27,7 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
 - Conan PoC 当前事实：本机可在仓库内 `CONAN_HOME` 下完成 profile 生成并进入依赖图解析；若访问 `conancenter` 受限，仍需通过内网镜像、预热缓存或离线源完成真正取包。
 - 仓库已新增 `scripts/bootstrap_conan.py` 与 `conan/remotes.example.json`，用于优先准备本地 cache / 内网 remote；公网 `conancenter` 不是默认前提。
+- 2026-07-11 已完成 workflow Conan 路径审计：除面向 GitHub-hosted runner、使用 checkout 内目录和 `actions/cache` 的 `ci.yml` 外，所有执行 Conan 的 fixed-runner workflow（包括 release、长稳、nightly、perf、specialized E2E、production resilience/evidence/candidate）均使用 checkout 同级的 `${{ github.workspace }}/../.conan2-local`；`production-readiness.yml` 只汇聚 artifact，不执行 Conan。新 runner 必须在第一次远端拉取成功后，把填充后的 Conan home 复制到该路径并持久保留，详见 `conan/README.md` 和 `docs/fixed-runner-playbook.md`。
 - bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
 - 仓库已新增独立的 `conan-validate.yml` 手动流水线，用于在不扰动默认 CI 的前提下验证 Conan 依赖链；当前已补 `runner` / `conan_profile` / `conan_lockfile` 输入，默认可切到 Linux fixed-runner。
 - `conan-validate.yml` 已完成真实 GitHub Actions dispatch，历史事实是 workflow 已被 GitHub 接受并派发；后续 Linux fixed-runner 结果继续按同一入口归档。
