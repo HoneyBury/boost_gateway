@@ -66,18 +66,30 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_PROFILE,
             "build/conan-production-evidence-cmake",
             "runtime/validation/production-evidence-summary.json",
-            "runtime/validation/r0-production-candidate-evidence-summary.json",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
             "runtime/validation/production-evidence-summary.json",
+        ),
+    },
+    "production_candidate_evidence": {
+        "path": ".github/workflows/production-candidate-evidence.yml",
+        "tokens": (
+            LINUX_LOCKFILE,
+            LINUX_PROFILE,
+            "build/conan-production-candidate-cmake",
+            "scripts/verify_production_candidate_evidence.py",
+            "runtime/validation/r0-production-candidate-evidence-summary.json",
+            "actions/upload-artifact@v4",
+        ),
+        "summaries": (
             "runtime/validation/r0-production-candidate-evidence-summary.json",
         ),
     },
     "production_readiness": {
         "path": ".github/workflows/production-readiness.yml",
         "tokens": (
-            "production_evidence_run_id",
+            "production_candidate_run_id",
             "long_soak_run_id",
             "gh run download",
             "--require-fixed-runner",

@@ -10,8 +10,8 @@ on:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
         default: '"ubuntu-latest"'
-      production_evidence_run_id:
-        description: "Production evidence run ID whose artifact contains the R0/P6 summaries"
+      production_candidate_run_id:
+        description: "Production candidate run ID whose artifact contains the R0 summaries"
         required: true
       long_soak_run_id:
         description: "Long soak/capacity run ID whose artifact contains fixed-runner summaries"
@@ -43,15 +43,15 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          PRODUCTION_EVIDENCE_RUN_ID: ${{ inputs.production_evidence_run_id }}
+          PRODUCTION_CANDIDATE_RUN_ID: ${{ inputs.production_candidate_run_id }}
           LONG_SOAK_RUN_ID: ${{ inputs.long_soak_run_id }}
         run: |
           set -euo pipefail
-          mkdir -p runtime/validation runtime/readiness-import/production runtime/readiness-import/long-soak
-          gh run download "$PRODUCTION_EVIDENCE_RUN_ID" \
+          mkdir -p runtime/validation runtime/readiness-import/production-candidate runtime/readiness-import/long-soak
+          gh run download "$PRODUCTION_CANDIDATE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "production-evidence-$PRODUCTION_EVIDENCE_RUN_ID" \
-            --dir runtime/readiness-import/production
+            --name "production-candidate-evidence-$PRODUCTION_CANDIDATE_RUN_ID" \
+            --dir runtime/readiness-import/production-candidate
           gh run download "$LONG_SOAK_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name "long-soak-capacity-$LONG_SOAK_RUN_ID" \

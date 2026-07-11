@@ -237,36 +237,6 @@ jobs:
           fi
           python "${args[@]}"
 
-      - name: R0 production candidate aggregate
-        if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          args=(
-            scripts/verify_production_candidate_evidence.py
-            --build-dir "${{ inputs.build_dir || 'build/default' }}"
-            --configuration "${{ inputs.configuration || 'Debug' }}"
-            --skip-build
-            --step-timeout-seconds "${{ inputs.step_timeout_seconds || '1200' }}"
-            --summary-path runtime/validation/r0-production-candidate-evidence-summary.json
-          )
-          if [ "${{ inputs.include_redis_live }}" = "true" ]; then
-            args+=(--include-redis-live)
-          fi
-          if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
-            args+=(--include-kind)
-          fi
-          if [ "${{ inputs.include_observability_runtime }}" = "true" ]; then
-            args+=(--include-runtime-http)
-          fi
-          if [ "${{ inputs.include_release_baseline }}" = "true" ]; then
-            args+=(--include-release-baseline)
-          fi
-          if [ "${{ inputs.include_capacity_baseline }}" = "true" ]; then
-            args+=(--include-capacity-baseline)
-          fi
-          python "${args[@]}"
-
       - name: Observability runtime evidence
         if: inputs.include_observability_runtime
         shell: bash
@@ -287,7 +257,6 @@ jobs:
           for path in \
             runtime/validation/fixed-runner-preflight-summary.json \
             runtime/validation/production-evidence-summary.json \
-            runtime/validation/r0-production-candidate-evidence-summary.json \
             runtime/validation/p6-stability-soak-summary.json \
             runtime/validation/p6-data-recovery-summary.json \
             runtime/validation/p6-specialized-e2e-summary.json \
@@ -312,8 +281,6 @@ jobs:
           path: |
             runtime/validation/fixed-runner-preflight-summary.json
             runtime/validation/production-evidence-summary.json
-            runtime/validation/r0-production-candidate-evidence-summary.json
-            runtime/validation/r0-*-summary.json
             runtime/validation/p6-*-summary.json
             runtime/validation/p2-observability-runtime-summary.json
             runtime/validation/gateway-observability-runtime-summary.json
