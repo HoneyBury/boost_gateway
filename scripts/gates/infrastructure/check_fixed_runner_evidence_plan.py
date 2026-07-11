@@ -253,6 +253,20 @@ def main() -> int:
         all(token in stability_soak for token in ("\"long\": {\"build\": 1800, \"test\": 300, \"baseline\": 10800}", "\"overnight\": {\"build\": 1800, \"test\": 300, \"baseline\": 32400}")),
         "verify_stability_soak.py carries explicit long/overnight timeout profiles",
     )
+    fixed_runner_environment = read("scripts/gates/infrastructure/check_fixed_runner_environment.py")
+    add(
+        checks,
+        "workflow:long-soak-capacity:preflight-profile",
+        '"long-soak-capacity"' in fixed_runner_environment and '--profile long-soak-capacity' in long_soak_workflow,
+        "long-soak-capacity.yml uses a profile accepted by fixed-runner preflight",
+    )
+    long_soak_gate = read("scripts/gates/production/run_long_soak_capacity.py")
+    add(
+        checks,
+        "workflow:long-soak-capacity:canonical-root",
+        "Path(__file__).resolve().parents[3]" in long_soak_gate,
+        "run_long_soak_capacity.py resolves paths from the repository root",
+    )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(
         checks,
