@@ -22,6 +22,7 @@ WORKFLOWS = {
     "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "production_evidence": ".github/workflows/production-evidence.yml",
+    "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
 }
 
 
@@ -90,6 +91,7 @@ def main() -> int:
     long_soak = contents["long_soak_capacity"]
     release = contents["release"]
     production_evidence = contents["production_evidence"]
+    production_candidate_evidence = contents["production_candidate_evidence"]
     add(
         checks,
         "workflow:release:conan-preflight-toggle",
@@ -107,6 +109,12 @@ def main() -> int:
         "workflow:production-evidence:real-conan-validation-build",
         "build/conan-production-evidence-cmake" in production_evidence and "--target project_v2" in production_evidence,
         "production-evidence performs a lockfile-based Conan configure/build preflight",
+    )
+    add(
+        checks,
+        "workflow:production-candidate:fixed-conan-home",
+        "CONAN_HOME: ${{ github.workspace }}/../.conan2-local" in production_candidate_evidence,
+        "production-candidate-evidence reuses the fixed runner Conan home outside the checkout",
     )
 
     failed = [check for check in checks if not check["passed"]]
