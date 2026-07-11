@@ -98,6 +98,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Restore Conan cache
+        id: restore-conan
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+          restore-keys: |
+            conan-home-${{ runner.os }}-release-
+            conan-home-${{ runner.os }}-
+
       - name: Install Conan
         shell: bash
         run: |
@@ -218,3 +228,10 @@ jobs:
             runtime/perf/**
           retention-days: 90
           if-no-files-found: warn
+
+      - name: Save Conan cache
+        if: always() && steps.restore-conan.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CONAN_HOME }}
+          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
