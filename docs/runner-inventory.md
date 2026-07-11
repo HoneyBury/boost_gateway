@@ -38,9 +38,10 @@
 | `specialized-e2e.yml` | `29145172304` | `e8ea86f` | success |
 | `production-resilience.yml` | `29145497642` | `cbed12d` | success |
 | `production-evidence.yml` | `29146018657` | `ecf624c` | success |
-| `long-soak-capacity.yml` | `29146495724` | `ea05045` | failure: 2h pass; capacity/business-capacity failed |
+| `production-candidate-evidence.yml` | `29152333112` | `8cadbef` | success: R0/P5/P6/N5 summaries all passed |
+| `long-soak-capacity.yml` | `29146495724` | `ea05045` | failure: long profile recorded 13.952s, not 2h; battle-500 P99=750ms; business-capacity UTF-8 decode failure |
 
-上述 bounded workflow 以及专项 E2E、生产 resilience/evidence 已形成真实 fixed-runner 事实；long-soak 已证明 2h 稳定性通过，但 capacity/business-capacity 仍失败，R0/R2/R3 最终准入尚未通过。
+上述 bounded workflow、专项 E2E、生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍未通过。
 
 ## 受影响的默认 fixed-runner workflow
 

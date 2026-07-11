@@ -6,7 +6,7 @@
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
-容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642` 和 production evidence `29146018657`；长稳/容量批次 `29146495724` 正在执行。
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642`、production evidence `29146018657` 和 R0 candidate `29152333112`；长稳/容量批次 `29146495724` 已失败，必须以其 artifact 而不是 workflow 名称判断证据强度。
 
 GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
 
@@ -45,9 +45,9 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
-| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 已完成：2h soak 通过；capacity 的 battle-500 P99=750ms 超过 500ms，business-capacity 有 UTF-8 解码失败，不能作为通过证据 |
+| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 失败：`long` profile 实际仅 13.952 秒，不能声称 2h soak；capacity 的 battle-500 P99=750ms 超过 500ms；business-capacity 的 SDK client 输出触发 UTF-8 解码失败。long/overnight 已分别改为强制至少 7200/28800 秒，修复后的 workflow 必须重跑并归档实际时长 |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
-| 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁；stability baseline profile 随 `configuration` 对齐（Debug=`debug`，Release=`release`） | `runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0 子 summary |
+| 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁；stability baseline profile 随 `configuration` 对齐（Debug=`debug`，Release=`release`） | `29152333112`（`8cadbef`）已通过，`runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0/P5/P6/N5 子 summary 均归档 |
 | 6 | `production-readiness.yml` | `production_candidate_run_id` + `long_soak_run_id`，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
 
 通过判据：

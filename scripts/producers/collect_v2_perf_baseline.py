@@ -378,6 +378,14 @@ def fetch_json(url: str) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+def normalize_process_output(output: str | bytes | None) -> str:
+    if output is None:
+        return ""
+    if isinstance(output, bytes):
+        return output.decode("utf-8", errors="replace")
+    return output
+
+
 def run_business_flow_case(
     root: Path,
     build_dir: Path,
@@ -392,19 +400,32 @@ def run_business_flow_case(
     stdout_parts: list[str] = []
     stderr_parts: list[str] = []
     all_passed = True
+    failure_reason = ""
     for index in range(max(1, concurrent_clients)):
         cmd = [str(client_path), gateway_host, str(gateway_port)]
-        proc = subprocess.run(
-            cmd,
-            cwd=client_path.parent,
-            text=True,
-            capture_output=True,
-            timeout=120,
-        )
-        stdout_parts.append((proc.stdout or "")[-4000:])
-        stderr_parts.append((proc.stderr or "")[-4000:])
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=client_path.parent,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                capture_output=True,
+                timeout=120,
+                check=False,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout_parts.append(normalize_process_output(exc.stdout)[-4000:])
+            stderr_parts.append(normalize_process_output(exc.stderr)[-4000:])
+            all_passed = False
+            failure_reason = f"SDK full-flow client timed out after {exc.timeout}s"
+            break
+
+        stdout_parts.append(normalize_process_output(proc.stdout)[-4000:])
+        stderr_parts.append(normalize_process_output(proc.stderr)[-4000:])
         if proc.returncode != 0:
             all_passed = False
+            failure_reason = f"SDK full-flow client exited with {proc.returncode}"
             break
     duration = round(time.monotonic() - started, 3)
     summary = {
@@ -414,6 +435,7 @@ def run_business_flow_case(
         "gateway_host": gateway_host,
         "gateway_port": gateway_port,
         "concurrent_clients": max(1, concurrent_clients),
+        "failure_reason": failure_reason,
     }
     summary_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
     result: dict[str, Any] = {
@@ -1162,4 +1184,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

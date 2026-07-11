@@ -43,6 +43,7 @@ SOAK_PROFILES = {
         "actor_limit": "10000",
         "battles": "100",
         "expected_window": "bounded-smoke",
+        "minimum_duration_seconds": 0,
     },
     "short": {
         "iterations": "5000",
@@ -50,6 +51,7 @@ SOAK_PROFILES = {
         "actor_limit": "50000",
         "battles": "250",
         "expected_window": "15m-30m",
+        "minimum_duration_seconds": 0,
     },
     "medium": {
         "iterations": "10000",
@@ -57,6 +59,7 @@ SOAK_PROFILES = {
         "actor_limit": "100000",
         "battles": "500",
         "expected_window": "30m-60m",
+        "minimum_duration_seconds": 0,
     },
     "long": {
         "iterations": "20000",
@@ -64,6 +67,7 @@ SOAK_PROFILES = {
         "actor_limit": "200000",
         "battles": "1000",
         "expected_window": "2h",
+        "minimum_duration_seconds": 7200,
     },
     "overnight": {
         "iterations": "40000",
@@ -71,6 +75,7 @@ SOAK_PROFILES = {
         "actor_limit": "400000",
         "battles": "2000",
         "expected_window": "8h",
+        "minimum_duration_seconds": 28800,
     },
 }
 
@@ -115,8 +120,17 @@ def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
-def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict[str, object]:
-    print(f"==> {name}", flush=True)
+def run_step(
+    name: str,
+    category: str,
+    cmd: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    *,
+    emit_output: bool = True,
+) -> dict[str, object]:
+    if emit_output:
+        print(f"==> {name}", flush=True)
     started = time.monotonic()
     try:
         completed = subprocess.run(
@@ -145,9 +159,9 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
 
     stdout = normalize_output(completed.stdout)
     stderr = normalize_output(completed.stderr)
-    if stdout:
+    if stdout and emit_output:
         print(stdout, end="")
-    if stderr:
+    if stderr and emit_output:
         print(stderr, end="", file=sys.stderr)
     return {
         "name": name,
@@ -179,10 +193,89 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--build-timeout-seconds", type=int)
     parser.add_argument("--test-timeout-seconds", type=int)
     parser.add_argument("--baseline-timeout-seconds", type=int)
+    parser.add_argument(
+        "--minimum-duration-seconds",
+        type=int,
+        default=None,
+        help="Override the profile's required sustained architecture-baseline duration (0 keeps a bounded run).",
+    )
     parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
     parser.add_argument("--soak-profile", choices=sorted(SOAK_PROFILES), default="smoke")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/stability-soak-summary.json"))
     return parser.parse_args()
+
+
+def arch_baseline_command(
+    root: Path,
+    build_dir: Path,
+    output_root: Path,
+    soak_profile: dict[str, str | int],
+    baseline_timeout_seconds: int,
+    baseline_profile: str,
+) -> list[str]:
+    return [
+        sys.executable,
+        str(root / "scripts" / "collect_v2_arch_baseline.py"),
+        "--build-dir", str(build_dir),
+        "--output-root", str(output_root),
+        "--iterations", str(soak_profile["iterations"]),
+        "--actors", str(soak_profile["actors"]),
+        "--actor-limit", str(soak_profile["actor_limit"]),
+        "--battles", str(soak_profile["battles"]),
+        "--timeout-seconds", str(baseline_timeout_seconds),
+        "--gate-profile", baseline_profile,
+    ]
+
+
+def run_sustained_arch_baseline(
+    root: Path,
+    build_dir: Path,
+    output_root: Path,
+    soak_profile: dict[str, str | int],
+    baseline_timeout_seconds: int,
+    baseline_profile: str,
+    minimum_duration_seconds: int,
+) -> dict[str, object]:
+    name = "sustained arch baseline with external gates"
+    started = time.monotonic()
+    completed_runs = 0
+    last_run: dict[str, object] = {}
+    while completed_runs == 0 or time.monotonic() - started < minimum_duration_seconds:
+        completed_runs += 1
+        last_run = run_step(
+            f"{name} (pass {completed_runs})",
+            "baseline",
+            arch_baseline_command(
+                root, build_dir, output_root, soak_profile, baseline_timeout_seconds, baseline_profile
+            ),
+            root,
+            baseline_timeout_seconds + 10,
+            emit_output=completed_runs == 1,
+        )
+        if last_run["status"] != "passed":
+            if completed_runs > 1:
+                if last_run.get("stdout_tail"):
+                    print(last_run["stdout_tail"], end="")
+                if last_run.get("stderr_tail"):
+                    print(last_run["stderr_tail"], end="", file=sys.stderr)
+            return {
+                "name": name,
+                "category": "baseline",
+                "status": last_run["status"],
+                "duration_seconds": round(time.monotonic() - started, 3),
+                "minimum_duration_seconds": minimum_duration_seconds,
+                "completed_runs": completed_runs,
+                "last_run": last_run,
+            }
+    return {
+        "name": name,
+        "category": "baseline",
+        "status": "passed",
+        "duration_seconds": round(time.monotonic() - started, 3),
+        "minimum_duration_seconds": minimum_duration_seconds,
+        "completed_runs": completed_runs,
+        "last_run": last_run,
+    }
 
 
 def main() -> int:
@@ -198,6 +291,11 @@ def main() -> int:
     build_dir = args.build_dir.resolve()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     soak_profile = SOAK_PROFILES[args.soak_profile]
+    minimum_duration_seconds = (
+        int(soak_profile["minimum_duration_seconds"])
+        if args.minimum_duration_seconds is None
+        else max(0, args.minimum_duration_seconds)
+    )
     summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -206,6 +304,9 @@ def main() -> int:
         "baseline_profile": args.baseline_profile,
         "soak_profile": args.soak_profile,
         "expected_window": soak_profile.get("expected_window"),
+        "minimum_duration_seconds": minimum_duration_seconds,
+        "sustained_duration_seconds": 0.0,
+        "sustained_completed_runs": 0,
         "environment": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -221,8 +322,11 @@ def main() -> int:
             "arch_baseline_output_root": str(root / "runtime" / "perf" / "v2-stability-soak"),
         },
     }
-    if args.soak_profile in {"long", "overnight"}:
-        summary["artifacts"]["notes"] = "This profile is intended for fixed runners with expanded timeouts and dedicated machine access."
+    if minimum_duration_seconds > 0:
+        summary["artifacts"]["notes"] = (
+            "This profile repeats the architecture baseline until the required wall-clock duration is reached; "
+            "it is intended for fixed runners with dedicated machine access."
+        )
 
     try:
         if not args.skip_build:
@@ -243,34 +347,20 @@ def main() -> int:
             run_step("I/O policy and bounded accept checks", "io", [str(unit_tests), f"--gtest_filter={IO_FILTER}"], unit_tests.parent, args.test_timeout_seconds),
             run_step("WriteBehind drain/failure checks", "data", [str(unit_tests), f"--gtest_filter={DATA_FILTER}"], unit_tests.parent, args.test_timeout_seconds),
             run_step("backend timeout/recovery checks", "recovery", [str(integration_tests), f"--gtest_filter={RECOVERY_FILTER}"], integration_tests.parent, args.test_timeout_seconds),
-            run_step(
-                "short arch baseline with external gates",
-                "baseline",
-                [
-                    sys.executable,
-                    str(root / "scripts" / "collect_v2_arch_baseline.py"),
-                    "--build-dir",
-                    str(build_dir),
-                    "--output-root",
-                    str(root / "runtime" / "perf" / "v2-stability-soak"),
-                    "--iterations",
-                    soak_profile["iterations"],
-                    "--actors",
-                    soak_profile["actors"],
-                    "--actor-limit",
-                    soak_profile["actor_limit"],
-                    "--battles",
-                    soak_profile["battles"],
-                    "--timeout-seconds",
-                    str(args.baseline_timeout_seconds),
-                    "--gate-profile",
-                    args.baseline_profile,
-                ],
+            run_sustained_arch_baseline(
                 root,
-                args.baseline_timeout_seconds + 10,
+                build_dir,
+                root / "runtime" / "perf" / "v2-stability-soak",
+                soak_profile,
+                args.baseline_timeout_seconds,
+                args.baseline_profile,
+                minimum_duration_seconds,
             ),
         ]
         summary["steps"].extend(steps)
+        sustained_step = next(step for step in steps if step["name"] == "sustained arch baseline with external gates")
+        summary["sustained_duration_seconds"] = sustained_step["duration_seconds"]
+        summary["sustained_completed_runs"] = sustained_step["completed_runs"]
         for step in steps:
             if step["status"] != "passed":
                 raise RuntimeError(step["name"])
