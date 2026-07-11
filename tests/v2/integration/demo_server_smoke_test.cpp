@@ -213,6 +213,38 @@ TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsBootstrapAndDisconnectCleanup)
     runtime.stop();
 }
 
+TEST(V2DemoServerSmokeTest, DisconnectCleanupIsSerializedWithQueuedRequests) {
+    app::logging::init("project_tests");
+
+    V2DemoRuntime runtime;
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(runtime);
+
+    constexpr int kClosingClients = 24;
+    for (int index = 0; index < kClosingClients; ++index) {
+        TestClient client;
+        client.connect(runtime.server->local_port());
+        client.send(net::protocol::kLoginRequest,
+                    static_cast<std::uint32_t>(100 + index),
+                    "queued_" + std::to_string(index) + "|token:queued_" +
+                        std::to_string(index) + "|Queued");
+        client.close();
+    }
+
+    // Close callbacks and packet handling must share the gateway worker instead
+    // of concurrently mutating Runtime and ActorSystem state from I/O threads.
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+
+    TestClient survivor;
+    survivor.connect(runtime.server->local_port());
+    const auto response = survivor.exchange(
+        net::protocol::kLoginRequest, 200, "survivor|token:survivor|Survivor");
+    EXPECT_EQ(response.message_id, net::protocol::kLoginResponse);
+    EXPECT_EQ(response.body, "login_ok:survivor");
+
+    survivor.close();
+    runtime.stop();
+}
+
 TEST(V2DemoServerSmokeTest, RealSocketFlowSupportsRequestedBattleFinish) {
     app::logging::init("project_tests");
 
