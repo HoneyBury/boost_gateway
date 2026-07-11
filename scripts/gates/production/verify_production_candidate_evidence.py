@@ -79,6 +79,10 @@ def add_flag(command: list[str], enabled: bool, flag: str) -> None:
         command.append(flag)
 
 
+def baseline_profile_for(configuration: str) -> str:
+    return "release" if configuration.strip().lower() == "release" else "debug"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build/release")
@@ -98,6 +102,7 @@ def main() -> int:
         default=ROOT / "runtime/validation/r0-production-candidate-evidence-summary.json",
     )
     args = parser.parse_args()
+    baseline_profile = baseline_profile_for(args.configuration)
 
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
     validation_dir = summary_path.parent
@@ -144,7 +149,7 @@ def main() -> int:
         "--soak-profile",
         "smoke",
         "--baseline-profile",
-        "release",
+        baseline_profile,
         "--summary-path",
         str(evidence_summary),
     ]
@@ -220,6 +225,7 @@ def main() -> int:
             "include_runtime_http": args.include_runtime_http,
             "include_release_baseline": args.include_release_baseline,
             "include_capacity_baseline": args.include_capacity_baseline,
+            "baseline_profile": baseline_profile,
             "include_tls_full_flow": args.include_tls_full_flow,
             "include_n6_grpc_decision": args.include_n6_grpc_decision,
         },
@@ -241,4 +247,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

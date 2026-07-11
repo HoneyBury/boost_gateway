@@ -47,7 +47,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 已完成：2h soak 通过；capacity 的 battle-500 P99=750ms 超过 500ms，business-capacity 有 UTF-8 解码失败，不能作为通过证据 |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
-| 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁 | `runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0 子 summary |
+| 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁；stability baseline profile 随 `configuration` 对齐（Debug=`debug`，Release=`release`） | `runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0 子 summary |
 | 6 | `production-readiness.yml` | `production_candidate_run_id` + `long_soak_run_id`，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
 
 通过判据：
