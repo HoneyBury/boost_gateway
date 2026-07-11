@@ -223,7 +223,7 @@ def main() -> int:
     add(
         checks,
         "workflow:specialized-e2e:fresh-checkout-default",
-        "default: false" in specialized_e2e_workflow and "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in specialized_e2e_workflow,
+        "default: false" in specialized_e2e_workflow and "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in specialized_e2e_workflow and "mkdir -p runtime/validation" in specialized_e2e_workflow,
         ".github/workflows/specialized-e2e.yml defaults to a checked-out workflow commit",
     )
 

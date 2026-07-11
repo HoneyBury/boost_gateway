@@ -149,6 +149,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          mkdir -p runtime/validation
           if [ "${{ inputs.enable_conan_validation }}" = "true" ]; then
             cmake --preset "${{ inputs.build_preset }}" \
               -DBOOST_USE_CONAN_DEPS=ON \
