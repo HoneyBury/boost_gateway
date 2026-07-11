@@ -3,7 +3,6 @@ name: CI
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   push:
@@ -22,6 +21,8 @@ permissions:
 jobs:
   linux-build-and-test:
     runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    env:
+      CONAN_HOME: ${{ runner.workspace }}/.conan2-local
 
     steps:
       - name: Checkout

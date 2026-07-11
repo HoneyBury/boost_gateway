@@ -2,7 +2,6 @@ name: Conan Validate
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   workflow_dispatch:
@@ -59,6 +58,8 @@ permissions:
 jobs:
   conan-validate:
     runs-on: ${{ fromJSON(inputs.runner || vars.CONAN_VALIDATE_RUNNER || '["self-hosted","Linux","X64"]') }}
+    env:
+      CONAN_HOME: ${{ runner.workspace }}/.conan2-local
 
     steps:
       - name: Checkout
@@ -99,7 +100,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(python scripts/bootstrap_conan.py --reset-home --disable-example-internal)
+          args=(python scripts/bootstrap_conan.py --disable-example-internal)
           if [ "${{ inputs.allow_public }}" = "true" ]; then
             args+=(--allow-public)
           fi

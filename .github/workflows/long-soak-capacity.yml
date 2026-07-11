@@ -2,7 +2,6 @@ name: Long Soak Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
   workflow_dispatch:
@@ -70,6 +69,8 @@ permissions:
 jobs:
   long-soak-capacity:
     runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
+    env:
+      CONAN_HOME: ${{ runner.workspace }}/.conan2-local
     timeout-minutes: 720
     concurrency:
       group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
