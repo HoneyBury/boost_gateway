@@ -184,6 +184,7 @@ def main() -> int:
     transport_config_cmd = [
         sys.executable,
         str(root / "scripts" / "check_transport_config_governance.py"),
+        "--generate-dev-certs",
         "--summary-path",
         str(root / "runtime" / "validation" / "p5-transport-config-governance-summary.json"),
     ]
