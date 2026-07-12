@@ -274,6 +274,17 @@ def main() -> int:
         "timeout-minutes: 1440" in long_soak_workflow,
         ".github/workflows/long-soak-capacity.yml allows the advertised soak/capacity combination to finish",
     )
+    boolean_inputs = ("run_2h_soak", "run_8h_soak", "run_capacity", "run_business_capacity")
+    add(
+        checks,
+        "workflow:long-soak-capacity:preserves-explicit-boolean-inputs",
+        all(
+            f'if [ "${{{{ inputs.{name} }}}}" = "true" ]; then' in long_soak_workflow
+            and f"inputs.{name} ||" not in long_soak_workflow
+            for name in boolean_inputs
+        ),
+        ".github/workflows/long-soak-capacity.yml does not turn a dispatched false input into its default",
+    )
     stability_soak = read("scripts/gates/release/verify_stability_soak.py")
     add(
         checks,
@@ -294,6 +305,15 @@ def main() -> int:
         "workflow:long-soak-capacity:canonical-root",
         "Path(__file__).resolve().parents[3]" in long_soak_gate,
         "run_long_soak_capacity.py resolves paths from the repository root",
+    )
+    release_baseline = read("scripts/producers/collect_release_baseline.py")
+    add(
+        checks,
+        "capacity:sampled-battle-state-pushes",
+        "battle-frame-push-every" in long_soak_gate
+        and 'args.battle_frame_push_every = 10' in release_baseline
+        and '"--battle-frame-push-every"' in release_baseline,
+        "capacity profiles use the configured battle state push sampling without changing the P99 gate",
     )
     readiness_report = read("scripts/gates/production/render_production_readiness_report.py")
     add(

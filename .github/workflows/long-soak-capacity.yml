@@ -158,16 +158,16 @@ jobs:
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
             --summary-path runtime/validation/long-soak-capacity-summary.json
           )
-          if [ "${{ inputs.run_2h_soak || 'true' }}" = "true" ]; then
+          if [ "${{ inputs.run_2h_soak }}" = "true" ]; then
             args+=(--run-2h-soak)
           fi
-          if [ "${{ inputs.run_8h_soak || 'false' }}" = "true" ]; then
+          if [ "${{ inputs.run_8h_soak }}" = "true" ]; then
             args+=(--run-8h-soak)
           fi
-          if [ "${{ inputs.run_capacity || 'true' }}" = "true" ]; then
+          if [ "${{ inputs.run_capacity }}" = "true" ]; then
             args+=(--run-capacity)
           fi
-          if [ "${{ inputs.run_business_capacity || 'true' }}" = "true" ]; then
+          if [ "${{ inputs.run_business_capacity }}" = "true" ]; then
             args+=(--run-business-capacity)
           fi
           python "${args[@]}"
