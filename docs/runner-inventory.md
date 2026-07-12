@@ -42,6 +42,13 @@
 | `long-soak-capacity.yml` | `29146495724` | `ea05045` | failure: long profile recorded 13.952s, not 2h; battle-500 P99=750ms; business-capacity UTF-8 decode failure |
 | `long-soak-capacity.yml` | `29153158335` | `f5516be` | failure: Conan and SDK business flow passed; second sustained baseline gate failed after 209s; battle-500 P99=750ms persists |
 
+2026-07-12 在 `main` 上补充完成的 gRPC fixed-runner 实验验证：
+
+| Workflow | Run | 提交 | 结论 |
+|---|---:|---|---|
+| `grpc-experimental.yml` | `29195792943` | `5df1479` | failure: `use_existing_workspace=true` 时 runner workspace HEAD 与 `GITHUB_SHA` 不一致，命中 preflight 保护 |
+| `grpc-experimental.yml` | `29196150703` | `0af5c91` | success: `use_existing_workspace=false` + `no_remote=true`；fixed-runner `${{ github.workspace }}/../.conan2-local` 缓存可完成 `BOOST_BUILD_GRPC=ON`、SDK consumer 与 decision-boundary 验证 |
+
 上述 bounded workflow、专项 E2E、生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍未通过。
 
 ## 受影响的默认 fixed-runner workflow
@@ -56,7 +63,12 @@
 - `production-resilience.yml`
 - `long-soak-capacity.yml`
 
+实验性 fixed-runner workflow：
+
+- `grpc-experimental.yml`
+
 ## 说明
 
 - `ci.yml` 当前默认走 GitHub-hosted `ubuntu-latest` fallback；其余 workflow 可使用在线 Linux fixed runner。
+- `grpc-experimental.yml` 的当前事实是：默认应使用 fresh checkout；若 runner 已预热 `${{ github.workspace }}/../.conan2-local`，则 `no_remote=true` 可避免重复远端 Conan 拉取。
 - 上表的 bounded 成功 run 不替代 `specialized-e2e.yml`、`production-resilience.yml`、`production-evidence.yml` 与 `long-soak-capacity.yml` 的固定 runner 生产证据。

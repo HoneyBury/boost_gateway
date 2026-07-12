@@ -176,9 +176,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 下一阶段执行优先级概括为：
 
 1. 等待项：固定 runner 恢复 Docker Hub 或受信任 mirror 访问并预热 Compose 镜像后，重新执行完整 R5/R6，再依次刷新真实 2h soak、R0 和 R2/R3。`verify_stability_soak.py` 的 long/overnight profile 分别强制不少于 7200/28800 秒，历史 run `29146495724` 的 13.952 秒记录无效。
-2. 当前可推进项：生产认证边界已完成当前收口，生产 login backend 仅验证带有效期的外部 RS256 JWT，不再承担本地凭证存储或 token 签发。generated proto/gRPC 的 adapter unary E2E、SDK 驱动 Login/Room/Battle/Leaderboard 多服务流程、Battle 可取消限速 stream、trusted principal + RBAC allow/deny、TLS/mTLS 临时证书 E2E、路由/流生命周期指标和本机真实 I/O 微基准已完成；下一项收口到 gRPC OTel/外部指标导出、独立 SDK 安装包契约与 fixed-runner `BOOST_BUILD_GRPC=ON` summary，再决定是否继续推进；默认生产传输结论继续保持 `defer_default_transport`。
+2. 当前可推进项：生产认证边界已完成当前收口，生产 login backend 仅验证带有效期的外部 RS256 JWT，不再承担本地凭证存储或 token 签发。generated proto/gRPC 的 adapter unary E2E、SDK 驱动 Login/Room/Battle/Leaderboard 多服务流程、Battle 可取消限速 stream、trusted principal + RBAC allow/deny、TLS/mTLS 临时证书 E2E、路由/流生命周期指标、OTLP collector E2E、实验 SDK 安装包契约，以及 fixed-runner `BOOST_BUILD_GRPC=ON` run `29196150703` 均已形成事实；当前不再把这些项视为待补缺口，默认生产传输结论继续保持 `defer_default_transport`，代码侧优先级转回真实 2h/8h soak、R0 和 R2/R3 等主线事项。
 3. 后续项：固定 runner 证据链完整后，将 Conan `nosqlite` 路径提升为唯一推荐依赖入口；外部身份提供方的 JWKS/多 `kid`、持久化账户和可撤销 refresh token 作为独立集成，不与当前 login backend 的进程内演示状态混合。
-4. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile 和独立 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
+4. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：
 
