@@ -309,11 +309,14 @@ def main() -> int:
     release_baseline = read("scripts/producers/collect_release_baseline.py")
     add(
         checks,
-        "capacity:sampled-battle-state-pushes",
-        "battle-frame-push-every" in long_soak_gate
-        and 'args.battle_frame_push_every = 10' in release_baseline
-        and '"--battle-frame-push-every"' in release_baseline,
-        "capacity profiles use the configured battle state push sampling without changing the P99 gate",
+        "capacity:explicit-battle-route-concurrency",
+        'parser.add_argument("--backend-pool-size", type=int, default=8)' in long_soak_gate
+        and 'parser.add_argument("--battle-route-workers", type=int, default=8)' in long_soak_gate
+        and 'args.backend_pool_size = 8' in release_baseline
+        and 'args.battle_route_workers = 8' in release_baseline
+        and '"--backend-pool-size"' in release_baseline
+        and '"--battle-route-workers"' in release_baseline,
+        "capacity profiles explicitly configure battle backend connections and route workers",
     )
     readiness_report = read("scripts/gates/production/render_production_readiness_report.py")
     add(

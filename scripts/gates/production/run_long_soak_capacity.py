@@ -112,12 +112,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-business-capacity", action="store_true")
     parser.add_argument("--perf-repetitions", type=int, default=3)
     parser.add_argument("--business-flow-clients", type=int, default=3)
-    parser.add_argument(
-        "--battle-frame-push-every",
-        type=int,
-        default=10,
-        help="Emit one non-terminal battle state push per N frames during capacity profiles.",
-    )
+    parser.add_argument("--backend-pool-size", type=int, default=8)
+    parser.add_argument("--battle-route-workers", type=int, default=8)
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/long-soak-capacity-summary.json"))
     return parser.parse_args()
 
@@ -195,8 +191,10 @@ def main() -> int:
             "capacity",
             "--perf-repetitions",
             str(args.perf_repetitions),
-            "--battle-frame-push-every",
-            str(args.battle_frame_push_every),
+            "--backend-pool-size",
+            str(args.backend_pool_size),
+            "--battle-route-workers",
+            str(args.battle_route_workers),
             "--summary-path",
             str(ROOT / "runtime/validation/capacity-baseline-summary.json"),
             "--perf-output-root",
@@ -214,8 +212,10 @@ def main() -> int:
             "business-capacity",
             "--perf-repetitions",
             str(args.perf_repetitions),
-            "--battle-frame-push-every",
-            str(args.battle_frame_push_every),
+            "--backend-pool-size",
+            str(args.backend_pool_size),
+            "--battle-route-workers",
+            str(args.battle_route_workers),
             "--summary-path",
             str(ROOT / "runtime/validation/business-capacity-baseline-summary.json"),
             "--perf-output-root",
@@ -239,7 +239,8 @@ def main() -> int:
         "run_business_capacity": args.run_business_capacity,
         "perf_repetitions": args.perf_repetitions,
         "business_flow_clients": args.business_flow_clients,
-        "battle_frame_push_every": args.battle_frame_push_every,
+        "backend_pool_size": args.backend_pool_size,
+        "battle_route_workers": args.battle_route_workers,
         "environment": environment_snapshot(),
         "overall_pass": failed is None,
         "passed": failed is None,

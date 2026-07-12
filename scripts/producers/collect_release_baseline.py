@@ -88,12 +88,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--business-flow-clients", type=int, default=1)
     parser.add_argument("--perf-repetitions", type=int, default=3)
     parser.add_argument("--perf-timeout-seconds", type=int, default=600)
-    parser.add_argument(
-        "--battle-frame-push-every",
-        type=int,
-        default=0,
-        help="Override battle state push sampling; capacity profiles default to every 10 frames.",
-    )
+    parser.add_argument("--backend-pool-size", type=int, default=0)
+    parser.add_argument("--battle-route-workers", type=int, default=0)
     parser.add_argument("--skip-r4", action="store_true")
     parser.add_argument("--skip-perf", action="store_true")
     parser.add_argument("--perf-output-root", type=Path, default=None)
@@ -103,8 +99,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if args.perf_preset in {"capacity", "business-capacity"} and args.battle_frame_push_every <= 0:
-        args.battle_frame_push_every = 10
+    if args.perf_preset in {"capacity", "business-capacity"}:
+        if args.backend_pool_size <= 0:
+            args.backend_pool_size = 8
+        if args.battle_route_workers <= 0:
+            args.battle_route_workers = 8
     root = Path(__file__).resolve().parents[2]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     perf_output = args.perf_output_root if args.perf_output_root is not None else root / "runtime" / "perf" / "release-baseline"
@@ -118,7 +117,8 @@ def main() -> int:
         "baseline_profile": "release",
         "perf_preset": args.perf_preset,
         "perf_repetitions": args.perf_repetitions,
-        "battle_frame_push_every": args.battle_frame_push_every,
+        "backend_pool_size": args.backend_pool_size,
+        "battle_route_workers": args.battle_route_workers,
         "environment": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -220,8 +220,10 @@ def main() -> int:
             str(args.perf_repetitions),
             "--output-root",
             str(perf_output),
-            "--battle-frame-push-every",
-            str(args.battle_frame_push_every),
+            "--backend-pool-size",
+            str(args.backend_pool_size),
+            "--battle-route-workers",
+            str(args.battle_route_workers),
         ]
         if args.include_business_flow:
             perf_cmd.extend(["--include-business-flow", "--business-flow-clients", str(args.business_flow_clients)])
