@@ -13,12 +13,14 @@
 #include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include <grpcpp/grpcpp.h>
 #include <grpcpp/server_context.h>
 
+#include "v2/auth/authorizer.h"
 #include "v2/grpc/grpc_server.h"
 
 // Generated protobuf/gRPC headers — resolved via project_proto include path
@@ -68,6 +70,22 @@ class BattleFinishCallData;
 // -------------------------------------------------------------------
 class GatewayGrpcServer final : public GrpcServer {
  public:
+  struct AuthenticatedPrincipal {
+    std::string subject;
+    v2::auth::Role role = v2::auth::Role::kPlayer;
+  };
+
+  using PrincipalResolver = std::function<std::optional<AuthenticatedPrincipal>(
+      const ::grpc::ServerContext& context, std::string& out_error)>;
+
+  struct SecurityOptions {
+    GrpcTlsServerOptions tls;
+    bool require_authenticated_principal;
+    PrincipalResolver principal_resolver;
+
+    SecurityOptions() : require_authenticated_principal(false) {}
+  };
+
   struct BattleStateStreamMetricsSnapshot {
     std::uint64_t started = 0;
     std::uint64_t active = 0;
@@ -216,7 +234,8 @@ class GatewayGrpcServer final : public GrpcServer {
       BattleCreateCallback battle_create_cb = nullptr,
       BattleInputCallback battle_input_cb = nullptr,
       BattleStateCallback battle_state_cb = nullptr,
-      BattleFinishCallback battle_finish_cb = nullptr);
+      BattleFinishCallback battle_finish_cb = nullptr,
+      SecurityOptions security_options = {});
 
   ~GatewayGrpcServer() override;
 
@@ -248,6 +267,29 @@ class GatewayGrpcServer final : public GrpcServer {
         .completed = battle_state_streams_completed_.load(std::memory_order_relaxed),
         .cancelled = battle_state_streams_cancelled_.load(std::memory_order_relaxed),
     };
+  }
+
+  [[nodiscard]] ::grpc::Status authorize_request(
+      const ::grpc::ServerContext& context,
+      std::uint16_t protocol_message_id) const {
+    if (!security_options_.require_authenticated_principal) {
+      return ::grpc::Status::OK;
+    }
+    if (!security_options_.principal_resolver) {
+      return {::grpc::StatusCode::UNAUTHENTICATED,
+              "grpc_principal_resolver_required"};
+    }
+    std::string error;
+    const auto principal = security_options_.principal_resolver(context, error);
+    if (!principal || principal->subject.empty()) {
+      return {::grpc::StatusCode::UNAUTHENTICATED,
+              error.empty() ? "grpc_authenticated_principal_required" : error};
+    }
+    if (!v2::auth::Authorizer::instance().is_allowed(
+            principal->role, protocol_message_id)) {
+      return {::grpc::StatusCode::PERMISSION_DENIED, "grpc_rbac_denied"};
+    }
+    return ::grpc::Status::OK;
   }
 
  private:
@@ -302,6 +344,7 @@ class GatewayGrpcServer final : public GrpcServer {
   BattleInputCallback battle_input_cb_;
   BattleStateCallback battle_state_cb_;
   BattleFinishCallback battle_finish_cb_;
+  SecurityOptions security_options_;
 
   std::atomic<std::uint32_t> active_sessions_{0};
   std::atomic<std::uint64_t> battle_state_streams_started_{0};

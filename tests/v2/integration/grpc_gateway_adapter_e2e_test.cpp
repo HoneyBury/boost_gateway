@@ -15,8 +15,11 @@
 
 #include <chrono>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <thread>
 
@@ -52,9 +55,62 @@ v2::gateway::GatewayServiceBridge::BackendConfig backend_config(std::uint16_t po
     };
 }
 
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path);
+    std::ostringstream buffer;
+    buffer << input.rdbuf();
+    return buffer.str();
+}
+
+std::filesystem::path make_temp_dir(const std::string& prefix) {
+    const auto unique = prefix + "-" +
+        std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    auto dir = std::filesystem::temp_directory_path() / unique;
+    std::filesystem::create_directories(dir);
+    return dir;
+}
+
+bool generate_dev_certs(const std::filesystem::path& output_dir,
+                        bool include_client,
+                        std::string& out_error) {
+    const std::string script = std::string(PROJECT_SOURCE_DIR) + "/scripts/gen_certs.py";
+    std::string command = "python3 \"" + script + "\" --output-dir \"" + output_dir.string() + "\"";
+    if (include_client) {
+        command += " --include-client";
+    }
+    if (std::system(command.c_str()) != 0) {
+        out_error = "failed to generate dev certificates";
+        return false;
+    }
+    return true;
+}
+
 class GrpcGatewayAdapterE2ETest : public ::testing::Test {
 protected:
+    using SecurityOptions = v2::grpc::GrpcGatewayAdapter::SecurityOptions;
+    using AuthenticatedPrincipal = v2::grpc::GatewayGrpcServer::AuthenticatedPrincipal;
+
+    virtual bool prepare_security_materials(std::string& out_error) {
+        (void)out_error;
+        return true;
+    }
+
+    virtual SecurityOptions adapter_security_options() const {
+        return {};
+    }
+
+    virtual std::shared_ptr<grpc::ChannelCredentials> channel_credentials() const {
+        return grpc::InsecureChannelCredentials();
+    }
+
+    virtual bool connect_sdk_client(boost_gateway::sdk::GrpcClient& client) const {
+        return client.connect("127.0.0.1", adapter_->port());
+    }
+
     void SetUp() override {
+        std::string prepare_error;
+        ASSERT_TRUE(prepare_security_materials(prepare_error)) << prepare_error;
+
         login_ = std::make_unique<v2::login::LoginBackendService>(0);
         room_ = std::make_unique<v2::room::RoomBackendService>(0);
         battle_ = std::make_unique<v2::battle::BattleBackendService>(0);
@@ -79,13 +135,14 @@ protected:
                 .battle_backend_config = backend_config(battle_->local_port()),
                 .matchmaking_backend_config = backend_config(match_->local_port()),
                 .leaderboard_backend_config = backend_config(leaderboard_->local_port()),
-            });
+            },
+            adapter_security_options());
         ASSERT_TRUE(adapter_->start());
         ASSERT_GT(adapter_->port(), 0U);
 
         channel_ = grpc::CreateChannel(
             "127.0.0.1:" + std::to_string(adapter_->port()),
-            grpc::InsecureChannelCredentials());
+            channel_credentials());
         stub_ = boost::gateway::v3::Gateway::NewStub(channel_);
     }
 
@@ -109,6 +166,123 @@ protected:
     std::unique_ptr<v2::grpc::GrpcGatewayAdapter> adapter_;
     std::shared_ptr<grpc::Channel> channel_;
     std::unique_ptr<boost::gateway::v3::Gateway::Stub> stub_;
+};
+
+class GrpcGatewayRbacE2ETest : public GrpcGatewayAdapterE2ETest {
+protected:
+    SecurityOptions adapter_security_options() const override {
+        SecurityOptions options;
+        options.require_authenticated_principal = true;
+        options.principal_resolver =
+            [](const grpc::ServerContext& context, std::string& out_error)
+                -> std::optional<AuthenticatedPrincipal> {
+            const auto it = context.client_metadata().find("x-test-principal");
+            if (it == context.client_metadata().end()) {
+                out_error = "test_principal_missing";
+                return std::nullopt;
+            }
+            const std::string metadata(it->second.data(), it->second.length());
+            const auto separator = metadata.find(':');
+            if (separator == std::string::npos || separator == 0 ||
+                separator + 1 >= metadata.size()) {
+                out_error = "test_principal_invalid";
+                return std::nullopt;
+            }
+
+            AuthenticatedPrincipal principal;
+            principal.subject = metadata.substr(separator + 1);
+            const auto role = metadata.substr(0, separator);
+            if (role == "player") {
+                principal.role = v2::auth::Role::kPlayer;
+            } else if (role == "observer") {
+                principal.role = v2::auth::Role::kObserver;
+            } else if (role == "admin") {
+                principal.role = v2::auth::Role::kAdmin;
+            } else {
+                out_error = "test_principal_role_invalid";
+                return std::nullopt;
+            }
+            return principal;
+        };
+        return options;
+    }
+
+    void set_principal(grpc::ClientContext& context, const std::string& principal) const {
+        context.AddMetadata("x-test-principal", principal);
+    }
+};
+
+class GrpcGatewayTlsE2ETest : public GrpcGatewayAdapterE2ETest {
+protected:
+    bool prepare_security_materials(std::string& out_error) override {
+        cert_dir_ = make_temp_dir("grpc-gateway-tls");
+        if (!generate_dev_certs(cert_dir_, requires_client_certificate(), out_error)) {
+            return false;
+        }
+        ca_pem_ = read_text_file(cert_dir_ / "ca.crt");
+        server_cert_pem_ = read_text_file(cert_dir_ / "server.crt");
+        server_key_pem_ = read_text_file(cert_dir_ / "server.key");
+        if (ca_pem_.empty() || server_cert_pem_.empty() || server_key_pem_.empty()) {
+            out_error = "generated server certificates are empty";
+            return false;
+        }
+        if (requires_client_certificate()) {
+            client_cert_pem_ = read_text_file(cert_dir_ / "client.crt");
+            client_key_pem_ = read_text_file(cert_dir_ / "client.key");
+            if (client_cert_pem_.empty() || client_key_pem_.empty()) {
+                out_error = "generated client certificates are empty";
+                return false;
+            }
+        }
+        return true;
+    }
+
+    SecurityOptions adapter_security_options() const override {
+        SecurityOptions options;
+        options.tls.certificate_chain_pem = server_cert_pem_;
+        options.tls.private_key_pem = server_key_pem_;
+        options.tls.root_ca_pem = ca_pem_;
+        options.tls.require_client_certificate = requires_client_certificate();
+        return options;
+    }
+
+    std::shared_ptr<grpc::ChannelCredentials> channel_credentials() const override {
+        grpc::SslCredentialsOptions options;
+        options.pem_root_certs = ca_pem_;
+        if (requires_client_certificate()) {
+            options.pem_cert_chain = client_cert_pem_;
+            options.pem_private_key = client_key_pem_;
+        }
+        return grpc::SslCredentials(options);
+    }
+
+    bool connect_sdk_client(boost_gateway::sdk::GrpcClient& client) const override {
+        boost_gateway::sdk::GrpcClientTlsOptions options;
+        options.root_ca_pem = ca_pem_;
+        if (requires_client_certificate()) {
+            options.client_certificate_chain_pem = client_cert_pem_;
+            options.client_private_key_pem = client_key_pem_;
+        }
+        return client.connect_secure("127.0.0.1", adapter_->port(), options);
+    }
+
+    virtual bool requires_client_certificate() const {
+        return false;
+    }
+
+    std::filesystem::path cert_dir_;
+    std::string ca_pem_;
+    std::string server_cert_pem_;
+    std::string server_key_pem_;
+    std::string client_cert_pem_;
+    std::string client_key_pem_;
+};
+
+class GrpcGatewayMtlsE2ETest : public GrpcGatewayTlsE2ETest {
+protected:
+    bool requires_client_certificate() const override {
+        return true;
+    }
 };
 
 TEST_F(GrpcGatewayAdapterE2ETest, RoutesRoomMatchAndLeaderboardToRealBackends) {
@@ -219,7 +393,7 @@ TEST_F(GrpcGatewayAdapterE2ETest, RoutesRoomMatchAndLeaderboardToRealBackends) {
 
 TEST_F(GrpcGatewayAdapterE2ETest, SdkClientRoutesRoomBattleAndLeaderboard) {
     boost_gateway::sdk::GrpcClient client;
-    ASSERT_TRUE(client.connect("127.0.0.1", adapter_->port()));
+    ASSERT_TRUE(connect_sdk_client(client));
 
     ASSERT_TRUE(client.login("sdk-alice", "token:sdk-alice", "SDK Alice").ok);
     ASSERT_TRUE(client.create_room("sdk-alice", "sdk-grpc-room").ok);
@@ -292,6 +466,135 @@ TEST_F(GrpcGatewayAdapterE2ETest, SdkClientRoutesRoomBattleAndLeaderboard) {
     EXPECT_GE(battle_metrics.latency_sample_count, 8U);
 
     client.disconnect();
+}
+
+TEST_F(GrpcGatewayRbacE2ETest, ResolvesTrustedPrincipalAndAppliesAllowDeny) {
+    {
+        grpc::ClientContext context;
+        boost::gateway::v3::RoomCreateRequest request;
+        request.set_user_id("alice");
+        request.set_room_id("rbac-missing-principal");
+        boost::gateway::v3::RoomCreateResponse response;
+        const auto status = stub_->RequestRoomCreate(&context, request, &response);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::UNAUTHENTICATED);
+        EXPECT_EQ(status.error_message(), "test_principal_missing");
+    }
+
+    {
+        grpc::ClientContext context;
+        set_principal(context, "observer:viewer");
+        boost::gateway::v3::RoomCreateRequest request;
+        request.set_user_id("viewer");
+        request.set_room_id("rbac-denied-room");
+        boost::gateway::v3::RoomCreateResponse response;
+        const auto status = stub_->RequestRoomCreate(&context, request, &response);
+        EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+        EXPECT_EQ(status.error_message(), "grpc_rbac_denied");
+    }
+
+    {
+        grpc::ClientContext context;
+        set_principal(context, "player:alice");
+        boost::gateway::v3::RoomCreateRequest request;
+        request.set_user_id("alice");
+        request.set_room_id("rbac-allowed-room");
+        boost::gateway::v3::RoomCreateResponse response;
+        const auto status = stub_->RequestRoomCreate(&context, request, &response);
+        ASSERT_TRUE(status.ok());
+        EXPECT_EQ(response.error_code(), 0);
+    }
+
+    {
+        grpc::ClientContext submit_context;
+        set_principal(submit_context, "player:alice");
+        boost::gateway::v3::LeaderboardSubmitRequest submit_request;
+        submit_request.set_user_id("alice");
+        submit_request.set_display_name("Alice");
+        submit_request.set_score(1800);
+        boost::gateway::v3::LeaderboardSubmitResponse submit_response;
+        ASSERT_TRUE(stub_->RequestLeaderboardSubmit(
+            &submit_context, submit_request, &submit_response).ok());
+    }
+
+    {
+        grpc::ClientContext context;
+        set_principal(context, "player:alice");
+        boost::gateway::v3::LeaderboardTopRequest request;
+        request.set_k(1);
+        boost::gateway::v3::LeaderboardTopResponse response;
+        const auto status = stub_->RequestLeaderboardTop(&context, request, &response);
+        ASSERT_TRUE(status.ok());
+        EXPECT_EQ(response.error_code(), 0);
+        ASSERT_EQ(response.entries_size(), 1);
+        EXPECT_EQ(response.entries(0).user_id(), "alice");
+    }
+}
+
+TEST_F(GrpcGatewayRbacE2ETest, RejectsUnauthorizedBattleStreamWithoutLeakingMetrics) {
+    grpc::ClientContext context;
+    set_principal(context, "observer:viewer");
+    boost::gateway::v3::BattleStateRequest request;
+    request.set_battle_id("rbac-stream-denied");
+    request.set_max_updates(1);
+    auto reader = stub_->StreamBattleState(&context, request);
+
+    boost::gateway::v3::BattleStateResponse response;
+    EXPECT_FALSE(reader->Read(&response));
+    const auto status = reader->Finish();
+    EXPECT_EQ(status.error_code(), grpc::StatusCode::PERMISSION_DENIED);
+    EXPECT_EQ(status.error_message(), "grpc_rbac_denied");
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const auto metrics = adapter_->battle_state_stream_metrics();
+    EXPECT_EQ(metrics.started, 0U);
+    EXPECT_EQ(metrics.active, 0U);
+    EXPECT_EQ(metrics.completed, 0U);
+    EXPECT_EQ(metrics.cancelled, 0U);
+}
+
+TEST_F(GrpcGatewayTlsE2ETest, SdkClientCompletesRoomAndBattleFlowOverTls) {
+    boost_gateway::sdk::GrpcClient client;
+    ASSERT_TRUE(connect_sdk_client(client));
+
+    ASSERT_TRUE(client.login("tls-alice", "token:tls-alice", "TLS Alice").ok);
+    ASSERT_TRUE(client.create_room("tls-alice", "tls-room").ok);
+    ASSERT_TRUE(client.join_room("tls-bob", "tls-room").ok);
+
+    const auto battle = client.create_battle(
+        "tls-battle", "tls-room", {"tls-alice", "tls-bob"}, 30);
+    ASSERT_TRUE(battle.ok) << battle.error_message;
+
+    const auto stream = client.stream_battle_state("tls-battle", 2);
+    ASSERT_TRUE(stream.ok) << stream.error_message;
+    ASSERT_EQ(stream.updates.size(), 2U);
+
+    const auto finish = client.finish_battle("tls-alice", "tls-battle", "tls_done");
+    ASSERT_TRUE(finish.ok) << finish.error_message;
+}
+
+TEST_F(GrpcGatewayMtlsE2ETest, RequiresClientCertificateAndAcceptsMutualTlsClient) {
+    boost_gateway::sdk::GrpcClient missing_client_certificate;
+    boost_gateway::sdk::GrpcClientTlsOptions missing_tls_options;
+    missing_tls_options.root_ca_pem = ca_pem_;
+    const bool connected_without_certificate = missing_client_certificate.connect_secure(
+        "127.0.0.1", adapter_->port(), missing_tls_options, std::chrono::milliseconds(800));
+    if (connected_without_certificate) {
+        const auto rejected = missing_client_certificate.login(
+            "mtls-missing-cert", "token:mtls-missing-cert", "Missing Cert",
+            std::chrono::milliseconds(800));
+        EXPECT_FALSE(rejected.ok);
+        EXPECT_NE(rejected.error_code, 0);
+    } else {
+        EXPECT_FALSE(connected_without_certificate);
+    }
+
+    boost_gateway::sdk::GrpcClient client;
+    ASSERT_TRUE(connect_sdk_client(client));
+
+    const auto login = client.login("mtls-alice", "token:mtls-alice", "mTLS Alice");
+    ASSERT_TRUE(login.ok) << login.error_message;
+    const auto room = client.create_room("mtls-alice", "mtls-room");
+    ASSERT_TRUE(room.ok) << room.error_message;
 }
 
 }  // namespace

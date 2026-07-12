@@ -87,6 +87,8 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
     add(checks, "cmake exposes transport contract target", "check_v3_proto_transport_contract" in all_cmake, "CMake target check_v3_proto_transport_contract exists")
     add(checks, "cmake exposes generation target", "generate_v3_proto_cpp" in all_cmake, "CMake target generate_v3_proto_cpp exists")
     grpc_source = read_text(ROOT / "src/v2/grpc/gateway_grpc_server.cpp")
+    grpc_header = read_text(ROOT / "src/v2/grpc/gateway_grpc_server.h")
+    grpc_server_header = read_text(ROOT / "src/v2/grpc/grpc_server.h")
     gateway_proto = read_text(ROOT / "proto/v3/gateway.proto")
     add(checks, "grpc scope includes room base flows", "RoomCreateCallData" in grpc_source and "RoomJoinCallData" in grpc_source and "RoomLeaveCallData" in grpc_source and "RoomReadyCallData" in grpc_source, "experimental gateway gRPC scope now includes room create/join/leave/ready")
     add(checks, "grpc scope includes match and leaderboard base flows", "MatchJoinCallData" in grpc_source and "MatchLeaveCallData" in grpc_source and "MatchStatusCallData" in grpc_source and "LeaderboardSubmitCallData" in grpc_source and "LeaderboardTopCallData" in grpc_source and "LeaderboardRankCallData" in grpc_source, "experimental gateway gRPC scope now includes match and leaderboard base flows")
@@ -101,13 +103,42 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
         "grpc adapter routes requests via GatewayServiceBridge-backed callbacks instead of the old allow-all-only stub path",
     )
     grpc_sdk = read_text(ROOT / "sdk/src/grpc_client.cpp")
+    grpc_sdk_header = read_text(ROOT / "sdk/include/boost_gateway/sdk/grpc_client.h")
+    grpc_e2e = read_text(ROOT / "tests/v2/integration/grpc_gateway_adapter_e2e_test.cpp")
     add(checks, "grpc scope includes cancellable rate-limited battle streaming", "StreamBattleState" in gateway_proto and "update_interval_ms" in gateway_proto and "BattleStateStreamCallData" in grpc_source and "AsyncNotifyWhenDone" in grpc_source and "kMinimumIntervalMs" in grpc_source and "subscribe_battle_state" in grpc_sdk, "experimental gateway gRPC exposes cancellable, rate-limited Battle state server streaming")
-    add(checks, "grpc production profile still incomplete", "SslServerCredentials" not in grpc_source and "Authorizer" not in grpc_source and "OpenTelemetry" not in grpc_source, "gRPC still lacks TLS, RBAC, and observability production-path coverage")
+    add(
+        checks,
+        "grpc security profile includes tls rbac and mtls evidence",
+        "SslServerCredentials" in grpc_server_header
+        and "require_authenticated_principal" in grpc_header
+        and "GrpcClientTlsOptions" in grpc_sdk_header
+        and "connect_secure" in grpc_sdk
+        and "GrpcGatewayRbacE2ETest" in grpc_e2e
+        and "GrpcGatewayTlsE2ETest" in grpc_e2e
+        and "GrpcGatewayMtlsE2ETest" in grpc_e2e,
+        "experimental gateway gRPC now has TLS server credentials, trusted-principal RBAC, SDK TLS client credentials, and TLS/mTLS E2E coverage",
+    )
+    add(
+        checks,
+        "grpc production profile still incomplete",
+        "OpenTelemetry" not in grpc_source
+        and "未进入独立安装包" in current
+        and "defer_default_transport" in current,
+        "gRPC still lacks observability production-path coverage and an installed SDK distribution contract, so default transport remains deferred",
+    )
     grpc_benchmark = read_text(ROOT / "tests/perf/grpc_vs_tcp_perf_test.cpp")
     add(checks, "grpc benchmark uses real tcp io", "run_tcp_benchmark(std::uint16_t port" in grpc_benchmark and "BackendConnection conn" in grpc_benchmark and "conn.send_request(req)" in grpc_benchmark, "grpc vs tcp perf test uses real TCP backend requests")
     add(checks, "grpc benchmark uses real grpc io", "run_grpc_benchmark(std::uint16_t port" in grpc_benchmark and "Gateway::NewStub" in grpc_benchmark and "stub->RequestLogin(&ctx, req, &resp)" in grpc_benchmark, "grpc vs tcp perf test uses real gRPC RequestLogin calls")
     add(checks, "grpc benchmark remains login-only scope", "make_login_backend()" in grpc_benchmark and "GatewayGrpcServer" in grpc_benchmark, "grpc benchmark is real I/O but still limited to the currently implemented login path")
-    add(checks, "grpc non-login coverage documented as next evidence", "扩展到更多非登录路径" in read_text(ROOT / "docs/mainline-execution-plan.md") and "defer_default_transport" in read_text(ROOT / "docs/mainline-execution-plan.md"), "mainline plan requires non-login gRPC evidence while keeping default transport deferred")
+    mainline_plan = read_text(ROOT / "docs/mainline-execution-plan.md")
+    add(
+        checks,
+        "grpc next evidence stays deferred behind remaining delivery gaps",
+        "defer_default_transport" in mainline_plan
+        and "OTel/外部观测" in mainline_plan
+        and "fixed-runner `BOOST_BUILD_GRPC=ON` summary" in mainline_plan,
+        "mainline plan must keep default transport deferred until observability and fixed-runner delivery gaps are closed",
+    )
     conan_validate = read_text(ROOT / ".github/workflows/conan-validate.yml")
     production_evidence = read_text(ROOT / ".github/workflows/production-evidence.yml")
     add(

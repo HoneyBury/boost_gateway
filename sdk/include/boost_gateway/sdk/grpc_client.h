@@ -14,6 +14,26 @@
 
 namespace boost_gateway::sdk {
 
+struct GrpcClientTlsOptions {
+  std::string root_ca_pem;
+  std::string client_certificate_chain_pem;
+  std::string client_private_key_pem;
+
+  [[nodiscard]] bool enabled() const noexcept {
+    return !root_ca_pem.empty() || !client_certificate_chain_pem.empty() ||
+           !client_private_key_pem.empty();
+  }
+
+  [[nodiscard]] bool valid() const noexcept {
+    if (!enabled()) {
+      return true;
+    }
+    const bool has_client_identity =
+        client_certificate_chain_pem.empty() == client_private_key_pem.empty();
+    return !root_ca_pem.empty() && has_client_identity;
+  }
+};
+
 class GrpcClient {
  public:
   using BattleStateUpdateCallback = std::function<bool(const BattleStateResult&)>;
@@ -27,6 +47,11 @@ class GrpcClient {
   bool connect(const std::string& host,
                std::uint16_t port,
                std::chrono::milliseconds timeout = std::chrono::seconds(5));
+  bool connect_secure(
+      const std::string& host,
+      std::uint16_t port,
+      const GrpcClientTlsOptions& tls_options,
+      std::chrono::milliseconds timeout = std::chrono::seconds(5));
   void disconnect();
   [[nodiscard]] bool is_connected() const;
 

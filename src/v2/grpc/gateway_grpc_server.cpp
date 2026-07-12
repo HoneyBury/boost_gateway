@@ -262,8 +262,12 @@ class RoomCreateCallData final : public GatewayGrpcServer::CallData {
     if (status_ == PROCESS) {
       std::string error;
       std::int32_t member_count = 0;
-      ::grpc::Status rpc_status = ::grpc::Status::OK;
-      if (!server_->room_create_cb_ ||
+      ::grpc::Status rpc_status = server_->authorize_request(ctx_, 3001);
+      if (!rpc_status.ok()) {
+        response_.set_room_id(request_.room_id());
+        response_.set_error_code(static_cast<std::int32_t>(rpc_status.error_code()));
+        response_.set_error_message(rpc_status.error_message());
+      } else if (!server_->room_create_cb_ ||
           !server_->room_create_cb_(request_.user_id(), request_.room_id(), member_count, error)) {
         response_.set_room_id(request_.room_id());
         rpc_status = set_backend_failure(response_, error, "room_create_failed");
@@ -314,6 +318,9 @@ class RoomJoinCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 3003); !auth.ok()) {
+        responder_.Finish(response_, auth, this); status_ = FINISH; return;
+      }
       std::string error;
       std::int32_t member_count = 0;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -368,6 +375,9 @@ class RoomLeaveCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 3005); !auth.ok()) {
+        responder_.Finish(response_, auth, this); status_ = FINISH; return;
+      }
       std::string error;
       bool was_owner = false;
       std::string new_owner_id;
@@ -424,6 +434,9 @@ class RoomReadyCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 3007); !auth.ok()) {
+        responder_.Finish(response_, auth, this); status_ = FINISH; return;
+      }
       std::string error;
       bool all_ready = false;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -477,6 +490,9 @@ class MatchJoinCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 6001); !auth.ok()) {
+        responder_.Finish(response_, auth, this); status_ = FINISH; return;
+      }
       std::string error;
       bool queued = false;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -529,6 +545,9 @@ class MatchLeaveCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 6004); !auth.ok()) {
+        responder_.Finish(response_, auth, this); status_ = FINISH; return;
+      }
       std::string error;
       bool left = false;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -580,6 +599,7 @@ class MatchStatusCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 6006); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       bool matched = false;
       std::string match_id;
@@ -638,6 +658,7 @@ class LeaderboardSubmitCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 7001); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::int64_t rank = 0;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -690,6 +711,7 @@ class LeaderboardTopCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 7003); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::vector<boost::gateway::v3::LeaderboardEntry> entries;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -743,6 +765,7 @@ class LeaderboardRankCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 7005); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::int64_t rank = 0;
       std::int64_t score = 0;
@@ -797,6 +820,7 @@ class BattleCreateCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 4001); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::vector<std::string> player_ids;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -856,6 +880,7 @@ class BattleInputCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 4003); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::uint64_t input_seq = 0;
       std::uint32_t frame_number = 0;
@@ -910,6 +935,7 @@ class BattleStateCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 4007); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::uint32_t frame_number = 0;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -987,6 +1013,10 @@ class BattleStateStreamCallData final : public GatewayGrpcServer::CallData {
     }
     // Keep accepting new streaming clients while this call remains active.
     (void)new BattleStateStreamCallData(server_, service_, cq_);
+    if (const auto auth = server_->authorize_request(ctx_, 4007); !auth.ok()) {
+      finish(auth);
+      return;
+    }
     update_limit_ = std::min(request_.max_updates(), kMaximumUpdates);
     update_interval_ms_ = std::clamp(
         request_.update_interval_ms() == 0 ? kDefaultIntervalMs
@@ -1150,6 +1180,7 @@ class BattleFinishCallData final : public GatewayGrpcServer::CallData {
       return;
     }
     if (status_ == PROCESS) {
+      if (const auto auth = server_->authorize_request(ctx_, 4001); !auth.ok()) { responder_.Finish(response_, auth, this); status_ = FINISH; return; }
       std::string error;
       std::uint32_t total_frames = 0;
       ::grpc::Status rpc_status = ::grpc::Status::OK;
@@ -1207,8 +1238,9 @@ GatewayGrpcServer::GatewayGrpcServer(
     BattleCreateCallback battle_create_cb,
     BattleInputCallback battle_input_cb,
     BattleStateCallback battle_state_cb,
-    BattleFinishCallback battle_finish_cb)
-    : GrpcServer("GatewayGrpc", port),
+    BattleFinishCallback battle_finish_cb,
+    SecurityOptions security_options)
+    : GrpcServer("GatewayGrpc", port, security_options.tls),
       login_auth_(std::move(login_auth)),
       logout_cb_(std::move(logout_cb)),
       room_create_cb_(std::move(room_create_cb)),
@@ -1224,7 +1256,8 @@ GatewayGrpcServer::GatewayGrpcServer(
       battle_create_cb_(std::move(battle_create_cb)),
       battle_input_cb_(std::move(battle_input_cb)),
       battle_state_cb_(std::move(battle_state_cb)),
-      battle_finish_cb_(std::move(battle_finish_cb)) {}
+      battle_finish_cb_(std::move(battle_finish_cb)),
+      security_options_(std::move(security_options)) {}
 
 GatewayGrpcServer::~GatewayGrpcServer() {
   shutdown();

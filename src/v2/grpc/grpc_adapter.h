@@ -58,13 +58,17 @@ class GrpcGatewayAdapter {
     std::optional<v2::gateway::GatewayServiceBridge::BackendConfig> leaderboard_backend_config;
   };
 
+  using SecurityOptions = GatewayGrpcServer::SecurityOptions;
+
   /// Construct a gRPC gateway adapter.
   /// @param port  gRPC server port (default 50051).
   explicit GrpcGatewayAdapter(std::uint16_t port = 50051,
-                              BackendOptions backend_options = {})
+                              BackendOptions backend_options = {},
+                              SecurityOptions security_options = {})
       : configured_port_(port),
         port_(port),
-        backend_options_(std::move(backend_options)) {}
+        backend_options_(std::move(backend_options)),
+        security_options_(std::move(security_options)) {}
 
   ~GrpcGatewayAdapter() {
     stop();
@@ -371,7 +375,7 @@ class GrpcGatewayAdapter {
           }
           out_total_frames = doc.value("total_frames", std::uint32_t{0});
           return true;
-        });
+        }, security_options_);
 
     if (!grpc_server_->start()) {
       SPDLOG_ERROR("GrpcGatewayAdapter: failed to start gRPC server");
@@ -465,6 +469,7 @@ class GrpcGatewayAdapter {
   std::uint16_t configured_port_;
   std::uint16_t port_;
   BackendOptions backend_options_;
+  SecurityOptions security_options_;
   std::shared_ptr<v2::gateway::BackendMetrics> backend_metrics_;
   std::unique_ptr<GatewayGrpcServer> grpc_server_;
   std::unique_ptr<v2::gateway::GatewayServiceBridge> bridge_;

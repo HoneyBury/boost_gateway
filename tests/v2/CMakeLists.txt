@@ -117,7 +117,10 @@ if(BOOST_BUILD_GRPC)
     target_include_directories(project_v2_integration_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src"
     )
-    target_compile_definitions(project_v2_integration_tests PRIVATE BOOST_BUILD_GRPC)
+    target_compile_definitions(project_v2_integration_tests PRIVATE
+        BOOST_BUILD_GRPC
+        PROJECT_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    )
     target_link_libraries(project_v2_integration_tests
         PRIVATE
             boost_gateway_sdk_grpc

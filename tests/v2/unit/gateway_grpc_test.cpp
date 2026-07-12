@@ -202,8 +202,9 @@ struct GatewayGrpcTest : ::testing::Test {
             void* tag;
             bool ok;
             while (running_ && cq->Next(&tag, &ok)) {
-                auto* call = static_cast<v2::grpc::GatewayGrpcServer::CallData*>(tag);
-                if (call) call->proceed(ok);
+                auto* completion_tag =
+                    static_cast<v2::grpc::GatewayGrpcServer::CompletionTag*>(tag);
+                if (completion_tag) completion_tag->proceed(ok);
             }
         });
 
@@ -216,6 +217,9 @@ struct GatewayGrpcTest : ::testing::Test {
         stub.reset();
         if (server) {
             server->shutdown();
+            if (auto* cq = server->completion_queue()) {
+                cq->Shutdown();
+            }
         }
         if (cq_thread_.joinable())
             cq_thread_.join();

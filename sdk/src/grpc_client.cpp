@@ -1,5 +1,6 @@
 #include "boost_gateway/sdk/grpc_client.h"
 
+#include <algorithm>
 #include <gateway.grpc.pb.h>
 #include <grpcpp/grpcpp.h>
 #include <nlohmann/json.hpp>
@@ -36,6 +37,18 @@ void set_deadline(::grpc::ClientContext& context, std::chrono::milliseconds time
   context.set_deadline(std::chrono::system_clock::now() + timeout);
 }
 
+std::shared_ptr<::grpc::ChannelCredentials> make_channel_credentials(
+    const GrpcClientTlsOptions& tls_options) {
+  if (!tls_options.enabled()) {
+    return ::grpc::InsecureChannelCredentials();
+  }
+  ::grpc::SslCredentialsOptions options;
+  options.pem_root_certs = tls_options.root_ca_pem;
+  options.pem_cert_chain = tls_options.client_certificate_chain_pem;
+  options.pem_private_key = tls_options.client_private_key_pem;
+  return ::grpc::SslCredentials(options);
+}
+
 }  // namespace
 
 class GrpcClient::Impl {
@@ -50,9 +63,20 @@ GrpcClient::~GrpcClient() = default;
 bool GrpcClient::connect(const std::string& host,
                          std::uint16_t port,
                          std::chrono::milliseconds timeout) {
+  return connect_secure(host, port, {}, timeout);
+}
+
+bool GrpcClient::connect_secure(const std::string& host,
+                                std::uint16_t port,
+                                const GrpcClientTlsOptions& tls_options,
+                                std::chrono::milliseconds timeout) {
+  if (!tls_options.valid()) {
+    disconnect();
+    return false;
+  }
   disconnect();
   const auto endpoint = host + ":" + std::to_string(port);
-  auto channel = ::grpc::CreateChannel(endpoint, ::grpc::InsecureChannelCredentials());
+  auto channel = ::grpc::CreateChannel(endpoint, make_channel_credentials(tls_options));
   if (!channel->WaitForConnected(std::chrono::system_clock::now() + timeout)) {
     return false;
   }

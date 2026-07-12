@@ -19,12 +19,20 @@ DNS.2=*.boost-gateway.svc.cluster.local
 IP.1=127.0.0.1
 """
 
+CLIENT_EXT = """authorityKeyIdentifier=keyid,issuer
+basicConstraints=CA:FALSE
+keyUsage=digitalSignature,nonRepudiation,keyEncipherment,dataEncipherment
+extendedKeyUsage=clientAuth
+"""
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Generate local TLS certificates for gateway/backend validation.")
     parser.add_argument("--output-dir", type=Path, default=Path("certs"))
     parser.add_argument("--days", type=int, default=3650)
     parser.add_argument("--common-name", default="localhost")
+    parser.add_argument("--include-client", action="store_true")
+    parser.add_argument("--client-common-name", default="boost-grpc-client")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[2]
@@ -72,6 +80,32 @@ def main() -> int:
         if path.exists():
             path.unlink()
 
+    if args.include_client:
+        subprocess.run([
+            openssl, "req", "-new", "-newkey", "rsa:4096", "-sha256", "-days", str(args.days), "-nodes",
+            "-keyout", str(certs_dir / "client.key"),
+            "-out", str(certs_dir / "client.csr"),
+            "-subj", f"/CN={args.client_common_name}/O=Boost Gateway Dev/C=US",
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        client_ext = certs_dir / "client.ext"
+        client_ext.write_text(CLIENT_EXT, encoding="utf-8")
+        subprocess.run([
+            openssl, "x509", "-req",
+            "-in", str(certs_dir / "client.csr"),
+            "-CA", str(certs_dir / "ca.crt"),
+            "-CAkey", str(certs_dir / "ca.key"),
+            "-CAcreateserial",
+            "-out", str(certs_dir / "client.crt"),
+            "-days", str(args.days), "-sha256",
+            "-extfile", str(client_ext),
+        ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        print("  [OK] client.key + client.crt")
+
+        for path in [certs_dir / "client.csr", client_ext]:
+            if path.exists():
+                path.unlink()
+
     print(f"==> Done. Certificates in {certs_dir}/")
     for item in sorted(certs_dir.iterdir()):
         print(f"  {item.name}")
@@ -80,4 +114,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

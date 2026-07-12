@@ -22,6 +22,12 @@
 python3 scripts/gen_certs.py
 ```
 
+如需给实验 gRPC mTLS 或其他本机双向 TLS 验证生成临时 client cert：
+
+```bash
+python3 scripts/gen_certs.py --include-client
+```
+
 也可以为轮换演练输出到独立目录：
 
 ```bash
@@ -33,6 +39,9 @@ python3 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --
 - `certs/ca.crt`
 - `certs/server.crt`
 - `certs/server.key`
+- `certs/client.crt` / `certs/client.key`（仅 `--include-client`）
+
+实验 gRPC `GatewayGrpcServer` / `GrpcClient` 的 TLS/mTLS E2E 也复用这组开发证书；当前仓库只把它们用于本机或 CI 验证，不得作为生产 CA 或生产 client cert。
 
 生产不得使用开发 CA。正式环境应由 Vault、云 Secret Manager、cert-manager 或企业 CA 管理，并在发布记录里写清证书指纹、过期时间和轮换窗口。
 

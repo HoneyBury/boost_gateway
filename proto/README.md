@@ -98,7 +98,7 @@ Gateway -> ServiceEnvelope -> Leaderboard Backend
 
 - 非登录路径的 gRPC vs TCP benchmark，至少覆盖 room、battle、match、leaderboard 的基础 RPC。
 - SDK-integrated full-flow，不只验证单个 gRPC RPC。
-- 持续订阅的 streaming/push、TLS、RBAC、observability 的独立 profile 证据；Battle 已有可取消、限速的 server stream，但尚无 TLS/RBAC/OTel 或外部指标导出 profile。
+- 持续订阅的 streaming/push、observability 的独立 profile 证据；Battle 已有可取消、限速的 server stream，实验 gRPC 也已有 TLS server credential、trusted principal RBAC、SDK `connect_secure()` 和 TLS/mTLS E2E，但尚无 OTel/外部指标导出 profile、独立 SDK 安装包契约或 fixed-runner `BOOST_BUILD_GRPC=ON` summary。
 - Ubuntu fixed-runner 上 `BOOST_BUILD_GRPC=ON` 的构建和测试 summary。
 
 在这些证据完成前，生产默认链路继续保持 `SDK + TCP gateway + BackendEnvelope + typed helper + 五后端`，决策状态保持 `defer_default_transport`。

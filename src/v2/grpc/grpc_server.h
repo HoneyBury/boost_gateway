@@ -23,6 +23,23 @@
 
 namespace v2::grpc {
 
+struct GrpcTlsServerOptions {
+  std::string certificate_chain_pem;
+  std::string private_key_pem;
+  std::string root_ca_pem;
+  bool require_client_certificate = false;
+
+  [[nodiscard]] bool enabled() const noexcept {
+    return !certificate_chain_pem.empty() || !private_key_pem.empty();
+  }
+
+  [[nodiscard]] bool valid() const noexcept {
+    if (!enabled()) return true;
+    return !certificate_chain_pem.empty() && !private_key_pem.empty() &&
+           (!require_client_certificate || !root_ca_pem.empty());
+  }
+};
+
 struct BackendFailure {
   v2::service::ServiceErrorCode code = v2::service::ServiceErrorCode::kRejected;
   std::string message;
@@ -149,9 +166,12 @@ struct ErrorCodeMapper {
 // -------------------------------------------------------------------
 class GrpcServer {
  public:
-  explicit GrpcServer(std::string server_name, std::uint16_t port)
+  explicit GrpcServer(std::string server_name,
+                      std::uint16_t port,
+                      GrpcTlsServerOptions tls_options = {})
       : server_name_(std::move(server_name)),
-        port_(port) {}
+        port_(port),
+        tls_options_(std::move(tls_options)) {}
 
   virtual ~GrpcServer() = default;
 
@@ -169,6 +189,11 @@ class GrpcServer {
 
     start_time_ = std::chrono::steady_clock::now();
 
+    if (!tls_options_.valid()) {
+      SPDLOG_ERROR("{}: invalid TLS configuration", server_name_);
+      return false;
+    }
+
     // Build server address string
     const std::string address = fmt::format("0.0.0.0:{}", port_);
     SPDLOG_INFO("{}: starting gRPC server on {}", server_name_, address);
@@ -179,9 +204,23 @@ class GrpcServer {
     // Let subclasses register services before building
     register_services(builder_);
 
+    std::shared_ptr<::grpc::ServerCredentials> credentials;
+    if (tls_options_.enabled()) {
+      ::grpc::SslServerCredentialsOptions ssl_options;
+      ssl_options.pem_root_certs = tls_options_.root_ca_pem;
+      ssl_options.pem_key_cert_pairs.push_back({
+          tls_options_.private_key_pem, tls_options_.certificate_chain_pem});
+      if (tls_options_.require_client_certificate) {
+        ssl_options.client_certificate_request =
+            GRPC_SSL_REQUEST_AND_REQUIRE_CLIENT_CERTIFICATE_AND_VERIFY;
+      }
+      credentials = ::grpc::SslServerCredentials(ssl_options);
+    } else {
+      credentials = ::grpc::InsecureServerCredentials();
+    }
+
     int selected_port = 0;
-    builder_.AddListeningPort(
-        address, ::grpc::InsecureServerCredentials(), &selected_port);
+    builder_.AddListeningPort(address, credentials, &selected_port);
 
     // Optional: set server-level resource limits
     builder_.SetMaxReceiveMessageSize(4 * 1024 * 1024);   // 4 MB
@@ -243,6 +282,7 @@ class GrpcServer {
  private:
   std::string server_name_;
   std::uint16_t port_;
+  GrpcTlsServerOptions tls_options_;
 };
 
 }  // namespace v2::grpc
