@@ -7,6 +7,7 @@
 #include <boost/asio/ssl.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -25,6 +26,9 @@ struct BackendServerOptions {
     std::uint16_t port = 0;
     bool tls_enabled = true;   // Batch B: TLS default on, set BOOST_DISABLE_TLS=1 to disable
     std::optional<v3::cluster::TlsSessionConfig> tls_config;
+    // BackendConnection instances are intentionally long lived. Keep their
+    // server-side idle window longer than a normal capacity measurement.
+    std::chrono::milliseconds session_idle_timeout = std::chrono::minutes(2);
 };
 
 class BackendServer {

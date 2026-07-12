@@ -212,7 +212,7 @@ void BackendServer::handle_plain_session(std::shared_ptr<tcp::socket> socket) {
         session_sockets_.push_back(socket);
     }
     while (running_ && socket->is_open()) {
-        auto request = read_frame(*socket, std::chrono::milliseconds(7000));
+        auto request = read_frame(*socket, options_.session_idle_timeout);
         if (!request) break;
 
         write_frame(*socket, handle_request(*request));
@@ -235,7 +235,7 @@ void BackendServer::handle_tls_session(std::shared_ptr<tcp::socket> socket) {
         asio::ssl::stream<tcp::socket&> stream(*socket, *ssl_context_);
         stream.handshake(asio::ssl::stream_base::server);
         while (running_ && socket->is_open()) {
-            auto request = read_frame(stream, std::chrono::milliseconds(7000));
+            auto request = read_frame(stream, options_.session_idle_timeout);
             if (!request) break;
             write_frame(stream, handle_request(*request));
         }

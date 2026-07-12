@@ -9,6 +9,7 @@
 #include "v3/cluster/cluster_router.h"
 #include "v3/cluster/consistent_hash.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
@@ -376,11 +377,22 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         const auto pool_size = target.from_cluster
             ? slot.cluster_connection_pools[target.connection_key].size()
             : slot.connection_pool.size();
+        const auto has_disconnected_connection = target.from_cluster
+            ? [&]() {
+                  const auto& pool = slot.cluster_connection_pools[target.connection_key];
+                  return std::any_of(pool.begin(), pool.end(), [](const auto& conn) {
+                      return !conn || !conn->is_connected();
+                  });
+              }()
+            : std::any_of(slot.connection_pool.begin(),
+                          slot.connection_pool.end(),
+                          [](const auto& conn) { return !conn || !conn->is_connected(); });
         // A non-empty pool used to return its first healthy connection here,
         // which prevented it from ever reaching its configured size. Grow the
         // pool before reusing connections so concurrent battle routes do not
         // serialize behind one BackendConnection mutex.
-        if (existing && existing->is_connected() && pool_size >= desired_pool_size) {
+        if (existing && existing->is_connected() && pool_size >= desired_pool_size &&
+            !has_disconnected_connection) {
             if (registry_) {
                 registry_->heartbeat(service, target.config.host, target.config.port);
             }
@@ -413,10 +425,24 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
         } else {
             for (std::size_t attempt = 0; attempt < pool.size(); ++attempt) {
                 const auto index = (next + attempt) % pool.size();
-                if (pool[index] && pool[index]->is_connected()) {
-                    next = (index + 1) % pool.size();
+                if (!pool[index] || !pool[index]->is_connected()) {
+                    if (pool[index]) {
+                        pool[index]->close();
+                    }
+                    pool[index] = std::move(conn);
                     stored = pool[index].get();
+                    next = (index + 1) % pool.size();
                     break;
+                }
+            }
+            if (stored == nullptr) {
+                for (std::size_t attempt = 0; attempt < pool.size(); ++attempt) {
+                    const auto index = (next + attempt) % pool.size();
+                    if (pool[index] && pool[index]->is_connected()) {
+                        next = (index + 1) % pool.size();
+                        stored = pool[index].get();
+                        break;
+                    }
                 }
             }
             if (stored == nullptr) {
@@ -436,11 +462,30 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
             slot.next_connection_index %= slot.connection_pool.size();
         } else {
             for (std::size_t attempt = 0; attempt < slot.connection_pool.size(); ++attempt) {
-                const auto index = (slot.next_connection_index + attempt) % slot.connection_pool.size();
-                if (slot.connection_pool[index] && slot.connection_pool[index]->is_connected()) {
-                    slot.next_connection_index = (index + 1) % slot.connection_pool.size();
+                const auto index = (slot.next_connection_index + attempt) %
+                                   slot.connection_pool.size();
+                if (!slot.connection_pool[index] ||
+                    !slot.connection_pool[index]->is_connected()) {
+                    if (slot.connection_pool[index]) {
+                        slot.connection_pool[index]->close();
+                    }
+                    slot.connection_pool[index] = std::move(conn);
                     stored = slot.connection_pool[index].get();
+                    slot.next_connection_index =
+                        (index + 1) % slot.connection_pool.size();
                     break;
+                }
+            }
+            if (stored == nullptr) {
+                for (std::size_t attempt = 0; attempt < slot.connection_pool.size(); ++attempt) {
+                    const auto index = (slot.next_connection_index + attempt) %
+                                       slot.connection_pool.size();
+                    if (slot.connection_pool[index] && slot.connection_pool[index]->is_connected()) {
+                        slot.next_connection_index =
+                            (index + 1) % slot.connection_pool.size();
+                        stored = slot.connection_pool[index].get();
+                        break;
+                    }
                 }
             }
             if (stored == nullptr) {
