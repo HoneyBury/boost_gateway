@@ -78,6 +78,33 @@ def run_step(name: str, category: str, command: list[str], timeout_seconds: int)
     }
 
 
+def run_step_with_retry(
+    name: str,
+    category: str,
+    command: list[str],
+    timeout_seconds: int,
+    attempts: int,
+) -> dict[str, Any]:
+    results: list[dict[str, Any]] = []
+    for attempt in range(1, max(1, attempts) + 1):
+        result = run_step(
+            f"{name} (attempt {attempt})",
+            category,
+            command,
+            timeout_seconds,
+        )
+        results.append(result)
+        if result.get("status") == "passed":
+            result["name"] = name
+            result["attempts"] = attempt
+            return result
+        if attempt < max(1, attempts):
+            time.sleep(min(5.0, float(attempt)))
+    results[-1]["name"] = name
+    results[-1]["attempts"] = len(results)
+    return results[-1]
+
+
 def fetch_json(url: str, timeout_s: float = 2.0) -> dict[str, Any]:
     with urllib.request.urlopen(url, timeout=timeout_s) as response:
         parsed = json.loads(response.read().decode("utf-8", errors="replace"))
@@ -289,6 +316,7 @@ def main() -> int:
     parser.add_argument("--mode", choices=["auto", "docker-compose", "bounded-local"], default="auto")
     parser.add_argument("--leave-running", action="store_true")
     parser.add_argument("--step-timeout-seconds", type=int, default=300)
+    parser.add_argument("--docker-pull-attempts", type=int, default=3)
     parser.add_argument("--summary-path", type=Path, default=REPO_ROOT / "runtime/validation/preprod-recovery-drill-summary.json")
     args = parser.parse_args()
 
@@ -323,14 +351,24 @@ def main() -> int:
     try:
         if mode == "docker-compose":
             steps.append(
-                run_step(
-                    "R5 docker compose up from existing images",
+                run_step_with_retry(
+                    "R5 docker compose pull",
                     "docker_compose",
-                    [*compose_command, "-f", str(compose_file), "up", "-d", "--no-build"],
+                    [*compose_command, "-f", str(compose_file), "pull"],
                     args.step_timeout_seconds,
+                    args.docker_pull_attempts,
                 )
             )
-            cleanup_needed = True
+            if steps[-1]["status"] == "passed":
+                steps.append(
+                    run_step(
+                        "R5 docker compose up from existing images",
+                        "docker_compose",
+                        [*compose_command, "-f", str(compose_file), "up", "-d", "--no-build"],
+                        args.step_timeout_seconds,
+                    )
+                )
+                cleanup_needed = True
             if steps[-1]["status"] == "passed":
                 ready_started = time.monotonic()
                 try:
