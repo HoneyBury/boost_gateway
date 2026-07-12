@@ -1,12 +1,12 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-07-11（N0-N3 + Conan fixed-runner）
+更新时间：2026-07-12（N0-N3 + Conan fixed-runner）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
 P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文档后续章节。
 
-容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642`、production evidence `29146018657` 和 R0 candidate `29152333112`；长稳/容量批次 `29146495724` 已失败，必须以其 artifact 而不是 workflow 名称判断证据强度。
+容量、长稳和 release/capacity 归档的推荐主事实源是 Ubuntu LTS 固定 runner。macOS 本机结果可以继续作为开发回归参考，但不作为最终生产容量声明依据。2026-07-11 已在同一 Linux runner 上完成 production resilience `29145497642`、production evidence `29146018657` 和 R0 candidate `29152333112`；历史长稳/容量批次 `29146495724` 已失败，必须以其 artifact 而不是 workflow 名称判断证据强度。最新 capacity 闭环见 `29183833041`。
 
 GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
 
@@ -45,10 +45,11 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
-| 3 | `long-soak-capacity.yml` | `run_2h_soak=true`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29146495724` 失败：`long` profile 实际仅 13.952 秒，不能声称 2h soak；capacity 的 battle-500 P99=750ms 超过 500ms；business-capacity 的 SDK client 输出触发 UTF-8 解码失败。`29153158335` 已修复 UTF-8 问题并确认 SDK full-flow 通过，但第二轮持续基准 gate 在 209 秒提前退出。long/overnight 现会分别持续至少 7200/28800 秒并聚合失败指标，P5/stability 子 summary 也会上传，修复后必须重跑 |
+| 3 | `long-soak-capacity.yml` | capacity: `run_2h_soak=false`、`run_8h_soak=false`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29183833041`（`6d537ee`）已通过：Conan 预检、Release 构建、capacity、business-capacity 和 R4 聚合均为 `overall_pass=true`。capacity 的 battle-500 三轮 P99=40/100/150ms，business-capacity 为 75/150/150ms，均为 0 rejected/failed；3 个 SDK full-flow 客户端通过。该 run 未执行 2h/8h，长稳事实仍分别以真实 7200/28800 秒 run 归档 |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
 | 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁；stability baseline profile 随 `configuration` 对齐（Debug=`debug`，Release=`release`） | `29152333112`（`8cadbef`）已通过，`runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0/P5/P6/N5 子 summary 均归档 |
-| 6 | `production-readiness.yml` | `production_candidate_run_id` + `long_soak_run_id`，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
+| 6 | `preprod-evidence.yml` | `recovery_mode=docker-compose`、`tls_runs=2`、Release + Conan lockfile | `runtime/validation/preprod-recovery-drill-summary.json`、`runtime/validation/tls-preprod-multi-run-summary.json` |
+| 7 | `production-readiness.yml` | R0、真实 2h soak、当前 capacity/R4、R5/R6 各自的 run ID，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
 
 通过判据：
 
@@ -323,13 +324,15 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
 ## R2/R3 cross-workflow aggregation
 
-`production-candidate-evidence.yml` 和 `long-soak-capacity.yml` 在独立运行中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。使用 `production-readiness.yml` 传入两个已完成的 run ID，将 artifact 汇聚到同一 workspace，再运行 R2 `--require-fixed-runner` 和 R3 readiness report：
+R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再运行 R2 `--require-fixed-runner` 和 R3 readiness report。R2 会验证导入的 long-soak summary 实际设置了 `run_2h_soak=true`，capacity-only batch 不能替代 2h soak：
 
 ```bash
 gh workflow run production-readiness.yml --ref develop \
   -f runner='"ubuntu-latest"' \
   -f production_candidate_run_id=<production-candidate-run-id> \
-  -f long_soak_run_id=<long-soak-capacity-run-id> \
+  -f long_soak_run_id=<2h-long-soak-run-id> \
+  -f capacity_run_id=<capacity-r4-run-id> \
+  -f preprod_evidence_run_id=<r5-r6-run-id> \
   -f require_fixed_runner=true
 ```
 

@@ -1,6 +1,6 @@
 # v2.0.2 性能基线报告 — Windows Release P0 实测版
 
-更新时间：2026-07-11
+更新时间：2026-07-12
 
 ## 工程效率与固定 Runner 口径
 
@@ -11,6 +11,17 @@
 - 2026-07-10/11 对 GitHub-hosted workflow 的连续回归已完成 hosted warm-cache 与 workflow 行为闭环验证：run `29106845147` 证明 Conan cache 恢复后路径漂移问题已解除，但旧版 `sccache` key 因“配置哈希固定 + exact-hit 后不再 save”被冻结在早期缓存，仍出现 `compile_requests=184 / cache_hits=0 / cache_misses=184`；提交 `28bda13` 将 `ci.yml` 调整为“配置哈希前缀 restore + commit exact key save”后，run `29108671173` 已在 GitHub-hosted `ubuntu-latest` 上达到 `compile_requests=184 / cache_hits=184 / cache_misses=0`。随后 `perf-regression.yml` 在 run `29112908106` 上取得 `compile_requests=202 / cache_hits=199 / cache_misses=3`，并成功写出自己的 workflow exact key；`perf-commit-check.yml`、`nightly-stability.yml`、`release.yml` 则分别在 run `29112908805`、`29112908489`、`29112907891` 上暴露出 dispatch-only PR comment 假设、stability build timeout 过紧和 release test 可观测性不足，最终由提交 `8127391` / `f365125` 收口，修复后 runs `29113691995`、`29113691508`、`29114301198` 全部通过。当前 hosted 侧剩余重点已不再是 workflow 自身可用性，而是 fixed-runner 口径。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
+
+### 最新固定 Runner 容量事实（2026-07-12）
+
+`long-soak-capacity.yml` run `29183833041` 在 Linux fixed runner、提交 `6d537ee` 上完成 capacity 与 business-capacity 各 3 轮；2h/8h 输入均为 `false`，因此本记录不构成长稳结论。Conan lockfile 预检、Release 构建与 `fixed-runner-release-capacity-summary.json` 均为 `overall_pass=true`。
+
+| Profile | battle-500 P99 (min/median/max) | 吞吐中位数 (msg/s) | Connected | Rejected / Failed | 额外验证 |
+| --- | --- | ---: | ---: | --- | --- |
+| capacity | 40 / 100 / 150ms | 6725.07 | 500 | 0 / 0 | echo-1000/5000/10000、battle-100 均通过 |
+| business-capacity | 75 / 150 / 150ms | 6725.26 | 500 | 0 / 0 | 3 个并发 SDK full-flow 客户端通过（6.091s） |
+
+该结果替代“battle-500 仍需 fixed-runner 重跑”的当前状态；旧 Windows/P0 数值保留为历史开发基线，不能与此固定 Linux runner 数据直接横比。
 
 ### P1 Conan 依赖治理验证（已升级为主线默认路径）
 
@@ -272,7 +283,7 @@ Echo 场景每连接边际成本仅 3.5-8.4 KB，适合大规模连接场景。B
 
 ---
 
-## 3. P0 Capacity 容量实测（已测定）
+## 3. P0 Capacity 历史本机实测
 
 2026-05-18 本机 capacity 三轮实测结果：
 
@@ -284,7 +295,7 @@ Echo 场景每连接边际成本仅 3.5-8.4 KB，适合大规模连接场景。B
 
 > 详细数据见 `runtime/perf/p0-capacity-local/` 和 `runtime/perf/p0-business-capacity-local-r2/`。
 > 
-> echo-10000 P99=50ms 已贴近 gate，属于 10K 连接的合理退化边界。battle-500 P99=400ms（经 response/push 出站优先级隔离优化后），仍需后续架构专项（异步后端路由、多 core session 分流）进一步收紧。
+> 这是历史本机数据。后续 Linux fixed-runner 结果已见本文开头的最新容量事实；不得用此处的 P99=400ms 推断当前容量表现。
 
 ---
 
@@ -292,13 +303,13 @@ Echo 场景每连接边际成本仅 3.5-8.4 KB，适合大规模连接场景。B
 
 以下场景已有压测命令和工具支持，但需要在固定 runner（独占机器）上执行：
 
-### 4.1 容量专项需复测
+### 4.1 容量专项固定 Runner 复测状态
 
 | 场景 | 命令 | 已测定？ | 备注 |
 |------|------|---------|------|
-| echo-5000-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | 本机 0 failed 通过 |
-| echo-10000-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | P99=50ms 贴近 gate |
-| battle-500-30s | `--run-preset capacity` | 已测定，需固定 runner 复测 | P99=400ms，需架构优化 |
+| echo-5000-30s | `--run-preset capacity` | 已在 fixed runner 测定 | `29183833041` 三轮 P99=5ms、0 failed/rejected |
+| echo-10000-30s | `--run-preset capacity` | 已在 fixed runner 测定 | `29183833041` 三轮 P99=5ms、0 failed/rejected |
+| battle-500-30s | `--run-preset capacity` | 已在 fixed runner 测定 | `29183833041` 三轮 P99=40/100/150ms、0 failed/rejected |
 | 1-core echo | `--io-cores 1` | **待测定** | extrapolated 值待验证 |
 | 2-core echo | `--io-cores 2` | **待测定** | extrapolated 值待验证 |
 

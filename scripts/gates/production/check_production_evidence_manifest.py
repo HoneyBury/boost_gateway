@@ -114,6 +114,17 @@ def check_evidence(
         check["status"] = "failed-summary"
         check["details"].append("summary did not pass")
 
+    required_values = item.get("required_json_values")
+    if isinstance(required_values, dict):
+        for key, expected in required_values.items():
+            observed = summary.get(key)
+            if observed != expected:
+                check["passed"] = False
+                check["status"] = "invalid-evidence-scope"
+                check["details"].append(
+                    f"expected summary.{key}={expected!r}, got {observed!r}"
+                )
+
     max_age = float(item.get("freshness_hours", 0) or 0)
     if max_age > 0:
         fresh, age_hours, message = freshness_status(summary, max_age, now)

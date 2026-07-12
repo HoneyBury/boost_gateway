@@ -14,7 +14,13 @@ on:
         description: "Production candidate run ID whose artifact contains the R0 summaries"
         required: true
       long_soak_run_id:
-        description: "Long soak/capacity run ID whose artifact contains fixed-runner summaries"
+        description: "Long soak run ID whose artifact contains the real 2h soak summary"
+        required: true
+      capacity_run_id:
+        description: "Capacity run ID whose artifact contains current R4 capacity summaries"
+        required: true
+      preprod_evidence_run_id:
+        description: "R5/R6 pre-production evidence run ID"
         required: true
       require_fixed_runner:
         description: "Require all fixed-runner and pre-production manifest entries"
@@ -45,9 +51,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PRODUCTION_CANDIDATE_RUN_ID: ${{ inputs.production_candidate_run_id }}
           LONG_SOAK_RUN_ID: ${{ inputs.long_soak_run_id }}
+          CAPACITY_RUN_ID: ${{ inputs.capacity_run_id }}
+          PREPROD_EVIDENCE_RUN_ID: ${{ inputs.preprod_evidence_run_id }}
         run: |
           set -euo pipefail
-          mkdir -p runtime/validation runtime/readiness-import/production-candidate runtime/readiness-import/long-soak
+          mkdir -p runtime/validation runtime/readiness-import/production-candidate runtime/readiness-import/long-soak runtime/readiness-import/capacity runtime/readiness-import/preprod
           gh run download "$PRODUCTION_CANDIDATE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --name "production-candidate-evidence-$PRODUCTION_CANDIDATE_RUN_ID" \
@@ -56,15 +64,27 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --name "long-soak-capacity-$LONG_SOAK_RUN_ID" \
             --dir runtime/readiness-import/long-soak
+          gh run download "$CAPACITY_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "long-soak-capacity-$CAPACITY_RUN_ID" \
+            --dir runtime/readiness-import/capacity
+          gh run download "$PREPROD_EVIDENCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID" \
+            --dir runtime/readiness-import/preprod
           find runtime/readiness-import -type f \( -name '*.json' -o -name '*.md' \) -print0 |
             while IFS= read -r -d '' path; do
               case "$path" in
                 *.json) cp "$path" runtime/validation/"$(basename "$path")" ;;
               esac
             done
+          find runtime/readiness-import/long-soak -name long-soak-capacity-summary.json -type f -print -quit |
+            xargs -r -I{} cp {} runtime/validation/long-soak-capacity-summary.json
           test -f runtime/validation/r0-production-candidate-evidence-summary.json
           test -f runtime/validation/long-soak-capacity-summary.json
           test -f runtime/validation/fixed-runner-release-capacity-summary.json
+          test -f runtime/validation/preprod-recovery-drill-summary.json
+          test -f runtime/validation/tls-preprod-multi-run-summary.json
 
       - name: R2 fixed-runner manifest
         id: r2

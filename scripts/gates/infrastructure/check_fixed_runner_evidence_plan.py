@@ -87,11 +87,31 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/r0-production-candidate-evidence-summary.json",
         ),
     },
+    "preprod_evidence": {
+        "path": ".github/workflows/preprod-evidence.yml",
+        "tokens": (
+            LINUX_LOCKFILE,
+            LINUX_PROFILE,
+            "scripts/verify_preprod_recovery_drill.py",
+            "scripts/verify_tls_preprod_multi_run.py",
+            "runtime/validation/preprod-recovery-drill-summary.json",
+            "runtime/validation/tls-preprod-multi-run-summary.json",
+            "preprod-evidence-${{ github.run_id }}",
+            "actions/upload-artifact@v4",
+        ),
+        "summaries": (
+            "runtime/validation/preprod-recovery-drill-summary.json",
+            "runtime/validation/tls-preprod-multi-run-summary.json",
+        ),
+    },
     "production_readiness": {
         "path": ".github/workflows/production-readiness.yml",
         "tokens": (
             "production_candidate_run_id",
             "long_soak_run_id",
+            "capacity_run_id",
+            "preprod_evidence_run_id",
+            "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID",
             "gh run download",
             "--require-fixed-runner",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",

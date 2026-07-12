@@ -1,0 +1,174 @@
+name: Preproduction Evidence
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+      configure_preset:
+        description: "CMake configure preset"
+        required: true
+        default: "release"
+      build_dir:
+        description: "CMake build directory"
+        required: true
+        default: "build/release"
+      configuration:
+        description: "Build configuration"
+        required: true
+        default: "Release"
+      recovery_mode:
+        description: "R5 recovery drill mode; docker-compose is required for pre-production evidence"
+        required: true
+        default: "docker-compose"
+        type: choice
+        options:
+          - docker-compose
+          - bounded-local
+      recovery_timeout_seconds:
+        description: "Timeout for each R5 recovery operation"
+        required: true
+        default: "300"
+      tls_runs:
+        description: "Number of R6 TLS readiness passes"
+        required: true
+        default: "2"
+      tls_timeout_seconds:
+        description: "Timeout for each R6 TLS readiness pass"
+        required: true
+        default: "240"
+      conan_profile:
+        description: "Repository Conan profile path"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      conan_lockfile:
+        description: "Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+
+permissions:
+  contents: read
+
+jobs:
+  preprod-evidence:
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64"]') }}
+    timeout-minutes: 180
+    concurrency:
+      group: preprod-evidence-${{ inputs.runner || 'self-hosted-linux-x64' }}
+      cancel-in-progress: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Fixed runner preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_fixed_runner_environment.py \
+            --profile production-evidence \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --summary-path runtime/validation/preprod-evidence-preflight-summary.json
+
+      - name: Conan lockfile install
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_conan.py
+          conan install . \
+            --output-folder=build/conan-preprod-evidence \
+            --build=missing \
+            -s build_type="${{ inputs.configuration || 'Release' }}" \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
+            -o "&:with_grpc=False" \
+            -o "&:with_sqlite=False"
+
+      - name: Configure
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          cmake --preset "${{ inputs.configure_preset || 'release' }}" \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DCMAKE_TOOLCHAIN_FILE="build/conan-preprod-evidence/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake" \
+            2>&1 | tee runtime/validation/preprod-evidence-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/preprod-evidence-configure.log
+
+      - name: Build validation targets
+        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }} --parallel
+
+      - name: R5 pre-production recovery drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_preprod_recovery_drill.py \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --mode "${{ inputs.recovery_mode }}" \
+            --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
+            --summary-path runtime/validation/preprod-recovery-drill-summary.json
+
+      - name: R6 TLS pre-production multi-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_tls_preprod_multi_run.py \
+            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --skip-build \
+            --runs "${{ inputs.tls_runs }}" \
+            --step-timeout-seconds "${{ inputs.tls_timeout_seconds }}" \
+            --summary-path runtime/validation/tls-preprod-multi-run-summary.json
+
+      - name: Render pre-production summary
+        if: always()
+        shell: bash
+        run: |
+          summaries=()
+          for path in runtime/validation/preprod-evidence-preflight-summary.json runtime/validation/preprod-recovery-drill-summary.json runtime/validation/tls-preprod-multi-run-summary.json; do
+            if [ -f "$path" ]; then summaries+=("$path"); fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload pre-production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preprod-evidence-${{ github.run_id }}
+          path: |
+            runtime/validation/preprod-evidence-*-summary.json
+            runtime/validation/preprod-recovery-drill-summary.json
+            runtime/validation/r5-*-summary.json
+            runtime/validation/tls-preprod-multi-run-summary.json
+            runtime/validation/r6-*.json
+            runtime/tls-preprod/**
+            runtime/perf/docker-production-snapshot/**
+          retention-days: 90
+          if-no-files-found: warn

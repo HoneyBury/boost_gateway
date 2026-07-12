@@ -85,6 +85,9 @@
       "required": false,
       "fixed_runner_required": true,
       "freshness_hours": 336,
+      "required_json_values": {
+        "run_2h_soak": true
+      },
       "producer": "python3 scripts/run_long_soak_capacity.py --run-2h-soak --run-capacity",
       "notes": "N1 fixed-runner evidence producer for 2h/8h soak and capacity baseline. Final approval should include at least 2h soak plus capacity; 8h soak is recommended before high-risk releases."
     },
