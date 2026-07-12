@@ -105,6 +105,10 @@ if(BOOST_BUILD_GRPC)
     grpc/gateway_grpc_server.cpp
   )
 
+  target_include_directories(project_v2 PRIVATE
+    "${CMAKE_SOURCE_DIR}/src"
+  )
+
   target_link_libraries(project_v2
     PUBLIC
       project_proto

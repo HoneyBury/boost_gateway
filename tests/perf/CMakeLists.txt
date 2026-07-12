@@ -14,6 +14,10 @@ target_link_libraries(grpc_vs_tcp_perf_test
 )
 
 if(BOOST_BUILD_GRPC)
+    target_include_directories(grpc_vs_tcp_perf_test
+        PRIVATE
+            ${CMAKE_SOURCE_DIR}/src
+    )
     target_compile_definitions(grpc_vs_tcp_perf_test
         PRIVATE
             BOOST_BUILD_GRPC

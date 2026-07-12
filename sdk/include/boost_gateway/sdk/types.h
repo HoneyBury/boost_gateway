@@ -72,6 +72,21 @@ struct BattleStateResult {
     std::string response_body;
 };
 
+struct BattleStateStreamResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::vector<BattleStateResult> updates;
+};
+
+struct BattleFinishResult {
+    bool ok = false;
+    std::int32_t error_code = 0;
+    std::string error_message;
+    std::string battle_id;
+    std::uint32_t total_frames = 0;
+};
+
 struct ReplayLoadResult {
     bool ok = false;
     std::int32_t error_code = 0;

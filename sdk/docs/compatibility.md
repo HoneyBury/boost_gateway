@@ -14,7 +14,7 @@
 
 | 客户端形态 | 安装/加载入口 | 运行时版本校验 | Full-flow 示例 | 当前支持边界 |
 | --- | --- | --- | --- | --- |
-| C++ | CMake install 后 `boost_gateway::sdk` | 编译期 `BOOST_GATEWAY_SDK_VERSION` | `sdk/examples/full_flow_client/main.cpp` | 同步 API，调用方负责线程归属和对象生命周期 |
+| C++ | CMake install 后 `boost_gateway::sdk` | 编译期 `BOOST_GATEWAY_SDK_VERSION` | `sdk/examples/full_flow_client/main.cpp` | 默认同步 TCP API，调用方负责线程归属和对象生命周期 |
 | C ABI | `boost_gateway_sdk_dll` 动态库 | `gsdk_version()` | 由 Python/C# wrapper 与 C ABI 单测覆盖 | ABI 边界捕获异常，错误通过返回值和 response text 传递 |
 | Python | `BOOST_GATEWAY_SDK_LIBRARY` 或平台默认库名 | `assert_compatible_version()` 要求 native `4.x` | `sdk/examples/python_full_flow.py` | 薄绑定，不内置包管理发布；加载失败会列出尝试路径 |
 | C# | `DllImport` native library | `AssertCompatibleNativeVersion()` 要求 native `4.x` | `sdk/examples/csharp_full_flow/Program.cs` | 薄绑定，不替代 NuGet 包；native allocation failure 会抛出明确异常 |
@@ -45,7 +45,7 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 
 ## 兼容边界
 
-- 当前 SDK 面向现有 TCP wire protocol，不承诺 proto/gRPC 外部客户端协议。
+- 默认 SDK 面向现有 TCP wire protocol。仓库内 `BOOST_BUILD_GRPC=ON` 时提供实验性 `boost_gateway::sdk_grpc` / `GrpcClient`，已验证 unary Login、Room、Battle、Leaderboard、有限帧 `stream_battle_state()` 及回调取消的 `subscribe_battle_state()`；服务端将订阅间隔夹紧到 100-5000ms。该 target 尚未进入独立安装包，且不承诺 TLS/RBAC、外部指标导出或外部协议稳定性。
 - backend TLS profile 不改变 SDK 外部 API；证书加载和 mTLS 策略由服务端部署治理，客户端 SDK 只感知 gateway 连接和业务结果。
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。

@@ -36,7 +36,7 @@ class BoostGatewayConan(ConanFile):
         self.requires("gtest/1.15.0")
         if bool(self.options.get_safe("with_grpc")):
             self.requires("protobuf/5.27.0")
-            self.requires("grpc/1.65.0")
+            self.requires("grpc/1.67.1")
 
     def configure(self):
         if self.options.get_safe("with_grpc") is None:

@@ -35,7 +35,7 @@ proto/v3/
 这意味着当前仓库已经具备：
 
 - typed envelope helper 的运行时兼容能力
-- generated protobuf / gRPC stub 的生成入口
+- generated protobuf / gRPC stub 的生成入口；CMake 当前以自包含的 `gateway.proto` 为 canonical schema，避免与 typed-envelope 领域 proto 的同名消息重复链接
 
 但默认运行路径仍以 helper 兼容层为主，generated stub 还没有完全替代现有桥接实现。
 
@@ -98,7 +98,7 @@ Gateway -> ServiceEnvelope -> Leaderboard Backend
 
 - 非登录路径的 gRPC vs TCP benchmark，至少覆盖 room、battle、match、leaderboard 的基础 RPC。
 - SDK-integrated full-flow，不只验证单个 gRPC RPC。
-- streaming/push、TLS、RBAC、observability 的独立 profile 证据。
+- 持续订阅的 streaming/push、TLS、RBAC、observability 的独立 profile 证据；Battle 已有可取消、限速的 server stream，但尚无 TLS/RBAC/OTel 或外部指标导出 profile。
 - Ubuntu fixed-runner 上 `BOOST_BUILD_GRPC=ON` 的构建和测试 summary。
 
 在这些证据完成前，生产默认链路继续保持 `SDK + TCP gateway + BackendEnvelope + typed helper + 五后端`，决策状态保持 `defer_default_transport`。

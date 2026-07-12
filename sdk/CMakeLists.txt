@@ -140,6 +140,28 @@ endif()
 
 add_library(boost_gateway::sdk ALIAS boost_gateway_sdk)
 
+# Generated gRPC SDK transport remains opt-in with the experimental server.
+if(BOOST_BUILD_GRPC)
+    add_library(boost_gateway_sdk_grpc STATIC
+        src/grpc_client.cpp
+    )
+    target_include_directories(boost_gateway_sdk_grpc
+        PUBLIC
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+    )
+    target_link_libraries(boost_gateway_sdk_grpc
+        PUBLIC
+            project_proto
+            nlohmann_json::nlohmann_json
+    )
+    target_compile_definitions(boost_gateway_sdk_grpc PUBLIC BOOST_BUILD_GRPC)
+    add_library(boost_gateway::sdk_grpc ALIAS boost_gateway_sdk_grpc)
+    if(COMMAND apply_project_warnings)
+        apply_project_warnings(boost_gateway_sdk_grpc)
+    endif()
+endif()
+
 # ── Install ──────────────────────────────────────────────────────────
 include(CMakePackageConfigHelpers)
 include(GNUInstallDirs)
@@ -162,7 +184,8 @@ install(TARGETS boost_gateway_sdk_dll
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
 # Headers
-install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    PATTERN grpc_client.h EXCLUDE)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/boost_gateway/sdk/version.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway/sdk)
 

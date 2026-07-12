@@ -28,14 +28,13 @@ set(GENERATED_DIR  "${CMAKE_BINARY_DIR}/generated/proto")
 
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
-# ── Locate all v3 proto files ─────────────────────────────────────────────
-file(GLOB V3_PROTO_FILES
-  "${PROTO_V3_DIR}/*.proto"
-)
+# ── Select the canonical gRPC schema ───────────────────────────────────────
+# gateway.proto is intentionally self-contained.  The per-domain proto files
+# currently preserve the typed-envelope contract and reuse the same package
+# message names, so compiling them together would produce duplicate C++ types.
+set(V3_PROTO_FILES "${PROTO_V3_DIR}/gateway.proto")
 
-list(SORT V3_PROTO_FILES)
-
-message(STATUS "Proto: found ${V3_PROTO_FILES}")
+message(STATUS "Proto: generating canonical schema ${V3_PROTO_FILES}")
 
 # ── Protobuf C++ generation (all v3 protos) ───────────────────────────────
 # protobuf_generate is provided by find_package(Protobuf CONFIG) in CMake >= 3.14.
@@ -66,8 +65,7 @@ foreach(_proto ${V3_PROTO_FILES})
   )
 endforeach()
 
-# ── 2. gRPC service stubs (only for files containing a `service` keyword) ──
-# In practice, only gateway.proto today; we still iterate to stay future-proof.
+# ── 2. gRPC service stubs ─────────────────────────────────────────────────
 foreach(_proto ${V3_PROTO_FILES})
   get_filename_component(_proto_name ${_proto} NAME_WE)
   set(_grpc_cc "${GENERATED_DIR}/${_proto_name}.grpc.pb.cc")
@@ -99,26 +97,32 @@ add_custom_target(generate_v3_grpc
   COMMENT "Generate v3 gRPC C++ stubs"
 )
 
-add_library(project_proto INTERFACE)
+add_library(project_proto STATIC
+  ${PROTOBUF_GENERATED_SOURCES}
+  ${GRPC_GENERATED_SOURCES}
+)
 add_dependencies(project_proto generate_v3_grpc generate_v3_proto)
 
 target_include_directories(project_proto
-  INTERFACE
+  PUBLIC
     "${GENERATED_DIR}"
 )
 
 target_link_libraries(project_proto
-  INTERFACE
+  PUBLIC
     protobuf::libprotobuf
     gRPC::grpc++
     gRPC::grpc
-    gRPC::grpcpp
 )
+
+if(TARGET gRPC::grpc++_reflection)
+  target_link_libraries(project_proto PUBLIC gRPC::grpc++_reflection)
+endif()
 
 # Also expose the protobuf include dir (for google/protobuf/... imports)
 if(PROTOBUF_INCLUDE_DIR)
   target_include_directories(project_proto
-    INTERFACE
+    PUBLIC
       "${PROTOBUF_INCLUDE_DIR}"
   )
 endif()

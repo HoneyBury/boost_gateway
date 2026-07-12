@@ -110,8 +110,21 @@ add_executable(project_v2_integration_tests
     integration/cluster_router_e2e_test.cpp
     integration/matchmaking_e2e_test.cpp
 )
+if(BOOST_BUILD_GRPC)
+    target_sources(project_v2_integration_tests PRIVATE
+        integration/grpc_gateway_adapter_e2e_test.cpp
+    )
+    target_include_directories(project_v2_integration_tests PRIVATE
+        "${CMAKE_SOURCE_DIR}/src"
+    )
+    target_compile_definitions(project_v2_integration_tests PRIVATE BOOST_BUILD_GRPC)
+    target_link_libraries(project_v2_integration_tests
+        PRIVATE
+            boost_gateway_sdk_grpc
+    )
+endif()
 target_link_libraries(project_v2_integration_tests
-    PRIVATE
+        PRIVATE
         project_v2
         GTest::gtest_main
 )

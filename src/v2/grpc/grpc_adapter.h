@@ -32,6 +32,14 @@
 
 namespace v2::grpc {
 
+inline std::string bridge_failure(
+    const v2::gateway::GatewayServiceBridge::BackendRoutingResult& result,
+    const std::string& fallback) {
+  return encode_backend_failure(
+      result.error,
+      result.response_payload.empty() ? fallback : result.response_payload);
+}
+
 // -------------------------------------------------------------------
 // GrpcGatewayAdapter: adapter between existing v2 service conventions
 // and the gRPC server lifecycle.
@@ -54,7 +62,8 @@ class GrpcGatewayAdapter {
   /// @param port  gRPC server port (default 50051).
   explicit GrpcGatewayAdapter(std::uint16_t port = 50051,
                               BackendOptions backend_options = {})
-      : port_(port),
+      : configured_port_(port),
+        port_(port),
         backend_options_(std::move(backend_options)) {}
 
   ~GrpcGatewayAdapter() {
@@ -74,16 +83,18 @@ class GrpcGatewayAdapter {
 
     SPDLOG_INFO("GrpcGatewayAdapter: starting gRPC gateway on port {}", port_);
 
+    backend_metrics_ = std::make_shared<v2::gateway::BackendMetrics>();
     bridge_ = std::make_unique<v2::gateway::GatewayServiceBridge>(
         backend_options_.login_backend_config,
         backend_options_.room_backend_config,
         backend_options_.battle_backend_config,
         backend_options_.matchmaking_backend_config,
-        backend_options_.leaderboard_backend_config);
+        backend_options_.leaderboard_backend_config,
+        backend_metrics_);
 
     // Create and start the server
     grpc_server_ = std::make_unique<GatewayGrpcServer>(
-        port_,
+        configured_port_,
         [this](const std::string& user_id,
                const std::string& token,
                std::string& out_error) -> bool {
@@ -124,7 +135,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_create",
                                        nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "room_create_failed" : result.response_payload;
+            out_error = bridge_failure(result, "room_create_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -139,7 +150,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_join",
                                        nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "room_join_failed" : result.response_payload;
+            out_error = bridge_failure(result, "room_join_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -154,7 +165,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_leave",
                                        nlohmann::json{{"user_id", user_id}, {"room_id", room_id}}.dump(), room_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "room_leave_failed" : result.response_payload;
+            out_error = bridge_failure(result, "room_leave_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -170,7 +181,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kRoom, "room_ready",
                                        nlohmann::json{{"user_id", user_id}, {"room_id", room_id}, {"ready", ready}}.dump(), room_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "room_ready_failed" : result.response_payload;
+            out_error = bridge_failure(result, "room_ready_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -185,7 +196,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_join",
                                        nlohmann::json{{"user_id", user_id}, {"mmr", mmr}, {"mode", mode}}.dump(), user_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "match_join_failed" : result.response_payload;
+            out_error = bridge_failure(result, "match_join_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -200,7 +211,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_leave",
                                        nlohmann::json{{"user_id", user_id}, {"mode", mode}}.dump(), user_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "match_leave_failed" : result.response_payload;
+            out_error = bridge_failure(result, "match_leave_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -215,7 +226,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kMatchmaking, "match_status",
                                        nlohmann::json{{"user_id", user_id}, {"mode", mode}}.dump(), user_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "match_status_failed" : result.response_payload;
+            out_error = bridge_failure(result, "match_status_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -237,7 +248,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_submit",
                                        nlohmann::json{{"user_id", user_id}, {"display_name", display_name}, {"score", score}}.dump(), user_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "leaderboard_submit_failed" : result.response_payload;
+            out_error = bridge_failure(result, "leaderboard_submit_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -252,7 +263,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_top",
                                        nlohmann::json{{"k", k}}.dump());
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "leaderboard_top_failed" : result.response_payload;
+            out_error = bridge_failure(result, "leaderboard_top_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -278,7 +289,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kLeaderboard, "leaderboard_rank",
                                        nlohmann::json{{"user_id", user_id}}.dump(), user_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "leaderboard_rank_failed" : result.response_payload;
+            out_error = bridge_failure(result, "leaderboard_rank_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -298,7 +309,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_create",
                                        nlohmann::json{{"battle_id", battle_id}, {"room_id", room_id}, {"player_ids", player_ids}, {"max_frames", max_frames}}.dump(), room_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "battle_create_failed" : result.response_payload;
+            out_error = bridge_failure(result, "battle_create_failed");
             return false;
           }
           return true;
@@ -311,7 +322,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_input",
                                        nlohmann::json{{"user_id", user_id}, {"battle_id", battle_id}, {"input_data", input_data}, {"submitted_frame", submitted_frame}}.dump(), battle_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "battle_input_failed" : result.response_payload;
+            out_error = bridge_failure(result, "battle_input_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -331,7 +342,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_state",
                                        nlohmann::json{{"battle_id", battle_id}}.dump(), battle_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "battle_state_failed" : result.response_payload;
+            out_error = bridge_failure(result, "battle_state_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -350,7 +361,7 @@ class GrpcGatewayAdapter {
           auto result = bridge_->route(v2::service::ServiceId::kBattle, "battle_finish",
                                        nlohmann::json{{"user_id", user_id}, {"battle_id", battle_id}, {"reason", reason}}.dump(), battle_id);
           if (!result.success) {
-            out_error = result.response_payload.empty() ? "battle_finish_failed" : result.response_payload;
+            out_error = bridge_failure(result, "battle_finish_failed");
             return false;
           }
           auto doc = nlohmann::json::parse(result.response_payload, nullptr, false);
@@ -367,6 +378,7 @@ class GrpcGatewayAdapter {
       grpc_server_.reset();
       return false;
     }
+    port_ = grpc_server_->port();
 
     // Seed the completion queue with initial CallData instances
     grpc_server_->seed_completion_queue();
@@ -385,14 +397,9 @@ class GrpcGatewayAdapter {
       void* tag = nullptr;
       bool ok = false;
 
-      while (running_.load(std::memory_order_relaxed)) {
-        if (cq->Next(&tag, &ok)) {
-          auto* call_data = static_cast<GatewayGrpcServer::CallData*>(tag);
-          call_data->proceed(ok);
-        } else {
-          // CQ shut down
-          break;
-        }
+      while (cq->Next(&tag, &ok)) {
+        auto* completion_tag = static_cast<GatewayGrpcServer::CompletionTag*>(tag);
+        completion_tag->proceed(ok);
       }
 
       SPDLOG_DEBUG("GrpcGatewayAdapter: poll thread exiting");
@@ -425,6 +432,7 @@ class GrpcGatewayAdapter {
 
     grpc_server_.reset();
     bridge_.reset();
+    backend_metrics_.reset();
     SPDLOG_INFO("GrpcGatewayAdapter: gRPC gateway stopped");
   }
 
@@ -441,9 +449,23 @@ class GrpcGatewayAdapter {
     return grpc_server_ ? grpc_server_->active_sessions() : 0;
   }
 
+  [[nodiscard]] v2::gateway::BackendMetricsSnapshot backend_metrics_snapshot(
+      v2::service::ServiceId service) const {
+    return backend_metrics_ ? backend_metrics_->snapshot(service)
+                            : v2::gateway::BackendMetricsSnapshot{};
+  }
+
+  [[nodiscard]] GatewayGrpcServer::BattleStateStreamMetricsSnapshot
+  battle_state_stream_metrics() const noexcept {
+    return grpc_server_ ? grpc_server_->battle_state_stream_metrics()
+                        : GatewayGrpcServer::BattleStateStreamMetricsSnapshot{};
+  }
+
  private:
+  std::uint16_t configured_port_;
   std::uint16_t port_;
   BackendOptions backend_options_;
+  std::shared_ptr<v2::gateway::BackendMetrics> backend_metrics_;
   std::unique_ptr<GatewayGrpcServer> grpc_server_;
   std::unique_ptr<v2::gateway::GatewayServiceBridge> bridge_;
   std::thread poll_thread_;

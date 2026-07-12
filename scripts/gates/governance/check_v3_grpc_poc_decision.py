@@ -100,7 +100,9 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
         and "Accept all; real auth would validate the token" not in grpc_adapter,
         "grpc adapter routes requests via GatewayServiceBridge-backed callbacks instead of the old allow-all-only stub path",
     )
-    add(checks, "grpc full-flow still incomplete", "stream" not in gateway_proto and "Sdk" not in grpc_source and "RBAC" not in grpc_source and "TLS" not in grpc_source, "gRPC gateway still lacks streaming, SDK-integrated full-flow, RBAC, and TLS production-path coverage")
+    grpc_sdk = read_text(ROOT / "sdk/src/grpc_client.cpp")
+    add(checks, "grpc scope includes cancellable rate-limited battle streaming", "StreamBattleState" in gateway_proto and "update_interval_ms" in gateway_proto and "BattleStateStreamCallData" in grpc_source and "AsyncNotifyWhenDone" in grpc_source and "kMinimumIntervalMs" in grpc_source and "subscribe_battle_state" in grpc_sdk, "experimental gateway gRPC exposes cancellable, rate-limited Battle state server streaming")
+    add(checks, "grpc production profile still incomplete", "SslServerCredentials" not in grpc_source and "Authorizer" not in grpc_source and "OpenTelemetry" not in grpc_source, "gRPC still lacks TLS, RBAC, and observability production-path coverage")
     grpc_benchmark = read_text(ROOT / "tests/perf/grpc_vs_tcp_perf_test.cpp")
     add(checks, "grpc benchmark uses real tcp io", "run_tcp_benchmark(std::uint16_t port" in grpc_benchmark and "BackendConnection conn" in grpc_benchmark and "conn.send_request(req)" in grpc_benchmark, "grpc vs tcp perf test uses real TCP backend requests")
     add(checks, "grpc benchmark uses real grpc io", "run_grpc_benchmark(std::uint16_t port" in grpc_benchmark and "Gateway::NewStub" in grpc_benchmark and "stub->RequestLogin(&ctx, req, &resp)" in grpc_benchmark, "grpc vs tcp perf test uses real gRPC RequestLogin calls")

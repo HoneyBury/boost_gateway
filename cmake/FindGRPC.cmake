@@ -37,18 +37,14 @@ set(GRPC_FOUND_AND_INCLUDED TRUE)
 # find_grpc_cpp_plugin
 # -------------------------------------------------------------------
 function(find_grpc_cpp_plugin _out_var)
-  if(GRPC_CPP_PLUGIN)
-    set(${_out_var} "${GRPC_CPP_PLUGIN}" PARENT_SCOPE)
+  if(TARGET gRPC::grpc_cpp_plugin)
+    set(${_out_var} "$<TARGET_FILE:gRPC::grpc_cpp_plugin>" PARENT_SCOPE)
     return()
   endif()
 
-  if(TARGET gRPC::grpc_cpp_plugin)
-    get_target_property(_plugin gRPC::grpc_cpp_plugin IMPORTED_LOCATION)
-    if(_plugin)
-      set(GRPC_CPP_PLUGIN "${_plugin}" CACHE FILEPATH "Path to grpc_cpp_plugin")
-      set(${_out_var} "${_plugin}" PARENT_SCOPE)
-      return()
-    endif()
+  if(GRPC_CPP_PLUGIN)
+    set(${_out_var} "${GRPC_CPP_PLUGIN}" PARENT_SCOPE)
+    return()
   endif()
 
   # Fallback: search PATH manually
@@ -71,18 +67,22 @@ endfunction()
 # find_protoc
 # -------------------------------------------------------------------
 function(find_protoc _out_var)
-  if(PROTOC)
-    set(${_out_var} "${PROTOC}" PARENT_SCOPE)
+  if(TARGET protobuf::protoc)
+    # Some Conan protobuf build modules search PATH before their package
+    # directory and can therefore bind this target to a system protoc.  Keep
+    # generated code ABI-compatible with the Conan protobuf runtime.
+    if(DEFINED protobuf_PACKAGE_FOLDER_RELEASE AND
+       EXISTS "${protobuf_PACKAGE_FOLDER_RELEASE}/bin/protoc")
+      set_property(TARGET protobuf::protoc PROPERTY IMPORTED_LOCATION
+        "${protobuf_PACKAGE_FOLDER_RELEASE}/bin/protoc")
+    endif()
+    set(${_out_var} "$<TARGET_FILE:protobuf::protoc>" PARENT_SCOPE)
     return()
   endif()
 
-  if(TARGET protobuf::protoc)
-    get_target_property(_protoc protobuf::protoc IMPORTED_LOCATION)
-    if(_protoc)
-      set(PROTOC "${_protoc}" CACHE FILEPATH "Path to protoc")
-      set(${_out_var} "${_protoc}" PARENT_SCOPE)
-      return()
-    endif()
+  if(PROTOC)
+    set(${_out_var} "${PROTOC}" PARENT_SCOPE)
+    return()
   endif()
 
   find_program(PROTOC

@@ -27,6 +27,25 @@
 
 namespace v2::grpc {
 
+class LoginCallData;
+class LogoutCallData;
+class HealthCallData;
+class RoomCreateCallData;
+class RoomJoinCallData;
+class RoomLeaveCallData;
+class RoomReadyCallData;
+class MatchJoinCallData;
+class MatchLeaveCallData;
+class MatchStatusCallData;
+class LeaderboardSubmitCallData;
+class LeaderboardTopCallData;
+class LeaderboardRankCallData;
+class BattleCreateCallData;
+class BattleInputCallData;
+class BattleStateCallData;
+class BattleStateStreamCallData;
+class BattleFinishCallData;
+
 // -------------------------------------------------------------------
 // GatewayGrpcServer: implements the Gateway gRPC service.
 //
@@ -44,13 +63,29 @@ namespace v2::grpc {
 //   auto* cq = server.completion_queue();
 //   void* tag; bool ok;
 //   while (cq->Next(&tag, &ok)) {
-//       static_cast<GatewayGrpcServer::CallData*>(tag)->proceed(ok);
+//       static_cast<GatewayGrpcServer::CompletionTag*>(tag)->proceed(ok);
 //   }
 // -------------------------------------------------------------------
 class GatewayGrpcServer final : public GrpcServer {
  public:
+  struct BattleStateStreamMetricsSnapshot {
+    std::uint64_t started = 0;
+    std::uint64_t active = 0;
+    std::uint64_t completed = 0;
+    std::uint64_t cancelled = 0;
+  };
+
+  /// Abstract base for every completion-queue tag. Streaming RPCs use
+  /// dedicated tags for writes, timers, and client cancellation so those
+  /// events cannot be confused with the request-accept tag.
+  class CompletionTag {
+   public:
+    virtual ~CompletionTag() = default;
+    virtual void proceed(bool ok) = 0;
+  };
+
   /// Abstract base for per-RPC state machines.
-  class CallData {
+  class CallData : public CompletionTag {
    public:
     virtual ~CallData() = default;
     /// Drive the state machine (called by the CQ polling loop).
@@ -194,7 +229,7 @@ class GatewayGrpcServer final : public GrpcServer {
   std::uint32_t active_sessions() const noexcept { return active_sessions_; }
 
   /// Access the completion queue for external polling.
-  grpc::ServerCompletionQueue* completion_queue() noexcept { return cq_.get(); }
+  ::grpc::ServerCompletionQueue* completion_queue() noexcept { return cq_.get(); }
 
   /// Access the async service (for seeding initial CallData objects).
   boost::gateway::v3::Gateway::AsyncService& async_service() noexcept {
@@ -205,12 +240,51 @@ class GatewayGrpcServer final : public GrpcServer {
   /// RPC type. Must be called after start() and before the CQ poll loop.
   void seed_completion_queue();
 
+  [[nodiscard]] BattleStateStreamMetricsSnapshot
+  battle_state_stream_metrics() const noexcept {
+    return {
+        .started = battle_state_streams_started_.load(std::memory_order_relaxed),
+        .active = battle_state_streams_active_.load(std::memory_order_relaxed),
+        .completed = battle_state_streams_completed_.load(std::memory_order_relaxed),
+        .cancelled = battle_state_streams_cancelled_.load(std::memory_order_relaxed),
+    };
+  }
+
  private:
+  friend class LoginCallData;
+  friend class LogoutCallData;
+  friend class HealthCallData;
+  friend class RoomCreateCallData;
+  friend class RoomJoinCallData;
+  friend class RoomLeaveCallData;
+  friend class RoomReadyCallData;
+  friend class MatchJoinCallData;
+  friend class MatchLeaveCallData;
+  friend class MatchStatusCallData;
+  friend class LeaderboardSubmitCallData;
+  friend class LeaderboardTopCallData;
+  friend class LeaderboardRankCallData;
+  friend class BattleCreateCallData;
+  friend class BattleInputCallData;
+  friend class BattleStateCallData;
+  friend class BattleStateStreamCallData;
+  friend class BattleFinishCallData;
+
+  void on_battle_state_stream_started() noexcept {
+    battle_state_streams_started_.fetch_add(1, std::memory_order_relaxed);
+    battle_state_streams_active_.fetch_add(1, std::memory_order_relaxed);
+  }
+  void on_battle_state_stream_finished(bool cancelled) noexcept {
+    battle_state_streams_active_.fetch_sub(1, std::memory_order_relaxed);
+    (cancelled ? battle_state_streams_cancelled_ : battle_state_streams_completed_)
+        .fetch_add(1, std::memory_order_relaxed);
+  }
+
   // GrpcServer interface
-  void register_services(grpc::ServerBuilder& builder) override;
+  void register_services(::grpc::ServerBuilder& builder) override;
 
   boost::gateway::v3::Gateway::AsyncService service_;
-  std::unique_ptr<grpc::ServerCompletionQueue> cq_;
+  std::unique_ptr<::grpc::ServerCompletionQueue> cq_;
 
   LoginAuthCallback login_auth_;
   LogoutCallback logout_cb_;
@@ -230,6 +304,10 @@ class GatewayGrpcServer final : public GrpcServer {
   BattleFinishCallback battle_finish_cb_;
 
   std::atomic<std::uint32_t> active_sessions_{0};
+  std::atomic<std::uint64_t> battle_state_streams_started_{0};
+  std::atomic<std::uint64_t> battle_state_streams_active_{0};
+  std::atomic<std::uint64_t> battle_state_streams_completed_{0};
+  std::atomic<std::uint64_t> battle_state_streams_cancelled_{0};
 };
 
 }  // namespace v2::grpc

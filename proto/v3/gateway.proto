@@ -32,6 +32,7 @@ service Gateway {
   rpc RequestBattleCreate(BattleCreateRequest) returns (BattleCreateResponse);
   rpc RequestBattleInput(BattleInputRequest) returns (BattleInputResponse);
   rpc RequestBattleState(BattleStateRequest) returns (BattleStateResponse);
+  rpc StreamBattleState(BattleStateRequest) returns (stream BattleStateResponse);
   rpc RequestBattleFinish(BattleFinishRequest) returns (BattleFinishResponse);
 }
 
@@ -234,6 +235,12 @@ message BattleInputResponse {
 
 message BattleStateRequest {
   string battle_id = 1;
+  // Zero keeps the experimental server stream open until the client cancels
+  // it. Positive values cap the stream and are clamped by the server.
+  uint32 max_updates = 2;
+  // Requested interval between state snapshots. The server applies its own
+  // lower and upper bounds to protect the battle backend.
+  uint32 update_interval_ms = 3;
 }
 
 message BattleStateResponse {

@@ -13,6 +13,7 @@
 #include <vector>
 
 #include <nlohmann/json.hpp>
+#include <spdlog/spdlog.h>
 
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_server.h"
@@ -197,10 +198,11 @@ public:
             server_->seed_completion_queue();
             void* tag = nullptr;
             bool ok = false;
-            while (running_.load(std::memory_order_acquire) && cq->Next(&tag, &ok)) {
-                auto* call = static_cast<v2::grpc::GatewayGrpcServer::CallData*>(tag);
-                if (call != nullptr) {
-                    call->proceed(ok);
+            while (cq->Next(&tag, &ok)) {
+                auto* completion_tag =
+                    static_cast<v2::grpc::GatewayGrpcServer::CompletionTag*>(tag);
+                if (completion_tag != nullptr) {
+                    completion_tag->proceed(ok);
                 }
             }
         });
@@ -212,6 +214,9 @@ public:
         running_.store(false, std::memory_order_release);
         if (server_) {
             server_->shutdown();
+            if (auto* cq = server_->completion_queue()) {
+                cq->Shutdown();
+            }
         }
         if (cq_thread_.joinable()) {
             cq_thread_.join();
@@ -334,6 +339,9 @@ BenchmarkOutput run_single_benchmark(const std::string& protocol,
 }  // namespace
 
 int main() {
+    // Per-request server INFO logs dominate this small local microbenchmark.
+    spdlog::set_level(spdlog::level::warn);
+
     auto tcp_server = make_login_backend();
     tcp_server.start();
     const auto tcp_port = tcp_server.local_port();

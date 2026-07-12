@@ -112,7 +112,7 @@ cmake --build build/default --parallel
 | 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 部分完成，等待 R5 环境恢复 | R0 candidate `29152333112`、P5/P6 bounded summary 已成功；`29183833041` 已完成 Conan/Release 预检及 capacity、business-capacity 三轮闭环，battle-500 P99 均低于 500ms 且 SDK full-flow 通过。`29186343065` 已在 `4855dc0` 完成 R6 两轮 TLS 预发验证，但 R5 因 runner 到 Docker Hub 的连接被重置而未完成。待 runner 恢复 Docker 镜像预热后，依次刷新 R5/R6、真实 2h soak、R0，再生成 R2/R3 连续准入事实链 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
 | 4 | 生产认证边界 | 已完成当前边界收口 | 生产 `external-jwt` 模式现只验证带 `exp` 的外部 RS256 JWT，拒绝本地签名、注册、guest 和 refresh；账户持久化、JWKS/多 `kid` 轮换和可撤销 refresh token 明确属于外部身份提供方集成，不再由进程内 demo state 伪装承担 |
-| 5 | generated proto/gRPC 非登录 full-flow 证据 | 待开始，当前可推进 | 认证边界收口后，应将现有 Room/Battle/Match/Leaderboard 的基础 RPC 从 adapter/单请求验证扩展到 SDK 驱动的多服务 full-flow、push/streaming、TLS/RBAC 与可观测性证据，而不是继续扩大概念性 PoC |
+| 5 | generated proto/gRPC 非登录 full-flow 证据 | 阶段性完成，继续推进 | 本机 Conan `grpc/1.67.1` 构建与真实 `GrpcGatewayAdapterE2ETest` 已验证 Room/Match/Leaderboard unary 后端 E2E、`NOT_FOUND` 错误语义、实验 SDK `GrpcClient` 驱动的 Login/Room/Battle/Leaderboard full-flow，以及 Battle 可取消的持续订阅 server stream（100-5000ms 限速、正常/取消 CQ 回收、流生命周期与 backend route metrics）。本机 gRPC/TCP Login 微基准在并发 1/10/100/1000 均零失败，但仅作非固定 runner 的实现回归证据；继续扩展到更多非登录路径的 gRPC TLS 凭证、可信身份 RBAC、OTel/外部观测与独立 SDK 安装包契约，默认仍保持 `defer_default_transport`，而不是继续扩大概念性 PoC |
 | 6 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
 
 ### 当前优先级判断

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -217,6 +218,8 @@ private:
     std::uint32_t room_ttl_ms_ = 300000;
     std::uint32_t cleanup_interval_ms_ = 60000;
     std::atomic<bool> cleanup_running_{false};
+    std::condition_variable cleanup_wait_cv_;
+    std::mutex cleanup_wait_mutex_;
     std::thread cleanup_thread_;
 
     // v2.2.0: Diagnostics integration — snapshot collector for health /metrics
@@ -226,8 +229,14 @@ private:
         cleanup_running_ = true;
         cleanup_thread_ = std::thread([this]() {
             while (cleanup_running_) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(cleanup_interval_ms_));
-                if (!cleanup_running_) break;
+                std::unique_lock lock(cleanup_wait_mutex_);
+                if (cleanup_wait_cv_.wait_for(
+                        lock,
+                        std::chrono::milliseconds(cleanup_interval_ms_),
+                        [this] { return !cleanup_running_.load(); })) {
+                    break;
+                }
+                lock.unlock();
                 cleanup_expired_rooms();
             }
         });
@@ -235,6 +244,7 @@ private:
 
     void stop_cleanup_timer() {
         cleanup_running_ = false;
+        cleanup_wait_cv_.notify_all();
         if (cleanup_thread_.joinable()) {
             cleanup_thread_.join();
         }
