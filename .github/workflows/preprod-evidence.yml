@@ -86,6 +86,21 @@ jobs:
           pip install "conan>=2.0,<2.9"
           conan --version
 
+      - name: Ensure Docker Compose
+        shell: bash
+        run: |
+          set -euo pipefail
+          if docker compose version; then
+            exit 0
+          fi
+          if command -v docker-compose >/dev/null 2>&1; then
+            docker-compose version
+            exit 0
+          fi
+          sudo apt-get update
+          sudo apt-get install -y docker-compose-plugin
+          docker compose version
+
       - name: Fixed runner preflight
         shell: bash
         run: |

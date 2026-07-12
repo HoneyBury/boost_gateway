@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -99,14 +100,30 @@ def wait_for_ready(url: str, timeout_seconds: float) -> dict[str, Any]:
     raise TimeoutError(f"timed out waiting for {url}: {last_error}")
 
 
-def wait_for_prometheus_targets_up(compose_file: Path, timeout_seconds: float) -> dict[str, Any]:
+def docker_compose_command() -> list[str]:
+    probe = subprocess.run(
+        ["docker", "compose", "version"],
+        cwd=REPO_ROOT,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if probe.returncode == 0:
+        return ["docker", "compose"]
+    if shutil.which("docker-compose"):
+        return ["docker-compose"]
+    return ["docker", "compose"]
+
+
+def wait_for_prometheus_targets_up(
+    compose_command: list[str], compose_file: Path, timeout_seconds: float
+) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     last_error = ""
     while time.monotonic() < deadline:
         completed = subprocess.run(
             [
-                "docker",
-                "compose",
+                *compose_command,
                 "-f",
                 str(compose_file),
                 "exec",
@@ -301,6 +318,7 @@ def main() -> int:
     record_path = validation_dir / "r5-preprod-recovery-drill-record.json"
     record_check_summary = validation_dir / "r5-recovery-drill-record-check-summary.json"
     cleanup_needed = False
+    compose_command = docker_compose_command() if mode == "docker-compose" else []
 
     try:
         if mode == "docker-compose":
@@ -308,7 +326,7 @@ def main() -> int:
                 run_step(
                     "R5 docker compose up from existing images",
                     "docker_compose",
-                    ["docker", "compose", "-f", str(compose_file), "up", "-d", "--no-build"],
+                    [*compose_command, "-f", str(compose_file), "up", "-d", "--no-build"],
                     args.step_timeout_seconds,
                 )
             )
@@ -356,7 +374,7 @@ def main() -> int:
                     run_step(
                         "R5 docker compose restart gateway",
                         "recovery_drill",
-                        ["docker", "compose", "-f", str(compose_file), "restart", "gateway"],
+                        [*compose_command, "-f", str(compose_file), "restart", "gateway"],
                         args.step_timeout_seconds,
                     )
                 )
@@ -403,6 +421,7 @@ def main() -> int:
                 prometheus_started = time.monotonic()
                 try:
                     prometheus_doc = wait_for_prometheus_targets_up(
+                        compose_command,
                         compose_file,
                         min(float(args.step_timeout_seconds), 90.0),
                     )
@@ -484,7 +503,7 @@ def main() -> int:
                 run_step(
                     "R5 docker compose cleanup",
                     "cleanup",
-                    ["docker", "compose", "-f", str(compose_file), "down"],
+                    [*compose_command, "-f", str(compose_file), "down"],
                     args.step_timeout_seconds,
                 )
             )
