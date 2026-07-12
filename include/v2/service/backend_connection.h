@@ -47,6 +47,12 @@ struct BackendConnectionOptions {
 
 class BackendConnection {
 public:
+    enum class Availability {
+        kConnected,
+        kBusy,
+        kDisconnected,
+    };
+
     enum class FailureStage {
         kNone,
         kNotConnected,
@@ -82,6 +88,8 @@ public:
     void close();
 
     [[nodiscard]] bool is_connected() const;
+    // Pool selection must not block behind an in-flight synchronous RPC.
+    [[nodiscard]] Availability availability() const;
     [[nodiscard]] FailureStage last_failure_stage() const noexcept { return last_failure_stage_; }
     [[nodiscard]] std::uint32_t active_requests() const noexcept { return active_requests_; }
 

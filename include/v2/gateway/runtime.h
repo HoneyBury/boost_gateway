@@ -45,6 +45,19 @@ class Runtime final : public GatewayCommandSink,
                       public v2::player::PlayerEventSink,
                       public v2::room::RoomEventSink {
 public:
+    struct BattleRouteDiagnostics {
+        std::uint64_t completed_tasks = 0;
+        std::uint64_t queued_tasks = 0;
+        std::uint64_t total_queue_wait_us = 0;
+        std::uint64_t max_queue_wait_us = 0;
+        std::uint64_t total_task_execution_us = 0;
+        std::uint64_t max_task_execution_us = 0;
+        std::uint64_t total_backend_route_us = 0;
+        std::uint64_t max_backend_route_us = 0;
+        std::uint64_t total_response_dispatch_us = 0;
+        std::uint64_t max_response_dispatch_us = 0;
+    };
+
     struct BattleArchive {
         std::string battle_id;
         std::string room_id;
@@ -84,6 +97,7 @@ public:
     // Wire diagnostics data sources. These delegate to the internal DiagnosticsManager.
     void set_backend_metrics_for_diagnostics(std::shared_ptr<BackendMetrics> m);
     void set_service_registry_for_diagnostics(std::shared_ptr<v2::service::ServiceRegistry> r);
+    [[nodiscard]] BattleRouteDiagnostics battle_route_diagnostics() const noexcept;
 
     // ── Authorizer integration ─────────────────────────────────────────
     // Store the role for a session after successful authentication.
@@ -202,6 +216,16 @@ private:
     std::deque<std::function<void()>> battle_route_tasks_;
     std::vector<std::thread> battle_route_workers_;
     std::atomic<bool> battle_route_stopping_{false};
+    std::atomic<std::uint64_t> battle_route_completed_tasks_{0};
+    std::atomic<std::uint64_t> battle_route_queued_tasks_{0};
+    std::atomic<std::uint64_t> battle_route_total_queue_wait_us_{0};
+    std::atomic<std::uint64_t> battle_route_max_queue_wait_us_{0};
+    std::atomic<std::uint64_t> battle_route_total_task_execution_us_{0};
+    std::atomic<std::uint64_t> battle_route_max_task_execution_us_{0};
+    std::atomic<std::uint64_t> battle_route_total_backend_route_us_{0};
+    std::atomic<std::uint64_t> battle_route_max_backend_route_us_{0};
+    std::atomic<std::uint64_t> battle_route_total_response_dispatch_us_{0};
+    std::atomic<std::uint64_t> battle_route_max_response_dispatch_us_{0};
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;
     SchemaValidator schema_validator_;

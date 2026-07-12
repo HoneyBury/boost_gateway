@@ -25,6 +25,16 @@ namespace v2::gateway {
 
 namespace {
 
+void update_max(std::atomic<std::uint64_t>& target, std::uint64_t candidate) {
+    auto current = target.load(std::memory_order_relaxed);
+    while (current < candidate &&
+           !target.compare_exchange_weak(current,
+                                         candidate,
+                                         std::memory_order_relaxed,
+                                         std::memory_order_relaxed)) {
+    }
+}
+
 double read_rate_limit_override(const char* name, double fallback) {
     const char* raw = std::getenv(name);
     if (raw == nullptr || raw[0] == '\0') {
@@ -159,6 +169,27 @@ void Runtime::set_service_registry_for_diagnostics(
     std::shared_ptr<v2::service::ServiceRegistry> r) {
     diagnostics_->set_service_registry(r);
     health_check_->set_service_registry(std::move(r));
+}
+
+Runtime::BattleRouteDiagnostics Runtime::battle_route_diagnostics() const noexcept {
+    return BattleRouteDiagnostics{
+        .completed_tasks = battle_route_completed_tasks_.load(std::memory_order_relaxed),
+        .queued_tasks = battle_route_queued_tasks_.load(std::memory_order_relaxed),
+        .total_queue_wait_us = battle_route_total_queue_wait_us_.load(std::memory_order_relaxed),
+        .max_queue_wait_us = battle_route_max_queue_wait_us_.load(std::memory_order_relaxed),
+        .total_task_execution_us =
+            battle_route_total_task_execution_us_.load(std::memory_order_relaxed),
+        .max_task_execution_us =
+            battle_route_max_task_execution_us_.load(std::memory_order_relaxed),
+        .total_backend_route_us =
+            battle_route_total_backend_route_us_.load(std::memory_order_relaxed),
+        .max_backend_route_us =
+            battle_route_max_backend_route_us_.load(std::memory_order_relaxed),
+        .total_response_dispatch_us =
+            battle_route_total_response_dispatch_us_.load(std::memory_order_relaxed),
+        .max_response_dispatch_us =
+            battle_route_max_response_dispatch_us_.load(std::memory_order_relaxed),
+    };
 }
 
 v2::actor::ActorRef Runtime::create_gateway_actor() {
@@ -1244,9 +1275,17 @@ bool Runtime::handle(const GatewayCommand& command) {
                     enqueue_battle_route_task(
                         [this, bridge, session_id, request_id, room_id,
                          payload = input_payload.dump()]() mutable {
+                            const auto route_started_at = std::chrono::steady_clock::now();
                             auto result = bridge->route(v2::service::ServiceId::kBattle,
                                                         "battle_input",
                                                         payload);
+                            const auto route_completed_at = std::chrono::steady_clock::now();
+                            const auto backend_route_us = static_cast<std::uint64_t>(
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                    route_completed_at - route_started_at).count());
+                            battle_route_total_backend_route_us_.fetch_add(
+                                backend_route_us, std::memory_order_relaxed);
+                            update_max(battle_route_max_backend_route_us_, backend_route_us);
                             if (!result.success) {
                                 emit(net::protocol::kErrorResponse,
                                      session_id,
@@ -1294,6 +1333,12 @@ bool Runtime::handle(const GatewayCommand& command) {
                                                       push.dump());
                                 }
                             }
+                            const auto response_dispatch_us = static_cast<std::uint64_t>(
+                                std::chrono::duration_cast<std::chrono::microseconds>(
+                                    std::chrono::steady_clock::now() - route_completed_at).count());
+                            battle_route_total_response_dispatch_us_.fetch_add(
+                                response_dispatch_us, std::memory_order_relaxed);
+                            update_max(battle_route_max_response_dispatch_us_, response_dispatch_us);
                         });
                     return true;
                 }
@@ -2693,6 +2738,7 @@ void Runtime::start_battle_route_workers() {
                     }
                     task = std::move(battle_route_tasks_.front());
                     battle_route_tasks_.pop_front();
+                    battle_route_queued_tasks_.fetch_sub(1, std::memory_order_relaxed);
                 }
                 if (task) {
                     task();
@@ -2717,9 +2763,28 @@ void Runtime::enqueue_battle_route_task(std::function<void()> task) {
     if (!task) {
         return;
     }
+    const auto enqueued_at = std::chrono::steady_clock::now();
+    auto measured_task = [this, enqueued_at, task = std::move(task)]() mutable {
+        const auto started_at = std::chrono::steady_clock::now();
+        const auto queue_wait_us = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(started_at - enqueued_at).count());
+        battle_route_total_queue_wait_us_.fetch_add(queue_wait_us, std::memory_order_relaxed);
+        update_max(battle_route_max_queue_wait_us_, queue_wait_us);
+
+        task();
+
+        const auto task_execution_us = static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - started_at).count());
+        battle_route_total_task_execution_us_.fetch_add(task_execution_us,
+                                                         std::memory_order_relaxed);
+        update_max(battle_route_max_task_execution_us_, task_execution_us);
+        battle_route_completed_tasks_.fetch_add(1, std::memory_order_relaxed);
+    };
     {
         std::scoped_lock lock(battle_route_mutex_);
-        battle_route_tasks_.push_back(std::move(task));
+        battle_route_tasks_.push_back(std::move(measured_task));
+        battle_route_queued_tasks_.fetch_add(1, std::memory_order_relaxed);
     }
     battle_route_cv_.notify_one();
 }

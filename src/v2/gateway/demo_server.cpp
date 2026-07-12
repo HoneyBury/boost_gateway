@@ -392,6 +392,7 @@ DemoServerDiagnostics DemoServer::diagnostics() const {
         result.total_accepted_sessions += snapshot.accepted_sessions;
         result.total_outbound_dispatches += snapshot.outbound_dispatches;
     }
+    result.battle_route = runtime_.battle_route_diagnostics();
 
     if (backend_metrics_) {
         auto all = backend_metrics_->all_snapshots();
@@ -418,6 +419,31 @@ std::string DemoServer::diagnostics_json() const {
     doc["total_active_sessions"] = snapshot.total_active_sessions;
     doc["total_accepted_sessions"] = snapshot.total_accepted_sessions;
     doc["total_outbound_dispatches"] = snapshot.total_outbound_dispatches;
+    const auto completed_battle_routes = snapshot.battle_route.completed_tasks;
+    doc["battle_route"] = {
+        {"completed_tasks", completed_battle_routes},
+        {"queued_tasks", snapshot.battle_route.queued_tasks},
+        {"average_queue_wait_us", completed_battle_routes == 0
+                                        ? 0
+                                        : snapshot.battle_route.total_queue_wait_us /
+                                              completed_battle_routes},
+        {"max_queue_wait_us", snapshot.battle_route.max_queue_wait_us},
+        {"average_task_execution_us", completed_battle_routes == 0
+                                            ? 0
+                                            : snapshot.battle_route.total_task_execution_us /
+                                                  completed_battle_routes},
+        {"max_task_execution_us", snapshot.battle_route.max_task_execution_us},
+        {"average_backend_route_us", completed_battle_routes == 0
+                                         ? 0
+                                         : snapshot.battle_route.total_backend_route_us /
+                                               completed_battle_routes},
+        {"max_backend_route_us", snapshot.battle_route.max_backend_route_us},
+        {"average_response_dispatch_us", completed_battle_routes == 0
+                                              ? 0
+                                              : snapshot.battle_route.total_response_dispatch_us /
+                                                    completed_battle_routes},
+        {"max_response_dispatch_us", snapshot.battle_route.max_response_dispatch_us},
+    };
 
     nlohmann::json io_cores = nlohmann::json::array();
     for (const auto& core : snapshot.io_cores) {

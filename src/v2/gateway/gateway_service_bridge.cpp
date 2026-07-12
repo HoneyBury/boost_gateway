@@ -345,6 +345,7 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
     {
         std::scoped_lock lock(mutex_);
         auto& slot = slot_for(service);
+        v2::service::BackendConnection* busy_connection = nullptr;
         auto* existing = target.from_cluster
             ? [&]() -> v2::service::BackendConnection* {
                   auto& pool = slot.cluster_connection_pools[target.connection_key];
@@ -354,10 +355,23 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
                   auto& next = slot.cluster_next_connection_index[target.connection_key];
                   for (std::size_t attempt = 0; attempt < pool.size(); ++attempt) {
                       const auto index = (next + attempt) % pool.size();
-                      if (pool[index] && pool[index]->is_connected()) {
+                      if (!pool[index]) {
+                          continue;
+                      }
+                      const auto availability = pool[index]->availability();
+                      if (availability == v2::service::BackendConnection::Availability::kBusy) {
+                          if (busy_connection == nullptr) {
+                              busy_connection = pool[index].get();
+                          }
+                          continue;
+                      }
+                      if (availability == v2::service::BackendConnection::Availability::kConnected) {
                           next = (index + 1) % pool.size();
                           return pool[index].get();
                       }
+                  }
+                  if (busy_connection != nullptr) {
+                      next = (next + 1) % pool.size();
                   }
                   return nullptr;
               }()
@@ -367,10 +381,24 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
                   }
                   for (std::size_t attempt = 0; attempt < slot.connection_pool.size(); ++attempt) {
                       const auto index = (slot.next_connection_index + attempt) % slot.connection_pool.size();
-                      if (slot.connection_pool[index] && slot.connection_pool[index]->is_connected()) {
+                      if (!slot.connection_pool[index]) {
+                          continue;
+                      }
+                      const auto availability = slot.connection_pool[index]->availability();
+                      if (availability == v2::service::BackendConnection::Availability::kBusy) {
+                          if (busy_connection == nullptr) {
+                              busy_connection = slot.connection_pool[index].get();
+                          }
+                          continue;
+                      }
+                      if (availability == v2::service::BackendConnection::Availability::kConnected) {
                           slot.next_connection_index = (index + 1) % slot.connection_pool.size();
                           return slot.connection_pool[index].get();
                       }
+                  }
+                  if (busy_connection != nullptr) {
+                      slot.next_connection_index =
+                          (slot.next_connection_index + 1) % slot.connection_pool.size();
                   }
                   return nullptr;
               }();
@@ -381,22 +409,35 @@ v2::service::BackendConnection* GatewayServiceBridge::ensure_connection(
             ? [&]() {
                   const auto& pool = slot.cluster_connection_pools[target.connection_key];
                   return std::any_of(pool.begin(), pool.end(), [](const auto& conn) {
-                      return !conn || !conn->is_connected();
+                      return !conn || conn->availability() ==
+                                          v2::service::BackendConnection::Availability::kDisconnected;
                   });
               }()
             : std::any_of(slot.connection_pool.begin(),
                           slot.connection_pool.end(),
-                          [](const auto& conn) { return !conn || !conn->is_connected(); });
+                          [](const auto& conn) {
+                              return !conn || conn->availability() ==
+                                                  v2::service::BackendConnection::Availability::kDisconnected;
+                          });
         // A non-empty pool used to return its first healthy connection here,
         // which prevented it from ever reaching its configured size. Grow the
         // pool before reusing connections so concurrent battle routes do not
         // serialize behind one BackendConnection mutex.
-        if (existing && existing->is_connected() && pool_size >= desired_pool_size &&
-            !has_disconnected_connection) {
+        if (existing && pool_size >= desired_pool_size && !has_disconnected_connection) {
             if (registry_) {
                 registry_->heartbeat(service, target.config.host, target.config.port);
             }
             return existing;
+        }
+        // All pooled connections may be busy with their synchronous request. Do not
+        // block while probing each socket or replace a healthy busy connection; the
+        // caller will wait only on this selected connection's request mutex.
+        if (busy_connection && pool_size >= desired_pool_size &&
+            !has_disconnected_connection) {
+            if (registry_) {
+                registry_->heartbeat(service, target.config.host, target.config.port);
+            }
+            return busy_connection;
         }
     }
 

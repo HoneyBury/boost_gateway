@@ -315,4 +315,19 @@ bool BackendConnection::is_connected() const {
     return socket_ && socket_->is_open();
 }
 
+BackendConnection::Availability BackendConnection::availability() const {
+    std::unique_lock<std::recursive_mutex> lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock()) {
+        return Availability::kBusy;
+    }
+    if (ssl_stream_) {
+        return ssl_stream_->next_layer().is_open()
+            ? Availability::kConnected
+            : Availability::kDisconnected;
+    }
+    return socket_ && socket_->is_open()
+        ? Availability::kConnected
+        : Availability::kDisconnected;
+}
+
 }  // namespace v2::service
