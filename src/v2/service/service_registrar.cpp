@@ -54,6 +54,7 @@ void ServiceRegistrar::start() {
 
 void ServiceRegistrar::stop() {
     running_.store(false, std::memory_order_release);
+    heartbeat_cv_.notify_all();
     if (heartbeat_thread_.joinable()) {
         heartbeat_thread_.join();
     }
@@ -89,18 +90,26 @@ bool ServiceRegistrar::is_healthy() const {
 
 void ServiceRegistrar::heartbeat_loop() {
     while (running_.load(std::memory_order_acquire)) {
-        std::this_thread::sleep_for(heartbeat_interval_);
-
-        if (!running_.load(std::memory_order_acquire)) {
-            break;
+        std::function<bool()> health_check_fn;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            const bool stop_requested = heartbeat_cv_.wait_for(
+                lock,
+                heartbeat_interval_,
+                [this]() { return !running_.load(std::memory_order_acquire); });
+            if (stop_requested || !running_.load(std::memory_order_acquire)) {
+                break;
+            }
+            health_check_fn = health_check_fn_;
         }
 
         bool healthy = true;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (health_check_fn_) {
-                healthy = health_check_fn_();
-            }
+        if (health_check_fn) {
+            healthy = health_check_fn();
+        }
+
+        if (!running_.load(std::memory_order_acquire)) {
+            break;
         }
 
         if (!healthy) {

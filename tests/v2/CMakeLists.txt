@@ -29,6 +29,7 @@ add_executable(project_v2_unit_tests
     unit/service_boundary_test.cpp
     unit/shadow_bridge_policy_test.cpp
     unit/service_registry_test.cpp
+    unit/service_registrar_test.cpp
     unit/write_behind_store_test.cpp
     unit/cached_data_store_test.cpp
     unit/aoi_system_test.cpp

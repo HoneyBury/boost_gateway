@@ -18,6 +18,7 @@
 #include "v3/cluster/tls_config.h"
 
 #include <condition_variable>
+#include <atomic>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -153,6 +154,7 @@ private:
     std::unique_ptr<std::thread> gateway_worker_;
     bool gateway_worker_stopping_ = false;
     std::mutex gateway_handle_mutex_;
+    std::atomic<bool> stop_requested_{false};
 };
 
 }  // namespace v2::gateway

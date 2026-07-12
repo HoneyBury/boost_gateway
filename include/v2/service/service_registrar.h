@@ -4,6 +4,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -89,6 +90,7 @@ private:
     std::chrono::milliseconds heartbeat_interval_;
     std::function<bool()> health_check_fn_;
     mutable std::mutex mutex_;
+    std::condition_variable heartbeat_cv_;
     std::atomic<bool> running_{false};
     std::atomic<bool> registered_{false};
     std::thread heartbeat_thread_;

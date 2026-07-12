@@ -178,6 +178,7 @@ DemoServer::~DemoServer() {
 }
 
 void DemoServer::start() {
+    stop_requested_.store(false, std::memory_order_release);
     start_gateway_worker();
     if (options_.http_management_port.has_value()) {
         management_io_ = std::make_unique<boost::asio::io_context>();
@@ -223,12 +224,14 @@ void DemoServer::start() {
 }
 
 void DemoServer::stop() {
+    if (stop_requested_.exchange(true, std::memory_order_acq_rel)) {
+        return;
+    }
+
     if (config_watcher_) {
         config_watcher_->stop();
         config_watcher_.reset();
     }
-
-    stop_gateway_worker();
 
     // Stop health check thread and service registrars first
     health_check_running_ = false;
@@ -255,6 +258,7 @@ void DemoServer::stop() {
     http_manager_.reset();
     management_io_.reset();
 
+    std::vector<std::shared_ptr<v2::io::IoSession>> sessions_to_close;
     {
         std::scoped_lock lock(sessions_mutex_);
         if (acceptor_) {
@@ -262,10 +266,15 @@ void DemoServer::stop() {
         }
         for (auto& [session_id, session] : sessions_) {
             (void)session_id;
-            session->close();
+            session->set_packet_handler({});
+            session->set_close_handler({});
+            sessions_to_close.push_back(session);
         }
         sessions_.clear();
         session_core_by_id_.clear();
+    }
+    for (auto& session : sessions_to_close) {
+        session->close();
     }
     {
         std::scoped_lock lock(io_core_snapshot_mutex_);
@@ -274,6 +283,7 @@ void DemoServer::stop() {
             snapshot.active_sessions = 0;
         }
     }
+    stop_gateway_worker();
     io_engine_->stop();
     acceptor_.reset();
 }
@@ -623,10 +633,13 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
 }
 
 void DemoServer::do_accept() {
-    if (!acceptor_) {
+    if (!acceptor_ || stop_requested_.load(std::memory_order_acquire)) {
         return;
     }
     acceptor_->async_accept([this](std::unique_ptr<v2::io::IoSession> session) {
+        if (stop_requested_.load(std::memory_order_acquire)) {
+            return;
+        }
         if (!session) {
             do_accept();
             return;
@@ -654,6 +667,9 @@ void DemoServer::do_accept() {
         const auto session_core = session_ref->owning_core_id();
         session_ref->set_packet_handler(
             [this, session_id, session_ref](v2::io::IoSession::PacketMessage message) {
+                if (stop_requested_.load(std::memory_order_acquire)) {
+                    return;
+                }
                 if (message.message_id == net::protocol::kHeartbeatRequest) {
                     session_ref->send(net::protocol::kHeartbeatResponse,
                                       message.request_id,
@@ -675,6 +691,9 @@ void DemoServer::do_accept() {
                 enqueue_packet(session_id, std::move(message));
             });
         session_ref->set_close_handler([this, session_id]() {
+            if (stop_requested_.load(std::memory_order_acquire)) {
+                return;
+            }
             enqueue_session_closed(session_id);
             std::optional<std::uint32_t> session_core_id;
             {
@@ -718,6 +737,9 @@ void DemoServer::do_accept() {
 
 void DemoServer::enqueue_packet(SessionId session_id,
                                 v2::io::IoSession::PacketMessage message) {
+    if (stop_requested_.load(std::memory_order_acquire)) {
+        return;
+    }
     {
         std::scoped_lock lock(gateway_queue_mutex_);
         gateway_queue_.push_back(GatewayQueueItem{
@@ -729,6 +751,9 @@ void DemoServer::enqueue_packet(SessionId session_id,
 }
 
 void DemoServer::enqueue_session_closed(SessionId session_id) {
+    if (stop_requested_.load(std::memory_order_acquire)) {
+        return;
+    }
     {
         std::scoped_lock lock(gateway_queue_mutex_);
         gateway_queue_.push_back(GatewayQueueItem{.session_id = session_id});
