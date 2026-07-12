@@ -394,7 +394,7 @@
 
 1. 完成项目命名和描述收敛，保留兼容说明。
 2. 固化 helper/raw JSON 当前事实：全部 5 服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息），仅内部 Raft RPC 保留 raw JSON 路径。
-3. 在 Ubuntu fixed runner 上回填 `grpc-experimental.yml` 的真实 Conan/build/ctest/package-consumer 结果，但继续保持 `defer_default_transport`。
+3. 保持 gRPC 的实验边界，不因 current PoC 完整而直接升级为默认传输；后续仍以 `defer_default_transport` 为前提。
 4. 在条件允许时于 Ubuntu fixed runner 上刷新 Conan install、release/capacity/long-soak 真实证据。
 5. 继续做 CI/build cache 量化与开发者入口治理。
 6. 编写 Developer Guide 和贡献规则，把测试分层策略固化为 PR checklist。
