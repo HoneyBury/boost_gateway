@@ -36,7 +36,7 @@ on:
       use_existing_workspace:
         description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
         required: true
-        default: true
+        default: false
         type: boolean
       conan_lockfile:
         description: "Optional Conan lockfile path relative to repo root; leave empty to generate a grpc+nosqlite lockfile on-runner"
