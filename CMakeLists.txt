@@ -32,10 +32,10 @@ include(cmake/Dependencies.cmake)
 include(cmake/CompilerWarnings.cmake)
 
 add_subdirectory(src)
+add_subdirectory(proto)   # Proto/gRPC code generation (no-op when BOOST_BUILD_GRPC=OFF)
 add_subdirectory(sdk)
 add_subdirectory(examples)
 add_subdirectory(demo/games)
-add_subdirectory(proto)   # Proto/gRPC code generation (no-op when BOOST_BUILD_GRPC=OFF)
 
 if(ENABLE_TESTING)
     add_subdirectory(tests)

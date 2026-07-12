@@ -149,6 +149,8 @@ if(BOOST_BUILD_GRPC)
         PUBLIC
             $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
             $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include>
+            $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated/proto>
+            $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_link_libraries(boost_gateway_sdk_grpc
         PUBLIC
@@ -178,6 +180,14 @@ endif()
 install(TARGETS boost_gateway_sdk EXPORT boost_gateway_sdk-targets
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
+if(BOOST_BUILD_GRPC)
+    install(TARGETS
+        project_proto
+        boost_gateway_sdk_grpc
+        EXPORT boost_gateway_sdk-targets
+        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR})
+endif()
+
 install(TARGETS boost_gateway_sdk_dll
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -186,6 +196,15 @@ install(TARGETS boost_gateway_sdk_dll
 # Headers
 install(DIRECTORY include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     PATTERN grpc_client.h EXCLUDE)
+if(BOOST_BUILD_GRPC)
+    install(FILES
+        ${CMAKE_CURRENT_SOURCE_DIR}/include/boost_gateway/sdk/grpc_client.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway/sdk)
+    install(FILES
+        ${CMAKE_BINARY_DIR}/generated/proto/gateway.pb.h
+        ${CMAKE_BINARY_DIR}/generated/proto/gateway.grpc.pb.h
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+endif()
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/include/boost_gateway/sdk/version.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/boost_gateway/sdk)
 

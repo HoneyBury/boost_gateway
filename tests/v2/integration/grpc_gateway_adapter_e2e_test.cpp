@@ -2,6 +2,12 @@
 
 #include <gtest/gtest.h>
 
+#include <boost/asio.hpp>
+#include <boost/beast/core/flat_buffer.hpp>
+#include <boost/beast/http/message.hpp>
+#include <boost/beast/http/read.hpp>
+#include <boost/beast/http/string_body.hpp>
+#include <boost/beast/http/write.hpp>
 #include <grpcpp/grpcpp.h>
 
 #include "boost_gateway/sdk/grpc_client.h"
@@ -13,17 +19,24 @@
 #include "v2/match/matchmaking_service.h"
 #include "v2/room/room_backend_service.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <sstream>
 #include <string>
 #include <thread>
 
 namespace {
+
+namespace asio = boost::asio;
+namespace beast = boost::beast;
+namespace http = beast::http;
+using tcp = asio::ip::tcp;
 
 class DisableRedisAutoConnectForGrpcTest {
 public:
@@ -85,10 +98,89 @@ bool generate_dev_certs(const std::filesystem::path& output_dir,
     return true;
 }
 
+struct FakeOtlpCollector {
+    asio::io_context io_context;
+    tcp::acceptor acceptor{io_context};
+    std::thread thread;
+    std::mutex mutex;
+    std::string last_target;
+    std::string last_body;
+    std::size_t request_count = 0;
+    std::atomic<bool> running{false};
+
+    bool start() {
+        try {
+            acceptor.open(tcp::v4());
+            acceptor.set_option(asio::socket_base::reuse_address(true));
+            acceptor.bind({tcp::v4(), 0});
+            acceptor.listen();
+            running = true;
+            thread = std::thread([this]() { run(); });
+            return true;
+        } catch (...) {
+            return false;
+        }
+    }
+
+    void stop() {
+        running = false;
+        boost::system::error_code ignored_ec;
+        if (acceptor.is_open()) {
+            tcp::socket wake_socket(io_context);
+            wake_socket.connect(
+                tcp::endpoint(asio::ip::make_address("127.0.0.1"), port()),
+                ignored_ec);
+            wake_socket.close(ignored_ec);
+        }
+        if (thread.joinable()) {
+            thread.join();
+        }
+        acceptor.close(ignored_ec);
+        io_context.stop();
+    }
+
+    std::uint16_t port() const {
+        return acceptor.local_endpoint().port();
+    }
+
+private:
+    void run() {
+        while (running) {
+            boost::system::error_code ec;
+            tcp::socket socket(io_context);
+            acceptor.accept(socket, ec);
+            if (ec) {
+                if (!running) {
+                    return;
+                }
+                continue;
+            }
+
+            beast::flat_buffer buffer;
+            http::request<http::string_body> request;
+            http::read(socket, buffer, request, ec);
+            if (!ec) {
+                std::lock_guard lock(mutex);
+                last_target = std::string(request.target());
+                last_body = request.body();
+                ++request_count;
+            }
+
+            http::response<http::string_body> response{http::status::ok, 11};
+            response.set(http::field::content_type, "application/json");
+            response.body() = R"({"ok":true})";
+            response.prepare_payload();
+            http::write(socket, response, ec);
+            socket.shutdown(tcp::socket::shutdown_both, ec);
+        }
+    }
+};
+
 class GrpcGatewayAdapterE2ETest : public ::testing::Test {
 protected:
     using SecurityOptions = v2::grpc::GrpcGatewayAdapter::SecurityOptions;
     using AuthenticatedPrincipal = v2::grpc::GatewayGrpcServer::AuthenticatedPrincipal;
+    using ObservabilityOptions = v2::grpc::GrpcGatewayAdapter::ObservabilityOptions;
 
     virtual bool prepare_security_materials(std::string& out_error) {
         (void)out_error;
@@ -101,6 +193,10 @@ protected:
 
     virtual std::shared_ptr<grpc::ChannelCredentials> channel_credentials() const {
         return grpc::InsecureChannelCredentials();
+    }
+
+    virtual ObservabilityOptions adapter_observability_options() const {
+        return {};
     }
 
     virtual bool connect_sdk_client(boost_gateway::sdk::GrpcClient& client) const {
@@ -136,7 +232,8 @@ protected:
                 .matchmaking_backend_config = backend_config(match_->local_port()),
                 .leaderboard_backend_config = backend_config(leaderboard_->local_port()),
             },
-            adapter_security_options());
+            adapter_security_options(),
+            adapter_observability_options());
         ASSERT_TRUE(adapter_->start());
         ASSERT_GT(adapter_->port(), 0U);
 
@@ -466,6 +563,61 @@ TEST_F(GrpcGatewayAdapterE2ETest, SdkClientRoutesRoomBattleAndLeaderboard) {
     EXPECT_GE(battle_metrics.latency_sample_count, 8U);
 
     client.disconnect();
+}
+
+class GrpcGatewayOtlpE2ETest : public GrpcGatewayAdapterE2ETest {
+protected:
+    void SetUp() override {
+        ASSERT_TRUE(collector_.start());
+        GrpcGatewayAdapterE2ETest::SetUp();
+    }
+
+    void TearDown() override {
+        GrpcGatewayAdapterE2ETest::TearDown();
+        collector_.stop();
+    }
+
+    ObservabilityOptions adapter_observability_options() const override {
+        return {
+            .otlp_export_endpoint =
+                "http://127.0.0.1:" + std::to_string(collector_.port()) + "/v1/traces",
+            .service_name = "boost-gateway-grpc-e2e",
+            .max_batch_size = 1,
+            .export_interval = std::chrono::milliseconds(5),
+        };
+    }
+
+    FakeOtlpCollector collector_;
+};
+
+TEST_F(GrpcGatewayOtlpE2ETest, ExportsGatewayRouteSpansToOtlpCollector) {
+    grpc::ClientContext context;
+    boost::gateway::v3::LoginRequest request;
+    request.set_user_id("otel-alice");
+    request.set_token("token:otel-alice");
+    request.set_display_name("OTel Alice");
+    boost::gateway::v3::LoginResponse response;
+    const auto status = stub_->RequestLogin(&context, request, &response);
+    ASSERT_TRUE(status.ok());
+    EXPECT_EQ(response.error_code(), 0);
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+        {
+            std::lock_guard lock(collector_.mutex);
+            if (collector_.request_count > 0) {
+                EXPECT_EQ(collector_.last_target, "/v1/traces");
+                EXPECT_NE(collector_.last_body.find("\"operationName\":\"route.login_request\""),
+                          std::string::npos);
+                EXPECT_NE(collector_.last_body.find("\"serviceName\":\"login\""),
+                          std::string::npos);
+                return;
+            }
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    FAIL() << "timed out waiting for OTLP export";
 }
 
 TEST_F(GrpcGatewayRbacE2ETest, ResolvesTrustedPrincipalAndAppliesAllowDeny) {

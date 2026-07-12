@@ -45,6 +45,13 @@
       "capabilities": {},
       "vars_hint": "CONAN_VALIDATE_RUNNER"
     },
+    "grpc-experimental": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "loopback_bind": true },
+      "vars_hint": "GRPC_EXPERIMENTAL_RUNNER"
+    },
     "production-evidence": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",

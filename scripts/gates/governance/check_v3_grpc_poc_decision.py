@@ -94,6 +94,7 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
     add(checks, "grpc scope includes match and leaderboard base flows", "MatchJoinCallData" in grpc_source and "MatchLeaveCallData" in grpc_source and "MatchStatusCallData" in grpc_source and "LeaderboardSubmitCallData" in grpc_source and "LeaderboardTopCallData" in grpc_source and "LeaderboardRankCallData" in grpc_source, "experimental gateway gRPC scope now includes match and leaderboard base flows")
     add(checks, "grpc scope includes battle base flows", "BattleCreateCallData" in grpc_source and "BattleInputCallData" in grpc_source and "BattleStateCallData" in grpc_source and "BattleFinishCallData" in grpc_source, "experimental gateway gRPC scope now includes battle create/input/state/finish")
     grpc_adapter = read_text(ROOT / "src/v2/grpc/grpc_adapter.h")
+    sdk_readme = read_text(ROOT / "sdk/docs/README.md")
     add(
         checks,
         "grpc adapter uses real backend bridge routing",
@@ -120,11 +121,12 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
     )
     add(
         checks,
-        "grpc production profile still incomplete",
-        "OpenTelemetry" not in grpc_source
-        and "未进入独立安装包" in current
+        "grpc production profile still deferred after local delivery closure",
+        "set_otel_exporter" in grpc_adapter
+        and "boost_gateway::sdk_grpc" in sdk_readme
+        and "grpc-experimental.yml" in current
         and "defer_default_transport" in current,
-        "gRPC still lacks observability production-path coverage and an installed SDK distribution contract, so default transport remains deferred",
+        "gRPC now has local observability and install-package coverage plus a fixed-runner workflow entry, but default transport remains deferred until real fixed-runner evidence is refreshed",
     )
     grpc_benchmark = read_text(ROOT / "tests/perf/grpc_vs_tcp_perf_test.cpp")
     add(checks, "grpc benchmark uses real tcp io", "run_tcp_benchmark(std::uint16_t port" in grpc_benchmark and "BackendConnection conn" in grpc_benchmark and "conn.send_request(req)" in grpc_benchmark, "grpc vs tcp perf test uses real TCP backend requests")
@@ -135,9 +137,9 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
         checks,
         "grpc next evidence stays deferred behind remaining delivery gaps",
         "defer_default_transport" in mainline_plan
-        and "OTel/外部观测" in mainline_plan
-        and "fixed-runner `BOOST_BUILD_GRPC=ON` summary" in mainline_plan,
-        "mainline plan must keep default transport deferred until observability and fixed-runner delivery gaps are closed",
+        and "grpc-experimental.yml" in mainline_plan
+        and "fixed-runner `BOOST_BUILD_GRPC=ON` run 结果" in mainline_plan,
+        "mainline plan must keep default transport deferred until real fixed-runner gRPC evidence is refreshed",
     )
     conan_validate = read_text(ROOT / ".github/workflows/conan-validate.yml")
     production_evidence = read_text(ROOT / ".github/workflows/production-evidence.yml")

@@ -2,7 +2,7 @@
 
 面向 BoostGateway 游戏服务器的 C++ 客户端 SDK。封装了 TCP 连接管理、协议编解码、请求/响应关联和服务端推送处理。
 
-> **当前版本: v4.1.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装** | [路线与当前状态](roadmap.md)
+> **当前版本: v4.1.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装 + 实验 gRPC CMake target** | [路线与当前状态](roadmap.md)
 
 版本兼容与语言封装边界见 [SDK 与 Gateway 兼容矩阵](compatibility.md)。
 
@@ -191,6 +191,26 @@ find_package(boost_gateway_sdk CONFIG REQUIRED)
 target_link_libraries(your_app PRIVATE boost_gateway::sdk)
 ```
 
+如仓库在构建安装包时启用了 `-DBOOST_BUILD_GRPC=ON`，安装后的包还会暴露实验性 `boost_gateway::sdk_grpc` 和 `BOOST_GATEWAY_SDK_WITH_GRPC`：
+
+```cmake
+find_package(boost_gateway_sdk CONFIG REQUIRED)
+
+add_executable(your_app main.cpp)
+target_link_libraries(your_app PRIVATE
+    boost_gateway::sdk
+    boost_gateway::sdk_grpc)
+```
+
+```cpp
+#include <boost_gateway/sdk/grpc_client.h>
+#include <gateway.grpc.pb.h>
+
+boost_gateway::sdk::GrpcClient client;
+boost::gateway::v3::LoginRequest request;
+request.set_user_id("demo");
+```
+
 C API 动态库会随 SDK 一起安装，用于 Python `ctypes` 与 C# `DllImport` 绑定。C ABI 入口包含 `gsdk_version()`，用于运行时校验 native library 与语言封装版本是否匹配。
 
 Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native library 路径，加载失败时会列出尝试过的路径和底层错误。Python/C# wrapper 都会校验 native SDK 主版本号，避免语言封装与动态库版本错配。
@@ -207,6 +227,7 @@ Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native libr
 python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --skip-build
 python3 scripts/check_sdk_distribution.py --build-dir build/default
 python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
+python3 scripts/verify_sdk_package_consumer.py --build-dir build/default --with-grpc
 python3 scripts/verify_sdk_business_flow.py --build-dir build/default
 python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
 python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default --backend-tls

@@ -105,7 +105,8 @@ add_dependencies(project_proto generate_v3_grpc generate_v3_proto)
 
 target_include_directories(project_proto
   PUBLIC
-    "${GENERATED_DIR}"
+    $<BUILD_INTERFACE:${GENERATED_DIR}>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_link_libraries(project_proto
@@ -117,14 +118,6 @@ target_link_libraries(project_proto
 
 if(TARGET gRPC::grpc++_reflection)
   target_link_libraries(project_proto PUBLIC gRPC::grpc++_reflection)
-endif()
-
-# Also expose the protobuf include dir (for google/protobuf/... imports)
-if(PROTOBUF_INCLUDE_DIR)
-  target_include_directories(project_proto
-    PUBLIC
-      "${PROTOBUF_INCLUDE_DIR}"
-  )
 endif()
 
 message(STATUS "Proto: project_proto interface target ready (${GENERATED_DIR})")

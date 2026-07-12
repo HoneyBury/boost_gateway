@@ -272,11 +272,12 @@
 - 为每个服务建立 proto contract test、generated stub compile test、TCP 对照测试和 full-flow 测试。
 - 建立 gRPC vs TCP 性能基准；当前 `tests/perf/grpc_vs_tcp_perf_test.cpp` 已升级为真实 TCP login backend 与 gRPC `RequestLogin` 的 I/O benchmark，下一步需要把 benchmark 从 login-only 扩展到更多非登录路径。
 - 明确迁移策略：先 generated proto 作为 payload schema，再评估 gRPC 作为外部或内部 transport。
+- 将实验 gRPC 交付链补到可验证状态：OTLP collector E2E、`boost_gateway::sdk_grpc` install/export 与独立 fixed-runner workflow 入口。
 - 在完成 full-flow、性能、观测、限流、RBAC、TLS 证据前，gRPC 不进入默认生产链路。
 
 验收：
 
-- `BOOST_BUILD_GRPC=ON` 在 Ubuntu fixed runner 上稳定构建和测试。
+- `BOOST_BUILD_GRPC=ON` 在 Ubuntu fixed runner 上有独立 workflow 入口，并稳定构建和测试。
 - gRPC full-flow 与 TCP full-flow 的行为差异有测试覆盖。
 - proto/gRPC readiness gate 能被 R0/R2/R3 evidence 消费。
 
@@ -393,7 +394,7 @@
 
 1. 完成项目命名和描述收敛，保留兼容说明。
 2. 固化 helper/raw JSON 当前事实：全部 5 服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息），仅内部 Raft RPC 保留 raw JSON 路径。
-3. 将 gRPC 从 login-only benchmark 推进到更多非登录路径的 full-flow contract/test 覆盖，但继续保持 `defer_default_transport`。
+3. 在 Ubuntu fixed runner 上回填 `grpc-experimental.yml` 的真实 Conan/build/ctest/package-consumer 结果，但继续保持 `defer_default_transport`。
 4. 在条件允许时于 Ubuntu fixed runner 上刷新 Conan install、release/capacity/long-soak 真实证据。
 5. 继续做 CI/build cache 量化与开发者入口治理。
 6. 编写 Developer Guide 和贡献规则，把测试分层策略固化为 PR checklist。

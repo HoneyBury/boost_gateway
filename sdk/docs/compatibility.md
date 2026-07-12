@@ -1,6 +1,6 @@
 # SDK 与 Gateway 兼容矩阵
 
-更新时间：2026-05-19
+更新时间：2026-07-12
 
 本文档记录当前客户端 SDK 与 BoostGateway 服务端的生产接入口径。默认事实源以 SDK native 版本、C ABI、语言封装和真实 gateway full-flow gate 为准。
 
@@ -38,14 +38,14 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 该门禁聚合：
 
 - `scripts/check_sdk_distribution.py`：SDK 版本、CMake package、C ABI、Python/C# wrapper、native 加载诊断。
-- `scripts/verify_sdk_package_consumer.py`：临时安装 SDK，并让外部 CMake consumer `find_package()`、链接和运行。
+- `scripts/verify_sdk_package_consumer.py`：临时安装 SDK，并让外部 CMake consumer `find_package()`、链接和运行；`--with-grpc` 还会校验实验 `boost_gateway::sdk_grpc`、生成的 `gateway.pb.h/gateway.grpc.pb.h` 与 package config 的 gRPC 依赖导出。
 - `scripts/verify_sdk_business_flow.py`：in-process gateway 业务闭环，覆盖 heartbeat、reconnect、push、disconnect callback。
 - `scripts/verify_sdk_full_flow_client.py`：真实 `v2_gateway_demo` + 五后端 + `sdk_full_flow_client`，覆盖最接近客户端接入的生产链路。
 - `scripts/verify_sdk_full_flow_client.py --backend-tls`：同一 SDK 客户端 API，在服务端 backend TLS profile 下跑通真实 full-flow。
 
 ## 兼容边界
 
-- 默认 SDK 面向现有 TCP wire protocol。仓库内 `BOOST_BUILD_GRPC=ON` 时提供实验性 `boost_gateway::sdk_grpc` / `GrpcClient`，已验证 unary Login、Room、Battle、Leaderboard、有限帧 `stream_battle_state()` 及回调取消的 `subscribe_battle_state()`；服务端将订阅间隔夹紧到 100-5000ms。该 target 尚未进入独立安装包，且不承诺 TLS/RBAC、外部指标导出或外部协议稳定性。
+- 默认 SDK 面向现有 TCP wire protocol。仓库内 `BOOST_BUILD_GRPC=ON` 时提供实验性 `boost_gateway::sdk_grpc` / `GrpcClient`，已验证 unary Login、Room、Battle、Leaderboard、有限帧 `stream_battle_state()` 及回调取消的 `subscribe_battle_state()`；服务端将订阅间隔夹紧到 100-5000ms。该 target 现在已进入仓库内 CMake install/export 与 package consumer 契约，也已具备 TLS/mTLS、RBAC 和 OTLP collector E2E 事实；但仍不承诺跨语言封装、默认启用或外部 wire 稳定性。
 - backend TLS profile 不改变 SDK 外部 API；证书加载和 mTLS 策略由服务端部署治理，客户端 SDK 只感知 gateway 连接和业务结果。
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。

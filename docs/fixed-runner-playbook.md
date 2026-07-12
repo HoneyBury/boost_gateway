@@ -12,7 +12,7 @@ GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 f
 
 GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，`aoi-omen-gaming-laptop-16-am0xxx` 已作为在线 Linux runner 匹配 `["self-hosted","Linux","X64"]`；`MyDesktop-Win` 仍离线。第一批真实证据刷新已解除 runner 不可用阻断，但仍需按下表执行并归档 summary。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；其中 `release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。
 
 ### 新机器的 Conan 缓存初始化（必须执行）
 
@@ -60,6 +60,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | 顺序 | Workflow | 关键输入 | 必须归档的 summary |
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
+| 1.5 | `grpc-experimental.yml` | `runner=["self-hosted","Linux","X64"]`、`build_type=Release`、空 `conan_lockfile`（现场生成 grpc+nosqlite lockfile）或显式 grpc lockfile | `runtime/validation/grpc-fixed-runner-preflight-summary.json`、`runtime/validation/grpc-sdk-package-consumer-summary.json`、`runtime/validation/grpc-fixed-runner-decision-summary.json`；用于独立验证 `BOOST_BUILD_GRPC=ON`，不替代默认主线 `with_grpc=False` 证据 |
 | 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | capacity: `run_2h_soak=false`、`run_8h_soak=false`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29183833041`（`6d537ee`）已通过：Conan 预检、Release 构建、capacity、business-capacity 和 R4 聚合均为 `overall_pass=true`。capacity 的 battle-500 三轮 P99=40/100/150ms，business-capacity 为 75/150/150ms，均为 0 rejected/failed；3 个 SDK full-flow 客户端通过。该 run 未执行 2h/8h，长稳事实仍分别以真实 7200/28800 秒 run 归档 |
 | 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
@@ -119,6 +120,7 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | Business closure P5-P8 | `self-hosted,business-closure` | 手动命令 | CMake、Ninja、Python、可绑定本地端口；可选 OTel、kind、K8s 已部署集群 |
 | Production resilience | `self-hosted,production-resilience` | `production-resilience.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
+| Experimental gRPC | `self-hosted,observability` 或通用 Linux fixed runner | `grpc-experimental.yml` | CMake、Ninja、Python、可绑定本地端口；同级 Conan cache、gRPC/Protobuf 依赖、fake OTLP collector POST 能力 |
 | Cloud production closure | `self-hosted,cloud-production` | 手动命令 | CMake、Ninja、Python、Docker、kubectl、kind、Go、systemd；用于当前云服务器生产环境收束 |
 
 GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
@@ -180,6 +182,24 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 - `--include-otel-collector` 场景必须确认 runner 允许测试进程绑定 `127.0.0.1` 随机端口。
 - `--include-runtime-http` 场景会启动真实 `v2_gateway_demo`，用 SDK full-flow 产生业务流量，并验证 `/health`、`/ready`、`/metrics`、`/metrics/json`、`/metrics/diagnostics/json`；子 summary 位于 `runtime/validation/gateway-observability-runtime-summary.json`。
 - 如需验证真实 collector，运行 `examples/v2_gateway_demo` 时设置 `OTEL_EXPORT_ENDPOINT=http://<collector>/v1/traces`；默认 P4 gate 不依赖真实外部 collector。
+
+## Experimental gRPC / N6
+
+独立手动触发 `.github/workflows/grpc-experimental.yml`。该 workflow 不会改变默认主线 `with_grpc=False` 的 Conan 图，只用于在 fixed-runner 上复用同一个 `${{ github.workspace }}/../.conan2-local` 验证实验 `BOOST_BUILD_GRPC=ON`：
+
+- 预检：`check_fixed_runner_environment.py --profile observability`
+- Conan：`with_grpc=True`、`with_sqlite=False`
+- 构建：`project_proto`、`boost_gateway_sdk_grpc`、`project_v2_*tests`、`sdk_tests`
+- 测试：`ctest -R "GrpcGateway|OtelExporter"`
+- 包契约：`python scripts/verify_sdk_package_consumer.py --with-grpc`
+- 决策边界：`python scripts/check_v3_grpc_poc_decision.py`
+
+通过标准：
+
+- `runtime/validation/grpc-fixed-runner-preflight-summary.json` 中 `passed=true`
+- `runtime/validation/grpc-sdk-package-consumer-summary.json` 中 `with_grpc=true` 且 `passed=true`
+- `runtime/validation/grpc-fixed-runner-decision-summary.json` 中 `passed=true`
+- 该 workflow 的成功只说明实验 gRPC 入口在 fixed-runner 上可复现；默认生产链仍保持 `defer_default_transport`
 
 ## Business Closure / P5-P8
 

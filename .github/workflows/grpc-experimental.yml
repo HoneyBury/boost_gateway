@@ -1,0 +1,242 @@
+name: gRPC Experimental
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+      conan_profile:
+        description: "Repository Conan profile path relative to repo root"
+        required: true
+        default: "conan/profiles/linux-gcc-x64"
+      build_type:
+        description: "CMake/Conan build type"
+        required: true
+        default: "Release"
+        type: choice
+        options:
+          - Debug
+          - Release
+      allow_public:
+        description: "Allow public conancenter remote"
+        required: true
+        default: false
+        type: boolean
+      no_remote:
+        description: "Use local Conan cache only"
+        required: true
+        default: false
+        type: boolean
+      use_existing_workspace:
+        description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
+        required: true
+        default: true
+        type: boolean
+      conan_lockfile:
+        description: "Optional Conan lockfile path relative to repo root; leave empty to generate a grpc+nosqlite lockfile on-runner"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  grpc-experimental:
+    runs-on: ${{ fromJSON(inputs.runner || vars.GRPC_EXPERIMENTAL_RUNNER || '["self-hosted","Linux","X64"]') }}
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout
+        if: inputs.use_existing_workspace != true
+        uses: actions/checkout@v4
+        with:
+          clean: false
+          fetch-depth: 0
+
+      - name: Verify existing workspace
+        if: inputs.use_existing_workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d .git
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@v2
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          pip install "conan>=2.0,<2.9"
+          conan --version
+
+      - name: Fixed runner preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          python scripts/check_fixed_runner_environment.py \
+            --profile observability \
+            --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
+            --summary-path runtime/validation/grpc-fixed-runner-preflight-summary.json
+
+      - name: Bootstrap Conan home
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(python scripts/bootstrap_conan.py --disable-example-internal)
+          if [ "${{ inputs.allow_public }}" = "true" ]; then
+            args+=(--allow-public)
+          fi
+          if [ "${{ inputs.no_remote }}" = "true" ]; then
+            args+=(--no-remote)
+          fi
+          "${args[@]}"
+
+      - name: Resolve gRPC lockfile
+        id: lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.conan_lockfile }}" ]; then
+            test -f "${{ inputs.conan_lockfile }}"
+            echo "path=${{ inputs.conan_lockfile }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          lockfile="runtime/validation/linux-gcc-x64-${{ inputs.build_type }}-grpc-nosqlite.lock"
+          args=(
+            python scripts/generate_conan_lock.py
+            --profile "${{ inputs.conan_profile }}"
+            --build-type "${{ inputs.build_type }}"
+            --with-grpc
+            --without-sqlite
+            --conan-home "${CONAN_HOME}"
+            --lockfile-out "${lockfile}"
+          )
+          if [ "${{ inputs.allow_public }}" = "true" ]; then
+            args+=(--allow-public)
+          fi
+          if [ "${{ inputs.no_remote }}" = "true" ]; then
+            args+=(--no-remote)
+          fi
+          "${args[@]}"
+          echo "path=${lockfile}" >> "$GITHUB_OUTPUT"
+
+      - name: Conan install
+        shell: bash
+        run: |
+          set -euo pipefail
+          conan install . \
+            --output-folder="build/conan-grpc-${{ inputs.build_type }}" \
+            --build=missing \
+            -s build_type=${{ inputs.build_type }} \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "${{ steps.lockfile.outputs.path }}" \
+            -o "&:with_grpc=True" \
+            -o "&:with_sqlite=False"
+
+      - name: Configure gRPC build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B "build/grpc-experimental-${{ inputs.build_type }}" -G Ninja \
+            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_BUILD_GRPC=ON \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE="build/conan-grpc-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake" \
+            2>&1 | tee runtime/validation/grpc-experimental-configure.log
+          grep -F "Using Conan-provided dependency graph" runtime/validation/grpc-experimental-configure.log
+
+      - name: Build gRPC experimental targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build "build/grpc-experimental-${{ inputs.build_type }}" --parallel --target \
+            project_proto \
+            boost_gateway_sdk \
+            boost_gateway_sdk_grpc \
+            project_v2_unit_tests \
+            project_v2_integration_tests \
+            sdk_tests \
+            check_v3_proto_schema \
+            check_v3_proto_transport_contract
+
+      - name: Run gRPC focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "build/grpc-experimental-${{ inputs.build_type }}" \
+            -C "${{ inputs.build_type }}" \
+            --output-on-failure \
+            -R "GrpcGateway|OtelExporter" \
+            2>&1 | tee runtime/validation/grpc-experimental-ctest.log
+
+      - name: Verify installed gRPC SDK consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_sdk_package_consumer.py \
+            --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
+            --configuration "${{ inputs.build_type }}" \
+            --with-grpc \
+            --summary-path runtime/validation/grpc-sdk-package-consumer-summary.json
+
+      - name: Verify gRPC PoC decision boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_v3_grpc_poc_decision.py \
+            --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
+            --summary-path runtime/validation/grpc-fixed-runner-decision-summary.json
+
+      - name: Render gRPC validation summary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          summaries=()
+          for path in \
+            runtime/validation/grpc-fixed-runner-preflight-summary.json \
+            runtime/validation/grpc-sdk-package-consumer-summary.json \
+            runtime/validation/grpc-fixed-runner-decision-summary.json; do
+            if [ -f "$path" ]; then
+              summaries+=("$path")
+            fi
+          done
+          if [ "${#summaries[@]}" -gt 0 ]; then
+            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload gRPC validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: grpc-experimental-${{ github.run_id }}
+          path: |
+            runtime/validation/grpc-fixed-runner-preflight-summary.json
+            runtime/validation/grpc-sdk-package-consumer-summary.json
+            runtime/validation/grpc-fixed-runner-decision-summary.json
+            runtime/validation/grpc-experimental-configure.log
+            runtime/validation/grpc-experimental-ctest.log
+            runtime/validation/linux-gcc-x64-*-grpc-nosqlite.lock
+          if-no-files-found: warn

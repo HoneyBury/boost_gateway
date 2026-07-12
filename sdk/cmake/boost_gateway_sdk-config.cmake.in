@@ -2,6 +2,13 @@
 
 include(CMakeFindDependencyMacro)
 
+set(BOOST_GATEWAY_SDK_WITH_GRPC "@BOOST_BUILD_GRPC@")
+
+if(BOOST_GATEWAY_SDK_WITH_GRPC)
+    find_dependency(Protobuf CONFIG REQUIRED)
+    find_dependency(gRPC CONFIG REQUIRED)
+endif()
+
 if(NOT TARGET boost_gateway::nlohmann_json)
     add_library(boost_gateway::nlohmann_json INTERFACE IMPORTED)
     set_target_properties(boost_gateway::nlohmann_json PROPERTIES
@@ -15,7 +22,11 @@ include("${CMAKE_CURRENT_LIST_DIR}/boost_gateway_sdk-targets.cmake")
 
 # Single-config generators export IMPORTED_LOCATION_NOCONFIG. Only apply the
 # compatibility mapping when the installed target actually uses that layout.
-foreach(_target boost_gateway::boost_gateway_sdk boost_gateway::boost_gateway_sdk_dll)
+foreach(_target
+    boost_gateway::boost_gateway_sdk
+    boost_gateway::boost_gateway_sdk_dll
+    boost_gateway::project_proto
+    boost_gateway::boost_gateway_sdk_grpc)
     if(TARGET "${_target}")
         get_target_property(_imported_location_noconfig "${_target}" IMPORTED_LOCATION_NOCONFIG)
         if(_imported_location_noconfig)
@@ -36,6 +47,9 @@ set(BoostGatewaySdk_VERSION_PATCH "@BOOST_GATEWAY_SDK_VERSION_PATCH@")
 # Re-create the build-tree ALIAS for consumer convenience.
 if(NOT TARGET boost_gateway::sdk)
     add_library(boost_gateway::sdk ALIAS boost_gateway::boost_gateway_sdk)
+endif()
+if(TARGET boost_gateway::boost_gateway_sdk_grpc AND NOT TARGET boost_gateway::sdk_grpc)
+    add_library(boost_gateway::sdk_grpc ALIAS boost_gateway::boost_gateway_sdk_grpc)
 endif()
 
 check_required_components(boost_gateway_sdk)

@@ -42,6 +42,24 @@ WORKFLOW_REQUIREMENTS = {
         ),
         "summaries": ("runtime/validation/release-baseline-summary.json",),
     },
+    "grpc_experimental": {
+        "path": ".github/workflows/grpc-experimental.yml",
+        "tokens": (
+            LINUX_PROFILE,
+            "${{ github.workspace }}/../.conan2-local",
+            "vars.GRPC_EXPERIMENTAL_RUNNER",
+            'with_grpc=True',
+            "BOOST_BUILD_GRPC=ON",
+            "scripts/verify_sdk_package_consumer.py",
+            "scripts/check_v3_grpc_poc_decision.py",
+            "actions/upload-artifact@v4",
+        ),
+        "summaries": (
+            "runtime/validation/grpc-fixed-runner-preflight-summary.json",
+            "runtime/validation/grpc-sdk-package-consumer-summary.json",
+            "runtime/validation/grpc-fixed-runner-decision-summary.json",
+        ),
+    },
     "long_soak_capacity": {
         "path": ".github/workflows/long-soak-capacity.yml",
         "tokens": (
@@ -198,6 +216,7 @@ def main() -> int:
     for workflow_name, expected_var in (
         ("release", "RELEASE_RUNNER"),
         ("conan-validate", "CONAN_VALIDATE_RUNNER"),
+        ("grpc-experimental", "GRPC_EXPERIMENTAL_RUNNER"),
         ("specialized-e2e", "SPECIALIZED_E2E_RUNNER"),
     ):
         entry = matrix_workflows.get(workflow_name, {})

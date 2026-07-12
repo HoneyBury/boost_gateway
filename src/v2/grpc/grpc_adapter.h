@@ -29,6 +29,7 @@
 
 #include "v2/gateway/gateway_service_bridge.h"
 #include "v2/grpc/gateway_grpc_server.h"
+#include "v3/tracing/otel_exporter.h"
 
 namespace v2::grpc {
 
@@ -60,15 +61,32 @@ class GrpcGatewayAdapter {
 
   using SecurityOptions = GatewayGrpcServer::SecurityOptions;
 
+  struct ObservabilityOptions {
+    std::string otlp_export_endpoint;
+    std::string service_name = "boost-gateway-grpc";
+    std::size_t max_batch_size = 256;
+    std::chrono::milliseconds export_interval{5000};
+  };
+
   /// Construct a gRPC gateway adapter.
   /// @param port  gRPC server port (default 50051).
   explicit GrpcGatewayAdapter(std::uint16_t port = 50051,
                               BackendOptions backend_options = {},
                               SecurityOptions security_options = {})
+      : GrpcGatewayAdapter(port,
+                           std::move(backend_options),
+                           std::move(security_options),
+                           ObservabilityOptions{}) {}
+
+  explicit GrpcGatewayAdapter(std::uint16_t port,
+                              BackendOptions backend_options,
+                              SecurityOptions security_options,
+                              ObservabilityOptions observability_options)
       : configured_port_(port),
         port_(port),
         backend_options_(std::move(backend_options)),
-        security_options_(std::move(security_options)) {}
+        security_options_(std::move(security_options)),
+        observability_options_(std::move(observability_options)) {}
 
   ~GrpcGatewayAdapter() {
     stop();
@@ -95,6 +113,19 @@ class GrpcGatewayAdapter {
         backend_options_.matchmaking_backend_config,
         backend_options_.leaderboard_backend_config,
         backend_metrics_);
+    if (!observability_options_.otlp_export_endpoint.empty()) {
+      auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+          v3::tracing::OtlpExporter::Config{
+              .service_name = observability_options_.service_name,
+              .export_endpoint = observability_options_.otlp_export_endpoint,
+              .max_batch_size = observability_options_.max_batch_size,
+              .export_interval = observability_options_.export_interval,
+          });
+      bridge_->set_otel_exporter(exporter);
+      SPDLOG_INFO(
+          "GrpcGatewayAdapter: OTLP export enabled → {}",
+          observability_options_.otlp_export_endpoint);
+    }
 
     // Create and start the server
     grpc_server_ = std::make_unique<GatewayGrpcServer>(
@@ -434,6 +465,12 @@ class GrpcGatewayAdapter {
       poll_thread_.join();
     }
 
+    if (bridge_) {
+      if (auto exporter = bridge_->get_otel_exporter()) {
+        (void)exporter->flush();
+      }
+    }
+
     grpc_server_.reset();
     bridge_.reset();
     backend_metrics_.reset();
@@ -470,6 +507,7 @@ class GrpcGatewayAdapter {
   std::uint16_t port_;
   BackendOptions backend_options_;
   SecurityOptions security_options_;
+  ObservabilityOptions observability_options_;
   std::shared_ptr<v2::gateway::BackendMetrics> backend_metrics_;
   std::unique_ptr<GatewayGrpcServer> grpc_server_;
   std::unique_ptr<v2::gateway::GatewayServiceBridge> bridge_;

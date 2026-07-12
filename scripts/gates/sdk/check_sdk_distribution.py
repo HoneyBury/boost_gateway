@@ -112,6 +112,35 @@ def validate_cmake_distribution(checks: list[dict[str, Any]]) -> None:
         "BoostGatewaySdk_VERSION" in config and "@BOOST_GATEWAY_SDK_VERSION@" in config,
         "package config exposes version variables",
     )
+    add_check(
+        checks,
+        "sdk-cmake:grpc-target",
+        "add_library(boost_gateway_sdk_grpc STATIC" in cmake,
+        "experimental gRPC SDK target exists",
+    )
+    add_check(
+        checks,
+        "sdk-cmake:grpc-export",
+        "project_proto" in cmake
+        and "boost_gateway_sdk_grpc" in cmake
+        and "EXPORT boost_gateway_sdk-targets" in cmake,
+        "gRPC SDK target and generated proto target are exported for install consumers",
+    )
+    add_check(
+        checks,
+        "sdk-cmake:grpc-headers-install",
+        "include/boost_gateway/sdk/grpc_client.h" in cmake and "gateway.grpc.pb.h" in cmake,
+        "gRPC SDK header and generated proto headers are installed",
+    )
+    add_check(
+        checks,
+        "sdk-cmake:grpc-config-deps",
+        "BOOST_GATEWAY_SDK_WITH_GRPC" in config
+        and "find_dependency(Protobuf CONFIG REQUIRED)" in config
+        and "find_dependency(gRPC CONFIG REQUIRED)" in config
+        and "boost_gateway::sdk_grpc" in config,
+        "package config exposes gRPC capability flag, dependencies, and alias",
+    )
 
 
 def validate_c_api(checks: list[dict[str, Any]]) -> None:
@@ -202,6 +231,12 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "sdk-docs:grpc-distribution",
+        "boost_gateway::sdk_grpc" in docs and "--with-grpc" in docs,
+        "SDK docs describe installed gRPC package consumption and smoke validation",
+    )
+    add_check(
+        checks,
         "sdk-docs:c-api",
         "C API" in docs and "Python" in docs and "C#" in docs,
         "SDK docs cover cross-language wrappers",
@@ -246,6 +281,12 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         "sdk-tools:consumer-smoke",
         (REPO_ROOT / "scripts/verify_sdk_package_consumer.py").exists(),
         "installed package consumer verification script exists",
+    )
+    add_check(
+        checks,
+        "sdk-tools:grpc-consumer-smoke",
+        "--with-grpc" in read_text("scripts/gates/sdk/verify_sdk_package_consumer.py"),
+        "installed package consumer verification supports the gRPC SDK path",
     )
     add_check(
         checks,

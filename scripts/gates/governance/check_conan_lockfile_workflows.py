@@ -31,6 +31,7 @@ WORKFLOWS = {
 # home through actions/cache.
 FIXED_RUNNER_CONAN_WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
+    "grpc_experimental": ".github/workflows/grpc-experimental.yml",
     "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "nightly_stability": ".github/workflows/nightly-stability.yml",
