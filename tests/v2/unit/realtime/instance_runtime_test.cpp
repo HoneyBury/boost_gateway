@@ -4,7 +4,12 @@
 #include "v2/realtime/types.h"
 
 #include <atomic>
+#include <barrier>
 #include <chrono>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -73,6 +78,59 @@ public:
 
 std::unique_ptr<v2::realtime::InstancePlugin> create_echo_plugin() {
     return std::make_unique<EchoPlugin>();
+}
+
+struct ConcurrentTickState {
+    std::mutex mutex;
+    std::condition_variable cv;
+    std::atomic<int> entered{0};
+    std::atomic<int> peer_observations{0};
+};
+
+class ConcurrentTickPlugin final : public v2::realtime::InstancePlugin {
+public:
+    explicit ConcurrentTickPlugin(std::shared_ptr<ConcurrentTickState> state)
+        : state_(std::move(state)) {}
+
+    void on_instance_created(v2::realtime::InstanceContext&) override {}
+    void on_player_join(v2::realtime::InstanceContext&, const v2::realtime::PlayerContext&) override {}
+    void on_player_leave(v2::realtime::InstanceContext&, const v2::realtime::PlayerContext&) override {}
+    v2::realtime::InputResult on_input(v2::realtime::InstanceContext&,
+                                        const v2::realtime::InputEnvelope&) override {
+        return {.accepted = true, .ack_seq = 1};
+    }
+    v2::realtime::TickStats on_tick(v2::realtime::InstanceContext&,
+                                     const v2::realtime::FrameContext& frame_ctx) noexcept override {
+        std::unique_lock<std::mutex> lock(state_->mutex);
+        state_->entered.fetch_add(1, std::memory_order_release);
+        state_->cv.notify_all();
+        if (state_->cv.wait_for(lock, std::chrono::milliseconds(200), [this] {
+                return state_->entered.load(std::memory_order_acquire) >= 2;
+            })) {
+            state_->peer_observations.fetch_add(1, std::memory_order_release);
+        }
+        return {.frame_number = frame_ctx.frame_number};
+    }
+    v2::realtime::Snapshot build_snapshot(v2::realtime::InstanceContext&, bool) noexcept override {
+        return {};
+    }
+    std::string build_settlement(v2::realtime::InstanceContext&,
+                                 const v2::realtime::SettlementContext&) noexcept override {
+        return "{}";
+    }
+    v2::realtime::Snapshot build_resume_snapshot(v2::realtime::InstanceContext&,
+                                                  const v2::realtime::PlayerContext&) noexcept override {
+        return {};
+    }
+
+private:
+    std::shared_ptr<ConcurrentTickState> state_;
+};
+
+std::shared_ptr<ConcurrentTickState> concurrent_tick_state;
+
+std::unique_ptr<v2::realtime::InstancePlugin> create_concurrent_tick_plugin() {
+    return std::make_unique<ConcurrentTickPlugin>(concurrent_tick_state);
 }
 
 }  // namespace
@@ -409,6 +467,37 @@ TEST(InstanceRuntimeTest, MultipleInstancesDontInterfere) {
     runtime.tick_all(now);
 
     EXPECT_EQ(runtime.instance_count(), 2);
+}
+
+TEST(InstanceRuntimeTest, TicksDifferentInstancesConcurrently) {
+    const auto state = std::make_shared<ConcurrentTickState>();
+    concurrent_tick_state = state;
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("concurrent", &create_concurrent_tick_plugin);
+
+    v2::realtime::PlayerContext player;
+    player.user_id = "alice";
+    ASSERT_FALSE(runtime.create_instance("a", "room_a", "concurrent", {player}).empty());
+    ASSERT_FALSE(runtime.create_instance("b", "room_b", "concurrent", {player}).empty());
+
+    const auto now = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    std::barrier start(3);
+    std::thread first([&] {
+        start.arrive_and_wait();
+        runtime.tick_instance("a", 1, now);
+    });
+    std::thread second([&] {
+        start.arrive_and_wait();
+        runtime.tick_instance("b", 1, now);
+    });
+    start.arrive_and_wait();
+    first.join();
+    second.join();
+
+    EXPECT_EQ(state->entered.load(std::memory_order_acquire), 2);
+    EXPECT_EQ(state->peer_observations.load(std::memory_order_acquire), 2);
+    concurrent_tick_state.reset();
 }
 
 // Instance list includes state info

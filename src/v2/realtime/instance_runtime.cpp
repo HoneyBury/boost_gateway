@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <memory>
 #include <mutex>
 #include <queue>
 #include <string>
@@ -16,6 +17,9 @@ namespace v2::realtime {
 // ─── Internal instance data ─────────────────────────────────────────
 
 struct InternalInstance {
+    // Per-instance state must remain ordered, but unrelated battles should
+    // not contend on the runtime's instance-table mutex.
+    std::mutex mutex;
     InstanceContext ctx;
     InstanceState state = InstanceState::kCreating;
     std::unique_ptr<InstancePlugin> plugin;
@@ -138,12 +142,11 @@ public:
     }
 
     InputResult submit_input(const InputEnvelope& input) {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto* inst = find_instance_locked(input.instance_id);
-        if (inst == nullptr) {
+        const auto inst = find_instance_shared(input.instance_id);
+        if (!inst) {
             return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
         }
+        std::lock_guard<std::mutex> lock(inst->mutex);
 
         if (inst->state != InstanceState::kRunning &&
             inst->state != InstanceState::kWaitingPlayers) {
@@ -175,10 +178,9 @@ public:
 
     void finish_instance(const std::string& instance_id,
                          FinishReason reason) {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto* inst = find_instance_locked(instance_id);
-        if (inst == nullptr) return;
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) return;
+        std::lock_guard<std::mutex> lock(inst->mutex);
         if (inst->state == InstanceState::kFinished ||
             inst->state == InstanceState::kClosed) return;
 
@@ -225,10 +227,9 @@ public:
 
     Snapshot get_resume_snapshot(const std::string& instance_id,
                                   const std::string& user_id) {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        auto* inst = find_instance_locked(instance_id);
-        if (inst == nullptr) return {};
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) return {};
+        std::lock_guard<std::mutex> lock(inst->mutex);
 
         auto* player = inst->ctx.find_player(user_id);
         if (player == nullptr) return {};
@@ -258,13 +259,12 @@ public:
     TickStats tick_instance(const std::string& instance_id,
                             std::uint32_t frame_number,
                             std::int64_t tick_start_ms) {
-        std::unique_lock<std::mutex> lock(mutex_);
-
-        auto* inst = find_instance_locked(instance_id);
-        if (inst == nullptr) {
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) {
             return TickStats{.frame_number = frame_number, .should_finish = true,
                             .finish_reason = FinishReason::kError};
         }
+        std::unique_lock<std::mutex> lock(inst->mutex);
 
         if (inst->state != InstanceState::kRunning &&
             inst->state != InstanceState::kWaitingPlayers) {
@@ -395,15 +395,22 @@ public:
     std::vector<TickStats> tick_all(std::int64_t tick_start_ms) {
         std::vector<TickStats> results;
 
-        // Collect instance IDs + next frame under lock, tick outside to avoid deadlock
+        // Hold table references briefly, then inspect/tick instances under
+        // their own locks so separate battles can run concurrently.
         std::vector<std::pair<std::string, std::uint32_t>> to_tick;
+        std::vector<std::shared_ptr<InternalInstance>> instances;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            for (const auto& [id, inst] : instances_) {
-                if (inst->state == InstanceState::kRunning ||
-                    inst->state == InstanceState::kWaitingPlayers) {
-                    to_tick.push_back({id, inst->current_frame + 1});
-                }
+            instances.reserve(instances_.size());
+            for (const auto& [_, inst] : instances_) {
+                instances.push_back(inst);
+            }
+        }
+        for (const auto& inst : instances) {
+            std::lock_guard<std::mutex> lock(inst->mutex);
+            if (inst->state == InstanceState::kRunning ||
+                inst->state == InstanceState::kWaitingPlayers) {
+                to_tick.push_back({inst->ctx.instance_id, inst->current_frame + 1});
             }
         }
 
@@ -416,23 +423,32 @@ public:
     }
 
     InstanceContext* find_instance(const std::string& instance_id) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto* inst = find_instance_locked(instance_id);
+        const auto inst = find_instance_shared(instance_id);
         return inst ? &inst->ctx : nullptr;
     }
 
     InstanceState get_instance_state(const std::string& instance_id) const {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = instances_.find(instance_id);
-        return it != instances_.end() ? it->second->state : InstanceState::kClosed;
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) return InstanceState::kClosed;
+        std::lock_guard<std::mutex> lock(inst->mutex);
+        return inst->state;
     }
 
     std::vector<InstanceSnapshot> list_instances() const {
-        std::lock_guard<std::mutex> lock(mutex_);
+        std::vector<std::shared_ptr<InternalInstance>> instances;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            instances.reserve(instances_.size());
+            for (const auto& [_, inst] : instances_) {
+                instances.push_back(inst);
+            }
+        }
         std::vector<InstanceSnapshot> result;
-        for (const auto& [id, inst] : instances_) {
+        result.reserve(instances.size());
+        for (const auto& inst : instances) {
+            std::lock_guard<std::mutex> lock(inst->mutex);
             InstanceSnapshot snap;
-            snap.instance_id = id;
+            snap.instance_id = inst->ctx.instance_id;
             snap.instance_type = inst->ctx.instance_type;
             snap.state = inst->state;
             snap.frame_number = inst->current_frame;
@@ -453,13 +469,14 @@ public:
 private:
     RuntimeConfig config_;
     mutable std::mutex mutex_;
-    std::unordered_map<std::string, std::unique_ptr<InternalInstance>> instances_;
+    std::unordered_map<std::string, std::shared_ptr<InternalInstance>> instances_;
     std::unordered_map<std::string, InstancePluginFactory> plugin_factories_;
     InstanceEventCallback event_callback_;
 
-    InternalInstance* find_instance_locked(const std::string& id) {
+    std::shared_ptr<InternalInstance> find_instance_shared(const std::string& id) const {
+        std::lock_guard<std::mutex> lock(mutex_);
         auto it = instances_.find(id);
-        return it != instances_.end() ? it->second.get() : nullptr;
+        return it != instances_.end() ? it->second : nullptr;
     }
 
     void emit_event(InstanceEvent event) {

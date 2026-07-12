@@ -988,6 +988,12 @@ def main() -> int:
         default=0,
         help="Override V2_BATTLE_ROUTE_WORKERS for battle input backend route offload experiments.",
     )
+    parser.add_argument(
+        "--case",
+        action="append",
+        default=[],
+        help="Run only this named preset case; repeat to select multiple cases.",
+    )
     parser.add_argument("--output-root", default="")
     args = parser.parse_args()
 
@@ -1016,6 +1022,11 @@ def main() -> int:
     }
 
     run_cases = build_run_cases(args.run_preset)
+    if args.case:
+        selected_cases = set(args.case)
+        run_cases = [case for case in run_cases if case["name"] in selected_cases]
+        if not run_cases:
+            parser.error("--case did not match any case in the selected --run-preset")
 
     battle_max_frames = estimate_battle_max_frames(run_cases)
     managed: list[ManagedProcess] = []
