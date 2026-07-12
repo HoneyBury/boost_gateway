@@ -158,10 +158,16 @@ DemoServer::DemoServer(std::uint16_t port,
             health_check_running_ = true;
             health_check_thread_ = std::make_unique<std::thread>([this]() {
                 while (health_check_running_) {
-                    std::this_thread::sleep_for(std::chrono::seconds(5));
-                    if (health_check_running_) {
-                        cluster_router_->run_health_checks();
+                    std::unique_lock<std::mutex> lock(health_check_mutex_);
+                    const bool stop_requested = health_check_cv_.wait_for(
+                        lock,
+                        std::chrono::seconds(5),
+                        [this]() { return !health_check_running_.load(); });
+                    lock.unlock();
+                    if (stop_requested || !health_check_running_) {
+                        break;
                     }
+                    cluster_router_->run_health_checks();
                 }
             });
         }
@@ -235,6 +241,7 @@ void DemoServer::stop() {
 
     // Stop health check thread and service registrars first
     health_check_running_ = false;
+    health_check_cv_.notify_all();
     if (health_check_thread_ && health_check_thread_->joinable()) {
         health_check_thread_->join();
     }

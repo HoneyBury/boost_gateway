@@ -145,6 +145,8 @@ private:
     std::shared_ptr<v3::cluster::ClusterRouter> cluster_router_;
     std::unique_ptr<std::thread> health_check_thread_;
     std::atomic<bool> health_check_running_{false};
+    std::mutex health_check_mutex_;
+    std::condition_variable health_check_cv_;
     std::vector<std::shared_ptr<v2::service::ServiceRegistrar>> service_registrars_;
     std::mutex gateway_queue_mutex_;
     std::condition_variable gateway_queue_cv_;
