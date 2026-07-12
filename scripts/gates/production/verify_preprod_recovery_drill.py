@@ -99,7 +99,7 @@ def run_step_with_retry(
             result["attempts"] = attempt
             return result
         if attempt < max(1, attempts):
-            time.sleep(min(5.0, float(attempt)))
+            time.sleep(min(30.0, 5.0 * (2 ** (attempt - 1))))
     results[-1]["name"] = name
     results[-1]["attempts"] = len(results)
     return results[-1]
@@ -140,6 +140,12 @@ def docker_compose_command() -> list[str]:
     if shutil.which("docker-compose"):
         return ["docker-compose"]
     return ["docker", "compose"]
+
+
+def docker_compose_pull_command(compose_command: list[str], compose_file: Path) -> list[str]:
+    if compose_command == ["docker", "compose"]:
+        return [*compose_command, "--parallel", "1", "-f", str(compose_file), "pull"]
+    return [*compose_command, "-f", str(compose_file), "pull"]
 
 
 def wait_for_prometheus_targets_up(
@@ -354,7 +360,7 @@ def main() -> int:
                 run_step_with_retry(
                     "R5 docker compose pull",
                     "docker_compose",
-                    [*compose_command, "-f", str(compose_file), "pull"],
+                    docker_compose_pull_command(compose_command, compose_file),
                     args.step_timeout_seconds,
                     args.docker_pull_attempts,
                 )
