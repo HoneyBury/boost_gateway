@@ -16,7 +16,7 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - 稳定性门禁：`scripts/verify_stability_soak.py` 覆盖 I/O accept policy、WriteBehind drain/failure、backend timeout/recovery 和短架构基线，提供 `smoke`、`short`、`medium` soak profile；`.github/workflows/nightly-stability.yml` 已将 `short` profile 纳入夜间任务。
 - 后端稳定性：`BackendServer` 已支持多会话跟踪与关闭收口；plain TCP `read_frame()` 使用 Boost.Asio non-blocking bounded read，避免 POSIX `select()` 限制。
 - RC 总门禁：`scripts/verify_release_candidate.py` 汇总可靠性矩阵、R4 契约、稳定性 soak 和可选 Release baseline，并输出结构化 summary。
-- 安全发布门禁：`scripts/check_security_release_gate.py` 检查生产模式禁用 dev token fallback 的证据、admin 审计最小键和 ACL 边界说明。
+- 安全发布门禁：`scripts/check_security_release_gate.py` 检查生产 Login Backend 仅验证外部 RS256 JWT、禁用 dev token/local signing/local identity operations 的证据，以及 admin 审计最小键和 ACL 边界说明。
 
 ## 增量能力
 
@@ -61,11 +61,12 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - N6 gRPC/proto 取舍补充：`tests/perf/grpc_vs_tcp_perf_test.cpp` 已不再是 placeholder，当前已基于真实 TCP backend request 与 gRPC `RequestLogin` RPC 生成 benchmark 数据；`gateway.proto` 与 `GatewayGrpcServer` 当前已覆盖 login/logout/health，以及 room/match/leaderboard/battle 的基础 RPC，`GrpcGatewayAdapter` 也已从 allow-all stub 收口到 `GatewayServiceBridge` 驱动的真实 backend 路由。但 streaming/push、SDK-integrated full-flow、TLS/RBAC/observability 的 gRPC profile 证据仍未完成，因此结论继续保持 `defer_default_transport`。
 - R0 生产候选证据聚合：`scripts/verify_production_candidate_evidence.py` 已聚合 fixed-runner preflight、P5 production resilience、P6 production evidence、N5 SDK enterprise delivery，并可显式追加 N4 TLS full-flow 与 N6 gRPC PoC decision；summary 写入 `runtime/validation/r0-production-candidate-evidence-summary.json`。2026-07-11 的 fixed-runner run `29152333112` 已在 `8cadbef` 成功生成这条 R0 事实链；P5 data recovery 与 P6 data recovery 均通过，未触发 timeout retry。
 - R1 TLS 上线前置证据：`scripts/verify_tls_production_readiness.py` 已覆盖 TLS profile full-flow、server CA 校验、证书轮换 full-flow、CA 不匹配 expected failure 诊断和 plain/TLS 单次业务闭环耗时对比；默认生产仍是 plain TCP，R1 只作为启用 backend TLS profile 前的前置证据。
-- R2 生产候选证据 Manifest：`docs/production/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py` 已将 R0/R1 本机有界证据、固定 runner long-soak/capacity、release/capacity、预发恢复演练和 TLS 预发多轮证据统一成可校验 manifest。`--require-fixed-runner` 现会验证 long-soak summary 的 `run_2h_soak=true`，并要求 R4/R5/R6 summary 存在、通过且新鲜；R2/R3 的下一步是对当前提交生成并汇聚这些 producer artifact。
+- R2 生产候选证据 Manifest：`docs/production/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py` 已将 R0/R1 本机有界证据、固定 runner long-soak/capacity、release/capacity、预发恢复演练和 TLS 预发多轮证据统一成可校验 manifest。`--require-fixed-runner` 会验证 long-soak summary 的 `run_2h_soak=true`，并要求 R4/R5/R6 summary 存在、通过且新鲜。当前不能生成最终 R2/R3：2026-07-12 的 `29186343065` 中 R6 通过而 R5 失败，完整 R5/R6 artifact 仍待固定 runner 恢复后刷新。
 - R3 生产 Readiness Report：`scripts/render_production_readiness_report.py` 已将 R2 manifest、R0 aggregate 和 R1 TLS readiness 汇总为 Markdown 报告与机器 summary；报告明确区分 bounded local evidence 与 final production readiness，当前固定 runner / 预发缺口仍会作为最终投产阻断项展示。
 - R4 固定 Runner Release / Capacity 证据：`scripts/verify_fixed_runner_release_capacity.py` 已将 release baseline、capacity profile 和 business-capacity profile 汇总成 `runtime/validation/fixed-runner-release-capacity-summary.json`，并校验 capacity/business-capacity 的 preset、必需 case 与最小 repetitions，用于解除 R2/R3 中 `fixed_runner_release_capacity` 阻断；最终投产仍建议在固定低噪声性能机器上刷新该 summary。
-- R5 预发恢复 / 回滚演练证据：`scripts/verify_preprod_recovery_drill.py` 已将 N3 recovery gate、Docker Compose gateway restart、SDK full-flow、Docker production snapshot 和 recovery drill record validator 串成 `runtime/validation/preprod-recovery-drill-summary.json` producer。2026-05-20 已在当前 macOS + OrbStack 环境完成真实复测并通过；本轮同时固化了 Docker builder 补 `python3`、gateway backend pool 默认收敛到 `1`、以及 leaderboard 自动结算可用性修复。
-- R6 TLS 预发多轮证据：`scripts/verify_tls_preprod_multi_run.py` 已多轮聚合 R1 TLS readiness，覆盖 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。2026-05-20 已在当前授权环境完成 2 轮预发多轮验证并通过。
+- R5 预发恢复 / 回滚演练证据：`scripts/verify_preprod_recovery_drill.py` 已将 N3 recovery gate、Docker Compose gateway restart、SDK full-flow、Docker production snapshot 和 recovery drill record validator 串成 `runtime/validation/preprod-recovery-drill-summary.json` producer。2026-05-20 已在 macOS + OrbStack 环境完成真实复测；2026-07-12 的固定 runner run `29186343065` 已通过 Compose 安装、Conan/Release 构建和 83/83 项 N3 静态检查，但在 `auth.docker.io` 匿名令牌请求被连接重置时失败，尚未产生可用于投产的 R5 通过证据。runner 可用后必须恢复 Docker Hub/受信任 mirror 访问并预热 Compose 镜像，再重跑该 workflow。
+- R6 TLS 预发多轮证据：`scripts/verify_tls_preprod_multi_run.py` 已多轮聚合 R1 TLS readiness，覆盖 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。2026-07-12 的固定 runner run `29186343065` 在 `4855dc0` 完成两轮验证，均通过，plain-vs-TLS overhead ratio 为 `1.034`、`1.031`；它仅证明 R6，不能替代失败的 R5 或完整预发 artifact。
+- 生产认证边界：生产 `auth.mode=external-jwt` 已收口为外部身份提供方的 RS256 JWT 验证方，强制 public key、issuer、audience 与 `exp`，拒绝对称密钥、私钥、本地注册、guest 登录和 refresh token 签发。开发模式仍保留演示身份能力；其进程内存账户状态不再保存任何 credential hash，不能作为生产账户库。JWKS/多 `kid` 在线轮换、持久化账户体系和可撤销 refresh token 仍是外部身份提供方集成的后续工作。
 - 脚本与配置治理：`docs/script-inventory.json` 已将顶层脚本划分为 public entrypoint、aggregate gate、producer、tool、platform wrapper 和 legacy；`scripts/check_script_inventory.py`、`scripts/check_validation_summary_contract.py`、`scripts/check_config_source_layout.py` 已用于阻断脚本索引、summary v2 契约和 `env/` 配置事实源漂移。后续如需物理移动脚本，必须先保留顶层 shim 并更新 inventory / reliability matrix。
 - 默认主线测试面为 `tests/v2`、SDK 和对应 gate。
 - 其中 `admin_service` 已明确留在 legacy-v1 / demo-only 面，不进入默认 gate，也不作为当前 v2 生产控制面承诺。后续如需评估新的 v2 控制面，参考 `docs/legacy/v2-control-plane-preplan.md`。
@@ -172,9 +173,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 下一阶段执行优先级概括为：
 
-1. 短期：验证真实时长的 fixed-runner soak。`verify_stability_soak.py` 的 long/overnight profile 现已分别强制持续执行不少于 7200/28800 秒，并在 summary 记录 `minimum_duration_seconds`、`duration_seconds` 与 `completed_runs`；历史 run `29146495724` 的 13.952 秒记录仍无效，需按新语义重跑。
-2. 中期：Ubuntu fixed-runner 容量事实沉淀与 Conan 主线路径升格。先修复 business-capacity SDK client 输出解码、定位并修复 battle-500 P99 超过 500ms 的性能问题，再刷新 long-soak/capacity、R4 和 R2/R3 summary；仅在连续事实链稳定后把 Conan `nosqlite` 路径提升为唯一推荐依赖入口。
-3. 中期：补齐生产认证与 token 签发硬化，再推进 generated proto/gRPC 非登录 full-flow。当前 login backend 仍标注密码哈希和 token 重签发 placeholder；这类生产安全边界优先于扩大实验传输面。
+1. 等待项：固定 runner 恢复 Docker Hub 或受信任 mirror 访问并预热 Compose 镜像后，重新执行完整 R5/R6，再依次刷新真实 2h soak、R0 和 R2/R3。`verify_stability_soak.py` 的 long/overnight profile 分别强制不少于 7200/28800 秒，历史 run `29146495724` 的 13.952 秒记录无效。
+2. 当前可推进项：生产认证边界已完成当前收口，生产 login backend 仅验证带有效期的外部 RS256 JWT，不再承担本地凭证存储或 token 签发。下一项是 generated proto/gRPC 非登录 full-flow，先补 SDK 驱动的 Room/Battle/Match/Leaderboard 端到端证据，再补 push/streaming、TLS/RBAC 与可观测性；默认生产传输结论继续保持 `defer_default_transport`。
+3. 后续项：固定 runner 证据链完整后，将 Conan `nosqlite` 路径提升为唯一推荐依赖入口；外部身份提供方的 JWKS/多 `kid`、持久化账户和可撤销 refresh token 作为独立集成，不与当前 login backend 的进程内演示状态混合。
 4. 长期：generated proto/gRPC 从 login-only 对照扩展到非登录 full-flow，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：

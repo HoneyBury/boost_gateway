@@ -12,7 +12,7 @@
 | --- | --- | --- | --- |
 | Bootstrap Config | 服务名、监听端口、线程数、配置路径、管理端口 | `config/environments/<env>/*.json`，少量 env/argv 兼容覆盖 | 重启生效 |
 | Runtime Config | gateway 后端路由、feature flag、TLS/security policy、部分业务策略 | `config/environments/<env>/*.json` | gateway 部分热重载，backend 当前重启生效 |
-| Secret Config | JWT secret、Redis password、Grafana password、外部 webhook token | `config/secrets/.env.example` 作为模板，生产由 Secret Manager / `.env` 注入 | 默认重启生效 |
+| Secret Config | JWT verification public key、Redis password、Grafana password、外部 webhook token | `config/secrets/.env.example` 作为模板，生产由 Secret Manager / `.env` 注入 | 默认重启生效 |
 
 不要追求“所有配置都热重载”。企业级游戏服务器更重要的是：哪些能热重载、哪些必须重启、失败时是否保留旧配置，这些语义必须稳定。
 
@@ -103,6 +103,22 @@ backend 已统一走 `app::config::load_backend_service_config()`。环境变量
 - `service.name`
 - `service.port`
 - `service.config_version`
+- `auth.mode`：本地/Docker 使用 `dev`；生产必须为 `external-jwt`。
+- `auth.jwt_public_key_pem`、`auth.jwt_issuer`、`auth.jwt_audience`：生产 JWT 验签边界，分别由 `V2_LOGIN_JWT_PUBLIC_KEY`、`V2_LOGIN_JWT_ISSUER`、`V2_LOGIN_JWT_AUDIENCE` 覆盖。
+
+生产 Login Backend 只验证外部身份提供方签发的、带 `exp` 的 RS256 JWT。它不接受 `jwt_secret` 或私钥，不负责注册账户、guest 登录或 refresh token 签发；这些操作必须由外部身份提供方完成。该约束避免把进程内存中的演示账户状态误用作生产凭证库。
+
+生产启动前必须从 Secret Manager 注入公钥、issuer 与 audience，例如：
+
+```bash
+export V2_LOGIN_AUTH_MODE=external-jwt
+export V2_LOGIN_JWT_PUBLIC_KEY="$(cat issuer-public.pem)"
+export V2_LOGIN_JWT_ISSUER=https://issuer.example.invalid
+export V2_LOGIN_JWT_AUDIENCE=boost-game-client
+v2_login_backend --config config/environments/production/login.json
+```
+
+密钥轮换时先部署包含新公钥的配置，再由身份提供方切换签发 key；当前静态公钥配置不支持在线 JWKS 获取或多 `kid` 并存，因此该类能力属于后续身份提供方集成，不得假设已经完成。
 - `auth.mode`
 - `auth.jwt_issuer`
 - `auth.jwt_audience`

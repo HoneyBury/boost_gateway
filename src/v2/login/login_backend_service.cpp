@@ -25,7 +25,6 @@ namespace {
 
 struct AccountRecord {
     std::string user_id;
-    std::string credential_hash;
     std::string display_name;
     std::string status = "active";  // active, disabled, banned
     std::int64_t created_at_ms = 0;
@@ -134,6 +133,15 @@ public:
         : port_(options.port),
           production_auth_required_(options.production_auth_required) {
         tls_config_ = std::move(options.tls_config);
+        if (production_auth_required_) {
+            if (options.jwt_public_key_pem.empty() || !options.jwt_secret.empty() ||
+                !options.jwt_private_key_pem.empty() || options.jwt_issuer.empty() ||
+                options.jwt_audience.empty()) {
+                throw std::invalid_argument(
+                    "production auth requires an RS256 public key, issuer, and audience; "
+                    "local signing and symmetric JWT secrets are not allowed");
+            }
+        }
         if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty()) {
             jwt_validator_.emplace(v2::auth::JwtValidator::Config{
                 .secret = options.jwt_secret,
@@ -141,11 +149,12 @@ public:
                 .private_key_pem = options.jwt_private_key_pem,
                 .issuer = options.jwt_issuer,
                 .audience = options.jwt_audience,
+                .require_expiration = production_auth_required_,
             });
         }
         if (production_auth_required_ && !jwt_validator_.has_value()) {
             throw std::invalid_argument(
-                "production auth requires V2_LOGIN_JWT_SECRET or V2_LOGIN_JWT_PUBLIC_KEY");
+                "production auth requires V2_LOGIN_JWT_PUBLIC_KEY");
         }
     }
 
@@ -172,13 +181,36 @@ public:
             };
         };
 
-        handlers["register_account"] = diag_wrap("register_account", [this](const auto& req) { return handle_register_account(req); });
+        const auto external_identity_only = [](const auto&) {
+            AUDIT_LOG("identity_operation_rejected", "reason=external_identity_provider_required");
+            return make_error_response(
+                static_cast<std::int32_t>(v2::service::ServiceErrorCode::kRejected),
+                "external_identity_provider_required");
+        };
+        std::function<v2::service::BackendEnvelope(const v2::service::BackendEnvelope&)>
+            register_account_handler = external_identity_only;
+        std::function<v2::service::BackendEnvelope(const v2::service::BackendEnvelope&)>
+            token_refresh_handler = external_identity_only;
+        std::function<v2::service::BackendEnvelope(const v2::service::BackendEnvelope&)>
+            guest_login_handler = external_identity_only;
+        if (!production_auth_required_) {
+            register_account_handler = [this](const auto& req) {
+                return handle_register_account(req);
+            };
+            token_refresh_handler = [this](const auto& req) {
+                return handle_token_refresh(req);
+            };
+            guest_login_handler = [this](const auto& req) {
+                return handle_guest_login(req);
+            };
+        }
+        handlers["register_account"] = diag_wrap("register_account", std::move(register_account_handler));
         handlers["login_request"] = diag_wrap("login_request", [this](const auto& req) { return handle_login_request(req); });
         handlers["token_validate"] = diag_wrap("token_validate", [this](const auto& req) { return handle_token_validate(req); });
         handlers["session_bind"] = diag_wrap("session_bind", [this](const auto& req) { return handle_session_bind(req); });
         handlers["session_close"] = diag_wrap("session_close", [this](const auto& req) { return handle_session_close(req); });
-        handlers["token_refresh"] = diag_wrap("token_refresh", [this](const auto& req) { return handle_token_refresh(req); });
-        handlers["guest_login"] = diag_wrap("guest_login", [this](const auto& req) { return handle_guest_login(req); });
+        handlers["token_refresh"] = diag_wrap("token_refresh", std::move(token_refresh_handler));
+        handlers["guest_login"] = diag_wrap("guest_login", std::move(guest_login_handler));
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
@@ -256,12 +288,8 @@ private:
                     "user_already_exists");
             }
 
-            // Simple credential hashing (placeholder — use bcrypt/argon2 in production)
-            std::string credential_hash = std::to_string(std::hash<std::string>{}(credential));
-
             AccountRecord record;
             record.user_id = user_id;
-            record.credential_hash = credential_hash;
             record.display_name = display_name;
             record.status = "active";
             record.created_at_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -539,23 +567,23 @@ private:
             return make_error_response(-1003, "invalid_token");
         }
 
-        // Issue new token (refresh)
+        // JWT refresh is always owned by the external identity provider. The
+        // local development token format below is retained only for demos.
+        if (jwt_validator_.has_value()) {
+            AUDIT_LOG("token_refresh_failure", "user_id=" + user_id +
+                " reason=external_identity_provider_required");
+            return make_error_response(
+                static_cast<std::int32_t>(v2::service::ServiceErrorCode::kRejected),
+                "external_identity_provider_required");
+        }
+
+        // Issue a development-only token refresh.
         std::string new_token;
         std::string refresh_token;
         std::uint64_t expires_at = 0;
 
-        if (jwt_validator_.has_value()) {
-            // In production, would generate a new signed JWT with extended expiry
-            new_token = token;  // placeholder — real impl re-signs
-            refresh_token = user_id + "_rt_" + std::to_string(
-                std::chrono::duration_cast<std::chrono::milliseconds>(
-                    std::chrono::system_clock::now().time_since_epoch()).count());
-            expires_at = 0;  // extended window
-        } else {
-            // Dev mode: generate a new token
-            new_token = "refreshed:" + user_id;
-            refresh_token = user_id + "_dev_rt";
-        }
+        new_token = "refreshed:" + user_id;
+        refresh_token = user_id + "_dev_rt";
 
         // Update stored token
         {

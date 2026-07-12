@@ -25,7 +25,8 @@ void handle_signal(int) {
 }
 
 bool production_auth_required(const std::string& mode) {
-    return mode == "production" || mode == "prod" || mode == "jwt";
+    return mode == "external-jwt" || mode == "production" || mode == "prod" ||
+           mode == "jwt";
 }
 
 }  // namespace

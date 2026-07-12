@@ -3,12 +3,12 @@
     "name": "login",
     "host": "0.0.0.0",
     "port": 9202,
-    "config_version": "production-login-v1"
+    "config_version": "production-login-v2"
   },
   "log_level": "info",
   "auth": {
-    "mode": "production",
-    "jwt_secret": "${JWT_SECRET}",
+    "mode": "external-jwt",
+    "jwt_public_key_pem": "${JWT_PUBLIC_KEY_PEM}",
     "jwt_issuer": "boost-gateway",
     "jwt_audience": "boost-game-client"
   }

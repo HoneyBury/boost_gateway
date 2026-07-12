@@ -186,7 +186,6 @@ void PlayerActor::handle_reconnect_timeout(const ReconnectTimerExpiredMsg& /*mes
 }
 
 void PlayerActor::schedule_reconnect_timeout() {
-    const auto now = std::chrono::steady_clock::now();
     v2::actor::Message timeout_msg;
     timeout_msg.header.kind = v2::actor::MessageKind::kUser;
     timeout_msg.payload = ReconnectTimerExpiredMsg{
@@ -200,20 +199,9 @@ void PlayerActor::handle_token_refresh(const TokenRefreshMsg& message) {
         return;
     }
 
-    // In a full implementation this would call the LoginBackendService
-    // to obtain a new token. For now, we extend the existing token meta
-    // and notify the sink so the gateway can deliver the updated token.
-    if (token_meta_.has_value()) {
-        token_meta_->expires_at = 0;  // extended — reset to "no expiry"
-    }
-
-    sink_.push(TokenRefreshedMsg{
-        .session_id = message.session_id,
-        .user_id = state_.user_id,
-        .new_token = state_.user_id,  // placeholder; real impl would receive from backend
-        .refresh_token = "",
-        .expires_at = 0,
-    });
+    // Credentials are issued only by the configured identity provider. This
+    // actor has no signing authority and must never fabricate a refresh token.
+    (void)message;
 }
 
 }  // namespace v2::player

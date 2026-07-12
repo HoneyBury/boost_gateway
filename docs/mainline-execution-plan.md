@@ -109,13 +109,14 @@ cmake --build build/default --parallel
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
 | 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 进行中 | R0 candidate `29152333112`、P5/P6 bounded summary 已成功；`29183833041` 已完成 Conan/Release 预检及 capacity、business-capacity 三轮闭环，battle-500 P99 均低于 500ms 且 SDK full-flow 通过。2h/8h 仍以各自真实时长 artifact 为准；下一步是用当前 long-soak/capacity artifact 生成 R2/R3 连续准入事实链 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 部分完成，等待 R5 环境恢复 | R0 candidate `29152333112`、P5/P6 bounded summary 已成功；`29183833041` 已完成 Conan/Release 预检及 capacity、business-capacity 三轮闭环，battle-500 P99 均低于 500ms 且 SDK full-flow 通过。`29186343065` 已在 `4855dc0` 完成 R6 两轮 TLS 预发验证，但 R5 因 runner 到 Docker Hub 的连接被重置而未完成。待 runner 恢复 Docker 镜像预热后，依次刷新 R5/R6、真实 2h soak、R0，再生成 R2/R3 连续准入事实链 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 待开始 | 当前默认已 Conan-first，但仍保留 fallback；要在 fixed-runner summary 稳定后再收紧推荐口径 |
-| 4 | generated proto/gRPC 非登录 full-flow 证据 | 待开始 | login schema 与 typed helper 收口已经完成，下一步应扩到 Room/Battle/Match/Leaderboard 非登录路径，而不是继续扩大概念性 PoC |
-| 5 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
+| 4 | 生产认证边界 | 已完成当前边界收口 | 生产 `external-jwt` 模式现只验证带 `exp` 的外部 RS256 JWT，拒绝本地签名、注册、guest 和 refresh；账户持久化、JWKS/多 `kid` 轮换和可撤销 refresh token 明确属于外部身份提供方集成，不再由进程内 demo state 伪装承担 |
+| 5 | generated proto/gRPC 非登录 full-flow 证据 | 待开始，当前可推进 | 认证边界收口后，应将现有 Room/Battle/Match/Leaderboard 的基础 RPC 从 adapter/单请求验证扩展到 SDK 驱动的多服务 full-flow、push/streaming、TLS/RBAC 与可观测性证据，而不是继续扩大概念性 PoC |
+| 6 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
 
 ### 当前优先级判断
 
 1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
-2. fixed runner 已完成 capacity（包括 battle-500）与 business-capacity 刷新；结合已归档的真实时长 long/overnight soak，下一步是重跑 R2 `--require-fixed-runner` 与 R3 readiness report，生成连续准入事实链。只有连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
-3. 实际代码的下一项生产风险是 login backend 的 placeholder 密码哈希和 token 重签发；应先明确并实现生产身份凭证方案，再推进非登录 gRPC full-flow。gRPC/proto 仍保持中期实验项。
+2. R5 是当前唯一的预发证据阻断项：`29186343065` 的 R6 已通过，但 R5 不能以 R6 或本机演练替代。runner 恢复 Docker Hub 或受信任 mirror 访问并预热镜像后，必须先重跑完整 `preprod-evidence.yml`，再依次刷新真实 2h soak、R0 和 R2/R3。只有连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
+3. 生产认证边界已经收口：生产 login backend 只验证外部 RS256 JWT，并拒绝本地身份操作。runner 不可用期间，实际代码的下一优先级是 generated proto/gRPC 非登录 full-flow，但继续保持 `defer_default_transport`，直至 SDK 端到端、push/streaming、TLS/RBAC 与可观测性证据齐全。

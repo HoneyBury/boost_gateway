@@ -296,6 +296,17 @@ TEST(ServiceBusIntegrity, LoginBackendAcceptsRs256JwtAndValidatesToken) {
     ASSERT_FALSE(bad_validate_doc.is_discarded());
     EXPECT_FALSE(bad_validate_doc.value("valid", true));
 
+    auto refresh_req = payload_envelope(
+        nlohmann::json{{"user_id", "alice"}, {"token", token}}.dump());
+    refresh_req.message_type = "token_refresh";
+    refresh_req.target_service = v2::service::ServiceId::kLogin;
+    auto refresh_resp = conn.send_request(refresh_req);
+    ASSERT_TRUE(refresh_resp.has_value());
+    EXPECT_EQ(refresh_resp->kind, v2::service::MessageKind::kError);
+    auto refresh_doc = nlohmann::json::parse(refresh_resp->payload, nullptr, false);
+    ASSERT_FALSE(refresh_doc.is_discarded());
+    EXPECT_EQ(refresh_doc.value("reason", ""), "external_identity_provider_required");
+
     service.stop();
 }
 
@@ -307,12 +318,101 @@ TEST(ServiceBusIntegrity, LoginBackendProductionModeRequiresJwtVerifier) {
         }),
         std::invalid_argument);
 
-    EXPECT_NO_THROW(
+    EXPECT_THROW(
         v2::login::LoginBackendService(v2::login::LoginBackendOptions{
             .port = 0,
             .production_auth_required = true,
             .jwt_secret = "production-secret",
+            .jwt_issuer = "boost-gateway",
+            .jwt_audience = "game-client",
+        }),
+        std::invalid_argument);
+
+    EXPECT_NO_THROW(
+        v2::login::LoginBackendService(v2::login::LoginBackendOptions{
+            .port = 0,
+            .production_auth_required = true,
+            .jwt_public_key_pem = kRs256PublicKey,
+            .jwt_issuer = "boost-gateway",
+            .jwt_audience = "game-client",
         }));
+}
+
+TEST(ServiceBusIntegrity, LoginBackendProductionModeIsExternalJwtOnly) {
+    v2::login::LoginBackendService service(v2::login::LoginBackendOptions{
+        .port = 0,
+        .production_auth_required = true,
+        .jwt_public_key_pem = kRs256PublicKey,
+        .jwt_issuer = "boost-gateway",
+        .jwt_audience = "game-client",
+    });
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    v2::auth::JwtValidator signer({
+        .public_key_pem = kRs256PublicKey,
+        .private_key_pem = kRs256PrivateKey,
+        .issuer = "boost-gateway",
+        .audience = "game-client",
+    });
+    const auto now = static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::system_clock::now().time_since_epoch())
+            .count());
+    v2::auth::JwtPayload valid_payload;
+    valid_payload.sub = "alice";
+    valid_payload.role = "player";
+    valid_payload.aud = "game-client";
+    valid_payload.iat = now;
+    valid_payload.exp = now + 300;
+    const auto valid_token = signer.generate(valid_payload);
+    ASSERT_FALSE(valid_token.empty());
+
+    auto login_req = payload_envelope(
+        nlohmann::json{{"user_id", "alice"}, {"token", valid_token}}.dump());
+    login_req.message_type = "login_request";
+    login_req.target_service = v2::service::ServiceId::kLogin;
+    auto login_resp = conn.send_request(login_req);
+    ASSERT_TRUE(login_resp.has_value());
+    EXPECT_EQ(login_resp->kind, v2::service::MessageKind::kResponse);
+
+    auto expect_external_identity_rejection = [&conn](const std::string& message_type,
+                                                       nlohmann::json payload) {
+        auto request = payload_envelope(payload.dump());
+        request.message_type = message_type;
+        request.target_service = v2::service::ServiceId::kLogin;
+        auto response = conn.send_request(request);
+        ASSERT_TRUE(response.has_value());
+        EXPECT_EQ(response->kind, v2::service::MessageKind::kError);
+        const auto body = nlohmann::json::parse(response->payload, nullptr, false);
+        ASSERT_FALSE(body.is_discarded());
+        EXPECT_EQ(body.value("reason", ""), "external_identity_provider_required");
+    };
+    expect_external_identity_rejection(
+        "register_account", {{"user_id", "alice"}, {"credential", "not-used"}});
+    expect_external_identity_rejection("guest_login", nlohmann::json::object());
+    expect_external_identity_rejection(
+        "token_refresh", {{"user_id", "alice"}, {"token", valid_token}});
+
+    v2::auth::JwtPayload missing_expiration = valid_payload;
+    missing_expiration.exp = 0;
+    const auto timeless_token = signer.generate(missing_expiration);
+    ASSERT_FALSE(timeless_token.empty());
+    auto timeless_login = payload_envelope(
+        nlohmann::json{{"user_id", "alice"}, {"token", timeless_token}}.dump());
+    timeless_login.message_type = "login_request";
+    timeless_login.target_service = v2::service::ServiceId::kLogin;
+    auto timeless_response = conn.send_request(timeless_login);
+    ASSERT_TRUE(timeless_response.has_value());
+    EXPECT_EQ(timeless_response->kind, v2::service::MessageKind::kError);
+    const auto timeless_body = nlohmann::json::parse(timeless_response->payload, nullptr, false);
+    ASSERT_FALSE(timeless_body.is_discarded());
+    EXPECT_EQ(timeless_body.value("reason", ""), "missing_expiration");
+
+    service.stop();
 }
 
 // ─── Room backend data chain ────────────────────────────────────────────

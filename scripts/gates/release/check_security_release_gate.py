@@ -27,12 +27,18 @@ def check_login_backend_config(root: Path, errors: list[str], warnings: list[str
     config = load_json(config_path)
     auth = config.get("auth", {})
     mode = str(auth.get("mode", "dev"))
-    if mode == "dev":
-        warnings.append(
-            "config/environments/production/login.json uses dev auth; production must set "
-            "V2_LOGIN_AUTH_MODE=production and V2_LOGIN_JWT_SECRET or V2_LOGIN_JWT_PUBLIC_KEY"
+    if mode != "external-jwt":
+        errors.append(
+            "config/environments/production/login.json must use auth.mode=external-jwt; "
+            "the production login backend validates externally issued RS256 JWTs only"
         )
-    elif mode not in {"jwt", "prod", "production"}:
+    if not str(auth.get("jwt_public_key_pem", "")):
+        errors.append("production login config must declare auth.jwt_public_key_pem")
+    if str(auth.get("jwt_secret", "")) or str(auth.get("jwt_private_key_pem", "")):
+        errors.append("production login config must not declare local JWT signing material")
+    if not str(auth.get("jwt_issuer", "")) or not str(auth.get("jwt_audience", "")):
+        errors.append("production login config must declare JWT issuer and audience")
+    if mode not in {"external-jwt", "jwt", "prod", "production"}:
         errors.append(f"unsupported login auth.mode: {mode}")
 
 
@@ -46,10 +52,10 @@ def check_source_contracts(root: Path, errors: list[str]) -> None:
     release_governance_doc = root / "docs" / "release-governance.md"
 
     required_snippets = {
-        login_header: ["production_auth_required"],
-        login_source: ["jwt_required", "production auth requires"],
+        login_header: ["production_auth_required", "RS256"],
+        login_source: ["external_identity_provider_required", "require_expiration", "production auth requires"],
         login_main: ["resolve_backend_config_path", "load_backend_service_config"],
-        config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_SECRET", "V2_LOGIN_JWT_PUBLIC_KEY"],
+        config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_PUBLIC_KEY"],
         admin_doc: ["admin_invoke", "admin_denied", "ACL"],
         release_governance_doc: ["legacy demo admin surface", "不代表当前 v2 主线提供正式 admin 控制面"],
         current_state_doc: ["admin_service", "legacy-v1 / demo-only", "不进入默认 gate"],

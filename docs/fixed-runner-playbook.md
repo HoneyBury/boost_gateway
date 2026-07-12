@@ -39,6 +39,12 @@ docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
 
 该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。若 runner 访问 `registry-1.docker.io:443` 失败，应配置网络出口或受信任 registry mirror 后再预热；R5 会明确失败，不能用 `bounded-local` 结果替代预发恢复演练。
 
+当前验证状态（2026-07-12）：run `29186343065` 已在 `4855dc0` 通过 R6 两轮 TLS 预发验证，但 R5 在请求 `auth.docker.io` 匿名令牌时连接被重置。Compose 插件安装、Conan/Release 构建和 R5 静态 gate 均已通过；这不是应用代码通过 R5 的证据。runner 恢复后按以下顺序验证：
+
+1. 成功执行上述 `docker compose ... pull`，确认 Docker daemon 缓存完整 Compose 镜像。
+2. 手动运行 `preprod-evidence.yml`，保持 `recovery_mode=docker-compose` 与 `tls_runs=2`，且整个 job 必须成功。
+3. 使用该成功 run 的 artifact，再执行真实 2h soak、R0 和 `production-readiness.yml` 的 R2/R3 汇聚。
+
 手动命令：
 
 ```bash

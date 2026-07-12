@@ -20,7 +20,7 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "mode": { "type": "string", "enum": ["dev", "production", "prod", "jwt"] },
+        "mode": { "type": "string", "enum": ["dev", "external-jwt", "production", "prod", "jwt"] },
         "jwt_secret": { "type": "string" },
         "jwt_public_key_pem": { "type": "string" },
         "jwt_private_key_pem": { "type": "string" },
