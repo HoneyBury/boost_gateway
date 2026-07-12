@@ -29,6 +29,16 @@ export CONAN_HOME="$RUNNER_CONAN_HOME"
 
 固定 runner 的 Conan 路径由 `scripts/check_conan_lockfile_workflows.py` 持续检查。`ci.yml` 是有意保留的例外：它面向 GitHub-hosted runner，使用 checkout 内 `.conan2-local` 和 `actions/cache`；`production-readiness.yml` 只汇聚已有 artifact，不执行 Conan。
 
+### 新机器的 Docker 镜像预热（R5 必须执行）
+
+R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已能访问 Docker Hub，或已缓存 `env/docker/docker-compose.yml` 的镜像。新机器首次接入、Docker 数据目录清理或 registry mirror 变更后，先在 runner 上成功执行一次：
+
+```bash
+docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
+```
+
+该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。若 runner 访问 `registry-1.docker.io:443` 失败，应配置网络出口或受信任 registry mirror 后再预热；R5 会明确失败，不能用 `bounded-local` 结果替代预发恢复演练。
+
 手动命令：
 
 ```bash

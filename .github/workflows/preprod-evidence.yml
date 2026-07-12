@@ -147,6 +147,7 @@ jobs:
             --summary-path runtime/validation/preprod-recovery-drill-summary.json
 
       - name: R6 TLS pre-production multi-run
+        if: always()
         shell: bash
         run: |
           set -euo pipefail
