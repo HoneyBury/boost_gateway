@@ -168,6 +168,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/validation
+          # Each Conan install emits this generated user preset. This job performs
+          # two installs, so avoid importing stale duplicate Conan presets.
+          rm -f CMakeUserPresets.json
           build_type="${{ inputs.configuration || 'Debug' }}"
           cmake --preset "${{ inputs.configure_preset || 'default' }}" \
             -DBOOST_USE_CONAN_DEPS=ON \
