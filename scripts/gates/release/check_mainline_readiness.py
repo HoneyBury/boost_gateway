@@ -100,6 +100,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "scripts/check_script_inventory.py",
         "scripts/check_validation_summary_contract.py",
         "scripts/check_evidence_provenance_contract.py",
+        "scripts/check_r5_docker_image_policy_contract.py",
         "scripts/check_config_source_layout.py",
         "scripts/check_fixed_runner_evidence_plan.py",
         "scripts/verify_fixed_runner_release_capacity.py",
@@ -110,7 +111,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     ):
         add(checks, f"p2:script:{script}", exists(script), f"{script} exists")
 
-    workflow = read(".github/workflows/production-evidence.yml")
+    workflow = read(".github/workflows/production-gates.yml")
     for token in (
         "include_redis_live",
         "include_operator_kind",
@@ -119,7 +120,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "actions/upload-artifact@v4",
         "scripts/render_validation_summary.py",
     ):
-        add(checks, f"p2:workflow:{token}", token in workflow, f"production evidence workflow includes {token}")
+        add(checks, f"p2:workflow:{token}", token in workflow, f"production gates workflow includes {token}")
 
     fixed_runner = read("docs/fixed-runner-playbook.md")
     add(checks, "p2:fixed-runner-r4", "verify_fixed_runner_release_capacity.py" in fixed_runner, "fixed runner playbook documents R4")
@@ -155,21 +156,22 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:conan-linux-profile-pins-compiler-version", "compiler.version=" in linux_profile, "Linux fixed-runner Conan profile pins compiler.version")
     conan_validate_workflow = read(".github/workflows/conan-validate.yml")
     long_soak_workflow = read(".github/workflows/long-soak-capacity.yml")
-    production_evidence_workflow = read(".github/workflows/production-evidence.yml")
+    production_gates_workflow = read(".github/workflows/production-gates.yml")
     linux_lockfile = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
-    add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_evidence_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
+    add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_gates_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
     add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
     add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
     add(checks, "p3:evidence-provenance-contract-gate", exists("scripts/check_evidence_provenance_contract.py"), "evidence provenance contract governance gate exists")
+    add(checks, "p3:r5-docker-image-policy-contract-gate", exists("scripts/check_r5_docker_image_policy_contract.py"), "R5 Docker image policy contract governance gate exists")
     add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
     add(checks, "p3:long-soak-consumes-conan-lockfile", "build/conan-long-soak-capacity-cmake" in long_soak_workflow and "--lockfile" in long_soak_workflow, "long-soak-capacity workflow performs lockfile-based Conan configure/build preflight")
-    add(checks, "p3:production-evidence-consumes-conan-lockfile", "build/conan-production-evidence-cmake" in production_evidence_workflow and "--lockfile" in production_evidence_workflow, "production-evidence workflow performs lockfile-based Conan configure/build preflight")
+    add(checks, "p3:production-gates-consumes-conan-lockfile", "build/conan-production-gates-cmake" in production_gates_workflow and "--lockfile" in production_gates_workflow, "production-gates workflow performs lockfile-based Conan configure/build preflight")
     add(
         checks,
         "p3:fixed-runner-summaries-uploaded",
         "runtime/validation/long-soak-capacity-summary.json" in long_soak_workflow
         and "runtime/validation/fixed-runner-release-capacity-summary.json" in long_soak_workflow
-        and "runtime/validation/production-evidence-summary.json" in production_evidence_workflow,
+        and "runtime/validation/production-evidence-summary.json" in production_gates_workflow,
         "fixed-runner workflows upload the required long-soak/capacity/production evidence summaries",
     )
     ci_workflow = read(".github/workflows/ci.yml")
@@ -185,6 +187,13 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         "Evidence provenance contract gate" in ci_workflow
         and "scripts/check_evidence_provenance_contract.py" in ci_workflow,
         "CI runs the evidence provenance contract governance gate",
+    )
+    add(
+        checks,
+        "p3:ci-runs-r5-docker-image-policy-contract-gate",
+        "R5 Docker image policy contract gate" in ci_workflow
+        and "scripts/check_r5_docker_image_policy_contract.py" in ci_workflow,
+        "CI runs the R5 Docker image policy contract governance gate",
     )
 
     root_cmake = read("CMakeLists.txt")

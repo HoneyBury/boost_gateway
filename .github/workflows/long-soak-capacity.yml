@@ -1,4 +1,4 @@
-name: Long Soak Capacity
+name: Stability / Fixed-Runner Soak & Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

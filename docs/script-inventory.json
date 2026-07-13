@@ -64,10 +64,12 @@
     "scripts/check_legacy_helper_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_legacy_helper_inventory.py"},
     "scripts/check_openssl_dependency_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_openssl_dependency_governance.py"},
     "scripts/check_reliability_matrix.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_reliability_matrix.py"},
+    "scripts/check_r5_docker_image_policy_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_r5_docker_image_policy_contract.py"},
     "scripts/check_script_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_script_inventory.py"},
     "scripts/check_v3_grpc_poc_decision.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_v3_grpc_poc_decision.py"},
     "scripts/check_v3_proto_schema.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_v3_proto_schema.py"},
     "scripts/check_validation_summary_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_validation_summary_contract.py"},
+    "scripts/check_workflow_catalog.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_workflow_catalog.py"},
     "scripts/check_workflow_python_cli_contracts.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_workflow_python_cli_contracts.py"},
 
     "scripts/check_fixed_runner_environment.py": {"category": "aggregate_gate", "canonical": "scripts/gates/infrastructure/check_fixed_runner_environment.py"},

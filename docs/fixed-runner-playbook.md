@@ -12,7 +12,7 @@ GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 f
 
 GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，`aoi-omen-gaming-laptop-16-am0xxx` 已作为在线 Linux runner 匹配 `["self-hosted","Linux","X64"]`；`MyDesktop-Win` 仍离线。第一批真实证据刷新已解除 runner 不可用阻断，但仍需按下表执行并归档 summary。
 
-Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-evidence.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-evidence.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py` 和 `python3 scripts/check_fixed_runner_evidence_plan.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
+Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
 ### 新机器的 Conan 缓存初始化（必须执行）
 
@@ -31,18 +31,25 @@ export CONAN_HOME="$RUNNER_CONAN_HOME"
 
 ### 新机器的 Docker 镜像预热（R5 必须执行）
 
-R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已能访问 Docker Hub，或已缓存 `env/docker/docker-compose.yml` 的镜像。新机器首次接入、Docker 数据目录清理或 registry mirror 变更后，先在 runner 上成功执行一次：
+R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已缓存 `env/docker/docker-compose.yml` 展开的全部镜像。新机器首次接入、Docker 数据目录清理或 registry mirror 变更后，先在 runner 上成功执行一次：
 
 ```bash
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
+docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml build
+python3 scripts/verify_preprod_recovery_drill.py \
+  --mode docker-compose \
+  --image-preflight-only \
+  --docker-pull-policy never
 ```
 
-该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。若 runner 访问 `registry-1.docker.io:443` 失败，应配置网络出口或受信任 registry mirror 后再预热；R5 会明确失败，不能用 `bounded-local` 结果替代预发恢复演练。
+该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=missing` 是 fixed-runner 默认值，只拉取缺失的 registry 镜像；`never` 完全禁止远端访问；`always` 强制执行完整 Compose pull。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先执行 Compose build。
 
-当前验证状态（2026-07-12）：run `29186343065` 已在 `4855dc0` 通过 R6 两轮 TLS 预发验证，但 R5 在请求 `auth.docker.io` 匿名令牌时连接被重置。Compose 插件安装、Conan/Release 构建和 R5 静态 gate 均已通过；这不是应用代码通过 R5 的证据。runner 恢复后按以下顺序验证：
+若新 runner 访问 `registry-1.docker.io:443` 失败，应通过受信任 mirror 完成首次预热；预热完成后可使用 `never` 离线执行。R5 不能用 `bounded-local` 结果替代预发恢复演练。
 
-1. 成功执行上述 `docker compose ... pull`，确认 Docker daemon 缓存完整 Compose 镜像。
-2. 手动运行 `preprod-evidence.yml`，保持 `recovery_mode=docker-compose` 与 `tls_runs=2`，且整个 job 必须成功。
+当前验证状态（2026-07-13）：run `29186343065` 已在 `4855dc0` 通过 R6 两轮 TLS 预发验证，但旧版 R5 在请求 `auth.docker.io` 匿名令牌时连接被重置。当前代码已增加 `missing/never/always` 镜像策略和离线预检契约，本地策略测试通过；这仍不是 fixed-runner 应用代码通过 R5 的证据。runner 可用后按以下顺序验证：
+
+1. 使用 `--image-preflight-only --docker-pull-policy never` 确认全部镜像已预热；缺失时通过 mirror 补齐。
+2. 手动运行 `preprod-evidence.yml`，保持 `recovery_mode=docker-compose`、`docker_pull_policy=never|missing` 与 `tls_runs=2`，且整个 job 必须成功。
 3. 使用该成功 run 的 artifact，再执行真实 2h soak、R0 和 `production-readiness.yml` 的 R2/R3 汇聚。
 
 手动命令：
@@ -61,9 +68,9 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | --- | --- | --- | --- |
 | 1 | `conan-validate.yml` | `runner=["self-hosted","Linux","X64"]`、`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`、`with_sqlite=false` | Conan install/build artifact；失败时以 Conan step 日志为准 |
 | 1.5 | `grpc-experimental.yml` | `runner=["self-hosted","Linux","X64"]`、`build_type=Release`、空 `conan_lockfile`（现场生成 grpc+nosqlite lockfile）或显式 grpc lockfile | run `29196150703`（`main` / `0af5c91`）已通过：`runtime/validation/grpc-fixed-runner-preflight-summary.json`、`runtime/validation/grpc-sdk-package-consumer-summary.json`、`runtime/validation/grpc-fixed-runner-decision-summary.json` 全部归档；用于独立验证 `BOOST_BUILD_GRPC=ON`，不替代默认主线 `with_grpc=False` 证据 |
-| 2 | `release.yml` (baseline) | `enable_conan_validation=true`、`perf_preset=baseline`、`perf_repetitions=3` | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
+| 2 | `release.yml` (baseline) | `perf_preset=baseline`、`perf_repetitions=3`，Conan lockfile preflight 固定执行 | `runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json` |
 | 3 | `long-soak-capacity.yml` | capacity: `run_2h_soak=false`、`run_8h_soak=false`、`run_capacity=true`、`run_business_capacity=true`、`perf_repetitions=3` | `29183833041`（`6d537ee`）已通过：Conan 预检、Release 构建、capacity、business-capacity 和 R4 聚合均为 `overall_pass=true`。capacity 的 battle-500 三轮 P99=40/100/150ms，business-capacity 为 75/150/150ms，均为 0 rejected/failed；3 个 SDK full-flow 客户端通过。该 run 未执行 2h/8h，长稳事实仍分别以真实 7200/28800 秒 run 归档 |
-| 4 | `production-evidence.yml` | `conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | `29146018657` 的 `production-evidence-summary.json` 已通过 |
+| 4 | `production-gates.yml` | `gate=p6-evidence`，`conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`，按 runner 能力显式打开 Redis/kind/observability | 旧 `29146018657` 的 `production-evidence-summary.json` 为历史通过事实；新入口需在同一候选 SHA 上刷新 |
 | 5 | `production-candidate-evidence.yml` | 独立运行 R0 aggregate，避免在 P6 job 后重复执行门禁；stability baseline profile 随 `configuration` 对齐（Debug=`debug`，Release=`release`） | `29152333112`（`8cadbef`）已通过，`runtime/validation/r0-production-candidate-evidence-summary.json` 及 R0/P5/P6/N5 子 summary 均归档 |
 | 6 | `preprod-evidence.yml` | `recovery_mode=docker-compose`、`tls_runs=2`、Release + Conan lockfile | `runtime/validation/preprod-recovery-drill-summary.json`、`runtime/validation/tls-preprod-multi-run-summary.json` |
 | 7 | `production-readiness.yml` | R0、真实 2h soak、当前 capacity/R4、R5/R6 各自的 run ID，跨 workflow 下载 artifact 后统一执行 R2/R3 | `runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json`、`runtime/validation/r3-production-readiness-report-summary.json` |
@@ -102,8 +109,8 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | Release baseline | 每周 1 次 | `self-hosted,release-baseline` | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/release-baseline-summary.json`、`runtime/perf/release-baseline/summary.json`、`runtime/perf/release-baseline/report.md` |
 | Specialized E2E default | 每周 2 次 | `self-hosted,raft-ha` 或通用 runner | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/specialized-e2e-summary.json` |
 | Redis live / raft-ha | 每周 1 次 | `self-hosted,redis-live` / `self-hosted,raft-ha` | `runtime/validation/specialized-e2e-summary.json` |
-| Production resilience | 每周 1 次 | `self-hosted,production-resilience` | `runtime/validation/p5-fixed-runner-preflight-summary.json`、`runtime/validation/production-resilience-summary.json` |
-| Production evidence | 每周 1 次 | `self-hosted,production-evidence` | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/production-evidence-summary.json` |
+| Production gates / P5 | 手动，候选 SHA 冻结后执行 | `self-hosted,production-resilience` 或通用 Linux fixed runner | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/production-resilience-summary.json` |
+| Production gates / P6 | 手动，候选 SHA 冻结后执行 | `self-hosted,production-evidence` 或通用 Linux fixed runner | `runtime/validation/fixed-runner-preflight-summary.json`、`runtime/validation/production-evidence-summary.json` |
 | Observability runtime | 每周 1 次 | `self-hosted,observability` | `runtime/validation/observability-gate-summary.json`、`runtime/validation/gateway-observability-runtime-summary.json` |
 | P5-P8 business closure | 每周 1 次 | `self-hosted,business-closure` | `runtime/validation/p5-p8-business-closure-summary.json` |
 | K8s / Operator kind | 每周 1 次 | `self-hosted,operator-kind` | `runtime/validation/p5-control-plane-kind-summary.json`、`runtime/validation/p7-k8s-full-flow-summary.json` |
@@ -120,12 +127,12 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 | Observability | `self-hosted,observability` | 手动命令或 release gate | CMake、Ninja、Python、可绑定本地端口；可选 fake OTel collector 与真实 gateway HTTP runtime 测试 |
 | Control plane | `self-hosted,operator-kind` | 手动命令或 `specialized-e2e.yml` | Go、Docker、kind、kubectl、make、Python；可选 envtest assets |
 | Business closure P5-P8 | `self-hosted,business-closure` | 手动命令 | CMake、Ninja、Python、可绑定本地端口；可选 OTel、kind、K8s 已部署集群 |
-| Production resilience | `self-hosted,production-resilience` | `production-resilience.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
-| Production evidence | `self-hosted,production-evidence` | `production-evidence.yml` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
+| Production gates / P5 | `self-hosted,production-resilience` | `production-gates.yml`, `gate=p5-resilience` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
+| Production gates / P6 | `self-hosted,production-evidence` | `production-gates.yml`, `gate=p6-evidence` | CMake、Ninja、Python、可绑定本地端口；可选 Redis、Docker/kind、Release baseline 固定性能环境、runtime observability |
 | Experimental gRPC | `self-hosted,observability` 或通用 Linux fixed runner | `grpc-experimental.yml` | CMake、Ninja、Python、可绑定本地端口；同级 Conan cache、gRPC/Protobuf 依赖、fake OTLP collector POST 能力 |
 | Cloud production closure | `self-hosted,cloud-production` | 手动命令 | CMake、Ninja、Python、Docker、kubectl、kind、Go、systemd；用于当前云服务器生产环境收束 |
 
-GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-evidence.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
+GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-gates.yml` 的 `runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","Linux","X64"]`。
 
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；其它固定 runner、性能、稳定性和专项验证入口保留 `workflow_dispatch`，需要时手动触发。`.github/runner-matrix.json` 是版本化 runner/默认标签配置源，变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件，避免真实触发行为和文档配置漂移。
 
@@ -138,7 +145,6 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ev
 | `runner` | `["self-hosted","Linux","X64"]` | `["self-hosted","Linux","X64"]` |
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
-| `enable_conan_validation` | `true` | `true` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 
 通过标准：
@@ -260,7 +266,7 @@ python scripts/verify_control_plane_gate.py --include-kind --summary-path runtim
 
 P5 长稳、故障注入与回滚演练使用 `scripts/verify_production_resilience_gate.py` 作为统一入口。默认模式保持有界，只跑固定 runner 预检、bounded stability soak、data recovery 和 Redis/Raft/Operator failure-path 专项；真实 Redis、kind、runtime HTTP、release/capacity baseline 必须显式启用。
 
-手动触发 `.github/workflows/production-resilience.yml` 时，`runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-resilience"]`。
+手动触发 `.github/workflows/production-gates.yml` 并选择 `gate=p5-resilience`。`runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-resilience"]` 或 `["self-hosted","Linux","X64"]`。
 
 推荐本机或固定 runner 命令：
 
@@ -337,7 +343,7 @@ P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raf
 python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build
 ```
 
-手动触发 `.github/workflows/production-evidence.yml` 时，`runner` 建议填 `["self-hosted","Linux","X64"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
+手动触发 `.github/workflows/production-gates.yml` 并选择 `gate=p6-evidence`。`runner` 建议填 `["self-hosted","Linux","X64"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
 
 本机或固定 runner 已具备 Redis + Docker/kind 时：
 

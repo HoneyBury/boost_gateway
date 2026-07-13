@@ -1,4 +1,4 @@
-name: Performance Regression
+name: Performance / Baseline & Regression
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -13,9 +13,9 @@ on:
         required: true
         default: '["self-hosted","Linux","X64"]'
       perf_preset:
-        description: "Performance baseline preset"
+        description: "Performance preset. Use smoke to replace the retired per-commit performance check."
         required: true
-        default: "baseline"
+        default: "smoke"
         type: choice
         options:
           - smoke
@@ -35,35 +35,15 @@ permissions:
   actions: read
 
 jobs:
-  perf-regression:
+  performance:
     runs-on: ${{ fromJSON(inputs.runner || vars.PERF_REGRESSION_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Setup CMake
-        uses: jwlawson/actions-setup-cmake@v2
-
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Conan
-        shell: bash
-        run: |
-          set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install "conan>=2.0,<2.9"
-          conan --version
-
-      - name: Bootstrap Conan home
-        shell: bash
-        run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+      - name: Setup C++ Conan toolchain
+        uses: ./.github/actions/setup-cpp-conan
 
       - name: Conan install
         shell: bash
@@ -225,7 +205,6 @@ jobs:
 
           sys.exit(exit_code)
           PY
-        continue-on-error: true
 
       - name: Generate performance report
         if: always()

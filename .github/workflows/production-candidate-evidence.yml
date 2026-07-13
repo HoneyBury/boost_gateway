@@ -1,4 +1,4 @@
-name: Production Candidate Evidence
+name: Production / Candidate Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

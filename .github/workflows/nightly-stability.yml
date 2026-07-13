@@ -1,4 +1,4 @@
-name: Nightly Stability
+name: Stability / Bounded Soak
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

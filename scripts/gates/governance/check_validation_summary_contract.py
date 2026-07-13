@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SUMMARIES = [
     "runtime/validation/release-baseline-summary.json",
     "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/production-resilience-summary.json",
     "runtime/validation/production-evidence-summary.json",
     "runtime/validation/r0-production-candidate-evidence-summary.json",
     "runtime/validation/r2-production-evidence-manifest-summary.json",

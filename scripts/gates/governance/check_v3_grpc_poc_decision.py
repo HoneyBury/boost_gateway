@@ -142,12 +142,12 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
         "mainline plan must keep default transport deferred until real fixed-runner gRPC evidence is refreshed",
     )
     conan_validate = read_text(ROOT / ".github/workflows/conan-validate.yml")
-    production_evidence = read_text(ROOT / ".github/workflows/production-evidence.yml")
+    production_gates = read_text(ROOT / ".github/workflows/production-gates.yml")
     add(
         checks,
         "grpc workflow still opt-in",
         '-o "&:with_grpc=False"' in conan_validate
-        and '-o "&:with_grpc=False"' in production_evidence,
+        and '-o "&:with_grpc=False"' in production_gates,
         "Conan-using fixed-runner workflows keep gRPC disabled in the default dependency graph",
     )
     add(

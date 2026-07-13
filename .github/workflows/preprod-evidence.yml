@@ -1,4 +1,4 @@
-name: Preproduction Evidence
+name: Production / Preproduction Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -37,6 +37,19 @@ on:
         description: "Timeout for each R5 recovery operation"
         required: true
         default: "300"
+      docker_pull_policy:
+        description: "R5 image policy: missing reuses cache, never is fully offline, always refreshes"
+        required: true
+        default: "missing"
+        type: choice
+        options:
+          - missing
+          - never
+          - always
+      docker_pull_attempts:
+        description: "Attempts for each R5 registry pull"
+        required: true
+        default: "3"
       tls_runs:
         description: "Number of R6 TLS readiness passes"
         required: true
@@ -147,6 +160,9 @@ jobs:
             --configuration "${{ inputs.configuration || 'Release' }}" \
             --mode "${{ inputs.recovery_mode }}" \
             --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
+            --docker-pull-policy "${{ inputs.docker_pull_policy || 'missing' }}" \
+            --docker-pull-attempts "${{ inputs.docker_pull_attempts || '3' }}" \
+            --image-preflight-summary-path runtime/validation/r5-docker-image-preflight-summary.json \
             --summary-path runtime/validation/preprod-recovery-drill-summary.json
 
       - name: R6 TLS pre-production multi-run
@@ -182,6 +198,7 @@ jobs:
           path: |
             runtime/validation/preprod-evidence-*-summary.json
             runtime/validation/preprod-recovery-drill-summary.json
+            runtime/validation/r5-docker-image-preflight-summary.json
             runtime/validation/r5-*-summary.json
             runtime/validation/tls-preprod-multi-run-summary.json
             runtime/validation/r6-*.json

@@ -30,27 +30,29 @@ def contains(relative: str, token: str) -> bool:
 
 
 def validate_h0(checks: list[dict[str, Any]]) -> None:
-    for workflow in (".github/workflows/production-resilience.yml", ".github/workflows/production-evidence.yml"):
-        text = read_text(workflow)
-        add(checks, f"h0:{workflow}:schedule", "schedule:" in text and "cron:" in text, "weekly scheduled workflow exists")
-        add(checks, f"h0:{workflow}:runner-fallback", "vars.PRODUCTION_" in text and "ubuntu-latest" in text, "scheduled runs have runner fallback")
-        add(checks, f"h0:{workflow}:configure-fallback", "inputs.configure_preset || 'default'" in text, "scheduled runs have configure preset fallback")
-        add(checks, f"h0:{workflow}:concurrency-fallback", "group:" in text and "ubuntu-latest" in text, "scheduled runs have stable concurrency fallback")
-        add(checks, f"h0:{workflow}:summary-render", "scripts/render_validation_summary.py" in text, "workflow renders GitHub Step Summary")
-        add(checks, f"h0:{workflow}:artifact", "actions/upload-artifact@v4" in text, "workflow archives evidence artifacts")
+    workflow = ".github/workflows/production-gates.yml"
+    text = read_text(workflow)
+    add(checks, f"h0:{workflow}:manual-dispatch", "workflow_dispatch:" in text and "gate:" in text, "manual fixed-runner diagnostic workflow exists")
+    add(checks, f"h0:{workflow}:runner-override", "vars.PRODUCTION_GATES_RUNNER" in text and '["self-hosted","Linux","X64"]' in text, "workflow keeps fixed-runner override")
+    add(checks, f"h0:{workflow}:configure-fallback", "inputs.configure_preset || 'default'" in text, "workflow has configure preset fallback")
+    add(checks, f"h0:{workflow}:concurrency", "group: production-gates-" in text, "workflow has stable concurrency group")
+    add(checks, f"h0:{workflow}:p5", "scripts/verify_production_resilience_gate.py" in text, "workflow exposes P5 resilience gate")
+    add(checks, f"h0:{workflow}:p6", "scripts/verify_production_evidence_gate.py" in text, "workflow exposes P6 evidence gate")
+    add(checks, f"h0:{workflow}:summary-render", "scripts/render_validation_summary.py" in text, "workflow renders GitHub Step Summary")
+    add(checks, f"h0:{workflow}:artifact", "actions/upload-artifact@v4" in text, "workflow archives evidence artifacts")
 
 
 def validate_h1(checks: list[dict[str, Any]]) -> None:
-    soak = read_text("scripts/verify_stability_soak.py")
+    soak = read_text("scripts/gates/release/verify_stability_soak.py")
     plan = read_text("docs/archive/plans/production-candidate-hardening-plan.md")
     add(checks, "h1:soak-profiles", all(item in soak for item in ['"smoke"', '"short"', '"medium"']), "bounded soak profiles exist")
-    add(checks, "h1:long-soak-plan", "2h / 8h soak" in plan and "RSS銆乫d銆佺嚎绋嬫暟銆丆PU" in plan, "long soak resource plan exists")
-    add(checks, "h1:nightly-workflow", contains(".github/workflows/nightly-stability.yml", "schedule:"), "nightly stability workflow exists")
+    add(checks, "h1:long-soak-plan", "2h / 8h soak" in plan and "RSS" in plan and "CPU" in plan, "long soak resource plan exists")
+    add(checks, "h1:bounded-stability-workflow", contains(".github/workflows/nightly-stability.yml", "workflow_dispatch:"), "bounded stability workflow exists")
 
 
 def validate_h2(checks: list[dict[str, Any]]) -> None:
-    release = read_text("scripts/collect_release_baseline.py")
-    perf = read_text("scripts/collect_v2_perf_baseline.py")
+    release = read_text("scripts/producers/collect_release_baseline.py")
+    perf = read_text("scripts/producers/collect_v2_perf_baseline.py")
     add(checks, "h2:capacity-preset", '"capacity"' in release and "perf_preset" in release, "release baseline supports capacity preset")
     add(checks, "h2:capacity-cases", "echo-10000" in perf and "battle-500" in perf, "capacity profile covers 10K echo and battle-500")
     add(checks, "h2:release-gates", "release_gates" in perf and "overall_pass" in perf, "performance summary has release gates")
@@ -69,12 +71,12 @@ def validate_h3(checks: list[dict[str, Any]]) -> None:
         text = read_text(manifest)
         add(checks, f"h3:{manifest}:resources", "resources:" in text and "requests:" in text and "limits:" in text, "manifest has resource requests/limits")
         add(checks, f"h3:{manifest}:hpa-pdb", "HorizontalPodAutoscaler" in text and "PodDisruptionBudget" in text, "manifest has HPA and PDB")
-    add(checks, "h3:operator-kind", contains("scripts/operator_kind_smoke.py", "rollout") and contains("scripts/operator_kind_smoke.py", "conditions"), "operator kind smoke covers rollout/status")
+    add(checks, "h3:operator-kind", contains("scripts/tools/operator_kind_smoke.py", "rollout") and contains("scripts/tools/operator_kind_smoke.py", "conditions"), "operator kind smoke covers rollout/status")
 
 
 def validate_h4(checks: list[dict[str, Any]]) -> None:
-    add(checks, "h4:runtime-http-gate", contains("scripts/verify_observability_gate.py", "--include-runtime-http"), "runtime HTTP observability gate exists")
-    add(checks, "h4:otel-collector-gate", contains("scripts/verify_observability_gate.py", "--include-otel-collector"), "OTel collector gate exists")
+    add(checks, "h4:runtime-http-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-runtime-http"), "runtime HTTP observability gate exists")
+    add(checks, "h4:otel-collector-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-otel-collector"), "OTel collector gate exists")
     add(checks, "h4:gateway-red-dashboard", contains("env/monitoring/grafana-dashboard.json", "gateway_backend_.*_requests_total"), "dashboard has backend RED panels")
     add(checks, "h4:p99-boundary-doc", contains("docs/archive/releases/v3.3.2-p3-monitoring-operations.md", "P99"), "P99 observability boundary documented")
 
@@ -87,7 +89,7 @@ def validate_h5(checks: list[dict[str, Any]]) -> None:
     add(checks, "h5:compatibility-matrix", exists("sdk/docs/compatibility.md") and contains("sdk/docs/compatibility.md", "v3.3.2") and contains("sdk/docs/compatibility.md", "v4.1.0"), "SDK compatibility matrix exists")
     sdk_docs = read_text("sdk/docs/README.md")
     add(checks, "h5:heartbeat-doc", "start_heartbeat" in sdk_docs and "on_disconnect" in sdk_docs, "SDK docs cover heartbeat/disconnect")
-    add(checks, "h5:version-diagnostics", "BOOST_GATEWAY_SDK_LIBRARY" in sdk_docs and "鐗堟湰" in sdk_docs, "SDK docs cover native version/load diagnostics")
+    add(checks, "h5:version-diagnostics", "BOOST_GATEWAY_SDK_LIBRARY" in sdk_docs and "gsdk_version()" in sdk_docs, "SDK docs cover native version/load diagnostics")
 
 
 def main() -> int:
@@ -106,11 +108,16 @@ def main() -> int:
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "overall_pass": not failed,
         "passed": not failed,
+        "failed_category": "production_hardening" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
+        "artifacts": {"summary_path": str(summary_path)},
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
@@ -125,4 +132,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

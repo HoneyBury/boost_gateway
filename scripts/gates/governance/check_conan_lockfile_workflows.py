@@ -21,7 +21,7 @@ WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
     "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
-    "production_evidence": ".github/workflows/production-evidence.yml",
+    "production_gates": ".github/workflows/production-gates.yml",
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
 }
 
@@ -35,11 +35,9 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "nightly_stability": ".github/workflows/nightly-stability.yml",
-    "perf_commit_check": ".github/workflows/perf-commit-check.yml",
     "perf_regression": ".github/workflows/perf-regression.yml",
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
-    "production_evidence": ".github/workflows/production-evidence.yml",
-    "production_resilience": ".github/workflows/production-resilience.yml",
+    "production_gates": ".github/workflows/production-gates.yml",
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
 }
 FIXED_RUNNER_CONAN_HOME = "CONAN_HOME: ${{ github.workspace }}/../.conan2-local"
@@ -109,12 +107,12 @@ def main() -> int:
 
     long_soak = contents["long_soak_capacity"]
     release = contents["release"]
-    production_evidence = contents["production_evidence"]
+    production_gates = contents["production_gates"]
     add(
         checks,
-        "workflow:release:conan-preflight-toggle",
-        "enable_conan_validation" in release and "conan-preflight" in release,
-        "release workflow exposes lockfile-based Conan preflight before release baseline collection",
+        "workflow:release:conan-preflight",
+        "conan-preflight" in release and "enable_conan_validation" not in release,
+        "release workflow always runs lockfile-based Conan preflight before release baseline collection",
     )
     add(
         checks,
@@ -124,9 +122,9 @@ def main() -> int:
     )
     add(
         checks,
-        "workflow:production-evidence:real-conan-validation-build",
-        "build/conan-production-evidence-cmake" in production_evidence and "--target project_v2" in production_evidence,
-        "production-evidence performs a lockfile-based Conan configure/build preflight",
+        "workflow:production-gates:real-conan-validation-build",
+        "build/conan-production-gates-cmake" in production_gates and "--target project_v2" in production_gates,
+        "production-gates performs a lockfile-based Conan configure/build preflight",
     )
     for name, path in FIXED_RUNNER_CONAN_WORKFLOWS.items():
         content = read(path) if exists(path) else ""

@@ -1,4 +1,4 @@
-name: CI
+name: Mainline / Build, Test & Governance
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -6,9 +6,6 @@ env:
   CONAN_HOME: ${{ github.workspace }}/.conan2-local
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       runner:
@@ -154,9 +151,17 @@ jobs:
         shell: bash
         run: python3 scripts/check_workflow_python_cli_contracts.py
 
+      - name: Workflow catalog gate
+        shell: bash
+        run: python3 scripts/check_workflow_catalog.py
+
       - name: Evidence provenance contract gate
         shell: bash
         run: python3 scripts/check_evidence_provenance_contract.py
+
+      - name: R5 Docker image policy contract gate
+        shell: bash
+        run: python3 scripts/check_r5_docker_image_policy_contract.py
 
       - name: Legacy/helper inventory gate
         shell: bash
