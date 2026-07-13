@@ -66,6 +66,7 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     version_header = read_text("sdk/include/boost_gateway/sdk/version.h.in")
     c_api = read_text("sdk/include/boost_gateway/sdk/c_api.h")
     docs = read_text("sdk/docs/README.md")
+    python_setup = read_text("sdk/python/setup.py")
 
     add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.1.0")
     add_check(
@@ -82,6 +83,12 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     )
     add_check(checks, "sdk-version:c-api-doc", "SDK v4.1.0" in c_api, "C API header version is current")
     add_check(checks, "sdk-version:docs", "v4.1.0" in docs, "SDK docs mention current version")
+    add_check(
+        checks,
+        "sdk-version:python-package",
+        f'version="{SDK_VERSION}"' in python_setup,
+        "Python package version matches the SDK version",
+    )
 
 
 def validate_cmake_distribution(checks: list[dict[str, Any]]) -> None:
