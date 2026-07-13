@@ -17,13 +17,6 @@
       "capabilities": {},
       "vars_hint": "RELEASE_RUNNER"
     },
-    "perf-commit-check": {
-      "enabled": true,
-      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
-      "labels": { "os": "linux", "arch": "x64" },
-      "capabilities": {},
-      "vars_hint": "PERF_COMMIT_RUNNER"
-    },
     "perf-regression": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
@@ -52,19 +45,33 @@
       "capabilities": { "loopback_bind": true },
       "vars_hint": "GRPC_EXPERIMENTAL_RUNNER"
     },
-    "production-evidence": {
+    "production-gates": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
-      "capabilities": { "redis": true, "large_disk": true },
-      "vars_hint": "PRODUCTION_EVIDENCE_RUNNER"
+      "capabilities": { "redis": true, "kind": true, "large_disk": true },
+      "vars_hint": "PRODUCTION_GATES_RUNNER"
     },
-    "production-resilience": {
+    "production-candidate-evidence": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
-      "capabilities": { "redis": true, "kind": true },
-      "vars_hint": "PRODUCTION_RESILIENCE_RUNNER"
+      "capabilities": { "redis": true, "kind": true, "large_disk": true },
+      "vars_hint": "PRODUCTION_CANDIDATE_RUNNER"
+    },
+    "preprod-evidence": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64" },
+      "capabilities": { "docker": true, "redis": true },
+      "vars_hint": "PREPROD_EVIDENCE_RUNNER"
+    },
+    "production-readiness": {
+      "enabled": true,
+      "runner": "\"ubuntu-latest\"",
+      "labels": { "os": "linux", "arch": "x64", "mode": "artifact-aggregation" },
+      "capabilities": { "github_hosted_fallback": true },
+      "vars_hint": "PRODUCTION_READINESS_RUNNER"
     },
     "long-soak-capacity": {
       "enabled": true,

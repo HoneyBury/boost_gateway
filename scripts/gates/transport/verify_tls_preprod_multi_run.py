@@ -13,6 +13,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.lib.evidence_provenance import build_evidence_provenance
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -106,6 +108,7 @@ def extract_run_metrics(path: Path) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/release")
+    parser.add_argument("--configuration", default="Release")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--runs", type=int, default=2)
     parser.add_argument("--step-timeout-seconds", type=int, default=240)
@@ -153,6 +156,10 @@ def main() -> int:
     summary = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "provenance": build_evidence_provenance(
+            REPO_ROOT,
+            build_configuration=args.configuration,
+        ),
         "overall_pass": passed,
         "passed": passed,
         "failed_category": str(failed.get("category", "")) if failed else ("tls_preprod_metrics" if metrics_failed or ratio_failed else ""),
@@ -186,4 +193,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

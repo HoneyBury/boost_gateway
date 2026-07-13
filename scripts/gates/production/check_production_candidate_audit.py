@@ -31,8 +31,7 @@ REQUIRED_FILES = {
     "p5-resilience-gate": "scripts/verify_production_resilience_gate.py",
     "p6-production-evidence-gate": "scripts/verify_production_evidence_gate.py",
     "h0-h5-production-hardening-gate": "scripts/check_production_hardening_gate.py",
-    "production-evidence-workflow": ".github/workflows/production-evidence.yml",
-    "production-resilience-workflow": ".github/workflows/production-resilience.yml",
+    "production-gates-workflow": ".github/workflows/production-gates.yml",
 }
 
 REQUIRED_TEXT = {
@@ -70,22 +69,17 @@ REQUIRED_TEXT = {
         "control_plane_operator_gate",
     ],
     "docs/fixed-runner-playbook.md": [
-        "production-resilience.yml",
-        "production-evidence.yml",
+        "production-gates.yml",
         "p6-candidate-audit-summary.json",
     ],
-    ".github/workflows/production-evidence.yml": [
+    ".github/workflows/production-gates.yml": [
         "scripts/verify_production_evidence_gate.py",
-        "scripts/render_validation_summary.py",
-        "actions/upload-artifact@v4",
-        "runtime/validation/production-evidence-summary.json",
-        "runtime/validation/p6-candidate-audit-summary.json",
-    ],
-    ".github/workflows/production-resilience.yml": [
         "scripts/verify_production_resilience_gate.py",
         "scripts/render_validation_summary.py",
         "actions/upload-artifact@v4",
+        "runtime/validation/production-evidence-summary.json",
         "runtime/validation/production-resilience-summary.json",
+        "runtime/validation/p6-candidate-audit-summary.json",
     ],
 }
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
@@ -188,4 +182,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

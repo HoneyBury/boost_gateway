@@ -1,0 +1,53 @@
+name: Setup C++ Conan Toolchain
+description: Install Ninja, CMake, Python, Conan, and optionally bootstrap the repository Conan home.
+
+inputs:
+  python-version:
+    description: Python version to install through actions/setup-python.
+    required: false
+    default: "3.12"
+  conan-version:
+    description: Conan version range to install when Conan is not already available.
+    required: false
+    default: "conan>=2.0,<2.9"
+  run-bootstrap:
+    description: Run scripts/bootstrap_conan.py after Conan is available.
+    required: false
+    default: "true"
+  bootstrap-args:
+    description: Extra arguments passed to scripts/bootstrap_conan.py.
+    required: false
+    default: "--allow-public --disable-example-internal"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup Ninja
+      uses: seanmiddleditch/gha-setup-ninja@v5
+
+    - name: Setup CMake
+      uses: jwlawson/actions-setup-cmake@v2
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Ensure Conan
+      shell: bash
+      run: |
+        set -euo pipefail
+        if command -v conan >/dev/null 2>&1; then
+          conan --version
+          exit 0
+        fi
+        python -m pip install --upgrade pip
+        python -m pip install "${{ inputs.conan-version }}"
+        conan --version
+
+    - name: Bootstrap Conan home
+      if: inputs.run-bootstrap == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        python scripts/bootstrap_conan.py ${{ inputs.bootstrap-args }}

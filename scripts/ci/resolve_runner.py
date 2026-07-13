@@ -18,14 +18,16 @@ MATRIX_PATH = os.path.join(
 )
 KNOWN_WORKFLOWS = [
     "ci",
-    "release",
-    "perf-commit-check",
-    "perf-regression",
-    "nightly-stability",
     "conan-validate",
-    "production-evidence",
-    "production-resilience",
+    "grpc-experimental",
     "long-soak-capacity",
+    "nightly-stability",
+    "perf-regression",
+    "preprod-evidence",
+    "production-candidate-evidence",
+    "production-gates",
+    "production-readiness",
+    "release",
     "specialized-e2e",
 ]
 SELF_HOSTED_LINUX_X64 = ["self-hosted", "Linux", "X64"]
@@ -115,8 +117,13 @@ def cmd_validate(matrix):
                 parsed_runner = None
             if name == "ci" and parsed_runner != GITHUB_HOSTED_UBUNTU:
                 errors.append("workflow 'ci' should default to GitHub-hosted ubuntu-latest fallback")
-            if name in {"release", "conan-validate", "specialized-e2e"} and parsed_runner != SELF_HOSTED_LINUX_X64:
+            if (
+                name not in {"ci", "production-readiness"}
+                and parsed_runner != SELF_HOSTED_LINUX_X64
+            ):
                 errors.append(f"workflow '{name}' should default to ['self-hosted', 'Linux', 'X64']")
+            if name == "production-readiness" and parsed_runner != GITHUB_HOSTED_UBUNTU:
+                errors.append("workflow 'production-readiness' should default to GitHub-hosted ubuntu-latest fallback")
         if name == "ci":
             if entry.get("vars_hint") != "CI_RUNNER":
                 errors.append("workflow 'ci' should expose vars_hint=CI_RUNNER")

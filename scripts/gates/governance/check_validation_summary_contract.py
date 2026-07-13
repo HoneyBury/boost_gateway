@@ -9,11 +9,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.lib.evidence_provenance import validate_evidence_provenance
+
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SUMMARIES = [
     "runtime/validation/release-baseline-summary.json",
     "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/production-resilience-summary.json",
     "runtime/validation/production-evidence-summary.json",
     "runtime/validation/r0-production-candidate-evidence-summary.json",
     "runtime/validation/r2-production-evidence-manifest-summary.json",
@@ -29,9 +32,18 @@ DEFAULT_SUMMARIES = [
 ]
 REQUIRED_KEYS = {
     "summary_version",
+    "generated_at",
     "overall_pass",
     "passed",
     "artifacts",
+}
+PROVENANCE_REQUIRED_SUMMARIES = {
+    "runtime/validation/release-baseline-summary.json",
+    "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/r0-production-candidate-evidence-summary.json",
+    "runtime/validation/fixed-runner-release-capacity-summary.json",
+    "runtime/validation/preprod-recovery-drill-summary.json",
+    "runtime/validation/tls-preprod-multi-run-summary.json",
 }
 
 
@@ -79,6 +91,14 @@ def main() -> int:
         add(checks, f"summary-version:{name}", data.get("summary_version") == 2, "summary_version=2")
         add(checks, f"pass-fields:{name}", data.get("overall_pass") == data.get("passed"), "overall_pass matches passed")
         add(checks, f"artifacts-object:{name}", isinstance(data.get("artifacts"), dict), "artifacts is object")
+        if name in PROVENANCE_REQUIRED_SUMMARIES:
+            provenance_errors = validate_evidence_provenance(data.get("provenance"))
+            add(
+                checks,
+                f"provenance:{name}",
+                not provenance_errors,
+                "; ".join(provenance_errors) if provenance_errors else "provenance is complete and matches checkout",
+            )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

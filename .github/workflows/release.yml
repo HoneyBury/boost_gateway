@@ -1,9 +1,11 @@
-name: Release
+name: Release / Package & Publish
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
   CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+  BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
+  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
 on:
   push:
@@ -15,10 +17,6 @@ on:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
         default: '["self-hosted","Linux","X64"]'
-      enable_conan_validation:
-        description: "Run Conan lockfile-based dependency preflight"
-        type: boolean
-        default: true
       conan_lockfile:
         description: "Conan lockfile path for dependency preflight"
         type: string
@@ -102,7 +100,6 @@ jobs:
           python scripts/bootstrap_conan.py --allow-public --disable-example-internal
 
       - name: Conan lockfile preflight
-        if: ${{ inputs.enable_conan_validation != 'false' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -187,6 +184,21 @@ jobs:
       - name: Control-plane operator gate
         run: python scripts/verify_control_plane_gate.py
 
+      - name: Workflow Python CLI contract gate
+        run: python scripts/check_workflow_python_cli_contracts.py
+
+      - name: Workflow catalog gate
+        run: python scripts/check_workflow_catalog.py
+
+      - name: Evidence provenance contract gate
+        run: python scripts/check_evidence_provenance_contract.py
+
+      - name: R5 Docker image policy contract gate
+        run: python scripts/check_r5_docker_image_policy_contract.py
+
+      - name: Legacy/helper inventory gate
+        run: python scripts/gates/governance/check_legacy_helper_inventory.py
+
       - name: Release candidate bounded gate
         run: python scripts/verify_release_candidate.py --build-dir build/release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
@@ -195,6 +207,7 @@ jobs:
           python scripts/collect_release_baseline.py \
             --build-dir build/release \
             --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
+            --perf-repetitions ${{ inputs.perf_repetitions || '3' }} \
             --skip-build \
             --perf-output-root runtime/perf/release-baseline \
             --summary-path runtime/validation/release-baseline-summary.json

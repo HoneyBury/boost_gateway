@@ -27,10 +27,10 @@
 | 服务闭环 | `gateway + login + room + battle + matchmaking + leaderboard` 已作为主线闭环 | `src/v2/`, `examples/v2_*`, `README.md` |
 | 协议演进 | v3 proto schema、CMake target、schema check 和 gRPC PoC gate 已存在；gRPC gateway 当前已覆盖 login/logout/health 以及 room/match/leaderboard/battle 的基础 RPC，并开始通过 `GrpcGatewayAdapter` 落到真实 `GatewayServiceBridge` 路由，但 generated gRPC 仍是实验能力，不进入默认生产链路 | `proto/README.md`, `proto/CMakeLists.txt`, `src/v2/CMakeLists.txt`, `src/v2/grpc/`, `scripts/check_v3_grpc_poc_decision.py` |
 | helper/legacy 状态 | typed envelope helper 已接入主线；全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；legacy raw JSON 兼容窗口仍存在但已收缩到仅内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy/legacy-helper-inventory.md`, `proto/README.md` |
-| CI 平台 | 默认主 CI 是 Linux Conan 主线验证；`ci.yml` 仅在 `v*` tag 或 `workflow_dispatch` 下运行，并支持通过 `runner` 输入切换到 GitHub-hosted `ubuntu-latest` 或 self-hosted Linux labels；固定 runner 证据 workflow 仍依赖在线 Linux runner | `.github/workflows/ci.yml`, `.github/runner-matrix.json`, `docs/current-state.md` |
-| 性能门禁 | perf label 触发 per-commit smoke；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-commit-check.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml` |
-| 依赖管理 | Conan 2 `nosqlite` lockfile/profile 路径已经落仓，`BOOST_USE_CONAN_DEPS=ON` 是默认值，自动回退到 FetchContent/third_party；`release.yml` 已接入 Conan lockfile 预检步骤；Ubuntu fixed-runner 实跑结果可提升为默认推荐依据 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-evidence.yml` |
-| 编译缓存 | 主流程已启用 `sccache` + `actions/cache`，每次 CI 运行归档 build-time.json + sccache-stats.json | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/perf-commit-check.yml` |
+| CI 平台 | 默认主 CI 是手动 Linux Conan 主线验证；`ci.yml` 仅在 `workflow_dispatch` 下运行，并支持通过 `runner` 输入切换到 GitHub-hosted `ubuntu-latest` 或 self-hosted Linux labels；`v*` tag 只触发 release | `.github/workflows/ci.yml`, `.github/runner-matrix.json`, `docs/current-state.md` |
+| 性能门禁 | `perf-regression.yml` 统一覆盖 smoke / baseline / capacity；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-regression.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml` |
+| 依赖管理 | Conan 2 `nosqlite` lockfile/profile 路径已经落仓，`BOOST_USE_CONAN_DEPS=ON` 是默认值，自动回退到 FetchContent/third_party；`release.yml` 已接入 Conan lockfile 预检步骤；Ubuntu fixed-runner 实跑结果可提升为默认推荐依据 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-gates.yml` |
+| 编译缓存 | 主流程已启用 `sccache` + `actions/cache`，每次 CI 运行归档 build-time.json + sccache-stats.json | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/perf-regression.yml` |
 | 近期代码趋势 | 最近提交集中在 runner 治理、CTest label 统一、release-governance 文档对齐、login schema 闭环，以及 Linux CI 回归修复 | `git log --oneline -n 6` |
 
 ## 已知冲突与未实现项
@@ -174,7 +174,7 @@
 
 已完成的工作：
 - ✅ 保持 Ninja 作为默认 generator；当前 `CMakePresets.json` 已满足，后续新增 preset 必须默认 Ninja。
-- ✅ 在 `ci.yml`、`perf-commit-check.yml`、`release.yml` 以及 `nightly-stability.yml`、`perf-regression.yml` 共 5 个 workflow 中引入 sccache。
+- ✅ 在 `ci.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 中引入 sccache。
 - ✅ Windows sccache 已随 Windows 支持暂停而移除。
 - ✅ 使用 `actions/cache@v4` 按 OS、CMake preset、依赖锁 hash 分 key 缓存 sccache 目录。
 - ✅ 每次 CI 运行结构化归档构建耗时（`build-time.json`）与 sccache 统计（`sccache-stats.json`）至 `runtime/perf/build-times/`。
@@ -192,8 +192,8 @@
 任务：
 
 - 保留 PR 默认 smoke gate。
-- `perf` label 继续触发 per-commit performance smoke。
-- release baseline 继续走手动/定时 workflow，并要求 artifact 归档。
+- `perf-regression.yml` 使用 `perf_preset=smoke` 覆盖原 per-commit performance smoke。
+- release baseline 继续走手动 workflow，并要求 artifact 归档。
 - capacity、business-capacity、2h/8h soak 只在固定 runner 或夜间任务执行。
 
 验收：
@@ -250,7 +250,7 @@
 任务：
 
 - 已选定 Conan 作为依赖管理方案，`conanfile.py` 和 `BOOST_USE_CONAN_DEPS=ON` 已落地，`release.yml` 已接入 Conan lockfile preflight。
-- 仓库内 `conan/profiles/`、`scripts/generate_conan_lock.py`、`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 与 fixed-runner 文档入口已完备；`conan-validate.yml`、`long-soak-capacity.yml`、`production-evidence.yml` 使用 lockfile 预检。
+- 仓库内 `conan/profiles/`、`scripts/generate_conan_lock.py`、`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 与 fixed-runner 文档入口已完备；`conan-validate.yml`、`long-soak-capacity.yml`、`production-gates.yml` 使用 lockfile 预检。
 - 当前已完成第一轮规则收敛：`fmt/spdlog/nlohmann_json/hiredis/boost::headers` 按 Conan-first 治理，`OpenSSL` 暂时保持双轨保守；当前默认 Conan 主线路径使用 `with_sqlite=False`，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。

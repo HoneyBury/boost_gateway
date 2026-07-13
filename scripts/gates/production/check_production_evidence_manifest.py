@@ -9,6 +9,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.lib.evidence_provenance import validate_evidence_provenance
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -43,7 +45,7 @@ def summary_passed(summary: dict[str, Any]) -> bool:
 def freshness_status(summary: dict[str, Any], max_age_hours: float, now: datetime) -> tuple[bool, float | None, str]:
     generated_at = parse_generated_at(summary.get("generated_at"))
     if generated_at is None:
-        return True, None, "summary does not expose generated_at; freshness not enforced"
+        return False, None, "summary must expose a valid generated_at timestamp"
     age_hours = (now - generated_at).total_seconds() / 3600.0
     return age_hours <= max_age_hours, round(age_hours, 3), ""
 
@@ -68,11 +70,13 @@ def check_evidence(
     now: datetime,
     require_fixed_runner: bool,
     parent_artifacts: dict[str, set[str]],
+    expected_candidate_revision: str,
 ) -> dict[str, Any]:
     evidence_id = str(item.get("id", "unknown"))
     relative_path = str(item.get("path", ""))
     required = bool(item.get("required"))
     fixed_runner_required = bool(item.get("fixed_runner_required"))
+    provenance_required = bool(item.get("provenance_required"))
     effective_required = required or (require_fixed_runner and fixed_runner_required)
     path = root / relative_path
     check: dict[str, Any] = {
@@ -81,6 +85,7 @@ def check_evidence(
         "required": effective_required,
         "declared_required": required,
         "fixed_runner_required": fixed_runner_required,
+        "provenance_required": provenance_required,
         "path": relative_path,
         "passed": True,
         "status": "passed",
@@ -108,6 +113,22 @@ def check_evidence(
         check["status"] = "optional-present"
         check["details"].append("optional fixed-runner/pre-production evidence is present but not required in bounded mode")
         return check
+
+    if provenance_required:
+        provenance = summary.get("provenance")
+        provenance_errors = validate_evidence_provenance(
+            provenance,
+            expected_candidate_revision=expected_candidate_revision,
+        )
+        if isinstance(provenance, dict):
+            check["candidate_revision"] = str(provenance.get("candidate_revision", ""))
+            check["git_commit"] = str(provenance.get("git_commit", ""))
+            check["workflow"] = str(provenance.get("workflow", ""))
+            check["run_id"] = str(provenance.get("run_id", ""))
+        if provenance_errors:
+            check["passed"] = False
+            check["status"] = "provenance-invalid"
+            check["details"].extend(provenance_errors)
 
     if not summary_passed(summary):
         check["passed"] = False
@@ -159,12 +180,24 @@ def main() -> int:
     )
     parser.add_argument("--require-fixed-runner", action="store_true")
     parser.add_argument(
+        "--expected-candidate-revision",
+        default="",
+        help="Require all provenance-bearing evidence to match this candidate revision.",
+    )
+    parser.add_argument(
+        "--evidence-root",
+        type=Path,
+        default=REPO_ROOT,
+        help="Root used to resolve evidence paths; primarily useful for contract tests.",
+    )
+    parser.add_argument(
         "--summary-path",
         type=Path,
         default=None,
     )
     args = parser.parse_args()
 
+    evidence_root = args.evidence_root if args.evidence_root.is_absolute() else REPO_ROOT / args.evidence_root
     manifest_path = args.manifest if args.manifest.is_absolute() else REPO_ROOT / args.manifest
     if args.summary_path is None:
         summary_path = REPO_ROOT / (
@@ -210,23 +243,57 @@ def main() -> int:
         if not isinstance(entry, dict):
             continue
         evidence_id = str(entry.get("id", ""))
-        path = REPO_ROOT / str(entry.get("path", ""))
+        path = evidence_root / str(entry.get("path", ""))
         parent_artifacts[evidence_id] = collect_artifact_paths(load_json(path)) if path.exists() else set()
 
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        check = check_evidence(entry, REPO_ROOT, now, args.require_fixed_runner, parent_artifacts)
+        check = check_evidence(
+            entry,
+            evidence_root,
+            now,
+            args.require_fixed_runner,
+            parent_artifacts,
+            args.expected_candidate_revision,
+        )
         checks.append(check)
         if check["status"] == "optional-missing":
             warnings.append(f"{check['name']}: optional evidence missing")
+
+    provenance_checks = [
+        check
+        for check in checks
+        if check.get("required") is True and check.get("provenance_required") is True
+    ]
+    candidate_revision = args.expected_candidate_revision
+    if not candidate_revision:
+        candidate_revision = next(
+            (str(check.get("candidate_revision", "")) for check in provenance_checks if check.get("candidate_revision")),
+            "",
+        )
+    for check in provenance_checks:
+        observed = str(check.get("candidate_revision", ""))
+        if (
+            check.get("passed") is True
+            and observed
+            and candidate_revision
+            and observed != candidate_revision
+        ):
+            check["passed"] = False
+            check["status"] = "provenance-mismatch"
+            check["details"].append(
+                f"candidate revision {observed} does not match evidence set {candidate_revision}"
+            )
 
     failed = [check for check in checks if not check.get("passed")]
     summary = {
         "summary_version": 2,
         "generated_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "manifest_path": str(manifest_path),
+        "evidence_root": str(evidence_root),
         "require_fixed_runner": args.require_fixed_runner,
+        "candidate_revision": candidate_revision,
         "overall_pass": not errors and not failed,
         "passed": not errors and not failed,
         "failed_category": "manifest" if errors else ("evidence" if failed else ""),

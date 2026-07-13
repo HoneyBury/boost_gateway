@@ -1,7 +1,7 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "name": "production-candidate-evidence-manifest",
-  "description": "R2 production candidate evidence manifest. Local bounded evidence is required; fixed-runner/pre-production entries become required only when check_production_evidence_manifest.py is run with --require-fixed-runner.",
+  "description": "R2 production candidate evidence manifest. Local bounded evidence is required; fixed-runner/pre-production entries become required only with --require-fixed-runner. Provenance-bearing entries must come from one candidate revision and match their checked-out commit.",
   "generated_for": "BoostGateway v3.5.0 production candidate",
   "required_categories": [
     "production_candidate",
@@ -20,6 +20,7 @@
       "title": "R0 production candidate aggregate evidence",
       "path": "runtime/validation/r0-production-candidate-evidence-summary.json",
       "required": true,
+      "provenance_required": true,
       "freshness_hours": 168,
       "notes": "Aggregates fixed-runner preflight, P5/P6, N5, optional N4 TLS full-flow, and optional N6 decision evidence."
     },
@@ -84,6 +85,7 @@
       "path": "runtime/validation/long-soak-capacity-summary.json",
       "required": false,
       "fixed_runner_required": true,
+      "provenance_required": true,
       "freshness_hours": 336,
       "required_json_values": {
         "run_2h_soak": true
@@ -98,6 +100,7 @@
       "path": "runtime/validation/fixed-runner-release-capacity-summary.json",
       "required": false,
       "fixed_runner_required": true,
+      "provenance_required": true,
       "freshness_hours": 336,
       "producer": "python3 scripts/verify_fixed_runner_release_capacity.py",
       "notes": "R4 validates release baseline, capacity profile, and business-capacity evidence. Prefer fixed low-noise performance runner output before final production approval."
@@ -109,6 +112,7 @@
       "path": "runtime/validation/preprod-recovery-drill-summary.json",
       "required": false,
       "fixed_runner_required": true,
+      "provenance_required": true,
       "freshness_hours": 336,
       "producer": "python3 scripts/verify_preprod_recovery_drill.py",
       "notes": "R5 produces a Docker Compose gateway restart drill summary when Docker is available; staging/prod records should reuse the same drill record schema."
@@ -120,6 +124,7 @@
       "path": "runtime/validation/tls-preprod-multi-run-summary.json",
       "required": false,
       "fixed_runner_required": true,
+      "provenance_required": true,
       "freshness_hours": 336,
       "producer": "python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build",
       "notes": "R6 runs multiple TLS readiness passes and aggregates rotation, expected failure, and plain-vs-TLS overhead evidence."

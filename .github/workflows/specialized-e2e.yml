@@ -1,4 +1,4 @@
-name: Specialized E2E
+name: Infrastructure / Redis, Raft & Operator E2E
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"

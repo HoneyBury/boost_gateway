@@ -12,6 +12,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.lib.evidence_provenance import build_evidence_provenance
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -214,6 +216,10 @@ def main() -> int:
     summary = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "provenance": build_evidence_provenance(
+            ROOT,
+            build_configuration=args.configuration,
+        ),
         "passed": failed is None,
         "overall_pass": failed is None,
         "failed_category": str(failed.get("category", "")) if failed else "",

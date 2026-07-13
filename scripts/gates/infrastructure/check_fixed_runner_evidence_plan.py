@@ -37,7 +37,6 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_PROFILE,
             "conan install",
             "--lockfile",
-            "enable_conan_validation",
             "conan-preflight",
         ),
         "summaries": ("runtime/validation/release-baseline-summary.json",),
@@ -77,17 +76,19 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/fixed-runner-release-capacity-summary.json",
         ),
     },
-    "production_evidence": {
-        "path": ".github/workflows/production-evidence.yml",
+    "production_gates": {
+        "path": ".github/workflows/production-gates.yml",
         "tokens": (
             LINUX_LOCKFILE,
             LINUX_PROFILE,
-            "build/conan-production-evidence-cmake",
+            "build/conan-production-gates-cmake",
             "runtime/validation/production-evidence-summary.json",
+            "runtime/validation/production-resilience-summary.json",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
             "runtime/validation/production-evidence-summary.json",
+            "runtime/validation/production-resilience-summary.json",
         ),
     },
     "production_candidate_evidence": {
@@ -111,6 +112,9 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_LOCKFILE,
             LINUX_PROFILE,
             "scripts/verify_preprod_recovery_drill.py",
+            "docker_pull_policy",
+            "--docker-pull-policy",
+            "runtime/validation/r5-docker-image-preflight-summary.json",
             "scripts/verify_tls_preprod_multi_run.py",
             "runtime/validation/preprod-recovery-drill-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",
@@ -132,6 +136,7 @@ WORKFLOW_REQUIREMENTS = {
             "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID",
             "gh run download",
             "--require-fixed-runner",
+            "runtime/validation/r2-production-evidence-manifest-summary.json",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
             "runtime/validation/r3-production-readiness-report-summary.json",
             "actions/upload-artifact@v4",
@@ -295,8 +300,7 @@ def main() -> int:
     )
 
     for workflow_name, workflow_path in (
-        ("production-evidence", ".github/workflows/production-evidence.yml"),
-        ("production-resilience", ".github/workflows/production-resilience.yml"),
+        ("production-gates", ".github/workflows/production-gates.yml"),
     ):
         workflow_content = read(workflow_path)
         add(
@@ -363,6 +367,38 @@ def main() -> int:
         "workflow:readiness-report:canonical-root",
         "Path(__file__).resolve().parents[3]" in readiness_report,
         "render_production_readiness_report.py resolves paths from the repository root",
+    )
+    add(
+        checks,
+        "workflow:readiness-report:requires-bounded-and-fixed",
+        "decision_passed = final_ready if args.require_fixed_runner else bounded_ready" in readiness_report
+        and "--require-fixed-runner" in read(".github/workflows/production-readiness.yml"),
+        "final readiness requires both bounded and fixed-runner R2 summaries",
+    )
+    evidence_manifest_gate = read("scripts/gates/production/check_production_evidence_manifest.py")
+    add(
+        checks,
+        "workflow:readiness-report:provenance-coherence",
+        "provenance-mismatch" in evidence_manifest_gate
+        and "expected-candidate-revision" in evidence_manifest_gate
+        and "provenance_required" in read("docs/production/production-candidate-evidence-manifest.json"),
+        "R2 validates provenance-bearing evidence against one candidate revision",
+    )
+    preprod_recovery_gate = read("scripts/gates/production/verify_preprod_recovery_drill.py")
+    add(
+        checks,
+        "workflow:preprod:r5-docker-image-policies",
+        all(
+            token in preprod_recovery_gate
+            for token in (
+                'choices=["always", "missing", "never"]',
+                "resolve_compose_image_requirements",
+                "inspect_required_images",
+                "missing_build_images",
+                "r5-docker-image-preflight-summary.json",
+            )
+        ),
+        "R5 supports cached, offline, and forced-refresh image policies with image evidence",
     )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(

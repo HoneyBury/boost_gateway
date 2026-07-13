@@ -49,18 +49,18 @@
 | `grpc-experimental.yml` | `29195792943` | `5df1479` | failure: `use_existing_workspace=true` 时 runner workspace HEAD 与 `GITHUB_SHA` 不一致，命中 preflight 保护 |
 | `grpc-experimental.yml` | `29196150703` | `0af5c91` | success: `use_existing_workspace=false` + `no_remote=true`；fixed-runner `${{ github.workspace }}/../.conan2-local` 缓存可完成 `BOOST_BUILD_GRPC=ON`、SDK consumer 与 decision-boundary 验证 |
 
-上述 bounded workflow、专项 E2E、生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍未通过。
+上述 bounded workflow、专项 E2E、历史生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。`perf-commit-check.yml`、`production-resilience.yml`、`production-evidence.yml` 已退役，当前分别由 `perf-regression.yml` 和 `production-gates.yml` 承接。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍需按同一候选 SHA 刷新。
 
 ## 受影响的默认 fixed-runner workflow
 
 - `release.yml`
-- `perf-commit-check.yml`
 - `perf-regression.yml`
 - `nightly-stability.yml`
 - `conan-validate.yml`
 - `specialized-e2e.yml`
-- `production-evidence.yml`
-- `production-resilience.yml`
+- `production-gates.yml`
+- `production-candidate-evidence.yml`
+- `preprod-evidence.yml`
 - `long-soak-capacity.yml`
 
 实验性 fixed-runner workflow：
@@ -71,4 +71,4 @@
 
 - `ci.yml` 当前默认走 GitHub-hosted `ubuntu-latest` fallback；其余 workflow 可使用在线 Linux fixed runner。
 - `grpc-experimental.yml` 的当前事实是：默认应使用 fresh checkout；若 runner 已预热 `${{ github.workspace }}/../.conan2-local`，则 `no_remote=true` 可避免重复远端 Conan 拉取。
-- 上表的 bounded 成功 run 不替代 `specialized-e2e.yml`、`production-resilience.yml`、`production-evidence.yml` 与 `long-soak-capacity.yml` 的固定 runner 生产证据。
+- 上表的 bounded 成功 run 不替代 `specialized-e2e.yml`、`production-gates.yml`、`preprod-evidence.yml` 与 `long-soak-capacity.yml` 的固定 runner 生产证据。
