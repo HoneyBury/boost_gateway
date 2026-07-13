@@ -149,53 +149,44 @@ jobs:
             exit 1
           fi
 
-          GATES_FILE="config/perf/v2_arch_baseline_gates.json"
-          SUMMARY_PATH="$SUMMARY_PATH" GATES_FILE="$GATES_FILE" GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" python - <<'PY'
+          SUMMARY_PATH="$SUMMARY_PATH" GITHUB_STEP_SUMMARY="$GITHUB_STEP_SUMMARY" python - <<'PY'
           import json
           import os
           import sys
 
           with open(os.environ["SUMMARY_PATH"], encoding="utf-8") as f:
               summary = json.load(f)
-          with open(os.environ["GATES_FILE"], encoding="utf-8") as f:
-              gates_config = json.load(f)
 
-          scenario_gates = gates_config.get("scenario_gates", {})
-          aggregates = summary.get("case_aggregates", [])
-          exit_code = 0
+          release_gates = summary.get("release_gates")
+          if not isinstance(release_gates, dict):
+              print("summary.json is missing release_gates")
+              sys.exit(1)
+
+          checks = release_gates.get("checks", [])
+          warnings = release_gates.get("warnings", [])
+          overall_pass = release_gates.get("overall_pass") is True
           report_lines = ["## Performance Gate Results", ""]
-          report_lines.append("| Case | Metric | Observed | Warning | Critical | Verdict |")
-          report_lines.append("| --- | --- | ---: | ---: | ---: | --- |")
+          report_lines.append(f"- Overall pass: `{overall_pass}`")
+          report_lines.append("")
+          report_lines.append("| Case | Verdict | Observed P99 | Criteria |")
+          report_lines.append("| --- | --- | ---: | --- |")
 
-          for agg in aggregates:
-              case_name = agg.get("case_name", "")
-              p99_ms = agg.get("latency_p99_ms", {}).get("median", 0)
-              p99_us = p99_ms * 1000
-
-              if "echo" in case_name:
-                  gate = scenario_gates.get("echo_p99_us", {})
-              elif "login" in case_name:
-                  gate = scenario_gates.get("login_p99_us", {})
-              elif "battle" in case_name:
-                  gate = scenario_gates.get("battle_broadcast_p99_us", {})
-              else:
-                  continue
-
-              warning_threshold = gate.get("warning", float("inf"))
-              critical_threshold = gate.get("critical", float("inf"))
-
-              if p99_us >= critical_threshold:
-                  verdict = "FAIL (critical)"
-                  exit_code = 1
-              elif p99_us >= warning_threshold:
-                  verdict = "WARN"
-              else:
-                  verdict = "PASS"
-
+          for check in checks:
+              observed = check.get("observed", {})
+              p99_ms = observed.get("p99_ms")
+              p99_display = f"{p99_ms:.0f}ms" if isinstance(p99_ms, (int, float)) else "n/a"
+              verdict = "PASS" if check.get("passed") else "FAIL"
               report_lines.append(
-                  f"| {case_name} | P99 | {p99_us:.0f}us | {warning_threshold}us | "
-                  f"{critical_threshold}us | {verdict} |"
+                  f"| {check.get('case', 'unknown')} | {verdict} | {p99_display} | "
+                  f"{check.get('criteria', 'n/a')} |"
               )
+
+          if warnings:
+              report_lines.extend(["", "### Warnings", ""])
+              for warning in warnings:
+                  report_lines.append(
+                      f"- `{warning.get('case', 'unknown')}`: {warning.get('warning', 'warning')}"
+                  )
 
           report = "\n".join(report_lines)
           print(report)
@@ -203,7 +194,7 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as outf:
               outf.write(report + "\n")
 
-          sys.exit(exit_code)
+          sys.exit(0 if overall_pass else 1)
           PY
 
       - name: Generate performance report
