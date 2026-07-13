@@ -85,6 +85,8 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
 - 统一包含 `environment`，至少记录 `platform`、`python`、`host`
 - 统一包含 `artifacts`，指向 summary、report 或子 summary 路径
 - workflow step summary 统一通过 `scripts/render_validation_summary.py` 渲染，不再只上传 artifact
+- R0、long-soak、R4、R5、R6 还必须包含 `provenance`：候选提交、实际 checkout、workflow/run、runner、构建配置、Conan lockfile 与 SHA-256；`revision_matches_checkout` 必须为 `true`
+- 用于同一次 R2/R3 最终准入的五类核心证据必须具有完全相同的 `candidate_revision`，不能把不同提交上的成功 artifact 拼接成一个候选结论
 
 失败归因约定：
 
@@ -366,7 +368,7 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
 ## R2/R3 cross-workflow aggregation
 
-R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再运行 R2 `--require-fixed-runner` 和 R3 readiness report。R2 会验证导入的 long-soak summary 实际设置了 `run_2h_soak=true`，capacity-only batch 不能替代 2h soak：
+R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。开始这一轮前先冻结候选提交，并确保四个 workflow 都从该完整 SHA dispatch。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再分别运行 bounded/fixed 两份 R2 和最终 R3 readiness report。R2 会验证导入的 long-soak summary 实际设置了 `run_2h_soak=true`，并拒绝缺失 `generated_at`、缺失 provenance、checkout 不匹配或候选 SHA 不一致；capacity-only batch 不能替代 2h soak：
 
 ```bash
 gh workflow run production-readiness.yml --ref develop \
@@ -378,7 +380,7 @@ gh workflow run production-readiness.yml --ref develop \
   -f require_fixed_runner=true
 ```
 
-该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；缺少 R5/R6 或其他固定 runner summary 时应失败并列出 blocker。
+该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；该值只有在 bounded/fixed 两份 R2 同时通过时才为 `true`。缺少 R5/R6、其他固定 runner summary 或任一跨 SHA 证据时应失败并列出 blocker。可先运行 `python3 scripts/check_evidence_provenance_contract.py` 验证本地 provenance 判定逻辑。
 
 ## R4/R5/R6 production blocking evidence
 

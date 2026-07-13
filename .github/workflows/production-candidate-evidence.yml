@@ -3,6 +3,7 @@ name: Production Candidate Evidence
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+  BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
 
 on:
   workflow_dispatch:

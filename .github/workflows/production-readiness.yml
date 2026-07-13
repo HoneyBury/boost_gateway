@@ -86,8 +86,17 @@ jobs:
           test -f runtime/validation/preprod-recovery-drill-summary.json
           test -f runtime/validation/tls-preprod-multi-run-summary.json
 
+      - name: R2 bounded manifest
+        id: r2-bounded
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/check_production_evidence_manifest.py \
+            --summary-path runtime/validation/r2-production-evidence-manifest-summary.json
+
       - name: R2 fixed-runner manifest
-        id: r2
+        id: r2-fixed
         continue-on-error: true
         shell: bash
         run: |
@@ -106,29 +115,46 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/render_production_readiness_report.py \
-            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json \
-            --r0-summary runtime/validation/r0-production-candidate-evidence-summary.json \
-            --output runtime/validation/r3-production-readiness-report.md \
+          args=(
+            scripts/render_production_readiness_report.py
+            --manifest-summary runtime/validation/r2-production-evidence-manifest-summary.json
+            --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
+            --r0-summary runtime/validation/r0-production-candidate-evidence-summary.json
+            --output runtime/validation/r3-production-readiness-report.md
             --summary-path runtime/validation/r3-production-readiness-report-summary.json
+          )
+          if [ "${{ inputs.require_fixed_runner }}" = "true" ]; then
+            args+=(--require-fixed-runner)
+          fi
+          python "${args[@]}"
 
       - name: Evaluate readiness decision
         if: always()
         shell: bash
+        env:
+          REQUIRE_FIXED_RUNNER: ${{ inputs.require_fixed_runner }}
         run: |
           set -euo pipefail
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           path = Path("runtime/validation/r3-production-readiness-report-summary.json")
           summary = json.loads(path.read_text(encoding="utf-8"))
+          require_fixed_runner = os.environ.get("REQUIRE_FIXED_RUNNER", "").lower() == "true"
+          decision = (
+              summary.get("final_production_ready")
+              if require_fixed_runner
+              else summary.get("overall_pass")
+          )
           print(json.dumps({
               "overall_pass": summary.get("overall_pass"),
               "final_production_ready": summary.get("final_production_ready"),
+              "decision": decision,
               "failed_step": summary.get("failed_step", ""),
           }, sort_keys=True))
-          raise SystemExit(0 if summary.get("final_production_ready") is True else 1)
+          raise SystemExit(0 if decision is True else 1)
           PY
 
       - name: Upload production readiness evidence
@@ -140,6 +166,7 @@ jobs:
             runtime/validation/r0-*-summary.json
             runtime/validation/long-soak-*-summary.json
             runtime/validation/*capacity*summary.json
+            runtime/validation/r2-production-evidence-manifest-summary.json
             runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
             runtime/validation/r3-production-readiness-report.md
             runtime/validation/r3-production-readiness-report-summary.json

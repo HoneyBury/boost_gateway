@@ -154,6 +154,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_workflow_python_cli_contracts.py
 
+      - name: Evidence provenance contract gate
+        shell: bash
+        run: python3 scripts/check_evidence_provenance_contract.py
+
       - name: Legacy/helper inventory gate
         shell: bash
         run: python3 scripts/gates/governance/check_legacy_helper_inventory.py

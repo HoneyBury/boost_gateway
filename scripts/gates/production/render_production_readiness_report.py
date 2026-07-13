@@ -24,7 +24,15 @@ def load_json(path: Path) -> dict[str, Any]:
 def status_text(value: Any) -> str:
     if value is True or value == "passed":
         return "PASS"
-    if value is False or value in {"failed", "missing", "stale", "invalid-json", "artifact-mismatch"}:
+    if value is False or value in {
+        "failed",
+        "missing",
+        "stale",
+        "invalid-json",
+        "artifact-mismatch",
+        "provenance-invalid",
+        "provenance-mismatch",
+    }:
         return "FAIL"
     if value == "optional-missing":
         return "OPTIONAL-MISSING"
@@ -172,6 +180,11 @@ def main() -> int:
         type=Path,
         default=REPO_ROOT / "runtime/validation/r3-production-readiness-report-summary.json",
     )
+    parser.add_argument(
+        "--require-fixed-runner",
+        action="store_true",
+        help="Fail unless both bounded and fixed-runner R2 summaries pass.",
+    )
     args = parser.parse_args()
 
     manifest_summary_path = args.manifest_summary if args.manifest_summary.is_absolute() else REPO_ROOT / args.manifest_summary
@@ -184,7 +197,14 @@ def main() -> int:
     manifest_summary = load_json(manifest_summary_path)
     fixed_runner_summary = load_json(fixed_runner_summary_path)
     bounded_ready = bool_passed(manifest_summary)
-    final_ready = bool_passed(fixed_runner_summary) if fixed_runner_summary else False
+    fixed_runner_ready = (
+        bool_passed(fixed_runner_summary)
+        and fixed_runner_summary.get("require_fixed_runner") is True
+        if fixed_runner_summary
+        else False
+    )
+    final_ready = bounded_ready and fixed_runner_ready
+    decision_passed = final_ready if args.require_fixed_runner else bounded_ready
     now = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
     lines = [
@@ -196,6 +216,7 @@ def main() -> int:
         "",
         f"- Bounded local candidate evidence: **{status_text(bounded_ready)}**",
         f"- Final production fixed-runner/pre-production readiness: **{status_text(final_ready)}**",
+        f"- Candidate revision: `{fixed_runner_summary.get('candidate_revision') or manifest_summary.get('candidate_revision', '')}`",
         "",
     ]
     if bounded_ready and not final_ready:
@@ -250,11 +271,17 @@ def main() -> int:
     report_summary = {
         "summary_version": 2,
         "generated_at": now,
-        "overall_pass": bounded_ready,
-        "passed": bounded_ready,
+        "overall_pass": decision_passed,
+        "passed": decision_passed,
         "final_production_ready": final_ready,
-        "failed_category": "" if bounded_ready else "manifest",
-        "failed_step": "" if bounded_ready else str(manifest_summary.get("failed_step", "manifest")),
+        "require_fixed_runner": args.require_fixed_runner,
+        "candidate_revision": fixed_runner_summary.get("candidate_revision") or manifest_summary.get("candidate_revision", ""),
+        "failed_category": "" if decision_passed else "manifest",
+        "failed_step": "" if decision_passed else str(
+            (fixed_runner_summary if args.require_fixed_runner and bounded_ready else manifest_summary).get(
+                "failed_step", "manifest"
+            )
+        ),
         "artifacts": {
             "report_path": str(output_path),
             "summary_path": str(summary_path),
@@ -267,11 +294,11 @@ def main() -> int:
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(report_summary, indent=2, sort_keys=True), encoding="utf-8")
 
-    print(f"production readiness report: {'PASS' if bounded_ready else 'FAIL'}")
+    print(f"production readiness report: {'PASS' if decision_passed else 'FAIL'}")
     print(f"final production ready: {'YES' if final_ready else 'NO'}")
     print(f"report: {output_path}")
     print(f"summary: {summary_path}")
-    return 0 if bounded_ready else 1
+    return 0 if decision_passed else 1
 
 
 if __name__ == "__main__":

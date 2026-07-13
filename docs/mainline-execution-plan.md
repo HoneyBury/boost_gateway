@@ -1,6 +1,6 @@
 # v3.5.0 项目清理执行计划
 
-更新时间：2026-07-11
+更新时间：2026-07-13
 
 本文档是 v3.5.0 版本的执行计划，替代了之前的 `mainline-execution-plan.md`（2026-05-30 版本）。
 
@@ -118,5 +118,5 @@ cmake --build build/default --parallel
 ### 当前优先级判断
 
 1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
-2. R5 是当前唯一的预发证据阻断项：`29186343065` 的 R6 已通过，但 R5 不能以 R6 或本机演练替代。runner 恢复 Docker Hub 或受信任 mirror 访问并预热镜像后，必须先重跑完整 `preprod-evidence.yml`，再依次刷新真实 2h soak、R0 和 R2/R3。只有连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
+2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。R5 仍是当前唯一的预发环境阻断项：`29186343065` 的 R6 已通过，但 R5 不能以 R6 或本机演练替代。runner 恢复 Docker Hub 或受信任 mirror 访问并预热镜像后，先冻结一个候选 SHA，再在该 SHA 上依次刷新完整 R5/R6、真实 2h soak/R4、R0 和 R2/R3。只有同一候选的连续事实链稳定，`BOOST_USE_CONAN_DEPS=ON` 才应从“默认值”升级为“唯一推荐路径”。
 3. 生产认证边界已经收口：生产 login backend 只验证外部 RS256 JWT，并拒绝本地身份操作。当前代码侧 gRPC observability、安装包契约和 fixed-runner `BOOST_BUILD_GRPC=ON` run 都已完成；下一优先级不再是补 gRPC 入口事实，而是继续保持 `defer_default_transport` 并转向更高优先级的主线事项。

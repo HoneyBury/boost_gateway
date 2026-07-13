@@ -132,6 +132,7 @@ WORKFLOW_REQUIREMENTS = {
             "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID",
             "gh run download",
             "--require-fixed-runner",
+            "runtime/validation/r2-production-evidence-manifest-summary.json",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
             "runtime/validation/r3-production-readiness-report-summary.json",
             "actions/upload-artifact@v4",
@@ -363,6 +364,22 @@ def main() -> int:
         "workflow:readiness-report:canonical-root",
         "Path(__file__).resolve().parents[3]" in readiness_report,
         "render_production_readiness_report.py resolves paths from the repository root",
+    )
+    add(
+        checks,
+        "workflow:readiness-report:requires-bounded-and-fixed",
+        "decision_passed = final_ready if args.require_fixed_runner else bounded_ready" in readiness_report
+        and "--require-fixed-runner" in read(".github/workflows/production-readiness.yml"),
+        "final readiness requires both bounded and fixed-runner R2 summaries",
+    )
+    evidence_manifest_gate = read("scripts/gates/production/check_production_evidence_manifest.py")
+    add(
+        checks,
+        "workflow:readiness-report:provenance-coherence",
+        "provenance-mismatch" in evidence_manifest_gate
+        and "expected-candidate-revision" in evidence_manifest_gate
+        and "provenance_required" in read("docs/production/production-candidate-evidence-manifest.json"),
+        "R2 validates provenance-bearing evidence against one candidate revision",
     )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(

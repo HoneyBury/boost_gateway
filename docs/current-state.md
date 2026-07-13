@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-07-12
+更新时间：2026-07-13
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
 
@@ -65,6 +65,7 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - R1 TLS 上线前置证据：`scripts/verify_tls_production_readiness.py` 已覆盖 TLS profile full-flow、server CA 校验、证书轮换 full-flow、CA 不匹配 expected failure 诊断和 plain/TLS 单次业务闭环耗时对比；默认生产仍是 plain TCP，R1 只作为启用 backend TLS profile 前的前置证据。
 - R2 生产候选证据 Manifest：`docs/production/production-candidate-evidence-manifest.json` 与 `scripts/check_production_evidence_manifest.py` 已将 R0/R1 本机有界证据、固定 runner long-soak/capacity、release/capacity、预发恢复演练和 TLS 预发多轮证据统一成可校验 manifest。`--require-fixed-runner` 会验证 long-soak summary 的 `run_2h_soak=true`，并要求 R4/R5/R6 summary 存在、通过且新鲜。当前不能生成最终 R2/R3：2026-07-12 的 `29186343065` 中 R6 通过而 R5 失败，完整 R5/R6 artifact 仍待固定 runner 恢复后刷新。
 - R3 生产 Readiness Report：`scripts/render_production_readiness_report.py` 已将 R2 manifest、R0 aggregate 和 R1 TLS readiness 汇总为 Markdown 报告与机器 summary；报告明确区分 bounded local evidence 与 final production readiness，当前固定 runner / 预发缺口仍会作为最终投产阻断项展示。
+- 2026-07-13：R2/R3 证据来源契约已收紧。R0、真实 2h soak、R4、R5、R6 核心 summary 现在统一写入 `provenance`，包含候选提交、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile SHA-256；R2 会拒绝缺失时间、缺失 provenance、checkout 不匹配和跨候选提交的组合。R4 同时拒绝引用其它提交生成的 capacity/business-capacity summary。`production-readiness.yml` 会分别生成 bounded/fixed 两份 R2，最终模式要求两者同时通过。现有不同提交上的成功 run 继续作为历史能力事实，但不能再拼接成最终 R2/R3；下一轮必须先冻结一个候选 SHA，再在同一 SHA 上刷新 R0、2h、R4、R5、R6。
 - R4 固定 Runner Release / Capacity 证据：`scripts/verify_fixed_runner_release_capacity.py` 已将 release baseline、capacity profile 和 business-capacity profile 汇总成 `runtime/validation/fixed-runner-release-capacity-summary.json`，并校验 capacity/business-capacity 的 preset、必需 case 与最小 repetitions，用于解除 R2/R3 中 `fixed_runner_release_capacity` 阻断；最终投产仍建议在固定低噪声性能机器上刷新该 summary。
 - R5 预发恢复 / 回滚演练证据：`scripts/verify_preprod_recovery_drill.py` 已将 N3 recovery gate、Docker Compose gateway restart、SDK full-flow、Docker production snapshot 和 recovery drill record validator 串成 `runtime/validation/preprod-recovery-drill-summary.json` producer。2026-05-20 已在 macOS + OrbStack 环境完成真实复测；2026-07-12 的固定 runner run `29186343065` 已通过 Compose 安装、Conan/Release 构建和 83/83 项 N3 静态检查，但在 `auth.docker.io` 匿名令牌请求被连接重置时失败，尚未产生可用于投产的 R5 通过证据。runner 可用后必须恢复 Docker Hub/受信任 mirror 访问并预热 Compose 镜像，再重跑该 workflow。
 - R6 TLS 预发多轮证据：`scripts/verify_tls_preprod_multi_run.py` 已多轮聚合 R1 TLS readiness，覆盖 TLS full-flow、证书轮换、CA mismatch expected failure 和 plain-vs-TLS overhead ratio，输出 `runtime/validation/tls-preprod-multi-run-summary.json`。2026-07-12 的固定 runner run `29186343065` 在 `4855dc0` 完成两轮验证，均通过，plain-vs-TLS overhead ratio 为 `1.034`、`1.031`；它仅证明 R6，不能替代失败的 R5 或完整预发 artifact。

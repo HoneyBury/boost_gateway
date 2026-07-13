@@ -4,6 +4,8 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
   CONAN_HOME: ${{ github.workspace }}/../.conan2-local
+  BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
+  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
 on:
   push:

@@ -13,6 +13,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from scripts.lib.evidence_provenance import (
+    build_evidence_provenance,
+    validate_evidence_provenance,
+)
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -102,7 +107,11 @@ def business_flow_passed(summary: dict[str, Any]) -> bool:
     return business_flow.get("passed") is True
 
 
-def validate_release_summary(path: Path, required: bool) -> dict[str, Any]:
+def validate_release_summary(
+    path: Path,
+    required: bool,
+    expected_candidate_revision: str,
+) -> dict[str, Any]:
     summary = load_json(path)
     if not summary:
         return {
@@ -114,7 +123,17 @@ def validate_release_summary(path: Path, required: bool) -> dict[str, Any]:
             "passed": not required,
             "details": ["summary is missing or invalid"],
         }
-    passed = release_summary_passed(summary)
+    provenance_errors = validate_evidence_provenance(
+        summary.get("provenance"),
+        expected_candidate_revision=expected_candidate_revision,
+    )
+    passed = release_summary_passed(summary) and not provenance_errors
+    details = [
+        "release baseline aggregate passed"
+        if release_summary_passed(summary)
+        else "release baseline aggregate did not pass"
+    ]
+    details.extend(provenance_errors)
     return {
         "name": "release-baseline-summary",
         "category": "release_baseline",
@@ -122,7 +141,7 @@ def validate_release_summary(path: Path, required: bool) -> dict[str, Any]:
         "required": required,
         "status": "passed" if passed else "failed-summary",
         "passed": passed,
-        "details": ["release baseline aggregate passed" if passed else "release baseline aggregate did not pass"],
+        "details": details,
     }
 
 
@@ -134,6 +153,7 @@ def validate_perf_summary(
     require_business_flow: bool,
     required_preset: str,
     min_repetitions: int,
+    expected_candidate_revision: str,
 ) -> dict[str, Any]:
     summary = load_json(path)
     if not summary:
@@ -159,11 +179,21 @@ def validate_perf_summary(
         repetitions = 0
     preset_ok = preset == required_preset
     repetitions_ok = repetitions >= min_repetitions
-    passed = gates_passed and not missing_cases and business_passed and preset_ok and repetitions_ok
+    observed_revision = str(summary.get("git_commit", ""))
+    revision_ok = observed_revision == expected_candidate_revision
+    passed = (
+        gates_passed
+        and not missing_cases
+        and business_passed
+        and preset_ok
+        and repetitions_ok
+        and revision_ok
+    )
     details = [
         f"release_gates.overall_pass={gates_passed}",
         f"preset={preset}",
         f"repetitions={repetitions}",
+        f"git_commit={observed_revision}",
         "cases=" + ",".join(sorted(cases)),
     ]
     if not preset_ok:
@@ -174,6 +204,8 @@ def validate_perf_summary(
         details.append("missing cases: " + ",".join(missing_cases))
     if require_business_flow:
         details.append(f"business_flow.passed={business_passed}")
+    if not revision_ok:
+        details.append(f"expected git_commit={expected_candidate_revision}")
     return {
         "name": name,
         "category": category,
@@ -223,6 +255,11 @@ def main() -> int:
     business_capacity_summary_path = args.business_capacity_summary if args.business_capacity_summary.is_absolute() else REPO_ROOT / args.business_capacity_summary
     build_dir = args.build_dir if args.build_dir.is_absolute() else REPO_ROOT / args.build_dir
     steps: list[dict[str, Any]] = []
+    provenance = build_evidence_provenance(
+        REPO_ROOT,
+        build_configuration=args.configuration,
+    )
+    candidate_revision = str(provenance["candidate_revision"])
 
     if (args.collect_smoke or not release_summary_path.exists()) and not args.skip_collect:
         smoke_summary = REPO_ROOT / "runtime/validation/r4-release-smoke-summary.json"
@@ -252,8 +289,21 @@ def main() -> int:
         if steps[-1].get("status") == "passed":
             release_summary_path = smoke_summary
 
+    provenance_errors = validate_evidence_provenance(provenance)
     checks = [
-        validate_release_summary(release_summary_path, required=True),
+        {
+            "name": "r4-evidence-provenance",
+            "category": "evidence_provenance",
+            "required": True,
+            "status": "passed" if not provenance_errors else "provenance-invalid",
+            "passed": not provenance_errors,
+            "details": provenance_errors or ["R4 producer provenance matches the checked-out candidate"],
+        },
+        validate_release_summary(
+            release_summary_path,
+            required=True,
+            expected_candidate_revision=candidate_revision,
+        ),
         validate_perf_summary(
             "capacity-profile-summary",
             "capacity",
@@ -262,6 +312,7 @@ def main() -> int:
             require_business_flow=False,
             required_preset="capacity",
             min_repetitions=args.min_capacity_repetitions,
+            expected_candidate_revision=candidate_revision,
         ),
         validate_perf_summary(
             "business-capacity-summary",
@@ -271,6 +322,7 @@ def main() -> int:
             require_business_flow=True,
             required_preset="business-capacity",
             min_repetitions=args.min_capacity_repetitions,
+            expected_candidate_revision=candidate_revision,
         ),
     ]
 
@@ -280,6 +332,7 @@ def main() -> int:
     summary = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "provenance": provenance,
         "overall_pass": passed,
         "passed": passed,
         "failed_category": str(failed_step.get("category", "")) if failed_step else ("capacity_evidence" if failed_check else ""),
@@ -320,4 +373,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

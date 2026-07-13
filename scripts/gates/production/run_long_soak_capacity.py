@@ -15,6 +15,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.lib.evidence_provenance import build_evidence_provenance
+
 
 ROOT = Path(__file__).resolve().parents[3]
 
@@ -231,6 +233,10 @@ def main() -> int:
     summary = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "provenance": build_evidence_provenance(
+            ROOT,
+            build_configuration=args.configuration,
+        ),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
         "run_2h_soak": args.run_2h_soak,

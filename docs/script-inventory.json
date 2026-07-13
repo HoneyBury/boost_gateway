@@ -60,6 +60,7 @@
     "scripts/check_config_source_layout.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_config_source_layout.py"},
     "scripts/check_conan_lockfile_workflows.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_conan_lockfile_workflows.py"},
     "scripts/check_current_docs_install.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_current_docs_install.py"},
+    "scripts/check_evidence_provenance_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_evidence_provenance_contract.py"},
     "scripts/check_legacy_helper_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_legacy_helper_inventory.py"},
     "scripts/check_openssl_dependency_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_openssl_dependency_governance.py"},
     "scripts/check_reliability_matrix.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_reliability_matrix.py"},

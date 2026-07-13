@@ -38,7 +38,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 复制到该路径，并在 runner 清理或重建 checkout 时保留它。这样后续
 workflow 会直接复用本地包缓存。`ci.yml` 运行在 GitHub-hosted runner，
 是唯一使用 checkout 内 `.conan2-local` + Actions cache 的例外；
-`production-readiness.yml` 不运行 Conan。
+`production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
 ## 产物命名约定
 
