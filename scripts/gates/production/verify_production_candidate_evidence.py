@@ -167,6 +167,8 @@ def main() -> int:
         str(ROOT / "scripts/verify_sdk_enterprise_delivery.py"),
         "--build-dir",
         str(args.build_dir),
+        "--configuration",
+        args.configuration,
         "--summary-path",
         str(sdk_summary),
     ]
