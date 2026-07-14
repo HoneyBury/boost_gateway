@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-07-12
+更新时间：2026-07-14
 
 本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
 
@@ -31,6 +31,7 @@
 | [发布治理](release-governance.md) | 可靠性矩阵 + 发布检查清单 |
 | [性能基线](performance-baseline.md) | 性能数据和归档口径 |
 | [固定 Runner 手册](fixed-runner-playbook.md) | 固定 runner 操作指南 |
+| [Runner Gate Standard](runner-gate-standard.md) | runner 命名、标签、Conan/Docker 缓存与 R5 证据准入规范 |
 | [Runner Inventory](runner-inventory.md) | runner 在线状态与默认 fixed-runner 阻断说明 |
 
 ## 安全与传输

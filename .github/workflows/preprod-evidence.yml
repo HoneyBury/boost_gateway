@@ -11,7 +11,7 @@ on:
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
-        default: '["self-hosted","Linux","X64"]'
+        default: '["self-hosted","Linux","X64","preprod-r5"]'
       configure_preset:
         description: "CMake configure preset"
         required: true

@@ -3,6 +3,8 @@
 更新时间：2026-07-14（补充 R5 workflow dispatch 失败归因）
 
 本文档作为仓库 Actions runner 拓扑的单一事实源。`current-state.md` 与 `fixed-runner-playbook.md` 只引用这里的结论，不再各自维护 runner 在线状态描述。
+runner 命名、custom labels、Conan/Docker/R5 准入规则见
+`docs/runner-gate-standard.md`。
 
 ## 验证来源
 
@@ -32,11 +34,11 @@ GitHub API 在 2026-07-14 已确认三台 runner 都处于 `online`；Linux R5 w
 
 | Runner | OS / toolchain | 本机状态 | 结论 |
 |---|---|---|---|
-| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | 本地 `Runner.Listener` service 为 `active`；未使用 GitHub API 重新确认远端 online 状态 | R5 Docker Compose `never` drill 本机通过，见 `preprod-recovery-drill-summary.json`；仍需同一候选 SHA 的 GitHub workflow artifact。 |
-| 第二台 Ubuntu runner | 未通过 SSH 或 GitHub API 访问 | 未核验 | 先按 `docs/fixed-runner-playbook.md` 创建 `/opt/boost-gateway/{conan,sccache}`，再执行 Conan 预热、Docker bundle import 和 `never` preflight。 |
+| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | `Runner.Listener` active，GitHub API `online` | R5 Docker Compose `never` drill 本机通过，见 `preprod-recovery-drill-summary.json`；创建 `/opt/boost-gateway`、Conan 预热并添加 `preprod-r5-myserver` 后可执行 GitHub workflow。 |
+| `aoi-omen-gaming-laptop-16-am0xxx` | Linux x64，详细宿主工具链待主机登录核验 | GitHub API `online`；run `29345674702` 实际被调度到该机 | `/opt/boost-gateway` 缺失或不可写，G2 Conan 失败；修复后按 runner gate standard 完成 Conan、Docker 和 R5 准入。 |
 
-本机核验不能更新上方 GitHub API 快照，也不能替代预发 runner 证据。第二台
-runner 的 SSH 目标或已认证 GitHub API 是继续验证的前置条件。
+本机核验不能替代预发 runner artifact。两台 Linux runner 在加入共享
+`preprod-r5` label 前均不得承接通用 R5 workflow。
 
 ## 最近验证
 
