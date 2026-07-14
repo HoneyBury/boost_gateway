@@ -1,6 +1,6 @@
 # GitHub Actions Runner Inventory
 
-更新时间：2026-07-11（workflow 实跑刷新）
+更新时间：2026-07-14（补充本机 R5 验证）
 
 本文档作为仓库 Actions runner 拓扑的单一事实源。`current-state.md` 与 `fixed-runner-playbook.md` 只引用这里的结论，不再各自维护 runner 在线状态描述。
 
@@ -22,6 +22,16 @@
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
 - Windows runner `MyDesktop-Win` 仍离线，不是当前 Linux 主线的执行目标。
+
+## 2026-07-14 本机核验
+
+| Runner | OS / toolchain | 本机状态 | 结论 |
+|---|---|---|---|
+| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | 本地 `Runner.Listener` service 为 `active`；未使用 GitHub API 重新确认远端 online 状态 | R5 Docker Compose `never` drill 本机通过，见 `preprod-recovery-drill-summary.json`；仍需同一候选 SHA 的 GitHub workflow artifact。 |
+| 第二台 Ubuntu runner | 未通过 SSH 或 GitHub API 访问 | 未核验 | 先按 `docs/fixed-runner-playbook.md` 创建 `/opt/boost-gateway/{conan,sccache}`，再执行 Conan 预热、Docker bundle import 和 `never` preflight。 |
+
+本机核验不能更新上方 GitHub API 快照，也不能替代预发 runner 证据。第二台
+runner 的 SSH 目标或已认证 GitHub API 是继续验证的前置条件。
 
 ## 最近验证
 
@@ -47,7 +57,7 @@
 | Workflow | Run | 提交 | 结论 |
 |---|---:|---|---|
 | `grpc-experimental.yml` | `29195792943` | `5df1479` | failure: `use_existing_workspace=true` 时 runner workspace HEAD 与 `GITHUB_SHA` 不一致，命中 preflight 保护 |
-| `grpc-experimental.yml` | `29196150703` | `0af5c91` | success: `use_existing_workspace=false` + `no_remote=true`；fixed-runner `${{ github.workspace }}/../.conan2-local` 缓存可完成 `BOOST_BUILD_GRPC=ON`、SDK consumer 与 decision-boundary 验证 |
+| `grpc-experimental.yml` | `29196150703` | `0af5c91` | success: `use_existing_workspace=false` + `no_remote=true`；当时 runner 预置 Conan 缓存可完成 `BOOST_BUILD_GRPC=ON`、SDK consumer 与 decision-boundary 验证。当前缓存策略已按 Ubuntu release/GCC/arch/build type 分区。 |
 
 上述 bounded workflow、专项 E2E、历史生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。`perf-commit-check.yml`、`production-resilience.yml`、`production-evidence.yml` 已退役，当前分别由 `perf-regression.yml` 和 `production-gates.yml` 承接。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍需按同一候选 SHA 刷新。
 
@@ -70,5 +80,5 @@
 ## 说明
 
 - `ci.yml` 当前默认走 GitHub-hosted `ubuntu-latest` fallback；其余 workflow 可使用在线 Linux fixed runner。
-- `grpc-experimental.yml` 的当前事实是：默认应使用 fresh checkout；若 runner 已预热 `${{ github.workspace }}/../.conan2-local`，则 `no_remote=true` 可避免重复远端 Conan 拉取。
+- `grpc-experimental.yml` 的当前事实是：默认应使用 fresh checkout；若对应 Ubuntu release/GCC/arch/build-type 分区已经预热，`no_remote=true` 可避免重复远端 Conan 拉取，且不得跨 Ubuntu release 复用二进制包。
 - 上表的 bounded 成功 run 不替代 `specialized-e2e.yml`、`production-gates.yml`、`preprod-evidence.yml` 与 `long-soak-capacity.yml` 的固定 runner 生产证据。

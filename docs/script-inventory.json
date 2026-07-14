@@ -36,6 +36,8 @@
     "scripts/operator_kind_smoke.py": {"category": "tool", "canonical": "scripts/tools/operator_kind_smoke.py"},
     "scripts/perf_analyze.py": {"category": "tool", "canonical": "scripts/tools/perf_analyze.py"},
     "scripts/read_runner_matrix.py": {"category": "tool", "canonical": "scripts/tools/read_runner_matrix.py"},
+    "scripts/tools/r5_docker_cache_bundle.py": {"category": "tool"},
+    "scripts/tools/resolve_runner_cache.py": {"category": "tool"},
     "scripts/render_validation_summary.py": {"category": "tool", "canonical": "scripts/tools/render_validation_summary.py"},
     "scripts/run_tests.py": {"category": "tool"},
 

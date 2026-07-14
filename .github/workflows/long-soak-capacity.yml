@@ -2,7 +2,6 @@ name: Stability / Fixed-Runner Soak & Capacity
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
   BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
@@ -99,6 +98,17 @@ jobs:
           pip install "conan>=2.0,<2.9"
           conan --version
 
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "${{ inputs.configuration || 'Release' }}" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
+
       - name: Fixed runner preflight
         shell: bash
         run: |
@@ -112,7 +122,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py
+          python scripts/bootstrap_conan.py --no-remote
           args=(conan install . --output-folder=build/conan-long-soak-capacity --build=missing -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             test -f "${{ inputs.conan_lockfile }}"

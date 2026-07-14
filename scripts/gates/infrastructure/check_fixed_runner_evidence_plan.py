@@ -45,7 +45,7 @@ WORKFLOW_REQUIREMENTS = {
         "path": ".github/workflows/grpc-experimental.yml",
         "tokens": (
             LINUX_PROFILE,
-            "${{ github.workspace }}/../.conan2-local",
+            "scripts/tools/resolve_runner_cache.py",
             "vars.GRPC_EXPERIMENTAL_RUNNER",
             'with_grpc=True',
             "BOOST_BUILD_GRPC=ON",
@@ -399,6 +399,15 @@ def main() -> int:
             )
         ),
         "R5 supports cached, offline, and forced-refresh image policies with image evidence",
+    )
+    preprod_workflow = read(".github/workflows/preprod-evidence.yml")
+    add(
+        checks,
+        "workflow:preprod:offline-defaults",
+        'default: "never"' in preprod_workflow
+        and "scripts/bootstrap_conan.py --no-remote" in preprod_workflow
+        and "inputs.docker_pull_policy || 'never'" in preprod_workflow,
+        "R5 workflow defaults to offline Docker and a pre-warmed local Conan cache",
     )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(

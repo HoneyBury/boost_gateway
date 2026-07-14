@@ -2,7 +2,6 @@ name: Dependencies / Conan Graph Validation
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -94,6 +93,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install "conan>=2.0,<2.9"
           conan --version
+
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "${{ inputs.build_type }}" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
 
       - name: Bootstrap Conan home
         shell: bash

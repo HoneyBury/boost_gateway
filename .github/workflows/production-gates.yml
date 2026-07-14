@@ -2,7 +2,6 @@ name: Production / Gate Diagnostics
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -133,7 +132,10 @@ jobs:
       - name: Setup C++ Conan toolchain
         uses: ./.github/actions/setup-cpp-conan
         with:
-          bootstrap-args: ""
+          bootstrap-args: "--no-remote"
+          cache-build-type: ${{ inputs.conan_build_type || 'Release' }}
+          cache-profile: ${{ inputs.conan_profile }}
+          cache-lockfile: ${{ inputs.conan_lockfile }}
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -166,7 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py
+          python scripts/bootstrap_conan.py --no-remote
           args=(conan install . --output-folder=build/conan-production-gates --build=missing -s build_type=${{ inputs.conan_build_type || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             test -f "${{ inputs.conan_lockfile }}"
@@ -187,10 +189,27 @@ jobs:
       - name: Build Conan validation target
         run: cmake --build build/conan-production-gates-cmake --parallel --target project_v2
 
+      # The diagnostic build can be Debug while its required Conan preflight
+      # is Release; use its own OS/compiler/build-type namespace.
+      - name: Resolve main-build persistent runner cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          build_type="${{ inputs.configuration || 'Debug' }}"
+          lockfile=conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock
+          if [ "$build_type" = "Release" ]; then lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock; fi
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "$build_type" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "$lockfile" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-main-identity.json
+
       - name: Conan install for main build
         shell: bash
         run: |
           set -euo pipefail
+          python scripts/bootstrap_conan.py --no-remote
           build_type="${{ inputs.configuration || 'Debug' }}"
           lockfile=conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock
           if [ "$build_type" = "Release" ]; then
