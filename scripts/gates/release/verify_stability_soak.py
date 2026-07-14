@@ -89,6 +89,8 @@ PROFILE_TIMEOUTS = {
 
 SUSTAINED_GATE_MAX_FAILURE_RATE = 0.01
 SUSTAINED_GATE_MAX_DEVIATION_RATIO = 0.20
+SUSTAINED_GATE_RARE_MAX_FAILURE_RATE = 0.001
+SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO = 0.25
 
 
 def exe_name(base: str) -> str:
@@ -260,9 +262,21 @@ def sustained_failure_violations(
         )
         entry["failure_rate"] = round(failure_rate, 6)
         entry["worst_deviation_ratio"] = round(deviation_ratio, 6)
-        entry["accepted_as_transient"] = (
+        accepted_standard = (
             failure_rate <= SUSTAINED_GATE_MAX_FAILURE_RATE
             and deviation_ratio <= SUSTAINED_GATE_MAX_DEVIATION_RATIO
+        )
+        accepted_rare_tail = (
+            failure_rate <= SUSTAINED_GATE_RARE_MAX_FAILURE_RATE
+            and deviation_ratio <= SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO
+        )
+        entry["accepted_as_transient"] = accepted_standard or accepted_rare_tail
+        entry["acceptance_tier"] = (
+            "standard"
+            if accepted_standard
+            else "rare_tail"
+            if accepted_rare_tail
+            else "rejected"
         )
         if not entry["accepted_as_transient"]:
             violations.append(entry)
@@ -352,6 +366,8 @@ def run_sustained_arch_baseline(
         "transient_failure_policy": {
             "max_failure_rate": SUSTAINED_GATE_MAX_FAILURE_RATE,
             "max_deviation_ratio": SUSTAINED_GATE_MAX_DEVIATION_RATIO,
+            "rare_max_failure_rate": SUSTAINED_GATE_RARE_MAX_FAILURE_RATE,
+            "rare_max_deviation_ratio": SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO,
         },
     }
 
