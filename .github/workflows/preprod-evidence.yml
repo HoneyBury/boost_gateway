@@ -220,6 +220,8 @@ jobs:
             runtime/validation/preprod-recovery-drill-summary.json
             runtime/validation/r5-docker-image-preflight-summary.json
             runtime/validation/r5-*-summary.json
+            runtime/validation/r5-preprod-recovery-drill-record.json
+            runtime/validation/monitoring-operability-summary.json
             runtime/validation/tls-preprod-multi-run-summary.json
             runtime/validation/r6-*.json
             runtime/tls-preprod/**

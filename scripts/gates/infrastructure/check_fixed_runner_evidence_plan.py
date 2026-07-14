@@ -121,6 +121,8 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/r5-docker-image-preflight-summary.json",
             "scripts/verify_tls_preprod_multi_run.py",
             "runtime/validation/preprod-recovery-drill-summary.json",
+            "runtime/validation/r5-preprod-recovery-drill-record.json",
+            "runtime/validation/monitoring-operability-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",
             "preprod-evidence-${{ github.run_id }}",
             "actions/upload-artifact@v4",
@@ -514,6 +516,13 @@ def main() -> int:
         "R5 generates the monitoring summary required by its recovery drill record",
     )
     preprod_workflow = read(".github/workflows/preprod-evidence.yml")
+    add(
+        checks,
+        "workflow:preprod:r5-record-artifacts",
+        "runtime/validation/r5-preprod-recovery-drill-record.json" in preprod_workflow
+        and "runtime/validation/monitoring-operability-summary.json" in preprod_workflow,
+        "R5 uploads both the recovery drill record and its referenced monitoring summary",
+    )
     add(
         checks,
         "workflow:preprod:offline-defaults",
