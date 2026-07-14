@@ -46,6 +46,27 @@ python3 scripts/verify_preprod_recovery_drill.py \
 
 若新 runner 访问 `registry-1.docker.io:443` 失败，应通过受信任 mirror 完成首次预热；预热完成后可使用 `never` 离线执行。R5 不能用 `bounded-local` 结果替代预发恢复演练。
 
+### 从受信任工作站离线传入 Docker 缓存
+
+当 runner 不能访问 Docker Hub、但受信任工作站能够访问时，在**同一候选提交**的工作站 checkout 中创建 bundle。该工具从 Compose JSON 动态发现镜像，拉取 registry 镜像、构建全部项目镜像，并强制导出 `linux/amd64`。它会同时保存 Compose SHA-256、压缩包 SHA-256、每个镜像的 ID/标签/平台；不要只传 tar 包而遗漏相邻 manifest。
+
+```bash
+python3 scripts/tools/r5_docker_cache_bundle.py export \
+  --bundle runtime/r5-docker-cache/r5-docker-images-linux-amd64.tar.gz
+scp runtime/r5-docker-cache/r5-docker-images-linux-amd64.tar.gz* runner:/var/tmp/
+```
+
+在 Linux runner 的相同候选 checkout 中导入和校验。导入需要 Docker daemon 可写；bundle 在解压和 `docker load` 期间会额外占用约一份未压缩镜像空间。
+
+```bash
+python3 scripts/tools/r5_docker_cache_bundle.py import \
+  --bundle /var/tmp/r5-docker-images-linux-amd64.tar.gz
+python3 scripts/verify_preprod_recovery_drill.py \
+  --mode docker-compose --image-preflight-only --docker-pull-policy never
+```
+
+第二条命令通过后，再以 `docker_pull_policy=never` 手动 dispatch `preprod-evidence.yml`。bundle 是临时跨机器运输方式，不替代配置受信任 registry mirror；Compose 文件或候选提交改变时必须重新导出，不能用 `--allow-compose-drift` 形成生产证据。
+
 当前验证状态（2026-07-13）：run `29186343065` 已在 `4855dc0` 通过 R6 两轮 TLS 预发验证，但旧版 R5 在请求 `auth.docker.io` 匿名令牌时连接被重置。当前代码已增加 `missing/never/always` 镜像策略和离线预检契约，本地策略测试通过；这仍不是 fixed-runner 应用代码通过 R5 的证据。runner 可用后按以下顺序验证：
 
 1. 使用 `--image-preflight-only --docker-pull-policy never` 确认全部镜像已预热；缺失时通过 mirror 补齐。

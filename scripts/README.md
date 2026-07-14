@@ -24,6 +24,7 @@ Canonical groups migrated so far:
 - Workflow Python CLI contract gate: `scripts/check_workflow_python_cli_contracts.py`
 - Evidence provenance contract gate: `scripts/check_evidence_provenance_contract.py`
 - R5 Docker image policy contract gate: `scripts/check_r5_docker_image_policy_contract.py`
+- R5 offline image-cache transport: `scripts/tools/r5_docker_cache_bundle.py`
 
 Use these stable public entrypoints first:
 
