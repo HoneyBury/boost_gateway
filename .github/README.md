@@ -32,15 +32,16 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 ### Conan fixed-runner 缓存
 
-固定 runner 上的 Conan home 必须保存在 checkout 同级目录
-`${{ github.workspace }}/../.conan2-local`。新机器第一次运行时允许
-`conan install` 从远端拉取完整依赖，成功后将填充后的 `.conan2-local`
-复制到该路径，并在 runner 清理或重建 checkout 时保留它。这样后续
-workflow 会直接复用本地包缓存。`ci.yml` 运行在 GitHub-hosted runner，
-是唯一使用 checkout 内 `.conan2-local` + Actions cache 的例外；
+固定 runner 上的 Conan home 由 `scripts/tools/resolve_runner_cache.py` 分区到
+`/opt/boost-gateway/conan`：键包含 Ubuntu release、GCC、架构、build type、
+Conan 图和 remote 配置。新机器先按 lockfile 预热，后续证据任务使用
+`--no-remote`。sccache 使用相同平台分区。`ci.yml` 运行在 GitHub-hosted
+runner，是唯一使用 checkout 内 `.conan2-local` + Actions cache 的例外；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
-`preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=missing`，只补齐 Compose 动态清单中缺失的 registry 镜像；镜像已完整预热的固定 runner 可使用 `never` 完全离线验证，`always` 仅用于明确要求刷新远端镜像的场景。
+`preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=never`；完整
+Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 仅用于
+明确标注的联网诊断，不能解除 R5 预发阻断。
 
 ## 产物命名约定
 

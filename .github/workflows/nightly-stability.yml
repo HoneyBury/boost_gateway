@@ -2,8 +2,6 @@ name: Stability / Bounded Soak
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -52,6 +50,17 @@ jobs:
           pip install "conan>=2.0,<2.9"
           conan --version
 
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type Debug \
+            --profile conan/profiles/linux-gcc-x64 \
+            --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
+
       - name: Bootstrap Conan home
         shell: bash
         run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
@@ -78,17 +87,6 @@ jobs:
           echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
           mkdir -p "$SCCACHE_DIR"
           sccache --version
-
-      - name: Restore sccache cache
-        id: restore-sccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-nightly-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: |
-            sccache-${{ runner.os }}-nightly-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
-            sccache-${{ runner.os }}-nightly-
-            sccache-${{ runner.os }}-
 
       - name: Reset sccache stats
         shell: bash
@@ -180,10 +178,3 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-
-      - name: Save sccache cache
-        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-nightly-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}

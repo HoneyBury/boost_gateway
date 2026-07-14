@@ -2,7 +2,6 @@ name: Experimental / gRPC
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -86,6 +85,22 @@ jobs:
           python -m pip install --upgrade pip
           pip install "conan>=2.0,<2.9"
           conan --version
+
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          lockfile="${{ inputs.conan_lockfile }}"
+          if [ -z "$lockfile" ]; then
+            lockfile="conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+          fi
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "${{ inputs.build_type }}" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "$lockfile" \
+            --graph-variant grpc-nosqlite \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
 
       - name: Fixed runner preflight
         shell: bash

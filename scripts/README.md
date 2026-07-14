@@ -19,6 +19,7 @@ Canonical groups migrated so far:
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
 - Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
+- Fixed-runner Conan/sccache namespace resolver: `scripts/tools/resolve_runner_cache.py`
 - Conan lockfile workflow gate: `scripts/check_conan_lockfile_workflows.py`
 - Workflow catalog gate: `scripts/check_workflow_catalog.py`
 - Workflow Python CLI contract gate: `scripts/check_workflow_python_cli_contracts.py`
@@ -39,5 +40,22 @@ Use these stable public entrypoints first:
 - `run_long_soak_capacity.py` for fixed-runner N1 long-soak/capacity evidence.
 - `verify_sdk_enterprise_delivery.py` for N5 SDK delivery.
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
+
+R5 offline-cache execution order:
+
+1. Run `resolve_runner_cache.py` on each runner, then warm the exact Conan
+   namespace from its lockfile. Production evidence consumes that namespace with
+   `scripts/bootstrap_conan.py --no-remote`.
+2. On a clean candidate checkout, use `r5_docker_cache_bundle.py export`; it
+   rejects dirty source, candidate SHA drift, Compose drift, non-amd64 images
+   and missing registry digests.
+3. Import the bundle on the target runner, run
+   `verify_preprod_recovery_drill.py --image-preflight-only --docker-pull-policy never`,
+   then run the full Docker Compose recovery drill or `preprod-evidence.yml`.
+
+`resolve_runner_cache.py` requires a runner-owned persistent root. Its default
+is `/opt/boost-gateway`; provision `/opt/boost-gateway/conan` and
+`/opt/boost-gateway/sccache` before dispatching fixed-runner workflows. See
+`docs/fixed-runner-playbook.md` for the exact command and observed disk budget.
 
 Other scripts are internal producers, aggregate gates, tooling, platform wrappers, or legacy compatibility surfaces. Keep new workflow and documentation references on the public entrypoints unless there is a specific reason to call a producer directly.

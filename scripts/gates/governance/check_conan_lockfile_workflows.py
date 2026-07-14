@@ -25,10 +25,9 @@ WORKFLOWS = {
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
 }
 
-# Fixed runners keep the Conan home outside the checkout so a fresh checkout
-# does not invalidate the dependency cache.  ``ci.yml`` is intentionally
-# different: it targets GitHub-hosted runners and restores a checkout-local
-# home through actions/cache.
+# Fixed runners derive a persistent cache namespace from host ABI inputs and
+# the Conan graph. ``ci.yml`` is intentionally different: it targets
+# GitHub-hosted runners and restores a checkout-local home through actions/cache.
 FIXED_RUNNER_CONAN_WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
     "grpc_experimental": ".github/workflows/grpc-experimental.yml",
@@ -39,8 +38,10 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
     "production_gates": ".github/workflows/production-gates.yml",
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
+    "preprod_evidence": ".github/workflows/preprod-evidence.yml",
 }
-FIXED_RUNNER_CONAN_HOME = "CONAN_HOME: ${{ github.workspace }}/../.conan2-local"
+RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
+COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
 
 
 def read(relative: str) -> str:
@@ -128,12 +129,29 @@ def main() -> int:
     )
     for name, path in FIXED_RUNNER_CONAN_WORKFLOWS.items():
         content = read(path) if exists(path) else ""
+        resolver_available = RUNNER_CACHE_RESOLVER in content
+        if "uses: ./.github/actions/setup-cpp-conan" in content and exists(COMPOSITE_CONAN_ACTION):
+            resolver_available = resolver_available or RUNNER_CACHE_RESOLVER in read(COMPOSITE_CONAN_ACTION)
         add(
             checks,
-            f"workflow:{name}:fixed-conan-home",
-            FIXED_RUNNER_CONAN_HOME in content,
-            f"{path} reuses {FIXED_RUNNER_CONAN_HOME} outside the checkout",
+            f"workflow:{name}:os-safe-conan-cache",
+            resolver_available,
+            f"{path} resolves Conan Home through {RUNNER_CACHE_RESOLVER}",
         )
+        add(
+            checks,
+            f"workflow:{name}:no-static-fixed-conan-home",
+            "../.conan2-local" not in content,
+            f"{path} does not reuse a shared checkout-sibling Conan Home",
+        )
+
+    preprod = read(".github/workflows/preprod-evidence.yml")
+    add(
+        checks,
+        "workflow:preprod-evidence:offline-conan",
+        "scripts/bootstrap_conan.py --no-remote" in preprod,
+        "preprod evidence only consumes the previously warmed Conan cache",
+    )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

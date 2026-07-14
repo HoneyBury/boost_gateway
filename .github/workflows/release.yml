@@ -2,8 +2,6 @@ name: Release / Package & Publish
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
   BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
@@ -40,17 +38,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Restore sccache cache
-        id: restore-sccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
-          restore-keys: |
-            sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-
-            sccache-${{ runner.os }}-release-
-            sccache-${{ runner.os }}-
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
@@ -91,6 +78,17 @@ jobs:
           python -m pip install "conan>=2.0,<2.9"
           echo "$PWD/.venv-release/bin" >> "$GITHUB_PATH"
           conan --version
+
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type Release \
+            --profile conan/profiles/linux-gcc-x64 \
+            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
 
       - name: Bootstrap Conan home
         shell: bash
@@ -272,13 +270,6 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-
-      - name: Save sccache cache
-        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
 
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

@@ -18,6 +18,18 @@ inputs:
     description: Extra arguments passed to scripts/bootstrap_conan.py.
     required: false
     default: "--allow-public --disable-example-internal"
+  cache-build-type:
+    description: Build type used to isolate the persistent Conan and sccache namespaces.
+    required: false
+    default: "Release"
+  cache-profile:
+    description: Conan profile included in the persistent cache identity.
+    required: false
+    default: "conan/profiles/linux-gcc-x64"
+  cache-lockfile:
+    description: Conan lockfile included in the persistent cache identity.
+    required: false
+    default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 runs:
   using: composite
@@ -44,6 +56,17 @@ runs:
         python -m pip install --upgrade pip
         python -m pip install "${{ inputs.conan-version }}"
         conan --version
+
+    - name: Resolve persistent runner caches
+      shell: bash
+      run: |
+        set -euo pipefail
+        python scripts/tools/resolve_runner_cache.py \
+          --build-type "${{ inputs.cache-build-type }}" \
+          --profile "${{ inputs.cache-profile }}" \
+          --lockfile "${{ inputs.cache-lockfile }}" \
+          --github-env "$GITHUB_ENV" \
+          --summary-path runtime/validation/runner-cache-identity.json
 
     - name: Bootstrap Conan home
       if: inputs.run-bootstrap == 'true'

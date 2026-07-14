@@ -2,7 +2,6 @@ name: Production / Preproduction Evidence
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
   BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
@@ -40,7 +39,7 @@ on:
       docker_pull_policy:
         description: "R5 image policy: missing reuses cache, never is fully offline, always refreshes"
         required: true
-        default: "missing"
+        default: "never"
         type: choice
         options:
           - missing
@@ -101,6 +100,17 @@ jobs:
           pip install "conan>=2.0,<2.9"
           conan --version
 
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "${{ inputs.configuration || 'Release' }}" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
+
       - name: Setup Docker Compose
         uses: docker/setup-compose-action@v1
 
@@ -126,7 +136,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py
+          python scripts/bootstrap_conan.py --no-remote
           conan install . \
             --output-folder=build/conan-preprod-evidence \
             --build=missing \
@@ -160,7 +170,7 @@ jobs:
             --configuration "${{ inputs.configuration || 'Release' }}" \
             --mode "${{ inputs.recovery_mode }}" \
             --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
-            --docker-pull-policy "${{ inputs.docker_pull_policy || 'missing' }}" \
+            --docker-pull-policy "${{ inputs.docker_pull_policy || 'never' }}" \
             --docker-pull-attempts "${{ inputs.docker_pull_attempts || '3' }}" \
             --image-preflight-summary-path runtime/validation/r5-docker-image-preflight-summary.json \
             --summary-path runtime/validation/preprod-recovery-drill-summary.json
@@ -183,7 +193,7 @@ jobs:
         shell: bash
         run: |
           summaries=()
-          for path in runtime/validation/preprod-evidence-preflight-summary.json runtime/validation/preprod-recovery-drill-summary.json runtime/validation/tls-preprod-multi-run-summary.json; do
+          for path in runtime/validation/runner-cache-identity.json runtime/validation/preprod-evidence-preflight-summary.json runtime/validation/preprod-recovery-drill-summary.json runtime/validation/tls-preprod-multi-run-summary.json; do
             if [ -f "$path" ]; then summaries+=("$path"); fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
@@ -197,6 +207,7 @@ jobs:
           name: preprod-evidence-${{ github.run_id }}
           path: |
             runtime/validation/preprod-evidence-*-summary.json
+            runtime/validation/runner-cache-identity.json
             runtime/validation/preprod-recovery-drill-summary.json
             runtime/validation/r5-docker-image-preflight-summary.json
             runtime/validation/r5-*-summary.json

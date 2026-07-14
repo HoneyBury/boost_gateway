@@ -2,7 +2,6 @@ name: Infrastructure / Redis, Raft & Operator E2E
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -109,12 +108,24 @@ jobs:
           pip install "conan>=2.0,<2.9"
           conan --version
 
+      - name: Resolve persistent runner caches
+        if: inputs.enable_conan_validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type "${{ inputs.configuration }}" \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
+
       - name: Conan validation preflight
         if: inputs.enable_conan_validation
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py
+          python scripts/bootstrap_conan.py --no-remote
           args=(conan install . --output-folder=build/conan-specialized --build=missing -s build_type=${{ inputs.configuration }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             args+=(--lockfile "${{ inputs.conan_lockfile }}")

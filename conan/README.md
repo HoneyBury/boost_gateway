@@ -9,8 +9,8 @@ Current rules:
 - Default build path prefers Conan (`BOOST_USE_CONAN_DEPS=ON`), falling back to `FetchContent/third_party` when Conan packages are unavailable.
 - `BOOST_USE_CONAN_DEPS=ON` is the only supported switch for enabling Conan.
 - For local development, `CONAN_HOME=.conan2-local` is convenient. Fixed-runner
-  workflows deliberately use `${{ github.workspace }}/../.conan2-local`, which
-  survives checkout replacement and is pre-warmed on the runner.
+  workflows use an OS-safe persistent namespace under `/opt/boost-gateway/conan`;
+  do not share native Conan packages between Ubuntu releases.
 - Prefer repository-managed profiles and remotes under `conan/`.
 - Public `conancenter` is not a default requirement; internal mirror, warm cache,
   or `--no-remote` must remain supported.
@@ -30,26 +30,27 @@ cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_
 Linux fixed-runner example:
 
 ```bash
-python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
+cache_env="$(mktemp)"
+python scripts/tools/resolve_runner_cache.py --build-type Release \
+  --profile conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  --github-env "$cache_env"
+set -a; . "$cache_env"; set +a
+python scripts/bootstrap_conan.py --allow-public --disable-example-internal
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
+python scripts/bootstrap_conan.py --no-remote
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=missing --no-remote -s build_type=Release
 ```
 
 ### 新 runner 的 Conan 缓存初始化
 
-固定 runner 的 Conan home 是 checkout 的同级目录：
-`${GITHUB_WORKSPACE}/../.conan2-local`（Actions 中对应
-`${{ github.workspace }}/../.conan2-local`）。换新机器时，先让第一次
-`conan install` 从配置的远端完整拉取依赖；成功后把这个已填充的 Conan
-home 复制到该固定路径，并确保 runner 清理 checkout 时不要删除它。之后
-`conan-validate.yml`、`release.yml`、长稳、性能和 production evidence
-工作流都会复用这份缓存，避免每个 workflow 重复从远端下载。
-
-```bash
-export RUNNER_CONAN_HOME="$GITHUB_WORKSPACE/../.conan2-local"
-mkdir -p "$RUNNER_CONAN_HOME"
-rsync -a /path/to/seeded/.conan2-local/ "$RUNNER_CONAN_HOME/"
-export CONAN_HOME="$RUNNER_CONAN_HOME"
-```
+`resolve_runner_cache.py` creates `/opt/boost-gateway/conan/<ubuntu-release>-gcc<version>-<arch>-<build-type>/...`
+and exports `CONAN_HOME`; it also assigns sccache a matching namespace. The
+Conan key includes `conanfile.py`, profile, lockfile, repository remote files,
+remote overrides, Conan/GCC versions, OS release, architecture and build type.
+Warm each namespace using the fixed-runner example, then use `--no-remote` for
+evidence work. Docker images are a separate cache and may cross Ubuntu 22.04
+and 24.04 x64 runners when imported as `linux/amd64` images.
 
 `ci.yml` 是有意保留的例外：它运行在 GitHub-hosted runner 上，使用
 checkout 内的 `.conan2-local` 和 `actions/cache`；`production-readiness.yml`
@@ -65,8 +66,8 @@ Lockfile policy:
 - Generate lockfiles per build type and option set before promoting Conan to a
   default CI dependency source.
 - Store generated lockfiles under `conan/locks/`.
-- Cache keys should include `conanfile.py`, `conan/profiles/**`, remotes config,
-  and the relevant lockfile hash.
+- Cache keys include `conanfile.py`, profile, remotes config and overrides,
+  lockfile hash, Conan/GCC versions, Ubuntu release, architecture and build type.
 - `--no-remote` can only generate lockfiles after the local Conan cache has been
   pre-warmed with all required packages. Otherwise lock generation must use an
   internal/public remote.

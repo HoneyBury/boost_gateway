@@ -2,8 +2,6 @@ name: Performance / Baseline & Regression
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  SCCACHE_DIR: ${{ github.workspace }}/.sccache
-  CONAN_HOME: ${{ github.workspace }}/../.conan2-local
 
 on:
   workflow_dispatch:
@@ -44,6 +42,10 @@ jobs:
 
       - name: Setup C++ Conan toolchain
         uses: ./.github/actions/setup-cpp-conan
+        with:
+          cache-build-type: Release
+          cache-profile: conan/profiles/linux-gcc-x64
+          cache-lockfile: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
 
       - name: Conan install
         shell: bash
@@ -67,17 +69,6 @@ jobs:
           echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
           mkdir -p "$SCCACHE_DIR"
           sccache --version
-
-      - name: Restore sccache cache
-        id: restore-sccache
-        uses: actions/cache/restore@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}
-          restore-keys: |
-            sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-
-            sccache-${{ runner.os }}-perf-regression-
-            sccache-${{ runner.os }}-
 
       - name: Reset sccache stats
         shell: bash
@@ -253,10 +244,3 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
-
-      - name: Save sccache cache
-        if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-perf-regression-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**') }}-${{ github.sha }}

@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -26,6 +27,10 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_COMPOSE = ROOT / "env/docker/docker-compose.yml"
 DEFAULT_BUNDLE = ROOT / "runtime/r5-docker-cache/r5-docker-images-linux-amd64.tar.gz"
+SHA256_HEX = re.compile(r"[0-9a-f]{64}")
+GIT_REVISION_HEX = re.compile(r"[0-9a-f]{40}")
+IMAGE_ID = re.compile(r"sha256:[0-9a-f]{64}")
+REGISTRY_DIGEST = re.compile(r".+@sha256:[0-9a-f]{64}")
 
 
 def run(command: list[str], *, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -45,6 +50,37 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def checkout_revision() -> str:
+    completed = run(["git", "rev-parse", "--verify", "HEAD"])
+    revision = completed.stdout.strip().lower()
+    if completed.returncode or not GIT_REVISION_HEX.fullmatch(revision):
+        fail("cannot resolve the candidate Git revision from this checkout")
+    configured = os.environ.get("BOOST_GATEWAY_CANDIDATE_REVISION", "").strip().lower()
+    if configured and configured != revision:
+        fail(
+            "BOOST_GATEWAY_CANDIDATE_REVISION differs from the checked out Git revision "
+            f"({configured} != {revision})"
+        )
+    return revision
+
+
+def require_clean_checkout() -> None:
+    """Ensure the manifest revision fully describes the exported source tree."""
+    completed = run(["git", "status", "--porcelain", "--untracked-files=all"])
+    if completed.returncode:
+        fail("cannot determine whether the candidate checkout is clean")
+    if completed.stdout.strip():
+        fail("candidate checkout has uncommitted changes; commit or discard them before using a R5 bundle")
+
+
+def is_sha256(value: object) -> bool:
+    return isinstance(value, str) and SHA256_HEX.fullmatch(value) is not None
+
+
+def is_registry_digest(value: object) -> bool:
+    return isinstance(value, str) and REGISTRY_DIGEST.fullmatch(value) is not None
 
 
 def compose_document(compose_file: Path) -> dict[str, Any]:
@@ -133,6 +169,62 @@ def image_metadata(image: str) -> dict[str, Any]:
     }
 
 
+def validate_manifest(manifest: object) -> tuple[list[dict[str, str]], dict[str, dict[str, Any]]]:
+    """Validate bundle provenance before loading images into the local daemon."""
+    if not isinstance(manifest, dict):
+        fail("bundle manifest is not an object")
+    if manifest.get("schema_version") != 2:
+        fail("bundle manifest must use schema_version 2")
+    if not GIT_REVISION_HEX.fullmatch(str(manifest.get("candidate_revision", ""))):
+        fail("bundle manifest has no valid candidate_revision")
+    if manifest.get("target_platform") != "linux/amd64":
+        fail("bundle is not declared for linux/amd64")
+    if not is_sha256(manifest.get("compose_sha256")):
+        fail("bundle manifest has no valid compose_sha256")
+    bundle = manifest.get("bundle")
+    if not isinstance(bundle, dict) or not is_sha256(bundle.get("sha256")):
+        fail("bundle manifest has no valid bundle SHA-256")
+    requirements = manifest.get("requirements")
+    inventory = manifest.get("image_inventory")
+    if not isinstance(requirements, list) or not isinstance(inventory, list):
+        fail("bundle manifest has no image requirements or inventory")
+
+    sources: dict[str, str] = {}
+    normalized_requirements: list[dict[str, str]] = []
+    for requirement in requirements:
+        if not isinstance(requirement, dict):
+            fail("bundle manifest has an invalid image requirement")
+        image = requirement.get("image")
+        source = requirement.get("source")
+        if not isinstance(image, str) or not image or source not in {"build", "registry"}:
+            fail("bundle manifest has an invalid image requirement")
+        previous = sources.setdefault(image, source)
+        if previous != source:
+            fail(f"bundle manifest assigns conflicting sources to image {image}")
+        normalized_requirements.append({"image": image, "source": source})
+
+    image_inventory: dict[str, dict[str, Any]] = {}
+    for item in inventory:
+        if not isinstance(item, dict):
+            fail("bundle manifest has an invalid image inventory entry")
+        image = item.get("image")
+        if not isinstance(image, str) or image not in sources or image in image_inventory:
+            fail("bundle manifest image inventory does not match requirements")
+        if not isinstance(item.get("image_id"), str) or IMAGE_ID.fullmatch(item["image_id"]) is None:
+            fail(f"bundle manifest has no valid image ID for {image}")
+        if (item.get("os"), item.get("architecture")) != ("linux", "amd64"):
+            fail(f"bundle manifest image is not linux/amd64: {image}")
+        digests = item.get("repo_digests")
+        if not isinstance(digests, list) or not all(isinstance(value, str) for value in digests):
+            fail(f"bundle manifest has invalid registry digests for {image}")
+        if sources[image] == "registry" and not any(is_registry_digest(value) for value in digests):
+            fail(f"bundle manifest has no registry digest for {image}")
+        image_inventory[image] = item
+    if set(image_inventory) != set(sources):
+        fail("bundle manifest image inventory does not cover all requirements")
+    return normalized_requirements, image_inventory
+
+
 def linux_amd64_env() -> dict[str, str]:
     environment = os.environ.copy()
     environment["DOCKER_DEFAULT_PLATFORM"] = "linux/amd64"
@@ -143,6 +235,8 @@ def export_bundle(args: argparse.Namespace) -> None:
     compose_file = args.compose_file.resolve()
     if not compose_file.is_file():
         fail(f"Compose file does not exist: {compose_file}")
+    candidate_revision = checkout_revision()
+    require_clean_checkout()
     document = compose_document(compose_file)
     requirements = compose_requirements(document)
     environment = linux_amd64_env()
@@ -172,8 +266,9 @@ def export_bundle(args: argparse.Namespace) -> None:
             shutil.copyfileobj(source, target, length=1024 * 1024)
 
     payload = {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "candidate_revision": candidate_revision,
         "target_platform": "linux/amd64",
         "compose_file": str(compose_file.relative_to(ROOT)),
         "compose_sha256": sha256(compose_file),
@@ -198,12 +293,19 @@ def import_bundle(args: argparse.Namespace) -> None:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         fail(f"invalid bundle manifest: {exc}")
-    if manifest.get("target_platform") != "linux/amd64":
-        fail("bundle is not declared for linux/amd64")
-    if sha256(bundle) != manifest.get("bundle", {}).get("sha256"):
+    requirements, expected = validate_manifest(manifest)
+    registry_images = {item["image"] for item in requirements if item["source"] == "registry"}
+    candidate_revision = checkout_revision()
+    require_clean_checkout()
+    if candidate_revision != manifest["candidate_revision"]:
+        fail(
+            "candidate Git revision differs from bundle manifest; export again from the "
+            "candidate checkout"
+        )
+    if sha256(bundle) != manifest["bundle"]["sha256"]:
         fail("bundle SHA-256 does not match manifest")
     compose_file = args.compose_file.resolve()
-    if not args.allow_compose_drift and sha256(compose_file) != manifest.get("compose_sha256"):
+    if sha256(compose_file) != manifest["compose_sha256"]:
         fail("Compose file differs from bundle manifest; export again from the candidate checkout")
 
     with tempfile.TemporaryDirectory(prefix="boost-r5-image-import-") as temp:
@@ -215,7 +317,6 @@ def import_bundle(args: argparse.Namespace) -> None:
             if completed.returncode:
                 fail("docker load failed: " + completed.stderr.strip())
 
-    expected = {str(item["image"]): item for item in manifest.get("image_inventory", [])}
     failures: list[str] = []
     for image, item in expected.items():
         try:
@@ -227,6 +328,9 @@ def import_bundle(args: argparse.Namespace) -> None:
             failures.append(f"image ID differs for {image}")
         if (actual["os"], actual["architecture"]) != ("linux", "amd64"):
             failures.append(f"wrong platform for {image}: {actual['os']}/{actual['architecture']}")
+        expected_digests = set(item["repo_digests"])
+        if image in registry_images and not expected_digests.issubset(set(actual["repo_digests"])):
+            failures.append(f"registry digest differs for {image}")
     if failures:
         fail("cache validation failed: " + "; ".join(failures))
     print(f"validated {len(expected)} linux/amd64 cached images from {bundle}")
@@ -244,7 +348,6 @@ def main() -> int:
     export.add_argument("--skip-build", action="store_true", help="require prebuilt application images")
     importer = subparsers.choices["import"]
     importer.add_argument("--verify-only", action="store_true", help="do not run docker load")
-    importer.add_argument("--allow-compose-drift", action="store_true")
     args = parser.parse_args()
     try:
         if args.action == "export":
