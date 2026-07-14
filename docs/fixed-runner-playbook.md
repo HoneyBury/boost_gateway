@@ -100,9 +100,9 @@ Docker snapshot 与 recovery record `32/32` 均通过。产物为
 `runtime/validation/preprod-recovery-drill-summary.json`，其中
 `overall_pass=true`。
 
-该结果的 `run_id=local`，且当前实现尚未推送为候选 SHA；它证明本机 Docker
-路径和离线缓存可运行，不能替代 `preprod-evidence.yml` 在目标预发 runner
-生成的 artifact。以下阻断必须先关闭：
+该结果的 `run_id=local`；实现现已推送为候选 SHA `f6e0e57`，但本机结果仍只
+证明 Docker 路径和离线缓存可运行，不能替代 `preprod-evidence.yml` 在目标预发
+runner 生成的 artifact。以下阻断必须先关闭：
 
 | 阻断 | 现象 | 解决方式 |
 |---|---|---|
@@ -114,6 +114,118 @@ Docker snapshot 与 recovery record `32/32` 均通过。产物为
 关闭这些阻断后的固定顺序是：Conan 分区预热与 `--no-remote` 验证，导入或构建
 Docker cache 并执行 `never` preflight，最后 dispatch `preprod-evidence.yml`
 的 `docker-compose`/`never` 模式。
+
+### 新 Ubuntu runner 的 GitHub R5 执行清单
+
+这套清单适用于每台新 Ubuntu runner。不要依赖通用
+`["self-hosted","Linux","X64"]` labels 来选择目标机器：若有多台匹配，GitHub
+会自行调度。先为要执行 R5 的机器添加唯一 custom label，再在 dispatch 中要求它。
+
+```bash
+# 在管理员已认证的机器执行；先查看 runner ID 和现有 labels。
+gh api repos/HoneyBury/boost_gateway/actions/runners \
+  --jq '.runners[] | {id,name,status,busy,labels:[.labels[].name]}'
+
+# 示例：将本机 myserver 作为唯一 R5 runner。
+runner_id="$(gh api repos/HoneyBury/boost_gateway/actions/runners \
+  --jq '.runners[] | select(.name == "myserver") | .id')"
+gh api --method POST \
+  "repos/HoneyBury/boost_gateway/actions/runners/${runner_id}/labels" \
+  -f 'labels[]=preprod-r5-myserver'
+```
+
+1. 同步候选 checkout，并确认工作区干净：
+
+```bash
+git fetch origin --prune
+git checkout develop
+git pull --ff-only
+test -z "$(git status --porcelain)"
+git rev-parse HEAD
+```
+
+2. 预留磁盘并创建 persistent cache root：
+
+```bash
+docker builder prune -af
+df -h /
+sudo install -d -o "$USER" -g "$(id -gn)" \
+  /opt/boost-gateway/conan /opt/boost-gateway/sccache
+```
+
+构建或 bundle import 前至少保留 25GB 可用空间；`docker builder prune` 不会
+删除已标记的 Compose 镜像。
+
+3. 按本机 OS/compiler/arch/build-type 分区预热 Conan，并立即离线复验：
+
+```bash
+cache_env="$(mktemp)"
+python3 scripts/tools/resolve_runner_cache.py --build-type Release \
+  --profile conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  --github-env "$cache_env" \
+  --summary-path runtime/validation/runner-cache-identity.json
+set -a; . "$cache_env"; set +a
+python3 scripts/bootstrap_conan.py --allow-public --disable-example-internal
+conan install . --output-folder=build/conan-preprod-warm --build=missing \
+  -s build_type=Release --profile:host conan/profiles/linux-gcc-x64 \
+  --profile:build conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  -o "&:with_grpc=False" -o "&:with_sqlite=False"
+python3 scripts/bootstrap_conan.py --no-remote
+conan install . --output-folder=build/conan-preprod-offline-check --build=missing --no-remote \
+  -s build_type=Release --profile:host conan/profiles/linux-gcc-x64 \
+  --profile:build conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  -o "&:with_grpc=False" -o "&:with_sqlite=False"
+```
+
+4. 预热或 import Docker images，然后严格检查离线 cache：
+
+```bash
+docker compose -f env/docker/docker-compose.yml pull
+docker compose -f env/docker/docker-compose.yml build
+python3 scripts/verify_preprod_recovery_drill.py --mode docker-compose \
+  --image-preflight-only --docker-pull-policy never
+```
+
+离线 runner 改用同一干净候选 checkout 导出的
+`r5_docker_cache_bundle.py export` / `import`，不允许以 dirty checkout 导出。
+
+5. 使用唯一 label dispatch workflow，并保持 R5 离线：
+
+```bash
+gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref develop \
+  -f 'runner=["self-hosted","Linux","X64","preprod-r5-myserver"]' \
+  -f configure_preset=release -f build_dir=build/release -f configuration=Release \
+  -f recovery_mode=docker-compose -f recovery_timeout_seconds=300 \
+  -f docker_pull_policy=never -f docker_pull_attempts=1 \
+  -f tls_runs=2 -f tls_timeout_seconds=240 \
+  -f conan_profile=conan/profiles/linux-gcc-x64 \
+  -f conan_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+```
+
+6. 监控并验证 artifact：
+
+```bash
+gh run list --repo HoneyBury/boost_gateway --workflow preprod-evidence.yml \
+  --branch develop --limit 1
+gh run watch <RUN_ID> --repo HoneyBury/boost_gateway --exit-status
+gh run download <RUN_ID> --repo HoneyBury/boost_gateway \
+  --name "preprod-evidence-<RUN_ID>" --dir runtime/github-preprod-evidence
+jq '{overall_pass,scope,provenance}' \
+  runtime/github-preprod-evidence/preprod-recovery-drill-summary.json
+```
+
+要求 `overall_pass=true`、`scope.real_docker_compose_drill=true`、
+`scope.docker_pull_policy="never"`，且 `provenance.candidate_revision` 等于
+dispatch 的完整候选 SHA。
+
+2026-07-14 的第一次 workflow dispatch `29345674702` 被调度到
+`aoi-omen-gaming-laptop-16-am0xxx`，并在 `Resolve persistent runner caches`
+失败：该 runner 还没有可写的 `/opt/boost-gateway`。先在该机器执行步骤 2-4
+再重试；随后 R6 的 `build/release` 不存在是这个首要失败导致 Configure/Build
+被跳过的连带结果，不能单独归因为 TLS 回归。
 
 当前验证状态（2026-07-13）：run `29186343065` 已在 `4855dc0` 通过 R6 两轮 TLS 预发验证，但旧版 R5 在请求 `auth.docker.io` 匿名令牌时连接被重置。当前代码已增加 `missing/never/always` 镜像策略和离线预检契约，本地策略测试通过；这仍不是 fixed-runner 应用代码通过 R5 的证据。runner 可用后按以下顺序验证：
 
