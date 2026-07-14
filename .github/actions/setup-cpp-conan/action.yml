@@ -7,9 +7,13 @@ inputs:
     required: false
     default: "3.12"
   conan-version:
-    description: Conan version range to install when Conan is not already available.
+    description: Exact Conan version installed in the isolated runner virtual environment.
     required: false
-    default: "conan>=2.0,<2.9"
+    default: "2.8.1"
+  conan-venv-offline:
+    description: Require the pinned Conan virtual environment to have been pre-created without installing from the network.
+    required: false
+    default: "false"
   run-bootstrap:
     description: Run scripts/bootstrap_conan.py after Conan is available.
     required: false
@@ -49,13 +53,17 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        if command -v conan >/dev/null 2>&1; then
-          conan --version
-          exit 0
+        args=(
+          python scripts/tools/ensure_conan_venv.py
+          --venv "/opt/boost-gateway/tools/conan-${{ inputs.conan-version }}-py${{ inputs.python-version }}"
+          --conan-version "${{ inputs.conan-version }}"
+          --github-env "$GITHUB_ENV"
+          --github-path "$GITHUB_PATH"
+        )
+        if [ "${{ inputs.conan-venv-offline }}" = "true" ]; then
+          args+=(--offline)
         fi
-        python -m pip install --upgrade pip
-        python -m pip install "${{ inputs.conan-version }}"
-        conan --version
+        "${args[@]}"
 
     - name: Resolve persistent runner caches
       shell: bash
@@ -73,4 +81,4 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python scripts/bootstrap_conan.py ${{ inputs.bootstrap-args }}
+        python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" ${{ inputs.bootstrap-args }}

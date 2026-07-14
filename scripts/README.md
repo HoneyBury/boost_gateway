@@ -18,6 +18,7 @@ Canonical groups migrated so far:
 - Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
+- Pinned isolated Conan environment helper: `scripts/tools/ensure_conan_venv.py`
 - Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
 - Fixed-runner Conan/sccache namespace resolver: `scripts/tools/resolve_runner_cache.py`
 - Conan lockfile workflow gate: `scripts/check_conan_lockfile_workflows.py`
@@ -43,7 +44,8 @@ Use these stable public entrypoints first:
 
 R5 offline-cache execution order:
 
-1. Run `resolve_runner_cache.py` on each runner, then warm the exact Conan
+1. Create or verify the pinned Conan virtual environment with
+   `ensure_conan_venv.py`; then run `resolve_runner_cache.py` on each runner and warm the exact Conan
    namespace from its lockfile. Production evidence consumes that namespace with
    `scripts/bootstrap_conan.py --no-remote`.
 2. On a clean candidate checkout, use `r5_docker_cache_bundle.py export`; it

@@ -4,6 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
   BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
+  BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
 
 on:
   push:
@@ -68,16 +69,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if command -v conan >/dev/null 2>&1; then
-            conan --version
-            exit 0
-          fi
-          python -m venv .venv-release
-          . .venv-release/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install "conan>=2.0,<2.9"
-          echo "$PWD/.venv-release/bin" >> "$GITHUB_PATH"
-          conan --version
+          python scripts/tools/ensure_conan_venv.py \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
+            --conan-version 2.8.1 \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+          "$BOOST_GATEWAY_CONAN_VENV/bin/conan" --version
 
       - name: Resolve persistent runner caches
         shell: bash
@@ -94,14 +91,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/.venv-release/bin:$PATH"
-          python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
+          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
 
       - name: Conan lockfile preflight
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/.venv-release/bin:$PATH"
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
           conan --version
           conan install . \
             --profile:host conan/profiles/linux-gcc-x64 \

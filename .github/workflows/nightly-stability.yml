@@ -42,13 +42,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install Conan
+      - name: Ensure pinned Conan virtual environment
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --upgrade pip
-          pip install "conan>=2.0,<2.9"
-          conan --version
+          python scripts/tools/ensure_conan_venv.py \
+            --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
+            --conan-version 2.8.1 \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
 
       - name: Resolve persistent runner caches
         shell: bash
@@ -63,7 +65,7 @@ jobs:
 
       - name: Bootstrap Conan home
         shell: bash
-        run: python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+        run: python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
 
       - name: Conan install
         shell: bash

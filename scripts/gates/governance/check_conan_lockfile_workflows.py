@@ -42,6 +42,9 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
 }
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
+CONAN_VENV_HELPER = "scripts/tools/ensure_conan_venv.py"
+PINNED_CONAN_VERSION = "2.8.1"
+FLOATING_CONAN_REQUIREMENT = "conan>=2.0,<2.9"
 
 
 def read(relative: str) -> str:
@@ -54,6 +57,40 @@ def exists(relative: str) -> bool:
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def bootstrap_uses_resolved_home(content: str) -> bool:
+    """Reject bootstrap calls that can silently create a checkout-local Conan home."""
+    calls = [
+        line.strip()
+        for line in content.splitlines()
+        if "scripts/bootstrap_conan.py" in line and ("python " in line or "args=(" in line)
+    ]
+    return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
+
+
+def uses_composite_conan_action(content: str) -> bool:
+    return "uses: ./.github/actions/setup-cpp-conan" in content
+
+
+def composite_uses_pinned_venv(content: str) -> bool:
+    return all(
+        token in content
+        for token in (
+            CONAN_VENV_HELPER,
+            'default: "2.8.1"',
+            '--conan-version "${{ inputs.conan-version }}"',
+            '--github-path "$GITHUB_PATH"',
+        )
+    )
+
+
+def named_workflow_step(content: str, name: str) -> str:
+    marker = f"- name: {name}"
+    if marker not in content:
+        return ""
+    step = content.split(marker, 1)[1]
+    return step.split("\n      - name:", 1)[0]
 
 
 def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content: str) -> None:
@@ -127,10 +164,31 @@ def main() -> int:
         "build/conan-production-gates-cmake" in production_gates and "--target project_v2" in production_gates,
         "production-gates performs a lockfile-based Conan configure/build preflight",
     )
+
+    composite_conan = read(COMPOSITE_CONAN_ACTION) if exists(COMPOSITE_CONAN_ACTION) else ""
+    add(
+        checks,
+        "composite-conan:isolated-pinned-venv",
+        composite_uses_pinned_venv(composite_conan),
+        "the shared Conan action creates or verifies the pinned isolated virtual environment",
+    )
+    add(
+        checks,
+        "composite-conan:no-global-or-floating-conan",
+        FLOATING_CONAN_REQUIREMENT not in composite_conan and "command -v conan" not in composite_conan,
+        "the shared Conan action never accepts a global or floating Conan executable",
+    )
+    add(
+        checks,
+        "composite-conan:explicit-persistent-home",
+        bootstrap_uses_resolved_home(composite_conan),
+        "the shared Conan action passes the resolved CONAN_HOME to bootstrap explicitly",
+    )
     for name, path in FIXED_RUNNER_CONAN_WORKFLOWS.items():
         content = read(path) if exists(path) else ""
+        uses_composite = uses_composite_conan_action(content)
         resolver_available = RUNNER_CACHE_RESOLVER in content
-        if "uses: ./.github/actions/setup-cpp-conan" in content and exists(COMPOSITE_CONAN_ACTION):
+        if uses_composite and exists(COMPOSITE_CONAN_ACTION):
             resolver_available = resolver_available or RUNNER_CACHE_RESOLVER in read(COMPOSITE_CONAN_ACTION)
         add(
             checks,
@@ -144,13 +202,86 @@ def main() -> int:
             "../.conan2-local" not in content,
             f"{path} does not reuse a shared checkout-sibling Conan Home",
         )
+        venv_available = all(
+            token in content
+            for token in (CONAN_VENV_HELPER, f"--conan-version {PINNED_CONAN_VERSION}", '--github-path "$GITHUB_PATH"')
+        ) or (uses_composite and composite_uses_pinned_venv(composite_conan))
+        add(
+            checks,
+            f"workflow:{name}:isolated-pinned-conan-venv",
+            venv_available,
+            f"{path} obtains Conan {PINNED_CONAN_VERSION} through the isolated venv helper or the audited composite action",
+        )
+        add(
+            checks,
+            f"workflow:{name}:no-global-or-floating-conan",
+            FLOATING_CONAN_REQUIREMENT not in content and "command -v conan" not in content,
+            f"{path} does not accept a global Conan executable or a floating Conan version range",
+        )
+        direct_bootstrap = "scripts/bootstrap_conan.py" in content
+        add(
+            checks,
+            f"workflow:{name}:explicit-persistent-conan-home",
+            not direct_bootstrap or bootstrap_uses_resolved_home(content),
+            f"{path} passes $CONAN_HOME explicitly on every direct bootstrap call",
+        )
+        add(
+            checks,
+            f"workflow:{name}:offline-build-never",
+            "--no-remote" not in content or "--build=never" in content,
+            f"{path} rejects missing packages instead of building or downloading sources when remotes are disabled",
+        )
+
+    ci = read(".github/workflows/ci.yml")
+    add(
+        checks,
+        "workflow:ci:isolated-pinned-conan-venv",
+        all(
+            token in ci
+            for token in (CONAN_VENV_HELPER, f"--conan-version {PINNED_CONAN_VERSION}", '--github-path "$GITHUB_PATH"')
+        ),
+        "ci uses the same pinned isolated Conan virtual environment as development and runners",
+    )
+    add(
+        checks,
+        "workflow:ci:no-global-or-floating-conan",
+        FLOATING_CONAN_REQUIREMENT not in ci and "command -v conan" not in ci,
+        "ci does not accept a global Conan executable or a floating Conan version range",
+    )
+    add(
+        checks,
+        "workflow:ci:cache-key-pinned-conan-version",
+        "conan-2.8.1" in ci,
+        "ci cache keys include the fixed Conan version",
+    )
+    add(
+        checks,
+        "workflow:ci:no-broad-conan-cache-restore",
+        "restore-keys:" not in named_workflow_step(ci, "Restore Conan cache"),
+        "ci never restores a Conan cache from a less-specific version or dependency graph key",
+    )
 
     preprod = read(".github/workflows/preprod-evidence.yml")
     add(
         checks,
         "workflow:preprod-evidence:offline-conan",
-        "scripts/bootstrap_conan.py --no-remote" in preprod,
-        "preprod evidence only consumes the previously warmed Conan cache",
+        'scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote' in preprod
+        and "--build=never" in preprod,
+        "preprod evidence uses the resolved persistent cache without remote access or package builds",
+    )
+    add(
+        checks,
+        "workflow:preprod-evidence:isolated-pinned-conan",
+        all(
+            token in preprod
+            for token in (
+                "scripts/tools/ensure_conan_venv.py",
+                "--conan-version 2.8.1",
+                "--offline",
+                '--github-path "$GITHUB_PATH"',
+            )
+        ),
+        "preprod evidence requires the pinned isolated Conan virtual environment without network installation",
     )
 
     failed = [check for check in checks if not check["passed"]]

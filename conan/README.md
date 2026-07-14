@@ -16,11 +16,21 @@ Current rules:
   or `--no-remote` must remain supported.
 - `scripts/generate_conan_lock.py` now defaults to a profile-specific temporary
   `CONAN_HOME` to avoid cross-runner and cross-profile state collisions.
+- All development, cache warm-up and fixed-runner evidence use Conan `2.8.1`
+  from an isolated virtual environment. Do not install Conan into the system
+  Python or reuse an unpinned global `conan` executable.
+- Every repository workflow that invokes `conan install` follows the same
+  venv contract, including GitHub-hosted CI and release. The helper validates
+  Python 3.12 and Conan `2.8.1`; workflows must expose that venv through
+  `GITHUB_PATH`, not discover a global `conan` executable. CI cache keys carry
+  `conan-2.8.1` and never use a broad restore key across Conan versions.
 
 Recommended entrypoints (Linux/macOS mainline):
 
 ```bash
-export CONAN_HOME=$PWD/.conan2-local
+python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
+source .venv/conan-2.8.1/bin/activate
+export CONAN_HOME="$PWD/.conan2-local"
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
 cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
@@ -30,16 +40,20 @@ cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_
 Linux fixed-runner example:
 
 ```bash
+conan_venv=/opt/boost-gateway/tools/conan-2.8.1-py3.12
+python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1
+export PATH="$conan_venv/bin:$PATH"
 cache_env="$(mktemp)"
 python scripts/tools/resolve_runner_cache.py --build-type Release \
   --profile conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
   --github-env "$cache_env"
 set -a; . "$cache_env"; set +a
-python scripts/bootstrap_conan.py --allow-public --disable-example-internal
+python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
-python scripts/bootstrap_conan.py --no-remote
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=missing --no-remote -s build_type=Release
+python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
+python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
 ```
 
 ### 新 runner 的 Conan 缓存初始化
@@ -68,9 +82,9 @@ Lockfile policy:
 - Store generated lockfiles under `conan/locks/`.
 - Cache keys include `conanfile.py`, profile, remotes config and overrides,
   lockfile hash, Conan/GCC versions, Ubuntu release, architecture and build type.
-- `--no-remote` can only generate lockfiles after the local Conan cache has been
-  pre-warmed with all required packages. Otherwise lock generation must use an
-  internal/public remote.
+- Offline evidence must use `--no-remote --build=never` after the local Conan
+  cache has been pre-warmed with all required packages and source archives.
+  `--build=missing` is only for an explicit warm-up with an approved remote.
 - Windows profile/lockfile examples remain in git history only; current mainline
   no longer treats Windows as an active Conan validation target.
 - Typical blocking signals:

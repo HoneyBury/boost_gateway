@@ -4,6 +4,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   SCCACHE_DIR: ${{ github.workspace }}/.sccache
   CONAN_HOME: ${{ github.workspace }}/.conan2-local
+  BOOST_GATEWAY_CONAN_VENV: ${{ github.workspace }}/.venv/conan-2.8.1
 
 on:
   workflow_dispatch:
@@ -43,10 +44,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
-          restore-keys: |
-            conan-home-${{ runner.os }}-release-
-            conan-home-${{ runner.os }}-
+          key: conan-home-${{ runner.os }}-conan-2.8.1-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py', 'scripts/tools/ensure_conan_venv.py') }}
 
       - name: Show tool versions
         shell: bash
@@ -69,25 +67,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.local/bin:$PATH"
-          if command -v conan >/dev/null 2>&1; then
-            conan --version
-            exit 0
-          fi
-          python3 -m venv .venv-ci
-          . .venv-ci/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install "conan>=2.0,<2.9"
-          echo "$PWD/.venv-ci/bin" >> "$GITHUB_PATH"
-          conan --version
+          python3 scripts/tools/ensure_conan_venv.py \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
+            --conan-version 2.8.1 \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+          "$BOOST_GATEWAY_CONAN_VENV/bin/conan" --version
 
       - name: Conan install
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$HOME/.local/bin:$PWD/.venv-ci/bin:$PATH"
-          python3 scripts/bootstrap_conan.py --allow-public --disable-example-internal
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
           conan install . \
             --profile:host conan/profiles/linux-gcc-x64 \
             --profile:build conan/profiles/linux-gcc-x64 \
@@ -207,7 +199,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CONAN_HOME }}
-          key: conan-home-${{ runner.os }}-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py') }}
+          key: conan-home-${{ runner.os }}-conan-2.8.1-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py', 'scripts/tools/ensure_conan_venv.py') }}
 
       - name: Save sccache cache
         if: always() && steps.restore-sccache.outputs.cache-hit != 'true'

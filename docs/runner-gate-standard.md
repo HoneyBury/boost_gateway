@@ -47,14 +47,54 @@ registered -> initialized -> conan-ready -> docker-ready -> preprod-r5 eligible 
 | Gate | 目的 | 必需条件 | 通过证据 |
 |---|---|---|---|
 | G0 Identity | 机器可定位 | runner online，系统 labels 与唯一 custom label 正确 | `gh api .../runners/<id>/labels` 输出 |
-| G1 Host | 工具链与容量 | Ubuntu x64、Docker/Compose、Python、Conan、GCC；构建/import 前至少 25GB 可用空间 | host inventory 和 `df -h /` |
-| G2 Conan | 本机 ABI-safe 依赖缓存 | `/opt/boost-gateway/{conan,sccache}` 可写；按 OS release/GCC/arch/build type/graph remote digest 生成 namespace；`--no-remote` install 成功 | `runner-cache-identity.json` 和离线 install 日志 |
+| G1 Host | 工具链与容量 | Ubuntu x64、Docker/Compose、Python 3.12、GCC；构建/import 前至少 25GB 可用空间 | host inventory 和 `df -h /` |
+| G2 Conan | 固定工具链和本机 ABI-safe 依赖缓存 | `/opt/boost-gateway/{conan,sccache,tools}` 可写；`/opt/boost-gateway/tools/conan-2.8.1-py3.12` 只含 Conan `2.8.1`；按 OS release/GCC/arch/build type/graph remote digest 生成 namespace；`--no-remote --build=never` install 成功 | `runner-cache-identity.json`、venv `conan --version` 和离线 install 日志 |
 | G3 Docker | 完整离线 Compose image cache | 所有 Compose images 为 `linux/amd64`；registry digest 和 image ID 可读取；`docker_pull_policy=never` preflight 通过 | `r5-docker-image-preflight-summary.json` |
 | G4 R5 Drill | gateway restart 恢复路径 | `docker-compose` 启动、重启前后 SDK full-flow、snapshot、record validation 全部通过 | `preprod-recovery-drill-summary.json` |
 | G5 GitHub Evidence | 可接受的预发 artifact | workflow 使用 `preprod-r5` 或唯一 R5 label，候选 SHA 一致，R5/R6 artifact 上传且通过 | `preprod-evidence-<run-id>` artifact |
 
 G0-G3 通过后可添加 `preprod-r5`；G4-G5 通过后才可被 R2/R3 作为生产候选证据。
 本机手动演练只满足 G4 的技术路径验证，不能替代 G5。
+
+## Conan Virtual Environment Contract
+
+Conan 可执行文件也是可追溯构建输入，而不是由系统 Python 隐式提供的工具。所有
+开发、runner 预热和 R5 离线证据必须使用 Conan `2.8.1` 的隔离 virtual environment。
+开发 checkout 使用 `.venv/conan-2.8.1`；Ubuntu runner 使用
+`/opt/boost-gateway/tools/conan-2.8.1-py3.12`。二者都必须由
+`scripts/tools/ensure_conan_venv.py` 创建或验收。
+该 helper 默认要求 venv 内解释器为 Python 3.12，并精确验证 Conan `2.8.1`；不能
+只因宿主 `python` 或 `conan` 命令可用就视为通过 G2。
+
+创建或升级 venv 仅允许在开发、runner 初始化或显式预热阶段联网执行：
+
+```bash
+# 开发 checkout
+python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
+source .venv/conan-2.8.1/bin/activate
+
+# Ubuntu runner，预热前执行一次
+conan_venv=/opt/boost-gateway/tools/conan-2.8.1-py3.12
+python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1
+export PATH="$conan_venv/bin:$PATH"
+conan --version
+```
+
+R5 workflow 和手工离线复验必须使用 `--offline`；该模式不会创建、安装或升级，
+缺失 venv 或版本偏离会立即失败。Conan 2.29 等现有全局安装可保留用于历史本地
+任务，但不得进入 `PATH` 或作为 R5、预热、lockfile 生成的执行器。任何 Conan、
+Python minor version 或 venv 路径漂移都会使 G2 失效，必须重新验收后才可保留
+`preprod-r5` label。
+
+`--no-remote` 只禁用 Conan remote，不能单独证明 recipe 不会在构建缺包时下载
+上游源码。因此任何离线证据 install 都必须同时使用 `--build=never`；只有显式
+联网预热阶段才允许 `--build=missing`。
+
+所有仓库内会执行 `conan install` 的 workflow 都受同一规则约束，包括 GitHub-hosted
+CI、release 和 fixed-runner 证据任务。它们必须通过 helper（直接调用或经
+`setup-cpp-conan` composite action）把对应 venv 的 `bin` 加入 `GITHUB_PATH`，不得
+探测或回退到全局 `conan`，也不得使用浮动版本范围。CI 的 Conan cache key 必须包含
+`conan-2.8.1`，且不能用宽泛 restore key 恢复另一版本或另一依赖图的缓存。
 
 ## Conan and Docker Separation
 
@@ -63,7 +103,7 @@ G0-G3 通过后可添加 `preprod-r5`；G4-G5 通过后才可被 R2/R3 作为生
 | 缓存边界 | 每个 runner OS release、GCC、架构、build type 和依赖图独立 | 可在 Ubuntu 22.04/24.04 x64 runner 间运输 |
 | 原因 | 本机二进制包可能依赖宿主 glibc | 容器携带 Ubuntu 24.04 用户态，host 提供内核/daemon |
 | 共享方式 | 每台 runner 通过 lockfile `conan install --build=missing` 预热 | clean candidate checkout 的 bundle export/import，或后续 registry mirror |
-| 离线验证 | `bootstrap_conan.py --no-remote` + `conan install --no-remote` | `--image-preflight-only --docker-pull-policy never` |
+| 离线验证 | `bootstrap_conan.py --no-remote` + `conan install --no-remote --build=never` | `--image-preflight-only --docker-pull-policy never` |
 | 漂移处理 | 新 namespace，不能复制另一 Ubuntu release 的 Conan Home | Compose SHA、候选 SHA、image ID 或 digest 变化时重新导出/import |
 
 ## Registration and Admission

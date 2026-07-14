@@ -30,6 +30,12 @@ def conan_env(conan_home: Path) -> dict[str, str]:
     return env
 
 
+def default_conan_home() -> Path:
+    """Honor an already-resolved runner cache before using the local default."""
+    configured_home = os.environ.get("CONAN_HOME", "").strip()
+    return Path(configured_home) if configured_home else DEFAULT_CONAN_HOME
+
+
 def load_remotes(remotes_file: Path, local_remotes_file: Path, env: dict[str, str], allow_public: bool, no_remote: bool, disable_example_internal: bool) -> list[dict[str, object]]:
     remotes: list[dict[str, object]] = []
     if remotes_file.exists():
@@ -91,7 +97,12 @@ def configure_remotes(conan_home: Path, remotes: list[dict[str, object]]) -> Non
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--conan-home", type=Path, default=DEFAULT_CONAN_HOME)
+    parser.add_argument(
+        "--conan-home",
+        type=Path,
+        default=default_conan_home(),
+        help="Conan Home; defaults to CONAN_HOME when set, otherwise .conan2-local.",
+    )
     parser.add_argument("--remotes-file", type=Path, default=DEFAULT_REMOTES_FILE)
     parser.add_argument("--local-remotes-file", type=Path, default=DEFAULT_LOCAL_REMOTES_FILE)
     parser.add_argument("--allow-public", action="store_true", help="Enable public conancenter if present in remotes file.")

@@ -16,6 +16,9 @@ LINUX_PROFILE = "conan/profiles/linux-gcc-x64"
 SELF_HOSTED_LINUX_RUNNER = '["self-hosted","Linux","X64"]'
 PREPROD_R5_RUNNER = '["self-hosted","Linux","X64","preprod-r5"]'
 GITHUB_HOSTED_UBUNTU_RUNNER = '"ubuntu-latest"'
+CONAN_VENV_HELPER = "scripts/tools/ensure_conan_venv.py"
+PINNED_CONAN_VERSION = "2.8.1"
+FLOATING_CONAN_REQUIREMENT = "conan>=2.0,<2.9"
 
 WORKFLOW_REQUIREMENTS = {
     "conan_validate": {
@@ -156,6 +159,8 @@ DOC_TOKENS = (
     "Linux `nosqlite` lockfile",
     "overall_pass=true",
     "docs/runner-inventory.md",
+    "ensure_conan_venv.py",
+    "conan-2.8.1-py3.12",
 )
 
 README_TOKENS = (
@@ -175,6 +180,39 @@ def exists(relative: str) -> bool:
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def bootstrap_uses_resolved_home(content: str) -> bool:
+    calls = [
+        line.strip()
+        for line in content.splitlines()
+        if "scripts/bootstrap_conan.py" in line and ("python " in line or "args=(" in line)
+    ]
+    return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
+
+
+def uses_composite_conan_action(content: str) -> bool:
+    return "uses: ./.github/actions/setup-cpp-conan" in content
+
+
+def composite_uses_pinned_venv(content: str) -> bool:
+    return all(
+        token in content
+        for token in (
+            CONAN_VENV_HELPER,
+            'default: "2.8.1"',
+            '--conan-version "${{ inputs.conan-version }}"',
+            '--github-path "$GITHUB_PATH"',
+        )
+    )
+
+
+def named_workflow_step(content: str, name: str) -> str:
+    marker = f"- name: {name}"
+    if marker not in content:
+        return ""
+    step = content.split(marker, 1)[1]
+    return step.split("\n      - name:", 1)[0]
 
 
 def main() -> int:
@@ -240,6 +278,9 @@ def main() -> int:
         )
 
     expected_summaries: list[str] = []
+    composite_action_path = ".github/actions/setup-cpp-conan/action.yml"
+    composite_action = read(composite_action_path) if exists(composite_action_path) else ""
+    composite_venv_ok = composite_uses_pinned_venv(composite_action)
     for name, requirement in WORKFLOW_REQUIREMENTS.items():
         path = str(requirement["path"])
         add(checks, f"workflow:{name}:exists", exists(path), f"{path} exists")
@@ -249,6 +290,48 @@ def main() -> int:
         for summary in requirement["summaries"]:
             expected_summaries.append(summary)
             add(checks, f"workflow:{name}:uploads:{summary}", summary in content, f"{path} uploads {summary}")
+        if name != "production_readiness":
+            add(
+                checks,
+                f"workflow:{name}:pinned-conan-venv",
+                composite_venv_ok if uses_composite_conan_action(content) else all(
+                    token in content
+                    for token in (CONAN_VENV_HELPER, f"--conan-version {PINNED_CONAN_VERSION}", '--github-path "$GITHUB_PATH"')
+                ),
+                f"{path} uses the audited Conan {PINNED_CONAN_VERSION} virtual environment",
+            )
+            add(
+                checks,
+                f"workflow:{name}:no-floating-or-global-conan",
+                FLOATING_CONAN_REQUIREMENT not in content and "command -v conan" not in content,
+                f"{path} rejects floating Conan versions and global Conan discovery",
+            )
+            direct_bootstrap = "scripts/bootstrap_conan.py" in content
+            add(
+                checks,
+                f"workflow:{name}:bootstrap-persistent-conan-home",
+                not direct_bootstrap or bootstrap_uses_resolved_home(content),
+                f"{path} explicitly passes the resolved CONAN_HOME to direct bootstrap calls",
+            )
+
+    add(
+        checks,
+        "composite-conan:pinned-venv",
+        composite_venv_ok,
+        "the shared Conan action uses the pinned virtual environment helper",
+    )
+    add(
+        checks,
+        "composite-conan:no-global-or-floating-conan",
+        FLOATING_CONAN_REQUIREMENT not in composite_action and "command -v conan" not in composite_action,
+        "the shared Conan action never falls back to global or floating Conan",
+    )
+    add(
+        checks,
+        "composite-conan:bootstrap-persistent-conan-home",
+        bootstrap_uses_resolved_home(composite_action),
+        "the shared Conan action explicitly passes the resolved CONAN_HOME to bootstrap",
+    )
 
     ci_workflow = read(".github/workflows/ci.yml")
     add(
@@ -262,6 +345,27 @@ def main() -> int:
         "workflow:ci:cache-key-includes-conan-inputs",
         all(token in ci_workflow for token in ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "conan/locks/*.lock")),
         ".github/workflows/ci.yml cache key is bound to Conan graph inputs",
+    )
+    add(
+        checks,
+        "workflow:ci:pinned-conan-venv",
+        all(
+            token in ci_workflow
+            for token in (CONAN_VENV_HELPER, f"--conan-version {PINNED_CONAN_VERSION}", '--github-path "$GITHUB_PATH"')
+        ),
+        ".github/workflows/ci.yml uses the pinned Conan virtual environment helper",
+    )
+    add(
+        checks,
+        "workflow:ci:no-floating-or-global-conan",
+        FLOATING_CONAN_REQUIREMENT not in ci_workflow and "command -v conan" not in ci_workflow,
+        ".github/workflows/ci.yml rejects floating Conan versions and global Conan discovery",
+    )
+    add(
+        checks,
+        "workflow:ci:cache-key-pinned-conan-version",
+        "conan-2.8.1" in ci_workflow and "restore-keys:" not in named_workflow_step(ci_workflow, "Restore Conan cache"),
+        ".github/workflows/ci.yml cache key includes Conan 2.8.1 and has no broad fallback restore key",
     )
 
     release_workflow = read(".github/workflows/release.yml")
@@ -406,7 +510,10 @@ def main() -> int:
         checks,
         "workflow:preprod:offline-defaults",
         'default: "never"' in preprod_workflow
-        and "scripts/bootstrap_conan.py --no-remote" in preprod_workflow
+        and 'scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote' in preprod_workflow
+        and "--build=never" in preprod_workflow
+        and "scripts/tools/ensure_conan_venv.py" in preprod_workflow
+        and "--offline" in preprod_workflow
         and "inputs.docker_pull_policy || 'never'" in preprod_workflow,
         "R5 workflow defaults to offline Docker and a pre-warmed local Conan cache",
     )
@@ -463,6 +570,9 @@ def main() -> int:
         "G3 Docker",
         "G4 R5 Drill",
         "G5 GitHub Evidence",
+        "Conan Virtual Environment Contract",
+        "ensure_conan_venv.py",
+        "conan-2.8.1-py3.12",
         "Conan and Docker Separation",
     ):
         add(
