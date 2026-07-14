@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[3]
 LINUX_LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 LINUX_PROFILE = "conan/profiles/linux-gcc-x64"
 SELF_HOSTED_LINUX_RUNNER = '["self-hosted","Linux","X64"]'
+PREPROD_R5_RUNNER = '["self-hosted","Linux","X64","preprod-r5"]'
 GITHUB_HOSTED_UBUNTU_RUNNER = '"ubuntu-latest"'
 
 WORKFLOW_REQUIREMENTS = {
@@ -409,6 +410,12 @@ def main() -> int:
         and "inputs.docker_pull_policy || 'never'" in preprod_workflow,
         "R5 workflow defaults to offline Docker and a pre-warmed local Conan cache",
     )
+    add(
+        checks,
+        "workflow:preprod:r5-eligible-runner-default",
+        f"default: '{PREPROD_R5_RUNNER}'" in preprod_workflow,
+        "R5 workflow defaults to the preprod-r5 eligible runner pool rather than all Linux runners",
+    )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(
         checks,
@@ -439,6 +446,30 @@ def main() -> int:
             f"docs:runner-inventory:{token}",
             token in runner_inventory,
             f"{runner_inventory_path} mentions {token}",
+        )
+
+    runner_standard_path = "docs/runner-gate-standard.md"
+    add(
+        checks,
+        "docs:runner-gate-standard:exists",
+        exists(runner_standard_path),
+        f"{runner_standard_path} exists",
+    )
+    runner_standard = read(runner_standard_path) if exists(runner_standard_path) else ""
+    for token in (
+        "Runner Gate Standard",
+        "preprod-r5",
+        "G2 Conan",
+        "G3 Docker",
+        "G4 R5 Drill",
+        "G5 GitHub Evidence",
+        "Conan and Docker Separation",
+    ):
+        add(
+            checks,
+            f"docs:runner-gate-standard:{token}",
+            token in runner_standard,
+            f"{runner_standard_path} defines {token}",
         )
 
     current_state = read("docs/current-state.md")
