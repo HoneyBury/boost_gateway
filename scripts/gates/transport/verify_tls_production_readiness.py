@@ -212,6 +212,8 @@ def main() -> int:
                 sys.executable,
                 str(ROOT / "scripts/check_transport_config_governance.py"),
                 "--generate-dev-certs",
+                "--cert-dir",
+                str(work_dir / "n4-governance-certs"),
                 "--build-dir",
                 str(args.build_dir),
                 "--summary-path",
@@ -375,4 +377,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

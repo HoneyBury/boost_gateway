@@ -86,6 +86,12 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--generate-dev-certs", action="store_true")
+    parser.add_argument(
+        "--cert-dir",
+        type=Path,
+        default=ROOT / "certs",
+        help="Directory containing generated development certificates.",
+    )
     parser.add_argument("--include-tls-full-flow", action="store_true")
     parser.add_argument("--build-dir", type=Path, default=ROOT / "build/release")
     parser.add_argument(
@@ -94,6 +100,7 @@ def main() -> int:
         default=ROOT / "runtime/validation/n4-transport-config-governance-summary.json",
     )
     args = parser.parse_args()
+    cert_dir = args.cert_dir if args.cert_dir.is_absolute() else ROOT / args.cert_dir
 
     tls_summary = ROOT / "runtime/validation/n4-tls-profile-summary.json"
     config_summary = ROOT / "runtime/validation/n4-config-governance-summary.json"
@@ -104,7 +111,7 @@ def main() -> int:
         str(tls_summary),
     ]
     if args.generate_dev_certs:
-        tls_cmd.append("--generate-dev-certs")
+        tls_cmd.extend(["--generate-dev-certs", "--cert-dir", str(cert_dir)])
 
     steps = [
         run_step("N4 TLS/mTLS profile boundary", "tls_profile", tls_cmd, 60),
@@ -133,6 +140,8 @@ def main() -> int:
                     str(args.build_dir),
                     "--skip-build",
                     "--backend-tls",
+                    "--tls-cert-dir",
+                    str(cert_dir),
                     "--summary-path",
                     str(tls_full_flow_summary),
                 ],
@@ -171,4 +180,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

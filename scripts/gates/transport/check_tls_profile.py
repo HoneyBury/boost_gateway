@@ -146,10 +146,15 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
     )
 
 
-def validate_certs(checks: list[dict[str, Any]], generate: bool) -> None:
-    certs = [ROOT / "certs/ca.crt", ROOT / "certs/server.crt", ROOT / "certs/server.key"]
+def validate_certs(checks: list[dict[str, Any]], generate: bool, cert_dir: Path) -> None:
+    certs = [cert_dir / "ca.crt", cert_dir / "server.crt", cert_dir / "server.key"]
     if generate and not all(path.exists() for path in certs):
-        result = run([sys.executable, str(ROOT / "scripts/gen_certs.py")])
+        result = run([
+            sys.executable,
+            str(ROOT / "scripts/gen_certs.py"),
+            "--output-dir",
+            str(cert_dir),
+        ])
         add(
             checks,
             "generate-dev-certs",
@@ -160,9 +165,9 @@ def validate_certs(checks: list[dict[str, Any]], generate: bool) -> None:
         checks,
         "dev-certs-present",
         all(path.exists() for path in certs),
-        "certs/ca.crt, certs/server.crt and certs/server.key are present after optional generation",
+        f"{cert_dir}/ca.crt, server.crt and server.key are present after optional generation",
     )
-    openssl = run(["openssl", "x509", "-in", str(ROOT / "certs/server.crt"), "-noout", "-subject", "-issuer"])
+    openssl = run(["openssl", "x509", "-in", str(cert_dir / "server.crt"), "-noout", "-subject", "-issuer"])
     add(
         checks,
         "server-cert-readable",
@@ -175,14 +180,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=ROOT / "config/environments/production/gateway.json")
     parser.add_argument("--generate-dev-certs", action="store_true")
+    parser.add_argument(
+        "--cert-dir",
+        type=Path,
+        default=ROOT / "certs",
+        help="Directory containing generated development certificates.",
+    )
     parser.add_argument("--summary-path", type=Path, default=ROOT / "runtime/validation/tls-profile-summary.json")
     args = parser.parse_args()
 
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
+    cert_dir = args.cert_dir if args.cert_dir.is_absolute() else ROOT / args.cert_dir
     checks: list[dict[str, Any]] = []
     validate_gateway_config(checks, args.config)
     validate_source_boundary(checks)
-    validate_certs(checks, args.generate_dev_certs)
+    validate_certs(checks, args.generate_dev_certs, cert_dir)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
@@ -204,7 +216,7 @@ def main() -> int:
         "artifacts": {
             "summary_path": str(summary_path),
             "config_path": str(args.config),
-            "cert_dir": str(ROOT / "certs"),
+            "cert_dir": str(cert_dir),
         },
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
@@ -220,4 +232,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

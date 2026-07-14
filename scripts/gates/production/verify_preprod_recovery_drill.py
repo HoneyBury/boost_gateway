@@ -700,6 +700,7 @@ def main() -> int:
         return 0 if image_preflight.get("passed") is True else 1
 
     recovery_summary = validation_dir / "r5-production-recovery-summary.json"
+    monitoring_summary = REPO_ROOT / "runtime/validation/monitoring-operability-summary.json"
     steps.append(
         run_step(
             "R5 N3 production recovery static gate",
@@ -708,10 +709,22 @@ def main() -> int:
             120,
         )
     )
+    steps.append(
+        run_step(
+            "R5 monitoring operability static gate",
+            "monitoring_operability",
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/check_monitoring_operability.py"),
+                "--summary-path",
+                str(monitoring_summary),
+            ],
+            120,
+        )
+    )
 
     sdk_summary = validation_dir / "r5-post-recovery-sdk-full-flow-summary.json"
     docker_snapshot_summary = REPO_ROOT / "runtime/perf/docker-production-snapshot/summary.json"
-    monitoring_summary = REPO_ROOT / "runtime/validation/monitoring-operability-summary.json"
     record_path = validation_dir / "r5-preprod-recovery-drill-record.json"
     record_check_summary = validation_dir / "r5-recovery-drill-record-check-summary.json"
     cleanup_needed = False

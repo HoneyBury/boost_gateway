@@ -111,13 +111,15 @@ python3 scripts/verify_preprod_recovery_drill.py \
 Ubuntu 24.04 x64 runner `myserver` 已完成真实 Docker Compose gateway restart
 drill：Docker Engine `29.5.2`、Compose `v5.1.4`，11 个 Compose 镜像均为
 `linux/amd64`，`docker_pull_policy=never` preflight、重启前后 SDK full-flow、
-Docker snapshot 与 recovery record `32/32` 均通过。产物为
+Docker snapshot、重启前后 SDK full-flow 与 image preflight 均通过。恢复记录还必须
+引用同一候选 checkout 生成的
+`runtime/validation/monitoring-operability-summary.json`；R5 producer 负责在写 record
+前运行该门禁，不能依赖 workspace 中遗留的旧文件。产物为
 `runtime/validation/preprod-recovery-drill-summary.json`，其中
-`overall_pass=true`。
+`overall_pass=true` 才可作为预发证据。
 
-该结果的 `run_id=local`；实现现已推送为候选 SHA `f6e0e57`，但本机结果仍只
-证明 Docker 路径和离线缓存可运行，不能替代 `preprod-evidence.yml` 在目标预发
-runner 生成的 artifact。以下阻断必须先关闭：
+该结果的 `run_id=local`，只证明 Docker 路径和离线缓存可运行，不能替代
+`preprod-evidence.yml` 在目标预发 runner 生成的 artifact。以下阻断必须先关闭：
 
 | 阻断 | 现象 | 解决方式 |
 |---|---|---|
@@ -125,6 +127,8 @@ runner 生成的 artifact。以下阻断必须先关闭：
 | 第二台 runner 接入 | 本机无其 SSH/API 入口，且没有已认证的 `gh` CLI | 提供 SSH 目标，或在管理节点执行 `gh auth login` 后用 `gh api repos/HoneyBury/boost_gateway/actions/runners` 确认 labels/online 状态；随后在该 runner 执行同一预热、bundle import 和 `never` preflight。 |
 | Docker 磁盘容量 | `myserver` 清理后可用空间为 25GB，Docker images 约 1.4GB、BuildKit cache 为 0B | 导入/构建前保持至少 25GB 可用空间；若容量再次下降，先删除历史 build/旧 Conan namespace，保留当前 R5 Compose images。 |
 | C++ 构建内存 | `myserver` 为约 8GiB RAM、无 swap；无上限并发编译会被 OOM killer 终止 | `preprod-evidence.yml` 使用 `build_parallelism=2` 默认值；只有在对应 runner 实测足够内存后才能上调。 |
+| R5 监控记录证据 | 干净 workflow checkout 不含运行时 summary；recovery record validator 会拒绝缺少 `monitoring-operability-summary.json` 的记录 | R5 内部先运行 `check_monitoring_operability.py`，再写入并校验 record；不要手动复制历史 runtime 文件。 |
+| R6 开发证书目录 | 工作区根目录遗留的 `certs/` 可能来自 `sudo`，使下次 workflow 无法写入 | R6 将 N4 自签名证书写入 `runtime/tls-preprod/run*/n4-governance-certs`；不要以 root 在 checkout 创建临时证书。 |
 | 候选可追溯性 | dirty checkout 可能令镜像内容与 manifest Git SHA 不一致 | `r5_docker_cache_bundle.py` 已拒绝 dirty checkout；先提交并 push 候选 SHA，再从该干净 checkout 导出 bundle。 |
 
 关闭这些阻断后的固定顺序是：Conan 分区预热与 `--no-remote` 验证，导入或构建
@@ -254,13 +258,10 @@ dispatch 的完整候选 SHA。
 2. 手动运行 `preprod-evidence.yml`，保持 `recovery_mode=docker-compose`、`docker_pull_policy=never` 与 `tls_runs=2`，且整个 job 必须成功。`missing` 或 `always` 的联网诊断结果不能解除 R5 预发阻断。
 3. 使用该成功 run 的 artifact，再执行真实 2h soak、R0 和 `production-readiness.yml` 的 R2/R3 汇聚。
 
-手动命令：
-
-```bash
-python scripts/bootstrap_conan.py
-python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Release --without-sqlite
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
-```
+首次 Conan 预热与严格离线复验必须使用本章前面的固定 `conan-2.8.1` venv、
+runner OS 分区的 `CONAN_HOME`，以及 `--build=missing` 后紧跟
+`--no-remote --build=never` 的两阶段命令。不要再执行无 `--conan-home` 的
+`bootstrap_conan.py`，也不要使用 PATH 中的全局 Conan。
 
 ## Ubuntu Fixed-Runner 第一批执行矩阵
 

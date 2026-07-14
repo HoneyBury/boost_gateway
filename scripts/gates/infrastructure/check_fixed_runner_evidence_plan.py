@@ -505,6 +505,14 @@ def main() -> int:
         ),
         "R5 supports cached, offline, and forced-refresh image policies with image evidence",
     )
+    add(
+        checks,
+        "workflow:preprod:r5-monitoring-record-evidence",
+        "R5 monitoring operability static gate" in preprod_recovery_gate
+        and "scripts/check_monitoring_operability.py" in preprod_recovery_gate
+        and "monitoring-operability-summary.json" in preprod_recovery_gate,
+        "R5 generates the monitoring summary required by its recovery drill record",
+    )
     preprod_workflow = read(".github/workflows/preprod-evidence.yml")
     add(
         checks,
