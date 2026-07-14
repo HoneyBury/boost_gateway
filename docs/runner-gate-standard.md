@@ -47,7 +47,7 @@ registered -> initialized -> conan-ready -> docker-ready -> preprod-r5 eligible 
 | Gate | 目的 | 必需条件 | 通过证据 |
 |---|---|---|---|
 | G0 Identity | 机器可定位 | runner online，系统 labels 与唯一 custom label 正确 | `gh api .../runners/<id>/labels` 输出 |
-| G1 Host | 工具链与容量 | Ubuntu x64、Docker/Compose、Python 3.12、GCC；构建/import 前至少 25GB 可用空间 | host inventory 和 `df -h /` |
+| G1 Host | 工具链与容量 | Ubuntu x64、Docker/Compose、Python 3.12、GCC；构建/import 前至少 25GB 可用空间；8GiB/no-swap runner 的 R5 C++ build parallelism 不得超过 2 | host inventory、`df -h /` 和 `free -h` |
 | G2 Conan | 固定工具链和本机 ABI-safe 依赖缓存 | `/opt/boost-gateway/{conan,sccache,tools}` 可写；`/opt/boost-gateway/tools/conan-2.8.1-py3.12` 只含 Conan `2.8.1`；按 OS release/GCC/arch/build type/graph remote digest 生成 namespace；`--no-remote --build=never` install 成功 | `runner-cache-identity.json`、venv `conan --version` 和离线 install 日志 |
 | G3 Docker | 完整离线 Compose image cache | 所有 Compose images 为 `linux/amd64`；registry digest 和 image ID 可读取；`docker_pull_policy=never` preflight 通过 | `r5-docker-image-preflight-summary.json` |
 | G4 R5 Drill | gateway restart 恢复路径 | `docker-compose` 启动、重启前后 SDK full-flow、snapshot、record validation 全部通过 | `preprod-recovery-drill-summary.json` |

@@ -24,6 +24,10 @@ on:
         description: "Build configuration"
         required: true
         default: "Release"
+      build_parallelism:
+        description: "Maximum concurrent C++ build jobs; use 2 on 8GiB/no-swap runners"
+        required: true
+        default: "2"
       recovery_mode:
         description: "R5 recovery drill mode; docker-compose is required for pre-production evidence"
         required: true
@@ -164,7 +168,7 @@ jobs:
           grep -F "Using Conan-provided dependency graph" runtime/validation/preprod-evidence-configure.log
 
       - name: Build validation targets
-        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }} --parallel
+        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }} --parallel ${{ inputs.build_parallelism || '2' }}
 
       - name: R5 pre-production recovery drill
         shell: bash

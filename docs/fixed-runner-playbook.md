@@ -124,6 +124,7 @@ runner 生成的 artifact。以下阻断必须先关闭：
 | 本机 Conan 分区 | `myserver` 已创建 `/opt/boost-gateway/{conan,sccache,tools}`，并完成固定 venv 与缓存预热 | 2026-07-14 已在 `ubuntu-24.04-gcc13.3.0-x64-release/conan-2.8.1-graph-b47fea14f7c99e7799f9` 通过 `--no-remote --build=never` lockfile install；其它 runner 仍须各自预热。 |
 | 第二台 runner 接入 | 本机无其 SSH/API 入口，且没有已认证的 `gh` CLI | 提供 SSH 目标，或在管理节点执行 `gh auth login` 后用 `gh api repos/HoneyBury/boost_gateway/actions/runners` 确认 labels/online 状态；随后在该 runner 执行同一预热、bundle import 和 `never` preflight。 |
 | Docker 磁盘容量 | `myserver` 清理后可用空间为 25GB，Docker images 约 1.4GB、BuildKit cache 为 0B | 导入/构建前保持至少 25GB 可用空间；若容量再次下降，先删除历史 build/旧 Conan namespace，保留当前 R5 Compose images。 |
+| C++ 构建内存 | `myserver` 为约 8GiB RAM、无 swap；无上限并发编译会被 OOM killer 终止 | `preprod-evidence.yml` 使用 `build_parallelism=2` 默认值；只有在对应 runner 实测足够内存后才能上调。 |
 | 候选可追溯性 | dirty checkout 可能令镜像内容与 manifest Git SHA 不一致 | `r5_docker_cache_bundle.py` 已拒绝 dirty checkout；先提交并 push 候选 SHA，再从该干净 checkout 导出 bundle。 |
 
 关闭这些阻断后的固定顺序是：Conan 分区预热与 `--no-remote` 验证，导入或构建
@@ -217,6 +218,7 @@ python3 scripts/verify_preprod_recovery_drill.py --mode docker-compose \
 gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref develop \
   -f 'runner=["self-hosted","Linux","X64","preprod-r5-myserver"]' \
   -f configure_preset=release -f build_dir=build/release -f configuration=Release \
+  -f build_parallelism=2 \
   -f recovery_mode=docker-compose -f recovery_timeout_seconds=300 \
   -f docker_pull_policy=never -f docker_pull_attempts=1 \
   -f tls_runs=2 -f tls_timeout_seconds=240 \

@@ -519,6 +519,14 @@ def main() -> int:
     )
     add(
         checks,
+        "workflow:preprod:bounded-build-parallelism",
+        'build_parallelism:' in preprod_workflow
+        and 'default: "2"' in preprod_workflow
+        and "--parallel ${{ inputs.build_parallelism || '2' }}" in preprod_workflow,
+        "R5 build concurrency defaults to two jobs for 8GiB/no-swap runner admission",
+    )
+    add(
+        checks,
         "workflow:preprod:r5-eligible-runner-default",
         f"default: '{PREPROD_R5_RUNNER}'" in preprod_workflow,
         "R5 workflow defaults to the preprod-r5 eligible runner pool rather than all Linux runners",

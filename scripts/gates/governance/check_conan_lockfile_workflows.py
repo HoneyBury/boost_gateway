@@ -283,6 +283,14 @@ def main() -> int:
         ),
         "preprod evidence requires the pinned isolated Conan virtual environment without network installation",
     )
+    add(
+        checks,
+        "workflow:preprod-evidence:bounded-build-parallelism",
+        'build_parallelism:' in preprod
+        and 'default: "2"' in preprod
+        and "--parallel ${{ inputs.build_parallelism || '2' }}" in preprod,
+        "preprod evidence caps C++ build concurrency for memory-constrained fixed runners",
+    )
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
