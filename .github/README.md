@@ -3,8 +3,8 @@
 BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和固定 runner 证据是两个不同场景：
 
 - `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
-- `release.yml` 现在也可在 GitHub-hosted `ubuntu-latest` 上通过 `workflow_dispatch` 做有界 build/test/baseline 验证，但其结果仍不能替代 fixed-runner release/capacity/production evidence。
-- release/capacity/production evidence/long soak 仍以 Linux self-hosted runner 作为证据事实源。
+- `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
+- release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为执行与证据事实源。
 
 ## Workflow 总览
 
@@ -34,9 +34,10 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 固定 runner 上的 Conan home 由 `scripts/tools/resolve_runner_cache.py` 分区到
 `/opt/boost-gateway/conan`：键包含 Ubuntu release、GCC、架构、build type、
-Conan 图和 remote 配置。新机器先按 lockfile 预热，后续证据任务使用
-`--no-remote`。sccache 使用相同平台分区。`ci.yml` 运行在 GitHub-hosted
-runner，是唯一使用 checkout 内 `.conan2-local` + Actions cache 的例外；
+Conan 图和 remote 配置。新机器先按 lockfile 预热，后续 fixed-runner 任务显式使用
+`--no-remote --build=never`。sccache 使用相同平台分区。`ci.yml` 运行在
+GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
+`conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
 `preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=never`；完整
@@ -61,4 +62,4 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - Runner 标签和默认值: `.github/runner-matrix.json`
 - Workflow 清单一致性: `scripts/check_workflow_catalog.py`
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
-- 推荐策略: `ci.yml` 默认使用 GitHub-hosted `ubuntu-latest`；`release.yml` 可手动切到 GitHub-hosted `ubuntu-latest` 做有界验证；fixed-runner 证据 workflow 默认使用 self-hosted Linux labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 覆盖
+- 推荐策略: 仅 `ci.yml` 默认使用 GitHub-hosted `ubuntu-latest`；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 定向到已完成相应 namespace 准入的 runner

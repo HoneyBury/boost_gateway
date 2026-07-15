@@ -6,7 +6,7 @@
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-inventory.md`。
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 仅保留手动 dispatch，用作 GitHub-hosted 主线回归兜底，避免 tag 发布时重复构建。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，`scripts/check_workflow_catalog.py` 会阻断 workflow 清单、runner matrix 与 `.github/README.md` 漂移。性能 smoke/baseline/capacity、bounded stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
-GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线，`myserver` 与 `MyDesktop-Win` 离线。AOI fixed-runner workflow 已可执行，但生产证据仍必须以各 summary 和 artifact 为准。
+GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线，`myserver` 与 `MyDesktop-Win` 离线。AOI 的默认 Release namespace 已通过本轮 fixed-runner workflow 复验；实验 gRPC GCC 13 namespace 仍处于缺包阻断，生产证据仍必须以各 summary 和 artifact 为准。
 
 ## 稳定能力
 

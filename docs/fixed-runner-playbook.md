@@ -436,7 +436,8 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 
 - 首轮 run `29195792943`（`main` / `5df1479`）因 `use_existing_workspace=true` 下 workspace 不是目标 `GITHUB_SHA` 而失败。
 - 之后已将 workflow 默认值收口为 `use_existing_workspace=false`。
-- 成功 run `29196150703`（`main` / `0af5c91`）使用 `no_remote=true`，证明当时 runner 上的预置缓存覆盖实验 gRPC 依赖图；该历史缓存路径不能跨 Ubuntu release 复用。
+- 成功 run `29196150703`（`main` / `0af5c91`）使用当时的 `no_remote=true` 输入，证明旧 runner cache 曾覆盖实验 gRPC 依赖图；当前 workflow 已移除联网切换并无条件使用 `--no-remote --build=never`，该历史缓存路径不能跨 Ubuntu release 或实际 GCC 版本复用。
+- run `29420321189`（`develop` / `9c2421d`）在新 GCC 13 gRPC namespace 缺少 recipe 时于 1 分钟内严格离线失败；run `29421659838` 进一步确认 legacy cache 缺少 c-ares source。当前阻断只能通过同 ABI 的批准 cache bundle/mirror 预热解除，不能在实验 workflow 中临时联网或复用旧 GCC 11 构建包。
 
 通过标准：
 
