@@ -30,6 +30,15 @@ on:
         description: "Repository gRPC+nosqlite Conan lockfile path relative to repo root"
         required: true
         default: "conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock"
+      prepare_local_cache:
+        description: "One-time: seed recipes/sources from the runner legacy cache and rebuild GCC 13 packages without network access"
+        required: true
+        default: false
+        type: boolean
+      local_cache_seed:
+        description: "Runner-local legacy Conan home used only as a recipe/source seed"
+        required: true
+        default: "../.conan2-local"
 
 permissions:
   contents: read
@@ -110,6 +119,51 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+
+      - name: Prepare runner-local gRPC cache
+        if: inputs.prepare_local_cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          seed="${{ inputs.local_cache_seed }}"
+          test -d "$seed"
+          test -f "$seed/.conan.db"
+          test "$(realpath "$seed")" != "$(realpath "$CONAN_HOME")"
+
+          # The legacy cache supplies recipes and already-downloaded sources only.
+          # Every native library is rebuilt with the pinned GCC 13 profile below.
+          cp -a "$seed/." "$CONAN_HOME/"
+          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+
+          export HTTP_PROXY=http://127.0.0.1:9
+          export HTTPS_PROXY=http://127.0.0.1:9
+          export ALL_PROXY=http://127.0.0.1:9
+          export NO_PROXY=""
+          conan install . \
+            --output-folder="build/conan-grpc-${{ inputs.build_type }}-prepare" \
+            --no-remote \
+            -c tools.build:jobs=2 \
+            --build='abseil/*' \
+            --build='boost/*' \
+            --build='bzip2/*' \
+            --build='c-ares/*' \
+            --build='fmt/*' \
+            --build='grpc/*' \
+            --build='gtest/*' \
+            --build='hiredis/*' \
+            --build='libbacktrace/*' \
+            --build='nlohmann_json/*' \
+            --build='openssl/*' \
+            --build='protobuf/*' \
+            --build='re2/*' \
+            --build='spdlog/*' \
+            --build='zlib/*' \
+            -s build_type=${{ inputs.build_type }} \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock' }}" \
+            -o "&:with_grpc=True" \
+            -o "&:with_sqlite=False"
 
       - name: Conan install
         shell: bash
