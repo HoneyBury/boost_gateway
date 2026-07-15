@@ -17,28 +17,37 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 | Runner | OS | 状态 | Busy | 版本 | Labels |
 |---|---|---|---|---|---|
 | `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `node-aoi-omen-gaming-laptop-16-am0xxx` |
-| `MyDesktop-Win` | Windows | `offline` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
-| `myserver` | Linux | `offline` | `false` | locally managed | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
+| `MyDesktop-Win` | Windows | `online` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
+| `myserver` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
 
 ## 当前结论
 
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
-- Windows runner `MyDesktop-Win` 当前离线，也不是 Linux 主线的执行目标。
+- `myserver` 当前在线且空闲，具备唯一 R5 label；是否可调度仍取决于当前候选的 G2/G3 cache 准入。
+- Windows runner `MyDesktop-Win` 当前在线，但不是 Linux 主线的执行目标。
 
-GitHub API 在 2026-07-15 确认 AOI runner 在线，另两台 runner 离线。R5 机器专属
-复验使用 `node-aoi-omen-gaming-laptop-16-am0xxx`，不能使用属于离线 `myserver`
-的 `preprod-r5` label。需要确定执行机器时，必须 dispatch unique custom label。
+GitHub API 在 2026-07-15 确认 AOI runner、`myserver` 和 `MyDesktop-Win` 均在线。
+R5 机器专属复验必须使用目标机器的 unique custom label；不能用共享 label 代替
+当前候选的 G2/G3 cache 准入。
 
 ## 2026-07-15 本机核验
 
 | Runner | OS / toolchain | 本机状态 | 结论 |
 |---|---|---|---|
-| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | 历史本机核验通过；GitHub API 当前 `offline` | 历史 R5 Docker Compose `never` drill 本机通过，但当前不能承接 workflow。 |
+| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, pinned venv Conan 2.8.1, Docker 29.5, Compose 5.1 | GitHub API `online`；唯一 label `preprod-r5-myserver` | 候选 `18abba2` 的 nosqlite 与 gRPC graph 均通过 `--no-remote --build=never`；run `29428322350` 完成完整 R5/R6。 |
 | `aoi-omen-gaming-laptop-16-am0xxx` | Ubuntu 22.04 x64, GCC 13.4, Conan 2.8.1 | GitHub API `online`；唯一 label `node-aoi-omen-gaming-laptop-16-am0xxx` | `/opt/boost-gateway`、新图 namespace 和 runtime-only Docker cache 已预热；run `29415968573` 完成 strict offline Conan、R5 和 R6，结论 success。 |
 
 本机核验不能替代预发 runner artifact。当前 AOI 使用机器唯一 label 定向执行；
 共享 `preprod-r5` 能力池只应包含在线且通过 G0-G3 的 runner。
+
+`myserver` 在 2026-07-15 对候选 `18abba26aba2c0fe3d7d59e399e84887f9279bab`
+完成 G0-G5。主线 graph `3f740f23045ffb63d9a3` 在发现旧 seed 缺失 recipe export 后
+已从批准 remote 干净重建；实验 gRPC graph `3d1aa0fa82959e8f09ad` 也已显式预热。
+两者均已关闭全部 remote，并分别以 10/10、15/15 包完成离线验收。run `29428322350`
+使用机器唯一 label 和 parallelism 2 完成 strict Conan、Release 全目标构建、真实 R5
+gateway restart recovery drill 及两轮 R6；artifact `preprod-evidence-29428322350` 的
+R5/R6 summary 均为 `overall_pass=true`。根分区在完整 run 后仍保留约 29GB 可用空间。
 
 ## 最近验证
 
@@ -68,6 +77,7 @@ GitHub API 在 2026-07-15 确认 AOI runner 在线，另两台 runner 离线。R
 | `preprod-evidence.yml` | `29345674702` | `f6e0e57` | failure on `aoi-omen-gaming-laptop-16-am0xxx`: `/opt/boost-gateway` missing or not writable, so persistent cache resolution failed before Conan/Configure/R5. R6 build-dir failures are consequential, not independent TLS evidence. |
 | `preprod-evidence.yml` | `29415647897` | `6f1a2ba` | failure on AOI runner: candidate graph key selected a new empty Conan namespace; strict offline install correctly failed at `boost/1.86.0`. |
 | `preprod-evidence.yml` | `29415968573` | `6f1a2ba` | success on AOI runner: same-ABI cache seed accepted by `--no-remote --build=never`; strict Conan build, complete R5 `never` drill, two R6 runs and artifact upload passed. |
+| `preprod-evidence.yml` | `29428322350` | `18abba2` | success on `myserver`: clean nosqlite cache, pinned Conan venv, Release build, complete R5 `never` drill, two R6 runs and artifact upload passed. |
 
 2026-07-15 在 `develop` / `9c2421d` 上完成 strict-offline workflow 复验：
 
