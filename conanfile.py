@@ -52,7 +52,7 @@ class BoostGatewayConan(ConanFile):
         deps.generate()
 
         tc = CMakeToolchain(self)
-        tc.variables["BOOST_USE_CONAN_DEPS"] = True
+        tc.variables["BOOST_DEPENDENCY_PROVIDER"] = "conan"
         tc.variables["BOOST_BUILD_GRPC"] = bool(self.options.get_safe("with_grpc"))
         tc.variables["BOOST_BUILD_SQLITE"] = bool(self.options.get_safe("with_sqlite"))
         tc.generate()

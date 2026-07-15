@@ -1,92 +1,22 @@
-# Boost Gateway v3.3.2 — Generic Backend Docker image
-#
-# Multi-stage build producing a minimal image for any of the 5 backend
-# services (login, room, battle, matchmaking, leaderboard).
-#
-# The SERVICE_BINARY build argument selects which binary to include.
-# The SERVICE_PORT environment variable controls the listening port.
-#
-# Usage:
-#   docker build \
-#     --build-arg SERVICE_BINARY=v2_login_backend \
-#     -f env/docker/Dockerfile.backend \
-#     -t boost-login-backend:latest .
-#
-#   docker run -e SERVICE_PORT=9202 -p 9202:9202 boost-login-backend:latest
+# Runtime-only backend image. SERVICE_BINARY selects one of the binaries staged
+# from a strict Conan release build; this Dockerfile performs no downloads.
+FROM ubuntu:24.04
 
-# ============================================================================
-# Stage 1: Build
-# ============================================================================
-FROM ubuntu:24.04 AS builder
-
-ARG SERVICE_BINARY
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    ninja-build \
-    curl \
-    git \
-    python3 \
-    ca-certificates \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /src
-
-# Cache-friendly dependency install
-COPY CMakeLists.txt CMakePresets.json ./
-COPY cmake/ cmake/
-
-# Source code
-COPY include/ include/
-COPY src/ src/
-COPY sdk/ sdk/
-COPY examples/ examples/
-COPY demo/ demo/
-COPY proto/ proto/
-COPY tests/ tests/
-COPY third_party/ third_party/
-COPY config/ config/
-
-# Build only the requested target
-RUN cmake --preset release
-RUN cmake --build --preset release --parallel 2 --target ${SERVICE_BINARY}
-
-# ============================================================================
-# Stage 2: Runtime
-# ============================================================================
-FROM ubuntu:24.04 AS runtime
-
-ARG SERVICE_BINARY
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV SERVICE_PORT=9202
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    netcat-openbsd \
-    && rm -rf /var/lib/apt/lists/*
-
 WORKDIR /app
 RUN mkdir -p /app/bin /app/logs /app/config
 
-COPY --from=builder /src/build/release/examples/${SERVICE_BINARY}/${SERVICE_BINARY} /app/bin/
-COPY --from=builder /src/build/release/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
+ARG SERVICE_BINARY
+COPY runtime/docker-rootfs/bin/${SERVICE_BINARY} /app/bin/backend
+COPY runtime/docker-rootfs/manifest.json /app/build-manifest.json
 COPY config/ /app/config/
-RUN ldconfig
-
-# Symlink so ENTRYPOINT works generically for any SERVICE_BINARY
-RUN ln -s /app/bin/${SERVICE_BINARY} /app/bin/backend
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=5s \
-    CMD nc -z 127.0.0.1 "${SERVICE_PORT}" || exit 1
+    CMD timeout 2 bash -c '</dev/tcp/127.0.0.1/${SERVICE_PORT}' || exit 1
 
 EXPOSE ${SERVICE_PORT}
-
 ENTRYPOINT ["/app/bin/backend"]
 CMD []

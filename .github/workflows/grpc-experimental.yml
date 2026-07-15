@@ -180,7 +180,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake -S . -B "build/grpc-experimental-${{ inputs.build_type }}" -G Ninja \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DBOOST_BUILD_GRPC=ON \
             -DENABLE_TESTING=ON \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \

@@ -108,6 +108,13 @@ def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content:
     )
     add(checks, f"workflow:{name}:sqlite-disabled", sqlite_disabled, f"{path} keeps sqlite disabled by default for nosqlite mainline")
     add(checks, f"workflow:{name}:lockfile-consumed", "--lockfile" in content and "conan install" in content, f"{path} consumes lockfile during conan install")
+    if "cmake " in content:
+        add(
+            checks,
+            f"workflow:{name}:strict-conan-provider",
+            "-DBOOST_DEPENDENCY_PROVIDER=conan" in content,
+            f"{path} explicitly configures the strict Conan dependency provider",
+        )
     add(
         checks,
         f"workflow:{name}:artifact-upload",
@@ -138,6 +145,38 @@ def main() -> int:
     add(checks, "profile:linux-gcc-x64-exists", exists(PROFILE), f"{PROFILE} exists")
     add(checks, "conanfile:grpc-default-off", '"&:with_grpc": False' in read("conanfile.py"), "conanfile default disables gRPC")
     add(checks, "conanfile:sqlite-default-off", '"&:with_sqlite": False' in read("conanfile.py"), "conanfile default disables sqlite")
+    root_cmake = read("CMakeLists.txt")
+    dependencies_cmake = read("cmake/Dependencies.cmake")
+    sdk_cmake = read("sdk/CMakeLists.txt")
+    provider_contract = root_cmake + dependencies_cmake + sdk_cmake + read("conanfile.py")
+    add(
+        checks,
+        "provider:default-strict-conan",
+        'set(BOOST_DEPENDENCY_PROVIDER "conan" CACHE STRING' in root_cmake,
+        "the default CMake dependency provider is strict Conan",
+    )
+    add(
+        checks,
+        "provider:explicit-fetchcontent-development-only",
+        'if(BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")' in dependencies_cmake
+        and "explicit FetchContent development mode" in dependencies_cmake,
+        "FetchContent is reachable only through the explicit development provider",
+    )
+    add(
+        checks,
+        "provider:conan-packages-required",
+        all(
+            f"find_package({package} CONFIG REQUIRED)" in dependencies_cmake
+            for package in ("fmt", "spdlog", "nlohmann_json", "OpenSSL", "hiredis", "Boost", "GTest")
+        ),
+        "strict Conan configuration fails immediately when a generated package config is absent",
+    )
+    add(
+        checks,
+        "provider:no-legacy-toggle-or-fallback",
+        "BOOST_USE_CONAN_DEPS" not in provider_contract and "falling back to FetchContent" not in dependencies_cmake,
+        "the dependency contract contains no legacy boolean or implicit fallback",
+    )
 
     contents = {name: read(path) if exists(path) else "" for name, path in WORKFLOWS.items()}
     for name, path in WORKFLOWS.items():

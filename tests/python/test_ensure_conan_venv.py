@@ -39,6 +39,17 @@ class EnsureConanVenvTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "pre-created"):
                 VENV_TOOL.ensure_conan_venv(Path(temp_dir) / "missing", "2.8.1", "3.12", offline=True)
 
+    def test_offline_rejects_partial_virtual_environment_without_conan(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            venv_path = Path(temp_dir) / "conan-venv"
+            python_path = venv_path / "bin" / "python"
+            python_path.parent.mkdir(parents=True)
+            python_path.write_text("#!/bin/sh\nprintf 'Python 3.12.4\\n'\n", encoding="utf-8")
+            python_path.chmod(0o755)
+
+            with self.assertRaisesRegex(RuntimeError, "requires Conan 2.8.1"):
+                VENV_TOOL.ensure_conan_venv(venv_path, "2.8.1", "3.12", offline=True)
+
 
 if __name__ == "__main__":
     unittest.main()

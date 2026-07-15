@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate OpenSSL dependency fallback governance."""
+"""Validate strict-Conan and explicit-development OpenSSL governance."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 from datetime import UTC, datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[3]
 
 
 def read(relative: str) -> str:
@@ -34,7 +34,7 @@ def main() -> int:
     add(checks, "openssl:explicit-root-diagnostic", "OPENSSL_ROOT_DIR" in cmake and "third_party/openssl" in cmake, "resolver failure explains explicit/local OpenSSL options")
     add(checks, "openssl:standard-targets", "OpenSSL::SSL" in cmake and "OpenSSL::Crypto" in cmake, "standard OpenSSL CMake targets remain the contract")
     add(checks, "openssl:third-party-doc", "OpenSSL 是例外" in third_party_readme and "Conan config package" in third_party_readme, "third_party docs explain OpenSSL acquisition paths")
-    add(checks, "openssl:download-script-doc", "OpenSSL is not downloaded as source" in download_sh and "BOOST_USE_CONAN_DEPS=ON" in download_sh, "download script documents OpenSSL source policy")
+    add(checks, "openssl:download-script-doc", "OpenSSL is not downloaded as source" in download_sh and "BOOST_DEPENDENCY_PROVIDER=conan" in download_sh, "download script documents OpenSSL source policy")
     add(checks, "openssl:package-warning", "no local OpenSSL install found" in package_sh, "package script warns when no local OpenSSL install is bundled")
 
     failed = [check for check in checks if not check["passed"]]

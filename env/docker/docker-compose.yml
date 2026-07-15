@@ -103,7 +103,7 @@ services:
       leaderboard-backend:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9080/health"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9080'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -154,7 +154,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "9202"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9202'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -205,7 +205,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "9302"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9302'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -256,7 +256,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "9303"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9303'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -307,7 +307,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "9304"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9304'"]
       interval: 10s
       timeout: 3s
       retries: 3
@@ -363,7 +363,7 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "nc", "-z", "127.0.0.1", "9305"]
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9305'"]
       interval: 10s
       timeout: 3s
       retries: 3

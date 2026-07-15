@@ -1,13 +1,13 @@
 # Conan Governance
 
-This repository prefers Conan as the dependency provider with automatic
-fallback to FetchContent/third_party when Conan packages are unavailable.
-The lockfile/profile flow is ready for fixed-runner validation.
+This repository uses Conan as its strict default dependency provider. Missing
+packages or generated CMake config files are configuration errors; there is no
+implicit fallback. The lockfile/profile flow is the fixed-runner contract.
 
 Current rules:
 
-- Default build path prefers Conan (`BOOST_USE_CONAN_DEPS=ON`), falling back to `FetchContent/third_party` when Conan packages are unavailable.
-- `BOOST_USE_CONAN_DEPS=ON` is the only supported switch for enabling Conan.
+- The default build path is strict Conan (`BOOST_DEPENDENCY_PROVIDER=conan`).
+- `BOOST_DEPENDENCY_PROVIDER=fetchcontent` is an explicit development-only source mode; CI, release and evidence workflows must never use it.
 - For local development, `CONAN_HOME=.conan2-local` is convenient. Fixed-runner
   workflows use an OS-safe persistent namespace under `/opt/boost-gateway/conan`;
   do not share native Conan packages between Ubuntu releases.
@@ -33,7 +33,7 @@ source .venv/conan-2.8.1/bin/activate
 export CONAN_HOME="$PWD/.conan2-local"
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
-cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_tests
 ```
 
@@ -49,11 +49,12 @@ python scripts/tools/resolve_runner_cache.py --build-type Release \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
   --github-env "$cache_env"
 set -a; . "$cache_env"; set +a
-python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
 python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
 python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
+cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan-release-offline/build/Release/generators/conan_toolchain.cmake
+cmake --build build/release --parallel
+python scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 ```
 
 ### 新 runner 的 Conan 缓存初始化
@@ -65,6 +66,20 @@ remote overrides, Conan/GCC versions, OS release, architecture and build type.
 Warm each namespace using the fixed-runner example, then use `--no-remote` for
 evidence work. Docker images are a separate cache and may cross Ubuntu 22.04
 and 24.04 x64 runners when imported as `linux/amd64` images.
+
+The graph key changes whenever any hashed input changes, including a
+build-generation-only edit in `conanfile.py`. A new key intentionally selects
+an empty namespace even when the package requirements and ABI are unchanged.
+Before dispatching an offline workflow, resolve the key from the candidate
+checkout and run `conan install --no-remote --build=never` against that exact
+`CONAN_HOME`.
+
+An existing cache may seed a new graph namespace only when the platform
+namespace (OS release, full GCC version, architecture and build type), Conan
+version and lockfile are the same. Copy the cache; do not hard-link it because
+Conan updates SQLite/LRU metadata. The lockfile-driven offline install remains
+the acceptance test and will reject missing recipe revisions or package IDs.
+Never seed across Ubuntu releases or compiler identities.
 
 `ci.yml` 是有意保留的例外：它运行在 GitHub-hosted runner 上，使用
 checkout 内的 `.conan2-local` 和 `actions/cache`；`production-readiness.yml`

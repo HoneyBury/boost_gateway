@@ -16,7 +16,7 @@ import os
 import platform
 import re
 import subprocess
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -44,11 +44,42 @@ def command_output(command: list[str]) -> str:
     return subprocess.check_output(command, text=True, stderr=subprocess.STDOUT).strip()
 
 
-def compiler_version() -> str:
-    version = command_output(["gcc", "-dumpfullversion", "-dumpversion"]).splitlines()[0]
+def compiler_identity(profile: str) -> tuple[str, str]:
+    profile_path = required_file(profile)
+    section = ""
+    compiler_version_setting = ""
+    compiler_executable = ""
+    for raw_line in profile_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith(("#", ";")):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            section = line[1:-1].strip().lower()
+            continue
+        key, separator, value = line.partition("=")
+        if not separator:
+            continue
+        if section == "settings" and key.strip() == "compiler.version":
+            compiler_version_setting = value.strip()
+        if section == "conf" and key.strip() == "tools.build:compiler_executables":
+            executables = json.loads(value.strip())
+            if not isinstance(executables, dict) or not executables.get("c"):
+                raise ValueError(f"invalid compiler executables in profile: {profile_path}")
+            compiler_executable = str(executables["c"])
+
+    if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", compiler_version_setting):
+        raise ValueError(f"profile does not pin a valid compiler.version: {profile_path}")
+    if not compiler_executable:
+        compiler_executable = f"gcc-{compiler_version_setting.split('.')[0]}"
+
+    version = command_output([compiler_executable, "-dumpfullversion", "-dumpversion"]).splitlines()[0]
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
         raise ValueError(f"unsafe GCC version: {version!r}")
-    return version
+    if version.split(".")[0] != compiler_version_setting.split(".")[0]:
+        raise ValueError(
+            f"profile pins GCC {compiler_version_setting}, but {compiler_executable} reports {version}"
+        )
+    return compiler_executable, version
 
 
 def conan_version() -> str:
@@ -123,7 +154,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     distro, release = read_os_release()
-    gcc = compiler_version()
+    compiler_executable, gcc = compiler_identity(args.profile)
     conan = conan_version()
     arch = normalized_architecture()
     build_type = args.build_type.lower()
@@ -159,12 +190,13 @@ def main() -> int:
 
     identity = {
         "summary_version": 1,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "cache_root": str(cache_root),
         "platform_namespace": platform_namespace,
         "os": {"id": distro, "release": release},
         "architecture": arch,
         "gcc_version": gcc,
+        "compiler_executable": compiler_executable,
         "build_type": args.build_type,
         "conan_version": conan,
         "conan_graph_key": conan_key,

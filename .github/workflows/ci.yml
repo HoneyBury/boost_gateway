@@ -101,7 +101,7 @@ jobs:
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
           cmake -S . -B build/release -G Ninja \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=ON \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-ci/build/Release/generators/conan_toolchain.cmake \

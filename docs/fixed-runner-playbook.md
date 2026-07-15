@@ -1,6 +1,6 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-07-14（R5 offline cache + Conan ABI partitioning）
+更新时间：2026-07-15（strict Conan graph migration + AOI R5 evidence）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
@@ -10,7 +10,7 @@ P2 生产证据 runner 的详细配置、workflow 输入和归档标准见本文
 
 GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 fixed-runner 证据替代物。2026-07-11，在线 Linux runner 已在 `cb1c853` 上成功执行 release、Conan validation、nightly stability、CI 和 perf regression 的 bounded 验证；release baseline、capacity、production evidence 和 long soak 仍必须在同一类 fixed runner 上归档完整 summary。
 
-GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-11，`aoi-omen-gaming-laptop-16-am0xxx` 已作为在线 Linux runner 匹配 `["self-hosted","Linux","X64"]`；`MyDesktop-Win` 仍离线。第一批真实证据刷新已解除 runner 不可用阻断，但仍需按下表执行并归档 summary。
+GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线并已通过机器唯一 label 完成 R5/R6；`MyDesktop-Win` 与 `myserver` 离线。是否形成生产证据仍以 workflow artifact 为准。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
@@ -66,6 +66,37 @@ conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build cona
   -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
 ```
 
+### Conan 图哈希变化后的离线迁移
+
+`resolve_runner_cache.py` 会对 `conanfile.py`、profile、lockfile、remote 配置和
+remote override 计算图身份。即使只修改 `conanfile.py` 中的 CMakeToolchain 变量，
+新候选也会得到新的 `graph-<key>` 目录；这属于隔离策略，不是自动复用失败。
+workflow dispatch 前必须从候选 checkout 解析准确的 `CONAN_HOME`，不能凭历史路径
+猜测。
+
+若新目录为空，但旧目录与新目录具有完全相同的 Ubuntu release、GCC 完整版本、
+架构、build type 和 Conan 版本，并且继续使用同一 lockfile，可用旧 cache 做一次
+本地 seed。禁止跨平台 namespace 复制，也禁止使用硬链接共享 SQLite/LRU 元数据：
+
+```bash
+old_conan_home="/opt/boost-gateway/conan/<same-platform>/conan-2.8.1-graph-<old-key>"
+new_conan_home="$CONAN_HOME"
+test -n "$new_conan_home"
+cp -a "$old_conan_home/." "$new_conan_home/"
+
+CONAN_HOME="$new_conan_home" conan install . \
+  --profile:host conan/profiles/linux-gcc-x64 \
+  --profile:build conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  -o "&:with_grpc=False" -o "&:with_sqlite=False" \
+  --output-folder=build/conan-cache-acceptance \
+  --build=never --no-remote -s build_type=Release
+```
+
+只有最后一条命令成功，才可认为新 namespace 已预热。Conan 仍会按 lockfile 的
+recipe revision 和 package ID 选择包；复制本身不是有效证据。若依赖、options、
+lockfile 或 ABI 身份已变化，应从批准的 mirror 正式预热，不能强行复用旧二进制。
+
 `ci.yml` 是有意保留的例外：它运行在 GitHub-hosted runner 上，使用 checkout 内 `.conan2-local` 与 `actions/cache`；`production-readiness.yml` 只下载并汇聚已有 artifact，不执行 Conan。
 
 ### 新机器的 Docker 镜像预热（R5 必须执行）
@@ -74,6 +105,7 @@ R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已缓存 `env/
 
 ```bash
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
+python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml build
 python3 scripts/verify_preprod_recovery_drill.py \
   --mode docker-compose \
@@ -81,7 +113,7 @@ python3 scripts/verify_preprod_recovery_drill.py \
   --docker-pull-policy never
 ```
 
-该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先执行 Compose build 或导入已校验 bundle。
+项目的 6 个镜像只复制 `runtime/docker-rootfs` 中经过 ELF/动态库检查的 Conan Release 产物，Dockerfile 不执行 CMake、Conan 或包下载。镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先 staging、Compose build 或导入已校验 bundle。
 
 若新 runner 访问 `registry-1.docker.io:443` 失败，应通过受信任 mirror 完成首次预热；预热完成后可使用 `never` 离线执行。R5 不能用 `bounded-local` 结果替代预发恢复演练。
 
@@ -106,34 +138,28 @@ python3 scripts/verify_preprod_recovery_drill.py \
 
 第二条命令通过后，再以 `docker_pull_policy=never` 手动 dispatch `preprod-evidence.yml`。bundle 是临时跨机器运输方式，不替代配置受信任 registry mirror；工具会拒绝 Compose 文件或候选提交不匹配的 bundle，二者改变时必须重新导出。
 
-### 2026-07-14 本机 R5 验证与剩余阻断
+### 2026-07-15 AOI Runner R5/R6 远端证据
 
-Ubuntu 24.04 x64 runner `myserver` 已完成真实 Docker Compose gateway restart
-drill：Docker Engine `29.5.2`、Compose `v5.1.4`，11 个 Compose 镜像均为
-`linux/amd64`，`docker_pull_policy=never` preflight、重启前后 SDK full-flow、
-Docker snapshot、重启前后 SDK full-flow 与 image preflight 均通过。恢复记录还必须
-引用同一候选 checkout 生成的
-`runtime/validation/monitoring-operability-summary.json`；R5 producer 负责在写 record
-前运行该门禁，不能依赖 workspace 中遗留的旧文件。产物为
-`runtime/validation/preprod-recovery-drill-summary.json`，其中
-`overall_pass=true` 才可作为预发证据。
+候选 `6f1a2baeb440dcb0c0ff8180675d5559cdfa959a` 已在
+`aoi-omen-gaming-laptop-16-am0xxx` 上完成 `preprod-evidence.yml`。首次 run
+`29415647897` 正确解析到新 namespace
+`ubuntu-22.04-gcc13.4.0-x64-release/conan-2.8.1-graph-01fd8acf00b862ebd633`，
+但该目录为空，strict offline install 在 `boost/1.86.0` 处失败。旧 namespace
+`graph-b2e78859939dbf15cef9` 与其 ABI/Conan/lockfile 身份一致，因此按上一节复制
+seed，并以 `--no-remote --build=never` 验收 10/10 包后重新 dispatch。
 
-该结果的 `run_id=local`，只证明 Docker 路径和离线缓存可运行，不能替代
-`preprod-evidence.yml` 在目标预发 runner 生成的 artifact。以下阻断必须先关闭：
+最终 run `29415968573` 用机器唯一 label
+`node-aoi-omen-gaming-laptop-16-am0xxx` 定向执行，8m27s 完成并为 `success`：strict
+Conan install、Configure、Release 全目标构建、R5 和两轮 R6 全部通过。R5 artifact
+记录 `docker_pull_policy=never`、11 个必需镜像、0 个缺失镜像，并通过 gateway
+restart 前后两轮 SDK full-flow、Prometheus targets、Docker production snapshot、
+recovery record 校验和 cleanup。artifact 名为
+`preprod-evidence-29415968573`，R5/R6 summary 均记录同一候选 SHA 且
+`overall_pass=true`。
 
-| 阻断 | 现象 | 解决方式 |
-|---|---|---|
-| 本机 Conan 分区 | `myserver` 已创建 `/opt/boost-gateway/{conan,sccache,tools}`，并完成固定 venv 与缓存预热 | 2026-07-14 已在 `ubuntu-24.04-gcc13.3.0-x64-release/conan-2.8.1-graph-b47fea14f7c99e7799f9` 通过 `--no-remote --build=never` lockfile install；其它 runner 仍须各自预热。 |
-| 第二台 runner 接入 | 本机无其 SSH/API 入口，且没有已认证的 `gh` CLI | 提供 SSH 目标，或在管理节点执行 `gh auth login` 后用 `gh api repos/HoneyBury/boost_gateway/actions/runners` 确认 labels/online 状态；随后在该 runner 执行同一预热、bundle import 和 `never` preflight。 |
-| Docker 磁盘容量 | `myserver` 清理后可用空间为 25GB，Docker images 约 1.4GB、BuildKit cache 为 0B | 导入/构建前保持至少 25GB 可用空间；若容量再次下降，先删除历史 build/旧 Conan namespace，保留当前 R5 Compose images。 |
-| C++ 构建内存 | `myserver` 为约 8GiB RAM、无 swap；无上限并发编译会被 OOM killer 终止 | `preprod-evidence.yml` 使用 `build_parallelism=2` 默认值；只有在对应 runner 实测足够内存后才能上调。 |
-| R5 监控记录证据 | 干净 workflow checkout 不含运行时 summary；recovery record validator 会拒绝缺少 `monitoring-operability-summary.json` 的记录 | R5 内部先运行 `check_monitoring_operability.py`，再写入并校验 record；不要手动复制历史 runtime 文件。 |
-| R6 开发证书目录 | 工作区根目录遗留的 `certs/` 可能来自 `sudo`，使下次 workflow 无法写入 | R6 将 N4 自签名证书写入 `runtime/tls-preprod/run*/n4-governance-certs`；不要以 root 在 checkout 创建临时证书。 |
-| 候选可追溯性 | dirty checkout 可能令镜像内容与 manifest Git SHA 不一致 | `r5_docker_cache_bundle.py` 已拒绝 dirty checkout；先提交并 push 候选 SHA，再从该干净 checkout 导出 bundle。 |
-
-关闭这些阻断后的固定顺序是：Conan 分区预热与 `--no-remote` 验证，导入或构建
-Docker cache 并执行 `never` preflight，最后 dispatch `preprod-evidence.yml`
-的 `docker-compose`/`never` 模式。
+这次实跑同时确认项目镜像的 runtime-only 边界：先由严格 Conan Release 构建生成
+6 个 ELF，`prepare_docker_runtime_context.py` 校验动态库和摘要，Dockerfile 只复制
+`runtime/docker-rootfs` 与配置，不在镜像中运行 CMake、Conan、`apt-get` 或依赖下载。
 
 ### 新 Ubuntu runner 的 GitHub R5 执行清单
 

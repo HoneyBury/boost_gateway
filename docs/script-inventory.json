@@ -28,6 +28,7 @@
     "scripts/analyze_test_results.py": {"category": "tool", "canonical": "scripts/tools/analyze_test_results.py"},
     "scripts/bootstrap_conan.py": {"category": "tool", "canonical": "scripts/tools/bootstrap_conan.py"},
     "scripts/build_docker.py": {"category": "tool", "canonical": "scripts/tools/build_docker.py"},
+    "scripts/tools/prepare_docker_runtime_context.py": {"category": "tool"},
     "scripts/deploy_k8s.py": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.py"},
     "scripts/gen_certs.py": {"category": "tool", "canonical": "scripts/tools/gen_certs.py"},
     "scripts/generate_conan_lock.py": {"category": "tool", "canonical": "scripts/tools/generate_conan_lock.py"},

@@ -23,14 +23,26 @@ else()
     set(BoostGatewaySdk_VERSION "${BOOST_GATEWAY_SDK_VERSION}")
 endif()
 
-if(PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
+if(NOT DEFINED BOOST_DEPENDENCY_PROVIDER)
+    set(BOOST_DEPENDENCY_PROVIDER "conan" CACHE STRING "Dependency provider: conan or fetchcontent")
+endif()
+
+if(BOOST_DEPENDENCY_PROVIDER STREQUAL "conan")
     set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "conan")
+elseif(BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")
+    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "fetchcontent")
 else()
-    set(BOOST_GATEWAY_SDK_DEPENDENCY_PROVIDER "fetchcontent_fallback")
+    message(FATAL_ERROR
+        "Unsupported BOOST_DEPENDENCY_PROVIDER=${BOOST_DEPENDENCY_PROVIDER}; expected conan or fetchcontent")
 endif()
 
 # ── Dependencies ────────────────────────────────────────────────────
-if(NOT TARGET nlohmann_json::nlohmann_json AND NOT BOOST_USE_CONAN_DEPS)
+if(BOOST_GATEWAY_SDK_STANDALONE AND BOOST_DEPENDENCY_PROVIDER STREQUAL "conan")
+    find_package(nlohmann_json CONFIG REQUIRED)
+    find_package(Boost CONFIG REQUIRED)
+endif()
+
+if(NOT TARGET nlohmann_json::nlohmann_json AND BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")
     include(FetchContent)
     FetchContent_Declare(nlohmann_json
         GIT_REPOSITORY https://github.com/nlohmann/json.git
@@ -58,7 +70,8 @@ elseif(NOT BOOST_GATEWAY_SDK_JSON_INCLUDE_ROOT AND TARGET nlohmann_json::nlohman
     endforeach()
 endif()
 
-if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND NOT BOOST_USE_CONAN_DEPS)
+if(NOT DEFINED boost_SOURCE_DIR AND NOT TARGET boost::headers AND
+   BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")
     include(FetchContent)
     FetchContent_Declare(Boost
         URL https://archives.boost.io/release/1.86.0/source/boost_1_86_0.zip

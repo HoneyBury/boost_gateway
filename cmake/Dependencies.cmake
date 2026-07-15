@@ -1,11 +1,3 @@
-include(FetchContent)
-
-if(POLICY CMP0169)
-    cmake_policy(SET CMP0169 OLD)
-endif()
-
-set(FETCHCONTENT_QUIET OFF)
-
 # ---------------------------------------------------------------------------
 # Local third-party archive directory (for offline / internal-network builds)
 # ---------------------------------------------------------------------------
@@ -13,22 +5,11 @@ set(THIRD_PARTY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/third_party")
 set(THIRD_PARTY_CACHE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/_deps")
 set(THIRD_PARTY_BINARY_CACHE_DIR "${CMAKE_BINARY_DIR}/_deps")
 
-set(PROJECT_DEPENDENCY_PROVIDER "fetchcontent_fallback")
-set(PROJECT_CONAN_DEPENDENCY_MISSING "")
+set(PROJECT_DEPENDENCY_PROVIDER "${BOOST_DEPENDENCY_PROVIDER}")
 set(PROJECT_CONAN_FIRST_DEPENDENCIES "fmt;spdlog;nlohmann_json;hiredis;Boost")
 set(PROJECT_CONAN_BOOST_TARGET "")
 set(PROJECT_CONAN_DUAL_TRACK_DEPENDENCIES "OpenSSL")
 set(PROJECT_CONAN_EXPERIMENTAL_DEPENDENCIES "protobuf;grpc;sqlite3")
-
-if(BOOST_USE_CONAN_DEPS)
-    message(STATUS "BOOST_USE_CONAN_DEPS=ON — probing Conan-provided dependencies before fallback")
-endif()
-
-if(EXISTS "${THIRD_PARTY_DIR}")
-    message(STATUS "Third-party directory found: ${THIRD_PARTY_DIR}")
-else()
-    message(STATUS "Third-party directory not found — fetching from remote URLs")
-endif()
 
 function(project_try_local_source dep_name local_dir sentinel out_var)
     if(EXISTS "${local_dir}/${sentinel}")
@@ -47,14 +28,6 @@ function(project_resolve_source_dir dep_name sentinel out_var)
         project_try_local_source("${dep_name}" "${THIRD_PARTY_BINARY_CACHE_DIR}/${dep_name}-src" "${sentinel}" _resolved)
     endif()
     set(${out_var} "${_resolved}" PARENT_SCOPE)
-endfunction()
-
-function(project_record_missing_conan_dependency dep_name)
-    if(PROJECT_CONAN_DEPENDENCY_MISSING)
-        set(PROJECT_CONAN_DEPENDENCY_MISSING "${PROJECT_CONAN_DEPENDENCY_MISSING},${dep_name}" PARENT_SCOPE)
-    else()
-        set(PROJECT_CONAN_DEPENDENCY_MISSING "${dep_name}" PARENT_SCOPE)
-    endif()
 endfunction()
 
 function(project_configure_local_openssl_root candidate_root out_var)
@@ -105,8 +78,8 @@ function(project_ensure_openssl)
         return()
     endif()
 
-    # Conan exports OpenSSL config packages. Try CONFIG first so a Conan
-    # toolchain remains authoritative when BOOST_USE_CONAN_DEPS=ON.
+    # Conan exports OpenSSL config packages. Try CONFIG first so its toolchain
+    # remains authoritative in the strict Conan provider mode.
     find_package(OpenSSL CONFIG QUIET)
     if(TARGET OpenSSL::SSL AND TARGET OpenSSL::Crypto)
         message(STATUS "Using OpenSSL from CMake config package")
@@ -136,33 +109,19 @@ function(project_ensure_openssl)
 
     message(FATAL_ERROR
         "OpenSSL was not found. Install libssl-dev/openssl-devel, enable "
-        "Conan with BOOST_USE_CONAN_DEPS=ON, set OPENSSL_ROOT_DIR, or provide "
+        "Conan with BOOST_DEPENDENCY_PROVIDER=conan, set OPENSSL_ROOT_DIR, or provide "
         "a local OpenSSL install under third_party/openssl with include/ and lib/."
     )
 endfunction()
 
-if(BOOST_USE_CONAN_DEPS)
-    find_package(fmt CONFIG QUIET)
-    if(NOT fmt_FOUND)
-        project_record_missing_conan_dependency("fmt")
-    endif()
-    find_package(spdlog CONFIG QUIET)
-    if(NOT spdlog_FOUND)
-        project_record_missing_conan_dependency("spdlog")
-    endif()
-    find_package(nlohmann_json CONFIG QUIET)
-    if(NOT nlohmann_json_FOUND)
-        project_record_missing_conan_dependency("nlohmann_json")
-    endif()
-    find_package(OpenSSL CONFIG QUIET)
-    if(NOT OpenSSL_FOUND)
-        project_record_missing_conan_dependency("OpenSSL")
-    endif()
-    find_package(hiredis CONFIG QUIET)
-    if(NOT hiredis_FOUND)
-        project_record_missing_conan_dependency("hiredis")
-    endif()
-    find_package(Boost CONFIG QUIET)
+if(BOOST_DEPENDENCY_PROVIDER STREQUAL "conan")
+    message(STATUS "Dependency provider: strict Conan")
+    find_package(fmt CONFIG REQUIRED)
+    find_package(spdlog CONFIG REQUIRED)
+    find_package(nlohmann_json CONFIG REQUIRED)
+    find_package(OpenSSL CONFIG REQUIRED)
+    find_package(hiredis CONFIG REQUIRED)
+    find_package(Boost CONFIG REQUIRED)
     if(TARGET Boost::headers)
         set(PROJECT_CONAN_BOOST_TARGET "Boost::headers")
     elseif(TARGET boost::headers)
@@ -170,27 +129,29 @@ if(BOOST_USE_CONAN_DEPS)
     elseif(TARGET boost::boost)
         set(PROJECT_CONAN_BOOST_TARGET "boost::boost")
     else()
-        project_record_missing_conan_dependency("Boost")
+        message(FATAL_ERROR "Conan Boost package did not provide a supported headers target")
     endif()
     if(ENABLE_TESTING)
-        find_package(GTest CONFIG QUIET)
-        if(NOT GTest_FOUND)
-            project_record_missing_conan_dependency("GTest")
-        endif()
+        find_package(GTest CONFIG REQUIRED)
     endif()
-    if(fmt_FOUND AND spdlog_FOUND AND nlohmann_json_FOUND AND OpenSSL_FOUND AND hiredis_FOUND AND PROJECT_CONAN_BOOST_TARGET)
-        set(PROJECT_DEPENDENCY_PROVIDER "conan")
-        message(STATUS "Using Conan-provided dependency graph")
-        message(STATUS "Conan-first dependencies: ${PROJECT_CONAN_FIRST_DEPENDENCIES}")
-        message(STATUS "Conan dual-track dependencies: ${PROJECT_CONAN_DUAL_TRACK_DEPENDENCIES}")
-        message(STATUS "Conan experimental dependencies: ${PROJECT_CONAN_EXPERIMENTAL_DEPENDENCIES}")
-    else()
-        message(WARNING "BOOST_USE_CONAN_DEPS=ON but not all Conan packages were found "
-                        "(${PROJECT_CONAN_DEPENDENCY_MISSING}) — falling back to FetchContent/third_party")
-    endif()
+    message(STATUS "Using Conan-provided dependency graph")
+    message(STATUS "Conan dependencies: ${PROJECT_CONAN_FIRST_DEPENDENCIES}")
+    message(STATUS "Conan dual-track dependencies: ${PROJECT_CONAN_DUAL_TRACK_DEPENDENCIES}")
+    message(STATUS "Conan experimental dependencies: ${PROJECT_CONAN_EXPERIMENTAL_DEPENDENCIES}")
 endif()
 
-if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
+if(BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")
+    include(FetchContent)
+    if(POLICY CMP0169)
+        cmake_policy(SET CMP0169 OLD)
+    endif()
+    set(FETCHCONTENT_QUIET OFF)
+    message(STATUS "Dependency provider: explicit FetchContent development mode")
+    if(EXISTS "${THIRD_PARTY_DIR}")
+        message(STATUS "Third-party directory found: ${THIRD_PARTY_DIR}")
+    else()
+        message(STATUS "Third-party directory not found — fetching from remote URLs")
+    endif()
     # ---------------------------------------------------------------------------
     # fmt 11.2.0
     # ---------------------------------------------------------------------------
@@ -209,6 +170,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(fmt
             GIT_REPOSITORY https://github.com/fmtlib/fmt.git
             GIT_TAG 11.2.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -230,6 +192,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(googletest
             GIT_REPOSITORY https://github.com/google/googletest.git
             GIT_TAG v1.15.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -251,6 +214,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(spdlog
             GIT_REPOSITORY https://github.com/gabime/spdlog.git
             GIT_TAG v1.15.3
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -272,6 +236,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(nlohmann_json
             GIT_REPOSITORY https://github.com/nlohmann/json.git
             GIT_TAG v3.12.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -330,6 +295,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(hiredis
             GIT_REPOSITORY https://github.com/redis/hiredis.git
             GIT_TAG v1.2.0
+            GIT_SHALLOW TRUE
         )
     endif()
 

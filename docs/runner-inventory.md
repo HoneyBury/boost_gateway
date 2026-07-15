@@ -1,6 +1,6 @@
 # GitHub Actions Runner Inventory
 
-更新时间：2026-07-14（补充 R5 workflow dispatch 失败归因）
+更新时间：2026-07-15（AOI runner strict-offline R5/R6 success）
 
 本文档作为仓库 Actions runner 拓扑的单一事实源。`current-state.md` 与 `fixed-runner-playbook.md` 只引用这里的结论，不再各自维护 runner 在线状态描述。
 runner 命名、custom labels、Conan/Docker/R5 准入规则见
@@ -16,29 +16,29 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 
 | Runner | OS | 状态 | Busy | 版本 | Labels |
 |---|---|---|---|---|---|
-| `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux` |
-| `MyDesktop-Win` | Windows | `online` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
-| `myserver` | Linux | `online` | `false` | locally managed | `self-hosted`, `X64`, `Linux` |
+| `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `node-aoi-omen-gaming-laptop-16-am0xxx` |
+| `MyDesktop-Win` | Windows | `offline` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
+| `myserver` | Linux | `offline` | `false` | locally managed | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
 
 ## 当前结论
 
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
-- Windows runner `MyDesktop-Win` 已在线，但不是当前 Linux 主线的执行目标。
+- Windows runner `MyDesktop-Win` 当前离线，也不是 Linux 主线的执行目标。
 
-GitHub API 在 2026-07-14 已确认三台 runner 都处于 `online`；Linux R5 workflow
-使用通用 labels 时可被调度到 `aoi-omen-gaming-laptop-16-am0xxx` 或 `myserver`。
-需要确定执行机器时，必须先添加并 dispatch unique custom label。
+GitHub API 在 2026-07-15 确认 AOI runner 在线，另两台 runner 离线。R5 机器专属
+复验使用 `node-aoi-omen-gaming-laptop-16-am0xxx`，不能使用属于离线 `myserver`
+的 `preprod-r5` label。需要确定执行机器时，必须 dispatch unique custom label。
 
-## 2026-07-14 本机核验
+## 2026-07-15 本机核验
 
 | Runner | OS / toolchain | 本机状态 | 结论 |
 |---|---|---|---|
-| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | `Runner.Listener` active，GitHub API `online` | R5 Docker Compose `never` drill 本机通过，见 `preprod-recovery-drill-summary.json`；创建 `/opt/boost-gateway`、Conan 预热并添加 `preprod-r5-myserver` 后可执行 GitHub workflow。 |
-| `aoi-omen-gaming-laptop-16-am0xxx` | Linux x64，详细宿主工具链待主机登录核验 | GitHub API `online`；run `29345674702` 实际被调度到该机 | `/opt/boost-gateway` 缺失或不可写，G2 Conan 失败；修复后按 runner gate standard 完成 Conan、Docker 和 R5 准入。 |
+| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, Conan 2.29, Docker 29.5, Compose 5.1 | 历史本机核验通过；GitHub API 当前 `offline` | 历史 R5 Docker Compose `never` drill 本机通过，但当前不能承接 workflow。 |
+| `aoi-omen-gaming-laptop-16-am0xxx` | Ubuntu 22.04 x64, GCC 13.4, Conan 2.8.1 | GitHub API `online`；唯一 label `node-aoi-omen-gaming-laptop-16-am0xxx` | `/opt/boost-gateway`、新图 namespace 和 runtime-only Docker cache 已预热；run `29415968573` 完成 strict offline Conan、R5 和 R6，结论 success。 |
 
-本机核验不能替代预发 runner artifact。两台 Linux runner 在加入共享
-`preprod-r5` label 前均不得承接通用 R5 workflow。
+本机核验不能替代预发 runner artifact。当前 AOI 使用机器唯一 label 定向执行；
+共享 `preprod-r5` 能力池只应包含在线且通过 G0-G3 的 runner。
 
 ## 最近验证
 
@@ -66,6 +66,8 @@ GitHub API 在 2026-07-14 已确认三台 runner 都处于 `online`；Linux R5 w
 | `grpc-experimental.yml` | `29195792943` | `5df1479` | failure: `use_existing_workspace=true` 时 runner workspace HEAD 与 `GITHUB_SHA` 不一致，命中 preflight 保护 |
 | `grpc-experimental.yml` | `29196150703` | `0af5c91` | success: `use_existing_workspace=false` + `no_remote=true`；当时 runner 预置 Conan 缓存可完成 `BOOST_BUILD_GRPC=ON`、SDK consumer 与 decision-boundary 验证。当前缓存策略已按 Ubuntu release/GCC/arch/build type 分区。 |
 | `preprod-evidence.yml` | `29345674702` | `f6e0e57` | failure on `aoi-omen-gaming-laptop-16-am0xxx`: `/opt/boost-gateway` missing or not writable, so persistent cache resolution failed before Conan/Configure/R5. R6 build-dir failures are consequential, not independent TLS evidence. |
+| `preprod-evidence.yml` | `29415647897` | `6f1a2ba` | failure on AOI runner: candidate graph key selected a new empty Conan namespace; strict offline install correctly failed at `boost/1.86.0`. |
+| `preprod-evidence.yml` | `29415968573` | `6f1a2ba` | success on AOI runner: same-ABI cache seed accepted by `--no-remote --build=never`; strict Conan build, complete R5 `never` drill, two R6 runs and artifact upload passed. |
 
 上述 bounded workflow、专项 E2E、历史生产 resilience/evidence 和 R0 candidate 已形成真实 fixed-runner 事实。`perf-commit-check.yml`、`production-resilience.yml`、`production-evidence.yml` 已退役，当前分别由 `perf-regression.yml` 和 `production-gates.yml` 承接。long-soak workflow 的历史 artifact 未证明 2h 稳定性，只证明 long profile 的有界执行通过；真实时长 soak、capacity/business-capacity、R4 和 R2/R3 仍需按同一候选 SHA 刷新。
 

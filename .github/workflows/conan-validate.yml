@@ -147,7 +147,7 @@ jobs:
           set -euo pipefail
           mkdir -p runtime/validation
           cmake -S . -B build/conan-validate-${{ inputs.build_type }} -G Ninja \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=${{ inputs.enable_testing && 'ON' || 'OFF' }} \
             -DCMAKE_BUILD_TYPE=${{ inputs.build_type }} \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-${{ inputs.build_type }}/build/${{ inputs.build_type }}/generators/conan_toolchain.cmake \

@@ -6,6 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from prepare_docker_runtime_context import prepare
+
 
 TARGETS = {
     "gateway": ("boost-gateway", "env/docker/Dockerfile.gateway", []),
@@ -31,9 +33,19 @@ def main() -> int:
     parser.add_argument("target", nargs="?", default="all",
                         choices=["all", *TARGETS.keys()])
     parser.add_argument("--no-cache", action="store_true")
+    parser.add_argument("--build-dir", type=Path, default=Path("build/release"),
+                        help="existing strict-Conan CMake build containing release binaries")
+    parser.add_argument("--configuration", help="multi-config build configuration, for example Release")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parents[2]
+    build_dir = args.build_dir if args.build_dir.is_absolute() else root / args.build_dir
+    prepare(
+        build_dir,
+        root / "runtime/docker-rootfs",
+        root / "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock",
+        args.configuration,
+    )
     targets = TARGETS.keys() if args.target == "all" else [args.target]
     for target in targets:
         name, dockerfile, extra_args = TARGETS[target]
@@ -45,4 +57,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

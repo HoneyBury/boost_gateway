@@ -29,7 +29,7 @@
 | helper/legacy 状态 | typed envelope helper 已接入主线；全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；legacy raw JSON 兼容窗口仍存在但已收缩到仅内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy/legacy-helper-inventory.md`, `proto/README.md` |
 | CI 平台 | 默认主 CI 是手动 Linux Conan 主线验证；`ci.yml` 仅在 `workflow_dispatch` 下运行，并支持通过 `runner` 输入切换到 GitHub-hosted `ubuntu-latest` 或 self-hosted Linux labels；`v*` tag 只触发 release | `.github/workflows/ci.yml`, `.github/runner-matrix.json`, `docs/current-state.md` |
 | 性能门禁 | `perf-regression.yml` 统一覆盖 smoke / baseline / capacity；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-regression.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml` |
-| 依赖管理 | Conan 2 `nosqlite` lockfile/profile 路径已经落仓，`BOOST_USE_CONAN_DEPS=ON` 是默认值，自动回退到 FetchContent/third_party；`release.yml` 已接入 Conan lockfile 预检步骤；Ubuntu fixed-runner 实跑结果可提升为默认推荐依据 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-gates.yml` |
+| 依赖管理 | Conan 2 `nosqlite` lockfile/profile 是默认严格路径，缺包直接失败；FetchContent 仅可由开发者显式选择；`release.yml` 已接入 Conan lockfile 预检步骤 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-gates.yml` |
 | 编译缓存 | 主流程已启用 `sccache` + `actions/cache`，每次 CI 运行归档 build-time.json + sccache-stats.json | `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/workflows/perf-regression.yml` |
 | 近期代码趋势 | 最近提交集中在 runner 治理、CTest label 统一、release-governance 文档对齐、login schema 闭环，以及 Linux CI 回归修复 | `git log --oneline -n 6` |
 
@@ -42,7 +42,7 @@
 | G1 | 项目命名仍带 demo 色彩 | 根 README 标题已改为 `BoostGateway`，CMake 描述已收敛为企业级框架定位 | 本地目录和远端仓库已进入迁移期，文档引用已完成统一 |
 | G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 已覆盖 Room/Battle/Match/Leaderboard 基础 RPC、SDK-integrated full-flow、Battle 可取消 stream、trusted principal RBAC、TLS/mTLS、OTLP collector E2E、实验 SDK 安装包契约，以及 fixed-runner `BOOST_BUILD_GRPC=ON` run `29196150703`；当前剩余结论不是“证据缺失”，而是继续保持实验边界 | 中期继续以 `defer_default_transport` 为前提观察演进，只在默认链路确有收益且不新增主线负担时再讨论升格 |
 | G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；全部 5 个服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract，包括 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息；仅内部 Raft RPC 仍保留 raw JSON 路径 | room governance / control-plane 风格消息与 login 域补齐已完成；内部 Raft RPC 继续作为内部 RPC 边界保留，待等价集群/恢复测试就绪后迁移；其余路径可推进 `legacy raw JSON` 兼容窗口收缩 |
-| G4 | 依赖治理正在从 fallback 迁向 Conan lockfile | `BOOST_USE_CONAN_DEPS=ON` 已是默认值；Conan profile/lock 入口、Linux `nosqlite` lockfile、fixed-runner workflow 预检均已落地；`release.yml` 已接入 Conan lockfile preflight；仍需 Ubuntu fixed-runner 真实 summary 作为默认推荐依据 | 短期优先完成 Ubuntu fixed-runner lockfile install、release baseline、long-soak/capacity 和 production evidence；通过后把 Conan `nosqlite` 提升为主线唯一推荐路径 |
+| G4 | 依赖治理已收敛到 Conan lockfile | `BOOST_DEPENDENCY_PROVIDER=conan` 是严格默认值；profile/lock、fixed-runner workflow 预检和 release preflight 已落地；不会隐式进入 FetchContent | 持续维护 ABI 隔离的 runner 缓存并以 `--no-remote --build=never` 验证完整性 |
 | G5 | 编译加速尚未系统化收口 | sccache 已在 5/10 工作流中启用，剩余 5 个辅助工作流无需缓存；每次 CI 运行已结构化归档构建耗时与 sccache 统计至 `runtime/perf/build-times/` | build-time 基线基础设施已完成，待 CI 实际运行积累数据后可视需要扩大 sccache 覆盖 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
 | G6.5 | 自动 CI 平台矩阵需要和当前在线 runner 一致 | 仓库内版本化 runner matrix 与统一 runner 解析已经落地，但 self-hosted runner 离线或标签不匹配时仍会出现无效排队；当前 GitHub-hosted `ubuntu-latest` 只作为手动 fallback，不是固定 runner 证据替代物 | 短期把在线 runner inventory、标签治理、无效 run 处理和 GitHub-hosted fallback 流程写成标准操作，并补真实 Linux runner 证据 |
@@ -78,7 +78,7 @@
 | `src/v2/grpc/`, `tests/v2/unit/gateway_grpc_test.cpp`, `tests/perf/grpc_vs_tcp_perf_test.cpp` | gRPC PoC，默认 `BOOST_BUILD_GRPC=OFF`；benchmark 已改为真实 TCP login backend vs gRPC `RequestLogin` I/O，非登录 full-flow、Battle stream、trusted resolver RBAC、TLS/mTLS E2E 已落地 | 保留为实验区，不进入默认主线；下一步应补 observability、安装包契约和 fixed-runner 证据，而不是扩大宣传面 | gRPC 覆盖观测、交付与固定 runner 证据后再升级 |
 | `demo/games/tank_battle/`, `examples/realtime_echo_plugin` | 业务/demo/plugin 验证，不属于默认生产主链 | 保留为可选 demo，默认 OFF；禁止反向污染框架层 | demo gate 只验证 SPI 和业务样例，不作为生产能力宣传依据 |
 | `scripts/p4_validate.py` 和 legacy wrapper | script inventory 已标注 legacy | 不新增引用；能被新 gate 覆盖后删除或移入 archive | `check_script_inventory.py` 确认无 public/workflow 引用 |
-| `third_party/` 与 FetchContent 混合依赖 | 依赖来源目前统一为 Conan-first（`BOOST_USE_CONAN_DEPS=ON` 默认开启），自动 fallback 到 FetchContent/third_party | 中期迁移到纯 Conan lockfile 驱动；保留离线镜像策略 | lockfile/profile 和 dependency cache 稳定后，清理冗余 third_party 源 |
+| `third_party/` 与 FetchContent 开发依赖 | 生产、CI 和证据链只使用严格 Conan；`third_party/FetchContent` 仅服务显式开发模式 | 保留源码调试能力但不参与自动选择 | 门禁持续禁止工作流使用 `fetchcontent` |
 
 ### 收束顺序
 
@@ -93,7 +93,7 @@
 - ✅ `echo_server` 已移除（`echo_client` 保留）
 - ✅ `tests/unit`, `tests/integration`, `tests/chaos` 已移除
 - ✅ G3 typed envelope 收束：全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed request/response（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；仅内部 Raft RPC 保留 raw JSON 路径
-- ✅ G4 Conan 依赖治理：`BOOST_USE_CONAN_DEPS=ON` 默认开启，lockfile/profile/引导工具已落地；工作流（conan-validate/release/long-soak-capacity/production-evidence）已接入锁文件预检；docs/conan/README.md 和 governance gate 已更新；待 Ubuntu fixed-runner 真实 summary 完成后可提升为唯一推荐路径
+- ✅ G4 Conan 依赖治理：`BOOST_DEPENDENCY_PROVIDER=conan` 已成为严格唯一推荐主线，lockfile/profile/引导工具与 workflow 预检均已落地；FetchContent 只保留为显式开发模式
 - ✅ G5 sccache 构建时间基线：5/10 工作流已启用 sccache（另 5 个辅助工作流无需缓存）；每次 CI 运行结构化归档构建耗时与 sccache 统计至 `runtime/perf/build-times/`
 
 ### 默认构建/安装面目标
@@ -249,9 +249,9 @@
 
 任务：
 
-- 已选定 Conan 作为依赖管理方案，`conanfile.py` 和 `BOOST_USE_CONAN_DEPS=ON` 已落地，`release.yml` 已接入 Conan lockfile preflight。
+- 已选定 Conan 作为依赖管理方案，`conanfile.py` 和 `BOOST_DEPENDENCY_PROVIDER=conan` 已落地，`release.yml` 已接入 Conan lockfile preflight。
 - 仓库内 `conan/profiles/`、`scripts/generate_conan_lock.py`、`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 与 fixed-runner 文档入口已完备；`conan-validate.yml`、`long-soak-capacity.yml`、`production-gates.yml` 使用 lockfile 预检。
-- 当前已完成第一轮规则收敛：`fmt/spdlog/nlohmann_json/hiredis/boost::headers` 按 Conan-first 治理，`OpenSSL` 暂时保持双轨保守；当前默认 Conan 主线路径使用 `with_sqlite=False`，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
+- 当前主线严格由 Conan 提供 `fmt/spdlog/nlohmann_json/hiredis/boost::headers/OpenSSL`；默认使用 `with_sqlite=False`，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。
 - 保留离线/内网构建说明，避免完全依赖公网下载。
