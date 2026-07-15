@@ -45,7 +45,7 @@ COPY third_party/ third_party/
 COPY config/ config/
 
 # Configure and build only the gateway target
-RUN cmake --preset release
+RUN cmake --preset release -DENABLE_TESTING=OFF
 RUN cmake --build --preset release --parallel 2 --target v2_gateway_demo
 
 # ============================================================================

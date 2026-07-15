@@ -58,7 +58,7 @@ def ensure_conan_venv(venv_path: Path, conan_version: str, python_version: str, 
 
     try:
         installed_version = installed_conan_version(venv_path)
-    except (RuntimeError, subprocess.CalledProcessError) as error:
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         if offline:
             raise RuntimeError(f"offline mode requires Conan {conan_version} in {venv_path}") from error
         run([str(python_path), "-m", "pip", "install", "--upgrade", "pip"])

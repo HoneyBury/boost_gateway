@@ -19,7 +19,6 @@
 # ============================================================================
 FROM ubuntu:24.04 AS builder
 
-ARG SERVICE_BINARY
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV DEBIAN_FRONTEND=noninteractive
@@ -52,16 +51,20 @@ COPY tests/ tests/
 COPY third_party/ third_party/
 COPY config/ config/
 
-# Build only the requested target
-RUN cmake --preset release
-RUN cmake --build --preset release --parallel 2 --target ${SERVICE_BINARY}
+# Build all backend targets once so service images share the expensive compile layer.
+RUN cmake --preset release -DENABLE_TESTING=OFF
+RUN cmake --build --preset release --parallel 2 --target \
+    v2_login_backend \
+    v2_room_backend \
+    v2_battle_backend \
+    v2_match_backend \
+    v2_leaderboard_backend
 
 # ============================================================================
 # Stage 2: Runtime
 # ============================================================================
 FROM ubuntu:24.04 AS runtime
 
-ARG SERVICE_BINARY
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 ENV SERVICE_PORT=9202
@@ -75,6 +78,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 RUN mkdir -p /app/bin /app/logs /app/config
 
+ARG SERVICE_BINARY
 COPY --from=builder /src/build/release/examples/${SERVICE_BINARY}/${SERVICE_BINARY} /app/bin/
 COPY --from=builder /src/build/release/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
 COPY config/ /app/config/

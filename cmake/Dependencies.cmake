@@ -209,6 +209,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(fmt
             GIT_REPOSITORY https://github.com/fmtlib/fmt.git
             GIT_TAG 11.2.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -230,6 +231,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(googletest
             GIT_REPOSITORY https://github.com/google/googletest.git
             GIT_TAG v1.15.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -251,6 +253,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(spdlog
             GIT_REPOSITORY https://github.com/gabime/spdlog.git
             GIT_TAG v1.15.3
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -272,6 +275,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(nlohmann_json
             GIT_REPOSITORY https://github.com/nlohmann/json.git
             GIT_TAG v3.12.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
@@ -330,6 +334,7 @@ if(NOT PROJECT_DEPENDENCY_PROVIDER STREQUAL "conan")
         FetchContent_Declare(hiredis
             GIT_REPOSITORY https://github.com/redis/hiredis.git
             GIT_TAG v1.2.0
+            GIT_SHALLOW TRUE
         )
     endif()
 
