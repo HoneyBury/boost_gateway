@@ -49,6 +49,7 @@ jobs:
           python scripts/tools/ensure_conan_venv.py \
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
             --conan-version 2.8.1 \
+            --offline \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
 
@@ -65,7 +66,7 @@ jobs:
 
       - name: Bootstrap Conan home
         shell: bash
-        run: python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
+        run: python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 
       - name: Conan install
         shell: bash
@@ -78,7 +79,8 @@ jobs:
             -o "&:with_grpc=False" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-nightly \
-            --build=missing \
+            --build=never \
+            --no-remote \
             -s build_type=Debug
 
       - name: Install sccache

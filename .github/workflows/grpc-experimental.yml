@@ -20,27 +20,16 @@ on:
         default: "Release"
         type: choice
         options:
-          - Debug
           - Release
-      allow_public:
-        description: "Allow public conancenter remote"
-        required: true
-        default: false
-        type: boolean
-      no_remote:
-        description: "Use local Conan cache only"
-        required: true
-        default: false
-        type: boolean
       use_existing_workspace:
         description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
         required: true
         default: false
         type: boolean
       conan_lockfile:
-        description: "Optional Conan lockfile path relative to repo root; leave empty to generate a grpc+nosqlite lockfile on-runner"
-        required: false
-        default: ""
+        description: "Repository gRPC+nosqlite Conan lockfile path relative to repo root"
+        required: true
+        default: "conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock"
 
 permissions:
   contents: read
@@ -86,22 +75,18 @@ jobs:
             python scripts/tools/ensure_conan_venv.py
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12
             --conan-version 2.8.1
+            --offline
             --github-env "$GITHUB_ENV"
             --github-path "$GITHUB_PATH"
           )
-          if [ "${{ inputs.no_remote }}" = "true" ]; then
-            args+=(--offline)
-          fi
           "${args[@]}"
 
       - name: Resolve persistent runner caches
         shell: bash
         run: |
           set -euo pipefail
-          lockfile="${{ inputs.conan_lockfile }}"
-          if [ -z "$lockfile" ]; then
-            lockfile="conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
-          fi
+          lockfile="${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock' }}"
+          test -f "$lockfile"
           python scripts/tools/resolve_runner_cache.py \
             --build-type "${{ inputs.build_type }}" \
             --profile "${{ inputs.conan_profile }}" \
@@ -124,56 +109,22 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --disable-example-internal)
-          if [ "${{ inputs.allow_public }}" = "true" ]; then
-            args+=(--allow-public)
-          fi
-          if [ "${{ inputs.no_remote }}" = "true" ]; then
-            args+=(--no-remote)
-          fi
-          "${args[@]}"
-
-      - name: Resolve gRPC lockfile
-        id: lockfile
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ -n "${{ inputs.conan_lockfile }}" ]; then
-            test -f "${{ inputs.conan_lockfile }}"
-            echo "path=${{ inputs.conan_lockfile }}" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          lockfile="runtime/validation/linux-gcc-x64-${{ inputs.build_type }}-grpc-nosqlite.lock"
-          args=(
-            python scripts/generate_conan_lock.py
-            --profile "${{ inputs.conan_profile }}"
-            --build-type "${{ inputs.build_type }}"
-            --with-grpc
-            --without-sqlite
-            --conan-home "${CONAN_HOME}"
-            --lockfile-out "${lockfile}"
-          )
-          if [ "${{ inputs.allow_public }}" = "true" ]; then
-            args+=(--allow-public)
-          fi
-          if [ "${{ inputs.no_remote }}" = "true" ]; then
-            args+=(--no-remote)
-          fi
-          "${args[@]}"
-          echo "path=${lockfile}" >> "$GITHUB_OUTPUT"
+          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 
       - name: Conan install
         shell: bash
         run: |
           set -euo pipefail
-          args=(conan install . --output-folder="build/conan-grpc-${{ inputs.build_type }}" -s build_type=${{ inputs.build_type }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" --lockfile "${{ steps.lockfile.outputs.path }}" -o "&:with_grpc=True" -o "&:with_sqlite=False")
-          if [ "${{ inputs.no_remote }}" = "true" ]; then
-            args+=(--build=never)
-          else
-            args+=(--build=missing)
-          fi
-          "${args[@]}"
+          conan install . \
+            --output-folder="build/conan-grpc-${{ inputs.build_type }}" \
+            --build=never \
+            --no-remote \
+            -s build_type=${{ inputs.build_type }} \
+            --profile:host "${{ inputs.conan_profile }}" \
+            --profile:build "${{ inputs.conan_profile }}" \
+            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock' }}" \
+            -o "&:with_grpc=True" \
+            -o "&:with_sqlite=False"
 
       - name: Configure gRPC build
         shell: bash

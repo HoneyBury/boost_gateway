@@ -27,6 +27,17 @@ EXPECTED_NAMES = {
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}
+STRICT_OFFLINE_CONAN_WORKFLOWS = {
+    "grpc-experimental",
+    "long-soak-capacity",
+    "nightly-stability",
+    "perf-regression",
+    "preprod-evidence",
+    "production-candidate-evidence",
+    "production-gates",
+    "release",
+    "specialized-e2e",
+}
 
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
@@ -82,6 +93,27 @@ def main() -> int:
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
         add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
         add(checks, f"trigger:{stem}:no-pr", "pull_request:" not in text, f"{path.name} has no pull_request trigger")
+        if stem in STRICT_OFFLINE_CONAN_WORKFLOWS:
+            add(
+                checks,
+                f"conan:{stem}:no-public-remote",
+                "--allow-public" not in text,
+                f"{path.name} does not enable a public Conan remote",
+            )
+            add(
+                checks,
+                f"conan:{stem}:no-build-missing",
+                "--build=missing" not in text,
+                f"{path.name} does not build missing Conan dependencies",
+            )
+            if "uses: ./.github/actions/setup-cpp-conan" in text:
+                offline_action = 'bootstrap-args: "--no-remote"' in text and 'conan-venv-offline: "true"' in text
+                add(
+                    checks,
+                    f"conan:{stem}:offline-composite-action",
+                    offline_action,
+                    f"{path.name} configures setup-cpp-conan for runner-local offline use",
+                )
 
     retired = ("perf-commit-check.yml", "production-resilience.yml", "production-evidence.yml")
     for filename in retired:

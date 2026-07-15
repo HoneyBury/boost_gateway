@@ -13,15 +13,15 @@ on:
       build_preset:
         description: "CMake configure preset"
         required: true
-        default: "default"
+        default: "release"
       build_dir:
         description: "CMake build directory"
         required: true
-        default: "build/default"
+        default: "build/release"
       configuration:
         description: "Build configuration"
         required: true
-        default: "Debug"
+        default: "Release"
       specialized_profile:
         description: "Specialized E2E profile: default, redis-live, raft-ha, all"
         required: true
@@ -54,7 +54,7 @@ on:
       conan_lockfile:
         description: "Optional Conan lockfile path relative to repo root"
         required: true
-        default: "conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock"
+        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
       use_existing_workspace:
         description: "Reuse an already-clean workspace at the workflow commit"
         required: true
@@ -129,7 +129,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          args=(conan install . --output-folder=build/conan-specialized --build=never -s build_type=${{ inputs.configuration }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          args=(conan install . --output-folder=build/conan-specialized --build=never --no-remote -s build_type=${{ inputs.configuration }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             args+=(--lockfile "${{ inputs.conan_lockfile }}")
           fi
