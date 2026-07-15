@@ -1,6 +1,6 @@
 # CI/CD Architecture
 
-BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和固定 runner 证据是两个不同场景：
+BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和 fixed-runner 证据是两个不同场景：
 
 - `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
 - `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
