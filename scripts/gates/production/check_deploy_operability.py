@@ -83,7 +83,7 @@ def validate_compose(path: Path, checks: list[dict[str, Any]]) -> None:
         add_check(
             checks,
             f"{label}:{service}:tcp-healthcheck",
-            f'"nc", "-z", "127.0.0.1", "{port}"' in text,
+            f"</dev/tcp/127.0.0.1/{port}" in text,
             f"{service} probes TCP port {port}",
         )
         add_check(
@@ -260,47 +260,31 @@ def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
         ("dockerfile-backend", backend),
         ("dockerfile-gateway", gateway),
     ):
+        add_check(checks, f"{label}:runtime-only", text.count("FROM ") == 1, f"{label} has no dependency build stage")
+        add_check(checks, f"{label}:no-package-install", "apt-get" not in text, f"{label} performs no network package installation")
         add_check(
             checks,
-            f"{label}:openssl-dev-installed",
-            "libssl-dev" in text,
-            f"{label} builder image contains OpenSSL headers/libraries for CMake",
-        )
-        add_check(
-            checks,
-            f"{label}:sdk-copied",
-            "COPY sdk/ sdk/" in text,
-            f"{label} build context includes sdk because top-level CMake adds it",
-        )
-        add_check(
-            checks,
-            f"{label}:bounded-cmake-parallelism",
-            "--parallel 2" in text and "--preset release" in text,
-            f"{label} builds from the Release preset with bounded local Docker parallelism",
-        )
-        add_check(
-            checks,
-            f"{label}:hiredis-runtime-library",
-            "libhiredis*.so*" in text and "ldconfig" in text,
-            f"{label} runtime image contains the hiredis shared library required by linked binaries",
+            f"{label}:staged-conan-binary",
+            "COPY runtime/docker-rootfs/bin/" in text and "build-manifest.json" in text,
+            f"{label} consumes the validated strict-Conan runtime context",
         )
     add_check(
         checks,
-        "dockerfile-backend:nc-installed",
-        "netcat-openbsd" in backend,
-        "backend runtime image contains a TCP probe utility",
+        "dockerfile-backend:no-probe-package",
+        "netcat-openbsd" not in backend and "curl" not in backend,
+        "backend healthcheck uses tools already present in the base image",
     )
     add_check(
         checks,
         "dockerfile-backend:tcp-healthcheck",
-        'nc -z 127.0.0.1 "${SERVICE_PORT}"' in backend,
+        "</dev/tcp/127.0.0.1/${SERVICE_PORT}" in backend,
         "generic backend image uses TCP healthcheck",
     )
     add_check(
         checks,
-        "dockerfile-release-build-output",
-        "/src/build/release" in backend and "/src/build/release" in gateway,
-        "Docker runtime images copy binaries from the Release build tree",
+        "dockerfile-no-cmake-fetchcontent",
+        "cmake" not in backend.lower() and "cmake" not in gateway.lower() and "FetchContent" not in backend + gateway,
+        "Docker runtime images cannot configure or fetch CMake dependencies",
     )
 
 

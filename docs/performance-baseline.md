@@ -6,7 +6,7 @@
 
 - PR/CI 默认仍以 bounded smoke 和多平台快速反馈为主。
 - `ci.yml`、`release.yml`、`nightly-stability.yml`、`perf-regression.yml` 已接入 `sccache` 与 `actions/cache`，用于降低 configure/build/test 等待时间；其中 `perf-regression.yml` 现在统一覆盖 smoke / baseline / capacity 性能入口。
-- Conan 2 依赖治理已从 PoC 阶段提升为主线默认依赖路径（`BOOST_USE_CONAN_DEPS=ON`）；性能基线结论以 Conan 构建链为准，缺失 Conan 时会自动回退到 FetchContent/third_party。
+- Conan 2 是主线严格依赖路径（`BOOST_DEPENDENCY_PROVIDER=conan`）；性能基线只接受 lockfile 驱动的 Conan 构建，缺包或 toolchain 缺失会直接失败。
 - Conan 收口入口现已统一到 `conan/README.md`、仓库内 profile 和 `scripts/bootstrap_conan.py`；后续 fixed-runner / CI 需继续补 lockfile 与 cache key 量化。
 - 2026-07-10/11 对 GitHub-hosted workflow 的连续回归已完成 hosted warm-cache 与 workflow 行为闭环验证。历史 `perf-commit-check.yml` 的 dispatch-only PR comment 问题已由后续 workflow 收敛移除；当前唯一性能 workflow 是 `perf-regression.yml`，critical gate 不再 `continue-on-error`。
 - 本机 Windows/macOS baseline 继续作为开发回归参考。

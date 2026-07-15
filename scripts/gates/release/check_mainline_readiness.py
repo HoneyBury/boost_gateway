@@ -211,8 +211,8 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(checks, "p3:conan-hiredis-include-compatible", "__has_include(<hiredis/hiredis.h>)" in redis_client and "#include <hiredis.h>" in redis_client, "Redis client accepts both Conan and legacy hiredis include layouts")
     sdk_cmake = read("sdk/CMakeLists.txt")
     sdk_tests_cmake = read("sdk/tests/CMakeLists.txt")
-    add(checks, "p3:sdk-uses-project-boost-asio", "target_link_libraries(boost_gateway_sdk PRIVATE $<BUILD_INTERFACE:project_boost_asio>)" in sdk_cmake and "target_link_libraries(boost_gateway_sdk_dll PRIVATE project_boost_asio)" in sdk_cmake, "SDK reuses project_boost_asio privately for Conan/fallback Boost compatibility")
-    add(checks, "p3:sdk-tests-use-project-boost-asio", "target_link_libraries(sdk_tests PRIVATE project_boost_asio)" in sdk_tests_cmake and "target_link_libraries(sdk_business_flow_tests PRIVATE project_boost_asio)" in sdk_tests_cmake, "SDK tests reuse project_boost_asio for Conan/fallback Boost compatibility")
+    add(checks, "p3:sdk-uses-project-boost-asio", "target_link_libraries(boost_gateway_sdk PRIVATE $<BUILD_INTERFACE:project_boost_asio>)" in sdk_cmake and "target_link_libraries(boost_gateway_sdk_dll PRIVATE project_boost_asio)" in sdk_cmake, "SDK reuses the governed project_boost_asio target")
+    add(checks, "p3:sdk-tests-use-project-boost-asio", "target_link_libraries(sdk_tests PRIVATE project_boost_asio)" in sdk_tests_cmake and "target_link_libraries(sdk_business_flow_tests PRIVATE project_boost_asio)" in sdk_tests_cmake, "SDK tests reuse the governed project_boost_asio target")
 
     src_cmake = read("src/CMakeLists.txt")
     add(

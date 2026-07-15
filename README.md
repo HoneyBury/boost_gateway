@@ -58,32 +58,30 @@ Conan PoC 入口：
 export CONAN_HOME=$PWD/.conan2-local
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
-cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_USE_CONAN_DEPS=ON -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build build/linux-ninja-debug-conan --parallel
 ```
 
 说明：
 
-- 当前仓库 `conanfile.py` 已将 Conan 2 依赖管理提升为主线默认路径（`BOOST_USE_CONAN_DEPS=ON`）；缺失 Conan 时自动回退到 `FetchContent/third_party`。
+- 当前仓库以 Conan 2 为唯一默认依赖路径（`BOOST_DEPENDENCY_PROVIDER=conan`）；缺少 toolchain 或任一锁定包时 CMake 立即失败，不会隐式回退。
 - 推荐把 `CONAN_HOME` 指到仓库内目录（例如 `.conan2-local`），避免受用户主目录权限影响。
 - `python scripts/bootstrap_conan.py` 会优先准备仓库内 Conan home，并按 `conan/remotes.example.json` 配置 remote。
 - 如果存在 `conan/remotes.local.json`，它会覆盖示例 remote 配置，适合内网落地。
 - 也可以通过环境变量注入内网 remote，例如 `CONAN_REMOTE_URL`、`CONAN_REMOTE_NAME`。
 - 默认策略是先禁用公网 `conancenter`，优先本地 cache/内网 remote；只有显式传 `--allow-public` 才会启用公网 remote。
 - 如需完全离线，只走本地 cache，可使用 `python scripts/bootstrap_conan.py --no-remote`。
-- `BOOST_USE_CONAN_DEPS=ON` 时优先使用 Conan 生成的 `CMakeDeps/CMakeToolchain` 结果。
+- `BOOST_DEPENDENCY_PROVIDER=conan` 严格使用 Conan 生成的 `CMakeDeps/CMakeToolchain` 结果。
 - 当前依赖分层已经收敛为：
-  - Conan-first：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers`
-  - 双轨保守：`OpenSSL`
+  - Conan 严格主线：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers`、`OpenSSL`
   - 实验保留：`protobuf`、`grpc`、`sqlite3`
 - 当前已打通的 Conan 主线路径以 `with_grpc=False`、`with_sqlite=False` 为默认 lockfile 口径；`sqlite3` 保留为可选/实验层，不阻塞主线 Conan install。
 - 当前已落仓的 lockfile：
   - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
   - `conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock`
-- CMake 会统一汇总 Conan 探测缺失项；只要关键包不齐，就自动回退到 `FetchContent/third_party`（同时给出 warning）。
-- 如果 Conan 依赖未准备好或未启用，项目会回退到现有 `FetchContent/third_party` 路径。
-- SDK 安装打包现在会同时兼容 Conan 和 fallback 两种 `nlohmann_json` 头文件来源，不再假定只能来自 `nlohmann_json_SOURCE_DIR`。
-- `project_v3` 也不再显式依赖 `hiredis_SOURCE_DIR`；Conan 与 fallback 都统一走 `hiredis` target 暴露的头文件路径。
+- CMake 不再从 Conan 隐式回退。开发者确实需要调试源码依赖时，必须单独显式配置 `-DBOOST_DEPENDENCY_PROVIDER=fetchcontent`；该模式不用于 CI、发布和 fixed-runner 证据。
+- SDK 安装打包默认消费 Conan target，显式源码调试模式仍兼容 `nlohmann_json` 的 FetchContent 头文件布局。
+- `project_v3` 不再显式依赖 `hiredis_SOURCE_DIR`，统一走 `hiredis` target 暴露的头文件路径。
 - Linux `nosqlite` lockfile 已验证可真实生成，lockfile-based `conan install` 能进入解图、取包与缺失包构建阶段；真正在 Ubuntu fixed-runner 上的实跑结论应以 CI 结果为准。
 
 独立 Conan 流水线：
@@ -103,6 +101,7 @@ cmake --build build/linux-ninja-debug-conan --parallel
 推荐优先阅读 `docs/deployment/deployment-quickstart.md`。本机 Docker/OrbStack 联调：
 
 ```bash
+python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f env/docker/docker-compose.yml build
 docker compose -f env/docker/docker-compose.yml up -d
 curl http://127.0.0.1:9080/health

@@ -151,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           cmake -S . -B build/conan-production-candidate-cmake -G Ninja \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=${{ inputs.conan_build_type || 'Release' }} \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-production-candidate/build/${{ inputs.conan_build_type || 'Release' }}/generators/conan_toolchain.cmake
@@ -203,7 +203,7 @@ jobs:
           rm -f CMakeUserPresets.json
           build_type="${{ inputs.configuration || 'Debug' }}"
           cmake --preset "${{ inputs.configure_preset || 'default' }}" \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE="build/conan-production-candidate-main/build/${build_type}/generators/conan_toolchain.cmake" \
           2>&1 | tee runtime/validation/r0-configure.log
           grep -F "Using Conan-provided dependency graph" runtime/validation/r0-configure.log

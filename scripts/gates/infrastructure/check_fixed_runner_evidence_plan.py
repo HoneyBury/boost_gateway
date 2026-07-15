@@ -28,7 +28,7 @@ WORKFLOW_REQUIREMENTS = {
             LINUX_PROFILE,
             "conan install",
             "--lockfile",
-            "BOOST_USE_CONAN_DEPS=ON",
+            "BOOST_DEPENDENCY_PROVIDER=conan",
             "--target \"$target\"",
             "actions/upload-artifact@v4",
         ),

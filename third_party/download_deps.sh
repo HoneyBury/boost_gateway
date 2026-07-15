@@ -82,7 +82,7 @@ fi
 cat <<'EOF'
 
 [info] OpenSSL is not downloaded as source by this script. Provide it via one of:
-  - Conan: BOOST_USE_CONAN_DEPS=ON with the repository conanfile/lockfile
+  - Conan: BOOST_DEPENDENCY_PROVIDER=conan with the repository conanfile/lockfile
   - system package: libssl-dev / openssl-devel
   - local install: third_party/openssl/{include,lib} or OPENSSL_ROOT_DIR
 EOF

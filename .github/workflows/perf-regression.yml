@@ -81,7 +81,7 @@ jobs:
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
           cmake --preset release \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-perf-regression/build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \

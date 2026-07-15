@@ -74,6 +74,7 @@ R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已缓存 `env/
 
 ```bash
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
+python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml build
 python3 scripts/verify_preprod_recovery_drill.py \
   --mode docker-compose \
@@ -81,7 +82,7 @@ python3 scripts/verify_preprod_recovery_drill.py \
   --docker-pull-policy never
 ```
 
-该镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先执行 Compose build 或导入已校验 bundle。
+项目的 6 个镜像只复制 `runtime/docker-rootfs` 中经过 ELF/动态库检查的 Conan Release 产物，Dockerfile 不执行 CMake、Conan 或包下载。镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先 staging、Compose build 或导入已校验 bundle。
 
 若新 runner 访问 `registry-1.docker.io:443` 失败，应通过受信任 mirror 完成首次预热；预热完成后可使用 `never` 离线执行。R5 不能用 `bounded-local` 结果替代预发恢复演练。
 

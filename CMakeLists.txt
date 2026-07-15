@@ -13,7 +13,14 @@ option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
 option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
-option(BOOST_USE_CONAN_DEPS "Prefer Conan-provided dependencies before falling back to FetchContent/third_party" ON)
+set(BOOST_DEPENDENCY_PROVIDER "conan" CACHE STRING "Dependency provider: conan or fetchcontent")
+set_property(CACHE BOOST_DEPENDENCY_PROVIDER PROPERTY STRINGS conan fetchcontent)
+if(NOT BOOST_DEPENDENCY_PROVIDER STREQUAL "conan" AND
+   NOT BOOST_DEPENDENCY_PROVIDER STREQUAL "fetchcontent")
+  message(FATAL_ERROR
+    "Unsupported BOOST_DEPENDENCY_PROVIDER=${BOOST_DEPENDENCY_PROVIDER}; "
+    "expected conan or fetchcontent")
+endif()
 
 # Batch B: Auto-detect gRPC if available (does NOT enable the gRPC listener at runtime)
 find_package(gRPC QUIET)

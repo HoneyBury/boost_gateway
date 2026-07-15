@@ -1,81 +1,21 @@
-# Boost Gateway v3.3.2 — Gateway Docker image
-#
-# Multi-stage build producing a minimal image containing only the gateway
-# binary and its runtime dependencies.
-#
-# Usage:
-#   docker build -f env/docker/Dockerfile.gateway -t boost-gateway:latest .
-#   docker run -p 9201:9201 -p 9080:9080 boost-gateway:latest
-
-# ============================================================================
-# Stage 1: Build
-# ============================================================================
-FROM ubuntu:24.04 AS builder
+# Runtime-only gateway image. Prepare runtime/docker-rootfs from a strict Conan
+# release build before invoking Docker; this Dockerfile performs no downloads.
+FROM ubuntu:24.04
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
-ENV DEBIAN_FRONTEND=noninteractive
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    cmake \
-    ninja-build \
-    curl \
-    git \
-    python3 \
-    ca-certificates \
-    libssl-dev \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /src
-
-# Copy only what is needed for CMake configuration first — leverage Docker cache
-COPY CMakeLists.txt CMakePresets.json ./
-COPY cmake/ cmake/
-
-# Copy source (gateway binary is in examples/)
-COPY include/ include/
-COPY src/ src/
-COPY sdk/ sdk/
-COPY examples/ examples/
-COPY demo/ demo/
-COPY proto/ proto/
-COPY tests/ tests/
-COPY third_party/ third_party/
-COPY config/ config/
-
-# Configure and build only the gateway target
-RUN cmake --preset release -DENABLE_TESTING=OFF
-RUN cmake --build --preset release --parallel 2 --target v2_gateway_demo
-
-# ============================================================================
-# Stage 2: Runtime
-# ============================================================================
-FROM ubuntu:24.04 AS runtime
-
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 RUN mkdir -p /app/bin /app/logs /app/config
 
-COPY --from=builder /src/build/release/examples/v2_gateway_demo/v2_gateway_demo /app/bin/
-COPY --from=builder /src/build/release/_deps/hiredis-build/libhiredis*.so* /usr/local/lib/
+COPY runtime/docker-rootfs/bin/v2_gateway_demo /app/bin/v2_gateway_demo
+COPY runtime/docker-rootfs/manifest.json /app/build-manifest.json
 COPY config/ /app/config/
-RUN ldconfig
 
 EXPOSE 9201 9080
 
 HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=10s \
-    CMD curl -f http://localhost:${MANAGEMENT_PORT:-9080}/health || exit 1
+    CMD timeout 2 bash -c '</dev/tcp/127.0.0.1/${MANAGEMENT_PORT:-9080}' || exit 1
 
 ENTRYPOINT ["/app/bin/v2_gateway_demo"]
-
-# Default arguments: bind to 9201, management on 9080, connect backends on
-# their default hosts/ports. Override via docker run / docker-compose command.
 CMD ["--http-port", "9080"]

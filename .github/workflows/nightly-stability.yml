@@ -101,7 +101,7 @@ jobs:
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
           cmake --preset default \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-nightly/build/Debug/generators/conan_toolchain.cmake \
             -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \

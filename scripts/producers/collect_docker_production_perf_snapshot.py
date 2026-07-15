@@ -8,6 +8,7 @@ import datetime as dt
 import json
 import subprocess
 import sys
+import urllib.request
 from pathlib import Path
 from typing import Any
 
@@ -50,6 +51,11 @@ def parse_json_output(label: str, raw: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise RuntimeError(f"{label} returned non-object JSON")
     return value
+
+
+def http_get(url: str, timeout: int = 20) -> str:
+    with urllib.request.urlopen(url, timeout=timeout) as response:  # noqa: S310 - fixed localhost endpoints
+        return response.read().decode("utf-8")
 
 
 def compose_cmd(compose_file: Path, *args: str) -> list[str]:
@@ -105,11 +111,11 @@ def summarize_backend_metrics(diagnostics: dict[str, Any]) -> dict[str, dict[str
 def collect(compose_file: Path, output_dir: Path, containers: list[str]) -> dict[str, Any]:
     gateway_ready = parse_json_output(
         "gateway /ready",
-        compose_exec(compose_file, "gateway", "curl", "-fsS", "http://127.0.0.1:9080/ready"),
+        http_get("http://127.0.0.1:9080/ready"),
     )
     gateway_diagnostics = parse_json_output(
         "gateway diagnostics",
-        compose_exec(compose_file, "gateway", "curl", "-fsS", "http://127.0.0.1:9080/metrics/diagnostics/json"),
+        http_get("http://127.0.0.1:9080/metrics/diagnostics/json"),
     )
     prometheus_ready = compose_exec(compose_file, "prometheus", "wget", "-qO-", "http://127.0.0.1:9090/-/ready")
     prometheus_targets = parse_json_output(
@@ -264,4 +270,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

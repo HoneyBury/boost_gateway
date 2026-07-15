@@ -162,7 +162,7 @@ jobs:
           set -euo pipefail
           mkdir -p runtime/validation
           cmake --preset "${{ inputs.configure_preset || 'release' }}" \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE="build/conan-preprod-evidence/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake" \
             2>&1 | tee runtime/validation/preprod-evidence-configure.log
           grep -F "Using Conan-provided dependency graph" runtime/validation/preprod-evidence-configure.log

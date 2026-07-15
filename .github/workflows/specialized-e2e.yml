@@ -135,7 +135,7 @@ jobs:
           fi
           "${args[@]}"
           cmake -S . -B build/conan-specialized-cmake -G Ninja \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=OFF \
             -DCMAKE_BUILD_TYPE=${{ inputs.configuration }} \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-specialized/build/${{ inputs.configuration }}/generators/conan_toolchain.cmake
@@ -166,7 +166,7 @@ jobs:
           mkdir -p runtime/validation
           if [ "${{ inputs.enable_conan_validation }}" = "true" ]; then
             cmake --preset "${{ inputs.build_preset }}" \
-              -DBOOST_USE_CONAN_DEPS=ON \
+              -DBOOST_DEPENDENCY_PROVIDER=conan \
               -DCMAKE_TOOLCHAIN_FILE=build/conan-specialized/build/${{ inputs.configuration }}/generators/conan_toolchain.cmake \
               2>&1 | tee runtime/validation/specialized-e2e-configure.log
             grep -F "Using Conan-provided dependency graph" runtime/validation/specialized-e2e-configure.log

@@ -119,7 +119,7 @@ jobs:
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
           cmake --preset release \
-            -DBOOST_USE_CONAN_DEPS=ON \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-preflight/build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
@@ -130,7 +130,7 @@ jobs:
         run: |
           set -euo pipefail
           grep -F "Using Conan-provided dependency graph" runtime/validation/release-configure.log
-          grep -F "BOOST_USE_CONAN_DEPS:BOOL=ON" build/release/CMakeCache.txt
+          grep -F "BOOST_DEPENDENCY_PROVIDER:STRING=conan" build/release/CMakeCache.txt
           grep -F "CMAKE_TOOLCHAIN_FILE:FILEPATH=" build/release/CMakeCache.txt \
             | grep -F "build/conan-preflight/build/Release/generators/conan_toolchain.cmake"
 

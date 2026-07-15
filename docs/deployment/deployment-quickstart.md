@@ -21,6 +21,7 @@ gateway 地址。当前服务端主链包含：
 ```bash
 cd /Users/honeybury/workspace/boost_gateway
 
+python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f env/docker/docker-compose.yml build
 docker compose -f env/docker/docker-compose.yml up -d
 ```
@@ -62,8 +63,10 @@ docker compose -f env/docker/docker-compose.yml down -v
 ```bash
 cd /Users/honeybury/workspace/boost_gateway
 
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build --target \
+cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE=build/conan-release/build/Release/generators/conan_toolchain.cmake
+cmake --build build/release --target \
   boost_gateway_sdk \
   v2_gateway_demo \
   v2_login_backend \
