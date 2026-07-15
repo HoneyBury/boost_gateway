@@ -43,6 +43,8 @@ jobs:
       - name: Setup C++ Conan toolchain
         uses: ./.github/actions/setup-cpp-conan
         with:
+          bootstrap-args: "--no-remote"
+          conan-venv-offline: "true"
           cache-build-type: Release
           cache-profile: conan/profiles/linux-gcc-x64
           cache-lockfile: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
@@ -58,7 +60,8 @@ jobs:
             -o "&:with_grpc=False" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-perf-regression \
-            --build=missing \
+            --build=never \
+            --no-remote \
             -s build_type=Release
 
       - name: Install sccache

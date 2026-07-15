@@ -49,6 +49,7 @@ jobs:
           python scripts/tools/ensure_conan_venv.py \
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
             --conan-version 2.8.1 \
+            --offline \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
 
@@ -57,15 +58,15 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/tools/resolve_runner_cache.py \
-            --build-type Debug \
+            --build-type Release \
             --profile conan/profiles/linux-gcc-x64 \
-            --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/runner-cache-identity.json
 
       - name: Bootstrap Conan home
         shell: bash
-        run: python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
+        run: python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 
       - name: Conan install
         shell: bash
@@ -74,12 +75,13 @@ jobs:
           conan install . \
             --profile:host conan/profiles/linux-gcc-x64 \
             --profile:build conan/profiles/linux-gcc-x64 \
-            --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
             -o "&:with_grpc=False" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-nightly \
-            --build=missing \
-            -s build_type=Debug
+            --build=never \
+            --no-remote \
+            -s build_type=Release
 
       - name: Install sccache
         shell: bash
@@ -100,9 +102,9 @@ jobs:
           set -euo pipefail
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
-          cmake --preset default \
+          cmake --preset release \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-nightly/build/Debug/generators/conan_toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-nightly/build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
             -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
             2>&1 | tee runtime/validation/nightly-configure.log
@@ -116,7 +118,7 @@ jobs:
         shell: bash
         run: |
           : "${SCCACHE_BIN:?missing sccache path}"
-          grep -F -n "$SCCACHE_BIN" build/default/CMakeCache.txt build/default/build.ninja
+          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
         shell: bash
@@ -126,9 +128,9 @@ jobs:
         shell: bash
         run: |
           python scripts/verify_stability_soak.py \
-            --build-dir build/default \
-            --configuration Debug \
-            --baseline-profile debug \
+            --build-dir build/release \
+            --configuration Release \
+            --baseline-profile release \
             --soak-profile ${{ inputs.soak_profile || 'short' }} \
             --build-timeout-seconds 300 \
             --summary-path runtime/validation/nightly-stability-soak-summary.json
