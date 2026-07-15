@@ -67,6 +67,20 @@ Warm each namespace using the fixed-runner example, then use `--no-remote` for
 evidence work. Docker images are a separate cache and may cross Ubuntu 22.04
 and 24.04 x64 runners when imported as `linux/amd64` images.
 
+The graph key changes whenever any hashed input changes, including a
+build-generation-only edit in `conanfile.py`. A new key intentionally selects
+an empty namespace even when the package requirements and ABI are unchanged.
+Before dispatching an offline workflow, resolve the key from the candidate
+checkout and run `conan install --no-remote --build=never` against that exact
+`CONAN_HOME`.
+
+An existing cache may seed a new graph namespace only when the platform
+namespace (OS release, full GCC version, architecture and build type), Conan
+version and lockfile are the same. Copy the cache; do not hard-link it because
+Conan updates SQLite/LRU metadata. The lockfile-driven offline install remains
+the acceptance test and will reject missing recipe revisions or package IDs.
+Never seed across Ubuntu releases or compiler identities.
+
 `ci.yml` 是有意保留的例外：它运行在 GitHub-hosted runner 上，使用
 checkout 内的 `.conan2-local` 和 `actions/cache`；`production-readiness.yml`
 只下载并汇聚已有 artifact，不执行 Conan。

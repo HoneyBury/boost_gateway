@@ -1,12 +1,12 @@
 # 当前项目事实源
 
-更新时间：2026-07-13
+更新时间：2026-07-15
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-inventory.md`。
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 仅保留手动 dispatch，用作 GitHub-hosted 主线回归兜底，避免 tag 发布时重复构建。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，`scripts/check_workflow_catalog.py` 会阻断 workflow 清单、runner matrix 与 `.github/README.md` 漂移。性能 smoke/baseline/capacity、bounded stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
-GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-14，Linux self-hosted runners `aoi-omen-gaming-laptop-16-am0xxx` 与 `myserver` 已在线并匹配 `self-hosted/Linux/X64`，Windows runner `MyDesktop-Win` 也已在线。固定 runner workflow 已可执行，但生产证据仍必须以各 summary 和 artifact 为准。
+GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线，`myserver` 与 `MyDesktop-Win` 离线。AOI fixed-runner workflow 已可执行，但生产证据仍必须以各 summary 和 artifact 为准。
 
 ## 稳定能力
 
@@ -26,8 +26,9 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - 2026-07-12：fixed-runner 的 8h overnight soak 已完整通过（28815.787s）。本次 `long-soak-capacity.yml` run `29183833041` 在 `6d537ee` 上只执行 capacity 与 business-capacity（未执行 2h/8h），Conan lockfile 预检、Release 构建和 R4 fixed-runner 聚合门禁均通过。
 - 2026-07-12：`GatewayServiceBridge` 已避免在连接池选取时阻塞等待其它同步 RPC 持有的连接锁，并在池满全忙时公平轮询。run `29183833041` 的固定 Linux runner 三轮 capacity `battle-500` P99 为 40/100/150ms、吞吐中位数 6725.07 msg/s；business-capacity P99 为 75/150/150ms、吞吐中位数 6725.26 msg/s。两组均为 500 connected、0 rejected、0 failed，business-capacity 的 3 个 SDK full-flow 客户端也全部通过；`fixed-runner-release-capacity-summary.json` 为 `overall_pass=true`。
 - 依赖治理：`BOOST_DEPENDENCY_PROVIDER=conan` 是严格默认入口，依赖完全由 Conan lockfile、CMakeDeps 和 CMakeToolchain 提供；缺包直接阻断，不再隐式 fallback。`fetchcontent` 只保留为开发者显式选择的源码调试模式。
+- 2026-07-15：候选 `6f1a2ba` 已在 AOI runner 通过 `preprod-evidence.yml` run `29415968573`。该 run 使用新 Conan namespace `graph-01fd8acf00b862ebd633`、`docker_pull_policy=never` 和 runtime-only 项目镜像，完成 strict offline Conan install、Release 构建、完整 R5 与两轮 R6；R5 的 11 个镜像全部命中、gateway restart 前后 SDK full-flow 与 production snapshot 均通过，artifact `preprod-evidence-29415968573` 的 R5/R6 summary 均为 `overall_pass=true`。首轮 run `29415647897` 因图输入变化生成的新 namespace 为空而失败；在确认 OS/GCC/arch/build-type/Conan/lockfile 身份一致后，由旧 cache 本地复制 seed，并以 `--no-remote --build=never` 10/10 包验收后消除阻断。
 - 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
-- Conan PoC 当前事实：本机可在仓库内 `CONAN_HOME` 下完成 profile 生成并进入依赖图解析；若访问 `conancenter` 受限，仍需通过内网镜像、预热缓存或离线源完成真正取包。
+- Conan 离线事实：AOI runner 的 ABI-safe namespace 已覆盖默认 `nosqlite` lockfile，并通过 `--no-remote --build=never` 验收；新图 key 仍须先预热或从完全相同 ABI/Conan/lockfile 身份的旧 namespace 复制 seed 后重新验收。
 - 仓库已新增 `scripts/bootstrap_conan.py` 与 `conan/remotes.example.json`，用于优先准备本地 cache / 内网 remote；公网 `conancenter` 不是默认前提。
 - 2026-07-14 已完成 workflow Conan 缓存路径审计：除面向 GitHub-hosted runner、使用 checkout 内目录和 `actions/cache` 的 `ci.yml` 外，所有执行 Conan 的 fixed-runner workflow 通过 `scripts/tools/resolve_runner_cache.py` 使用 `/opt/boost-gateway/conan` 下按 Ubuntu release、GCC、架构、build type、Conan 图及 remote 配置分区的持久 Home；`production-readiness.yml` 只汇聚 artifact，不执行 Conan。每个分区须先按 lockfile 预热，生产证据阶段使用 `--no-remote`，详见 `conan/README.md` 和 `docs/fixed-runner-playbook.md`。
 - bootstrap 现已支持 `conan/remotes.local.json` 覆盖、`CONAN_REMOTE_URL` 环境变量注入和 `--no-remote` 离线模式。
@@ -176,9 +177,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 下一阶段执行优先级概括为：
 
-1. 等待项：固定 runner 使用受信任 mirror 完成首次 Compose 镜像预热，或确认现有缓存可通过 `--image-preflight-only --docker-pull-policy never` 后，重新执行完整 R5/R6，再依次刷新真实 2h soak、R0 和 R2/R3。`verify_stability_soak.py` 的 long/overnight profile 分别强制不少于 7200/28800 秒，历史 run `29146495724` 的 13.952 秒记录无效。
+1. 等待项：R5/R6 离线 fixed-runner 阻断已由 run `29415968573` 消除；下一步按同一候选口径刷新真实 2h soak、R0 和 R2/R3。`verify_stability_soak.py` 的 long/overnight profile 分别强制不少于 7200/28800 秒，历史 run `29146495724` 的 13.952 秒记录无效。
 2. 当前可推进项：生产认证边界已完成当前收口，生产 login backend 仅验证带有效期的外部 RS256 JWT，不再承担本地凭证存储或 token 签发。generated proto/gRPC 的 adapter unary E2E、SDK 驱动 Login/Room/Battle/Leaderboard 多服务流程、Battle 可取消限速 stream、trusted principal + RBAC allow/deny、TLS/mTLS 临时证书 E2E、路由/流生命周期指标、OTLP collector E2E、实验 SDK 安装包契约，以及 fixed-runner `BOOST_BUILD_GRPC=ON` run `29196150703` 均已形成事实；当前不再把这些项视为待补缺口，默认生产传输结论继续保持 `defer_default_transport`，代码侧优先级转回真实 2h/8h soak、R0 和 R2/R3 等主线事项。
-3. 后续项：固定 runner 证据链完整后，将 Conan `nosqlite` 路径提升为唯一推荐依赖入口；外部身份提供方的 JWKS/多 `kid`、持久化账户和可撤销 refresh token 作为独立集成，不与当前 login backend 的进程内演示状态混合。
+3. 后续项：持续维护 Conan `nosqlite` 严格主线及其 ABI-safe cache；外部身份提供方的 JWKS/多 `kid`、持久化账户和可撤销 refresh token 作为独立集成，不与当前 login backend 的进程内演示状态混合。
 4. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：
