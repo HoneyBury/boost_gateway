@@ -89,7 +89,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     manifest = json.loads(manifest_raw)
     ids = {entry.get("id") for entry in manifest.get("evidence", []) if isinstance(entry, dict)}
     for evidence_id in (
-        "long_soak_capacity",
+        "long_soak_2h",
         "fixed_runner_release_capacity",
         "preprod_recovery_drill",
         "tls_preprod_multi_run",
@@ -169,7 +169,7 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "p3:fixed-runner-summaries-uploaded",
-        "runtime/validation/long-soak-capacity-summary.json" in long_soak_workflow
+        "runtime/validation/long-soak-2h-summary.json" in long_soak_workflow
         and "runtime/validation/fixed-runner-release-capacity-summary.json" in long_soak_workflow
         and "runtime/validation/production-evidence-summary.json" in production_gates_workflow,
         "fixed-runner workflows upload the required long-soak/capacity/production evidence summaries",

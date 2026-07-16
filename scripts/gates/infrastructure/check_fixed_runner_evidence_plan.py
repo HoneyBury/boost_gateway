@@ -81,6 +81,7 @@ WORKFLOW_REQUIREMENTS = {
         ),
         "summaries": (
             "runtime/validation/long-soak-capacity-summary.json",
+            "runtime/validation/long-soak-2h-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
         ),
     },
@@ -626,7 +627,7 @@ def main() -> int:
         manifest = json.loads(read(manifest_path))
         manifest_text = json.dumps(manifest, ensure_ascii=False)
         for summary in (
-            "runtime/validation/long-soak-capacity-summary.json",
+            "runtime/validation/long-soak-2h-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
             "runtime/validation/preprod-recovery-drill-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",
@@ -634,7 +635,7 @@ def main() -> int:
             add(checks, f"manifest:requires:{summary}", summary in manifest_text, f"manifest references {summary}")
     else:
         for summary in (
-            "runtime/validation/long-soak-capacity-summary.json",
+            "runtime/validation/long-soak-2h-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
             "runtime/validation/preprod-recovery-drill-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",

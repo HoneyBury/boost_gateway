@@ -79,19 +79,19 @@
       "notes": "Covers TLS full-flow, server CA verification, certificate rotation, mismatched CA expected failure, and plain-vs-TLS smoke comparison."
     },
     {
-      "id": "long_soak_capacity",
+      "id": "long_soak_2h",
       "category": "long_soak_capacity",
-      "title": "Long-soak and capacity evidence batch",
-      "path": "runtime/validation/long-soak-capacity-summary.json",
+      "title": "Two-hour fixed-runner long-soak evidence",
+      "path": "runtime/validation/long-soak-2h-summary.json",
       "required": false,
       "fixed_runner_required": true,
       "provenance_required": true,
       "freshness_hours": 336,
       "required_json_values": {
-        "run_2h_soak": true
+        "soak_profile": "long"
       },
-      "producer": "python3 scripts/run_long_soak_capacity.py --run-2h-soak --run-capacity",
-      "notes": "N1 fixed-runner evidence producer for 2h/8h soak and capacity baseline. Final approval should include at least 2h soak plus capacity; 8h soak is recommended before high-risk releases."
+      "producer": "python3 scripts/run_long_soak_capacity.py --run-2h-soak",
+      "notes": "N1 fixed-runner 2h evidence is validated independently from capacity/R4. Capacity may be rerun separately on the same candidate SHA; 8h soak remains recommended before high-risk releases."
     },
     {
       "id": "fixed_runner_release_capacity",

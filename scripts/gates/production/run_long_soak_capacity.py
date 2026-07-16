@@ -132,6 +132,19 @@ def environment_snapshot() -> dict[str, object]:
     }
 
 
+def attach_provenance(summary_path: Path, provenance: dict[str, object]) -> None:
+    if not summary_path.exists():
+        return
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    if not isinstance(summary, dict):
+        return
+    summary["provenance"] = provenance
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+
+
 def main() -> int:
     args = parse_args()
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
@@ -149,6 +162,10 @@ def main() -> int:
     if args.skip_build:
         common.append("--skip-build")
 
+    provenance = build_evidence_provenance(
+        ROOT,
+        build_configuration=args.configuration,
+    )
     steps: list[dict[str, object]] = []
     if args.run_2h_soak:
         preset = LONG_SOAK_PRESETS["2h"]
@@ -166,6 +183,7 @@ def main() -> int:
             str(preset["step_timeout_seconds"]),
         ]
         steps.append(run_step("2h long-soak evidence", "long_soak", cmd, preset["step_timeout_seconds"] + 300))
+        attach_provenance(ROOT / preset["summary_path"], provenance)
 
     if args.run_8h_soak:
         preset = LONG_SOAK_PRESETS["8h"]
@@ -183,6 +201,7 @@ def main() -> int:
             str(preset["step_timeout_seconds"]),
         ]
         steps.append(run_step("8h long-soak evidence", "long_soak", cmd, preset["step_timeout_seconds"] + 300))
+        attach_provenance(ROOT / preset["summary_path"], provenance)
 
     if args.run_capacity:
         cmd = [
@@ -233,10 +252,7 @@ def main() -> int:
     summary = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-        "provenance": build_evidence_provenance(
-            ROOT,
-            build_configuration=args.configuration,
-        ),
+        "provenance": provenance,
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
         "run_2h_soak": args.run_2h_soak,

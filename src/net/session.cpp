@@ -25,9 +25,15 @@ Session::Session(tcp::socket socket, SessionOptions options)
       options_(options) {}
 
 void Session::start() {
-    // 连接进入工作态后，同时启动读包状态机和心跳巡检。
-    arm_heartbeat_timer();
-    do_read_header();
+    auto self = shared_from_this();
+    asio::dispatch(strand_, [self]() {
+        if (self->started_ || self->stopped_) {
+            return;
+        }
+        self->started_ = true;
+        self->arm_heartbeat_timer();
+        self->do_read_header();
+    });
 }
 
 void Session::send(std::uint16_t message_id,
@@ -143,6 +149,10 @@ tcp::socket& Session::socket() {
 }
 
 void Session::do_read_header() {
+    if (stopped_ || read_phase_ != ReadPhase::kIdle) {
+        return;
+    }
+    read_phase_ = ReadPhase::kHeader;
     auto self = shared_from_this();
     // async_read 会一直读取到 4 字节长度头完整到达，因此天然支持半包。
     asio::async_read(
@@ -150,7 +160,11 @@ void Session::do_read_header() {
         asio::buffer(read_header_),
         asio::bind_executor(strand_,
                             [self](const error_code& ec, std::size_t /*bytes_transferred*/) {
+                                if (self->read_phase_ != ReadPhase::kHeader) {
+                                    return;
+                                }
                                 if (ec) {
+                                    self->read_phase_ = ReadPhase::kIdle;
                                     self->handle_close(ec);
                                     return;
                                 }
@@ -162,6 +176,7 @@ void Session::do_read_header() {
                                     LOG_WARN("Session {} invalid packet length {}",
                                              self->remote_endpoint(),
                                              self->expected_body_length_);
+                                    self->read_phase_ = ReadPhase::kIdle;
                                     self->handle_close(asio::error::invalid_argument);
                                     return;
                                 }
@@ -170,6 +185,7 @@ void Session::do_read_header() {
                                     LOG_WARN("Session {} packet too large: {} bytes",
                                              self->remote_endpoint(),
                                              self->expected_body_length_);
+                                    self->read_phase_ = ReadPhase::kIdle;
                                     self->handle_close(asio::error::message_size);
                                     return;
                                 }
@@ -178,6 +194,7 @@ void Session::do_read_header() {
                                 auto pooled = BufferPool::instance().acquire_vector(self->expected_body_length_);
                                 self->read_body_ = std::move(pooled);
                                 self->read_body_.assign(self->expected_body_length_, '\0');
+                                self->read_phase_ = ReadPhase::kBody;
                                 self->do_read_body();
                             }));
 }
@@ -190,7 +207,11 @@ void Session::do_read_body() {
         asio::buffer(read_body_),
         asio::bind_executor(strand_,
                             [self](const error_code& ec, std::size_t /*bytes_transferred*/) {
+                                if (self->read_phase_ != ReadPhase::kBody) {
+                                    return;
+                                }
                                 if (ec) {
+                                    self->read_phase_ = ReadPhase::kIdle;
                                     self->handle_close(ec);
                                     return;
                                 }
@@ -243,6 +264,7 @@ void Session::do_read_body() {
                                     LOG_WARN("Session {} decode failed: {}",
                                              self->remote_endpoint(),
                                              ex.what());
+                                    self->read_phase_ = ReadPhase::kIdle;
                                     self->handle_close(asio::error::invalid_argument);
                                     return;
                                 }
@@ -251,6 +273,7 @@ void Session::do_read_body() {
                                 if (!self->read_body_.empty()) {
                                     BufferPool::instance().release_vector(std::move(self->read_body_));
                                 }
+                                self->read_phase_ = ReadPhase::kIdle;
 
                                 if (!self->stopped_ && !self->backpressure_active_) {
                                     asio::post(self->strand_, [self]() {
@@ -405,6 +428,7 @@ void Session::handle_close(const error_code& ec) {
     }
 
     stopped_ = true;
+    read_phase_ = ReadPhase::kIdle;
     heartbeat_timer_.cancel();
 
     LOG_INFO("Session {} closed: {}", remote_endpoint(), ec.message());

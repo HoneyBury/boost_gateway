@@ -11,6 +11,8 @@
 - **预生产恢复证据**：R5 使用 runtime-only Docker 镜像和 `docker_pull_policy=never`，R6 归档 TLS 多轮验证；fixed-runner 离线执行环境已经完成准入。
 - **gRPC 实验边界**：`BOOST_BUILD_GRPC=ON` 已在 fixed runner 上完成严格离线构建、gRPC/OTel 测试、SDK package consumer 和 N6 决策门禁；继续保持 `experimental_only`，不进入默认生产传输链路。
 - **发布收口顺序**：冻结候选后按低成本门禁、2h soak/R4、R5/R6、R2/R3 顺序生成同提交证据；8h overnight soak 作为后续高风险发布补充。
+- **TCP frame 读取单飞**：`Session::start()` 改为幂等，header/body 使用显式读取阶段，避免重复 pending read 将包体误判为长度头。
+- **长稳/容量证据解耦**：2h summary 完成后立即固化 provenance，并与 capacity/R4 独立导入；后置容量失败不再作废有效的同 SHA 长稳证据。
 
 ### 删除
 

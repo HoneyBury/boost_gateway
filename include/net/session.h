@@ -70,6 +70,12 @@ public:
     tcp::socket& socket();
 
 private:
+    enum class ReadPhase : std::uint8_t {
+        kIdle,
+        kHeader,
+        kBody,
+    };
+
     void do_read_header();
     void do_read_body();
     void enqueue_write(PacketMessage message, bool high_priority = false);
@@ -101,6 +107,8 @@ private:
     void resume_if_paused();
 
     std::chrono::steady_clock::time_point last_activity_at_;
+    ReadPhase read_phase_ = ReadPhase::kIdle;
+    bool started_ = false;
     bool stopped_ = false;
     bool backpressure_active_ = false;
     std::size_t backpressure_activate_count_ = 0;

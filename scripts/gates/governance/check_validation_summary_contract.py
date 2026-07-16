@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_SUMMARIES = [
     "runtime/validation/release-baseline-summary.json",
     "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/long-soak-2h-summary.json",
     "runtime/validation/production-resilience-summary.json",
     "runtime/validation/production-evidence-summary.json",
     "runtime/validation/r0-production-candidate-evidence-summary.json",
@@ -40,6 +41,7 @@ REQUIRED_KEYS = {
 PROVENANCE_REQUIRED_SUMMARIES = {
     "runtime/validation/release-baseline-summary.json",
     "runtime/validation/long-soak-capacity-summary.json",
+    "runtime/validation/long-soak-2h-summary.json",
     "runtime/validation/r0-production-candidate-evidence-summary.json",
     "runtime/validation/fixed-runner-release-capacity-summary.json",
     "runtime/validation/preprod-recovery-drill-summary.json",

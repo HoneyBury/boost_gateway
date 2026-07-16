@@ -78,10 +78,10 @@ jobs:
                 *.json) cp "$path" runtime/validation/"$(basename "$path")" ;;
               esac
             done
-          find runtime/readiness-import/long-soak -name long-soak-capacity-summary.json -type f -print -quit |
-            xargs -r -I{} cp {} runtime/validation/long-soak-capacity-summary.json
+          find runtime/readiness-import/long-soak -name long-soak-2h-summary.json -type f -print -quit |
+            xargs -r -I{} cp {} runtime/validation/long-soak-2h-summary.json
           test -f runtime/validation/r0-production-candidate-evidence-summary.json
-          test -f runtime/validation/long-soak-capacity-summary.json
+          test -f runtime/validation/long-soak-2h-summary.json
           test -f runtime/validation/fixed-runner-release-capacity-summary.json
           test -f runtime/validation/preprod-recovery-drill-summary.json
           test -f runtime/validation/tls-preprod-multi-run-summary.json

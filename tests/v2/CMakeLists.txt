@@ -44,6 +44,7 @@ add_executable(project_v2_unit_tests
     unit/jwt_validator_test.cpp
     unit/anti_cheat_test.cpp
     unit/schema_validator_test.cpp
+    unit/session_test.cpp
     unit/matchmaking_test.cpp
     unit/leaderboard_test.cpp
     unit/battle_systems_test.cpp

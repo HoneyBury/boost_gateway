@@ -18,7 +18,7 @@ from scripts.lib.evidence_provenance import build_evidence_provenance
 ROOT = Path(__file__).resolve().parents[3]
 EVIDENCE_IDS = (
     "r0_production_candidate_evidence",
-    "long_soak_capacity",
+    "long_soak_2h",
     "fixed_runner_release_capacity",
     "preprod_recovery_drill",
     "tls_preprod_multi_run",
@@ -337,7 +337,7 @@ def main() -> int:
         )
 
         def missing_generated_at(summaries: dict[str, dict[str, Any]]) -> None:
-            summaries["long_soak_capacity"].pop("generated_at")
+            summaries["long_soak_2h"].pop("generated_at")
 
         returncode, payload, output = run_case(temp_root, "missing-generated-at", mutate=missing_generated_at)
         checks.append(

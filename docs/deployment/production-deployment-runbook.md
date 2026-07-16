@@ -218,16 +218,18 @@ Prometheus 告警：
 ```bash
 cmake --preset release
 python3 scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
-python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak --run-capacity
+python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-2h-soak
+python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-capacity --run-business-capacity
+python3 scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release
 python3 scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
 ```
 
 说明：
 
 - 第一步确认生产主机依赖完整：Docker、kubectl、kind、Go、systemd、CMake、Ninja。
-- 生产主机如已安装系统 Boost/OpenSSL 头文件，应优先复用本机依赖，避免发布收束阶段继续依赖外网下载第三方源码。
-- 第二步完成 2h soak 与 capacity 证据收束；8h soak 可复用同一脚本补跑。
-- 第三步完成 Docker Compose、kind/control-plane、production evidence 聚合和快照归档。
+- 生产主机使用 runner-local Conan namespace、仓库 lockfile 和 `--no-remote --build=never`；不得以系统或全局 Conan 依赖替代候选图。
+- 2h soak 与 capacity/R4 独立归档但绑定同一候选 SHA；8h soak 可复用同一脚本补跑。
+- 最后完成 Docker Compose、kind/control-plane、production evidence 聚合和快照归档。
 - 如需形成最终发布记录，再追加 `python3 scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --run-8h-soak`。
 
 ## Redis 备份与恢复

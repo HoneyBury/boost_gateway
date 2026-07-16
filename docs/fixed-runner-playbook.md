@@ -540,13 +540,16 @@ python scripts/check_fixed_runner_environment.py --profile cloud-production --bu
 
 ```bash
 python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
-python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak --run-capacity --run-business-capacity --perf-repetitions 3
+python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak
+python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3
+python scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release
 python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
 ```
 
 通过标准：
 
-- `runtime/validation/long-soak-capacity-summary.json` 中 `summary_version=2`、`overall_pass=true`，并包含 `environment` 与 `artifacts`。
+- `runtime/validation/long-soak-2h-summary.json` 中 `summary_version=2`、`overall_pass=true`、`soak_profile=long`，并包含 `provenance`、`environment` 与 `artifacts`。
+- `runtime/validation/fixed-runner-release-capacity-summary.json` 中 `summary_version=2`、`overall_pass=true`；容量失败不会反向否定已经通过的 2h summary，但两者仍必须绑定同一候选 SHA。
 - `runtime/validation/cloud-production-closure-summary.json` 中 `summary_version=2`、`overall_pass=true`，并包含 `environment` 与 `artifacts`。
 - 长稳 summary 至少归档 `long-soak-2h-summary.json`；8h soak 可在同一云主机扩展执行并归档 `long-soak-8h-summary.json`。容量 summary 应同时归档 `capacity-baseline-summary.json`、`business-capacity-baseline-summary.json`、`runtime/perf/fixed-runner-capacity/summary.json` 和 `runtime/perf/fixed-runner-business-capacity/summary.json`。
 - 云端部署收束必须同时包含 Compose 运行态快照、kind/control-plane 结果和 production evidence 聚合 summary。
@@ -554,9 +557,11 @@ python scripts/run_cloud_production_closure.py --build-dir build/release --confi
 N1/N2/N3 建议按以下顺序收集：
 
 1. `python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release`
-2. `python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak --run-capacity --run-business-capacity --perf-repetitions 3`
-3. `python scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
-4. `python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`
+2. `python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak`
+3. `python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3`
+4. `python scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release`
+5. `python scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
+6. `python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`
 
 这样可以把 N1 长稳/容量、N2 监控口径、N3 部署恢复都沉淀到统一的 fixed-runner summary 契约里。
 
@@ -607,7 +612,7 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
 ## R2/R3 cross-workflow aggregation
 
-R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。开始这一轮前先冻结候选提交，并确保四个 workflow 都从该完整 SHA dispatch。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再分别运行 bounded/fixed 两份 R2 和最终 R3 readiness report。R2 会验证导入的 long-soak summary 实际设置了 `run_2h_soak=true`，并拒绝缺失 `generated_at`、缺失 provenance、checkout 不匹配或候选 SHA 不一致；capacity-only batch 不能替代 2h soak：
+R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。开始这一轮前先冻结候选提交，并确保四个 workflow 都从该完整 SHA dispatch。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再分别运行 bounded/fixed 两份 R2 和最终 R3 readiness report。R2 直接验证 `long-soak-2h-summary.json` 的 `soak_profile=long`、成功状态、时效和 provenance，并独立验证 capacity run 的 R4 summary；capacity-only batch 不能替代 2h soak，capacity 失败也不会使已通过的 2h summary 失效：
 
 ```bash
 gh workflow run production-readiness.yml --ref develop \
