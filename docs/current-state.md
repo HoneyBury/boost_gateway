@@ -1,12 +1,12 @@
 # 当前项目事实源
 
-更新时间：2026-07-15
+更新时间：2026-07-16
 
 本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.0` 为准；提交状态以 `git HEAD` 为准。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-inventory.md`。
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 仅保留手动 dispatch，用作 GitHub-hosted 主线回归兜底，避免 tag 发布时重复构建。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，`scripts/check_workflow_catalog.py` 会阻断 workflow 清单、runner matrix 与 `.github/README.md` 漂移。性能 smoke/baseline/capacity、bounded stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
-GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线，`myserver` 与 `MyDesktop-Win` 离线。AOI 的默认 Release namespace 已通过本轮 fixed-runner workflow 复验；实验 gRPC GCC 13 namespace 仍处于缺包阻断，生产证据仍必须以各 summary 和 artifact 为准。
+GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventory.md`；runner 命名、custom labels、Conan/Docker/R5 准入规则见 `docs/runner-gate-standard.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx`、`myserver` 与 `MyDesktop-Win` 均在线。AOI 的默认 Release namespace 和实验 gRPC GCC 13 namespace 均已通过严格离线准入；生产证据仍必须以各 summary 和 artifact 为准。
 
 ## 稳定能力
 
@@ -28,7 +28,8 @@ GitHub 仓库当前 runner inventory 的单一事实源见 `docs/runner-inventor
 - 依赖治理：`BOOST_DEPENDENCY_PROVIDER=conan` 是严格默认入口，依赖完全由 Conan lockfile、CMakeDeps 和 CMakeToolchain 提供；缺包直接阻断，不再隐式 fallback。`fetchcontent` 只保留为开发者显式选择的源码调试模式。
 - 2026-07-15：候选 `6f1a2ba` 已在 AOI runner 通过 `preprod-evidence.yml` run `29415968573`。该 run 使用新 Conan namespace `graph-01fd8acf00b862ebd633`、`docker_pull_policy=never` 和 runtime-only 项目镜像，完成 strict offline Conan install、Release 构建、完整 R5 与两轮 R6；R5 的 11 个镜像全部命中、gateway restart 前后 SDK full-flow 与 production snapshot 均通过，artifact `preprod-evidence-29415968573` 的 R5/R6 summary 均为 `overall_pass=true`。首轮 run `29415647897` 因图输入变化生成的新 namespace 为空而失败；在确认 OS/GCC/arch/build-type/Conan/lockfile 身份一致后，由旧 cache 本地复制 seed，并以 `--no-remote --build=never` 10/10 包验收后消除阻断。
 - 2026-07-15 workflow 离线收口：`grpc-experimental.yml`、`nightly-stability.yml`、`perf-regression.yml`、`release.yml` 及 fixed-runner evidence 入口统一禁止公网 Conan，并显式使用 `--no-remote --build=never`；gRPC Release lockfile 已纳入仓库，不再在 workflow 内动态联网解析。Candidate、Gate Diagnostics 与 Specialized E2E 默认构建组合统一为 AOI 已预热的 Release namespace。`check_workflow_catalog.py` 会阻断 fixed-runner workflow 重新引入 `--allow-public`、`--build=missing` 或未离线配置的 Conan composite action。GitHub-hosted `ci.yml` 与显式依赖预热入口 `conan-validate.yml` 是仅有例外。
-- 2026-07-15 离线 workflow 远端复验：候选 `9c2421d` 的 Bounded Soak run `29420484420`、Release run `29420589850`、Specialized E2E run `29420833603`、Candidate Evidence run `29421017380` 和 Gate Diagnostics run `29421305436` 全部成功，Conan 均命中 AOI 的 Release namespace。gRPC run `29420321189` 在 1 分钟内严格离线失败于新 namespace 缺少 `boost/1.86.0` recipe；后续本地 seed 试验 `29421659838` 证明 legacy cache 缺少 c-ares source，且不可达代理成功阻止其联网。由于 legacy 包由旧工具链实际构建，不能冒充当前 GCC 13 cache；gRPC 转绿仍需从同 ABI 的批准 bundle/mirror 预热 `graph-a863bf92d6e235d2f53d`，正常 workflow 不会为此降级联网或复用不可信二进制。
+- 2026-07-15 离线 workflow 远端复验：候选 `9c2421d` 的 Bounded Soak run `29420484420`、Release run `29420589850`、Specialized E2E run `29420833603`、Candidate Evidence run `29421017380` 和 Gate Diagnostics run `29421305436` 全部成功，Conan 均命中 AOI 的 Release namespace。gRPC run `29420321189` 在 1 分钟内严格离线失败于新 namespace 缺少 `boost/1.86.0` recipe；后续本地 seed 试验 `29421659838` 证明 legacy cache 缺少 c-ares source，且不可达代理成功阻止其联网。这两次运行证明正常 workflow 没有降级联网或复用不可信二进制。
+- 2026-07-16 gRPC runner 修复：AOI runner 的 2026-07-15 runs `29416581124`、`29420321189`、`29421659838` 分别失败于离线动态 lockfile 解析、全新 gRPC namespace 缺少 GCC 13 二进制、以及把 legacy cache 迁移混入验证 job 后准备步骤失败。当前 workflow 固定消费仓库内 `linux-gcc-x64-release-grpc-nosqlite.lock`，只允许 `--no-remote --build=never`，默认编译并行度为 2；AOI 的 `graph-a863bf92d6e235d2f53d` 已通过 15/15 包严格离线 install 验收。本机随后完成 185/185 目标构建、17/17 gRPC/OTel 聚焦测试、SDK package consumer 5/5 和 N6 decision gate；尚需提交后重新 dispatch GitHub workflow 形成新 run artifact。缓存预热是 runner 准入动作，不再由日常 gRPC 证据 job 动态完成。
 - 依赖治理补充：仓库已新增 `scripts/generate_conan_lock.py`、`conan/profiles/linux-gcc-x64`；`release.yml` 与 `long-soak-capacity.yml` 已支持把 Ubuntu fixed-runner 与同一份 `conan_lockfile` 关联使用。当前默认主线 Conan 路径是 `with_grpc=False`、`with_sqlite=False`；`sqlite3` 继续保留为可选/实验层。
 - Conan 离线事实：AOI runner 的 ABI-safe namespace 已覆盖默认 `nosqlite` lockfile，并通过 `--no-remote --build=never` 验收；新图 key 仍须先预热或从完全相同 ABI/Conan/lockfile 身份的旧 namespace 复制 seed 后重新验收。
 - 仓库已新增 `scripts/bootstrap_conan.py` 与 `conan/remotes.example.json`，用于优先准备本地 cache / 内网 remote；公网 `conancenter` 不是默认前提。

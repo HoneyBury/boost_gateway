@@ -12,6 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+GRPC_LOCKFILE = "conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock"
 PROFILE = "conan/profiles/linux-gcc-x64"
 CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "conan/locks/*.lock")
 
@@ -142,6 +143,7 @@ def main() -> int:
 
     checks: list[dict[str, Any]] = []
     add(checks, "lockfile:linux-nosqlite-exists", exists(LOCKFILE), f"{LOCKFILE} exists")
+    add(checks, "lockfile:linux-grpc-nosqlite-exists", exists(GRPC_LOCKFILE), f"{GRPC_LOCKFILE} exists")
     add(checks, "profile:linux-gcc-x64-exists", exists(PROFILE), f"{PROFILE} exists")
     add(checks, "conanfile:grpc-default-off", '"&:with_grpc": False' in read("conanfile.py"), "conanfile default disables gRPC")
     add(checks, "conanfile:sqlite-default-off", '"&:with_sqlite": False' in read("conanfile.py"), "conanfile default disables sqlite")
@@ -270,6 +272,27 @@ def main() -> int:
             "--no-remote" not in content or "--build=never" in content,
             f"{path} rejects missing packages instead of building or downloading sources when remotes are disabled",
         )
+
+    grpc_workflow = read(FIXED_RUNNER_CONAN_WORKFLOWS["grpc_experimental"])
+    grpc_install = named_workflow_step(grpc_workflow, "Conan install")
+    add(
+        checks,
+        "workflow:grpc-experimental:pinned-grpc-lockfile",
+        GRPC_LOCKFILE in grpc_workflow and "scripts/generate_conan_lock.py" not in grpc_workflow,
+        "gRPC validation consumes the repository lockfile instead of resolving a graph on the runner",
+    )
+    add(
+        checks,
+        "workflow:grpc-experimental:strict-offline-install",
+        all(token in grpc_install for token in ("--no-remote", "--build=never", 'with_grpc=True')),
+        "gRPC validation only consumes an admitted runner-local binary cache",
+    )
+    add(
+        checks,
+        "workflow:grpc-experimental:no-public-path",
+        "--allow-public" not in grpc_workflow and "--build=missing" not in grpc_workflow,
+        "gRPC validation cannot download or build dependencies as part of the evidence job",
+    )
 
     ci = read(".github/workflows/ci.yml")
     add(

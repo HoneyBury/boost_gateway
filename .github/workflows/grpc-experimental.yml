@@ -21,6 +21,10 @@ on:
         type: choice
         options:
           - Release
+      build_parallelism:
+        description: "Maximum parallel compile jobs for the fixed runner"
+        required: true
+        default: "2"
       use_existing_workspace:
         description: "Skip actions/checkout and reuse the self-hosted runner workspace clone"
         required: true
@@ -85,7 +89,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          lockfile="${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock' }}"
+          lockfile="${{ inputs.conan_lockfile }}"
           test -f "$lockfile"
           python scripts/tools/resolve_runner_cache.py \
             --build-type "${{ inputs.build_type }}" \
@@ -122,7 +126,7 @@ jobs:
             -s build_type=${{ inputs.build_type }} \
             --profile:host "${{ inputs.conan_profile }}" \
             --profile:build "${{ inputs.conan_profile }}" \
-            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock' }}" \
+            --lockfile "${{ inputs.conan_lockfile }}" \
             -o "&:with_grpc=True" \
             -o "&:with_sqlite=False"
 
@@ -143,7 +147,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cmake --build "build/grpc-experimental-${{ inputs.build_type }}" --parallel --target \
+          cmake --build "build/grpc-experimental-${{ inputs.build_type }}" --parallel "${{ inputs.build_parallelism }}" --target \
             project_proto \
             boost_gateway_sdk \
             boost_gateway_sdk_grpc \
@@ -206,9 +210,10 @@ jobs:
           name: grpc-experimental-${{ github.run_id }}
           path: |
             runtime/validation/grpc-fixed-runner-preflight-summary.json
+            runtime/validation/runner-cache-identity.json
             runtime/validation/grpc-sdk-package-consumer-summary.json
             runtime/validation/grpc-fixed-runner-decision-summary.json
             runtime/validation/grpc-experimental-configure.log
             runtime/validation/grpc-experimental-ctest.log
-            runtime/validation/linux-gcc-x64-*-grpc-nosqlite.lock
+            conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock
           if-no-files-found: warn

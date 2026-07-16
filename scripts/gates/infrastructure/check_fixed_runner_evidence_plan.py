@@ -12,6 +12,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 LINUX_LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+LINUX_GRPC_LOCKFILE = "conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock"
 LINUX_PROFILE = "conan/profiles/linux-gcc-x64"
 SELF_HOSTED_LINUX_RUNNER = '["self-hosted","Linux","X64"]'
 PREPROD_R5_RUNNER = '["self-hosted","Linux","X64","preprod-r5"]'
@@ -49,9 +50,12 @@ WORKFLOW_REQUIREMENTS = {
         "path": ".github/workflows/grpc-experimental.yml",
         "tokens": (
             LINUX_PROFILE,
+            LINUX_GRPC_LOCKFILE,
             "scripts/tools/resolve_runner_cache.py",
             "vars.GRPC_EXPERIMENTAL_RUNNER",
             'with_grpc=True',
+            "--build=never",
+            "--no-remote",
             "BOOST_BUILD_GRPC=ON",
             "scripts/verify_sdk_package_consumer.py",
             "scripts/check_v3_grpc_poc_decision.py",

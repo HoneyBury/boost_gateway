@@ -138,7 +138,8 @@ def validate_static_boundaries(checks: list[dict[str, Any]]) -> None:
         "grpc next evidence stays deferred behind remaining delivery gaps",
         "defer_default_transport" in mainline_plan
         and "grpc-experimental.yml" in mainline_plan
-        and "fixed-runner `BOOST_BUILD_GRPC=ON` run 结果" in mainline_plan,
+        and "fixed-runner run" in mainline_plan
+        and "BOOST_BUILD_GRPC=ON" in mainline_plan,
         "mainline plan must keep default transport deferred until real fixed-runner gRPC evidence is refreshed",
     )
     conan_validate = read_text(ROOT / ".github/workflows/conan-validate.yml")
