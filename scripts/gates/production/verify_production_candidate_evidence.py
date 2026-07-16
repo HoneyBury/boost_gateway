@@ -118,7 +118,6 @@ def main() -> int:
         "--build-dir",
         str(args.build_dir),
     ]
-    add_flag(preflight_cmd, args.include_redis_live, "--include-redis-live")
     add_flag(preflight_cmd, args.include_redis_live, "--require-redis")
     add_flag(preflight_cmd, args.include_kind, "--require-kind")
 
