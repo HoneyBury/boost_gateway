@@ -34,14 +34,14 @@ cmake --build build/release --parallel
 ### 运行测试
 
 ```bash
-ctest --preset default --timeout 300
+ctest --preset release --timeout 300
 ```
 
 ### 运行网关 Demo
 
 ```bash
 # 启动 gateway（需要先启动 5 个后端服务，或使用单进程模式）
-./build/default/examples/v2_gateway_demo/v2_gateway_demo --port 9201
+./build/release/examples/v2_gateway_demo/v2_gateway_demo --port 9201
 ```
 
 ### Docker 方式启动

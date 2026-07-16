@@ -109,14 +109,14 @@ cmake --build build/default --parallel
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
 | 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | R5/R6 已完成，继续刷新长稳与候选聚合 | AOI runner run `29415968573` 已在 `6f1a2ba` 以新 Conan namespace、strict offline install 和 `docker_pull_policy=never` 完成 Release build、完整 R5 与两轮 R6；11 个镜像全部命中且 artifact 通过。下一步刷新真实 2h soak、R0 和 R2/R3 连续准入事实链 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 历史能力已验证，正在刷新同候选证据链 | R5/R6 run `29428322350`、gRPC run `29465329265` 以及 Release/Bounded/Candidate 等离线工作流已分别成功；这些历史事实分属不同提交，不能拼接为最终结论。下一步冻结候选 SHA，在同一提交刷新 R0、真实 2h soak/R4、R5/R6 和 R2/R3 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 已完成 | 默认严格 Conan，缺包直接失败；FetchContent 仅保留为显式开发选项，fixed-runner 与发布工作流均固定 `BOOST_DEPENDENCY_PROVIDER=conan` |
 | 4 | 生产认证边界 | 已完成当前边界收口 | 生产 `external-jwt` 模式现只验证带 `exp` 的外部 RS256 JWT，拒绝本地签名、注册、guest 和 refresh；账户持久化、JWKS/多 `kid` 轮换和可撤销 refresh token 明确属于外部身份提供方集成，不再由进程内 demo state 伪装承担 |
-| 5 | generated proto/gRPC 非登录 full-flow 证据 | 当前闭环完成，继续保持实验边界 | 本机 Conan `grpc/1.67.1` 构建与真实 `GrpcGatewayAdapterE2ETest` 已验证 Room/Match/Leaderboard unary 后端 E2E、`NOT_FOUND` 错误语义、实验 SDK `GrpcClient` 驱动的 Login/Room/Battle/Leaderboard full-flow、Battle 可取消的持续订阅 server stream（100-5000ms 限速、正常/取消 CQ 回收、流生命周期与 backend route metrics），以及 trusted principal + `Authorizer` RBAC allow/deny、TLS full-flow、mTLS 缺/带 client cert 两条路径。OTLP collector E2E、实验 SDK 安装包契约和独立 `grpc-experimental.yml` fixed-runner 入口都已补齐，并已在 fixed-runner run `29196150703` 成功完成 `BOOST_BUILD_GRPC=ON` 验证；当前剩余结论只是不把该链路升格为默认生产主线 |
-| 6 | Developer Guide / 贡献验证矩阵收束 | 待开始 | 当前脚本和 gate 足够多，但开发者入口、测试层级与提交流程还需要更直接的维护面说明 |
+| 5 | generated proto/gRPC 非登录 full-flow 证据 | 当前闭环完成，继续保持实验边界 | 本机功能证据已覆盖 Room/Match/Leaderboard unary、SDK Login/Room/Battle/Leaderboard full-flow、可取消 stream、RBAC、TLS/mTLS、OTLP 和安装包契约；fixed-runner run `29465329265` 在 `7c1bd4b` 上以 15/15 Conan 包严格离线完成 185/185 构建、17/17 gRPC/OTel 测试、SDK consumer 5/5 和 N6 decision gate。结论继续保持 `experimental_only` / `defer_default_transport` |
+| 6 | Developer Guide / 贡献验证矩阵收束 | 进行中 | `docs/ONBOARDING.md` 已提供入口；当前工作是统一 Debug/Release 命令、测试层级与提交验证矩阵，消除文档和实际 workflow 的漂移，不新增重复 gate |
 
 ### 当前优先级判断
 
 1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
-2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。R5 预发环境阻断已由 `29415968573` 消除；该 run 的 R5/R6 artifact 与 strict Conan/runtime-only Docker 镜像均绑定 `6f1a2ba`。后续在同一候选口径继续刷新真实 2h soak/R4、R0 和 R2/R3。
+2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。历史 R5/R6、gRPC、Release 与有界门禁已经证明执行环境可用；发布前仍须在冻结的同一候选 SHA 上刷新真实 2h soak/R4、R0、R5/R6 和 R2/R3。
 3. 生产认证边界已经收口：生产 login backend 只验证外部 RS256 JWT，并拒绝本地身份操作。当前代码侧 gRPC observability、安装包契约和 fixed-runner `BOOST_BUILD_GRPC=ON` run 都已完成；下一优先级不再是补 gRPC 入口事实，而是继续保持 `defer_default_transport` 并转向更高优先级的主线事项。

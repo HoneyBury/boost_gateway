@@ -4,6 +4,14 @@
 
 > **范围**：暂停 Windows 支持，聚焦 Linux/macOS 平台。删除所有 Windows 特有代码和工具，清理 CI/CD 流水线，更新项目版本到 3.5.0。
 
+### 生产候选与依赖治理
+
+- **严格离线 Conan**：fixed-runner workflow 使用版本固定的 runner-local Conan 虚拟环境和 ABI-safe namespace，日常证据任务统一执行 `--no-remote --build=never`；依赖预热与候选验证职责分离。
+- **候选证据 provenance**：R0、2h long soak、R4、R5、R6 与最终 R2/R3 必须绑定同一候选 SHA、实际 checkout、runner、构建配置和 Conan lockfile，禁止跨提交拼接发布结论。
+- **预生产恢复证据**：R5 使用 runtime-only Docker 镜像和 `docker_pull_policy=never`，R6 归档 TLS 多轮验证；fixed-runner 离线执行环境已经完成准入。
+- **gRPC 实验边界**：`BOOST_BUILD_GRPC=ON` 已在 fixed runner 上完成严格离线构建、gRPC/OTel 测试、SDK package consumer 和 N6 决策门禁；继续保持 `experimental_only`，不进入默认生产传输链路。
+- **发布收口顺序**：冻结候选后按低成本门禁、2h soak/R4、R5/R6、R2/R3 顺序生成同提交证据；8h overnight soak 作为后续高风险发布补充。
+
 ### 删除
 
 - **Windows 源码**：`windows_service.h/cpp`（~500 行 SCM 集成）、`windows_platform_test.cpp`
