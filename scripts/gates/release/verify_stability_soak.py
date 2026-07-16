@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import platform
+import shutil
 import subprocess
 import sys
 import time
@@ -91,6 +92,7 @@ SUSTAINED_GATE_MAX_FAILURE_RATE = 0.01
 SUSTAINED_GATE_MAX_DEVIATION_RATIO = 0.20
 SUSTAINED_GATE_RARE_MAX_FAILURE_RATE = 0.001
 SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO = 0.25
+SUSTAINED_GATE_CONFIRMATION_RUNS = 2
 
 
 def exe_name(base: str) -> str:
@@ -246,22 +248,182 @@ def failed_arch_checks(summary_path: Path) -> list[dict[str, object]]:
     return [check for check in checks if isinstance(check, dict) and check.get("passed") is False]
 
 
+def host_resource_snapshot() -> dict[str, object]:
+    snapshot: dict[str, object] = {
+        "captured_at": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+    }
+    try:
+        snapshot["load_average"] = list(os.getloadavg())
+    except (AttributeError, OSError):
+        pass
+
+    try:
+        snapshot["proc_loadavg"] = Path("/proc/loadavg").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+
+    meminfo = Path("/proc/meminfo")
+    try:
+        wanted = {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"}
+        snapshot["memory_kib"] = {
+            key: int(value.split()[0])
+            for line in meminfo.read_text(encoding="utf-8").splitlines()
+            for key, value in [line.split(":", 1)]
+            if key in wanted
+        }
+    except (OSError, ValueError):
+        pass
+
+    frequencies: list[int] = []
+    for path in Path("/sys/devices/system/cpu").glob("cpu*/cpufreq/scaling_cur_freq"):
+        try:
+            frequencies.append(int(path.read_text(encoding="utf-8").strip()))
+        except (OSError, ValueError):
+            continue
+    if frequencies:
+        snapshot["cpu_frequency_khz"] = {
+            "minimum": min(frequencies),
+            "maximum": max(frequencies),
+            "average": round(sum(frequencies) / len(frequencies), 3),
+            "sampled_cpus": len(frequencies),
+        }
+
+    thermal_millicelsius: dict[str, int] = {}
+    for path in Path("/sys/class/thermal").glob("thermal_zone*/temp"):
+        try:
+            thermal_millicelsius[path.parent.name] = int(path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            continue
+    if thermal_millicelsius:
+        snapshot["thermal_millicelsius"] = thermal_millicelsius
+    return snapshot
+
+
+def archive_failed_arch_run(
+    output_root: Path,
+    pass_number: int,
+    attempt: str,
+    before: dict[str, object],
+    after: dict[str, object],
+    *,
+    status: str = "failed",
+    failed_checks: list[dict[str, object]] | None = None,
+) -> dict[str, object]:
+    archive_dir = output_root / "failures" / f"pass-{pass_number:06d}-{attempt}"
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    archived_files: list[str] = []
+    for name in ("summary.json", "v2_arch_benchmark.json", "stdout.log", "stderr.log"):
+        source = output_root / name
+        if source.is_file():
+            destination = archive_dir / name
+            shutil.copy2(source, destination)
+            archived_files.append(str(destination))
+    diagnostics_path = archive_dir / "host-resources.json"
+    diagnostics_path.write_text(
+        json.dumps({"before": before, "after": after}, indent=2),
+        encoding="utf-8",
+    )
+    archived_files.append(str(diagnostics_path))
+    return {
+        "pass_number": pass_number,
+        "attempt": attempt,
+        "status": status,
+        "failed_checks": [
+            {
+                "name": check.get("name"),
+                "metric": check.get("metric"),
+                "value": check.get("value"),
+                "threshold": check.get("threshold"),
+                "direction": check.get("direction"),
+            }
+            for check in (failed_checks or [])
+        ],
+        "archive_dir": str(archive_dir),
+        "files": archived_files,
+    }
+
+
+def record_failure_episode(
+    failures: dict[str, dict[str, object]],
+    checks_by_run: list[list[dict[str, object]]],
+) -> None:
+    observations: dict[str, list[dict[str, object]]] = {}
+    for checks in checks_by_run:
+        for check in checks:
+            observations.setdefault(str(check.get("name", "unknown")), []).append(check)
+
+    for name, checks in observations.items():
+        first = checks[0]
+        entry = failures.setdefault(name, {
+            "name": name,
+            "metric": first.get("metric"),
+            "threshold": first.get("threshold"),
+            "direction": first.get("direction"),
+            "failed_runs": 0,
+            "confirmed_failed_runs": 0,
+            "unconfirmed_failed_runs": 0,
+            "confirmed_episodes": 0,
+            "recovered_episodes": 0,
+            "last_observed": None,
+        })
+        confirmed = len(checks) >= 2
+        entry["failed_runs"] = int(entry["failed_runs"]) + len(checks)
+        entry["last_observed"] = checks[-1].get("value")
+        if confirmed:
+            entry["confirmed_failed_runs"] = int(entry["confirmed_failed_runs"]) + len(checks)
+            entry["confirmed_episodes"] = int(entry["confirmed_episodes"]) + 1
+        else:
+            entry["unconfirmed_failed_runs"] = int(entry["unconfirmed_failed_runs"]) + len(checks)
+            entry["recovered_episodes"] = int(entry["recovered_episodes"]) + 1
+
+        for check in checks:
+            observed = float(check["value"])
+            worst_observed = entry.get("worst_observed")
+            if worst_observed is None or (
+                str(entry["direction"]) == "max" and observed > float(worst_observed)
+            ) or (
+                str(entry["direction"]) == "min" and observed < float(worst_observed)
+            ):
+                entry["worst_observed"] = observed
+            if confirmed:
+                worst_confirmed = entry.get("worst_confirmed_observed")
+                if worst_confirmed is None or (
+                    str(entry["direction"]) == "max" and observed > float(worst_confirmed)
+                ) or (
+                    str(entry["direction"]) == "min" and observed < float(worst_confirmed)
+                ):
+                    entry["worst_confirmed_observed"] = observed
+
+
 def sustained_failure_violations(
     failures: dict[str, dict[str, object]], completed_runs: int
 ) -> list[dict[str, object]]:
     violations: list[dict[str, object]] = []
     for entry in failures.values():
         threshold = float(entry["threshold"])
+        failed_runs = int(entry["failed_runs"])
+        confirmed_failed_runs = int(entry.get("confirmed_failed_runs", failed_runs))
         worst_observed = float(entry["worst_observed"])
-        failure_rate = int(entry["failed_runs"]) / max(1, completed_runs)
+        worst_confirmed_observed = float(entry.get("worst_confirmed_observed", worst_observed))
+        confirmed_failure_rate = confirmed_failed_runs / max(1, completed_runs)
+        raw_failure_rate = failed_runs / max(1, completed_runs)
+        failure_rate = confirmed_failure_rate if confirmed_failed_runs else raw_failure_rate
         direction = str(entry["direction"])
         deviation_ratio = (
-            (worst_observed - threshold) / threshold
+            (worst_confirmed_observed - threshold) / threshold
             if direction == "max"
-            else (threshold - worst_observed) / threshold
+            else (threshold - worst_confirmed_observed) / threshold
         )
+        entry["raw_failure_rate"] = round(raw_failure_rate, 6)
+        entry["confirmed_failure_rate"] = round(confirmed_failure_rate, 6)
         entry["failure_rate"] = round(failure_rate, 6)
         entry["worst_deviation_ratio"] = round(deviation_ratio, 6)
+        confirmation_recovered = (
+            confirmed_failed_runs == 0
+            and raw_failure_rate <= SUSTAINED_GATE_RARE_MAX_FAILURE_RATE
+        )
         accepted_standard = (
             failure_rate <= SUSTAINED_GATE_MAX_FAILURE_RATE
             and deviation_ratio <= SUSTAINED_GATE_MAX_DEVIATION_RATIO
@@ -270,9 +432,13 @@ def sustained_failure_violations(
             failure_rate <= SUSTAINED_GATE_RARE_MAX_FAILURE_RATE
             and deviation_ratio <= SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO
         )
-        entry["accepted_as_transient"] = accepted_standard or accepted_rare_tail
+        entry["accepted_as_transient"] = (
+            confirmation_recovered or accepted_standard or accepted_rare_tail
+        )
         entry["acceptance_tier"] = (
-            "standard"
+            "confirmation_recovered"
+            if confirmation_recovered
+            else "standard"
             if accepted_standard
             else "rare_tail"
             if accepted_rare_tail
@@ -297,9 +463,14 @@ def run_sustained_arch_baseline(
     completed_runs = 0
     last_run: dict[str, object] = {}
     failures: dict[str, dict[str, object]] = {}
+    failure_events: list[dict[str, object]] = []
+    failure_archive_root = output_root / "failures"
+    if failure_archive_root.exists():
+        shutil.rmtree(failure_archive_root)
     summary_path = output_root / "summary.json"
     while completed_runs == 0 or time.monotonic() - started < minimum_duration_seconds:
         completed_runs += 1
+        resources_before = host_resource_snapshot()
         last_run = run_step(
             f"{name} (pass {completed_runs})",
             "baseline",
@@ -310,31 +481,70 @@ def run_sustained_arch_baseline(
             baseline_timeout_seconds + 10,
             emit_output=completed_runs == 1,
         )
+        resources_after = host_resource_snapshot()
         if last_run["status"] != "passed":
             sample_failures = failed_arch_checks(summary_path)
+            failure_events.append(archive_failed_arch_run(
+                output_root,
+                completed_runs,
+                "initial",
+                resources_before,
+                resources_after,
+                failed_checks=sample_failures,
+            ))
             # A benchmark gate failure is evidence to aggregate across the full soak,
             # while a missing/invalid summary or process failure must stop immediately.
             if last_run.get("returncode") == 2 and sample_failures:
-                for check in sample_failures:
-                    name_key = str(check.get("name", "unknown"))
-                    entry = failures.setdefault(name_key, {
-                        "name": name_key,
-                        "metric": check.get("metric"),
-                        "threshold": check.get("threshold"),
-                        "direction": check.get("direction"),
-                        "failed_runs": 0,
-                        "last_observed": None,
-                    })
-                    entry["failed_runs"] = int(entry["failed_runs"]) + 1
-                    entry["last_observed"] = check.get("value")
-                    observed = float(check["value"])
-                    worst_observed = entry.get("worst_observed")
-                    if worst_observed is None or (
-                        str(entry["direction"]) == "max" and observed > float(worst_observed)
-                    ) or (
-                        str(entry["direction"]) == "min" and observed < float(worst_observed)
-                    ):
-                        entry["worst_observed"] = observed
+                checks_by_run = [sample_failures]
+                confirmation_runs = (
+                    SUSTAINED_GATE_CONFIRMATION_RUNS if minimum_duration_seconds > 0 else 0
+                )
+                for confirmation in range(1, confirmation_runs + 1):
+                    completed_runs += 1
+                    resources_before = host_resource_snapshot()
+                    confirmation_run = run_step(
+                        f"{name} (pass {completed_runs}, confirmation {confirmation})",
+                        "baseline",
+                        arch_baseline_command(
+                            root, build_dir, output_root, soak_profile,
+                            baseline_timeout_seconds, baseline_profile
+                        ),
+                        root,
+                        baseline_timeout_seconds + 10,
+                        emit_output=False,
+                    )
+                    resources_after = host_resource_snapshot()
+                    confirmation_failures = (
+                        failed_arch_checks(summary_path)
+                        if confirmation_run.get("returncode") == 2
+                        else []
+                    )
+                    checks_by_run.append(confirmation_failures)
+                    failure_events.append(archive_failed_arch_run(
+                        output_root,
+                        completed_runs,
+                        f"confirmation-{confirmation}",
+                        resources_before,
+                        resources_after,
+                        status=str(confirmation_run["status"]),
+                        failed_checks=confirmation_failures,
+                    ))
+                    if confirmation_run["status"] != "passed" and not confirmation_failures:
+                        return {
+                            "name": name,
+                            "category": "baseline",
+                            "status": confirmation_run["status"],
+                            "duration_seconds": round(time.monotonic() - started, 3),
+                            "minimum_duration_seconds": minimum_duration_seconds,
+                            "completed_runs": completed_runs,
+                            "last_run": confirmation_run,
+                            "failed_checks": sorted(
+                                failures.values(), key=lambda check: str(check["name"])
+                            ),
+                            "failure_events": failure_events,
+                        }
+                    last_run = confirmation_run
+                record_failure_episode(failures, checks_by_run)
                 continue
             if completed_runs > 1:
                 if last_run.get("stdout_tail"):
@@ -350,6 +560,7 @@ def run_sustained_arch_baseline(
                 "completed_runs": completed_runs,
                 "last_run": last_run,
                 "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
+                "failure_events": failure_events,
             }
     violating_checks = sustained_failure_violations(failures, completed_runs)
     status = "failed" if violating_checks else "passed"
@@ -363,11 +574,14 @@ def run_sustained_arch_baseline(
         "last_run": last_run,
         "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
         "violating_checks": violating_checks,
+        "failure_events": failure_events,
         "transient_failure_policy": {
             "max_failure_rate": SUSTAINED_GATE_MAX_FAILURE_RATE,
             "max_deviation_ratio": SUSTAINED_GATE_MAX_DEVIATION_RATIO,
             "rare_max_failure_rate": SUSTAINED_GATE_RARE_MAX_FAILURE_RATE,
             "rare_max_deviation_ratio": SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO,
+            "confirmation_runs": SUSTAINED_GATE_CONFIRMATION_RUNS,
+            "confirmation_required_failures": 2,
         },
     }
 

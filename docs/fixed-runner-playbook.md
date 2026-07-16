@@ -552,6 +552,7 @@ python scripts/run_cloud_production_closure.py --build-dir build/release --confi
 - `runtime/validation/fixed-runner-release-capacity-summary.json` 中 `summary_version=2`、`overall_pass=true`；容量失败不会反向否定已经通过的 2h summary，但两者仍必须绑定同一候选 SHA。
 - `runtime/validation/cloud-production-closure-summary.json` 中 `summary_version=2`、`overall_pass=true`，并包含 `environment` 与 `artifacts`。
 - 长稳 summary 至少归档 `long-soak-2h-summary.json`；8h soak 可在同一云主机扩展执行并归档 `long-soak-8h-summary.json`。容量 summary 应同时归档 `capacity-baseline-summary.json`、`business-capacity-baseline-summary.json`、`runtime/perf/fixed-runner-capacity/summary.json` 和 `runtime/perf/fixed-runner-business-capacity/summary.json`。
+- long/overnight 期间任何失败执行及其两次确认都必须保留 `runtime/perf/v2-stability-soak/failures/pass-*-*/`，其中包含该轮 `summary.json`、原始 benchmark JSON、stdout/stderr 和 `host-resources.json`。聚合器会立即执行两次同配置确认：同指标在三次中至少两次失败视为可复现退化；只有确认均恢复且原始失败率不超过 0.1% 的孤立尖峰可记为 `confirmation_recovered`。不得删除失败目录、确认结果或只上传最后一次成功覆盖后的顶层 summary。
 - 云端部署收束必须同时包含 Compose 运行态快照、kind/control-plane 结果和 production evidence 聚合 summary。
 
 N1/N2/N3 建议按以下顺序收集：

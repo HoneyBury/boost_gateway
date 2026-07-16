@@ -447,6 +447,23 @@ def main() -> int:
         all(token in stability_soak for token in ("\"long\": {\"build\": 1800, \"test\": 300, \"baseline\": 10800}", "\"overnight\": {\"build\": 1800, \"test\": 300, \"baseline\": 32400}")),
         "verify_stability_soak.py carries explicit long/overnight timeout profiles",
     )
+    add(
+        checks,
+        "workflow:long-soak-capacity:failed-run-archive",
+        all(
+            token in stability_soak
+            for token in (
+                "archive_failed_arch_run",
+                'output_root / "failures"',
+                "shutil.rmtree(failure_archive_root)",
+                "host_resource_snapshot",
+                "SUSTAINED_GATE_CONFIRMATION_RUNS = 2",
+                '"confirmation_recovered"',
+            )
+        )
+        and "runtime/perf/v2-stability-soak/**" in long_soak_workflow,
+        "long soak preserves failed benchmark outputs, host diagnostics, and confirmation evidence",
+    )
     fixed_runner_environment = read("scripts/gates/infrastructure/check_fixed_runner_environment.py")
     add(
         checks,

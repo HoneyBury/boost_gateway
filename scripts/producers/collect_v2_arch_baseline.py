@@ -152,6 +152,11 @@ def main() -> int:
 
     benchmark = resolve_executable(args.build_dir, "v2_arch_benchmark")
     raw_path = output_root / "v2_arch_benchmark.json"
+    summary_path = output_root / "summary.json"
+    stdout_path = output_root / "stdout.log"
+    stderr_path = output_root / "stderr.log"
+    for generated_path in (raw_path, summary_path, stdout_path, stderr_path):
+        generated_path.unlink(missing_ok=True)
     cmd = [
         str(benchmark),
         "--iterations", str(args.iterations),
@@ -168,8 +173,8 @@ def main() -> int:
         timeout=args.timeout_seconds,
         check=False,
     )
-    (output_root / "stdout.log").write_text(completed.stdout, encoding="utf-8")
-    (output_root / "stderr.log").write_text(completed.stderr, encoding="utf-8")
+    stdout_path.write_text(completed.stdout, encoding="utf-8")
+    stderr_path.write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:
         print(completed.stderr, file=sys.stderr)
         return completed.returncode
@@ -193,7 +198,6 @@ def main() -> int:
         "release_gates": evaluate_gates(report, args.actor_limit, gate_checks),
         "results": report.get("results", []),
     }
-    summary_path = output_root / "summary.json"
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({
         "summary": str(summary_path),
@@ -204,4 +208,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
