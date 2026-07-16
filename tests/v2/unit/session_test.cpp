@@ -1,3 +1,4 @@
+#include "app/logging.h"
 #include "net/packet_codec.h"
 #include "net/session.h"
 
@@ -16,6 +17,8 @@ namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
 TEST(NetSessionTest, StartIsIdempotentAndKeepsFrameAlignment) {
+    app::logging::init("project_tests");
+
     asio::io_context server_io;
     tcp::acceptor acceptor(server_io, tcp::endpoint(tcp::v4(), 0));
     std::promise<std::shared_ptr<net::Session>> accepted_promise;
