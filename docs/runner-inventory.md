@@ -1,6 +1,6 @@
 # GitHub Actions Runner Inventory
 
-更新时间：2026-07-16（AOI runner gRPC offline cache admitted）
+更新时间：2026-07-16（22:00 CST GitHub API 快照）
 
 本文档作为仓库 Actions runner 拓扑的单一事实源。`current-state.md` 与 `fixed-runner-playbook.md` 只引用这里的结论，不再各自维护 runner 在线状态描述。
 runner 命名、custom labels、Conan/Docker/R5 准入规则见
@@ -9,7 +9,7 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 ## 验证来源
 
 - 仓库：`HoneyBury/boost_gateway`
-- 验证时间：2026-07-15
+- 验证时间：2026-07-16 22:00 CST
 - 验证命令：`gh api repos/HoneyBury/boost_gateway/actions/runners`
 
 ## 当前快照
@@ -17,17 +17,17 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 | Runner | OS | 状态 | Busy | 版本 | Labels |
 |---|---|---|---|---|---|
 | `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `node-aoi-omen-gaming-laptop-16-am0xxx` |
-| `MyDesktop-Win` | Windows | `online` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
-| `myserver` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
+| `MyDesktop-Win` | Windows | `offline` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
+| `myserver` | Linux | `offline` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
 
 ## 当前结论
 
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
-- `myserver` 当前在线且空闲，具备唯一 R5 label；是否可调度仍取决于当前候选的 G2/G3 cache 准入。
-- Windows runner `MyDesktop-Win` 当前在线，但不是 Linux 主线的执行目标。
+- `myserver` 当前离线，虽然仍具备唯一 R5 label，但恢复在线后仍须确认当前候选的 G2/G3 cache 准入才能调度 R5。
+- Windows runner `MyDesktop-Win` 当前离线，且不是 Linux 主线的执行目标。
 
-GitHub API 在 2026-07-15 确认 AOI runner、`myserver` 和 `MyDesktop-Win` 均在线。
+GitHub API 在 2026-07-16 22:00 CST 确认 AOI runner 在线，`myserver` 和 `MyDesktop-Win` 离线。
 R5 机器专属复验必须使用目标机器的 unique custom label；不能用共享 label 代替
 当前候选的 G2/G3 cache 准入。
 
@@ -35,7 +35,7 @@ R5 机器专属复验必须使用目标机器的 unique custom label；不能用
 
 | Runner | OS / toolchain | 本机状态 | 结论 |
 |---|---|---|---|
-| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, pinned venv Conan 2.8.1, Docker 29.5, Compose 5.1 | GitHub API `online`；唯一 label `preprod-r5-myserver` | 候选 `18abba2` 的 nosqlite 与 gRPC graph 均通过 `--no-remote --build=never`；run `29428322350` 完成完整 R5/R6。 |
+| `myserver` | Ubuntu 24.04 x64, kernel 6.8, GCC 13.3, pinned venv Conan 2.8.1, Docker 29.5, Compose 5.1 | GitHub API 当前 `offline`；唯一 label `preprod-r5-myserver` 仍保留 | 候选 `18abba2` 的 nosqlite 与 gRPC graph 均通过 `--no-remote --build=never`；run `29428322350` 完成完整 R5/R6。该历史准入不等于当前候选准入。 |
 | `aoi-omen-gaming-laptop-16-am0xxx` | Ubuntu 22.04 x64, GCC 13.4, Conan 2.8.1 | GitHub API `online`；唯一 label `node-aoi-omen-gaming-laptop-16-am0xxx` | `/opt/boost-gateway`、新图 namespace 和 runtime-only Docker cache 已预热；run `29415968573` 完成 strict offline Conan、R5 和 R6，结论 success。 |
 
 本机核验不能替代预发 runner artifact。当前 AOI 使用机器唯一 label 定向执行；

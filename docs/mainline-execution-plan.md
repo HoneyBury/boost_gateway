@@ -1,6 +1,6 @@
 # v3.5.0 项目清理执行计划
 
-更新时间：2026-07-13
+更新时间：2026-07-16
 
 本文档是 v3.5.0 版本的执行计划，替代了之前的 `mainline-execution-plan.md`（2026-05-30 版本）。
 
@@ -109,7 +109,7 @@ cmake --build build/default --parallel
 | 顺序 | 主题 | 状态 | 说明 |
 |---|---|---|---|
 | 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | 历史能力已验证，正在刷新同候选证据链 | R5/R6 run `29428322350`、gRPC run `29465329265` 以及 Release/Bounded/Candidate 等离线工作流已分别成功；这些历史事实分属不同提交，不能拼接为最终结论。下一步冻结候选 SHA，在同一提交刷新 R0、真实 2h soak/R4、R5/R6 和 R2/R3 |
+| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | `480d5fd` 的 2h 已通过；冻结事实更新后的后继提交 | run `29494894953` 已在 `480d5fd` 完成 7201.245 秒、1616 轮且无失败事件，provenance 完整。R5/R6 run `29428322350`、gRPC run `29465329265` 以及此前 R0/R4 成功事实分属其他提交，不能拼接为最终结论。提交本次事实更新后不再修改候选；当前 AOI 在线，在该新完整 SHA 上刷新 R0、2h、capacity + business-capacity/R4 和定向 AOI 的 R5/R6，最后运行 R2/R3 |
 | 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 已完成 | 默认严格 Conan，缺包直接失败；FetchContent 仅保留为显式开发选项，fixed-runner 与发布工作流均固定 `BOOST_DEPENDENCY_PROVIDER=conan` |
 | 4 | 生产认证边界 | 已完成当前边界收口 | 生产 `external-jwt` 模式现只验证带 `exp` 的外部 RS256 JWT，拒绝本地签名、注册、guest 和 refresh；账户持久化、JWKS/多 `kid` 轮换和可撤销 refresh token 明确属于外部身份提供方集成，不再由进程内 demo state 伪装承担 |
 | 5 | generated proto/gRPC 非登录 full-flow 证据 | 当前闭环完成，继续保持实验边界 | 本机功能证据已覆盖 Room/Match/Leaderboard unary、SDK Login/Room/Battle/Leaderboard full-flow、可取消 stream、RBAC、TLS/mTLS、OTLP 和安装包契约；fixed-runner run `29465329265` 在 `7c1bd4b` 上以 15/15 Conan 包严格离线完成 185/185 构建、17/17 gRPC/OTel 测试、SDK consumer 5/5 和 N6 decision gate。结论继续保持 `experimental_only` / `defer_default_transport` |
@@ -118,5 +118,5 @@ cmake --build build/default --parallel
 ### 当前优先级判断
 
 1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
-2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。历史 R5/R6、gRPC、Release 与有界门禁已经证明执行环境可用；发布前仍须在冻结的同一候选 SHA 上刷新真实 2h soak/R4、R0、R5/R6 和 R2/R3。
+2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。`480d5fd` 的真实 2h soak 已由 run `29494894953` 通过；本次事实更新落仓后将形成新的冻结 SHA，因此 R0、2h、R4、R5/R6 和 R2/R3 都必须在该新 SHA 上刷新。
 3. 生产认证边界已经收口：生产 login backend 只验证外部 RS256 JWT，并拒绝本地身份操作。当前代码侧 gRPC observability、安装包契约和 fixed-runner `BOOST_BUILD_GRPC=ON` run 都已完成；下一优先级不再是补 gRPC 入口事实，而是继续保持 `defer_default_transport` 并转向更高优先级的主线事项。

@@ -12,11 +12,11 @@
 - 本机 Windows/macOS baseline 继续作为开发回归参考。
 - 最终容量、2h/8h soak、business-capacity 和 release/capacity 投产口径应优先以 Ubuntu fixed-runner summary 为准，而不是本机短样本。
 
-### 最新固定 Runner 容量事实（2026-07-12）
+### 最新固定 Runner 容量与 2h 稳定性事实
 
 `long-soak-capacity.yml` run `29183833041` 在 Linux fixed runner、提交 `6d537ee` 上完成 capacity 与 business-capacity 各 3 轮；2h/8h 输入均为 `false`，因此本记录不构成长稳结论。Conan lockfile 预检、Release 构建与 `fixed-runner-release-capacity-summary.json` 均为 `overall_pass=true`。
 
-候选 `80cc5cf` 的 run `29478926992` 已执行完整 7204.569 秒 2h soak，但 1627 轮中一轮 `multi_battle_tick_100_entities.p99=2141.51us` 超过 1000us 门槛及 25% 稀有尾峰硬偏差限制，因此仍是失败事实，不可作为候选证据。后续 long/overnight 会独立归档每个失败执行及主机资源快照，并以两次即时复测确认是否可复现；门槛仍保持 1000us。
+候选 `80cc5cf` 的 run `29478926992` 已执行完整 7204.569 秒 2h soak，但 1627 轮中一轮 `multi_battle_tick_100_entities.p99=2141.51us` 超过 1000us 门槛及 25% 稀有尾峰硬偏差限制，因此保留为失败事实。随后候选 `480d5fd` 的 run `29494894953` 完成 7201.245 秒和 1616 轮，未记录 `failure_events`、`violating_checks` 或 `failed_checks`，2h summary 与聚合 summary 均为 `overall_pass=true`。同 SHA 的前序 run `29489191125` 在 long-soak 步骤异常终止且未生成日志或 artifact，不能作为性能或应用失败样本。本次成功 artifact 与 checkout、候选 SHA 和 lockfile provenance 一致；该 run 未启用 capacity/business-capacity，不能替代 R4 容量证据。
 
 | Profile | battle-500 P99 (min/median/max) | 吞吐中位数 (msg/s) | Connected | Rejected / Failed | 额外验证 |
 | --- | --- | ---: | ---: | --- | --- |
@@ -116,7 +116,7 @@
 | echo-5000/10000 大连接 | **已测定** (P0 capacity, P99 20ms/50ms, 0 failed) |
 | battle-500 容量 | **已测定** (P0 business-capacity, P99 400ms) |
 | 1/2 核线性扩容 | **待固定 runner 实测** |
-| 2h/8h 稳定性浸泡 | **已执行，当前候选证据仍待通过** |
+| 2h/8h 稳定性浸泡 | **2h 已在当前候选通过；8h 只有历史通过事实** |
 | TLS on/off 损耗 | **待固定 runner 实测** |
 | OTel export 损耗 | **待固定 runner 实测** |
 | matchmaking/leaderboard 专项 | **待测定** |
@@ -445,7 +445,7 @@ CI 工作流 `perf-regression.yml` 使用 `verify_r4_contract.py` 自动判定 g
 | 2026-05-23 | GitHub Actions ubuntu-latest | smoke | PASS | CI artifact |
 | 2026-05-23 | GitHub Actions windows-2022 | smoke | PASS | CI artifact |
 | TBD | Ubuntu fixed runner | capacity (3 reps) | **待测定，优先事实源** | `runtime/perf/fixed-runner-capacity/` |
-| 2026-07-16 | Ubuntu fixed runner | long soak (2h) | **FAIL，单轮 P99 硬偏差违规，待新提交复测** | run `29478926992` / `runtime/validation/long-soak-2h-summary.json` |
+| 2026-07-16 | Ubuntu fixed runner | long soak (2h) | **PASS，7201.245s / 1616 轮，无失败事件** | run `29494894953` / `runtime/validation/long-soak-2h-summary.json` |
 | TBD | Ubuntu fixed runner | overnight soak (8h) | **待测定，优先事实源** | `runtime/validation/long-soak-8h-summary.json` |
 | TBD | Fixed runner | 1/2 core linearity | **待测定** | - |
 | TBD | Fixed runner | TLS overhead | **待测定** | - |
