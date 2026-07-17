@@ -119,7 +119,8 @@ def main() -> int:
     add(
         checks,
         "release:isolated-asset-directory",
-        "RELEASE_ASSET_DIR: ${{ runner.temp }}" in release_workflow,
+        'release_asset_dir="$RUNNER_TEMP/boost-gateway-release-${{ github.run_id }}"' in release_workflow
+        and '>> "$GITHUB_ENV"' in release_workflow,
         "release publish job uses a run-local asset directory instead of a persistent workspace path",
     )
     add(
