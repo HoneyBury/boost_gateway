@@ -138,40 +138,59 @@ jobs:
             --predicate-type https://spdx.dev/Document/v2.3 \
             > runtime/validation/published-release-sbom-verification.json
 
-          digest="$(sha256sum "$archive" | cut -d ' ' -f 1)"
-          jq -e --arg digest "$digest" \
-            '.[0].verificationResult.statement.subject[0].digest.sha256 == $digest' \
-            runtime/validation/published-release-provenance-verification.json
-          jq -e --arg digest "$digest" \
-            '.[0].verificationResult.statement.subject[0].digest.sha256 == $digest' \
-            runtime/validation/published-release-sbom-verification.json
+          export ARTIFACT_DIGEST="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          expected = os.environ["ARTIFACT_DIGEST"]
+          for name in ("provenance", "sbom"):
+              path = Path(f"runtime/validation/published-release-{name}-verification.json")
+              results = json.loads(path.read_text(encoding="utf-8"))
+              actual = results[0]["verificationResult"]["statement"]["subject"][0]["digest"]["sha256"]
+              if actual != expected:
+                  raise SystemExit(f"{name} attestation digest mismatch: {actual}")
+          PY
 
       - name: Render published asset summary
         shell: bash
+        env:
+          VERIFICATION_RUNNER: ${{ runner.name }}
         run: |
           set -euo pipefail
           archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz"
           sbom="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json"
-          jq -n \
-            --arg tag "$RELEASE_TAG" \
-            --arg commit "$EXPECTED_COMMIT" \
-            --arg runner "${{ runner.name }}" \
-            --arg archive_sha256 "$(sha256sum "$archive" | cut -d ' ' -f 1)" \
-            --arg sbom_sha256 "$(sha256sum "$sbom" | cut -d ' ' -f 1)" \
-            --slurpfile consumer runtime/validation/published-release-package-consumer-summary.json \
-            '{
-              summary_version: 2,
-              overall_pass: true,
-              passed: true,
-              tag: $tag,
-              expected_commit: $commit,
-              runner: $runner,
-              archive_sha256: $archive_sha256,
-              sbom_sha256: $sbom_sha256,
-              runtime_consumer: $consumer[0],
-              provenance_attestation_verified: true,
-              sbom_attestation_verified: true
-            }' > runtime/validation/published-release-asset-verification-summary.json
+          export ARCHIVE_SHA256="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          export SBOM_SHA256="$(sha256sum "$sbom" | cut -d ' ' -f 1)"
+          python3 - <<'PY'
+          import json
+          import os
+          from datetime import UTC, datetime
+          from pathlib import Path
+
+          validation = Path("runtime/validation")
+          consumer = json.loads(
+              (validation / "published-release-package-consumer-summary.json").read_text(encoding="utf-8")
+          )
+          summary = {
+              "summary_version": 2,
+              "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+              "overall_pass": True,
+              "passed": True,
+              "tag": os.environ["RELEASE_TAG"],
+              "expected_commit": os.environ["EXPECTED_COMMIT"],
+              "runner": os.environ["VERIFICATION_RUNNER"],
+              "archive_sha256": os.environ["ARCHIVE_SHA256"],
+              "sbom_sha256": os.environ["SBOM_SHA256"],
+              "runtime_consumer": consumer,
+              "provenance_attestation_verified": True,
+              "sbom_attestation_verified": True,
+          }
+          (validation / "published-release-asset-verification-summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
 
       - name: Upload published asset verification
         uses: actions/upload-artifact@v4
