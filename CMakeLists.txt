@@ -93,6 +93,7 @@ install(FILES
     docs/project-blueprint.md
     docs/mainline-execution-plan.md
     docs/v3.5.x-maintenance-plan.md
+    docs/v3.5.2-freeze-todo.md
     docs/architecture-overview.md
     docs/release-governance.md
     docs/performance-baseline.md

@@ -41,6 +41,7 @@
 - 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
 - v3.5.x 维护计划：`docs/v3.5.x-maintenance-plan.md`
+- v3.5.2 冻结待办：`docs/v3.5.2-freeze-todo.md`
 - 完整版本变更：`CHANGELOG.md`
 
 当前 CI/CD 平台选择：

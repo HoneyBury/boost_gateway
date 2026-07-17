@@ -20,6 +20,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/runner-gate-standard.md",
     "docs/project-blueprint.md",
     "docs/v3.5.x-maintenance-plan.md",
+    "docs/v3.5.2-freeze-todo.md",
     "docs/legacy/legacy-helper-inventory.md",
     "docs/architecture-overview.md",
     "docs/performance-baseline.md",
@@ -65,6 +66,9 @@ def main() -> int:
 
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    docs_index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    maintenance_plan = (ROOT / "docs/v3.5.x-maintenance-plan.md").read_text(encoding="utf-8")
+    freeze_todo = (ROOT / "docs/v3.5.2-freeze-todo.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     version_match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", cmake)
     version = version_match.group(1) if version_match else ""
@@ -82,6 +86,30 @@ def main() -> int:
         "release:readme-open-boundary",
         "29563770679" in readme and "第二台 Linux runner" in readme and "未完成冻结边界" in readme,
         "README records successful v3.5.2 kind evidence and keeps final-SHA/tag/second-runner boundaries open",
+    )
+    add(
+        checks,
+        "release:freeze-todo-indexed",
+        "docs/v3.5.2-freeze-todo.md" in readme
+        and "v3.5.2-freeze-todo.md" in docs_index
+        and "docs/v3.5.2-freeze-todo.md" in maintenance_plan,
+        "v3.5.2 freeze TODO is linked from README, docs index and maintenance plan",
+    )
+    add(
+        checks,
+        "release:freeze-todo-runner-contract",
+        all(
+            token in freeze_todo
+            for token in (
+                "--no-remote --build=never",
+                "第二台 Linux runner",
+                "preprod-r5",
+                "gh release download v3.5.2",
+                "gh attestation verify",
+                "不能跨 SHA 拼接",
+            )
+        ),
+        "v3.5.2 freeze TODO preserves runner, offline, same-SHA and published-asset checks",
     )
     add(checks, "release:license-exists", (ROOT / "LICENSE").is_file(), "LICENSE exists")
     add(checks, "release:license-installed", "    LICENSE\n" in cmake, "LICENSE is included by CMake install")
