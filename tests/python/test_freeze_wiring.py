@@ -52,6 +52,44 @@ class FreezeWiringTest(unittest.TestCase):
             (verify_gateway_observability_runtime.REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").is_file()
         )
 
+    def test_candidate_kind_flag_maps_to_child_gate_contracts(self) -> None:
+        commands: list[list[str]] = []
+
+        def fake_run_step(
+            name: str, category: str, command: list[str], timeout_seconds: int
+        ) -> dict[str, object]:
+            commands.append(command)
+            return {
+                "name": name,
+                "category": category,
+                "status": "passed",
+                "returncode": 0,
+                "duration_seconds": 0.0,
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
+
+        with tempfile.TemporaryDirectory() as temporary_directory, mock.patch.object(
+            verify_production_candidate_evidence, "run_step", side_effect=fake_run_step
+        ), mock.patch.object(
+            sys,
+            "argv",
+            [
+                "verify_production_candidate_evidence.py",
+                "--include-kind",
+                "--summary-path",
+                str(Path(temporary_directory) / "summary.json"),
+            ],
+        ):
+            result = verify_production_candidate_evidence.main()
+
+        self.assertEqual(0, result)
+        self.assertIn("--require-kind", commands[0])
+        self.assertIn("--include-operator-kind", commands[1])
+        self.assertIn("--include-operator-kind", commands[2])
+        self.assertNotIn("--include-kind", commands[1])
+        self.assertNotIn("--include-kind", commands[2])
+
 
 if __name__ == "__main__":
     unittest.main()

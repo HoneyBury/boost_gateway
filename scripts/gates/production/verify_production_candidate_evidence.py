@@ -134,7 +134,7 @@ def main() -> int:
     ]
     add_flag(resilience_cmd, args.skip_build, "--skip-build")
     add_flag(resilience_cmd, args.include_redis_live, "--include-redis-live")
-    add_flag(resilience_cmd, args.include_kind, "--include-kind")
+    add_flag(resilience_cmd, args.include_kind, "--include-operator-kind")
     add_flag(resilience_cmd, args.include_runtime_http, "--include-runtime-http")
     add_flag(resilience_cmd, args.include_release_baseline, "--include-release-baseline")
     add_flag(resilience_cmd, args.include_capacity_baseline, "--include-capacity-baseline")
@@ -156,7 +156,7 @@ def main() -> int:
     ]
     add_flag(evidence_cmd, args.skip_build, "--skip-build")
     add_flag(evidence_cmd, args.include_redis_live, "--include-redis-live")
-    add_flag(evidence_cmd, args.include_kind, "--include-kind")
+    add_flag(evidence_cmd, args.include_kind, "--include-operator-kind")
     add_flag(evidence_cmd, args.include_release_baseline, "--include-release-baseline")
     add_flag(evidence_cmd, args.include_capacity_baseline, "--include-capacity-baseline")
 
