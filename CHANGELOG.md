@@ -15,6 +15,7 @@
 - **长稳/容量证据解耦**：2h summary 完成后立即固化 provenance，并与 capacity/R4 独立导入；后置容量失败不再作废有效的同 SHA 长稳证据。
 - **长稳失败归档与确认复测**：long/overnight 基准的每个失败执行会独立保存原始 summary、benchmark JSON、stdout/stderr 和前后主机资源快照；单轮失败立即执行两次同配置确认，只有极低频且两次均恢复的尖峰可标记为 `confirmation_recovered`，同指标 2/3 失败、频繁未确认失败或原有偏差门槛违规仍会阻断。
 - **冻结证据接线修复**：R0 Redis live preflight 只传递受支持的 `--require-redis`，runtime HTTP observability producer 从 canonical 脚本位置正确解析仓库根，避免增强候选验证被脚本路径或 CLI 漂移误阻断。
+- **发布校验和修复**：tag publish 使用 `$RUNNER_TEMP` 下的 run-local 目录，只对唯一发布 tarball 生成 basename 形式的 `SHA256SUMS.txt`，避免 self-hosted workspace 残留文件进入校验清单。
 
 ### 删除
 

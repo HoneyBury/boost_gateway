@@ -115,6 +115,27 @@ def main() -> int:
                     f"{path.name} configures setup-cpp-conan for runner-local offline use",
                 )
 
+    release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    add(
+        checks,
+        "release:isolated-asset-directory",
+        "RELEASE_ASSET_DIR: ${{ runner.temp }}" in release_workflow,
+        "release publish job uses a run-local asset directory instead of a persistent workspace path",
+    )
+    add(
+        checks,
+        "release:checksum-only-published-archive",
+        "find \"$RELEASE_ASSET_DIR\" -type f -name '*.tar.gz'" in release_workflow
+        and "test \"${#archives[@]}\" -eq 1" in release_workflow,
+        "release checksum is derived from exactly one packaged tarball",
+    )
+    add(
+        checks,
+        "release:checksum-portable-basename",
+        '"$(basename "$archive")"' in release_workflow,
+        "release checksum records the downloadable asset basename",
+    )
+
     retired = ("perf-commit-check.yml", "production-resilience.yml", "production-evidence.yml")
     for filename in retired:
         add(checks, f"retired:{filename}", not (WORKFLOWS_ROOT / filename).exists(), f"{filename} is retired")
