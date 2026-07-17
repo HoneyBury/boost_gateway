@@ -78,14 +78,20 @@ def main() -> int:
     add(
         checks,
         "release:readme-published-facts",
-        "releases/tag/v3.5.1" in readme and "29551782341" in readme and "0872a6040d62f1bac0972e531ab211104bd273bd18923b006bdbd56b68b2c71e" in readme,
+        "releases/tag/v3.5.2" in readme
+        and "29589708378" in readme
+        and "3142ffe7578e457e7d6fba63a6a00c3366874252b9f56894e9e8f9c7a31e047b" in readme,
         "README records the current stable tag release, workflow and independently verified digest",
     )
     add(
         checks,
-        "release:readme-open-boundary",
-        "29563770679" in readme and "第二台 Linux runner" in readme and "未完成冻结边界" in readme,
-        "README records successful v3.5.2 kind evidence and keeps final-SHA/tag/second-runner boundaries open",
+        "release:readme-closed-boundary",
+        "29587996645" in readme
+        and "29588720453" in readme
+        and "29591469812" in readme
+        and "myserver" in readme
+        and "overall_pass=true" in readme,
+        "README records same-SHA myserver evidence and AOI published-asset verification",
     )
     add(
         checks,
