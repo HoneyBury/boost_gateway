@@ -131,6 +131,20 @@ def build_operator_image(operator_dir: Path, image: str, runtime_image: str) -> 
         run(["docker", "build", "--pull=false", "-t", image, "."], context)
 
 
+def build_workload_image(image: str, runtime_image: str) -> None:
+    with tempfile.TemporaryDirectory(prefix="boost-kind-workload-") as temp_dir:
+        context = Path(temp_dir)
+        (context / "Dockerfile").write_text(
+            "\n".join([
+                f"FROM {runtime_image}",
+                'ENTRYPOINT ["/bin/sh", "-c", "trap \'exit 0\' TERM INT; while :; do sleep 3600; done"]',
+                "",
+            ]),
+            encoding="utf-8",
+        )
+        run(["docker", "build", "--pull=false", "-t", image, "."], context)
+
+
 def delete_cluster(cluster_name: str) -> None:
     subprocess.run(["kind", "delete", "cluster", "--name", cluster_name], check=False)
 
@@ -163,7 +177,8 @@ def main() -> int:
     parser.add_argument("--namespace", default="boost-gateway")
     parser.add_argument("--kind-config", type=Path)
     parser.add_argument("--operator-image", default="ghcr.io/honeybury/boostgateway-operator:v0.1.0")
-    parser.add_argument("--workload-image", default="nginx:1.27-alpine")
+    parser.add_argument("--workload-image", default="boostgateway-kind-workload:v1")
+    parser.add_argument("--workload-runtime-image", default="ubuntu:24.04")
     parser.add_argument("--operator-runtime-image", default="ubuntu:24.04")
     parser.add_argument(
         "--node-image",
@@ -201,7 +216,7 @@ def main() -> int:
     print(f"kind node image: {args.node_image}")
     build_operator_image(operator_dir, args.operator_image, args.operator_runtime_image)
     run(["kind", "load", "docker-image", args.operator_image, "--name", args.cluster_name], operator_dir)
-    pull_image(args.workload_image)
+    build_workload_image(args.workload_image, args.workload_runtime_image)
     run(["kind", "load", "docker-image", args.workload_image, "--name", args.cluster_name], operator_dir)
     run(["make", "install"], operator_dir)
     run([
