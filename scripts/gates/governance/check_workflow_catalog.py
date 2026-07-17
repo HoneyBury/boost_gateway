@@ -190,6 +190,14 @@ def main() -> int:
     )
     add(
         checks,
+        "release:clean-cmake-consumer",
+        "scripts/tools/verify_release_cmake_consumer.py" in release_workflow
+        and "boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13" in release_workflow
+        and "runtime/validation/release-cmake-consumer-summary.json" in release_workflow,
+        "release builds and runs a downstream CMake consumer in the admitted compiler image",
+    )
+    add(
+        checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
         and release_workflow.count("uses: actions/attest@v4") == 2

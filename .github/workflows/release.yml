@@ -261,6 +261,15 @@ jobs:
             --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
             --image ubuntu:24.04
 
+      - name: Verify CMake consumer in clean compiler container
+        shell: bash
+        run: |
+          python scripts/tools/verify_release_cmake_consumer.py \
+            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
+            --image boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13 \
+            --candidate-revision "$GITHUB_SHA"
+
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
@@ -297,6 +306,7 @@ jobs:
             boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
             RELEASE_NOTES.md
             runtime/validation/release-package-consumer-summary.json
+            runtime/validation/release-cmake-consumer-summary.json
 
       - name: Show sccache stats
         if: always()

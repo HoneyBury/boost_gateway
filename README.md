@@ -27,7 +27,7 @@
 - `v3.5.2` 最新 Release run `29564215641` 在候选 `18de5ed` 上通过完整 build/test/gates、clean `ubuntu:24.04`（`network=none`、`pull=never`）发行包消费验证并生成 SPDX SBOM；artifact 为 `8400536405`。
 - Operator kind run `29563770679` 在候选 `21a4815` 上通过：kind `v0.32.0`、kubectl `v1.36.1`、固定 Kubernetes `v1.36.1` node digest，覆盖六组件 Ready、scale、rollout restart/undo、Operator restart、CR delete 和集群清理；summary artifact 为 `8400330394`。
 - 增强 R0 run `29564768686` 在候选 `d8d8108` 上通过 Redis live、runtime HTTP、release baseline、两条 production 子门禁的真实 kind 和 N5 SDK consumer/full-flow；顶层 provenance 与 checkout/lockfile/runner 一致，artifact 为 `8400890077`。
-- 正式 tag 的 provenance/SBOM attestation、第二台 Linux runner 同资产复验，以及 compiler-bearing clean container 中的 CMake consumer 仍是 `v3.5.2` 的未完成冻结边界；`myserver` 当前仍离线。Python/C# 保持源码 wrapper，独立 wheel/NuGet 与 debug-symbol 分发不进入 `v3.5.x`。
+- 正式 tag 的 provenance/SBOM attestation、第二台 Linux runner 同资产复验，以及最终冻结 SHA 的 compiler-bearing clean container CMake consumer 仍是 `v3.5.2` 的未完成冻结边界；`myserver` 已恢复在线并通过当前候选的严格离线 Conan G2，本机 Release artifact 仍待生成。Python/C# 保持源码 wrapper，独立 wheel/NuGet 与 debug-symbol 分发不进入 `v3.5.x`。
 
 ## 快速入口
 
