@@ -13,6 +13,7 @@
 - 发布 tarball 改为真实 gzip 压缩并去除内部 `dist/` 前缀，解压后直接得到单一版本目录。
 - SDK Python/C# 包元数据与 native SDK `4.1.0` 对齐，兼容矩阵补充 Gateway `v3.5.x`。
 - production hardening gate 的 configure preset 断言与 fixed-runner `release` 默认值对齐，避免旧 `default` 口径误阻断。
+- 使用 Operator 的 `go.sum` 作为 `setup-go` cache 依赖路径，消除仓库根缺少 `go.sum` 的 runner 告警。
 
 ### 文档与治理
 

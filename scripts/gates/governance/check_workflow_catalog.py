@@ -100,6 +100,13 @@ def main() -> int:
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
         add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
         add(checks, f"trigger:{stem}:no-pr", "pull_request:" not in text, f"{path.name} has no pull_request trigger")
+        if "uses: actions/setup-go@" in text:
+            add(
+                checks,
+                f"go:{stem}:cache-dependency-path",
+                "cache-dependency-path: operator/boostgateway-operator/go.sum" in text,
+                f"{path.name} keys setup-go cache from the operator go.sum file",
+            )
         if stem in STRICT_OFFLINE_CONAN_WORKFLOWS:
             add(
                 checks,

@@ -58,6 +58,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: operator/boostgateway-operator/go.mod
+          cache-dependency-path: operator/boostgateway-operator/go.sum
 
       - name: Setup Python
         uses: actions/setup-python@v5
