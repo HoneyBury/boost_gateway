@@ -10,6 +10,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 
@@ -133,6 +134,18 @@ def delete_cluster(cluster_name: str) -> None:
     subprocess.run(["kind", "delete", "cluster", "--name", cluster_name], check=False)
 
 
+def pull_image(image: str, attempts: int = 5) -> None:
+    for attempt in range(1, attempts + 1):
+        result = subprocess.run(["docker", "pull", image], check=False)
+        if result.returncode == 0:
+            return
+        if attempt == attempts:
+            raise subprocess.CalledProcessError(result.returncode, ["docker", "pull", image])
+        delay = min(5 * attempt, 20)
+        print(f"docker pull failed for {image} (attempt {attempt}/{attempts}); retrying in {delay}s")
+        time.sleep(delay)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run operator kind smoke test.")
     default_cluster = os.environ.get("KIND_CLUSTER_NAME") or f"boostgateway-operator-smoke-{os.environ.get('GITHUB_RUN_ID', 'local')}"
@@ -159,6 +172,7 @@ def main() -> int:
     clusters = subprocess.check_output(["kind", "get", "clusters"], text=True)
     created_cluster = False
     if args.cluster_name not in {line.strip() for line in clusters.splitlines()}:
+        pull_image(args.node_image)
         with tempfile.TemporaryDirectory(prefix="boost-kind-") as temp_dir:
             kind_config = args.kind_config
             if kind_config is None:
@@ -177,7 +191,7 @@ def main() -> int:
     print(f"kind node image: {args.node_image}")
     build_operator_image(operator_dir, args.operator_image, args.operator_runtime_image)
     run(["kind", "load", "docker-image", args.operator_image, "--name", args.cluster_name], operator_dir)
-    run(["docker", "pull", args.workload_image], operator_dir)
+    pull_image(args.workload_image)
     run(["kind", "load", "docker-image", args.workload_image, "--name", args.cluster_name], operator_dir)
     run(["make", "install"], operator_dir)
     run([
