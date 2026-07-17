@@ -281,11 +281,11 @@ dispatch 的完整候选 SHA。
 再重试；随后 R6 的 `build/release` 不存在是这个首要失败导致 Configure/Build
 被跳过的连带结果，不能单独归因为 TLS 回归。
 
-当前验证状态（2026-07-16）：run `29428322350` 已在候选 `18abba2` 上使用 `docker_pull_policy=never` 完成完整 R5 恢复演练和两轮 R6 TLS 验证，两份 summary 均为 `overall_pass=true`。这证明 runner 与离线执行路径可用，但不能替代本次事实更新提交所形成的新冻结候选证据。22:00 CST 的 GitHub API 快照显示 AOI 在线；本轮可使用其唯一 `node-aoi-omen-gaming-laptop-16-am0xxx` label 定向刷新：
+当前验证状态（2026-07-17）：`v3.5.0` 候选 `eed73cc` 已由 AOI 完成 R0 `29508284109`、2h/capacity/R4 `29509769283`、R5/R6 `29509972609` 和最终 R2/R3 `29544170962`，全部 provenance 匹配且通过。后续 `v3.5.x` 候选继续使用唯一 `node-aoi-omen-gaming-laptop-16-am0xxx` label 定向刷新：
 
 1. 使用 `--image-preflight-only --docker-pull-policy never` 确认全部镜像已预热；缺失时通过 mirror 补齐。
 2. 手动运行 `preprod-evidence.yml`，保持 `recovery_mode=docker-compose`、`docker_pull_policy=never` 与 `tls_runs=2`，且整个 job 必须成功。`missing` 或 `always` 的联网诊断结果不能解除 R5 预发阻断。
-3. `480d5fd` 的真实 2h soak 已由 run `29494894953` 通过；事实更新提交会产生新的候选 SHA，因此仍须在新 SHA 上刷新 R0、2h 和 R4，再把 R0、2h、R4、R5/R6 四类 run ID 交给 `production-readiness.yml` 汇聚 R2/R3。
+3. `v3.5.0` 的真实 2h 和最终 R2/R3 已闭环；新 patch 若改变运行时代码，必须在新 SHA 上刷新 R0、2h、R4、R5/R6。仅发布元数据变更也必须生成自身 package/bounded/R0 证据，不得把旧 summary 改写成新 SHA。
 
 首次 Conan 预热与严格离线复验必须使用本章前面的固定 `conan-2.8.1` venv、
 runner OS 分区的 `CONAN_HOME`，以及 `--build=missing` 后紧跟

@@ -19,6 +19,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/runner-inventory.md",
     "docs/runner-gate-standard.md",
     "docs/project-blueprint.md",
+    "docs/v3.5.x-maintenance-plan.md",
     "docs/legacy/legacy-helper-inventory.md",
     "docs/architecture-overview.md",
     "docs/performance-baseline.md",
@@ -63,6 +64,15 @@ def main() -> int:
         add(checks, f"cmake:{relative}", (ROOT / relative).exists(), f"{relative} exists")
 
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    version_match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", cmake)
+    version = version_match.group(1) if version_match else ""
+    add(checks, "release:project-version", bool(version), f"project version={version!r}")
+    add(checks, "release:readme-version", f"v{version}" in readme, f"README mentions v{version}")
+    add(checks, "release:changelog-version", f"## v{version} " in changelog, f"CHANGELOG has v{version} section")
+    add(checks, "release:license-exists", (ROOT / "LICENSE").is_file(), "LICENSE exists")
+    add(checks, "release:license-installed", "    LICENSE\n" in cmake, "LICENSE is included by CMake install")
     add(
         checks,
         "cmake:archives-installed-as-archive",

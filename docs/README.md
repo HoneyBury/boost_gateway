@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-07-14
+更新时间：2026-07-17
 
 本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
 
@@ -13,6 +13,7 @@
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
+| [v3.5.x 维护计划](v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 的补丁版本边界、顺序和冻结条件 |
 | [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
 | [Legacy / Helper 清单](legacy/legacy-helper-inventory.md) | 当前保留的 legacy/helper 兼容面与治理边界 |
 

@@ -2,7 +2,7 @@
 
 > Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
-高性能 C++20 实时服务框架，当前主线版本基线为 `v3.5.0`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
+高性能 C++20 实时服务框架，当前维护线为 `v3.5.x`，下一补丁候选为 `v3.5.1`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
 ## 当前状态
 
@@ -31,7 +31,7 @@
 当前 CI/CD 平台选择：
 
 - 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。
-- `.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 也只在 `v*` tag 或手动 dispatch 时运行 Linux Conan 主线验证。
+- `.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 仅通过手动 dispatch 运行 Linux Conan 主线验证。
 - 性能 smoke、nightly stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，需要时手动触发；具体触发条件以 `.github/workflows/*.yml` 为准。
 - `.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，用于记录当前 active runner 选择和 fixed-runner 默认标签；变更 tag 策略或 runner 拓扑时需要同步更新 workflow 与该文件。
 

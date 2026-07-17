@@ -67,6 +67,9 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     c_api = read_text("sdk/include/boost_gateway/sdk/c_api.h")
     docs = read_text("sdk/docs/README.md")
     python_setup = read_text("sdk/python/setup.py")
+    python_project = read_text("sdk/python/pyproject.toml")
+    csharp_project = read_text("sdk/csharp/SdkClient.csproj")
+    compatibility = read_text("sdk/docs/compatibility.md")
 
     add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.1.0")
     add_check(
@@ -88,6 +91,24 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
         "sdk-version:python-package",
         f'version="{SDK_VERSION}"' in python_setup,
         "Python package version matches the SDK version",
+    )
+    add_check(
+        checks,
+        "sdk-version:python-project-metadata",
+        f'version = "{SDK_VERSION}"' in python_project,
+        "pyproject.toml version matches the native SDK version",
+    )
+    add_check(
+        checks,
+        "sdk-version:csharp-project-metadata",
+        f"<Version>{SDK_VERSION}</Version>" in csharp_project,
+        "C# package version matches the native SDK version",
+    )
+    add_check(
+        checks,
+        "sdk-version:gateway-v35-compatibility",
+        "`v3.5.x`" in compatibility and "`v4.1.0`" in compatibility,
+        "compatibility matrix records Gateway v3.5.x with SDK v4.1.0",
     )
 
 

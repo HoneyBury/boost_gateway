@@ -582,9 +582,9 @@ def main() -> int:
     for token in DOC_TOKENS:
         add(checks, f"docs:fixed-runner:{token}", token in fixed_runner_doc, f"fixed-runner playbook mentions {token}")
 
-    github_readme = read(".github/README.md")
+    github_readme = read(".github/CI-CD.md")
     for token in README_TOKENS:
-        add(checks, f"docs:github-readme:{token}", token in github_readme, f".github/README.md mentions {token}")
+        add(checks, f"docs:github-readme:{token}", token in github_readme, f".github/CI-CD.md mentions {token}")
 
     runner_inventory_path = "docs/runner-inventory.md"
     add(checks, "docs:runner-inventory:exists", exists(runner_inventory_path), f"{runner_inventory_path} exists")

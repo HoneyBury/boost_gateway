@@ -79,7 +79,7 @@
 
 - 将 `release-baseline.yml` 的 baseline 采集步骤合入 `release.yml`
 - 删除 `release-baseline.yml`
-- 新建 `.github/README.md` 记录 CI/CD 架构
+- 新建 `.github/CI-CD.md` 记录 CI/CD 架构，避免覆盖 GitHub 仓库首页的根 README
 
 ## 验证命令
 

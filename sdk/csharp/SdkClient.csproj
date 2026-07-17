@@ -3,11 +3,11 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>BoostGateway.Sdk</RootNamespace>
     <AssemblyName>BoostGateway.Sdk</AssemblyName>
-    <Version>3.4.0</Version>
+    <Version>4.1.0</Version>
     <Description>Boost Gateway Game Server SDK - C# Bindings</Description>
     <Authors>BoostGateway Team</Authors>
     <PackageTags>game-server;gateway;boost</PackageTags>
-    <PackageProjectUrl>https://github.com/boost-gateway/BoostAsioDemo</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/HoneyBury/boost_gateway</PackageProjectUrl>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
   </PropertyGroup>
 

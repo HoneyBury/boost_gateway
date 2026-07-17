@@ -1,6 +1,27 @@
 # 更新日志
 
-## v3.5.0 — 项目清理与平台收束（2026-06-30）
+## v3.5.1 — 发布与事实治理（2026-07-17）
+
+> **范围**：不改变默认协议和运行时行为，修复 GitHub 展示、Release notes、发行包布局、许可证、SDK 包元数据和冻结事实文档。
+
+### 修复
+
+- GitHub 仓库首页恢复显示根 `README.md`，CI/CD 架构文档迁移到 `.github/CI-CD.md`。
+- tag publish 从本文件提取对应版本正文，避免 GitHub Release 只有 compare 链接。
+- tag publish 使用 `$RUNNER_TEMP` 下的 run-local 目录，只对唯一发布 tarball 生成 basename 形式的 `SHA256SUMS.txt`，避免 self-hosted workspace 残留文件进入校验清单。
+- 发布 tarball 改为真实 gzip 压缩并去除内部 `dist/` 前缀，解压后直接得到单一版本目录。
+- SDK Python/C# 包元数据与 native SDK `4.1.0` 对齐，兼容矩阵补充 Gateway `v3.5.x`。
+- production hardening gate 的 configure preset 断言与 fixed-runner `release` 默认值对齐，避免旧 `default` 口径误阻断。
+
+### 文档与治理
+
+- 新增 `docs/v3.5.x-maintenance-plan.md`，固定 `v3.5.1-v3.5.3` 的维护边界和冻结条件。
+- 新增 MIT `LICENSE` 并纳入安装包与治理门禁。
+- 回填 `v3.5.0` 最终候选、R0/R4/R5/R6/R2/R3 和正式发布事实。
+
+---
+
+## v3.5.0 — 项目清理与平台收束（2026-07-17）
 
 > **范围**：暂停 Windows 支持，聚焦 Linux/macOS 平台。删除所有 Windows 特有代码和工具，清理 CI/CD 流水线，更新项目版本到 3.5.0。
 
@@ -15,7 +36,6 @@
 - **长稳/容量证据解耦**：2h summary 完成后立即固化 provenance，并与 capacity/R4 独立导入；后置容量失败不再作废有效的同 SHA 长稳证据。
 - **长稳失败归档与确认复测**：long/overnight 基准的每个失败执行会独立保存原始 summary、benchmark JSON、stdout/stderr 和前后主机资源快照；单轮失败立即执行两次同配置确认，只有极低频且两次均恢复的尖峰可标记为 `confirmation_recovered`，同指标 2/3 失败、频繁未确认失败或原有偏差门槛违规仍会阻断。
 - **冻结证据接线修复**：R0 Redis live preflight 只传递受支持的 `--require-redis`，runtime HTTP observability producer 从 canonical 脚本位置正确解析仓库根，避免增强候选验证被脚本路径或 CLI 漂移误阻断。
-- **发布校验和修复**：tag publish 使用 `$RUNNER_TEMP` 下的 run-local 目录，只对唯一发布 tarball 生成 basename 形式的 `SHA256SUMS.txt`，避免 self-hosted workspace 残留文件进入校验清单。
 
 ### 删除
 
@@ -36,12 +56,13 @@
 - `CMakeLists.txt`：版本号 3.4.0 → 3.5.0
 - `CMakePresets.json`：仅保留 `default`（Debug）和 `release`（Release）两个 preset
 
-### 后续计划
+### 后续维护
 
-- Phase 2: 整理脚本（15 个 gate 分配 canonical 路径）
-- Phase 3: 整合文档（合并重叠文档、新建 ONBOARDING.md）
-- Phase 4: 修复代码质量（v2→v1 耦合解耦、测试链接修复）
-- Phase 5: 精简 CI/CD（合并 release-baseline 到 release）
+- 脚本、文档、代码质量和 CI/CD 收束阶段已完成；后续补丁版本范围见 `docs/v3.5.x-maintenance-plan.md`。
+
+### 发布后已知问题
+
+- Linux 资产虽然命名为 `.tar.gz`，实际由 `cmake -E tar cfv` 生成未压缩 tar；内容和已发布 SHA-256 未改变，但严格使用 gzip 解压会失败。`v3.5.1` 改用 `czfv` 生成真实 gzip，并增加 archive layout/format 门禁。
 
 ---
 

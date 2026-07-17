@@ -1,6 +1,6 @@
-# v2.0.2 性能基线报告 — Windows Release P0 实测版
+# BoostGateway v3.5.x 性能基线 — Linux Fixed-Runner 主口径
 
-更新时间：2026-07-16
+更新时间：2026-07-17
 
 ## 工程效率与固定 Runner 口径
 
@@ -14,16 +14,16 @@
 
 ### 最新固定 Runner 容量与 2h 稳定性事实
 
-`long-soak-capacity.yml` run `29183833041` 在 Linux fixed runner、提交 `6d537ee` 上完成 capacity 与 business-capacity 各 3 轮；2h/8h 输入均为 `false`，因此本记录不构成长稳结论。Conan lockfile 预检、Release 构建与 `fixed-runner-release-capacity-summary.json` 均为 `overall_pass=true`。
+`v3.5.0` 最终 `long-soak-capacity.yml` run `29509769283` 在 Linux AOI fixed runner、候选 `eed73cc` 上完成真实 2h、capacity、business-capacity 和 R4；所有核心 summary provenance 一致且 `overall_pass=true`。
 
-候选 `80cc5cf` 的 run `29478926992` 已执行完整 7204.569 秒 2h soak，但 1627 轮中一轮 `multi_battle_tick_100_entities.p99=2141.51us` 超过 1000us 门槛及 25% 稀有尾峰硬偏差限制，因此保留为失败事实。随后候选 `480d5fd` 的 run `29494894953` 完成 7201.245 秒和 1616 轮，未记录 `failure_events`、`violating_checks` 或 `failed_checks`，2h summary 与聚合 summary 均为 `overall_pass=true`。同 SHA 的前序 run `29489191125` 在 long-soak 步骤异常终止且未生成日志或 artifact，不能作为性能或应用失败样本。本次成功 artifact 与 checkout、候选 SHA 和 lockfile provenance 一致；该 run 未启用 capacity/business-capacity，不能替代 R4 容量证据。
+候选 `80cc5cf` 的 run `29478926992` 已执行完整 7204.569 秒 2h soak，但 1627 轮中一轮 `multi_battle_tick_100_entities.p99=2141.51us` 超过门槛，因此保留为失败事实。最终候选 `eed73cc` 的 run `29509769283` 持续基准运行 7202.597 秒、完成 1624 轮，`failure_events`、`violating_checks` 和 `failed_checks` 均为空；容量与业务容量也在同一 run 中通过。
 
 | Profile | battle-500 P99 (min/median/max) | 吞吐中位数 (msg/s) | Connected | Rejected / Failed | 额外验证 |
 | --- | --- | ---: | ---: | --- | --- |
-| capacity | 40 / 100 / 150ms | 6725.07 | 500 | 0 / 0 | echo-1000/5000/10000、battle-100 均通过 |
-| business-capacity | 75 / 150 / 150ms | 6725.26 | 500 | 0 / 0 | 3 个并发 SDK full-flow 客户端通过（6.091s） |
+| capacity | 最终 P99 150ms | 以 artifact 原始结果为准 | 500 | 0 / 0 | echo-1000/5000/10000 P99=1/5/5ms，battle-100 P99=5ms |
+| business-capacity | 最终 P99 150ms | 以 artifact 原始结果为准 | 500 | 0 / 0 | 3 个并发 SDK full-flow 客户端通过（6.087s） |
 
-该结果替代“battle-500 仍需 fixed-runner 重跑”的当前状态；旧 Windows/P0 数值保留为历史开发基线，不能与此固定 Linux runner 数据直接横比。
+该结果是 `v3.5.0` 的发布容量事实；旧 Windows/P0 数值仅保留为历史开发基线，后续迁入 archive，不能与 Linux fixed-runner 数据直接横比。
 
 ### P1 Conan 依赖治理验证（已升级为主线默认路径）
 

@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 3.5.0
+    VERSION 3.5.1
     DESCRIPTION "Enterprise-grade C++20 realtime service framework"
     LANGUAGES CXX
 )
@@ -75,6 +75,7 @@ install(DIRECTORY config/
 install(FILES
     README.md
     CHANGELOG.md
+    LICENSE
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}"
 )
 
@@ -91,6 +92,7 @@ install(FILES
     docs/current-state.md
     docs/project-blueprint.md
     docs/mainline-execution-plan.md
+    docs/v3.5.x-maintenance-plan.md
     docs/architecture-overview.md
     docs/release-governance.md
     docs/performance-baseline.md

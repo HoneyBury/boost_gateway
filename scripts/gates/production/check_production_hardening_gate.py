@@ -34,7 +34,7 @@ def validate_h0(checks: list[dict[str, Any]]) -> None:
     text = read_text(workflow)
     add(checks, f"h0:{workflow}:manual-dispatch", "workflow_dispatch:" in text and "gate:" in text, "manual fixed-runner diagnostic workflow exists")
     add(checks, f"h0:{workflow}:runner-override", "vars.PRODUCTION_GATES_RUNNER" in text and '["self-hosted","Linux","X64"]' in text, "workflow keeps fixed-runner override")
-    add(checks, f"h0:{workflow}:configure-fallback", "inputs.configure_preset || 'default'" in text, "workflow has configure preset fallback")
+    add(checks, f"h0:{workflow}:configure-fallback", "inputs.configure_preset || 'release'" in text, "workflow defaults to the Release configure preset")
     add(checks, f"h0:{workflow}:concurrency", "group: production-gates-" in text, "workflow has stable concurrency group")
     add(checks, f"h0:{workflow}:p5", "scripts/verify_production_resilience_gate.py" in text, "workflow exposes P5 resilience gate")
     add(checks, f"h0:{workflow}:p6", "scripts/verify_production_evidence_gate.py" in text, "workflow exposes P6 evidence gate")

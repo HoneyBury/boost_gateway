@@ -78,11 +78,18 @@ def main() -> int:
     matrix_workflows = set(matrix.get("workflows", {}))
     add(checks, "runner-matrix:exact-workflow-set", matrix_workflows == actual, f"matrix={sorted(matrix_workflows)} actual={sorted(actual)}")
 
-    readme_path = ROOT / ".github" / "README.md"
+    readme_path = ROOT / ".github" / "CI-CD.md"
     readme = read(readme_path) if readme_path.exists() else ""
     for stem in sorted(actual):
         filename = f"{stem}.yml"
-        add(checks, f"readme:lists:{filename}", f"`{filename}`" in readme, f".github/README.md lists {filename}")
+        add(checks, f"readme:lists:{filename}", f"`{filename}`" in readme, f".github/CI-CD.md lists {filename}")
+
+    add(
+        checks,
+        "readme:root-not-shadowed",
+        not (ROOT / ".github" / "README.md").exists(),
+        ".github/README.md does not shadow the repository root README on GitHub",
+    )
 
     for path in workflow_paths:
         stem = path.stem
@@ -135,6 +142,33 @@ def main() -> int:
         "release:checksum-portable-basename",
         '"$(basename "$archive")"' in release_workflow,
         "release checksum records the downloadable asset basename",
+    )
+    add(
+        checks,
+        "release:archive-without-dist-prefix",
+        '(cd dist && cmake -E tar czfv "../${archive_basename}.tar.gz"' in release_workflow,
+        "release archive is gzip-compressed and starts at the version directory instead of persistent dist",
+    )
+    add(
+        checks,
+        "release:archive-layout-gate",
+        "scripts/tools/verify_release_archive.py" in release_workflow
+        and "--expected-root" in release_workflow,
+        "release workflow validates archive layout and required metadata",
+    )
+    add(
+        checks,
+        "release:changelog-notes-rendered",
+        "scripts/tools/render_release_notes.py" in release_workflow
+        and "${GITHUB_REF_NAME#v}" in release_workflow,
+        "tag releases render their matching CHANGELOG section",
+    )
+    add(
+        checks,
+        "release:changelog-notes-published",
+        "body_path: ${{ env.RELEASE_ASSET_DIR }}/RELEASE_NOTES.md" in release_workflow
+        and "generate_release_notes: true" not in release_workflow,
+        "GitHub Release body uses deterministic CHANGELOG notes",
     )
 
     retired = ("perf-commit-check.yml", "production-resilience.yml", "production-evidence.yml")
