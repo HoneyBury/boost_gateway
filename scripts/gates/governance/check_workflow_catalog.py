@@ -130,6 +130,15 @@ def main() -> int:
                 )
 
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
+    add(
+        checks,
+        "specialized-e2e:pinned-kind-bootstrap",
+        "scripts/tools/bootstrap_kind_tools.py" in specialized_workflow
+        and "if: inputs.include_operator_kind" in specialized_workflow
+        and '--github-path "$GITHUB_PATH"' in specialized_workflow,
+        "Operator kind E2E installs checksum-pinned kind and kubectl before fixed-runner preflight",
+    )
     add(
         checks,
         "release:isolated-asset-directory",

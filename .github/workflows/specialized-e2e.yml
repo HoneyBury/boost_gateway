@@ -112,6 +112,14 @@ jobs:
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
 
+      - name: Bootstrap pinned kind and kubectl
+        if: inputs.include_operator_kind
+        shell: bash
+        run: |
+          python scripts/tools/bootstrap_kind_tools.py \
+            --install-dir "$RUNNER_TEMP/boost-gateway-kubernetes-tools" \
+            --github-path "$GITHUB_PATH"
+
       - name: Resolve persistent runner caches
         if: inputs.enable_conan_validation
         shell: bash
