@@ -1,0 +1,166 @@
+name: Release / Published Asset Verification
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  RELEASE_TAG: ${{ inputs.tag }}
+  EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag"
+        required: true
+        default: "v3.5.2"
+      expected_commit:
+        description: "Full commit SHA referenced by the tag"
+        required: true
+      runner:
+        description: "Runner JSON string or array"
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+
+permissions:
+  contents: read
+  attestations: read
+
+jobs:
+  verify-published-assets:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+
+      - name: Checkout verification scripts from release tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+
+      - name: Verify immutable tag checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          test "$(git rev-list -n 1 "$RELEASE_TAG")" = "$EXPECTED_COMMIT"
+
+      - name: Download published assets into an empty directory
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          asset_dir="$RUNNER_TEMP/boost-gateway-published-${{ github.run_id }}"
+          mkdir -p "$asset_dir"
+          test -z "$(find "$asset_dir" -mindepth 1 -maxdepth 1 -print -quit)"
+          gh release download "$RELEASE_TAG" \
+            --repo "${{ github.repository }}" \
+            --dir "$asset_dir" \
+            --pattern "boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
+            --pattern "boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
+            --pattern SHA256SUMS.txt
+          printf 'RELEASE_ASSET_DIR=%s\n' "$asset_dir" >> "$GITHUB_ENV"
+
+      - name: Verify checksums and archive layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          (cd "$RELEASE_ASSET_DIR" && sha256sum -c SHA256SUMS.txt)
+          python3 scripts/tools/verify_release_archive.py \
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64"
+
+      - name: Verify runtime consumer offline
+        shell: bash
+        run: |
+          python3 scripts/tools/verify_release_package_consumer.py \
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64" \
+            --image ubuntu:24.04 \
+            --summary-path runtime/validation/published-release-package-consumer-summary.json
+
+      - name: Install checksum-verified GitHub CLI for attestation verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh_version=2.96.0
+          archive="gh_${gh_version}_linux_amd64.tar.gz"
+          tool_dir="$RUNNER_TEMP/gh-${gh_version}-${{ github.run_id }}"
+          mkdir -p "$tool_dir"
+          curl --fail --location --retry 3 \
+            "https://github.com/cli/cli/releases/download/v${gh_version}/${archive}" \
+            --output "$tool_dir/$archive"
+          printf '%s  %s\n' \
+            '83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60' \
+            "$tool_dir/$archive" | sha256sum -c -
+          tar -xzf "$tool_dir/$archive" -C "$tool_dir"
+          printf 'VERIFICATION_GH=%s\n' "$tool_dir/gh_${gh_version}_linux_amd64/bin/gh" >> "$GITHUB_ENV"
+
+      - name: Verify provenance and SBOM attestations
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz"
+          signer='HoneyBury/boost_gateway/.github/workflows/release.yml'
+          common=(
+            "$archive" --repo "${{ github.repository }}" --format json
+            --signer-workflow "$signer"
+            --signer-digest "$EXPECTED_COMMIT"
+            --source-digest "$EXPECTED_COMMIT"
+            --source-ref "refs/tags/${RELEASE_TAG}"
+          )
+          "$VERIFICATION_GH" attestation verify "${common[@]}" \
+            > runtime/validation/published-release-provenance-verification.json
+          "$VERIFICATION_GH" attestation verify "${common[@]}" \
+            --predicate-type https://spdx.dev/Document/v2.3 \
+            > runtime/validation/published-release-sbom-verification.json
+
+          digest="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          jq -e --arg digest "$digest" \
+            '.[0].verificationResult.statement.subject[0].digest.sha256 == $digest' \
+            runtime/validation/published-release-provenance-verification.json
+          jq -e --arg digest "$digest" \
+            '.[0].verificationResult.statement.subject[0].digest.sha256 == $digest' \
+            runtime/validation/published-release-sbom-verification.json
+
+      - name: Render published asset summary
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz"
+          sbom="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json"
+          jq -n \
+            --arg tag "$RELEASE_TAG" \
+            --arg commit "$EXPECTED_COMMIT" \
+            --arg runner "${{ runner.name }}" \
+            --arg archive_sha256 "$(sha256sum "$archive" | cut -d ' ' -f 1)" \
+            --arg sbom_sha256 "$(sha256sum "$sbom" | cut -d ' ' -f 1)" \
+            --slurpfile consumer runtime/validation/published-release-package-consumer-summary.json \
+            '{
+              summary_version: 2,
+              overall_pass: true,
+              passed: true,
+              tag: $tag,
+              expected_commit: $commit,
+              runner: $runner,
+              archive_sha256: $archive_sha256,
+              sbom_sha256: $sbom_sha256,
+              runtime_consumer: $consumer[0],
+              provenance_attestation_verified: true,
+              sbom_attestation_verified: true
+            }' > runtime/validation/published-release-asset-verification-summary.json
+
+      - name: Upload published asset verification
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-release-asset-verification-${{ github.run_id }}
+          path: runtime/validation/published-release-*.json
+          retention-days: 90

@@ -21,6 +21,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-gates.yml` | Production / Gate Diagnostics | 手动 | P5 resilience 与 P6 production evidence 诊断入口 |
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | 构建 → 测试 → 门禁 → baseline；仅 tag push 进入发布 |
+| `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 
 ## Runner 要求

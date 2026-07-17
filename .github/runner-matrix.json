@@ -17,6 +17,13 @@
       "capabilities": {},
       "vars_hint": "RELEASE_RUNNER"
     },
+    "release-asset-verification": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "published-asset-verification" },
+      "capabilities": { "docker": true },
+      "vars_hint": "RELEASE_ASSET_VERIFICATION_RUNNER"
+    },
     "perf-regression": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",

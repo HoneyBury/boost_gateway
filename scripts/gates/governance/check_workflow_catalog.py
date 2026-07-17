@@ -24,6 +24,7 @@ EXPECTED_NAMES = {
     "production-gates": "Production / Gate Diagnostics",
     "production-readiness": "Production / Readiness Decision",
     "release": "Release / Package & Publish",
+    "release-asset-verification": "Release / Published Asset Verification",
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}
@@ -70,7 +71,7 @@ def main() -> int:
     actual = {path.stem for path in workflow_paths}
     expected = set(EXPECTED_NAMES)
 
-    add(checks, "workflow-count", len(actual) == 12, f"actual={len(actual)}")
+    add(checks, "workflow-count", len(actual) == 13, f"actual={len(actual)}")
     add(checks, "workflow-set:expected", actual == expected, f"actual={sorted(actual)} expected={sorted(expected)}")
 
     matrix_path = ROOT / ".github" / "runner-matrix.json"
