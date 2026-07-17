@@ -17,13 +17,20 @@
 
 - Release run `29560450740`（`9945028`）通过完整 build/test/gates、clean Ubuntu package consumer 与 SPDX SBOM，artifact `8399167635` 包含 tarball、SBOM 和结构化 summary。
 - Specialized E2E run `29563770679`（`21a4815`）通过真实 kind，summary `overall_pass=true`，artifact `8400330394`。
+- 最新 Release run `29564215641`（`18de5ed`）再次通过完整 package/SBOM 链，artifact `8400536405`。
+- 增强 R0 run `29564768686`（`d8d8108`）通过 Redis live、runtime HTTP、release baseline、P5/P6 真实 kind 与 N5 SDK，artifact `8400890077` 的顶层和关键子 summary 均为 `overall_pass=true`。
+- 修复 R0 `--include-kind` 向 resilience/evidence 子门禁错误透传的问题；子门禁统一接收 `--include-operator-kind`，并新增冻结接线回归测试。
+
+### 分发决策
+
+- `v3.5.x` 正式 SDK 资产保持 C++ CMake package + C ABI shared library；Python/C# 继续是源码 wrapper/example，不承诺 wheel/NuGet 仓库、签名和平台矩阵。
+- 独立 debug-symbol 包需要新增 `RelWithDebInfo`/符号拆分与符号服务器策略，不在 patch 线引入，转入下一次 minor 评估。
 
 ### 待冻结验证
 
-- 在最终候选 SHA 上重跑 Release/package 与增强 R0，避免跨 SHA 拼接冻结结论。
 - 正式 tag push 上验证 build provenance 与 SBOM attestation。
 - 第二台 Linux runner 对同一已发布资产执行 checksum、解压和最小启动复验；runner 未在线前不得宣称完成。
-- 对 clean CMake SDK consumer、Python/C# wrapper 发行定位和独立 debug-symbol 包作出冻结/延期决策。
+- 在 compiler-bearing clean container 中补 CMake SDK consumer；当前已通过 AOI downstream CMake consumer `5/5` 与 clean Ubuntu runtime consumer，但两者不能合并冒充该项。
 
 ---
 
