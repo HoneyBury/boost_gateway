@@ -40,6 +40,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve release version
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_version="$(python - <<'PY'
+          import pathlib
+          import re
+
+          text = pathlib.Path("CMakeLists.txt").read_text(encoding="utf-8")
+          match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", text)
+          if match is None:
+              raise SystemExit("unable to resolve project version from CMakeLists.txt")
+          print(match.group(1))
+          PY
+          )"
+          release_label="v${release_version}"
+          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "$release_label" ]]; then
+            echo "tag $GITHUB_REF_NAME does not match project version $release_label" >&2
+            exit 1
+          fi
+          printf 'RELEASE_VERSION=%s\nRELEASE_LABEL=%s\n' "$release_version" "$release_label" >> "$GITHUB_ENV"
+
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
 
@@ -224,7 +246,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${GITHUB_REF_NAME}-linux-x64"
+          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${RELEASE_LABEL}-linux-x64"
           cmake --install "build/release" --prefix "$install_dir"
           cp README.md CHANGELOG.md LICENSE "$install_dir/"
 
@@ -232,27 +254,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive_basename="boost-gateway-${GITHUB_REF_NAME}-linux-x64"
+          archive_basename="boost-gateway-${RELEASE_LABEL}-linux-x64"
           (cd dist && cmake -E tar czfv "../${archive_basename}.tar.gz" --format=gnutar "${archive_basename}")
 
       - name: Verify release archive layout
         shell: bash
         run: |
           python scripts/tools/verify_release_archive.py \
-            --archive "boost-gateway-${GITHUB_REF_NAME}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${GITHUB_REF_NAME}-linux-x64"
+            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64"
 
       - name: Render release notes
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: python scripts/tools/render_release_notes.py --version "${GITHUB_REF_NAME#v}" --output RELEASE_NOTES.md
+        run: python scripts/tools/render_release_notes.py --version "$RELEASE_VERSION" --output RELEASE_NOTES.md
 
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
           name: boost-gateway-linux-x64
           path: |
-            boost-gateway-${{ github.ref_name }}-linux-x64.tar.gz
+            boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
             RELEASE_NOTES.md
 
       - name: Show sccache stats

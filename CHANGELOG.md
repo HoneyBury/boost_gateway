@@ -8,6 +8,7 @@
 
 - GitHub 仓库首页恢复显示根 `README.md`，CI/CD 架构文档迁移到 `.github/CI-CD.md`。
 - tag publish 从本文件提取对应版本正文，避免 GitHub Release 只有 compare 链接。
+- 包名从 CMake 项目版本派生，tag 必须与项目版本一致；带 `/` 的维护分支可安全执行手动候选打包。
 - tag publish 使用 `$RUNNER_TEMP` 下的 run-local 目录，只对唯一发布 tarball 生成 basename 形式的 `SHA256SUMS.txt`，避免 self-hosted workspace 残留文件进入校验清单。
 - 发布 tarball 改为真实 gzip 压缩并去除内部 `dist/` 前缀，解压后直接得到单一版本目录。
 - SDK Python/C# 包元数据与 native SDK `4.1.0` 对齐，兼容矩阵补充 Gateway `v3.5.x`。

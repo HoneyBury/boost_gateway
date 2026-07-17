@@ -158,9 +158,17 @@ def main() -> int:
     )
     add(
         checks,
+        "release:version-from-project-metadata",
+        "RELEASE_VERSION=%s" in release_workflow
+        and "RELEASE_LABEL=%s" in release_workflow
+        and "tag $GITHUB_REF_NAME does not match project version $release_label" in release_workflow,
+        "release names derive from CMake project version and tag pushes must match it",
+    )
+    add(
+        checks,
         "release:changelog-notes-rendered",
         "scripts/tools/render_release_notes.py" in release_workflow
-        and "${GITHUB_REF_NAME#v}" in release_workflow,
+        and '--version "$RELEASE_VERSION"' in release_workflow,
         "tag releases render their matching CHANGELOG section",
     )
     add(
