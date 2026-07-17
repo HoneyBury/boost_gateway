@@ -1,5 +1,23 @@
 # 更新日志
 
+## v3.5.2 — 发行包与真实控制面（候选）
+
+> **范围**：不改变默认协议和业务能力，补齐发行包的 clean-environment 验证、SBOM/attestation、Operator kind 和备用 Linux runner 证据。
+
+### 发布工程
+
+- 新增发行包消费验证：在预缓存的 `ubuntu:24.04` 中以 `--pull=never --network=none` 检查全部安装二进制的 ELF/执行权限、运行时依赖和 hello-world 启动。
+- Release 生成 SPDX JSON SBOM，并为 tag tarball 生成 build provenance 与 SBOM attestation；tarball 和 SBOM 一并进入 `SHA256SUMS.txt`。
+- clean-environment 结果输出结构化 summary，并随候选 artifact 归档。
+
+### 待冻结验证
+
+- AOI runner 上的完整 Release/package/R0 候选验证。
+- Operator 在真实 kind 集群中的 reconcile、ready、scale、restart 与 cleanup。
+- 第二台 Linux runner 对同一已发布资产执行 checksum、解压和最小启动复验；runner 未在线前不得宣称完成。
+
+---
+
 ## v3.5.1 — 发布与事实治理（2026-07-17）
 
 > **范围**：不改变默认协议和运行时行为，修复 GitHub 展示、Release notes、发行包布局、许可证、SDK 包元数据和冻结事实文档。

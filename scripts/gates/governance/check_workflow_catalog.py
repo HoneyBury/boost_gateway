@@ -147,7 +147,7 @@ def main() -> int:
     add(
         checks,
         "release:checksum-portable-basename",
-        '"$(basename "$archive")"' in release_workflow,
+        '"$(basename "$asset")"' in release_workflow,
         "release checksum records the downloadable asset basename",
     )
     add(
@@ -162,6 +162,30 @@ def main() -> int:
         "scripts/tools/verify_release_archive.py" in release_workflow
         and "--expected-root" in release_workflow,
         "release workflow validates archive layout and required metadata",
+    )
+    add(
+        checks,
+        "release:clean-ubuntu-package-consumer",
+        "scripts/tools/verify_release_package_consumer.py" in release_workflow
+        and "--image ubuntu:24.04" in release_workflow,
+        "release workflow consumes the installed archive in the pinned clean Ubuntu environment",
+    )
+    add(
+        checks,
+        "release:sbom-and-attestations",
+        "uses: anchore/sbom-action@v0" in release_workflow
+        and release_workflow.count("uses: actions/attest@v4") == 2
+        and "sbom-path:" in release_workflow
+        and "attestations: write" in release_workflow
+        and "id-token: write" in release_workflow,
+        "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
+    )
+    add(
+        checks,
+        "release:sbom-published-and-checksummed",
+        "*-sbom.spdx.json" in release_workflow
+        and 'for asset in "$archive" "$sbom"' in release_workflow,
+        "release publishes and checksums both the tarball and SPDX SBOM",
     )
     add(
         checks,

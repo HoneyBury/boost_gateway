@@ -31,6 +31,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   package:
@@ -251,6 +253,36 @@ jobs:
             --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64"
 
+      - name: Verify package on clean Ubuntu
+        shell: bash
+        run: |
+          python scripts/tools/verify_release_package_consumer.py \
+            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
+            --image ubuntu:24.04
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: dist/boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64
+          format: spdx-json
+          output-file: boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest release archive provenance
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
+
+      - name: Attest release archive SBOM
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
+          sbom-path: boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
+
       - name: Render release notes
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -262,7 +294,9 @@ jobs:
           name: boost-gateway-linux-x64
           path: |
             boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
+            boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
             RELEASE_NOTES.md
+            runtime/validation/release-package-consumer-summary.json
 
       - name: Show sccache stats
         if: always()
@@ -316,8 +350,14 @@ jobs:
           mapfile -d '' archives < <(find "$RELEASE_ASSET_DIR" -type f -name '*.tar.gz' -print0)
           test "${#archives[@]}" -eq 1
           archive="${archives[0]}"
-          digest="$(sha256sum "$archive" | cut -d ' ' -f 1)"
-          printf '%s  %s\n' "$digest" "$(basename "$archive")" > "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
+          mapfile -d '' sboms < <(find "$RELEASE_ASSET_DIR" -type f -name '*-sbom.spdx.json' -print0)
+          test "${#sboms[@]}" -eq 1
+          sbom="${sboms[0]}"
+          : > "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
+          for asset in "$archive" "$sbom"; do
+            digest="$(sha256sum "$asset" | cut -d ' ' -f 1)"
+            printf '%s  %s\n' "$digest" "$(basename "$asset")" >> "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
+          done
           mapfile -d '' notes < <(find "$RELEASE_ASSET_DIR" -type f -name RELEASE_NOTES.md -print0)
           test "${#notes[@]}" -eq 1
           cp "${notes[0]}" "$RELEASE_ASSET_DIR/RELEASE_NOTES.md"
@@ -328,4 +368,5 @@ jobs:
           body_path: ${{ env.RELEASE_ASSET_DIR }}/RELEASE_NOTES.md
           files: |
             ${{ env.RELEASE_ASSET_DIR }}/**/*.tar.gz
+            ${{ env.RELEASE_ASSET_DIR }}/**/*-sbom.spdx.json
             ${{ env.RELEASE_ASSET_DIR }}/SHA256SUMS.txt

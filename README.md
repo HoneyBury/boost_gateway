@@ -2,7 +2,7 @@
 
 > Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
-高性能 C++20 实时服务框架，当前稳定版为 `v3.5.1`，维护线为 `v3.5.x`，下一阶段规划为 `v3.5.2`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
+高性能 C++20 实时服务框架，当前稳定版为 `v3.5.1`，维护线为 `v3.5.x`，当前候选版本为 `v3.5.2`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
 ## 当前状态
 
@@ -15,6 +15,15 @@
   - SDK package consumer 通过
   - N5 SDK enterprise delivery 通过
   - R0 production candidate evidence 通过
+  - `v3.5.0` 同一候选的真实 2h、R4、R5、R6、R2/R3 冻结链通过
+  - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
+
+## 发布事实与边界
+
+- `v3.5.1` annotated tag 固定在 `d7ecb1ae075112d692c73bcc0d25b9ad554ed544`；[GitHub Release](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.5.1) 的 package/publish run 为 `29551782341`。
+- Linux x64 资产为真实 gzip、只有一个版本顶层目录并包含 README/CHANGELOG/LICENSE；SHA-256 为 `0872a6040d62f1bac0972e531ab211104bd273bd18923b006bdbd56b68b2c71e`。
+- `v3.5.1` 没有运行时代码变更，因此没有把 `v3.5.0` 的长稳和预发 summary 伪装为新 SHA 证据；候选验证事实为 Release package `29551112356`、增强 R0 `29551445037`。
+- AOI runner 已具备严格离线 Conan、Redis live、runtime HTTP、Docker R5/R6 能力，但当前 runner inventory 仍缺少 kind/kubectl；Operator 真实 kind 集群和第二台 Linux runner 复验仍是 `v3.5.2` 的未完成冻结边界。
 
 ## 快速入口
 
@@ -27,6 +36,8 @@
 - 可靠性矩阵与发布门禁：`docs/release-governance.md`
 - 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
+- v3.5.x 维护计划：`docs/v3.5.x-maintenance-plan.md`
+- 完整版本变更：`CHANGELOG.md`
 
 当前 CI/CD 平台选择：
 
@@ -139,4 +150,4 @@ build/Release/examples/v2_leaderboard_backend/v2_leaderboard_backend
 
 ## 许可证
 
-MIT
+[MIT](LICENSE)

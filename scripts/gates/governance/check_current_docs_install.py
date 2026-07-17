@@ -71,6 +71,18 @@ def main() -> int:
     add(checks, "release:project-version", bool(version), f"project version={version!r}")
     add(checks, "release:readme-version", f"v{version}" in readme, f"README mentions v{version}")
     add(checks, "release:changelog-version", f"## v{version} " in changelog, f"CHANGELOG has v{version} section")
+    add(
+        checks,
+        "release:readme-published-facts",
+        "releases/tag/v3.5.1" in readme and "29551782341" in readme and "0872a6040d62f1bac0972e531ab211104bd273bd18923b006bdbd56b68b2c71e" in readme,
+        "README records the current stable tag release, workflow and independently verified digest",
+    )
+    add(
+        checks,
+        "release:readme-open-boundary",
+        "Operator 真实 kind 集群" in readme and "未完成冻结边界" in readme,
+        "README distinguishes the remaining v3.5.2 kind/second-runner boundary from completed facts",
+    )
     add(checks, "release:license-exists", (ROOT / "LICENSE").is_file(), "LICENSE exists")
     add(checks, "release:license-installed", "    LICENSE\n" in cmake, "LICENSE is included by CMake install")
     add(
