@@ -117,7 +117,7 @@ jobs:
         shell: bash
         run: |
           python scripts/tools/bootstrap_kind_tools.py \
-            --install-dir "$RUNNER_TEMP/boost-gateway-kubernetes-tools" \
+            --install-dir "/opt/boost-gateway/tools/kubernetes-v0.32.0-v1.36.1" \
             --github-path "$GITHUB_PATH"
 
       - name: Resolve persistent runner caches

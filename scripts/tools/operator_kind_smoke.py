@@ -120,7 +120,8 @@ def build_operator_image(operator_dir: Path, image: str, runtime_image: str) -> 
         (context / "Dockerfile").write_text(
             "\n".join([
                 f"FROM {runtime_image}",
-                "COPY --chmod=0555 manager /manager",
+                "COPY manager /manager",
+                "RUN chmod 0555 /manager",
                 "USER 65532:65532",
                 'ENTRYPOINT ["/manager"]',
                 "",
