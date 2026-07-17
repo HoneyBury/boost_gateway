@@ -159,9 +159,10 @@ def main() -> int:
     add(
         checks,
         "release:version-from-project-metadata",
-        "RELEASE_VERSION=%s" in release_workflow
-        and "RELEASE_LABEL=%s" in release_workflow
-        and "tag $GITHUB_REF_NAME does not match project version $release_label" in release_workflow,
+        "scripts/tools/resolve_release_version.py" in release_workflow
+        and '--github-ref "$GITHUB_REF"' in release_workflow
+        and '--github-ref-name "$GITHUB_REF_NAME"' in release_workflow
+        and '--github-env "$GITHUB_ENV"' in release_workflow,
         "release names derive from CMake project version and tag pushes must match it",
     )
     add(

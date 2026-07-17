@@ -43,24 +43,10 @@ jobs:
       - name: Resolve release version
         shell: bash
         run: |
-          set -euo pipefail
-          release_version="$(python - <<'PY'
-          import pathlib
-          import re
-
-          text = pathlib.Path("CMakeLists.txt").read_text(encoding="utf-8")
-          match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", text)
-          if match is None:
-              raise SystemExit("unable to resolve project version from CMakeLists.txt")
-          print(match.group(1))
-          PY
-          )"
-          release_label="v${release_version}"
-          if [[ "$GITHUB_REF" == refs/tags/v* && "$GITHUB_REF_NAME" != "$release_label" ]]; then
-            echo "tag $GITHUB_REF_NAME does not match project version $release_label" >&2
-            exit 1
-          fi
-          printf 'RELEASE_VERSION=%s\nRELEASE_LABEL=%s\n' "$release_version" "$release_label" >> "$GITHUB_ENV"
+          python3 scripts/tools/resolve_release_version.py \
+            --github-ref "$GITHUB_REF" \
+            --github-ref-name "$GITHUB_REF_NAME" \
+            --github-env "$GITHUB_ENV"
 
       - name: Setup Ninja
         uses: seanmiddleditch/gha-setup-ninja@v5
