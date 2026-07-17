@@ -134,10 +134,48 @@ def build_operator_image(operator_dir: Path, image: str, runtime_image: str) -> 
 def build_workload_image(image: str, runtime_image: str) -> None:
     with tempfile.TemporaryDirectory(prefix="boost-kind-workload-") as temp_dir:
         context = Path(temp_dir)
+        (context / "main.go").write_text(
+            """package main
+
+import (
+    "fmt"
+    "net/http"
+    "os"
+)
+
+func serve(port string) {
+    mux := http.NewServeMux()
+    mux.HandleFunc("/ready", func(w http.ResponseWriter, _ *http.Request) {
+        w.WriteHeader(http.StatusOK)
+        _, _ = w.Write([]byte("ready\\n"))
+    })
+    if err := http.ListenAndServe(":"+port, mux); err != nil {
+        panic(fmt.Sprintf("listen %s: %v", port, err))
+    }
+}
+
+func main() {
+    servicePort := os.Getenv("SERVICE_PORT")
+    managementPort := os.Getenv("MANAGEMENT_PORT")
+    if servicePort == "" {
+        panic("SERVICE_PORT is required")
+    }
+    if managementPort != "" && managementPort != servicePort {
+        go serve(managementPort)
+    }
+    serve(servicePort)
+}
+""",
+            encoding="utf-8",
+        )
+        run(["go", "build", "-trimpath", "-o", str(context / "workload"), str(context / "main.go")], context)
         (context / "Dockerfile").write_text(
             "\n".join([
                 f"FROM {runtime_image}",
-                'ENTRYPOINT ["/bin/sh", "-c", "trap \'exit 0\' TERM INT; while :; do sleep 3600; done"]',
+                "COPY workload /workload",
+                "RUN chmod 0555 /workload",
+                "USER 65532:65532",
+                'ENTRYPOINT ["/workload"]',
                 "",
             ]),
             encoding="utf-8",
