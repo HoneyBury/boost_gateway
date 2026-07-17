@@ -99,6 +99,14 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Bootstrap pinned kind and kubectl
+        if: inputs.include_kind
+        shell: bash
+        run: |
+          python scripts/tools/bootstrap_kind_tools.py \
+            --install-dir "/opt/boost-gateway/tools/kubernetes-v0.32.0-v1.36.1" \
+            --github-path "$GITHUB_PATH"
+
       - name: Verify pinned offline Conan virtual environment
         shell: bash
         run: |
