@@ -136,6 +136,15 @@ def delete_cluster(cluster_name: str) -> None:
 
 
 def pull_image(image: str, attempts: int = 5) -> None:
+    present = subprocess.run(
+        ["docker", "image", "inspect", image],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if present.returncode == 0:
+        print(f"using cached Docker image: {image}")
+        return
     for attempt in range(1, attempts + 1):
         result = subprocess.run(["docker", "pull", image], check=False)
         if result.returncode == 0:
