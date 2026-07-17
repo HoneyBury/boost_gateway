@@ -17,13 +17,16 @@
   - R0 production candidate evidence 通过
   - `v3.5.0` 同一候选的真实 2h、R4、R5、R6、R2/R3 冻结链通过
   - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
+  - `v3.5.2` clean Ubuntu package、SPDX SBOM 和真实 Operator kind 专项通过
 
 ## 发布事实与边界
 
 - `v3.5.1` annotated tag 固定在 `d7ecb1ae075112d692c73bcc0d25b9ad554ed544`；[GitHub Release](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.5.1) 的 package/publish run 为 `29551782341`。
 - Linux x64 资产为真实 gzip、只有一个版本顶层目录并包含 README/CHANGELOG/LICENSE；SHA-256 为 `0872a6040d62f1bac0972e531ab211104bd273bd18923b006bdbd56b68b2c71e`。
 - `v3.5.1` 没有运行时代码变更，因此没有把 `v3.5.0` 的长稳和预发 summary 伪装为新 SHA 证据；候选验证事实为 Release package `29551112356`、增强 R0 `29551445037`。
-- AOI runner 已具备严格离线 Conan、Redis live、runtime HTTP、Docker R5/R6 能力，但当前 runner inventory 仍缺少 kind/kubectl；Operator 真实 kind 集群和第二台 Linux runner 复验仍是 `v3.5.2` 的未完成冻结边界。
+- `v3.5.2` Release run `29560450740` 在候选 `9945028` 上通过 clean `ubuntu:24.04`（`network=none`、`pull=never`）发行包消费验证并生成 SPDX SBOM；artifact 为 `8399167635`。
+- Operator kind run `29563770679` 在候选 `21a4815` 上通过：kind `v0.32.0`、kubectl `v1.36.1`、固定 Kubernetes `v1.36.1` node digest，覆盖六组件 Ready、scale、rollout restart/undo、Operator restart、CR delete 和集群清理；summary artifact 为 `8400330394`。
+- 上述两个 run 是阶段证据，不是同一最终候选冻结链。正式 tag 的 provenance/SBOM attestation、最终候选 Release/R0 重跑和第二台 Linux runner 复验仍是 `v3.5.2` 的未完成冻结边界；`myserver` 当前仍离线。
 
 ## 快速入口
 

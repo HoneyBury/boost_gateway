@@ -80,8 +80,8 @@ def main() -> int:
     add(
         checks,
         "release:readme-open-boundary",
-        "Operator 真实 kind 集群" in readme and "未完成冻结边界" in readme,
-        "README distinguishes the remaining v3.5.2 kind/second-runner boundary from completed facts",
+        "29563770679" in readme and "第二台 Linux runner" in readme and "未完成冻结边界" in readme,
+        "README records successful v3.5.2 kind evidence and keeps final-SHA/tag/second-runner boundaries open",
     )
     add(checks, "release:license-exists", (ROOT / "LICENSE").is_file(), "LICENSE exists")
     add(checks, "release:license-installed", "    LICENSE\n" in cmake, "LICENSE is included by CMake install")

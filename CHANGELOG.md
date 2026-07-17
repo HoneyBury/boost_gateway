@@ -9,12 +9,21 @@
 - 新增发行包消费验证：在预缓存的 `ubuntu:24.04` 中以 `--pull=never --network=none` 检查全部安装二进制的 ELF/执行权限、运行时依赖和 hello-world 启动。
 - Release 生成 SPDX JSON SBOM，并为 tag tarball 生成 build provenance 与 SBOM attestation；tarball 和 SBOM 一并进入 `SHA256SUMS.txt`。
 - clean-environment 结果输出结构化 summary，并随候选 artifact 归档。
+- Specialized E2E 使用 checksum 固定的 kind `v0.32.0` 与 kubectl `v1.36.1`，Kubernetes node image 固定到 `v1.36.1` digest；runner-local 工具目录可重复验签复用。
+- Operator kind smoke 使用宿主 Go cache 构建 manager，并从已准入的 Ubuntu runtime 本地构建 probe workload，避免在证据 job 中依赖 Docker Hub 的 Go/nginx 镜像。
+- Operator 真实集群验证覆盖六组件 Ready、gateway 1->2->1 scale、rollout restart/undo、Operator restart、CR delete 与 kind cluster cleanup。
+
+### 候选事实
+
+- Release run `29560450740`（`9945028`）通过完整 build/test/gates、clean Ubuntu package consumer 与 SPDX SBOM，artifact `8399167635` 包含 tarball、SBOM 和结构化 summary。
+- Specialized E2E run `29563770679`（`21a4815`）通过真实 kind，summary `overall_pass=true`，artifact `8400330394`。
 
 ### 待冻结验证
 
-- AOI runner 上的完整 Release/package/R0 候选验证。
-- Operator 在真实 kind 集群中的 reconcile、ready、scale、restart 与 cleanup。
+- 在最终候选 SHA 上重跑 Release/package 与增强 R0，避免跨 SHA 拼接冻结结论。
+- 正式 tag push 上验证 build provenance 与 SBOM attestation。
 - 第二台 Linux runner 对同一已发布资产执行 checksum、解压和最小启动复验；runner 未在线前不得宣称完成。
+- 对 clean CMake SDK consumer、Python/C# wrapper 发行定位和独立 debug-symbol 包作出冻结/延期决策。
 
 ---
 
