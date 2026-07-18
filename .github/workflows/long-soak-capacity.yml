@@ -52,6 +52,28 @@ on:
         description: "Sequential SDK full-flow passes for business-capacity evidence"
         required: true
         default: "3"
+      cpu_set:
+        description: "Optional Linux CPU affinity list for capacity runs, for example 0 or 0-1"
+        required: false
+        default: ""
+      run_business_operation_perf:
+        description: "Run opt-in concurrent matchmaking and leaderboard operation profiles"
+        required: true
+        default: false
+        type: boolean
+      leaderboard_redis_comparison:
+        description: "Compare in-memory-only and Redis-primary leaderboard persistence"
+        required: true
+        default: false
+        type: boolean
+      business_operation_clients:
+        description: "Concurrent clients per matchmaking/leaderboard profile"
+        required: true
+        default: "16"
+      business_operation_iterations:
+        description: "Operation cycles per client in each business profile"
+        required: true
+        default: "10"
       min_capacity_repetitions:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
@@ -164,6 +186,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          redis_name=""
+          cleanup_redis() {
+            if [ -n "$redis_name" ]; then
+              docker rm -f "$redis_name" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_redis EXIT
           args=(
             scripts/run_long_soak_capacity.py
             --build-dir "${{ inputs.build_dir || 'build/release' }}"
@@ -185,21 +214,62 @@ jobs:
           if [ "${{ inputs.run_business_capacity }}" = "true" ]; then
             args+=(--run-business-capacity)
           fi
+          if [ -n "${{ inputs.cpu_set }}" ]; then
+            args+=(--cpu-set "${{ inputs.cpu_set }}")
+          fi
+          if [ "${{ inputs.run_business_operation_perf }}" = "true" ]; then
+            args+=(
+              --run-business-operation-perf
+              --business-operation-clients "${{ inputs.business_operation_clients || '16' }}"
+              --business-operation-iterations "${{ inputs.business_operation_iterations || '10' }}"
+            )
+          fi
+          if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then
+            redis_name="boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            docker run -d --pull never --name "$redis_name" \
+              -p 127.0.0.1::6379 \
+              redis:7-alpine \
+              redis-server --protected-mode no --save "" --appendonly no
+            docker image inspect redis:7-alpine > runtime/validation/leaderboard-redis-image.json
+            for attempt in $(seq 1 30); do
+              if [ "$(docker exec "$redis_name" redis-cli ping 2>/dev/null || true)" = "PONG" ]; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "temporary Redis did not become ready" >&2
+                exit 1
+              fi
+              sleep 1
+            done
+            redis_port="$(docker port "$redis_name" 6379/tcp | sed -n 's/.*://p' | tail -1)"
+            test -n "$redis_port"
+            args+=(
+              --leaderboard-redis-comparison
+              --leaderboard-redis-host 127.0.0.1
+              --leaderboard-redis-port "$redis_port"
+            )
+          fi
           python "${args[@]}"
 
       - name: R4 fixed-runner release/capacity gate
-        if: inputs.run_capacity && inputs.run_business_capacity
+        if: always() && inputs.run_capacity && inputs.run_business_capacity
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_fixed_runner_release_capacity.py \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
-            --configuration "${{ inputs.configuration || 'Release' }}" \
-            --release-summary runtime/validation/capacity-baseline-summary.json \
-            --capacity-summary runtime/perf/fixed-runner-capacity/summary.json \
-            --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json \
-            --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}" \
+          args=(
+            scripts/verify_fixed_runner_release_capacity.py
+            --build-dir "${{ inputs.build_dir || 'build/release' }}"
+            --configuration "${{ inputs.configuration || 'Release' }}"
+            --release-summary runtime/validation/capacity-baseline-summary.json
+            --capacity-summary runtime/perf/fixed-runner-capacity/summary.json
+            --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json
+            --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}"
             --summary-path runtime/validation/fixed-runner-release-capacity-summary.json
+          )
+          if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then
+            args+=(--require-leaderboard-redis-comparison)
+          fi
+          python "${args[@]}"
 
       - name: Render long-soak capacity summary
         if: always()
@@ -237,6 +307,7 @@ jobs:
             runtime/validation/capacity-baseline-summary.json
             runtime/validation/business-capacity-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
+            runtime/validation/leaderboard-redis-image.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
             runtime/perf/v2-stability-soak/**

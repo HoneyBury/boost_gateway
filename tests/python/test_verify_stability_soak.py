@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import copy
 import json
+import os
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -12,7 +14,10 @@ from unittest import mock
 from scripts.gates.release import verify_stability_soak
 from scripts.gates.release.verify_stability_soak import (
     archive_failed_arch_run,
+    process_tree_resource_snapshot,
     record_failure_episode,
+    ResourceSampler,
+    summarize_resource_samples,
     sustained_failure_violations,
 )
 
@@ -149,8 +154,100 @@ class FailureArchiveTest(unittest.TestCase):
             self.assertEqual([1.1, 1.2, 1.3], diagnostics["after"]["load_average"])
 
 
+def resource_sample(
+    elapsed: float,
+    *,
+    total_ticks: int,
+    idle_ticks: int,
+    memory_kib: int,
+    rss_kib: int,
+    fd_count: int,
+) -> dict[str, object]:
+    return {
+        "elapsed_seconds": elapsed,
+        "host": {
+            "cpu_ticks": {"total": total_ticks, "idle": idle_ticks},
+            "memory_kib": {"MemAvailable": memory_kib},
+        },
+        "process_tree": {
+            "rss_kib": rss_kib,
+            "fd_count": fd_count,
+            "thread_count": 2,
+            "process_count": 1,
+        },
+    }
+
+
+class ResourceEvidenceTest(unittest.TestCase):
+    def test_summarizes_coverage_peaks_and_trends(self) -> None:
+        summary = summarize_resource_samples(
+            [
+                resource_sample(0, total_ticks=100, idle_ticks=40, memory_kib=1000, rss_kib=100, fd_count=4),
+                resource_sample(30, total_ticks=200, idle_ticks=60, memory_kib=900, rss_kib=140, fd_count=6),
+                resource_sample(60, total_ticks=300, idle_ticks=100, memory_kib=800, rss_kib=120, fd_count=5),
+            ],
+            30,
+            60,
+        )
+
+        self.assertTrue(summary["passed"])
+        self.assertEqual(60, summary["coverage_seconds"])
+        self.assertEqual(80.0, summary["host"]["cpu_percent"]["maximum"])
+        self.assertEqual(-200.0, summary["host"]["memory_available_kib"]["delta"])
+        self.assertEqual(140.0, summary["process_tree"]["rss_kib"]["maximum"])
+        self.assertEqual(6.0, summary["process_tree"]["fd_count"]["maximum"])
+
+    def test_rejects_sampling_gap_and_incomplete_duration(self) -> None:
+        summary = summarize_resource_samples(
+            [
+                resource_sample(0, total_ticks=100, idle_ticks=40, memory_kib=1000, rss_kib=100, fd_count=4),
+                resource_sample(90, total_ticks=200, idle_ticks=60, memory_kib=900, rss_kib=120, fd_count=5),
+            ],
+            30,
+            120,
+        )
+
+        self.assertFalse(summary["passed"])
+        self.assertFalse(summary["checks"]["duration_coverage"])
+        self.assertFalse(summary["checks"]["sampling_continuity"])
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "Linux /proc is required")
+    def test_process_tree_snapshot_includes_verifier(self) -> None:
+        snapshot = process_tree_resource_snapshot(os.getpid())
+
+        self.assertGreaterEqual(snapshot["process_count"], 1)
+        self.assertGreater(snapshot["rss_kib"], 0)
+        self.assertGreater(snapshot["fd_count"], 0)
+
+    @unittest.skipUnless(Path("/proc").is_dir(), "Linux /proc is required")
+    def test_sampler_persists_raw_and_aggregate_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            sampler = ResourceSampler(Path(temporary_directory), 0.1, 0)
+            sampler.start()
+            time.sleep(0.12)
+            summary = sampler.stop()
+
+            self.assertTrue(summary["passed"])
+            self.assertTrue(summary["overall_pass"])
+            self.assertEqual(1, summary["summary_version"])
+            self.assertGreaterEqual(summary["sample_count"], 3)
+            self.assertTrue(Path(summary["samples_path"]).is_file())
+            self.assertTrue(Path(summary["summary_path"]).is_file())
+
+
 class SustainedBaselineConfirmationTest(unittest.TestCase):
-    def run_baseline(self, results: list[dict[str, object]], failed_checks: list[list[dict[str, object]]]):
+    def run_baseline(
+        self,
+        results: list[dict[str, object]],
+        failed_checks: list[list[dict[str, object]]],
+        *,
+        resource_passed: bool = True,
+    ):
+        resource_evidence = {
+            "passed": resource_passed,
+            "samples_path": "resource-samples.jsonl",
+            "summary_path": "resource-summary.json",
+        }
         with tempfile.TemporaryDirectory() as temporary_directory, \
                 mock.patch.object(verify_stability_soak, "run_step", side_effect=results), \
                 mock.patch.object(
@@ -166,7 +263,10 @@ class SustainedBaselineConfirmationTest(unittest.TestCase):
                 ) as archive, \
                 mock.patch.object(
                     verify_stability_soak, "SUSTAINED_GATE_RARE_MAX_FAILURE_RATE", 1.0
-                ):
+                ), \
+                mock.patch.object(verify_stability_soak, "ResourceSampler") as sampler_type:
+            sampler_type.return_value.stop.return_value = resource_evidence
+            sampler_type.return_value.start.return_value = None
             result = verify_stability_soak.run_sustained_arch_baseline(
                 Path(temporary_directory),
                 Path(temporary_directory),
@@ -199,6 +299,16 @@ class SustainedBaselineConfirmationTest(unittest.TestCase):
         self.assertEqual(3, result["completed_runs"])
         self.assertEqual("rejected", result["failed_checks"][0]["acceptance_tier"])
         self.assertEqual(3, archive.call_count)
+
+    def test_rejects_successful_baseline_with_incomplete_resource_evidence(self) -> None:
+        result, _ = self.run_baseline(
+            [run_result(0)],
+            [],
+            resource_passed=False,
+        )
+
+        self.assertEqual("failed", result["status"])
+        self.assertTrue(result["resource_evidence_failure"])
 
 
 if __name__ == "__main__":

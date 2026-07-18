@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import stat
@@ -16,7 +17,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
-APP_IMAGE = "test-stack-app"
+APP_IMAGE = "test-stack-gateway"
 REDIS_IMAGE = "redis:test"
 PROM_IMAGE = "prom/test:v1"
 
@@ -79,6 +80,14 @@ if args[:2] == ["image", "inspect"] and len(args) == 3:
     }]))
     raise SystemExit(0)
 
+if args and args[0] == "run" and "/app/build-manifest.json" in args:
+    print(os.environ["FAKE_DOCKER_BUILD_MANIFEST"])
+    raise SystemExit(0)
+
+if args and args[0] == "run" and "/app/bin/v2_gateway_demo" in args:
+    print(os.environ["FAKE_DOCKER_BINARY_SHA256"] + "  /app/bin/v2_gateway_demo")
+    raise SystemExit(0)
+
 if args and args[0] == "pull" and len(args) == 2:
     image = args[1]
     if os.environ.get("FAKE_DOCKER_FAIL_PULL") == image:
@@ -100,7 +109,7 @@ def write_fixture(path: Path) -> None:
             {
                 "name": "test-stack",
                 "services": {
-                    "app": {"build": {"context": "."}},
+                    "gateway": {"build": {"context": "."}},
                     "prometheus": {"image": PROM_IMAGE},
                     "redis": {"image": REDIS_IMAGE},
                 },
@@ -134,6 +143,24 @@ def run_case(
     present_path.write_text("\n".join(sorted(present)) + ("\n" if present else ""), encoding="utf-8")
 
     environment = os.environ.copy()
+    candidate_revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.strip()
+    lockfile = ROOT / "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
+    binary_sha256 = "a" * 64
+    build_manifest = {
+        "schema_version": 1,
+        "git_revision": candidate_revision,
+        "dependency_provider": "conan",
+        "worktree_clean": True,
+        "conan_lockfile": str(lockfile.relative_to(ROOT)),
+        "conan_lockfile_sha256": hashlib.sha256(lockfile.read_bytes()).hexdigest(),
+        "binaries": [{"name": "v2_gateway_demo", "sha256": binary_sha256}],
+    }
     environment.update(
         {
             "PATH": str(bin_dir) + os.pathsep + environment.get("PATH", ""),
@@ -142,6 +169,8 @@ def run_case(
             "FAKE_DOCKER_COMPOSE_FIXTURE": str(fixture),
             "FAKE_DOCKER_FAIL_PULL": fail_pull,
             "FAKE_DOCKER_FAIL_COMPOSE_PULL": "1" if fail_compose_pull else "0",
+            "FAKE_DOCKER_BUILD_MANIFEST": json.dumps(build_manifest),
+            "FAKE_DOCKER_BINARY_SHA256": binary_sha256,
         }
     )
     command = [

@@ -147,9 +147,10 @@ gh api --method DELETE \
 R5 runner 池。首次验证、排障和机器专属复验必须传入唯一 label：
 
 ```bash
-gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref develop \
+gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref <candidate-sha> \
   -f 'runner=["self-hosted","Linux","X64","preprod-r5-myserver"]' \
-  -f recovery_mode=docker-compose -f docker_pull_policy=never
+  -f recovery_mode=docker-compose -f docker_pull_policy=never \
+  -f include_redis_recovery=true
 ```
 
 多个 runner 都通过 G0-G3 后，使用能力池即可让 GitHub 选择任一合格机器：

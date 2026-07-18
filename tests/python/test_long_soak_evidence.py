@@ -1,14 +1,48 @@
 import json
+import io
+import sys
 import tempfile
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.gates.production.check_production_evidence_manifest import check_evidence
-from scripts.gates.production.run_long_soak_capacity import attach_provenance
+from scripts.gates.production.run_long_soak_capacity import attach_provenance, parse_args
 
 
 class LongSoakEvidenceTest(unittest.TestCase):
+    def test_business_operation_perf_requires_capacity_profile(self):
+        with (
+            patch.object(sys, "argv", ["run_long_soak_capacity.py", "--run-business-operation-perf"]),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_redis_comparison_requires_business_capacity_and_three_repetitions(self):
+        invalid_argv = [
+            ["run_long_soak_capacity.py", "--leaderboard-redis-comparison"],
+            [
+                "run_long_soak_capacity.py",
+                "--leaderboard-redis-comparison",
+                "--run-business-operation-perf",
+                "--run-business-capacity",
+                "--perf-repetitions",
+                "2",
+            ],
+        ]
+        for argv in invalid_argv:
+            with (
+                self.subTest(argv=argv),
+                patch.object(sys, "argv", argv),
+                patch("sys.stderr", new=io.StringIO()),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                parse_args()
+            self.assertEqual(raised.exception.code, 2)
+
     def test_attach_provenance_updates_completed_long_soak_summary(self):
         with tempfile.TemporaryDirectory() as temp:
             summary_path = Path(temp) / "long-soak-2h-summary.json"

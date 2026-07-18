@@ -116,8 +116,32 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--business-flow-clients", type=int, default=3)
     parser.add_argument("--backend-pool-size", type=int, default=8)
     parser.add_argument("--battle-route-workers", type=int, default=8)
+    parser.add_argument(
+        "--cpu-set",
+        default="",
+        help="Linux CPU affinity list passed to capacity performance collectors.",
+    )
+    parser.add_argument("--run-business-operation-perf", action="store_true")
+    parser.add_argument("--business-operation-clients", type=int, default=16)
+    parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--leaderboard-redis-comparison", action="store_true")
+    parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
+    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
+    parser.add_argument("--leaderboard-redis-key", default="")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/long-soak-capacity-summary.json"))
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.run_business_operation_perf and not (args.run_capacity or args.run_business_capacity):
+        parser.error("--run-business-operation-perf requires --run-capacity or --run-business-capacity")
+    if args.leaderboard_redis_comparison and not (
+        args.run_business_operation_perf and args.run_business_capacity
+    ):
+        parser.error(
+            "--leaderboard-redis-comparison requires --run-business-operation-perf "
+            "and --run-business-capacity"
+        )
+    if args.leaderboard_redis_comparison and args.perf_repetitions < 3:
+        parser.error("--leaderboard-redis-comparison requires --perf-repetitions >= 3")
+    return args
 
 
 def environment_snapshot() -> dict[str, object]:
@@ -222,6 +246,19 @@ def main() -> int:
             str(ROOT / "runtime/perf/fixed-runner-capacity"),
             "--skip-r4",
         ]
+        if args.cpu_set:
+            cmd.extend(["--cpu-set", args.cpu_set])
+        if args.run_business_operation_perf and not args.run_business_capacity:
+            cmd.extend([
+                "--business-operation-scenario",
+                "matchmaking",
+                "--business-operation-scenario",
+                "leaderboard",
+                "--business-operation-clients",
+                str(args.business_operation_clients),
+                "--business-operation-iterations",
+                str(args.business_operation_iterations),
+            ])
         steps.append(run_step("capacity baseline evidence", "capacity", cmd, 10800))
 
     if args.run_business_capacity:
@@ -246,6 +283,29 @@ def main() -> int:
             str(args.business_flow_clients),
             "--skip-r4",
         ]
+        if args.cpu_set:
+            cmd.extend(["--cpu-set", args.cpu_set])
+        if args.run_business_operation_perf:
+            cmd.extend([
+                "--business-operation-scenario",
+                "matchmaking",
+                "--business-operation-scenario",
+                "leaderboard",
+                "--business-operation-clients",
+                str(args.business_operation_clients),
+                "--business-operation-iterations",
+                str(args.business_operation_iterations),
+            ])
+        if args.leaderboard_redis_comparison:
+            cmd.extend([
+                "--leaderboard-redis-comparison",
+                "--leaderboard-redis-host",
+                args.leaderboard_redis_host,
+                "--leaderboard-redis-port",
+                str(args.leaderboard_redis_port),
+            ])
+            if args.leaderboard_redis_key:
+                cmd.extend(["--leaderboard-redis-key", args.leaderboard_redis_key])
         steps.append(run_step("business-capacity baseline evidence", "business_capacity", cmd, 10800))
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
@@ -263,6 +323,13 @@ def main() -> int:
         "business_flow_clients": args.business_flow_clients,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
+        "cpu_set": args.cpu_set,
+        "run_business_operation_perf": args.run_business_operation_perf,
+        "business_operation_clients": args.business_operation_clients,
+        "business_operation_iterations": args.business_operation_iterations,
+        "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
+        "leaderboard_redis_host": args.leaderboard_redis_host if args.leaderboard_redis_comparison else "",
+        "leaderboard_redis_port": args.leaderboard_redis_port if args.leaderboard_redis_comparison else 0,
         "environment": environment_snapshot(),
         "overall_pass": failed is None,
         "passed": failed is None,

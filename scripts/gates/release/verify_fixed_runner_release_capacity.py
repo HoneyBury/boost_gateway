@@ -107,6 +107,103 @@ def business_flow_passed(summary: dict[str, Any]) -> bool:
     return business_flow.get("passed") is True
 
 
+def integer_or(value: object, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def validate_leaderboard_redis_comparison(
+    path: Path,
+    required: bool,
+    min_repetitions: int,
+) -> dict[str, Any]:
+    summary = load_json(path)
+    comparison = summary.get("leaderboard_persistence_comparison") if summary else None
+    if not isinstance(comparison, dict):
+        return {
+            "name": "leaderboard-redis-persistence-comparison",
+            "category": "business_capacity",
+            "path": str(path),
+            "required": required,
+            "status": "missing" if required else "optional-missing",
+            "passed": not required,
+            "details": ["leaderboard_persistence_comparison is missing"],
+        }
+
+    details: list[str] = []
+    repetitions = integer_or(comparison.get("repetitions_per_mode"))
+    modes = comparison.get("modes")
+    mode_checks: list[bool] = []
+    for mode in ("in_memory_only", "redis_primary_with_memory_shadow"):
+        mode_entry = modes.get(mode) if isinstance(modes, dict) else None
+        mode_summary = mode_entry.get("summary") if isinstance(mode_entry, dict) else None
+        aggregate = leaderboard_aggregate_for_gate(mode_summary)
+        operations = aggregate.get("operations", [])
+        operation_names = {
+            operation.get("operation")
+            for operation in operations
+            if isinstance(operation, dict)
+        }
+        mode_ok = (
+            isinstance(mode_entry, dict)
+            and mode_entry.get("log_verified") is True
+            and aggregate.get("passed") is True
+            and integer_or(aggregate.get("runs")) >= min_repetitions
+            and integer_or(aggregate.get("passed_runs")) == integer_or(aggregate.get("runs"))
+            and operation_names
+            == {"leaderboard_submit", "leaderboard_top", "leaderboard_rank"}
+            and all(integer_or(operation.get("failed"), -1) == 0 for operation in operations)
+        )
+        mode_checks.append(mode_ok)
+        details.append(f"{mode}: runs={aggregate.get('runs', 0)} log_verified={bool(mode_entry and mode_entry.get('log_verified'))}")
+
+    proof = comparison.get("redis_proof")
+    proof_ok = (
+        isinstance(proof, dict)
+        and proof.get("verified") is True
+        and proof.get("ping_before") is True
+        and proof.get("ping_after") is True
+        and bool(proof.get("key"))
+        and integer_or(proof.get("zcard"), -1)
+        >= integer_or(proof.get("expected_min_zcard"), -1)
+        > 0
+    )
+    passed = (
+        comparison.get("requested") is True
+        and comparison.get("verified") is True
+        and repetitions >= min_repetitions
+        and all(mode_checks)
+        and proof_ok
+    )
+    details.extend((
+        f"repetitions_per_mode={repetitions}",
+        f"redis_proof_verified={proof_ok}",
+    ))
+    return {
+        "name": "leaderboard-redis-persistence-comparison",
+        "category": "business_capacity",
+        "path": str(path),
+        "required": required,
+        "status": "passed" if passed else "failed-summary",
+        "passed": passed,
+        "details": details,
+    }
+
+
+def leaderboard_aggregate_for_gate(summary: object) -> dict[str, Any]:
+    if not isinstance(summary, dict):
+        return {}
+    aggregates = summary.get("scenario_aggregates")
+    if not isinstance(aggregates, list):
+        return {}
+    return next(
+        (item for item in aggregates if isinstance(item, dict) and item.get("scenario") == "leaderboard"),
+        {},
+    )
+
+
 def validate_release_summary(
     path: Path,
     required: bool,
@@ -227,6 +324,7 @@ def main() -> int:
     parser.add_argument("--collect-smoke", action="store_true", help="Collect fresh smoke evidence before validating existing capacity artifacts.")
     parser.add_argument("--step-timeout-seconds", type=int, default=900)
     parser.add_argument("--min-capacity-repetitions", type=int, default=3)
+    parser.add_argument("--require-leaderboard-redis-comparison", action="store_true")
     parser.add_argument(
         "--release-summary",
         type=Path,
@@ -325,6 +423,12 @@ def main() -> int:
             expected_candidate_revision=candidate_revision,
         ),
     ]
+    if args.require_leaderboard_redis_comparison:
+        checks.append(validate_leaderboard_redis_comparison(
+            business_capacity_summary_path,
+            required=True,
+            min_repetitions=args.min_capacity_repetitions,
+        ))
 
     failed_step = next((step for step in steps if step.get("status") != "passed"), None)
     failed_check = next((check for check in checks if check.get("passed") is not True), None)
@@ -350,6 +454,7 @@ def main() -> int:
             "required_capacity_preset": "capacity",
             "required_business_capacity_preset": "business-capacity",
             "min_capacity_repetitions": args.min_capacity_repetitions,
+            "leaderboard_redis_comparison_required": args.require_leaderboard_redis_comparison,
         },
         "steps": steps,
         "checks": checks,

@@ -133,6 +133,27 @@ def main() -> int:
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
+    long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
+    add(
+        checks,
+        "long-soak-capacity:leaderboard-redis-comparison-input-forwarding",
+        "leaderboard_redis_comparison:" in long_soak_workflow
+        and "if [ \"${{ inputs.leaderboard_redis_comparison }}\" = \"true\" ]" in long_soak_workflow
+        and "--leaderboard-redis-comparison" in long_soak_workflow
+        and "--leaderboard-redis-host" in long_soak_workflow
+        and "--leaderboard-redis-port" in long_soak_workflow
+        and "--require-leaderboard-redis-comparison" in long_soak_workflow
+        and "if: always() && inputs.run_capacity && inputs.run_business_capacity" in long_soak_workflow,
+        "long-soak capacity explicitly provisions and forwards the Redis persistence comparison to collection and R4",
+    )
+    add(
+        checks,
+        "long-soak-capacity:leaderboard-redis-image-provenance",
+        "docker run -d --pull never" in long_soak_workflow
+        and "docker image inspect redis:7-alpine" in long_soak_workflow
+        and "runtime/validation/leaderboard-redis-image.json" in long_soak_workflow,
+        "leaderboard comparison consumes the prewarmed Redis image offline and archives its image identity",
+    )
     add(
         checks,
         "specialized-e2e:pinned-kind-bootstrap",

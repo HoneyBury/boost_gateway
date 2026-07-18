@@ -1,122 +1,58 @@
-# v3.5.0 项目清理执行计划
+# v3.5.3 高风险部署证据执行计划
 
-更新时间：2026-07-16
+更新时间：2026-07-18
 
-本文档是 v3.5.0 版本的执行计划，替代了之前的 `mainline-execution-plan.md`（2026-05-30 版本）。
+## 阶段目标
 
-## 背景
+v3.5.0-v3.5.2 已完成清理、依赖治理和发布工程收口。v3.5.3 不扩展业务功能，目标是让高风险部署结论建立在同一候选提交、真实外部依赖和可复核产物上。
 
-项目从 demo 演进为企业级框架后，积累了大量 Windows 兼容代码、CI 适配逻辑、脚本和文档。本次清理的目标是：
+发布结论必须来自 Linux fixed runner 的实际 summary/artifact；历史数据、跨提交产物和推算值只能作为背景信息。
 
-1. **暂停 Windows 支持** — 聚焦 Linux/macOS（类 Unix API 近似）
-2. **收敛杂乱面** — 合并重叠文档、整理脚本结构、精简 CI workflow
-3. **偿还技术债** — 修复 v2→v1 耦合、测试链接问题、清理遗留引用
-4. **版本号更新到 3.5.0**
+## 优先级与验收标准
 
-## 阶段状态
-
-| 阶段 | 主题 | 状态 |
-|---|---|---|
-| Phase 1 | 删除 Windows 支持 | ✅ 已完成 |
-| Phase 2 | 整理脚本 | ✅ 已完成 |
-| Phase 3 | 整合文档 | ✅ 已完成 |
-| Phase 4 | 修复代码质量 | ✅ 已完成 |
-| Phase 5 | 精简 CI/CD | ✅ 已完成 |
-
-## Phase 1: 删除 Windows 支持 ✅
-
-已完成：
-
-- 删除 `windows_service.h/cpp`（~500 行 Windows SCM 代码）
-- 简化 8 个双平台文件为 POSIX-only（process_supervisor、crash_handler、perf_counter、highres_timer、hot_path、audit_log、redis_client）
-- 删除 43 个 Windows 脚本（.bat 和 .ps1）
-- 删除 Windows Dockerfile（`docker/gateway-server.Dockerfile`）
-- 删除 `windows-ci.yml` workflow
-- 清理 CMake：移除 MSVC 标志、Windows preset、DLL staging 函数
-- 更新 11 个 CI workflow 为 Linux-only
-- 更新 `runner-matrix.json` 到 schema v2（全部 Linux）
-- 版本号更新到 3.5.0
-- 构建验证通过（project_app 和 project_v2 编译成功）
-
-## Phase 2: 整理脚本 ✅
-
-目标：减少脚本杂乱，为未分配的 gate 脚本指定 canonical 路径。
-
-已完成：
-
-- 为 15 个未分配 canonical path 的 gate 脚本创建子目录并移动至 `scripts/gates/infrastructure/`、`scripts/gates/k8s/`、`scripts/gates/e2e/`
-- 合并 2 对重叠 gate 脚本
-- 更新 `script-inventory.json`
-
-## Phase 3: 整合文档 ✅
-
-目标：合并重叠文档，移动专业文档到子目录，创建开发者入门指南。
-
-已完成：
-
-- 合并 `reliability-matrix.md` + `v3-release-checklist.md` → `release-governance.md`
-- 合并 `production-evidence-runner.md` → `fixed-runner-playbook.md`
-- 移动 9 个专业文档到 `docs/deployment/`、`docs/production/`、`docs/legacy/`
-- 新建 `docs/ONBOARDING.md`（开发者入门指南）
-- 精简 `current-state.md`（删除 Windows 引用）
-- 更新 `project-blueprint.md`
-
-## Phase 4: 修复代码质量 ✅
-
-目标：修复 v2→v1 耦合、测试链接问题、清理遗留引用。
-
-已完成：
-
-- 提取 `v2::gateway::PacketBridge` 接口，`GatewayServerShadowBridge` 不再继承 v1 `GatewayPacketBridge`
-- `error_paths_test` 链接问题已处理（Windows 自动链接场景，Windows 支持已删除）
-- 清理 v2 代码中的死引用
-
-## Phase 5: 精简 CI/CD ✅
-
-目标：合并重叠 workflow，减少 workflow 数量。
-
-已完成：
-
-- 将 `release-baseline.yml` 的 baseline 采集步骤合入 `release.yml`
-- 删除 `release-baseline.yml`
-- 新建 `.github/CI-CD.md` 记录 CI/CD 架构，避免覆盖 GitHub 仓库首页的根 README
-
-## 验证命令
-
-```bash
-# 检查 Windows 引用
-grep -rn "_WIN32\|WIN32\|MSVC" src/ include/ tests/ --include="*.cpp" --include="*.h"
-grep -rn "WIN32\|MSVC" --include="CMakeLists.txt" --include="*.cmake" .
-find . -name "*.ps1" -o -name "*.bat"  # 排除 third_party 和 build
-grep -rn "Windows" .github/workflows/
-
-# 构建验证
-cmake --preset default
-cmake --build build/default --parallel
-```
-
-## 当前明确不做
-
-- 不恢复 Windows 支持（大后期再考虑）
-- 不扩展功能面
-- 不把 gRPC 接入默认生产链路
-- 不扩 demo 业务面
-
-## 清理收官后的主线顺序（2026-07-09）
-
-`v3.5.0` 清理阶段已经完成，后续 1-3 个月主线不再是“继续删旧代码”，而是把已经完成的治理项变成稳定、可重复的工程事实。
-
-| 顺序 | 主题 | 状态 | 说明 |
+| 优先级 | 工作项 | 交付物 | 完成标准 |
 |---|---|---|---|
-| 1 | 固定 runner 可用性治理与 GitHub-hosted fallback 固化 | 已完成当前契约收口 | Linux runner 已匹配默认标签；specialized E2E `29145172304`、production resilience `29145497642`、production evidence `29146018657` 已成功。期间修复了 workspace/目录初始化、证书生成、canonical gate 根路径、long-soak preflight profile 和长稳脚本根路径契约 |
-| 2 | Ubuntu fixed-runner Conan / baseline / evidence 刷新 | `480d5fd` 的 2h 已通过；冻结事实更新后的后继提交 | run `29494894953` 已在 `480d5fd` 完成 7201.245 秒、1616 轮且无失败事件，provenance 完整。R5/R6 run `29428322350`、gRPC run `29465329265` 以及此前 R0/R4 成功事实分属其他提交，不能拼接为最终结论。提交本次事实更新后不再修改候选；当前 AOI 在线，在该新完整 SHA 上刷新 R0、2h、capacity + business-capacity/R4 和定向 AOI 的 R5/R6，最后运行 R2/R3 |
-| 3 | Conan `nosqlite` 路径升格为唯一推荐主线 | 已完成 | 默认严格 Conan，缺包直接失败；FetchContent 仅保留为显式开发选项，fixed-runner 与发布工作流均固定 `BOOST_DEPENDENCY_PROVIDER=conan` |
-| 4 | 生产认证边界 | 已完成当前边界收口 | 生产 `external-jwt` 模式现只验证带 `exp` 的外部 RS256 JWT，拒绝本地签名、注册、guest 和 refresh；账户持久化、JWKS/多 `kid` 轮换和可撤销 refresh token 明确属于外部身份提供方集成，不再由进程内 demo state 伪装承担 |
-| 5 | generated proto/gRPC 非登录 full-flow 证据 | 当前闭环完成，继续保持实验边界 | 本机功能证据已覆盖 Room/Match/Leaderboard unary、SDK Login/Room/Battle/Leaderboard full-flow、可取消 stream、RBAC、TLS/mTLS、OTLP 和安装包契约；fixed-runner run `29465329265` 在 `7c1bd4b` 上以 15/15 Conan 包严格离线完成 185/185 构建、17/17 gRPC/OTel 测试、SDK consumer 5/5 和 N6 decision gate。结论继续保持 `experimental_only` / `defer_default_transport` |
-| 6 | Developer Guide / 贡献验证矩阵收束 | 进行中 | `docs/ONBOARDING.md` 已提供入口；当前工作是统一 Debug/Release 命令、测试层级与提交验证矩阵，消除文档和实际 workflow 的漂移，不新增重复 gate |
+| P0 | Specialized E2E 测试选择真实性 | Redis/Raft 测试组清单、实际匹配数和逐组结果 | filter 与 GoogleTest 实际名称一致；任何零匹配组直接失败；Redis live 与 Raft 组均有可追溯结果 |
+| P0 | Redis/Raft 真实故障恢复 | 运行中 stop/partition/recover、持续 SDK 流量和一致性 summary | 记录 RTO、失败请求、重复/丢失写入；Raft 覆盖重新选主及落后 follower catch-up |
+| P0 | 告警生命周期闭环 | Prometheus 查询证据和 recovery drill summary | 关键告警可观察到 `inactive -> pending -> firing -> resolved`；未连接外部告警系统时不得声称告警已验证 |
+| P1 | 专项性能矩阵 | 1/2/4 核、matchmaking、leaderboard、TLS、OTel 对照 summary | 使用 CPU affinity/cgroup 限额；至少三轮；输出 P99、吞吐、CPU、RSS、失败率和回归判定 |
+| P1 | 同一候选 8h soak 与容量证据 | 8h、capacity、business-capacity 和专项 E2E artifact | 所有核心产物绑定同一冻结 SHA；8h 实际持续时间不少于 28800 秒；失败轮与复测均保留 |
+| P2 | Runner 与工作流稳定性 | 统一 preflight、工具版本与缓存身份记录 | Python/Go/CMake/Conan/kind/kubectl 版本可复现；workspace、磁盘和缓存身份在运行前检查 |
+| P2 | 文档事实治理 | 开发者入口、性能口径和 workflow 契约检查 | 文档命令可执行；触发方式与 `.github/workflows/` 一致；已完成计划不再作为当前 TODO |
 
-### 当前优先级判断
+## 执行顺序
 
-1. workflow 输入、超时、目录、证书和脚本根路径契约已完成当前收口；后续只接受真实 summary/artifact 作为成功依据。
-2. R2/R3 已完成候选提交 provenance 收口：核心 summary 必须记录候选 SHA、实际 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要，跨提交 artifact 不再允许组合成最终准入结论。`480d5fd` 的真实 2h soak 已由 run `29494894953` 通过；本次事实更新落仓后将形成新的冻结 SHA，因此 R0、2h、R4、R5/R6 和 R2/R3 都必须在该新 SHA 上刷新。
-3. 生产认证边界已经收口：生产 login backend 只验证外部 RS256 JWT，并拒绝本地身份操作。当前代码侧 gRPC observability、安装包契约和 fixed-runner `BOOST_BUILD_GRPC=ON` run 都已完成；下一优先级不再是补 gRPC 入口事实，而是继续保持 `defer_default_transport` 并转向更高优先级的主线事项。
+1. 先修正 Specialized E2E 的测试发现和零匹配失败语义，重新生成 Redis/Raft 证据。
+2. 在真实 Redis/Raft 进程上执行故障恢复，并在故障窗口持续发送 SDK 业务流量。
+3. 将 Prometheus 告警状态查询纳入恢复演练，明确区分指标存在、规则加载和告警生命周期通过。
+4. 完成专项性能矩阵后冻结候选 SHA；冻结后不再修改采集器、门禁或阈值。
+5. 在该 SHA 上运行 8h soak、capacity、business-capacity、Redis/Raft 和告警演练，最后汇总准入结论。
+
+## 当前实现进度
+
+- Specialized E2E 已在运行前发现并验证每个 GTest filter，任一 pattern 零匹配或执行数不一致都会失败。
+- Redis Compose 恢复演练已提供 opt-in：持久标记、停服降级、恢复、数据校验和恢复后 SDK full-flow。
+- Prometheus verifier 已可与 Redis 故障窗口并发执行，并验证 `BoostGatewayRedisUnavailable` 的 `inactive -> pending -> firing -> resolved`。
+- Raft 集成测试已覆盖三节点 TCP Backend RPC、实际 leader 停止、存活节点重新选主、故障期写入和同对象 logical restart 后的缺失日志追赶；持久化进程级恢复仍需 fixed-runner 专项。
+- 性能采集器已支持 Linux `--cpu-set` 并记录实际 affinity；1/2/4 核 fixed-runner 数据仍待采集。
+- Matchmaking join/status/leave 与 Leaderboard submit/top/rank 已具备 opt-in 并发采集、分操作吞吐/P50/P99 和失败门禁；真实 fixed-runner 专项数据仍待采集。
+
+## 证据约束
+
+- summary 必须记录候选 SHA、实际 checkout SHA、workflow/run、runner 标签、构建类型、Conan profile 和 lockfile 摘要。
+- 核心结论不得组合不同 SHA 的 artifact；失败运行不得删除或覆盖。
+- 测试程序返回成功不足以证明覆盖完成，测试组必须记录 discovered/matched/executed 数量。
+- 1/2 核结果必须来自操作系统 CPU 配额或 affinity，不以 `--io-cores` 代替机器资源约束。
+- 8h soak 必须记录实际持续时间、轮次、失败事件、CPU/RSS/fd 和宿主机资源快照。
+
+## 当前边界
+
+- 不恢复 Windows 支持，不把历史 Windows 数据作为发布容量事实。
+- 不扩展 demo、ECS、AOI 或新业务功能。
+- gRPC 继续保持 `experimental_only` / `defer_default_transport`。只有 `grpc-experimental.yml` 的 fixed-runner run 在 `BOOST_BUILD_GRPC=ON` 下刷新证据，也不自动改变默认传输结论。
+- 不立即删除内部 Raft legacy raw JSON；先增加使用计数、allowlist 和拒绝开关，再通过 ADR 决定迁移窗口。
+- Python/C# wrapper、wheel/NuGet、macOS ARM64、JWKS/多 `kid` 和独立 debug symbols 进入 v3.6 ADR，不属于 v3.5.3 实现范围。
+
+## 阶段退出条件
+
+v3.5.3 只有同时满足以下条件才可结束：P0 全部通过；专项性能矩阵不存在未解释的 critical regression；8h 与所有高风险证据来自同一候选 SHA；告警生命周期有真实查询记录；发布清单能够直接定位每个原始 artifact。

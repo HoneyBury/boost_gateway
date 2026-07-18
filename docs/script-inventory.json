@@ -17,6 +17,7 @@
     "scripts/run_long_soak_capacity.py",
     "scripts/verify_sdk_enterprise_delivery.py",
     "scripts/verify_preprod_recovery_drill.py",
+    "scripts/verify_prometheus_alert_states.py",
     "scripts/verify_tls_preprod_multi_run.py"
   ],
   "scripts": {
@@ -25,6 +26,7 @@
     "scripts/lib/__init__.py": {"category": "tool"},
     "scripts/lib/subprocess_utils.py": {"category": "tool"},
 
+    "scripts/aggregate_cpu_capacity_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/aggregate_cpu_capacity_evidence.py"},
     "scripts/analyze_test_results.py": {"category": "tool", "canonical": "scripts/tools/analyze_test_results.py"},
     "scripts/bootstrap_conan.py": {"category": "tool", "canonical": "scripts/tools/bootstrap_conan.py"},
     "scripts/build_docker.py": {"category": "tool", "canonical": "scripts/tools/build_docker.py"},
@@ -117,6 +119,7 @@
     "scripts/verify_specialized_e2e.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_specialized_e2e.py"},
 
     "scripts/verify_preprod_recovery_drill.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_preprod_recovery_drill.py"},
+    "scripts/verify_prometheus_alert_states.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_prometheus_alert_states.py"},
     "scripts/verify_production_candidate_evidence.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_production_candidate_evidence.py"},
 
     "scripts/gates/infrastructure/check_fixed_runner_readiness.py": {"category": "aggregate_gate", "merged_from": ["check_fixed_runner_environment.py", "check_fixed_runner_evidence_plan.py"]},

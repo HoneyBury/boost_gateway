@@ -76,12 +76,33 @@ def git_revision() -> str:
     return result.stdout.strip()
 
 
-def prepare(build_dir: Path, output_dir: Path, lockfile: Path, configuration: str | None) -> Path:
+def worktree_is_clean() -> bool:
+    result = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=all"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        capture_output=True,
+    )
+    return not result.stdout.strip()
+
+
+def prepare(
+    build_dir: Path,
+    output_dir: Path,
+    lockfile: Path,
+    configuration: str | None,
+    *,
+    allow_dirty: bool = False,
+) -> Path:
     build_dir = build_dir.resolve()
     output_dir = output_dir.resolve()
     lockfile = lockfile.resolve()
     if not lockfile.is_file():
         raise FileNotFoundError(f"Conan lockfile does not exist: {lockfile}")
+    clean = worktree_is_clean()
+    if not clean and not allow_dirty:
+        raise RuntimeError("refusing to stage Docker evidence from a dirty Git worktree")
 
     bin_dir = output_dir / "bin"
     if output_dir.exists():
@@ -114,6 +135,7 @@ def prepare(build_dir: Path, output_dir: Path, lockfile: Path, configuration: st
         "created_at": datetime.now(timezone.utc).isoformat(),
         "git_revision": git_revision(),
         "dependency_provider": "conan",
+        "worktree_clean": clean,
         "conan_lockfile": str(lockfile.relative_to(ROOT)) if lockfile.is_relative_to(ROOT) else str(lockfile),
         "conan_lockfile_sha256": sha256(lockfile),
         "binaries": entries,
@@ -129,8 +151,15 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, default=ROOT / "runtime/docker-rootfs")
     parser.add_argument("--lockfile", type=Path, default=DEFAULT_LOCKFILE)
     parser.add_argument("--configuration", help="Multi-config build configuration, for example Release")
+    parser.add_argument("--allow-dirty", action="store_true", help="Allow non-evidence developer images from a dirty worktree")
     args = parser.parse_args()
-    manifest = prepare(args.build_dir, args.output_dir, args.lockfile, args.configuration)
+    manifest = prepare(
+        args.build_dir,
+        args.output_dir,
+        args.lockfile,
+        args.configuration,
+        allow_dirty=args.allow_dirty,
+    )
     print(f"Docker runtime context prepared: {manifest}")
     return 0
 

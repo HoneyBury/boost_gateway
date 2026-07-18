@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
+import math
 import os
 import platform
 import re
@@ -12,9 +14,11 @@ import shutil
 import statistics
 import signal
 import socket
+import struct
 import subprocess
 import sys
 import time
+import zlib
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +32,86 @@ def log_step(message: str) -> None:
 
 def is_windows() -> bool:
     return os.name == "nt"
+
+
+def parse_cpu_set(value: str) -> set[int]:
+    """Parse a Linux CPU list such as ``0-3,6`` into CPU identifiers."""
+    cpus: set[int] = set()
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise ValueError("CPU set contains an empty segment")
+        if "-" in part:
+            bounds = part.split("-")
+            if len(bounds) != 2 or not all(bound.isdigit() for bound in bounds):
+                raise ValueError(f"invalid CPU range: {part}")
+            first, last = (int(bound) for bound in bounds)
+            if first > last:
+                raise ValueError(f"CPU range is reversed: {part}")
+            cpus.update(range(first, last + 1))
+        elif part.isdigit():
+            cpus.add(int(part))
+        else:
+            raise ValueError(f"invalid CPU identifier: {part}")
+    if not cpus:
+        raise ValueError("CPU set must select at least one CPU")
+    return cpus
+
+
+def format_cpu_set(cpus: set[int]) -> str:
+    """Render CPU identifiers in the canonical Linux list form."""
+    ordered = sorted(cpus)
+    ranges: list[str] = []
+    start = previous = ordered[0]
+    for cpu in ordered[1:]:
+        if cpu == previous + 1:
+            previous = cpu
+            continue
+        ranges.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = cpu
+    ranges.append(str(start) if start == previous else f"{start}-{previous}")
+    return ",".join(ranges)
+
+
+def apply_cpu_affinity(cpu_set: str) -> dict[str, Any]:
+    """Apply and verify affinity before children are spawned so they inherit it."""
+    constraint: dict[str, Any] = {
+        "type": "linux_cpu_affinity",
+        "requested": cpu_set,
+        "applied": False,
+        "allowed_cpu_set_before": "",
+        "effective_cpu_set": "",
+        "cpu_count": 0,
+    }
+    if not cpu_set:
+        constraint["type"] = "none"
+        return constraint
+    if platform.system() != "Linux" or not hasattr(os, "sched_setaffinity") or not hasattr(os, "sched_getaffinity"):
+        raise RuntimeError("--cpu-set requires Linux sched affinity support")
+
+    requested = parse_cpu_set(cpu_set)
+    available = set(os.sched_getaffinity(0))
+    unavailable = requested - available
+    if unavailable:
+        raise ValueError(
+            f"requested CPUs are outside the collector's allowed set: {format_cpu_set(unavailable)} "
+            f"(allowed: {format_cpu_set(available)})"
+        )
+    os.sched_setaffinity(0, requested)
+    effective = set(os.sched_getaffinity(0))
+    if effective != requested:
+        raise RuntimeError(
+            f"CPU affinity verification failed: requested {format_cpu_set(requested)}, "
+            f"effective {format_cpu_set(effective)}"
+        )
+    constraint.update({
+        "requested": format_cpu_set(requested),
+        "applied": True,
+        "allowed_cpu_set_before": format_cpu_set(available),
+        "effective_cpu_set": format_cpu_set(effective),
+        "cpu_count": len(effective),
+    })
+    return constraint
 
 
 def exe_name(base: str) -> str:
@@ -225,7 +309,7 @@ def process_snapshot(pid: int) -> dict[str, Any]:
             return 0.0
         return round(float(parts[0]) / 1024.0, 2)
 
-    return {
+    snapshot = {
         "pid": pid,
         "process_name": info.get("Name", ""),
         "working_set_mb": parse_kb(info.get("VmRSS")),
@@ -235,6 +319,12 @@ def process_snapshot(pid: int) -> dict[str, Any]:
         "threads": int(info.get("Threads", "0")),
         "cpu_seconds": process_cpu_seconds(pid),
     }
+    if hasattr(os, "sched_getaffinity"):
+        with suppress(OSError, ProcessLookupError, PermissionError):
+            affinity = set(os.sched_getaffinity(pid))
+            snapshot["cpu_affinity"] = format_cpu_set(affinity)
+            snapshot["cpu_affinity_count"] = len(affinity)
+    return snapshot
 
 
 class ManagedProcess:
@@ -256,6 +346,14 @@ class ManagedProcess:
             env=merged_env,
         )
 
+    def log_text(self) -> str:
+        self.stdout_handle.flush()
+        self.stderr_handle.flush()
+        return "\n".join((
+            self.stdout_path.read_text(encoding="utf-8", errors="replace"),
+            self.stderr_path.read_text(encoding="utf-8", errors="replace"),
+        ))
+
     @property
     def pid(self) -> int:
         return self.proc.pid
@@ -273,6 +371,45 @@ class ManagedProcess:
                     self.proc.kill()
         self.stdout_handle.close()
         self.stderr_handle.close()
+
+
+def wait_process_log(process: ManagedProcess, marker: str, timeout_seconds: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if marker in process.log_text():
+            return True
+        if process.proc.poll() is not None:
+            break
+        time.sleep(0.1)
+    return marker in process.log_text()
+
+
+def redis_command(host: str, port: int, *parts: str, timeout_seconds: float = 3.0) -> str | int | None:
+    """Execute the small RESP subset needed to prove benchmark persistence."""
+    encoded_parts = [part.encode("utf-8") for part in parts]
+    request = [f"*{len(encoded_parts)}\r\n".encode("ascii")]
+    for part in encoded_parts:
+        request.extend((f"${len(part)}\r\n".encode("ascii"), part, b"\r\n"))
+    with socket.create_connection((host, port), timeout=timeout_seconds) as connection:
+        connection.settimeout(timeout_seconds)
+        connection.sendall(b"".join(request))
+        prefix = recv_exact(connection, 1)
+        line = bytearray()
+        while not line.endswith(b"\r\n"):
+            line.extend(recv_exact(connection, 1))
+        value = bytes(line[:-2]).decode("utf-8", errors="strict")
+        if prefix == b"+":
+            return value
+        if prefix == b":":
+            return int(value)
+        if prefix == b"$":
+            length = int(value)
+            if length < 0:
+                return None
+            return recv_exact(connection, length + 2)[:-2].decode("utf-8", errors="strict")
+        if prefix == b"-":
+            raise RuntimeError(f"Redis command failed: {value}")
+        raise RuntimeError(f"unsupported Redis response prefix: {prefix!r}")
 
 
 def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
@@ -358,6 +495,680 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     if not result:
         raise RuntimeError(f"Bench case did not emit JSON result: {case_name}")
     return result
+
+
+BUSINESS_OPERATION_SEQUENCES = {
+    "matchmaking": (
+        ("match_join", 6001, 6002),
+        ("match_status", 6006, 6007),
+        ("match_leave", 6004, 6005),
+    ),
+    "leaderboard": (
+        ("leaderboard_submit", 7001, 7002),
+        ("leaderboard_top", 7003, 7004),
+        ("leaderboard_rank", 7005, 7006),
+    ),
+}
+
+
+def encode_business_packet(
+    message_id: int,
+    request_id: int,
+    body: str,
+    *,
+    version: int = 1,
+    flags: int = 0,
+) -> bytes:
+    encoded_body = body.encode("utf-8")
+    payload_length = 16 + len(encoded_body)
+    return struct.pack("!IBHIIiB", payload_length, version, message_id, request_id, 0, 0, flags) + encoded_body
+
+
+def recv_exact(sock: socket.socket, size: int, deadline: float | None = None) -> bytes:
+    chunks: list[bytes] = []
+    received = 0
+    while received < size:
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("gateway response deadline exceeded")
+            sock.settimeout(remaining)
+        chunk = sock.recv(size - received)
+        if not chunk:
+            raise ConnectionError("gateway closed the connection")
+        chunks.append(chunk)
+        received += len(chunk)
+    return b"".join(chunks)
+
+
+def recv_business_packet(sock: socket.socket, deadline: float | None = None) -> dict[str, Any]:
+    payload_length = struct.unpack("!I", recv_exact(sock, 4, deadline))[0]
+    if payload_length < 16 or payload_length > 1024 * 1024:
+        raise ValueError(f"invalid gateway frame length: {payload_length}")
+    payload = recv_exact(sock, payload_length, deadline)
+    version, message_id, request_id, sequence_number, error_code, flags = struct.unpack(
+        "!BHIIiB", payload[:16]
+    )
+    return {
+        "version": version,
+        "message_id": message_id,
+        "request_id": request_id,
+        "sequence_number": sequence_number,
+        "error_code": error_code,
+        "flags": flags,
+        "body_bytes": payload[16:],
+        "body": payload[16:].decode("utf-8", errors="replace") if flags == 0 else "",
+    }
+
+
+class BusinessOperationClient:
+    PUSH_MESSAGE_IDS = {1003, 1004, 3009, 4005, 4006, 6003}
+
+    def __init__(self, host: str, port: int, timeout_seconds: float) -> None:
+        self.sock = socket.create_connection((host, port), timeout=timeout_seconds)
+        self.sock.settimeout(timeout_seconds)
+        self.timeout_seconds = timeout_seconds
+        self.next_request_id = 1
+
+    def close(self) -> None:
+        with suppress(OSError):
+            self.sock.close()
+
+    def request(
+        self,
+        message_id: int,
+        expected_message_id: int,
+        body: str,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        request_timeout = timeout_seconds or self.timeout_seconds
+        deadline = time.monotonic() + request_timeout
+        self.sock.settimeout(request_timeout)
+        request_id = self.next_request_id
+        self.next_request_id += 1
+        self.sock.sendall(encode_business_packet(message_id, request_id, body))
+        while True:
+            response = recv_business_packet(self.sock, deadline)
+            if response["version"] != 1:
+                raise ValueError(f"unsupported protocol version: {response['version']}")
+            if response["flags"] & ~0x01:
+                raise ValueError(
+                    f"unsupported response flags: 0x{response['flags']:02x}"
+                )
+            if response["flags"] & 0x01:
+                compressed = response["body_bytes"]
+                if len(compressed) < 4:
+                    raise ValueError("invalid compressed response: missing original length")
+                expected_length = int.from_bytes(compressed[:4], "little")
+                try:
+                    decoded = zlib.decompress(compressed[4:])
+                except zlib.error as exc:
+                    raise ValueError(f"invalid compressed response: {exc}") from exc
+                if len(decoded) != expected_length:
+                    raise ValueError(
+                        f"invalid compressed response length: expected {expected_length}, got {len(decoded)}"
+                    )
+                response["body"] = decoded.decode("utf-8", errors="strict")
+            if response["message_id"] in self.PUSH_MESSAGE_IDS:
+                continue
+            if response["request_id"] != request_id:
+                raise ValueError(
+                    f"unexpected request id {response['request_id']}, expected {request_id}"
+                )
+            response["ok"] = (
+                response["message_id"] == expected_message_id
+                and response["error_code"] == 0
+            )
+            return response
+
+
+def business_operation_body(
+    scenario: str,
+    operation: str,
+    user_id: str,
+    client_index: int,
+    iteration: int,
+) -> str:
+    if scenario == "matchmaking":
+        mmr = 1000 + (client_index % 20)
+        return f"{user_id}|{mmr if operation == 'match_join' else 0}|1v1"
+    if operation == "leaderboard_submit":
+        score = 1_000_000_000 + client_index * 100_000 + iteration
+        return f"{user_id}|perf-{client_index}|{score}"
+    if operation == "leaderboard_top":
+        return "20"
+    return user_id
+
+
+def run_business_operation_worker(
+    host: str,
+    port: int,
+    scenario: str,
+    client_index: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+) -> dict[str, Any]:
+    if scenario != "leaderboard":
+        raise ValueError("generic business operation worker only supports leaderboard")
+    user_id = f"perf_{scenario}_{run_id}_{client_index}"
+    records: list[dict[str, Any]] = []
+    client: BusinessOperationClient | None = None
+    try:
+        client = BusinessOperationClient(host, port, timeout_seconds)
+        login = client.request(2001, 2002, f"{user_id}|token:{user_id}|{user_id}")
+        if not login["ok"]:
+            return {"client_index": client_index, "setup_error": f"login failed: {login['body'][:200]}", "records": []}
+
+        for iteration in range(iterations):
+            for operation, request_id, response_id in BUSINESS_OPERATION_SEQUENCES[scenario]:
+                body = business_operation_body(scenario, operation, user_id, client_index, iteration)
+                started = time.perf_counter()
+                try:
+                    response = client.request(request_id, response_id, body)
+                    latency_ms = (time.perf_counter() - started) * 1000.0
+                    records.append({
+                        "operation": operation,
+                        "ok": response["ok"],
+                        "latency_ms": latency_ms,
+                        "error": "" if response["ok"] else f"error={response['error_code']} body={response['body'][:200]}",
+                    })
+                except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+                    records.append({
+                        "operation": operation,
+                        "ok": False,
+                        "latency_ms": (time.perf_counter() - started) * 1000.0,
+                        "error": str(exc)[:200],
+                    })
+        return {"client_index": client_index, "setup_error": "", "records": records}
+    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        return {"client_index": client_index, "setup_error": str(exc)[:200], "records": records}
+    finally:
+        if client is not None:
+            client.close()
+
+
+def setup_matchmaking_client(
+    host: str,
+    port: int,
+    client_index: int,
+    timeout_seconds: float,
+    run_id: str,
+    iteration: int,
+) -> dict[str, Any]:
+    user_id = f"perf_matchmaking_{run_id}_{iteration}_{client_index}"
+    client: BusinessOperationClient | None = None
+    try:
+        client = BusinessOperationClient(host, port, timeout_seconds)
+        login = client.request(2001, 2002, f"{user_id}|token:{user_id}|{user_id}")
+        if not login["ok"]:
+            raise ValueError(f"login failed: {login['body'][:200]}")
+        return {"client_index": client_index, "user_id": user_id, "client": client, "error": ""}
+    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        if client is not None:
+            client.close()
+        return {"client_index": client_index, "user_id": user_id, "client": None, "error": str(exc)[:200]}
+
+
+def execute_match_request(
+    entry: dict[str, Any],
+    operation: str,
+    request_id: int,
+    response_id: int,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        body = business_operation_body("matchmaking", operation, entry["user_id"], entry["client_index"], 0)
+        response = entry["client"].request(request_id, response_id, body, timeout_seconds)
+        return {
+            "operation": operation,
+            "ok": response["ok"],
+            "latency_ms": (time.perf_counter() - started) * 1000.0,
+            "error": "" if response["ok"] else f"error={response['error_code']} body={response['body'][:200]}",
+        }
+    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        return {
+            "operation": operation,
+            "ok": False,
+            "latency_ms": (time.perf_counter() - started) * 1000.0,
+            "error": str(exc)[:200],
+        }
+
+
+def poll_until_matched(
+    entry: dict[str, Any],
+    match_started: float,
+    match_deadline: float,
+) -> dict[str, Any]:
+    polls = 0
+    while time.monotonic() < match_deadline:
+        remaining = match_deadline - time.monotonic()
+        try:
+            body = business_operation_body("matchmaking", "match_status", entry["user_id"], entry["client_index"], 0)
+            response = entry["client"].request(6006, 6007, body, remaining)
+            polls += 1
+            if not response["ok"]:
+                raise ValueError(f"error={response['error_code']} body={response['body'][:200]}")
+            status = json.loads(response["body"])
+            if not isinstance(status, dict):
+                raise ValueError("match status response is not a JSON object")
+            if status.get("matched") is True:
+                return {
+                    "operation": "match_status",
+                    "ok": True,
+                    "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+                    "poll_attempts": polls,
+                    "error": "",
+                }
+        except (ConnectionError, OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            return {
+                "operation": "match_status",
+                "ok": False,
+                "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+                "poll_attempts": polls,
+                "error": str(exc)[:200],
+            }
+        time.sleep(min(0.05, max(0.0, match_deadline - time.monotonic())))
+    return {
+        "operation": "match_status",
+        "ok": False,
+        "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+        "poll_attempts": polls,
+        "error": "matchmaking deadline exceeded before matched=true",
+    }
+
+
+def run_matchmaking_scenario(
+    host: str,
+    port: int,
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    records: list[dict[str, Any]] = []
+    setup_failures: list[dict[str, Any]] = []
+    for iteration in range(iterations):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
+            entries = list(executor.map(
+                lambda index: setup_matchmaking_client(host, port, index, timeout_seconds, run_id, iteration),
+                range(clients),
+            ))
+        setup_failures.extend(
+            {"iteration": iteration, "client_index": entry["client_index"], "error": entry["error"]}
+            for entry in entries
+            if entry["error"]
+        )
+        active = [entry for entry in entries if entry["client"] is not None]
+        try:
+            match_started = time.perf_counter()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active))) as executor:
+                join_records = list(executor.map(
+                    lambda entry: execute_match_request(entry, "match_join", 6001, 6002, timeout_seconds),
+                    active,
+                ))
+            records.extend(join_records)
+
+            match_deadline = time.monotonic() + timeout_seconds
+            joined = [entry for entry, record in zip(active, join_records, strict=True) if record["ok"]]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(joined))) as executor:
+                status_records = list(executor.map(
+                    lambda entry: poll_until_matched(entry, match_started, match_deadline),
+                    joined,
+                ))
+            records.extend(status_records)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active))) as executor:
+                records.extend(executor.map(
+                    lambda entry: execute_match_request(entry, "match_leave", 6004, 6005, timeout_seconds),
+                    active,
+                ))
+        finally:
+            for entry in active:
+                entry["client"].close()
+
+    duration_seconds = round(time.perf_counter() - started, 6)
+    operations = summarize_business_operations(
+        ["match_join", "match_status", "match_leave"], records, duration_seconds
+    )
+    expected_per_operation = clients * iterations
+    matched_latencies = [
+        float(record["latency_ms"])
+        for record in records
+        if record["operation"] == "match_status" and record["ok"]
+    ]
+    passed = not setup_failures and all(
+        operation["attempted"] == expected_per_operation and operation["failed"] == 0
+        for operation in operations
+    )
+    return {
+        "scenario": "matchmaking",
+        "passed": passed,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "duration_seconds": duration_seconds,
+        "expected_per_operation": expected_per_operation,
+        "setup_failures": setup_failures,
+        "status_poll_attempts": sum(int(record.get("poll_attempts", 0)) for record in records),
+        "time_to_match_samples_ms": matched_latencies,
+        "time_to_match_p50_ms": latency_percentile(matched_latencies, 0.50),
+        "time_to_match_p99_ms": latency_percentile(matched_latencies, 0.99),
+        "operations": operations,
+    }
+
+
+def latency_percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(percentile * len(ordered)) - 1)
+    return round(ordered[index], 3)
+
+
+def summarize_business_operations(
+    operation_names: list[str],
+    records: list[dict[str, Any]],
+    duration_seconds: float,
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for operation in operation_names:
+        operation_records = [record for record in records if record["operation"] == operation]
+        latencies = [float(record["latency_ms"]) for record in operation_records]
+        succeeded = sum(1 for record in operation_records if record["ok"])
+        errors: dict[str, int] = {}
+        for record in operation_records:
+            if not record["ok"]:
+                error = str(record.get("error") or "unknown")
+                errors[error] = errors.get(error, 0) + 1
+        summaries.append({
+            "operation": operation,
+            "attempted": len(operation_records),
+            "succeeded": succeeded,
+            "failed": len(operation_records) - succeeded,
+            "throughput_ops_per_sec": round(len(operation_records) / max(duration_seconds, 0.000001), 3),
+            "latency_p50_ms": latency_percentile(latencies, 0.50),
+            "latency_p99_ms": latency_percentile(latencies, 0.99),
+            "errors": errors,
+        })
+    return summaries
+
+
+def run_leaderboard_scenario(
+    host: str,
+    port: int,
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+    persistence_mode: str,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
+        futures = [
+            executor.submit(
+                run_business_operation_worker,
+                host,
+                port,
+                "leaderboard",
+                client_index,
+                iterations,
+                timeout_seconds,
+                run_id,
+            )
+            for client_index in range(clients)
+        ]
+        workers = [future.result() for future in futures]
+    duration_seconds = round(time.perf_counter() - started, 6)
+    records = [record for worker in workers for record in worker["records"]]
+    operation_names = [item[0] for item in BUSINESS_OPERATION_SEQUENCES["leaderboard"]]
+    operations = summarize_business_operations(operation_names, records, duration_seconds)
+    setup_failures = [
+        {"client_index": worker["client_index"], "error": worker["setup_error"]}
+        for worker in workers
+        if worker["setup_error"]
+    ]
+    expected_per_operation = clients * iterations
+    passed = not setup_failures and all(
+        operation["attempted"] == expected_per_operation and operation["failed"] == 0
+        for operation in operations
+    )
+    return {
+        "scenario": "leaderboard",
+        "passed": passed,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "duration_seconds": duration_seconds,
+        "expected_per_operation": expected_per_operation,
+        "setup_failures": setup_failures,
+        "persistence_mode": persistence_mode,
+        "redis_comparison": False,
+        "operations": operations,
+    }
+
+
+def metric_distribution(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "median": None, "max": None}
+    return {
+        "min": round(min(values), 3),
+        "median": round(statistics.median(values), 3),
+        "max": round(max(values), 3),
+    }
+
+
+def aggregate_business_operation_runs(
+    scenarios: list[str],
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    aggregates: list[dict[str, Any]] = []
+    for scenario_name in scenarios:
+        scenario_runs = [
+            scenario
+            for run in runs
+            for scenario in run["scenarios"]
+            if scenario["scenario"] == scenario_name
+        ]
+        operation_names = [item[0] for item in BUSINESS_OPERATION_SEQUENCES[scenario_name]]
+        operation_aggregates: list[dict[str, Any]] = []
+        for operation_name in operation_names:
+            operation_runs = [
+                operation
+                for scenario in scenario_runs
+                for operation in scenario["operations"]
+                if operation["operation"] == operation_name
+            ]
+            operation_aggregates.append({
+                "operation": operation_name,
+                "attempted": sum(int(operation["attempted"]) for operation in operation_runs),
+                "succeeded": sum(int(operation["succeeded"]) for operation in operation_runs),
+                "failed": sum(int(operation["failed"]) for operation in operation_runs),
+                "throughput_ops_per_sec": metric_distribution([
+                    float(operation["throughput_ops_per_sec"]) for operation in operation_runs
+                ]),
+                "latency_p50_ms": metric_distribution([
+                    float(operation["latency_p50_ms"])
+                    for operation in operation_runs
+                    if operation["latency_p50_ms"] is not None
+                ]),
+                "latency_p99_ms": metric_distribution([
+                    float(operation["latency_p99_ms"])
+                    for operation in operation_runs
+                    if operation["latency_p99_ms"] is not None
+                ]),
+            })
+        aggregate: dict[str, Any] = {
+            "scenario": scenario_name,
+            "runs": len(scenario_runs),
+            "passed_runs": sum(1 for scenario in scenario_runs if scenario["passed"]),
+            "passed": len(scenario_runs) == len(runs) and all(scenario["passed"] for scenario in scenario_runs),
+            "operations": operation_aggregates,
+        }
+        if scenario_name == "matchmaking":
+            time_to_match_samples = [
+                float(value)
+                for scenario in scenario_runs
+                for value in scenario.get("time_to_match_samples_ms", [])
+            ]
+            aggregate.update({
+                "time_to_match_samples": len(time_to_match_samples),
+                "time_to_match_p50_ms": latency_percentile(time_to_match_samples, 0.50),
+                "time_to_match_p99_ms": latency_percentile(time_to_match_samples, 0.99),
+            })
+        if scenario_name == "leaderboard":
+            persistence_modes = sorted({str(scenario["persistence_mode"]) for scenario in scenario_runs})
+            aggregate.update({
+                "persistence_mode": persistence_modes[0] if len(persistence_modes) == 1 else "mixed",
+                "redis_comparison": False,
+            })
+        aggregates.append(aggregate)
+    return aggregates
+
+
+def run_business_operation_perf(
+    host: str,
+    port: int,
+    scenarios: list[str],
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    repetitions: int = 1,
+    leaderboard_persistence_mode: str = "in_memory_only",
+) -> dict[str, Any]:
+    selected_scenarios = list(dict.fromkeys(scenarios))
+    if clients <= 0 or iterations <= 0 or repetitions <= 0 or timeout_seconds <= 0:
+        raise ValueError("business operation clients, iterations, repetitions, and timeout must be positive")
+    if "matchmaking" in selected_scenarios and clients % 2 != 0:
+        raise ValueError("1v1 matchmaking requires an even client count")
+    runs: list[dict[str, Any]] = []
+    for repetition in range(repetitions):
+        scenario_summaries: list[dict[str, Any]] = []
+        for scenario in selected_scenarios:
+            run_id = f"{time.monotonic_ns()}_{repetition + 1}"
+            if scenario == "matchmaking":
+                scenario_summaries.append(run_matchmaking_scenario(
+                    host, port, clients, iterations, timeout_seconds, run_id
+                ))
+            else:
+                scenario_summaries.append(run_leaderboard_scenario(
+                    host,
+                    port,
+                    clients,
+                    iterations,
+                    timeout_seconds,
+                    run_id,
+                    leaderboard_persistence_mode,
+                ))
+        runs.append({
+            "run": repetition + 1,
+            "passed": all(scenario["passed"] for scenario in scenario_summaries),
+            "scenarios": scenario_summaries,
+        })
+    scenario_aggregates = aggregate_business_operation_runs(selected_scenarios, runs)
+    overall_pass = len(runs) == repetitions and all(run["passed"] for run in runs)
+    return {
+        "summary_version": 2,
+        "overall_pass": overall_pass,
+        "passed": overall_pass,
+        "gateway_host": host,
+        "gateway_port": port,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "requested_runs": repetitions,
+        "completed_runs": len(runs),
+        "runs": runs,
+        "scenario_aggregates": scenario_aggregates,
+        "leaderboard_persistence": {
+            "mode": leaderboard_persistence_mode,
+            "source": "explicit collector backend configuration",
+            "redis_comparison": False,
+        } if "leaderboard" in selected_scenarios else None,
+    }
+
+
+def leaderboard_aggregate(summary: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        (item for item in summary.get("scenario_aggregates", []) if item.get("scenario") == "leaderboard"),
+        {},
+    )
+
+
+def build_leaderboard_persistence_comparison(
+    in_memory_summary: dict[str, Any],
+    redis_summary: dict[str, Any],
+    *,
+    repetitions: int,
+    redis_host: str,
+    redis_port: int,
+    redis_key: str,
+    in_memory_log_verified: bool,
+    redis_log_verified: bool,
+    ping_before: bool,
+    ping_after: bool,
+    redis_zcard: int,
+    expected_min_zcard: int,
+) -> dict[str, Any]:
+    in_memory = leaderboard_aggregate(in_memory_summary)
+    redis = leaderboard_aggregate(redis_summary)
+    deltas: list[dict[str, Any]] = []
+    redis_operations = {item["operation"]: item for item in redis.get("operations", [])}
+    for operation in in_memory.get("operations", []):
+        peer = redis_operations.get(operation.get("operation"))
+        if not peer:
+            continue
+        metrics: dict[str, Any] = {}
+        for metric in ("throughput_ops_per_sec", "latency_p50_ms", "latency_p99_ms"):
+            baseline = operation.get(metric, {}).get("median")
+            observed = peer.get(metric, {}).get("median")
+            if baseline is None or observed is None:
+                continue
+            metrics[metric] = {
+                "in_memory_median": baseline,
+                "redis_median": observed,
+                "redis_minus_in_memory": round(float(observed) - float(baseline), 3),
+                "delta_percent": round((float(observed) - float(baseline)) / float(baseline) * 100.0, 3)
+                if float(baseline) != 0.0 else None,
+            }
+        deltas.append({"operation": operation.get("operation"), "metrics": metrics})
+
+    modes_passed = all(
+        aggregate.get("passed") is True
+        and int(aggregate.get("runs", 0)) == repetitions
+        and int(aggregate.get("passed_runs", 0)) == repetitions
+        and all(int(operation.get("failed", -1)) == 0 for operation in aggregate.get("operations", []))
+        for aggregate in (in_memory, redis)
+    )
+    redis_proof = {
+        "host": redis_host,
+        "port": redis_port,
+        "key": redis_key,
+        "ping_before": ping_before,
+        "ping_after": ping_after,
+        "zcard": redis_zcard,
+        "expected_min_zcard": expected_min_zcard,
+        "verified": ping_before and ping_after and redis_zcard >= expected_min_zcard,
+    }
+    verified = modes_passed and in_memory_log_verified and redis_log_verified and redis_proof["verified"]
+    return {
+        "requested": True,
+        "verified": verified,
+        "passed": verified,
+        "repetitions_per_mode": repetitions,
+        "execution_order": ["in_memory_only", "redis_primary_with_memory_shadow"],
+        "modes": {
+            "in_memory_only": {
+                "log_verified": in_memory_log_verified,
+                "summary": in_memory_summary,
+            },
+            "redis_primary_with_memory_shadow": {
+                "log_verified": redis_log_verified,
+                "summary": redis_summary,
+            },
+        },
+        "redis_proof": redis_proof,
+        "deltas": deltas,
+    }
 
 
 def estimate_battle_max_frames(cases: list[dict[str, Any]]) -> int:
@@ -712,6 +1523,7 @@ def aggregate_metric(resource_case: dict[str, Any], service: str, metric: str, s
 
 
 def render_markdown_report(summary: dict[str, Any]) -> str:
+    resource_constraint = summary.get("resource_constraint", {})
     lines = [
         "# v2 Performance Baseline Report",
         "",
@@ -722,6 +1534,7 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
         f"- Preset: `{summary.get('preset', 'unknown')}`",
         f"- Repetitions: `{summary.get('repetitions', 'unknown')}`",
         f"- Backend pool size: `{summary.get('topology', {}).get('backend_connection_pool_size', 'unknown')}`",
+        f"- CPU affinity: `{resource_constraint.get('effective_cpu_set') or 'unconstrained'}`",
         f"- Output dir: `{summary.get('output_dir', 'unknown')}`",
         "",
         "## Release Gates",
@@ -773,6 +1586,36 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"{fmt_number(aggregate.get('failed_clients', {}).get('max'))} | "
             f"{fmt_number(aggregate.get('forced_timeout'))} |"
         )
+
+    business_operation_perf = summary.get("business_operation_perf")
+    if isinstance(business_operation_perf, dict):
+        lines.extend([
+            "",
+            "## Business Operation Performance",
+            "",
+            f"- Runs: {business_operation_perf.get('completed_runs', 0)}/{business_operation_perf.get('requested_runs', 0)}",
+            "",
+            "| Scenario | Operation | Attempted | Succeeded | Failed | Throughput ops/s | P50 ms | P99 ms |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for scenario in business_operation_perf.get("scenario_aggregates", []):
+            for operation in scenario.get("operations", []):
+                lines.append(
+                    f"| `{scenario.get('scenario')}` | `{operation.get('operation')}` | "
+                    f"{fmt_number(operation.get('attempted'))} | "
+                    f"{fmt_number(operation.get('succeeded'))} | "
+                    f"{fmt_number(operation.get('failed'))} | "
+                    f"{fmt_number(operation.get('throughput_ops_per_sec', {}).get('median'), 3)} | "
+                    f"{fmt_number(operation.get('latency_p50_ms', {}).get('median'), 3)} | "
+                    f"{fmt_number(operation.get('latency_p99_ms', {}).get('median'), 3)} |"
+                )
+            if scenario.get("scenario") == "matchmaking":
+                lines.append(
+                    f"| `matchmaking` | `time_to_match` | {fmt_number(scenario.get('time_to_match_samples'))} | "
+                    f"{fmt_number(scenario.get('time_to_match_samples'))} | 0 | n/a | "
+                    f"{fmt_number(scenario.get('time_to_match_p50_ms'), 3)} | "
+                    f"{fmt_number(scenario.get('time_to_match_p99_ms'), 3)} |"
+                )
 
     business_flow = summary.get("business_flow")
     if isinstance(business_flow, dict):
@@ -960,6 +1803,11 @@ def main() -> int:
     parser.add_argument("--http-port", type=int, default=9080)
     parser.add_argument("--io-cores", type=int, default=4)
     parser.add_argument(
+        "--cpu-set",
+        default="",
+        help="Linux CPU affinity list (for example 0 or 0-1,4); inherited by all benchmark child processes.",
+    )
+    parser.add_argument(
         "--include-business-flow",
         action="store_true",
         help="Run SDK full-flow business coverage after pressure cases and include it in the report.",
@@ -989,6 +1837,24 @@ def main() -> int:
         help="Override V2_BATTLE_ROUTE_WORKERS for battle input backend route offload experiments.",
     )
     parser.add_argument(
+        "--business-operation-scenario",
+        action="append",
+        choices=sorted(BUSINESS_OPERATION_SEQUENCES),
+        default=[],
+        help="Run an opt-in concurrent business operation scenario; repeat for matchmaking and leaderboard.",
+    )
+    parser.add_argument("--business-operation-clients", type=int, default=16)
+    parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--business-operation-timeout-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--leaderboard-redis-comparison",
+        action="store_true",
+        help="Run three-or-more leaderboard repetitions in explicit in-memory and Redis-backed modes.",
+    )
+    parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
+    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
+    parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument(
         "--case",
         action="append",
         default=[],
@@ -996,6 +1862,27 @@ def main() -> int:
     )
     parser.add_argument("--output-root", default="")
     args = parser.parse_args()
+
+    try:
+        resource_constraint = apply_cpu_affinity(args.cpu_set)
+    except (RuntimeError, ValueError, OSError) as exc:
+        parser.error(str(exc))
+    if args.business_operation_scenario and (
+        args.business_operation_clients <= 0
+        or args.business_operation_iterations <= 0
+        or args.business_operation_timeout_seconds <= 0
+        or args.repetitions <= 0
+    ):
+        parser.error("business operation clients, iterations, and timeout must be positive")
+    if "matchmaking" in args.business_operation_scenario and args.business_operation_clients % 2 != 0:
+        parser.error("--business-operation-clients must be even for the 1v1 matchmaking profile")
+    if args.leaderboard_redis_comparison:
+        if "leaderboard" not in args.business_operation_scenario:
+            parser.error("--leaderboard-redis-comparison requires --business-operation-scenario leaderboard")
+        if args.repetitions < 3:
+            parser.error("--leaderboard-redis-comparison requires --repetitions >= 3")
+        if not 1 <= args.leaderboard_redis_port <= 65535:
+            parser.error("--leaderboard-redis-port must be between 1 and 65535")
 
     root = Path(__file__).resolve().parents[2]
     build_dir = Path(args.build_dir).resolve()
@@ -1052,14 +1939,28 @@ def main() -> int:
         ))
         wait_tcp_port("127.0.0.1", args.matchmaking_port)
 
-        managed.append(ManagedProcess(
+        leaderboard_process = ManagedProcess(
             "v2_leaderboard_backend",
             executables["leaderboard"],
             [str(args.leaderboard_port)],
             log_dir,
-            {"SERVICE_PORT": str(args.leaderboard_port), "LEADERBOARD_PORT": str(args.leaderboard_port)},
-        ))
+            {
+                "SERVICE_PORT": str(args.leaderboard_port),
+                "LEADERBOARD_PORT": str(args.leaderboard_port),
+                "LEADERBOARD_CONFIG_PATH": str(root / "config/environments/local/leaderboard.json"),
+                "REDIS_HOST": "",
+                "BOOST_DISABLE_REDIS_AUTO_CONNECT": "1",
+                "BOOST_LOG_LEVEL": "info",
+            },
+        )
+        managed.append(leaderboard_process)
         wait_tcp_port("127.0.0.1", args.leaderboard_port)
+        in_memory_log_verified = wait_process_log(
+            leaderboard_process,
+            "Redis auto-connect disabled",
+        )
+        if not in_memory_log_verified:
+            raise RuntimeError("in-memory leaderboard startup did not prove Redis auto-connect was disabled")
 
         gateway_args = [
             "--port", str(args.gateway_port),
@@ -1085,7 +1986,8 @@ def main() -> int:
             gateway_env["V2_BATTLE_FRAME_PUSH_EVERY"] = str(args.battle_frame_push_every)
         if args.battle_route_workers > 0:
             gateway_env["V2_BATTLE_ROUTE_WORKERS"] = str(args.battle_route_workers)
-        managed.append(ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env))
+        gateway_process = ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env)
+        managed.append(gateway_process)
         wait_tcp_port("127.0.0.1", args.gateway_port)
         wait_tcp_port("127.0.0.1", args.http_port)
 
@@ -1100,6 +2002,7 @@ def main() -> int:
             "build_dir": str(build_dir),
             "output_dir": str(output_root),
             "summary_version": 2,
+            "resource_constraint": resource_constraint,
             "topology": {
                 "gateway_port": args.gateway_port,
                 "login_port": args.login_port,
@@ -1119,6 +2022,8 @@ def main() -> int:
             "release_gates": {},
             "process_snapshots": {},
             "business_flow": None,
+            "business_operation_perf": None,
+            "leaderboard_persistence_comparison": None,
             "final_backend_metrics": {},
         }
         summary["process_snapshots"]["idle"] = snapshot_processes(managed)
@@ -1146,6 +2051,157 @@ def main() -> int:
             summary["case_aggregates"].append(aggregate)
 
         summary["release_gates"] = evaluate_release_gates(summary["case_aggregates"])
+        if args.business_operation_scenario:
+            selected_scenarios = list(dict.fromkeys(args.business_operation_scenario))
+            log_step(f"Running concurrent business operation performance: {', '.join(selected_scenarios)}")
+            summary["business_operation_perf"] = run_business_operation_perf(
+                "127.0.0.1",
+                args.gateway_port,
+                selected_scenarios,
+                args.business_operation_clients,
+                args.business_operation_iterations,
+                args.business_operation_timeout_seconds,
+                args.repetitions,
+                "in_memory_only",
+            )
+            if args.leaderboard_redis_comparison:
+                redis_key = args.leaderboard_redis_key.strip() or (
+                    f"lb:perf:{summary['git_commit'][:12]}:{os.getpid()}:{time.monotonic_ns()}"
+                )
+                ping_before = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "PING",
+                ) == "PONG"
+                if not ping_before:
+                    raise RuntimeError("Redis comparison endpoint did not respond to PING")
+                redis_command(args.leaderboard_redis_host, args.leaderboard_redis_port, "DEL", redis_key)
+                redis_command(args.leaderboard_redis_host, args.leaderboard_redis_port, "DEL", f"{redis_key}:names")
+
+                log_step("Restarting leaderboard topology for Redis persistence comparison")
+                gateway_process.stop()
+                managed.remove(gateway_process)
+                leaderboard_process.stop()
+                managed.remove(leaderboard_process)
+
+                leaderboard_process = ManagedProcess(
+                    "v2_leaderboard_backend.redis",
+                    executables["leaderboard"],
+                    [str(args.leaderboard_port)],
+                    log_dir,
+                    {
+                        "SERVICE_PORT": str(args.leaderboard_port),
+                        "LEADERBOARD_PORT": str(args.leaderboard_port),
+                        "LEADERBOARD_CONFIG_PATH": str(
+                            root / "config/environments/local/leaderboard.json"
+                        ),
+                        "REDIS_HOST": args.leaderboard_redis_host,
+                        "REDIS_PORT": str(args.leaderboard_redis_port),
+                        "REDIS_LEADERBOARD_KEY": redis_key,
+                        "BOOST_DISABLE_REDIS_AUTO_CONNECT": "0",
+                        "BOOST_LOG_LEVEL": "info",
+                    },
+                )
+                managed.append(leaderboard_process)
+                wait_tcp_port("127.0.0.1", args.leaderboard_port)
+                redis_log_marker = (
+                    "Redis leaderboard and event store enabled "
+                    f"({args.leaderboard_redis_host}:{args.leaderboard_redis_port})"
+                )
+                redis_log_verified = wait_process_log(leaderboard_process, redis_log_marker)
+                if not redis_log_verified:
+                    raise RuntimeError("Redis leaderboard startup did not emit the required enabled marker")
+
+                gateway_process = ManagedProcess(
+                    "v2_gateway_demo.redis",
+                    executables["gateway"],
+                    gateway_args,
+                    log_dir,
+                    gateway_env,
+                )
+                managed.append(gateway_process)
+                wait_tcp_port("127.0.0.1", args.gateway_port)
+                wait_tcp_port("127.0.0.1", args.http_port)
+                time.sleep(2.0)
+                redis_perf = run_business_operation_perf(
+                    "127.0.0.1",
+                    args.gateway_port,
+                    ["leaderboard"],
+                    args.business_operation_clients,
+                    args.business_operation_iterations,
+                    args.business_operation_timeout_seconds,
+                    args.repetitions,
+                    "redis_primary_with_memory_shadow",
+                )
+                ping_after = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "PING",
+                ) == "PONG"
+                redis_zcard_raw = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "ZCARD",
+                    redis_key,
+                )
+                redis_zcard = redis_zcard_raw if isinstance(redis_zcard_raw, int) else -1
+                comparison = build_leaderboard_persistence_comparison(
+                    summary["business_operation_perf"],
+                    redis_perf,
+                    repetitions=args.repetitions,
+                    redis_host=args.leaderboard_redis_host,
+                    redis_port=args.leaderboard_redis_port,
+                    redis_key=redis_key,
+                    in_memory_log_verified=in_memory_log_verified,
+                    redis_log_verified=redis_log_verified,
+                    ping_before=ping_before,
+                    ping_after=ping_after,
+                    redis_zcard=redis_zcard,
+                    expected_min_zcard=args.business_operation_clients * args.repetitions,
+                )
+                summary["leaderboard_persistence_comparison"] = comparison
+                summary["business_operation_perf"]["leaderboard_persistence"]["redis_comparison"] = True
+                summary["business_operation_perf"]["leaderboard_persistence"]["comparison_verified"] = comparison["verified"]
+                summary["business_operation_perf"]["passed"] = (
+                    summary["business_operation_perf"]["passed"] and comparison["verified"]
+                )
+                summary["business_operation_perf"]["overall_pass"] = summary["business_operation_perf"]["passed"]
+            business_operation_path = result_dir / "business-operation-perf.json"
+            business_operation_path.write_text(
+                json.dumps(summary["business_operation_perf"], indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            completed_business_runs = int(summary["business_operation_perf"]["completed_runs"])
+            aggregate_run_counts = [
+                int(item["runs"])
+                for item in summary["business_operation_perf"]["scenario_aggregates"]
+            ]
+            business_operation_passed = (
+                bool(summary["business_operation_perf"]["passed"])
+                and completed_business_runs == args.repetitions
+                and all(count == args.repetitions for count in aggregate_run_counts)
+                and (
+                    not args.leaderboard_redis_comparison
+                    or summary["leaderboard_persistence_comparison"]["verified"] is True
+                )
+            )
+            summary["release_gates"].setdefault("checks", []).append({
+                "case": "concurrent-business-operations",
+                "passed": business_operation_passed,
+                "criteria": "all requested runs and matchmaking/leaderboard operations complete without failure",
+                "observed": {
+                    "scenarios": selected_scenarios,
+                    "clients": args.business_operation_clients,
+                    "iterations_per_client": args.business_operation_iterations,
+                    "requested_runs": args.repetitions,
+                    "completed_runs": completed_business_runs,
+                    "aggregate_run_counts": aggregate_run_counts,
+                    "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
+                },
+            })
+            if not business_operation_passed:
+                summary["release_gates"]["overall_pass"] = False
+            summary["process_snapshots"]["business-operation-perf"] = snapshot_processes(managed)
         summary["resource_analysis"] = analyze_resources(summary)
         final_diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
         summary["final_backend_metrics"] = final_diagnostics.get("backend_metrics", {})
@@ -1184,7 +2240,10 @@ def main() -> int:
         report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
         log_step(f"Markdown report written: {report_path}")
-        if args.run_preset == "smoke" or summary["release_gates"].get("overall_pass"):
+        if (
+            (args.run_preset == "smoke" and not args.business_operation_scenario)
+            or summary["release_gates"].get("overall_pass")
+        ):
             return 0
         log_step("Release performance gates failed")
         return 2

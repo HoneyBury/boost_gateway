@@ -2764,7 +2764,7 @@ TEST(V2BackendRoutingTest, MatchmakingRestoresCommittedMatchAfterRestart) {
     std::filesystem::remove_all(storage_root, ec);
 }
 
-TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
+TEST(V2BackendRoutingTest, LeaderboardReelectsAndLogicalRestartCatchesUpOverBackendRpc) {
     app::logging::init("project_tests");
     DisableRedisAutoConnectForTest redis_guard;
 
@@ -2799,26 +2799,30 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     node3.start();
 
     std::uint16_t leader_port = 0;
-    std::uint16_t follower_port = 0;
+    v2::leaderboard::LeaderboardService* stopped_leader = nullptr;
     for (int i = 0; i < 80; ++i) {
-        if (node1.is_raft_leader()) {
-            leader_port = kPort1;
-            follower_port = kPort2;
-            break;
-        }
-        if (node2.is_raft_leader()) {
-            leader_port = kPort2;
-            follower_port = kPort1;
-            break;
-        }
-        if (node3.is_raft_leader()) {
-            leader_port = kPort3;
-            follower_port = kPort1;
+        const bool node1_leads = node1.is_raft_leader();
+        const bool node2_leads = node2.is_raft_leader();
+        const bool node3_leads = node3.is_raft_leader();
+        const int leader_count = static_cast<int>(node1_leads) + static_cast<int>(node2_leads) +
+                                 static_cast<int>(node3_leads);
+        if (leader_count == 1) {
+            if (node1_leads) {
+                leader_port = kPort1;
+                stopped_leader = &node1;
+            } else if (node2_leads) {
+                leader_port = kPort2;
+                stopped_leader = &node2;
+            } else {
+                leader_port = kPort3;
+                stopped_leader = &node3;
+            }
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     ASSERT_NE(leader_port, 0);
+    ASSERT_NE(stopped_leader, nullptr);
 
     v2::service::BackendConnection leader_conn({
         .host = "127.0.0.1",
@@ -2830,35 +2834,79 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     submit_request.target_service = v2::service::ServiceId::kGateway;
     submit_request.kind = v2::service::MessageKind::kRequest;
     submit_request.message_type = "leaderboard_submit";
-    submit_request.payload =
-        R"({"user_id":"eve","display_name":"Eve","score":1337})";
+    submit_request.payload = R"({"user_id":"eve","display_name":"Eve","score":1337})";
     auto submit_response = leader_conn.send_request(submit_request);
     ASSERT_TRUE(submit_response.has_value());
+    ASSERT_EQ(submit_response->kind, v2::service::MessageKind::kResponse);
     leader_conn.close();
 
-    if (leader_port == kPort1) node1.stop();
-    if (leader_port == kPort2) node2.stop();
-    if (leader_port == kPort3) node3.stop();
+    stopped_leader->stop();
 
-    v2::service::BackendConnection follower_conn({
+    v2::service::BackendConnection stopped_conn({
         .host = "127.0.0.1",
-        .port = follower_port,
+        .port = leader_port,
     });
-    ASSERT_TRUE(follower_conn.connect());
+    EXPECT_FALSE(stopped_conn.connect());
+
+    v2::leaderboard::LeaderboardService* new_leader = nullptr;
+    std::uint16_t new_leader_port = 0;
+    for (int i = 0; i < 80; ++i) {
+        const bool node1_leads = leader_port != kPort1 && node1.is_raft_leader();
+        const bool node2_leads = leader_port != kPort2 && node2.is_raft_leader();
+        const bool node3_leads = leader_port != kPort3 && node3.is_raft_leader();
+        const int survivor_leaders = static_cast<int>(node1_leads) + static_cast<int>(node2_leads) +
+                                     static_cast<int>(node3_leads);
+        if (survivor_leaders == 1) {
+            if (node1_leads) {
+                new_leader = &node1;
+                new_leader_port = kPort1;
+            } else if (node2_leads) {
+                new_leader = &node2;
+                new_leader_port = kPort2;
+            } else {
+                new_leader = &node3;
+                new_leader_port = kPort3;
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    ASSERT_NE(new_leader, nullptr);
+    ASSERT_NE(new_leader_port, leader_port);
+
+    v2::service::BackendConnection new_leader_conn({
+        .host = "127.0.0.1",
+        .port = new_leader_port,
+    });
+    ASSERT_TRUE(new_leader_conn.connect());
+
+    submit_request.payload = R"({"user_id":"frank","display_name":"Frank","score":2048})";
+    auto failover_submit_response = new_leader_conn.send_request(submit_request);
+    ASSERT_TRUE(failover_submit_response.has_value());
+    EXPECT_EQ(failover_submit_response->kind, v2::service::MessageKind::kResponse);
+    new_leader_conn.close();
+
+    stopped_leader->start();
+
+    v2::service::BackendConnection recovered_conn({
+        .host = "127.0.0.1",
+        .port = leader_port,
+    });
+    ASSERT_TRUE(recovered_conn.connect());
 
     v2::service::BackendEnvelope rank_request;
     rank_request.target_service = v2::service::ServiceId::kGateway;
     rank_request.kind = v2::service::MessageKind::kRequest;
     rank_request.message_type = "leaderboard_rank";
-    rank_request.payload = R"({"user_id":"eve"})";
+    rank_request.payload = R"({"user_id":"frank"})";
 
     std::optional<v2::service::BackendEnvelope> rank_response;
-    for (int i = 0; i < 30; ++i) {
-        rank_response = follower_conn.send_request(rank_request);
+    for (int i = 0; i < 80; ++i) {
+        rank_response = recovered_conn.send_request(rank_request);
         if (rank_response.has_value() &&
             rank_response->kind == v2::service::MessageKind::kResponse) {
             auto doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
-            if (!doc.is_discarded() && doc.value("score", 0) == 1337) {
+            if (!doc.is_discarded() && doc.value("score", 0) == 2048) {
                 break;
             }
         }
@@ -2869,12 +2917,18 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     EXPECT_EQ(rank_response->kind, v2::service::MessageKind::kResponse);
     auto rank_doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
     ASSERT_FALSE(rank_doc.is_discarded());
-    EXPECT_EQ(rank_doc.value("score", 0), 1337);
+    EXPECT_EQ(rank_doc.value("user_id", std::string{}), "frank");
+    EXPECT_EQ(rank_doc.value("score", 0), 2048);
 
-    follower_conn.close();
-    if (leader_port != kPort1) node1.stop();
-    if (leader_port != kPort2) node2.stop();
-    if (leader_port != kPort3) node3.stop();
+    const int final_leader_count = static_cast<int>(node1.is_raft_leader()) +
+                                   static_cast<int>(node2.is_raft_leader()) +
+                                   static_cast<int>(node3.is_raft_leader());
+    EXPECT_EQ(final_leader_count, 1);
+
+    recovered_conn.close();
+    node1.stop();
+    node2.stop();
+    node3.stop();
 }
 
 // ─── v3.0.0 B5: OpenTelemetry export integration tests ───────────────

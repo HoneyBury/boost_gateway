@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[3]
 
 ALLOWED_ENVIRONMENT_TYPES = {
     "docker-compose",
@@ -35,6 +35,7 @@ ALLOWED_SCENARIOS = {
 SUMMARY_FIELDS = [
     "production_recovery_summary",
     "sdk_full_flow_summary",
+    "redis_alert_runtime_summary",
     "docker_snapshot_summary",
     "k8s_full_flow_summary",
     "monitoring_summary",
@@ -116,6 +117,12 @@ def validate_record(record: dict[str, Any], record_path: Path, allow_template: b
     verification = record.get("verification")
     add(checks, "verification:object", isinstance(verification, dict), "verification is an object")
     add(checks, "verification:passed-bool", isinstance(get_path(record, "verification.passed"), bool), "verification.passed is boolean")
+    add(
+        checks,
+        "verification:passed",
+        is_template or get_path(record, "verification.passed") is True,
+        "executed recovery drill passed",
+    )
 
     summary_values = []
     if isinstance(verification, dict):
