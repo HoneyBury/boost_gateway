@@ -28,6 +28,11 @@ on:
         description: "Performance test repetitions for baseline"
         type: number
         default: 3
+      prepare_cmake_consumer_image:
+        description: "Maintenance only: rebuild the pinned clean compiler image before offline verification"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -260,6 +265,17 @@ jobs:
             --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
             --image ubuntu:24.04
+
+      - name: Prepare clean compiler image
+        if: github.event_name == 'workflow_dispatch' && inputs.prepare_cmake_consumer_image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull=false \
+            -f env/docker/release-cmake-consumer.Dockerfile \
+            -t boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13 .
+          docker image inspect boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13 \
+            --format '{{.Id}} {{.Architecture}}'
 
       - name: Verify CMake consumer in clean compiler container
         shell: bash

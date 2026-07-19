@@ -220,6 +220,16 @@ def main() -> int:
     )
     add(
         checks,
+        "release:clean-cmake-consumer-maintenance",
+        "prepare_cmake_consumer_image:" in release_workflow
+        and "github.event_name == 'workflow_dispatch' && inputs.prepare_cmake_consumer_image"
+        in release_workflow
+        and "docker build --pull=false" in release_workflow
+        and "env/docker/release-cmake-consumer.Dockerfile" in release_workflow,
+        "manual release dispatch can restore the pinned compiler image without enabling tag-time preparation",
+    )
+    add(
+        checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
         and release_workflow.count("uses: actions/attest@v4") == 2

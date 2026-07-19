@@ -381,6 +381,9 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ga
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
+| `prepare_cmake_consumer_image` | 仅 runner 镜像缺失时为 `true` | 通常为 `false` |
+
+`prepare_cmake_consumer_image=true` 只用于手动候选运行恢复固定 digest Dockerfile 对应的 compiler image。构建完成后的 consumer 仍强制 `--network=none --pull=never`；正式 tag 触发没有该输入，必须消费候选阶段已经准入的本地镜像，不能在发布时隐式联网预热。
 
 通过标准：
 
