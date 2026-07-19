@@ -410,6 +410,51 @@ def main() -> int:
         "default: false" in specialized_e2e_workflow and "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in specialized_e2e_workflow and "mkdir -p runtime/validation" in specialized_e2e_workflow,
         ".github/workflows/specialized-e2e.yml defaults to a checked-out workflow commit",
     )
+    for workflow_name in (
+        "production-candidate-evidence",
+        "preprod-evidence",
+        "production-gates",
+        "long-soak-capacity",
+        "production-readiness",
+        "release",
+        "release-asset-verification",
+        "specialized-e2e",
+        "nightly-stability",
+        "perf-regression",
+    ):
+        workflow_path = f".github/workflows/{workflow_name}.yml"
+        workflow_content = read(workflow_path)
+        add(
+            checks,
+            f"workflow:{workflow_name}:repair-fixed-workspace",
+            all(
+                token in workflow_content
+                for token in (
+                    "Normalize stale Go cache permissions",
+                    'cache="$GITHUB_WORKSPACE/runtime/go-cache"',
+                    "ubuntu:24.04 chmod -R a+rwX /cache",
+                    "uses: actions/checkout@v4",
+                )
+            ),
+            f"{workflow_path} repairs immutable Go cache output before a strict checkout clean",
+        )
+
+    control_plane_gate = read("scripts/gates/production/verify_control_plane_gate.py")
+    add(
+        checks,
+        "workflow:control-plane:external-go-state",
+        all(
+            token in control_plane_gate
+            for token in (
+                '"--go-state-root"',
+                'os.environ.get("BOOST_GATEWAY_GO_STATE_ROOT"',
+                'os.environ.get("RUNNER_TEMP"',
+                'state_root / "cache" / "build"',
+            )
+        )
+        and 'root / "runtime" / "go-cache"' not in control_plane_gate,
+        "control-plane Go caches and home default outside the persistent checkout",
+    )
 
     for workflow_name, workflow_path in (
         ("production-gates", ".github/workflows/production-gates.yml"),

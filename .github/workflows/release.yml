@@ -44,6 +44,16 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_RUNNER || '["self-hosted","Linux","X64"]') }}
 
     steps:
+      - name: Normalize stale Go cache permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$GITHUB_WORKSPACE/runtime/go-cache"
+          if [ -d "$cache" ]; then
+            docker run --rm --pull=never --network=none \
+              -v "$cache:/cache" ubuntu:24.04 chmod -R a+rwX /cache
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
