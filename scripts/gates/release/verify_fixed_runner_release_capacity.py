@@ -303,23 +303,37 @@ def validate_otel_comparison(
             for metric in delta_metrics
         )
     )
+    process_isolation_ok = (
+        integer_or(mode_summaries.get("off", {}).get("gateway_pid"), -1) > 0
+        and integer_or(mode_summaries.get("on", {}).get("gateway_pid"), -1) > 0
+        and integer_or(mode_summaries["off"].get("gateway_pid"))
+        != integer_or(mode_summaries["on"].get("gateway_pid"))
+        and integer_or(mode_summaries.get("off", {}).get("battle_backend_pid"), -1) > 0
+        and integer_or(mode_summaries.get("on", {}).get("battle_backend_pid"), -1) > 0
+        and integer_or(mode_summaries["off"].get("battle_backend_pid"))
+        != integer_or(mode_summaries["on"].get("battle_backend_pid"))
+    )
     passed = (
         comparison.get("requested") is True
         and comparison.get("verified") is True
         and comparison.get("absolute_gate_passed") is True
         and comparison.get("affinity_verified") is True
         and comparison.get("fresh_gateway_per_mode") is True
+        and comparison.get("fresh_battle_backend_per_mode") is True
         and comparison.get("execution_model")
-        == "one_fresh_gateway_per_mode_three_or_more_runs_per_process"
+        == "fresh_gateway_and_battle_backend_per_mode_three_or_more_runs_per_process"
         and comparison.get("performance_regression_policy") == "observed_not_thresholded"
         and repetitions >= min_repetitions
         and all(mode_checks)
         and proof_ok
         and deltas_ok
+        and process_isolation_ok
     )
     details.extend((
         f"repetitions_per_mode={repetitions}",
         f"affinity_verified={comparison.get('affinity_verified') is True}",
+        f"backend_isolation_verified={comparison.get('fresh_battle_backend_per_mode') is True}",
+        f"process_pids_verified={process_isolation_ok}",
         f"proof_verified={proof_ok}",
         f"deltas_complete={deltas_ok}",
         "performance delta is recorded without a percentage threshold; absolute battle gate remains required",

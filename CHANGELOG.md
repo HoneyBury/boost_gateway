@@ -13,7 +13,7 @@
 ### 性能与治理
 
 - 容量采集支持 1/2/4 CPU affinity 矩阵，并为 matchmaking、leaderboard 和 Redis on/off 输出至少三轮的吞吐、P99、CPU、RSS 与失败率。
-- 新增 OTel off/on 固定 runner 对照：使用本机回环 OTLP collector，核对 exporter、collector 与后端路由计数，输出 P99、吞吐、Gateway CPU/RSS 的观测差异。
+- 新增 OTel off/on 固定 runner 对照：每种模式隔离 Gateway/Battle Backend，使用本机回环 OTLP collector 核对 exporter、collector 与后端路由计数，输出 P99、吞吐、Gateway CPU/RSS 的观测差异。
 - OTel exporter 提供线程安全的入队、导出批次、失败重试与缓冲计数，并通过 Gateway diagnostics 暴露可审计状态。
 - 生产 readiness 明确绑定 workflow checkout SHA；导入旧候选证据会以 provenance 失败阻断最终决策。
 - 手动 Release 增加显式 compiler image 维护开关，用于 runner 缓存丢失后的候选预热；tag 发布仍只执行离线消费验证。

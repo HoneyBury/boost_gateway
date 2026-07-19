@@ -1473,6 +1473,7 @@ def aggregate_otel_mode(
     mode: str,
     runs: list[dict[str, Any]],
     mode_backend_routed_requests: int,
+    battle_backend_pid: int,
 ) -> dict[str, Any]:
     performance = aggregate_case_runs("battle-100-30s", runs)
     return {
@@ -1496,6 +1497,7 @@ def aggregate_otel_mode(
             str(run["gateway_resources"].get("cpu_affinity", "")) for run in runs
         }),
         "gateway_pid": runs[0]["gateway_resources"].get("pid") if runs else None,
+        "battle_backend_pid": battle_backend_pid,
         "runs_detail": runs,
     }
 
@@ -1574,9 +1576,15 @@ def build_otel_comparison(
         and on.get("gateway_pid") is not None
         and off.get("gateway_pid") != on.get("gateway_pid")
     )
+    fresh_battle_backend_per_mode = (
+        off.get("battle_backend_pid") is not None
+        and on.get("battle_backend_pid") is not None
+        and off.get("battle_backend_pid") != on.get("battle_backend_pid")
+    )
     verified = (
         complete
         and fresh_gateway_per_mode
+        and fresh_battle_backend_per_mode
         and affinity_verified
         and off_proof
         and on_proof
@@ -1589,8 +1597,9 @@ def build_otel_comparison(
         "repetitions_per_mode": repetitions,
         "case": "battle-100-30s",
         "performance_regression_policy": "observed_not_thresholded",
-        "execution_model": "one_fresh_gateway_per_mode_three_or_more_runs_per_process",
+        "execution_model": "fresh_gateway_and_battle_backend_per_mode_three_or_more_runs_per_process",
         "fresh_gateway_per_mode": fresh_gateway_per_mode,
+        "fresh_battle_backend_per_mode": fresh_battle_backend_per_mode,
         "absolute_gate_passed": absolute_gate_passed,
         "affinity_verified": affinity_verified,
         "modes": {"off": off, "on": on},
@@ -2238,7 +2247,10 @@ def main() -> int:
         managed.append(ManagedProcess("v2_room_backend", executables["room"], [str(args.room_port)], log_dir, battle_env))
         wait_tcp_port("127.0.0.1", args.room_port)
 
-        managed.append(ManagedProcess("v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir))
+        battle_process = ManagedProcess(
+            "v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir
+        )
+        managed.append(battle_process)
         wait_tcp_port("127.0.0.1", args.battle_port)
 
         managed.append(ManagedProcess(
@@ -2373,6 +2385,17 @@ def main() -> int:
             otel_collector.start()
 
             def run_otel_mode(mode: str, endpoint: str) -> tuple[dict[str, Any], bool, dict[str, int], dict[str, Any]]:
+                nonlocal battle_process
+                battle_process.stop()
+                managed.remove(battle_process)
+                battle_process = ManagedProcess(
+                    f"v2_battle_backend.otel-{mode}",
+                    executables["battle"],
+                    [str(args.battle_port)],
+                    log_dir,
+                )
+                managed.append(battle_process)
+                wait_tcp_port("127.0.0.1", args.battle_port)
                 mode_env = {**gateway_env, "OTEL_EXPORT_ENDPOINT": endpoint}
                 process = ManagedProcess(
                     f"v2_gateway_demo.otel-{mode}",
@@ -2454,6 +2477,7 @@ def main() -> int:
                             mode,
                             mode_runs,
                             mode_backend_routed_requests,
+                            battle_process.pid,
                         ),
                         log_verified,
                         collector_delta_mode,
@@ -2486,7 +2510,7 @@ def main() -> int:
                 "case": "otel-off-on-comparison",
                 "passed": summary["otel_comparison"]["verified"] is True,
                 "criteria": (
-                    "one fresh Gateway per OTel mode, battle-100 at least three runs per process; absolute gate, "
+                    "fresh Gateway and Battle Backend per OTel mode, battle-100 at least three runs per process; absolute gate, "
                     "runtime exporter counters, backend route and loopback collector proof agree"
                 ),
                 "observed": {

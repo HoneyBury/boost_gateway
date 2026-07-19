@@ -44,6 +44,7 @@ def mode(name: str) -> dict:
         "backend_routed_requests": 768,
         "gateway_cpu_affinities": ["0-1"],
         "gateway_pid": 100 if name == "off" else 200,
+        "battle_backend_pid": 300 if name == "off" else 400,
         "runs_detail": [],
     }
 
@@ -102,6 +103,7 @@ class OtelPerfComparisonTest(unittest.TestCase):
             "on",
             runs,
             mode_backend_routed_requests=35,
+            battle_backend_pid=456,
         )
 
         self.assertEqual(aggregate["backend_routed_requests"], 35)
@@ -185,6 +187,9 @@ class OtelPerfComparisonTest(unittest.TestCase):
             "buffered mismatch": lambda value: value["proof"]["on"]["exporter"].update(buffered_spans=1),
             "collector status error": lambda value: value["proof"]["on"]["collector"].update(span_status_errors=1),
             "missing delta": lambda value: value["deltas"].pop("gateway_rss_mb"),
+            "shared battle backend": lambda value: value["modes"]["on"].update(
+                battle_backend_pid=value["modes"]["off"]["battle_backend_pid"]
+            ),
         }
         for name, mutate in mutations.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temp:
