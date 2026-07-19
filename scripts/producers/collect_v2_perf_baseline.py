@@ -810,11 +810,68 @@ def setup_matchmaking_client(
         login = client.request(2001, 2002, f"{user_id}|token:{user_id}|{user_id}")
         if not login["ok"]:
             raise ValueError(f"login failed: {login['body'][:200]}")
-        return {"client_index": client_index, "user_id": user_id, "client": client, "error": ""}
-    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": client,
+            "error": "",
+            "retryable": False,
+        }
+    except (ConnectionError, OSError, TimeoutError) as exc:
         if client is not None:
             client.close()
-        return {"client_index": client_index, "user_id": user_id, "client": None, "error": str(exc)[:200]}
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": None,
+            "error": str(exc)[:200],
+            "retryable": True,
+        }
+    except ValueError as exc:
+        if client is not None:
+            client.close()
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": None,
+            "error": str(exc)[:200],
+            "retryable": False,
+        }
+
+
+def setup_matchmaking_cohort(
+    host: str,
+    port: int,
+    clients: int,
+    timeout_seconds: float,
+    run_id: str,
+    iteration: int,
+) -> tuple[list[dict[str, Any]], int]:
+    for attempt in range(2):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
+            entries = list(executor.map(
+                lambda index: setup_matchmaking_client(
+                    host,
+                    port,
+                    index,
+                    timeout_seconds,
+                    f"{run_id}_setup{attempt + 1}",
+                    iteration,
+                ),
+                range(clients),
+            ))
+        failures = [entry for entry in entries if entry["error"]]
+        if not failures or attempt == 1 or any(not entry["retryable"] for entry in failures):
+            return entries, attempt
+
+        # Matchmaking requires an even, complete cohort. Rebuild every connection
+        # before measuring operations so a transient setup timeout cannot leave an
+        # unmatched player in the queue or hide a failed measured request.
+        for entry in entries:
+            if entry["client"] is not None:
+                entry["client"].close()
+
+    raise AssertionError("unreachable")
 
 
 def execute_match_request(
@@ -897,12 +954,12 @@ def run_matchmaking_scenario(
     started = time.perf_counter()
     records: list[dict[str, Any]] = []
     setup_failures: list[dict[str, Any]] = []
+    setup_retry_count = 0
     for iteration in range(iterations):
-        with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
-            entries = list(executor.map(
-                lambda index: setup_matchmaking_client(host, port, index, timeout_seconds, run_id, iteration),
-                range(clients),
-            ))
+        entries, setup_retries = setup_matchmaking_cohort(
+            host, port, clients, timeout_seconds, run_id, iteration
+        )
+        setup_retry_count += setup_retries
         setup_failures.extend(
             {"iteration": iteration, "client_index": entry["client_index"], "error": entry["error"]}
             for entry in entries
@@ -958,6 +1015,7 @@ def run_matchmaking_scenario(
         "duration_seconds": duration_seconds,
         "expected_per_operation": expected_per_operation,
         "setup_failures": setup_failures,
+        "setup_retry_count": setup_retry_count,
         "status_poll_attempts": sum(int(record.get("poll_attempts", 0)) for record in records),
         "time_to_match_samples_ms": matched_latencies,
         "time_to_match_p50_ms": latency_percentile(matched_latencies, 0.50),
@@ -1119,6 +1177,9 @@ def aggregate_business_operation_runs(
                 for value in scenario.get("time_to_match_samples_ms", [])
             ]
             aggregate.update({
+                "setup_retry_count": sum(
+                    int(scenario.get("setup_retry_count", 0)) for scenario in scenario_runs
+                ),
                 "time_to_match_samples": len(time_to_match_samples),
                 "time_to_match_p50_ms": latency_percentile(time_to_match_samples, 0.50),
                 "time_to_match_p99_ms": latency_percentile(time_to_match_samples, 0.99),

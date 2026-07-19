@@ -31,10 +31,14 @@ class FakeGateway:
         response_version: int = 1,
         response_flags: int = 0,
         match_status_matched: bool = True,
+        first_login_delay_seconds: float = 0.0,
     ) -> None:
         self.response_version = response_version
         self.response_flags = response_flags
         self.match_status_matched = match_status_matched
+        self.first_login_delay_seconds = first_login_delay_seconds
+        self.login_lock = threading.Lock()
+        self.login_delayed = False
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock.bind(("127.0.0.1", 0))
@@ -60,6 +64,12 @@ class FakeGateway:
                     request = recv_business_packet(connection)
                 except (ConnectionError, OSError):
                     return
+                if request["message_id"] == 2001:
+                    with self.login_lock:
+                        delay_login = not self.login_delayed and self.first_login_delay_seconds > 0
+                        self.login_delayed = True
+                    if delay_login:
+                        time.sleep(self.first_login_delay_seconds)
                 response_id = self.RESPONSE_IDS[request["message_id"]]
                 if request["message_id"] == 6001:
                     connection.sendall(encode_business_packet(6003, 0, "match_found"))
@@ -70,13 +80,16 @@ class FakeGateway:
                     if request["message_id"] == 6006
                     else "ok"
                 )
-                connection.sendall(encode_business_packet(
-                    response_id,
-                    request["request_id"],
-                    body,
-                    version=self.response_version,
-                    flags=self.response_flags,
-                ))
+                try:
+                    connection.sendall(encode_business_packet(
+                        response_id,
+                        request["request_id"],
+                        body,
+                        version=self.response_version,
+                        flags=self.response_flags,
+                    ))
+                except OSError:
+                    return
 
     def close(self) -> None:
         self.stopped.set()
@@ -202,6 +215,45 @@ class BusinessOperationPerfTest(unittest.TestCase):
             run_business_operation_perf(
                 "127.0.0.1", 1, ["matchmaking"], clients=3, iterations=1, timeout_seconds=0.1
             )
+
+    def test_matchmaking_rebuilds_cohort_after_transient_setup_timeout(self) -> None:
+        gateway = FakeGateway(first_login_delay_seconds=0.08)
+        self.addCleanup(gateway.close)
+
+        summary = run_business_operation_perf(
+            gateway.host,
+            gateway.port,
+            ["matchmaking"],
+            clients=2,
+            iterations=1,
+            timeout_seconds=0.03,
+        )
+
+        self.assertTrue(summary["passed"])
+        matchmaking = summary["scenario_aggregates"][0]
+        self.assertEqual(matchmaking["setup_retry_count"], 1)
+        self.assertEqual(summary["runs"][0]["scenarios"][0]["setup_failures"], [])
+        for operation in matchmaking["operations"]:
+            self.assertEqual(operation["attempted"], 2)
+            self.assertEqual(operation["failed"], 0)
+
+    def test_matchmaking_does_not_retry_protocol_setup_failure(self) -> None:
+        gateway = FakeGateway(response_version=2)
+        self.addCleanup(gateway.close)
+
+        summary = run_business_operation_perf(
+            gateway.host,
+            gateway.port,
+            ["matchmaking"],
+            clients=2,
+            iterations=1,
+            timeout_seconds=0.1,
+        )
+
+        self.assertFalse(summary["passed"])
+        matchmaking = summary["scenario_aggregates"][0]
+        self.assertEqual(matchmaking["setup_retry_count"], 0)
+        self.assertEqual(matchmaking["operations"][0]["attempted"], 0)
 
     def test_client_rejects_unknown_version_and_flags(self) -> None:
         for kwargs, expected in (
