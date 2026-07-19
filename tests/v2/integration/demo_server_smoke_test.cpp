@@ -379,6 +379,36 @@ TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot
     }
 }
 
+TEST(V2DemoServerSmokeTest, DiagnosticsExposeOtelExporterMetrics) {
+    app::logging::init("project_tests");
+
+    v2::gateway::DemoServer server(0, {},
+                                   v2::gateway::DemoServerOptions{
+                                       .login_backend_config =
+                                           v2::gateway::GatewayServiceBridge::BackendConfig{
+                                               .host = "127.0.0.1",
+                                               .port = 19999,
+                                           },
+                                   });
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{.service_name = "diagnostics-test"});
+    ASSERT_NE(server.service_bridge(), nullptr);
+    server.service_bridge()->set_otel_exporter(exporter);
+
+    auto span = v2::tracing::Span::root("diagnostics_span");
+    span.finish();
+    exporter->export_span(span);
+
+    const auto diagnostics = nlohmann::json::parse(server.diagnostics_json());
+    const auto& metrics = diagnostics["otel_exporter_metrics"];
+    EXPECT_EQ(metrics["configured"], true);
+    EXPECT_EQ(metrics["enqueued_spans"], 1);
+    EXPECT_EQ(metrics["exported_spans"], 0);
+    EXPECT_EQ(metrics["successful_batches"], 0);
+    EXPECT_EQ(metrics["failed_batches"], 0);
+    EXPECT_EQ(metrics["buffered_spans"], 1);
+}
+
 TEST(V2DemoServerSmokeTest, DiagnosticsHttpEndpointReturnsStructuredSnapshot) {
     app::logging::init("project_tests");
 

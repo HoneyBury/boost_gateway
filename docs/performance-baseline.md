@@ -1,6 +1,6 @@
 # BoostGateway v3.5.x 性能基线
 
-更新时间：2026-07-18
+更新时间：2026-07-19
 
 ## 当前口径
 
@@ -39,12 +39,12 @@
 |---|---|
 | Linux capacity / business-capacity | v3.5.0 候选已测定；v3.5.3 冻结 SHA 待刷新 |
 | 2h soak | v3.5.0 候选已通过 |
-| 8h soak | 待在 v3.5.3 同一冻结 SHA 实测 |
-| 1/2/4 核资源线性 | 待实测；不得使用线性推算值 |
-| TLS on/off | 待 fixed runner 对照实测 |
-| OTel on/off | 待 fixed runner 对照实测 |
-| Matchmaking 专项 | 并发 join/status/leave 采集入口已实现；fixed-runner 数据待采集 |
-| Leaderboard 专项 | 并发 submit/top/rank 与可信 Redis on/off 对照入口已实现；fixed-runner 数据待采集 |
+| 8h soak | 阶段性 fixed-runner 证据已通过；v3.5.3 最终冻结 SHA 待刷新 |
+| 1/2/4 核资源线性 | 阶段性三档数据已形成；最终冻结 SHA 待刷新，不得使用线性推算值 |
+| TLS on/off | 阶段性 fixed-runner 对照已通过；最终冻结 SHA 待刷新 |
+| OTel on/off | fresh Gateway、loopback collector 与 runtime counter 对照入口已实现；fixed-runner 数据待采集 |
+| Matchmaking 专项 | 并发 join/status/leave 阶段性 fixed-runner 数据已形成；最终冻结 SHA 待刷新 |
+| Leaderboard 专项 | submit/top/rank 与可信 Redis on/off 阶段性数据已形成；最终冻结 SHA 待刷新 |
 
 ## 测量拓扑
 
@@ -107,11 +107,21 @@ python3 scripts/collect_v2_perf_baseline.py \
   --business-operation-scenario leaderboard \
   --business-operation-clients 16 \
   --business-operation-iterations 10
+
+# OTel off/on 专项；两个模式分别使用 fresh Gateway 和相同 battle-100 负载
+python3 scripts/collect_v2_perf_baseline.py \
+  --build-dir build/release \
+  --run-preset business-capacity \
+  --repetitions 3 \
+  --cpu-set 0-1 \
+  --otel-comparison
 ```
 
-固定 runner 的 2h/8h 与容量应通过 `long-soak-capacity.yml` 运行。8h 使用 `run_8h_soak=true`；业务专项使用 `run_business_operation_perf=true`；Redis 对照同时使用 `leaderboard_redis_comparison=true`，workflow 会创建 run 独占的临时 Redis 7 容器并在结束时清理。CPU 专项使用 `cpu_set=0`、`cpu_set=0-1` 和 `cpu_set=0-3` 分别 dispatch。采集器会通过 Linux `sched_setaffinity` 应用并回读约束，结果写入 `summary.resource_constraint` 和各进程快照。CPU 编号必须属于 runner 当前允许集合。
+固定 runner 的 2h/8h 与容量应通过 `long-soak-capacity.yml` 运行。8h 使用 `run_8h_soak=true`；业务专项使用 `run_business_operation_perf=true`；Redis 对照同时使用 `leaderboard_redis_comparison=true`，workflow 会创建 run 独占的临时 Redis 7 容器并在结束时清理；OTel 对照使用 `otel_comparison=true`。CPU 专项使用 `cpu_set=0`、`cpu_set=0-1` 和 `cpu_set=0-3` 分别 dispatch。采集器会通过 Linux `sched_setaffinity` 应用并回读约束，结果写入 `summary.resource_constraint` 和各进程快照。CPU 编号必须属于 runner 当前允许集合。
 
 Redis 对照的两个准确模式名是 `in_memory_only` 与 `redis_primary_with_memory_shadow`。后者的写入同时保留内存影子、查询优先 Redis，不能表述为 Redis-only。每种模式至少执行三轮；证据必须包含双方完整 runs、启动日志证明、Redis 前后 PING、隔离 key 的 ZCARD 下限以及 submit/top/rank 的吞吐和 P50/P99 median delta。R4 在 opt-in 时对这些真实性字段设硬门禁，但在形成历史基线前不设置任意性能回退百分比。
+
+OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用只走 Gateway echo 的流量替代。off/on 每种模式均使用 fresh Gateway、相同 CPU affinity 和至少三轮负载；on 组由采集器内置 loopback collector 接收 OTLP/HTTP JSON。证据必须同时对齐启动日志、collector request/span/invalid/status、runtime exporter enqueued/exported/batch/buffered counters 与 backend routed requests，并输出 P99、吞吐、Gateway CPU/RSS median delta。当前只保留既有 battle 绝对性能门槛，百分比 delta 标记为 `observed_not_thresholded`，待同硬件积累历史样本后再制定回退阈值。
 
 1/2/4 核三轮 workflow 完成后，下载各自 artifact，并用 `scripts/aggregate_cpu_capacity_evidence.py --source 1:<run-id>:<dir> --source 2:<run-id>:<dir> --source 4:<run-id>:<dir>` 生成 `cpu-capacity-matrix-summary.json`。聚合器会验证同一候选 SHA、run ID、requested/effective affinity、三轮 case 集合及 R4 契约。`evidence_complete` 表示矩阵来源可信完整；`all_workload_gates_passed` 单独表示三档均满足性能门槛，避免把可信的 1 核容量边界误写成无效证据。
 

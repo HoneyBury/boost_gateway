@@ -410,6 +410,9 @@ DemoServerDiagnostics DemoServer::diagnostics() const {
         result.total_outbound_dispatches += snapshot.outbound_dispatches;
     }
     result.battle_route = runtime_.battle_route_diagnostics();
+    if (const auto* bridge = runtime_.service_bridge()) {
+        result.otel_exporter_metrics = bridge->otel_exporter_metrics();
+    }
 
     if (backend_metrics_) {
         auto all = backend_metrics_->all_snapshots();
@@ -460,6 +463,16 @@ std::string DemoServer::diagnostics_json() const {
                                               : snapshot.battle_route.total_response_dispatch_us /
                                                     completed_battle_routes},
         {"max_response_dispatch_us", snapshot.battle_route.max_response_dispatch_us},
+    };
+    const auto otel_metrics =
+        snapshot.otel_exporter_metrics.value_or(v3::tracing::OtlpExporter::Metrics{});
+    doc["otel_exporter_metrics"] = {
+        {"configured", snapshot.otel_exporter_metrics.has_value()},
+        {"enqueued_spans", otel_metrics.enqueued_spans},
+        {"exported_spans", otel_metrics.exported_spans},
+        {"successful_batches", otel_metrics.successful_batches},
+        {"failed_batches", otel_metrics.failed_batches},
+        {"buffered_spans", otel_metrics.buffered_spans},
     };
 
     nlohmann::json io_cores = nlohmann::json::array();

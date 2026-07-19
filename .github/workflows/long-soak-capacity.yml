@@ -66,6 +66,11 @@ on:
         required: true
         default: false
         type: boolean
+      otel_comparison:
+        description: "Compare fresh-Gateway OTel exporter off/on performance with a loopback collector"
+        required: true
+        default: false
+        type: boolean
       business_operation_clients:
         description: "Concurrent clients per matchmaking/leaderboard profile"
         required: true
@@ -249,6 +254,9 @@ jobs:
               --leaderboard-redis-port "$redis_port"
             )
           fi
+          if [ "${{ inputs.otel_comparison }}" = "true" ]; then
+            args+=(--run-otel-comparison)
+          fi
           python "${args[@]}"
 
       - name: R4 fixed-runner release/capacity gate
@@ -268,6 +276,9 @@ jobs:
           )
           if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then
             args+=(--require-leaderboard-redis-comparison)
+          fi
+          if [ "${{ inputs.otel_comparison }}" = "true" ]; then
+            args+=(--require-otel-comparison)
           fi
           python "${args[@]}"
 

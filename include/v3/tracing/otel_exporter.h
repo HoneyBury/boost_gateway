@@ -48,6 +48,14 @@ public:
 
     using ExportFn = std::function<bool(const std::string& json_payload)>;
 
+    struct Metrics {
+        std::uint64_t enqueued_spans = 0;
+        std::uint64_t exported_spans = 0;
+        std::uint64_t successful_batches = 0;
+        std::uint64_t failed_batches = 0;
+        std::uint64_t buffered_spans = 0;
+    };
+
     explicit OtlpExporter(Config config);
     ~OtlpExporter();
 
@@ -63,6 +71,7 @@ public:
     [[nodiscard]] std::string flush_json();
     std::vector<SpanRecord> drain();
     [[nodiscard]] std::size_t buffer_size() const;
+    [[nodiscard]] Metrics metrics() const;
 
 private:
     [[nodiscard]] std::string to_hex(std::uint64_t val, int width) const;
@@ -71,10 +80,16 @@ private:
     [[nodiscard]] std::string serialize_records(
         const std::vector<SpanRecord>& records) const;
     [[nodiscard]] bool post_json(const std::string& json_payload) const;
+    [[nodiscard]] bool attempt_export(std::vector<SpanRecord> batch, const ExportFn& export_fn);
 
     Config config_;
     mutable std::mutex mutex_;
     std::vector<SpanRecord> buffer_;
+    std::size_t in_flight_spans_ = 0;
+    std::uint64_t enqueued_spans_ = 0;
+    std::uint64_t exported_spans_ = 0;
+    std::uint64_t successful_batches_ = 0;
+    std::uint64_t failed_batches_ = 0;
     ExportFn export_fn_;
     std::chrono::steady_clock::time_point last_export_;
 };
@@ -129,6 +144,7 @@ inline void OtlpExporter::export_span(
     {
         std::lock_guard lock(mutex_);
         buffer_.push_back(std::move(rec));
+        ++enqueued_spans_;
         const auto now = std::chrono::steady_clock::now();
         const bool batch_full =
             export_fn_ && buffer_.size() >= config_.max_batch_size;
@@ -137,19 +153,14 @@ inline void OtlpExporter::export_span(
         if (batch_full || interval_elapsed) {
             batch = std::move(buffer_);
             buffer_.clear();
+            in_flight_spans_ += batch.size();
             last_export_ = now;
             export_fn = export_fn_;
         }
     }
 
     if (!batch.empty() && export_fn) {
-        const auto payload = serialize_records(batch);
-        if (!export_fn(payload)) {
-            std::lock_guard lock(mutex_);
-            buffer_.insert(buffer_.begin(),
-                           std::make_move_iterator(batch.begin()),
-                           std::make_move_iterator(batch.end()));
-        }
+        (void)attempt_export(std::move(batch), export_fn);
     }
 }
 
@@ -171,15 +182,30 @@ inline bool OtlpExporter::flush() {
         }
         batch = std::move(buffer_);
         buffer_.clear();
+        in_flight_spans_ += batch.size();
         last_export_ = std::chrono::steady_clock::now();
         export_fn = export_fn_;
     }
 
-    if (export_fn(serialize_records(batch))) {
-        return true;
+    return attempt_export(std::move(batch), export_fn);
+}
+
+inline bool OtlpExporter::attempt_export(std::vector<SpanRecord> batch, const ExportFn& export_fn) {
+    bool succeeded = false;
+    try {
+        succeeded = export_fn(serialize_records(batch));
+    } catch (...) {
+        succeeded = false;
     }
 
     std::lock_guard lock(mutex_);
+    in_flight_spans_ -= batch.size();
+    if (succeeded) {
+        exported_spans_ += batch.size();
+        ++successful_batches_;
+        return true;
+    }
+    ++failed_batches_;
     buffer_.insert(buffer_.begin(),
                    std::make_move_iterator(batch.begin()),
                    std::make_move_iterator(batch.end()));
@@ -207,6 +233,10 @@ inline std::string OtlpExporter::serialize_records(
 inline std::string OtlpExporter::flush_json() {
     std::lock_guard lock(mutex_);
     const auto json = serialize_records(buffer_);
+    if (!buffer_.empty()) {
+        exported_spans_ += buffer_.size();
+        ++successful_batches_;
+    }
     buffer_.clear();
     return json;
 }
@@ -214,6 +244,10 @@ inline std::string OtlpExporter::flush_json() {
 inline std::vector<SpanRecord> OtlpExporter::drain() {
     std::lock_guard lock(mutex_);
     auto result = std::move(buffer_);
+    if (!result.empty()) {
+        exported_spans_ += result.size();
+        ++successful_batches_;
+    }
     buffer_.clear();
     return result;
 }
@@ -221,6 +255,17 @@ inline std::vector<SpanRecord> OtlpExporter::drain() {
 inline std::size_t OtlpExporter::buffer_size() const {
     std::lock_guard lock(mutex_);
     return buffer_.size();
+}
+
+inline OtlpExporter::Metrics OtlpExporter::metrics() const {
+    std::lock_guard lock(mutex_);
+    return Metrics{
+        .enqueued_spans = enqueued_spans_,
+        .exported_spans = exported_spans_,
+        .successful_batches = successful_batches_,
+        .failed_batches = failed_batches_,
+        .buffered_spans = static_cast<std::uint64_t>(buffer_.size() + in_flight_spans_),
+    };
 }
 
 inline bool OtlpExporter::post_json(const std::string& json_payload) const {

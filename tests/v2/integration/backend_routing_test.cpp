@@ -3057,6 +3057,12 @@ TEST(V2BackendRoutingTest, OtelExporterPostsSpanToCollectorEndpoint) {
         EXPECT_NE(collector.last_body.find("\"operationName\":\"route.login_request\""),
                   std::string::npos);
     }
+    const auto metrics = exporter->metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 1U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.failed_batches, 0U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
 
     bridge.shutdown();
     collector.stop();

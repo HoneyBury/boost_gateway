@@ -110,6 +110,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
     parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
     parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument("--otel-comparison", action="store_true")
     parser.add_argument("--skip-r4", action="store_true")
     parser.add_argument("--skip-perf", action="store_true")
     parser.add_argument("--perf-output-root", type=Path, default=None)
@@ -280,6 +281,8 @@ def main() -> int:
             ])
             if args.leaderboard_redis_key:
                 perf_cmd.extend(["--leaderboard-redis-key", args.leaderboard_redis_key])
+        if args.otel_comparison:
+            perf_cmd.append("--otel-comparison")
         steps.append(run_step(
             "release multi-process performance baseline",
             perf_cmd,

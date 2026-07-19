@@ -1,5 +1,27 @@
 # 更新日志
 
+## v3.5.3 — 高风险部署证据闭环（2026-07-19）
+
+> **范围**：不扩大默认协议或业务能力，补齐长期稳定性、受限 CPU 容量、真实依赖恢复、告警生命周期和专项性能证据。
+
+### 稳定性与恢复
+
+- 2h/8h soak 持续采集 Gateway 与宿主 CPU、RSS、fd 和负载，保留失败轮与确认复测，并校验资源采样覆盖率和最大间隔。
+- Redis 演练覆盖运行中停服、持续业务流量、恢复和告警 `inactive -> pending -> firing -> resolved`；Raft 演练覆盖 leader 故障、重新选主和落后 follower 追赶。
+- TLS 预发演练记录多轮 off/on 开销与恢复时间，生产证据清单统一绑定候选 SHA、checkout、runner 和 Conan lockfile。
+
+### 性能与治理
+
+- 容量采集支持 1/2/4 CPU affinity 矩阵，并为 matchmaking、leaderboard 和 Redis on/off 输出至少三轮的吞吐、P99、CPU、RSS 与失败率。
+- 新增 OTel off/on 固定 runner 对照：使用本机回环 OTLP collector，核对 exporter、collector 与后端路由计数，输出 P99、吞吐、Gateway CPU/RSS 的观测差异。
+- OTel exporter 提供线程安全的入队、导出批次、失败重试与缓冲计数，并通过 Gateway diagnostics 暴露可审计状态。
+- 生产 readiness 明确绑定 workflow checkout SHA；导入旧候选证据会以 provenance 失败阻断最终决策。
+
+### 发布边界
+
+- `v3.5.3` 的不可变 tag 只在新冻结 SHA 的 Release、R0、1/2/4 核矩阵、R4、R5/R6、Raft、2h/8h 与最终 R2/R3 全部完成后创建。
+- 1 核结果允许作为明确记录的容量边界，但不得把阈值失败改写为通过；OTel 相对开销只报告实测值，不在采集后补设任意百分比阈值。
+
 ## v3.5.2 — 发行包与真实控制面（候选）
 
 > **范围**：不改变默认协议和业务能力，补齐发行包的 clean-environment 验证、SBOM/attestation、Operator kind 和备用 Linux runner 证据。

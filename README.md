@@ -2,7 +2,7 @@
 
 > Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
-高性能 C++20 实时服务框架，当前稳定版为 `v3.5.2`，维护线为 `v3.5.x`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
+高性能 C++20 实时服务框架，当前版本为 `v3.5.3`，维护线为 `v3.5.x`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
 ## 当前状态
 
@@ -18,6 +18,7 @@
   - `v3.5.0` 同一候选的真实 2h、R4、R5、R6、R2/R3 冻结链通过
   - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
   - `v3.5.2` 同 SHA Release/R0、clean CMake consumer、tag publish/attestations 与双 runner 线上资产验收通过
+  - `v3.5.3` 已形成 2h/8h、1/2/4 核与业务专项、Redis/Raft 恢复、告警生命周期和 TLS 的阶段证据，并补齐 OTel 对照入口及同 SHA readiness 治理；正式结论和 tag 以最终冻结 SHA 的刷新结果为准
 
 ## 发布事实与边界
 

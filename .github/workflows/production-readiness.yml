@@ -2,6 +2,7 @@ name: Production / Readiness Decision
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
 
 on:
   workflow_dispatch:
@@ -93,6 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/check_production_evidence_manifest.py \
+            --expected-candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION" \
             --summary-path runtime/validation/r2-production-evidence-manifest-summary.json
 
       - name: R2 fixed-runner manifest
@@ -103,6 +105,7 @@ jobs:
           set -euo pipefail
           args=(
             scripts/check_production_evidence_manifest.py
+            --expected-candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION"
             --summary-path runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
           )
           if [ "${{ inputs.require_fixed_runner }}" = "true" ]; then
@@ -120,6 +123,7 @@ jobs:
             --manifest-summary runtime/validation/r2-production-evidence-manifest-summary.json
             --fixed-runner-summary runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
             --r0-summary runtime/validation/r0-production-candidate-evidence-summary.json
+            --expected-candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION"
             --output runtime/validation/r3-production-readiness-report.md
             --summary-path runtime/validation/r3-production-readiness-report-summary.json
           )
@@ -143,18 +147,26 @@ jobs:
           path = Path("runtime/validation/r3-production-readiness-report-summary.json")
           summary = json.loads(path.read_text(encoding="utf-8"))
           require_fixed_runner = os.environ.get("REQUIRE_FIXED_RUNNER", "").lower() == "true"
+          expected_revision = os.environ["BOOST_GATEWAY_CANDIDATE_REVISION"]
           decision = (
               summary.get("final_production_ready")
               if require_fixed_runner
               else summary.get("overall_pass")
           )
+          revision_matches = (
+              summary.get("candidate_revision") == expected_revision
+              and summary.get("candidate_revision_matches_expected") is True
+          )
           print(json.dumps({
               "overall_pass": summary.get("overall_pass"),
               "final_production_ready": summary.get("final_production_ready"),
-              "decision": decision,
+              "candidate_revision": summary.get("candidate_revision"),
+              "expected_candidate_revision": expected_revision,
+              "candidate_revision_matches_expected": revision_matches,
+              "decision": decision is True and revision_matches,
               "failed_step": summary.get("failed_step", ""),
           }, sort_keys=True))
-          raise SystemExit(0 if decision is True else 1)
+          raise SystemExit(0 if decision is True and revision_matches else 1)
           PY
 
       - name: Upload production readiness evidence

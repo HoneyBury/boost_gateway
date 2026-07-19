@@ -228,6 +228,8 @@ def run_r3_case(
     bounded_passed: bool,
     fixed_passed: bool,
     fixed_was_required: bool,
+    expected_revision: str = "",
+    evidence_revision: str = REVISION_A,
 ) -> tuple[int, dict[str, Any], str]:
     case_root = root / name
     case_root.mkdir(parents=True, exist_ok=True)
@@ -237,7 +239,14 @@ def run_r3_case(
     generated_at = datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
     common = {"summary_version": 2, "generated_at": generated_at, "checks": [], "artifacts": {}}
     bounded.write_text(
-        json.dumps({**common, "overall_pass": bounded_passed, "passed": bounded_passed}),
+        json.dumps(
+            {
+                **common,
+                "overall_pass": bounded_passed,
+                "passed": bounded_passed,
+                "candidate_revision": evidence_revision,
+            }
+        ),
         encoding="utf-8",
     )
     fixed.write_text(
@@ -247,7 +256,7 @@ def run_r3_case(
                 "overall_pass": fixed_passed,
                 "passed": fixed_passed,
                 "require_fixed_runner": fixed_was_required,
-                "candidate_revision": REVISION_A,
+                "candidate_revision": evidence_revision,
             }
         ),
         encoding="utf-8",
@@ -273,6 +282,8 @@ def run_r3_case(
         "--summary-path",
         str(summary),
     ]
+    if expected_revision:
+        command.extend(["--expected-candidate-revision", expected_revision])
     completed = subprocess.run(
         command,
         cwd=ROOT,
@@ -420,6 +431,7 @@ def main() -> int:
             bounded_passed=True,
             fixed_passed=True,
             fixed_was_required=True,
+            expected_revision=REVISION_A,
         )
         checks.append(
             {
@@ -427,6 +439,26 @@ def main() -> int:
                 "passed": returncode == 0
                 and payload.get("overall_pass") is True
                 and payload.get("final_production_ready") is True,
+                "detail": output[-2000:],
+            }
+        )
+
+        returncode, payload, output = run_r3_case(
+            temp_root,
+            "r3-checkout-revision-mismatch",
+            bounded_passed=True,
+            fixed_passed=True,
+            fixed_was_required=True,
+            expected_revision=REVISION_B,
+            evidence_revision=REVISION_A,
+        )
+        checks.append(
+            {
+                "name": "r3-rejects-evidence-from-different-checkout",
+                "passed": returncode != 0
+                and payload.get("overall_pass") is False
+                and payload.get("final_production_ready") is False
+                and payload.get("candidate_revision_matches_expected") is False,
                 "detail": output[-2000:],
             }
         )
@@ -463,6 +495,24 @@ def main() -> int:
                 and payload.get("final_production_ready") is False,
                 "detail": output[-2000:],
             }
+        )
+
+        readiness_workflow = (ROOT / ".github/workflows/production-readiness.yml").read_text(encoding="utf-8")
+        checks.extend(
+            [
+                {
+                    "name": "readiness-workflow-binds-checkout-revision",
+                    "passed": "BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}" in readiness_workflow,
+                    "detail": "workflow exports the immutable checkout revision",
+                },
+                {
+                    "name": "readiness-workflow-passes-expected-revision",
+                    "passed": readiness_workflow.count(
+                        '--expected-candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION"'
+                    ) >= 3,
+                    "detail": "bounded R2, fixed R2, and R3 receive the expected revision",
+                },
+            ]
         )
 
     failed = [check for check in checks if check["passed"] is not True]

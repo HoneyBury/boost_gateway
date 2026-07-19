@@ -58,6 +58,7 @@ struct DemoServerDiagnostics {
     std::uint64_t total_outbound_dispatches = 0;
     std::vector<DemoServerIoCoreSnapshot> io_cores;
     Runtime::BattleRouteDiagnostics battle_route;
+    std::optional<v3::tracing::OtlpExporter::Metrics> otel_exporter_metrics;
     std::unordered_map<std::string, BackendMetricsSnapshot> backend_metrics;
     std::vector<v2::service::ServiceInstance> backend_instances;
 };

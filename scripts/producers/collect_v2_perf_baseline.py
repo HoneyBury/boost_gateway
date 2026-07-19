@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import http.server
 import json
 import math
 import os
@@ -17,6 +18,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 import zlib
 from contextlib import suppress
@@ -410,6 +412,111 @@ def redis_command(host: str, port: int, *parts: str, timeout_seconds: float = 3.
         if prefix == b"-":
             raise RuntimeError(f"Redis command failed: {value}")
         raise RuntimeError(f"unsupported Redis response prefix: {prefix!r}")
+
+
+class LoopbackOtelCollector:
+    """Small OTLP/HTTP JSON sink used only for fixed-runner comparison proof."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counters = {
+            "requests": 0,
+            "spans": 0,
+            "invalid_payloads": 0,
+            "http_status_errors": 0,
+            "span_status_errors": 0,
+        }
+        collector = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                content_length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(content_length)
+                valid = False
+                spans: list[object] = []
+                try:
+                    payload = json.loads(body)
+                    raw_spans = payload.get("spans") if isinstance(payload, dict) else None
+                    if self.path == "/v1/traces" and isinstance(raw_spans, list):
+                        spans = raw_spans
+                        valid = all(isinstance(span, dict) for span in spans)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+                with collector._lock:
+                    collector._counters["requests"] += 1
+                    if valid:
+                        collector._counters["spans"] += len(spans)
+                        collector._counters["span_status_errors"] += sum(
+                            1 for span in spans if span.get("status") != "ok"
+                        )
+                    else:
+                        collector._counters["invalid_payloads"] += 1
+                        collector._counters["http_status_errors"] += 1
+                self.send_response(200 if valid else 400)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def endpoint(self) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}/v1/traces"
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=2)
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counters)
+
+
+def counter_delta(after: dict[str, int], before: dict[str, int]) -> dict[str, int]:
+    return {key: int(after.get(key, 0)) - int(before.get(key, 0)) for key in after}
+
+
+def total_backend_requests(diagnostics: dict[str, Any]) -> int:
+    metrics = diagnostics.get("backend_metrics")
+    if not isinstance(metrics, dict):
+        return 0
+    return sum(
+        int(snapshot.get("total_requests", 0))
+        for snapshot in metrics.values()
+        if isinstance(snapshot, dict)
+    )
+
+
+def wait_for_otel_mode_quiescence(
+    diagnostics_url: str,
+    *,
+    mode: str,
+    initial_backend_requests: int,
+    timeout_seconds: float = 5.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    previous: tuple[int, int] | None = None
+    stable_samples = 0
+    latest: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        latest = fetch_json(diagnostics_url)
+        routed = total_backend_requests(latest) - initial_backend_requests
+        enqueued = int(otel_exporter_metrics(latest).get("enqueued_spans", 0))
+        current = (routed, enqueued)
+        counters_agree = mode == "off" or routed == enqueued
+        stable_samples = stable_samples + 1 if current == previous and counters_agree else 0
+        if stable_samples >= 1:
+            return latest
+        previous = current
+        time.sleep(0.1)
+    return latest
 
 
 def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
@@ -1338,6 +1445,169 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     }
 
 
+def otel_exporter_metrics(diagnostics: dict[str, Any]) -> dict[str, Any]:
+    raw = diagnostics.get("otel_exporter_metrics")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "configured": raw.get("configured") is True,
+        "enqueued_spans": int(raw.get("enqueued_spans", 0)),
+        "exported_spans": int(raw.get("exported_spans", 0)),
+        "successful_batches": int(raw.get("successful_batches", 0)),
+        "failed_batches": int(raw.get("failed_batches", 0)),
+        "buffered_spans": int(raw.get("buffered_spans", 0)),
+    }
+
+
+def distribution(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "median": None, "max": None}
+    return {
+        "min": round(min(values), 3),
+        "median": round(statistics.median(values), 3),
+        "max": round(max(values), 3),
+    }
+
+
+def aggregate_otel_mode(
+    mode: str,
+    runs: list[dict[str, Any]],
+    mode_backend_routed_requests: int,
+) -> dict[str, Any]:
+    performance = aggregate_case_runs("battle-100-30s", runs)
+    return {
+        "mode": mode,
+        "runs": len(runs),
+        "performance": performance,
+        "gateway_cpu_seconds": distribution([
+            float(run["gateway_resources"]["cpu_seconds_delta"])
+            for run in runs
+            if run["gateway_resources"].get("cpu_seconds_delta") is not None
+        ]),
+        "gateway_rss_mb": distribution([
+            float(run["gateway_resources"]["rss_mb_after"])
+            for run in runs
+        ]),
+        "backend_routed_requests": mode_backend_routed_requests,
+        "per_run_backend_routed_requests": sum(
+            int(run["backend_routed_requests"]) for run in runs
+        ),
+        "gateway_cpu_affinities": sorted({
+            str(run["gateway_resources"].get("cpu_affinity", "")) for run in runs
+        }),
+        "gateway_pid": runs[0]["gateway_resources"].get("pid") if runs else None,
+        "runs_detail": runs,
+    }
+
+
+def median_delta(off_value: float | None, on_value: float | None) -> dict[str, float | None]:
+    if off_value is None or on_value is None:
+        return {"off": off_value, "on": on_value, "on_minus_off": None, "delta_percent": None}
+    difference = float(on_value) - float(off_value)
+    return {
+        "off": off_value,
+        "on": on_value,
+        "on_minus_off": round(difference, 3),
+        "delta_percent": round(difference / float(off_value) * 100.0, 3)
+        if float(off_value) != 0.0 else None,
+    }
+
+
+def build_otel_comparison(
+    off: dict[str, Any],
+    on: dict[str, Any],
+    *,
+    repetitions: int,
+    off_log_verified: bool,
+    on_log_verified: bool,
+    collector_off: dict[str, int],
+    collector_on: dict[str, int],
+    off_exporter: dict[str, Any],
+    on_exporter: dict[str, Any],
+) -> dict[str, Any]:
+    off_absolute_gate = evaluate_release_gates([off["performance"]])
+    on_absolute_gate = evaluate_release_gates([on["performance"]])
+    empty_collector = {
+        "requests": 0,
+        "spans": 0,
+        "invalid_payloads": 0,
+        "http_status_errors": 0,
+        "span_status_errors": 0,
+    }
+    counter_fields = (
+        "enqueued_spans", "exported_spans", "successful_batches", "failed_batches", "buffered_spans"
+    )
+    off_proof = (
+        off_log_verified
+        and collector_off == empty_collector
+        and off_exporter.get("configured") is False
+        and all(int(off_exporter.get(field, 0)) == 0 for field in counter_fields)
+    )
+    routed = int(on.get("backend_routed_requests", 0))
+    enqueued = int(on_exporter.get("enqueued_spans", -1))
+    exported = int(on_exporter.get("exported_spans", -1))
+    buffered = int(on_exporter.get("buffered_spans", -1))
+    on_proof = (
+        on_log_verified
+        and on_exporter.get("configured") is True
+        and routed > 0
+        and enqueued == routed
+        and exported == int(collector_on.get("spans", -1))
+        and int(on_exporter.get("successful_batches", -1)) == int(collector_on.get("requests", -1))
+        and int(on_exporter.get("failed_batches", -1)) == 0
+        and buffered == enqueued - exported
+        and int(collector_on.get("requests", 0)) > 0
+        and int(collector_on.get("spans", 0)) > 0
+        and int(collector_on.get("invalid_payloads", -1)) == 0
+        and int(collector_on.get("http_status_errors", -1)) == 0
+        and int(collector_on.get("span_status_errors", -1)) == 0
+    )
+    complete = int(off.get("runs", 0)) == repetitions and int(on.get("runs", 0)) == repetitions and repetitions >= 3
+    absolute_gate_passed = off_absolute_gate.get("overall_pass") is True and on_absolute_gate.get("overall_pass") is True
+    affinity_verified = (
+        off.get("gateway_cpu_affinities") == on.get("gateway_cpu_affinities")
+        and bool(off.get("gateway_cpu_affinities"))
+        and all(bool(value) for value in off.get("gateway_cpu_affinities", []))
+    )
+    fresh_gateway_per_mode = (
+        off.get("gateway_pid") is not None
+        and on.get("gateway_pid") is not None
+        and off.get("gateway_pid") != on.get("gateway_pid")
+    )
+    verified = (
+        complete
+        and fresh_gateway_per_mode
+        and affinity_verified
+        and off_proof
+        and on_proof
+        and absolute_gate_passed
+    )
+    return {
+        "requested": True,
+        "verified": verified,
+        "passed": verified,
+        "repetitions_per_mode": repetitions,
+        "case": "battle-100-30s",
+        "performance_regression_policy": "observed_not_thresholded",
+        "execution_model": "one_fresh_gateway_per_mode_three_or_more_runs_per_process",
+        "fresh_gateway_per_mode": fresh_gateway_per_mode,
+        "absolute_gate_passed": absolute_gate_passed,
+        "affinity_verified": affinity_verified,
+        "modes": {"off": off, "on": on},
+        "proof": {
+            "off": {"verified": off_proof, "log_verified": off_log_verified, "collector": collector_off, "exporter": off_exporter},
+            "on": {"verified": on_proof, "log_verified": on_log_verified, "collector": collector_on, "exporter": on_exporter},
+        },
+        "absolute_gates": {"off": off_absolute_gate, "on": on_absolute_gate},
+        "deltas": {
+            "throughput_msg_per_sec": median_delta(off["performance"]["throughput_msg_per_sec"]["median"], on["performance"]["throughput_msg_per_sec"]["median"]),
+            "latency_p99_ms": median_delta(off["performance"]["latency_p99_ms"]["median"], on["performance"]["latency_p99_ms"]["median"]),
+            "gateway_cpu_seconds": median_delta(off["gateway_cpu_seconds"]["median"], on["gateway_cpu_seconds"]["median"]),
+            "gateway_rss_mb": median_delta(off["gateway_rss_mb"]["median"], on["gateway_rss_mb"]["median"]),
+        },
+    }
+
+
 def case_base_name(snapshot_key: str) -> str:
     return re.sub(r"\.run\d+$", "", snapshot_key)
 
@@ -1586,6 +1856,37 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"{fmt_number(aggregate.get('failed_clients', {}).get('max'))} | "
             f"{fmt_number(aggregate.get('forced_timeout'))} |"
         )
+
+    otel_comparison = summary.get("otel_comparison")
+    if isinstance(otel_comparison, dict):
+        deltas = otel_comparison.get("deltas", {})
+        on_proof = otel_comparison.get("proof", {}).get("on", {})
+        lines.extend([
+            "",
+            "## OTel Off/On Comparison",
+            "",
+            f"- Verified: **{fmt_number(otel_comparison.get('verified'))}**",
+            f"- Runs per mode: {fmt_number(otel_comparison.get('repetitions_per_mode'))}",
+            f"- Regression policy: `{otel_comparison.get('performance_regression_policy')}`",
+            f"- Collector spans: {fmt_number(on_proof.get('collector', {}).get('spans'))}",
+            f"- Exporter failed batches: {fmt_number(on_proof.get('exporter', {}).get('failed_batches'))}",
+            "",
+            "| Metric | Off median | On median | On - off | Delta % |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ])
+        for metric in (
+            "throughput_msg_per_sec",
+            "latency_p99_ms",
+            "gateway_cpu_seconds",
+            "gateway_rss_mb",
+        ):
+            delta = deltas.get(metric, {})
+            lines.append(
+                f"| `{metric}` | {fmt_number(delta.get('off'), 3)} | "
+                f"{fmt_number(delta.get('on'), 3)} | "
+                f"{fmt_number(delta.get('on_minus_off'), 3)} | "
+                f"{fmt_number(delta.get('delta_percent'), 3)} |"
+            )
 
     business_operation_perf = summary.get("business_operation_perf")
     if isinstance(business_operation_perf, dict):
@@ -1855,6 +2156,11 @@ def main() -> int:
     parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
     parser.add_argument("--leaderboard-redis-key", default="")
     parser.add_argument(
+        "--otel-comparison",
+        action="store_true",
+        help="Run fresh-Gateway OTel off/on battle-100 comparisons with a loopback collector.",
+    )
+    parser.add_argument(
         "--case",
         action="append",
         default=[],
@@ -1883,6 +2189,11 @@ def main() -> int:
             parser.error("--leaderboard-redis-comparison requires --repetitions >= 3")
         if not 1 <= args.leaderboard_redis_port <= 65535:
             parser.error("--leaderboard-redis-port must be between 1 and 65535")
+    if args.otel_comparison:
+        if args.repetitions < 3:
+            parser.error("--otel-comparison requires --repetitions >= 3")
+        if not any(case["name"] == "battle-100-30s" for case in build_run_cases(args.run_preset)):
+            parser.error("--otel-comparison requires a preset containing battle-100-30s")
 
     root = Path(__file__).resolve().parents[2]
     build_dir = Path(args.build_dir).resolve()
@@ -1979,6 +2290,7 @@ def main() -> int:
             "V2_RATE_LIMIT_USER": "100000",
             "V2_RATE_LIMIT_LOGIN": "50000",
             "V2_BATTLE_MAX_FRAMES": str(battle_max_frames),
+            "OTEL_EXPORT_ENDPOINT": "",
         }
         if args.backend_pool_size > 0:
             gateway_env["V2_BACKEND_CONNECTION_POOL_SIZE"] = str(args.backend_pool_size)
@@ -2024,6 +2336,7 @@ def main() -> int:
             "business_flow": None,
             "business_operation_perf": None,
             "leaderboard_persistence_comparison": None,
+            "otel_comparison": None,
             "final_backend_metrics": {},
         }
         summary["process_snapshots"]["idle"] = snapshot_processes(managed)
@@ -2051,6 +2364,151 @@ def main() -> int:
             summary["case_aggregates"].append(aggregate)
 
         summary["release_gates"] = evaluate_release_gates(summary["case_aggregates"])
+        if args.otel_comparison:
+            log_step("Running fresh-Gateway OTel off/on performance comparison")
+            comparison_case = next(case for case in run_cases if case["name"] == "battle-100-30s")
+            gateway_process.stop()
+            managed.remove(gateway_process)
+            otel_collector = LoopbackOtelCollector()
+            otel_collector.start()
+
+            def run_otel_mode(mode: str, endpoint: str) -> tuple[dict[str, Any], bool, dict[str, int], dict[str, Any]]:
+                mode_env = {**gateway_env, "OTEL_EXPORT_ENDPOINT": endpoint}
+                process = ManagedProcess(
+                    f"v2_gateway_demo.otel-{mode}",
+                    executables["gateway"],
+                    gateway_args,
+                    log_dir,
+                    mode_env,
+                )
+                managed.append(process)
+                try:
+                    wait_tcp_port("127.0.0.1", args.gateway_port)
+                    wait_tcp_port("127.0.0.1", args.http_port)
+                    time.sleep(2.0)
+                    mode_initial_diagnostics = fetch_json(
+                        f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                    )
+                    collector_before_mode = otel_collector.snapshot()
+                    mode_runs: list[dict[str, Any]] = []
+                    for repetition in range(args.repetitions):
+                        diagnostics_before = fetch_json(
+                            f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                        )
+                        process_before = process_snapshot(process.pid)
+                        collector_before = otel_collector.snapshot()
+                        run = invoke_bench_case(
+                            executables["pressure"],
+                            args.gateway_port,
+                            {
+                                **comparison_case,
+                                "name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            },
+                            result_dir,
+                        )
+                        diagnostics_after = fetch_json(
+                            f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                        )
+                        process_after = process_snapshot(process.pid)
+                        collector_after = otel_collector.snapshot()
+                        cpu_before = process_before.get("cpu_seconds")
+                        cpu_after = process_after.get("cpu_seconds")
+                        run.update({
+                            "case_name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            "base_case_name": "battle-100-30s",
+                            "otel_mode": mode,
+                            "gateway_resources": {
+                                "cpu_seconds_before": cpu_before,
+                                "cpu_seconds_after": cpu_after,
+                                "cpu_seconds_delta": round(float(cpu_after) - float(cpu_before), 3)
+                                if cpu_before is not None and cpu_after is not None else None,
+                                "rss_mb_after": process_after.get("working_set_mb", 0.0),
+                                "cpu_affinity": process_after.get("cpu_affinity", ""),
+                                "pid": process.pid,
+                            },
+                            "backend_routed_requests": (
+                                total_backend_requests(diagnostics_after)
+                                - total_backend_requests(diagnostics_before)
+                            ),
+                            "collector_delta": counter_delta(collector_after, collector_before),
+                            "exporter_metrics_after": otel_exporter_metrics(diagnostics_after),
+                        })
+                        mode_runs.append(run)
+                    final_diagnostics = wait_for_otel_mode_quiescence(
+                        f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                        mode=mode,
+                        initial_backend_requests=total_backend_requests(mode_initial_diagnostics),
+                    )
+                    log_text = process.log_text()
+                    marker_present = "OTLP export enabled" in log_text
+                    log_verified = marker_present if mode == "on" else not marker_present
+                    collector_delta_mode = counter_delta(
+                        otel_collector.snapshot(), collector_before_mode
+                    )
+                    mode_backend_routed_requests = (
+                        total_backend_requests(final_diagnostics)
+                        - total_backend_requests(mode_initial_diagnostics)
+                    )
+                    return (
+                        aggregate_otel_mode(
+                            mode,
+                            mode_runs,
+                            mode_backend_routed_requests,
+                        ),
+                        log_verified,
+                        collector_delta_mode,
+                        otel_exporter_metrics(final_diagnostics),
+                    )
+                finally:
+                    process.stop()
+                    managed.remove(process)
+
+            try:
+                off_mode, off_log, off_collector, off_exporter = run_otel_mode("off", "")
+                on_mode, on_log, on_collector, on_exporter = run_otel_mode(
+                    "on", otel_collector.endpoint
+                )
+                summary["otel_comparison"] = build_otel_comparison(
+                    off_mode,
+                    on_mode,
+                    repetitions=args.repetitions,
+                    off_log_verified=off_log,
+                    on_log_verified=on_log,
+                    collector_off=off_collector,
+                    collector_on=on_collector,
+                    off_exporter=off_exporter,
+                    on_exporter=on_exporter,
+                )
+            finally:
+                otel_collector.stop()
+
+            summary["release_gates"].setdefault("checks", []).append({
+                "case": "otel-off-on-comparison",
+                "passed": summary["otel_comparison"]["verified"] is True,
+                "criteria": (
+                    "one fresh Gateway per OTel mode, battle-100 at least three runs per process; absolute gate, "
+                    "runtime exporter counters, backend route and loopback collector proof agree"
+                ),
+                "observed": {
+                    "repetitions_per_mode": args.repetitions,
+                    "performance_regression_policy": "observed_not_thresholded",
+                    "proof": summary["otel_comparison"]["proof"],
+                },
+            })
+            if summary["otel_comparison"]["verified"] is not True:
+                summary["release_gates"]["overall_pass"] = False
+
+            gateway_process = ManagedProcess(
+                "v2_gateway_demo.post-otel",
+                executables["gateway"],
+                gateway_args,
+                log_dir,
+                gateway_env,
+            )
+            managed.append(gateway_process)
+            wait_tcp_port("127.0.0.1", args.gateway_port)
+            wait_tcp_port("127.0.0.1", args.http_port)
+            time.sleep(2.0)
         if args.business_operation_scenario:
             selected_scenarios = list(dict.fromkeys(args.business_operation_scenario))
             log_step(f"Running concurrent business operation performance: {', '.join(selected_scenarios)}")

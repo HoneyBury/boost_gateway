@@ -43,6 +43,27 @@ class LongSoakEvidenceTest(unittest.TestCase):
                 parse_args()
             self.assertEqual(raised.exception.code, 2)
 
+    def test_otel_comparison_requires_business_capacity_and_three_repetitions(self):
+        invalid_argv = [
+            ["run_long_soak_capacity.py", "--run-otel-comparison"],
+            [
+                "run_long_soak_capacity.py",
+                "--run-otel-comparison",
+                "--run-business-capacity",
+                "--perf-repetitions",
+                "2",
+            ],
+        ]
+        for argv in invalid_argv:
+            with (
+                self.subTest(argv=argv),
+                patch.object(sys, "argv", argv),
+                patch("sys.stderr", new=io.StringIO()),
+                self.assertRaises(SystemExit) as raised,
+            ):
+                parse_args()
+            self.assertEqual(raised.exception.code, 2)
+
     def test_attach_provenance_updates_completed_long_soak_summary(self):
         with tempfile.TemporaryDirectory() as temp:
             summary_path = Path(temp) / "long-soak-2h-summary.json"

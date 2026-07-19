@@ -185,6 +185,11 @@ def main() -> int:
         action="store_true",
         help="Fail unless both bounded and fixed-runner R2 summaries pass.",
     )
+    parser.add_argument(
+        "--expected-candidate-revision",
+        default="",
+        help="Require bounded and fixed-runner evidence to match the workflow checkout revision.",
+    )
     args = parser.parse_args()
 
     manifest_summary_path = args.manifest_summary if args.manifest_summary.is_absolute() else REPO_ROOT / args.manifest_summary
@@ -196,10 +201,21 @@ def main() -> int:
 
     manifest_summary = load_json(manifest_summary_path)
     fixed_runner_summary = load_json(fixed_runner_summary_path)
-    bounded_ready = bool_passed(manifest_summary)
+    bounded_revision = str(manifest_summary.get("candidate_revision", ""))
+    fixed_revision = str(fixed_runner_summary.get("candidate_revision", ""))
+    expected_revision = args.expected_candidate_revision
+    bounded_revision_matches = not expected_revision or bounded_revision == expected_revision
+    fixed_revision_matches = not expected_revision or fixed_revision == expected_revision
+    candidate_revision_matches_expected = (
+        bounded_revision_matches
+        and fixed_revision_matches
+        and (not expected_revision or bool(bounded_revision and fixed_revision))
+    )
+    bounded_ready = bool_passed(manifest_summary) and bounded_revision_matches
     fixed_runner_ready = (
         bool_passed(fixed_runner_summary)
         and fixed_runner_summary.get("require_fixed_runner") is True
+        and fixed_revision_matches
         if fixed_runner_summary
         else False
     )
@@ -216,9 +232,18 @@ def main() -> int:
         "",
         f"- Bounded local candidate evidence: **{status_text(bounded_ready)}**",
         f"- Final production fixed-runner/pre-production readiness: **{status_text(final_ready)}**",
-        f"- Candidate revision: `{fixed_runner_summary.get('candidate_revision') or manifest_summary.get('candidate_revision', '')}`",
+        f"- Candidate revision: `{fixed_revision or bounded_revision}`",
+        f"- Expected candidate revision: `{expected_revision}`",
+        f"- Candidate revision matches checkout: **{status_text(candidate_revision_matches_expected)}**",
         "",
     ]
+    if not candidate_revision_matches_expected:
+        lines.extend(
+            [
+                "Current decision blocker: imported evidence candidate revision does not match the workflow checkout.",
+                "",
+            ]
+        )
     if bounded_ready and not final_ready:
         lines.extend(
             [
@@ -275,11 +300,21 @@ def main() -> int:
         "passed": decision_passed,
         "final_production_ready": final_ready,
         "require_fixed_runner": args.require_fixed_runner,
-        "candidate_revision": fixed_runner_summary.get("candidate_revision") or manifest_summary.get("candidate_revision", ""),
-        "failed_category": "" if decision_passed else "manifest",
-        "failed_step": "" if decision_passed else str(
-            (fixed_runner_summary if args.require_fixed_runner and bounded_ready else manifest_summary).get(
-                "failed_step", "manifest"
+        "candidate_revision": fixed_revision or bounded_revision,
+        "expected_candidate_revision": expected_revision,
+        "candidate_revision_matches_expected": candidate_revision_matches_expected,
+        "failed_category": (
+            "" if decision_passed else "provenance" if not candidate_revision_matches_expected else "manifest"
+        ),
+        "failed_step": (
+            ""
+            if decision_passed
+            else "candidate_revision"
+            if not candidate_revision_matches_expected
+            else str(
+                (fixed_runner_summary if args.require_fixed_runner and bounded_ready else manifest_summary).get(
+                    "failed_step", "manifest"
+                )
             )
         ),
         "artifacts": {

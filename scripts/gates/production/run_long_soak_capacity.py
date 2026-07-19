@@ -128,6 +128,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
     parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
     parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument("--run-otel-comparison", action="store_true")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/long-soak-capacity-summary.json"))
     args = parser.parse_args()
     if args.run_business_operation_perf and not (args.run_capacity or args.run_business_capacity):
@@ -141,6 +142,10 @@ def parse_args() -> argparse.Namespace:
         )
     if args.leaderboard_redis_comparison and args.perf_repetitions < 3:
         parser.error("--leaderboard-redis-comparison requires --perf-repetitions >= 3")
+    if args.run_otel_comparison and not args.run_business_capacity:
+        parser.error("--run-otel-comparison requires --run-business-capacity")
+    if args.run_otel_comparison and args.perf_repetitions < 3:
+        parser.error("--run-otel-comparison requires --perf-repetitions >= 3")
     return args
 
 
@@ -306,6 +311,8 @@ def main() -> int:
             ])
             if args.leaderboard_redis_key:
                 cmd.extend(["--leaderboard-redis-key", args.leaderboard_redis_key])
+        if args.run_otel_comparison:
+            cmd.append("--otel-comparison")
         steps.append(run_step("business-capacity baseline evidence", "business_capacity", cmd, 10800))
 
     failed = next((step for step in steps if step.get("status") != "passed"), None)
@@ -330,6 +337,7 @@ def main() -> int:
         "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
         "leaderboard_redis_host": args.leaderboard_redis_host if args.leaderboard_redis_comparison else "",
         "leaderboard_redis_port": args.leaderboard_redis_port if args.leaderboard_redis_comparison else 0,
+        "run_otel_comparison": args.run_otel_comparison,
         "environment": environment_snapshot(),
         "overall_pass": failed is None,
         "passed": failed is None,
