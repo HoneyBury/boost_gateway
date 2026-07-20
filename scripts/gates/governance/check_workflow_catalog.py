@@ -131,6 +131,7 @@ def main() -> int:
                 )
 
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    release_asset_verification = read(WORKFLOWS_ROOT / "release-asset-verification.yml")
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
@@ -232,11 +233,22 @@ def main() -> int:
         checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
+        and "scripts/tools/harden_release_sbom.py enrich" in release_workflow
+        and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
+        < release_workflow.index("Attest release archive SBOM")
         and release_workflow.count("uses: actions/attest@v4") == 2
         and "sbom-path:" in release_workflow
         and "attestations: write" in release_workflow
         and "id-token: write" in release_workflow,
         "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
+    )
+    add(
+        checks,
+        "release:published-sbom-semantics",
+        "scripts/tools/harden_release_sbom.py verify" in release_asset_verification
+        and "published-release-sbom-semantics-summary.json" in release_asset_verification
+        and '"sbom_semantics": sbom_semantics' in release_asset_verification,
+        "published asset verification rechecks SBOM file digests and Conan dependency semantics",
     )
     add(
         checks,

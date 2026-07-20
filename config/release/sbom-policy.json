@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "exclude_build_requires": true,
+  "excluded_conan_requires": [
+    "gtest"
+  ]
+}

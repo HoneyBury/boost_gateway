@@ -34,8 +34,10 @@
 - 同 SHA 8h run `29711044558` 连续执行 `28801.652s`，完成 3207 轮；960 个资源样本覆盖 `28801.542s`，最大间隔 `30.073s`，FD 起止均为 4。
 - 线上资产验证 run `29740136895` 的 checksum、archive layout、离线 runtime consumer、provenance attestation 和 SBOM attestation 全部通过。
 - 独立验签只证明已发布 SBOM 未被替换；`v3.5.3` SPDX 内容仍只有顶层 package 和 13 个 bin/lib 文件，文件 SHA1 为占位全零且未列出 Conan 第三方组件。后续发布必须增加独立的 SBOM semantic gate。
+- 发布后分支已新增确定性 SBOM enrich/verify：覆盖发行包全部普通文件 SHA-256，并从 Conan lockfile 补入 9 个运行时依赖及 PURL/recipe revision/`DEPENDS_ON`；release 与 published asset verification 在 attestation 前后分别执行同一语义门禁。该修复只影响后续发布，不重写 `v3.5.3` 资产。
 - 已发布 CPU 矩阵的延迟、吞吐和失败数是有效的整栈端到端事实，但 collector 在启动子进程前约束自身 affinity，使服务端与 load generator 共用 CPU set；它不能作为 Gateway 独占 1/2/4 vCPU 的扩展结论。
 - 旧资源分析使用实验初始 CPU 时间反复计算每轮差值，出现单核进程超过 100% 的不可解释结果；下一矩阵必须使用相邻快照。
+- 纠偏提交 `29fc4cff` 的 AOI focused run `29742852766` 已验证 service CPU `0` 与 loadgen CPU `4-7` 的进程级隔离。echo-5K 三轮 P99 均为 2ms、吞吐中位数 58010.88 msg/s；echo-10K P99 为 5/10/20ms、吞吐中位数 59251.73 msg/s；0 rejected/failed，六轮资源隔离 gate 全部通过。Gateway CPU 约 56-59%，整套服务总 CPU 约 56-62.5%，因此暂不调整 `io_cores` 默认值。
 
 ## 证据约束
 

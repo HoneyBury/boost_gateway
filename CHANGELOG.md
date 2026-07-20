@@ -1,5 +1,12 @@
 # 更新日志
 
+## Unreleased
+
+### 证据与发布工程
+
+- 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
+- Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。
+
 ## v3.5.3 — 高风险部署证据闭环（2026-07-20）
 
 > **范围**：不扩大默认协议或业务能力，补齐长期稳定性、受限 CPU 容量、真实依赖恢复、告警生命周期和专项性能证据。
