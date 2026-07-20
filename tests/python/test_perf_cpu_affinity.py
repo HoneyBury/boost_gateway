@@ -5,6 +5,7 @@ from unittest.mock import patch
 from scripts.producers.collect_v2_perf_baseline import (
     analyze_resources,
     apply_cpu_affinity,
+    evaluate_resource_isolation_evidence,
     format_cpu_set,
     parse_cpu_set,
     resolve_loadgen_cpu_set,
@@ -135,22 +136,37 @@ class PerfCpuAffinityTest(unittest.TestCase):
                     "after": [snapshot(40.0)],
                     "loadgen": {"cpu_percent_from_cpu_seconds": 50.0},
                     "elapsed_seconds": 30.0,
+                    "quiescence": {"quiesced": True},
                 },
                 "echo.run2": {
                     "before": [snapshot(40.0)],
                     "after": [snapshot(70.0)],
                     "loadgen": {"cpu_percent_from_cpu_seconds": 50.0},
                     "elapsed_seconds": 30.0,
+                    "quiescence": {"quiesced": True},
                 },
+            },
+            "service_resource_constraint": {
+                "type": "linux_cpu_affinity",
+                "applied": True,
+                "effective_cpu_set": "0",
+            },
+            "loadgen_resource_constraint": {
+                "type": "linux_cpu_affinity",
+                "applied": True,
+                "effective_cpu_set": "2-3",
             },
         }
 
         analysis = analyze_resources(summary)
+        summary["resource_analysis"] = analysis
+        isolation = evaluate_resource_isolation_evidence(summary)
 
         self.assertEqual(
             [run["services"]["gateway"]["cpu_percent_from_cpu_seconds"] for run in analysis["per_run"]],
             [100.0, 100.0],
         )
+        self.assertTrue(isolation["passed"])
 
 
 if __name__ == "__main__":

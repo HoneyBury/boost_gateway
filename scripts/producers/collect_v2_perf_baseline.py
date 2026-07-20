@@ -2105,6 +2105,94 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def evaluate_resource_isolation_evidence(summary: dict[str, Any]) -> dict[str, Any]:
+    service = summary.get("service_resource_constraint")
+    loadgen = summary.get("loadgen_resource_constraint")
+    service = service if isinstance(service, dict) else {}
+    loadgen = loadgen if isinstance(loadgen, dict) else {}
+    required = service.get("type") == "linux_cpu_affinity"
+    if not required:
+        return {
+            "case": "service-loadgen-resource-isolation",
+            "passed": True,
+            "required": False,
+            "criteria": "required only for Linux CPU-constrained evidence",
+            "observed": {"service_constraint_type": service.get("type", "none")},
+        }
+
+    service_set = parse_cpu_set(str(service.get("effective_cpu_set", "")))
+    loadgen_set = parse_cpu_set(str(loadgen.get("effective_cpu_set", "")))
+    service_limit = len(service_set) * 100.0 + 5.0
+    loadgen_limit = len(loadgen_set) * 100.0 + 5.0
+    failures: list[str] = []
+    if (
+        service.get("applied") is not True
+        or loadgen.get("applied") is not True
+        or not service_set.isdisjoint(loadgen_set)
+    ):
+        failures.append("service/loadgen affinity is missing, unverified, or overlapping")
+
+    cases = summary.get("cases")
+    per_run = summary.get("resource_analysis", {}).get("per_run")
+    snapshots = summary.get("process_snapshots")
+    cases = cases if isinstance(cases, list) else []
+    per_run = per_run if isinstance(per_run, list) else []
+    snapshots = snapshots if isinstance(snapshots, dict) else {}
+    if len(per_run) != len(cases) or not cases:
+        failures.append(f"resource run count mismatch: {len(per_run)}/{len(cases)}")
+    for run in per_run:
+        case_name = str(run.get("case_name", ""))
+        raw = snapshots.get(case_name)
+        services = run.get("services")
+        loadgen_metrics = run.get("loadgen")
+        if (
+            not isinstance(raw, dict)
+            or not isinstance(raw.get("quiescence"), dict)
+            or raw["quiescence"].get("quiesced") is not True
+            or not isinstance(services, dict)
+            or not services
+            or not isinstance(loadgen_metrics, dict)
+        ):
+            failures.append(f"{case_name}: missing quiescence or resource evidence")
+            continue
+        service_cpu = [
+            metrics.get("cpu_percent_from_cpu_seconds")
+            for metrics in services.values()
+            if isinstance(metrics, dict)
+        ]
+        loadgen_cpu = loadgen_metrics.get("cpu_percent_from_cpu_seconds")
+        if (
+            len(service_cpu) != len(services)
+            or any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or value < 0
+                for value in service_cpu
+            )
+            or sum(float(value) for value in service_cpu if isinstance(value, (int, float)))
+            > service_limit
+            or not isinstance(loadgen_cpu, (int, float))
+            or isinstance(loadgen_cpu, bool)
+            or not 0 <= loadgen_cpu <= loadgen_limit
+        ):
+            failures.append(f"{case_name}: CPU delta exceeds its physical affinity limit")
+
+    return {
+        "case": "service-loadgen-resource-isolation",
+        "passed": not failures,
+        "required": True,
+        "criteria": (
+            "disjoint verified affinity, per-run quiescence, adjacent snapshots, and physical CPU totals"
+        ),
+        "observed": {
+            "service_cpu_set": format_cpu_set(service_set),
+            "loadgen_cpu_set": format_cpu_set(loadgen_set),
+            "resource_runs": len(per_run),
+            "failures": failures,
+        },
+    }
+
+
 def minimum_battle_messages(case_name: str) -> int:
     if case_name.startswith("battle-500"):
         return 20_000
@@ -3190,6 +3278,10 @@ def main() -> int:
                 summary["release_gates"]["overall_pass"] = False
             summary["process_snapshots"]["business-operation-perf"] = snapshot_processes(managed)
         summary["resource_analysis"] = analyze_resources(summary)
+        resource_isolation_check = evaluate_resource_isolation_evidence(summary)
+        summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
+        if not resource_isolation_check["passed"]:
+            summary["release_gates"]["overall_pass"] = False
         final_diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
         summary["final_backend_metrics"] = final_diagnostics.get("backend_metrics", {})
         (result_dir / "final.gateway.diagnostics.json").write_text(
