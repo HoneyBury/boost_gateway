@@ -27,6 +27,11 @@ from pathlib import Path
 from typing import Any
 from urllib.request import urlopen
 
+try:
+    import resource
+except ImportError:  # pragma: no cover - unavailable on Windows
+    resource = None  # type: ignore[assignment]
+
 
 def log_step(message: str) -> None:
     print(f"==> {message}", flush=True)
@@ -114,6 +119,122 @@ def apply_cpu_affinity(cpu_set: str) -> dict[str, Any]:
         "cpu_count": len(effective),
     })
     return constraint
+
+
+def prepare_process_cpu_affinity(cpu_set: str, option_name: str) -> dict[str, Any]:
+    """Validate a child-process affinity without constraining the collector."""
+    constraint: dict[str, Any] = {
+        "type": "linux_cpu_affinity",
+        "requested": cpu_set,
+        "applied": False,
+        "allowed_cpu_set_before": "",
+        "effective_cpu_set": "",
+        "cpu_count": 0,
+        "processes": [],
+    }
+    if not cpu_set:
+        constraint["type"] = "none"
+        return constraint
+    if platform.system() != "Linux" or not hasattr(os, "sched_getaffinity"):
+        raise RuntimeError(f"{option_name} requires Linux sched affinity support")
+    if shutil.which("taskset") is None:
+        raise RuntimeError(f"{option_name} requires the Linux taskset command")
+
+    requested = parse_cpu_set(cpu_set)
+    available = set(os.sched_getaffinity(0))
+    unavailable = requested - available
+    if unavailable:
+        raise ValueError(
+            f"requested CPUs for {option_name} are outside the collector's allowed set: "
+            f"{format_cpu_set(unavailable)} (allowed: {format_cpu_set(available)})"
+        )
+    canonical = format_cpu_set(requested)
+    constraint.update({
+        "requested": canonical,
+        "allowed_cpu_set_before": format_cpu_set(available),
+        "cpu_count": len(requested),
+    })
+    return constraint
+
+
+def resolve_loadgen_cpu_set(service_cpu_set: str, loadgen_cpu_set: str) -> str:
+    """Resolve a load-generator set that is disjoint from constrained services."""
+    if not service_cpu_set:
+        if loadgen_cpu_set:
+            raise ValueError("--loadgen-cpu-set requires --cpu-set so services can be isolated explicitly")
+        return ""
+    service = parse_cpu_set(service_cpu_set)
+    if loadgen_cpu_set:
+        loadgen = parse_cpu_set(loadgen_cpu_set)
+    else:
+        if platform.system() != "Linux" or not hasattr(os, "sched_getaffinity"):
+            raise RuntimeError("automatic loadgen CPU isolation requires Linux sched affinity support")
+        loadgen = set(os.sched_getaffinity(0)) - service
+        if not loadgen:
+            raise ValueError(
+                "--cpu-set consumes every allowed CPU; provide a runner with at least one disjoint loadgen CPU"
+            )
+    overlap = service & loadgen
+    if overlap:
+        raise ValueError(
+            "--cpu-set and --loadgen-cpu-set must be disjoint; overlapping CPUs: "
+            f"{format_cpu_set(overlap)}"
+        )
+    return format_cpu_set(loadgen)
+
+
+def affinity_command(executable: Path, args: list[str], cpu_set: str) -> list[str]:
+    command = [str(executable), *args]
+    if not cpu_set:
+        return command
+    taskset = shutil.which("taskset")
+    if taskset is None:
+        raise RuntimeError("CPU-affined child process requires the Linux taskset command")
+    return [taskset, "--cpu-list", format_cpu_set(parse_cpu_set(cpu_set)), *command]
+
+
+def verify_process_cpu_affinity(
+    pid: int,
+    cpu_set: str,
+    timeout_seconds: float = 2.0,
+) -> dict[str, Any]:
+    requested = parse_cpu_set(cpu_set)
+    deadline = time.monotonic() + timeout_seconds
+    last_effective: set[int] = set()
+    while time.monotonic() < deadline:
+        try:
+            last_effective = set(os.sched_getaffinity(pid))
+        except (OSError, ProcessLookupError, PermissionError):
+            last_effective = set()
+        if last_effective == requested:
+            canonical = format_cpu_set(requested)
+            return {
+                "pid": pid,
+                "requested_cpu_set": canonical,
+                "effective_cpu_set": canonical,
+                "verified": True,
+            }
+        time.sleep(0.01)
+    raise RuntimeError(
+        f"child process {pid} CPU affinity verification failed: requested "
+        f"{format_cpu_set(requested)}, effective "
+        f"{format_cpu_set(last_effective) if last_effective else 'unavailable'}"
+    )
+
+
+def record_process_affinity(
+    constraint: dict[str, Any],
+    process: ManagedProcess,
+    *,
+    workload: str,
+) -> None:
+    if not constraint.get("requested"):
+        return
+    processes = constraint.setdefault("processes", [])
+    processes.append({"workload": workload, "service_name": process.name, **process.startup_affinity})
+    constraint["applied"] = all(item.get("verified") is True for item in processes)
+    if constraint["applied"]:
+        constraint["effective_cpu_set"] = constraint["requested"]
 
 
 def exe_name(base: str) -> str:
@@ -329,8 +450,24 @@ def process_snapshot(pid: int) -> dict[str, Any]:
     return snapshot
 
 
+def completed_children_cpu_seconds() -> float | None:
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return float(usage.ru_utime) + float(usage.ru_stime)
+
+
 class ManagedProcess:
-    def __init__(self, name: str, executable: Path, args: list[str], log_dir: Path, env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        executable: Path,
+        args: list[str],
+        log_dir: Path,
+        env: dict[str, str] | None = None,
+        *,
+        cpu_set: str = "",
+    ) -> None:
         self.name = name
         self.stdout_path = log_dir / f"{name}.stdout.log"
         self.stderr_path = log_dir / f"{name}.stderr.log"
@@ -340,12 +477,22 @@ class ManagedProcess:
         if env:
             merged_env.update(env)
         self.proc = subprocess.Popen(
-            [str(executable), *args],
+            affinity_command(executable, args, cpu_set),
             cwd=executable.parent,
             stdout=self.stdout_handle,
             stderr=self.stderr_handle,
             stdin=subprocess.DEVNULL,
             env=merged_env,
+        )
+        self.startup_affinity = (
+            verify_process_cpu_affinity(self.proc.pid, cpu_set)
+            if cpu_set
+            else {
+                "pid": self.proc.pid,
+                "requested_cpu_set": "",
+                "effective_cpu_set": process_snapshot(self.proc.pid).get("cpu_affinity", ""),
+                "verified": True,
+            }
         )
 
     def log_text(self) -> str:
@@ -528,13 +675,60 @@ def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
     return snapshots
 
 
-def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+def wait_for_service_quiescence(
+    managed: list[ManagedProcess],
+    diagnostics_url: str,
+    *,
+    timeout_seconds: float = 5.0,
+    interval_seconds: float = 0.1,
+) -> dict[str, Any]:
+    """Wait until backend routing and managed-process CPU counters stop changing."""
+    deadline = time.monotonic() + timeout_seconds
+    previous: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    latest: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    samples = 0
+    while time.monotonic() < deadline:
+        diagnostics = fetch_json(diagnostics_url)
+        cpu_state = tuple(sorted(
+            (
+                process.name,
+                round(float(process_snapshot(process.pid).get("cpu_seconds", 0.0)), 6),
+            )
+            for process in managed
+        ))
+        latest = (total_backend_requests(diagnostics), cpu_state)
+        samples += 1
+        if latest == previous:
+            return {
+                "quiesced": True,
+                "samples": samples,
+                "backend_routed_requests": latest[0],
+                "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
+            }
+        previous = latest
+        time.sleep(interval_seconds)
+    raise RuntimeError(
+        "managed service topology did not quiesce after load generation: "
+        f"last_state={latest}"
+    )
+
+
+def invoke_bench_case(
+    pressure_exe: Path,
+    gateway_port: int,
+    case: dict[str, Any],
+    run_dir: Path,
+    *,
+    loadgen_cpu_set: str = "",
+    loadgen_io_threads: int = 4,
+) -> dict[str, Any]:
     args = [
         "--host", "127.0.0.1",
         "--port", str(gateway_port),
         "--scenario", case["scenario"],
         "--clients", str(case["clients"]),
         "--duration", str(case["duration_seconds"]),
+        "--io-threads", str(loadgen_io_threads),
     ]
     if case.get("messages", 0) > 0:
         args.extend(["--messages", str(case["messages"])])
@@ -559,14 +753,39 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     args.extend(["--output", str(json_path)])
 
     log_step(f"Running bench case: {case_name}")
+    children_cpu_before = completed_children_cpu_seconds()
     proc = subprocess.Popen(
-        [str(pressure_exe), *args],
+        affinity_command(pressure_exe, args, loadgen_cpu_set),
         cwd=pressure_exe.parent,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         stdin=subprocess.DEVNULL,
     )
+    startup_affinity = (
+        verify_process_cpu_affinity(proc.pid, loadgen_cpu_set)
+        if loadgen_cpu_set
+        else {
+            "pid": proc.pid,
+            "requested_cpu_set": "",
+            "effective_cpu_set": process_snapshot(proc.pid).get("cpu_affinity", ""),
+            "verified": True,
+        }
+    )
+    sample_started_at = time.monotonic()
+    resource_samples: list[dict[str, Any]] = [process_snapshot(proc.pid)]
+    sampler_stop = threading.Event()
+
+    def sample_loadgen() -> None:
+        while not sampler_stop.wait(0.25):
+            if proc.poll() is not None:
+                return
+            snapshot = process_snapshot(proc.pid)
+            if snapshot.get("process_name"):
+                resource_samples.append(snapshot)
+
+    sampler = threading.Thread(target=sample_loadgen, name=f"{case_name}-resource-sampler", daemon=True)
+    sampler.start()
     timeout_seconds = int(case["duration_seconds"]) + 10
     timed_out = False
     try:
@@ -575,6 +794,11 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
         timed_out = True
         proc.kill()
         stdout, stderr = proc.communicate(timeout=5)
+    finally:
+        sampler_stop.set()
+        sampler.join(timeout=2)
+    sample_elapsed_seconds = max(0.0, time.monotonic() - sample_started_at)
+    children_cpu_after = completed_children_cpu_seconds()
     stdout_path.write_text(stdout or "", encoding="utf-8")
     stderr_path.write_text(stderr or "", encoding="utf-8")
     if proc.returncode != 0 and not json_path.exists():
@@ -601,6 +825,35 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
         raise RuntimeError(f"Bench case failed: {case_name} (exit {proc.returncode})")
     if not result:
         raise RuntimeError(f"Bench case did not emit JSON result: {case_name}")
+    first_sample = resource_samples[0]
+    last_sample = resource_samples[-1]
+    loadgen_resources = service_resource_delta(
+        first_sample,
+        last_sample,
+        sample_elapsed_seconds,
+    )
+    if children_cpu_before is not None and children_cpu_after is not None:
+        children_cpu_delta = max(0.0, children_cpu_after - children_cpu_before)
+        loadgen_resources.update({
+            "cpu_seconds_before": round(children_cpu_before, 6),
+            "cpu_seconds_after": round(children_cpu_after, 6),
+            "cpu_seconds_delta": round(children_cpu_delta, 6),
+            "cpu_percent_from_cpu_seconds": round(
+                children_cpu_delta / sample_elapsed_seconds * 100.0, 3
+            ) if sample_elapsed_seconds > 0 else None,
+        })
+    loadgen_resources.update({
+        "startup_affinity": startup_affinity,
+        "before": first_sample,
+        "after": last_sample,
+        "sample_count": len(resource_samples),
+        "sample_elapsed_seconds": round(sample_elapsed_seconds, 6),
+        "working_set_mb_peak": max(
+            float(sample.get("working_set_mb", 0.0)) for sample in resource_samples
+        ),
+    })
+    result["loadgen_resources"] = loadgen_resources
+    json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     return result
 
 
@@ -1708,8 +1961,8 @@ def aggregate_numeric(values: list[float]) -> dict[str, float] | None:
 
 
 def service_resource_delta(
-    idle: dict[str, Any] | None,
-    loaded: dict[str, Any] | None,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
     elapsed_seconds: float,
 ) -> dict[str, Any]:
     fields = [
@@ -1723,12 +1976,12 @@ def service_resource_delta(
     ]
     result: dict[str, Any] = {}
     for field in fields:
-        loaded_value = numeric_snapshot_value(loaded, field)
-        idle_value = numeric_snapshot_value(idle, field)
-        result[field] = loaded_value
+        after_value = numeric_snapshot_value(after, field)
+        before_value = numeric_snapshot_value(before, field)
+        result[field] = after_value
         result[f"{field}_delta"] = (
-            round(loaded_value - idle_value, 3)
-            if loaded_value is not None and idle_value is not None
+            round(after_value - before_value, 3)
+            if after_value is not None and before_value is not None
             else None
         )
     cpu_delta = result.get("cpu_seconds_delta")
@@ -1740,9 +1993,35 @@ def service_resource_delta(
     return result
 
 
+def build_resource_window(
+    service_before: list[dict[str, Any]],
+    service_after: list[dict[str, Any]],
+    loadgen_before: dict[str, Any],
+    loadgen_after: dict[str, Any],
+    elapsed_seconds: float,
+    quiescence: dict[str, Any],
+) -> dict[str, Any]:
+    before_map = snapshot_service_map(service_before)
+    after_map = snapshot_service_map(service_after)
+    return {
+        "elapsed_seconds": round(elapsed_seconds, 6),
+        "quiescence": quiescence,
+        "services": {
+            name: service_resource_delta(before_map.get(name), after, elapsed_seconds)
+            for name, after in after_map.items()
+        },
+        "loadgen": service_resource_delta(loadgen_before, loadgen_after, elapsed_seconds),
+        "raw": {
+            "service_before": service_before,
+            "service_after": service_after,
+            "loadgen_before": loadgen_before,
+            "loadgen_after": loadgen_after,
+        },
+    }
+
+
 def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
     snapshots = summary.get("process_snapshots", {})
-    idle_map = snapshot_service_map(snapshots.get("idle", []))
     cases = summary.get("cases", [])
 
     per_run: list[dict[str, Any]] = []
@@ -1754,11 +2033,15 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
             continue
         base_name = case_base_name(case_name)
         connected = max(0, int(run.get("connected_clients", 0)))
-        elapsed = float(run.get("elapsed_seconds", 0.0))
-        loaded_map = snapshot_service_map(snapshots.get(snapshot_key, []))
+        run_snapshots = snapshots.get(snapshot_key)
+        if not isinstance(run_snapshots, dict):
+            continue
+        elapsed = float(run_snapshots.get("elapsed_seconds", 0.0))
+        before_map = snapshot_service_map(run_snapshots.get("before", []))
+        after_map = snapshot_service_map(run_snapshots.get("after", []))
         services: dict[str, Any] = {}
-        for service_name, loaded in loaded_map.items():
-            delta = service_resource_delta(idle_map.get(service_name), loaded, elapsed)
+        for service_name, after in after_map.items():
+            delta = service_resource_delta(before_map.get(service_name), after, elapsed)
             if connected > 0:
                 rss_delta = delta.get("working_set_mb_delta")
                 handles_delta = delta.get("handles_delta")
@@ -1799,6 +2082,7 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
             "connected_clients": connected,
             "elapsed_seconds": elapsed,
             "services": services,
+            "loadgen": run_snapshots.get("loadgen", {}),
         })
 
     case_aggregates: list[dict[str, Any]] = []
@@ -2176,7 +2460,21 @@ def main() -> int:
     parser.add_argument(
         "--cpu-set",
         default="",
-        help="Linux CPU affinity list (for example 0 or 0-1,4); inherited by all benchmark child processes.",
+        help="Linux CPU affinity list for managed service processes (for example 0 or 0-1,4).",
+    )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help=(
+            "Linux CPU affinity list for the collector, pressure client, and in-process business clients; "
+            "defaults to CPUs outside --cpu-set."
+        ),
+    )
+    parser.add_argument(
+        "--loadgen-io-threads",
+        type=int,
+        default=4,
+        help="Explicit I/O thread count for the pressure client.",
     )
     parser.add_argument(
         "--include-business-flow",
@@ -2240,9 +2538,27 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        resource_constraint = apply_cpu_affinity(args.cpu_set)
+        resolved_loadgen_cpu_set = resolve_loadgen_cpu_set(args.cpu_set, args.loadgen_cpu_set)
+        service_resource_constraint = prepare_process_cpu_affinity(args.cpu_set, "--cpu-set")
+        loadgen_resource_constraint = prepare_process_cpu_affinity(
+            resolved_loadgen_cpu_set,
+            "--loadgen-cpu-set",
+        )
+        if resolved_loadgen_cpu_set:
+            collector_affinity = apply_cpu_affinity(resolved_loadgen_cpu_set)
+            loadgen_resource_constraint["processes"].append({
+                "workload": "python_collector_and_business_clients",
+                "pid": os.getpid(),
+                "requested_cpu_set": collector_affinity["requested"],
+                "effective_cpu_set": collector_affinity["effective_cpu_set"],
+                "verified": collector_affinity["applied"] is True,
+            })
+            loadgen_resource_constraint["applied"] = collector_affinity["applied"] is True
+            loadgen_resource_constraint["effective_cpu_set"] = collector_affinity["effective_cpu_set"]
     except (RuntimeError, ValueError, OSError) as exc:
         parser.error(str(exc))
+    if args.loadgen_io_threads <= 0:
+        parser.error("--loadgen-io-threads must be positive")
     if args.business_operation_scenario and (
         args.business_operation_clients <= 0
         or args.business_operation_iterations <= 0
@@ -2300,16 +2616,23 @@ def main() -> int:
     managed: list[ManagedProcess] = []
     try:
         log_step("Starting v2 backend topology")
-        managed.append(ManagedProcess("v2_login_backend", executables["login"], [str(args.login_port)], log_dir))
+        managed.append(ManagedProcess(
+            "v2_login_backend", executables["login"], [str(args.login_port)], log_dir,
+            cpu_set=args.cpu_set,
+        ))
         wait_tcp_port("127.0.0.1", args.login_port)
 
         battle_env = {"V2_BATTLE_MAX_FRAMES": str(battle_max_frames)}
 
-        managed.append(ManagedProcess("v2_room_backend", executables["room"], [str(args.room_port)], log_dir, battle_env))
+        managed.append(ManagedProcess(
+            "v2_room_backend", executables["room"], [str(args.room_port)], log_dir, battle_env,
+            cpu_set=args.cpu_set,
+        ))
         wait_tcp_port("127.0.0.1", args.room_port)
 
         battle_process = ManagedProcess(
-            "v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir
+            "v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir,
+            cpu_set=args.cpu_set,
         )
         managed.append(battle_process)
         wait_tcp_port("127.0.0.1", args.battle_port)
@@ -2320,6 +2643,7 @@ def main() -> int:
             [str(args.matchmaking_port)],
             log_dir,
             {"SERVICE_PORT": str(args.matchmaking_port), "MATCH_PORT": str(args.matchmaking_port)},
+            cpu_set=args.cpu_set,
         ))
         wait_tcp_port("127.0.0.1", args.matchmaking_port)
 
@@ -2336,6 +2660,7 @@ def main() -> int:
                 "BOOST_DISABLE_REDIS_AUTO_CONNECT": "1",
                 "BOOST_LOG_LEVEL": "info",
             },
+            cpu_set=args.cpu_set,
         )
         managed.append(leaderboard_process)
         wait_tcp_port("127.0.0.1", args.leaderboard_port)
@@ -2371,12 +2696,23 @@ def main() -> int:
             gateway_env["V2_BATTLE_FRAME_PUSH_EVERY"] = str(args.battle_frame_push_every)
         if args.battle_route_workers > 0:
             gateway_env["V2_BATTLE_ROUTE_WORKERS"] = str(args.battle_route_workers)
-        gateway_process = ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env)
+        gateway_process = ManagedProcess(
+            "v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env,
+            cpu_set=args.cpu_set,
+        )
         managed.append(gateway_process)
         wait_tcp_port("127.0.0.1", args.gateway_port)
         wait_tcp_port("127.0.0.1", args.http_port)
 
         time.sleep(2.0)
+
+        if args.cpu_set:
+            for process in managed:
+                record_process_affinity(
+                    service_resource_constraint,
+                    process,
+                    workload="initial_topology",
+                )
 
         summary: dict[str, Any] = {
             "collected_at": datetime.now().isoformat(timespec="seconds"),
@@ -2387,7 +2723,9 @@ def main() -> int:
             "build_dir": str(build_dir),
             "output_dir": str(output_root),
             "summary_version": 2,
-            "resource_constraint": resource_constraint,
+            "resource_constraint": service_resource_constraint,
+            "service_resource_constraint": service_resource_constraint,
+            "loadgen_resource_constraint": loadgen_resource_constraint,
             "topology": {
                 "gateway_port": args.gateway_port,
                 "login_port": args.login_port,
@@ -2397,6 +2735,7 @@ def main() -> int:
                 "leaderboard_port": args.leaderboard_port,
                 "http_port": args.http_port,
                 "io_cores": args.io_cores,
+                "loadgen_io_threads": args.loadgen_io_threads,
                 "battle_max_frames": battle_max_frames,
                 "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "8")),
                 "battle_frame_push_every": args.battle_frame_push_every or int(os.environ.get("V2_BATTLE_FRAME_PUSH_EVERY", "1")),
@@ -2417,20 +2756,53 @@ def main() -> int:
         for case in run_cases:
             case_runs: list[dict[str, Any]] = []
             for repetition in range(args.repetitions):
+                run_key = f"{case['name']}.run{repetition + 1}"
+                service_before = snapshot_processes(managed)
+                resource_started_at = time.monotonic()
                 run_result = invoke_bench_case(
                     executables["pressure"],
                     args.gateway_port,
-                    {**case, "name": f"{case['name']}.run{repetition + 1}"},
+                    {**case, "name": run_key},
                     result_dir,
+                    loadgen_cpu_set=resolved_loadgen_cpu_set,
+                    loadgen_io_threads=args.loadgen_io_threads,
                 )
-                run_result["case_name"] = f"{case['name']}.run{repetition + 1}"
+                quiescence = wait_for_service_quiescence(
+                    managed,
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                )
+                service_after = snapshot_processes(managed)
+                resource_elapsed_seconds = max(0.0, time.monotonic() - resource_started_at)
+                run_result["case_name"] = run_key
                 run_result["base_case_name"] = case["name"]
+                run_result["resource_elapsed_seconds"] = round(resource_elapsed_seconds, 6)
                 case_runs.append(run_result)
 
+                loadgen_affinity = run_result["loadgen_resources"]["startup_affinity"]
+                loadgen_resource_constraint["processes"].append({
+                    "case_name": run_key,
+                    **loadgen_affinity,
+                })
+                if resolved_loadgen_cpu_set:
+                    loadgen_resource_constraint["applied"] = all(
+                        evidence["verified"]
+                        for evidence in loadgen_resource_constraint["processes"]
+                    )
+                    if loadgen_resource_constraint["applied"]:
+                        loadgen_resource_constraint["effective_cpu_set"] = (
+                            loadgen_resource_constraint["requested"]
+                        )
+
                 diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
-                diagnostics_path = result_dir / f"{case['name']}.run{repetition + 1}.gateway.diagnostics.json"
+                diagnostics_path = result_dir / f"{run_key}.gateway.diagnostics.json"
                 diagnostics_path.write_text(json.dumps(diagnostics, indent=2, ensure_ascii=False), encoding="utf-8")
-                summary["process_snapshots"][f"{case['name']}.run{repetition + 1}"] = snapshot_processes(managed)
+                summary["process_snapshots"][run_key] = {
+                    "before": service_before,
+                    "after": service_after,
+                    "loadgen": run_result["loadgen_resources"],
+                    "elapsed_seconds": round(resource_elapsed_seconds, 6),
+                    "quiescence": quiescence,
+                }
 
             aggregate = aggregate_case_runs(case["name"], case_runs)
             summary["cases"].extend(case_runs)
@@ -2454,8 +2826,14 @@ def main() -> int:
                     executables["battle"],
                     [str(args.battle_port)],
                     log_dir,
+                    cpu_set=args.cpu_set,
                 )
                 managed.append(battle_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    battle_process,
+                    workload=f"otel_{mode}",
+                )
                 wait_tcp_port("127.0.0.1", args.battle_port)
                 mode_env = {**gateway_env, "OTEL_EXPORT_ENDPOINT": endpoint}
                 process = ManagedProcess(
@@ -2464,8 +2842,14 @@ def main() -> int:
                     gateway_args,
                     log_dir,
                     mode_env,
+                    cpu_set=args.cpu_set,
                 )
                 managed.append(process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    process,
+                    workload=f"otel_{mode}",
+                )
                 try:
                     wait_tcp_port("127.0.0.1", args.gateway_port)
                     wait_tcp_port("127.0.0.1", args.http_port)
@@ -2489,6 +2873,18 @@ def main() -> int:
                                 "name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
                             },
                             result_dir,
+                            loadgen_cpu_set=resolved_loadgen_cpu_set,
+                            loadgen_io_threads=args.loadgen_io_threads,
+                        )
+                        otel_loadgen_affinity = run["loadgen_resources"]["startup_affinity"]
+                        loadgen_resource_constraint["processes"].append({
+                            "workload": f"otel_{mode}",
+                            "case_name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            **otel_loadgen_affinity,
+                        })
+                        loadgen_resource_constraint["applied"] = all(
+                            evidence.get("verified") is True
+                            for evidence in loadgen_resource_constraint["processes"]
                         )
                         diagnostics_after = fetch_json(
                             f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
@@ -2589,14 +2985,23 @@ def main() -> int:
                 gateway_args,
                 log_dir,
                 gateway_env,
+                cpu_set=args.cpu_set,
             )
             managed.append(gateway_process)
+            record_process_affinity(
+                service_resource_constraint,
+                gateway_process,
+                workload="post_otel",
+            )
             wait_tcp_port("127.0.0.1", args.gateway_port)
             wait_tcp_port("127.0.0.1", args.http_port)
             time.sleep(2.0)
         if args.business_operation_scenario:
             selected_scenarios = list(dict.fromkeys(args.business_operation_scenario))
             log_step(f"Running concurrent business operation performance: {', '.join(selected_scenarios)}")
+            business_service_before = snapshot_processes(managed)
+            business_loadgen_before = process_snapshot(os.getpid())
+            business_resource_started_at = time.monotonic()
             summary["business_operation_perf"] = run_business_operation_perf(
                 "127.0.0.1",
                 args.gateway_port,
@@ -2606,6 +3011,18 @@ def main() -> int:
                 args.business_operation_timeout_seconds,
                 args.repetitions,
                 "in_memory_only",
+            )
+            business_quiescence = wait_for_service_quiescence(
+                managed,
+                f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+            )
+            summary["business_operation_perf"]["resource_evidence"] = build_resource_window(
+                business_service_before,
+                snapshot_processes(managed),
+                business_loadgen_before,
+                process_snapshot(os.getpid()),
+                max(0.0, time.monotonic() - business_resource_started_at),
+                business_quiescence,
             )
             if args.leaderboard_redis_comparison:
                 redis_key = args.leaderboard_redis_key.strip() or (
@@ -2644,8 +3061,14 @@ def main() -> int:
                         "BOOST_DISABLE_REDIS_AUTO_CONNECT": "0",
                         "BOOST_LOG_LEVEL": "info",
                     },
+                    cpu_set=args.cpu_set,
                 )
                 managed.append(leaderboard_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    leaderboard_process,
+                    workload="leaderboard_redis",
+                )
                 wait_tcp_port("127.0.0.1", args.leaderboard_port)
                 redis_log_marker = (
                     "Redis leaderboard and event store enabled "
@@ -2661,11 +3084,20 @@ def main() -> int:
                     gateway_args,
                     log_dir,
                     gateway_env,
+                    cpu_set=args.cpu_set,
                 )
                 managed.append(gateway_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    gateway_process,
+                    workload="leaderboard_redis",
+                )
                 wait_tcp_port("127.0.0.1", args.gateway_port)
                 wait_tcp_port("127.0.0.1", args.http_port)
                 time.sleep(2.0)
+                redis_service_before = snapshot_processes(managed)
+                redis_loadgen_before = process_snapshot(os.getpid())
+                redis_resource_started_at = time.monotonic()
                 redis_perf = run_business_operation_perf(
                     "127.0.0.1",
                     args.gateway_port,
@@ -2675,6 +3107,18 @@ def main() -> int:
                     args.business_operation_timeout_seconds,
                     args.repetitions,
                     "redis_primary_with_memory_shadow",
+                )
+                redis_quiescence = wait_for_service_quiescence(
+                    managed,
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                )
+                redis_perf["resource_evidence"] = build_resource_window(
+                    redis_service_before,
+                    snapshot_processes(managed),
+                    redis_loadgen_before,
+                    process_snapshot(os.getpid()),
+                    max(0.0, time.monotonic() - redis_resource_started_at),
+                    redis_quiescence,
                 )
                 ping_after = redis_command(
                     args.leaderboard_redis_host,

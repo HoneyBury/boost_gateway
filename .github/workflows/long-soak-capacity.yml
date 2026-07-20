@@ -48,14 +48,30 @@ on:
         description: "Repetitions per capacity case"
         required: true
         default: "3"
+      capacity_cases:
+        description: "Optional comma-separated capacity cases for focused diagnostics"
+        required: false
+        default: ""
       business_flow_clients:
         description: "Sequential SDK full-flow passes for business-capacity evidence"
         required: true
         default: "3"
       cpu_set:
-        description: "Optional Linux CPU affinity list for capacity runs, for example 0 or 0-1"
+        description: "Optional Linux CPU affinity list for managed services, for example 0 or 0-1"
         required: false
         default: ""
+      loadgen_cpu_set:
+        description: "Disjoint Linux CPU affinity list required whenever cpu_set is used for capacity"
+        required: false
+        default: ""
+      loadgen_io_threads:
+        description: "Explicit I/O thread count for the capacity load generator"
+        required: true
+        default: "4"
+      io_cores:
+        description: "Gateway I/O core count for capacity runs"
+        required: true
+        default: "4"
       run_business_operation_perf:
         description: "Run opt-in concurrent matchmaking and leaderboard operation profiles"
         required: true
@@ -215,6 +231,7 @@ jobs:
             --skip-build
             --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
+            --io-cores "${{ inputs.io_cores || '4' }}"
             --summary-path runtime/validation/long-soak-capacity-summary.json
           )
           if [ "${{ inputs.run_2h_soak }}" = "true" ]; then
@@ -231,6 +248,16 @@ jobs:
           fi
           if [ -n "${{ inputs.cpu_set }}" ]; then
             args+=(--cpu-set "${{ inputs.cpu_set }}")
+          fi
+          if [ -n "${{ inputs.loadgen_cpu_set }}" ]; then
+            args+=(--loadgen-cpu-set "${{ inputs.loadgen_cpu_set }}")
+          fi
+          args+=(--loadgen-io-threads "${{ inputs.loadgen_io_threads || '4' }}")
+          if [ -n "${{ inputs.capacity_cases }}" ]; then
+            IFS=',' read -r -a capacity_cases <<< "${{ inputs.capacity_cases }}"
+            for case_name in "${capacity_cases[@]}"; do
+              args+=(--capacity-case "$case_name")
+            done
           fi
           if [ "${{ inputs.run_business_operation_perf }}" = "true" ]; then
             args+=(

@@ -1,59 +1,58 @@
-# v3.5.3 高风险部署证据执行计划
+# v3.5.3 发布后主线执行计划
 
-更新时间：2026-07-18
+更新时间：2026-07-20
 
 ## 阶段目标
 
-v3.5.0-v3.5.2 已完成清理、依赖治理和发布工程收口。v3.5.3 不扩展业务功能，目标是让高风险部署结论建立在同一候选提交、真实外部依赖和可复核产物上。
-
-发布结论必须来自 Linux fixed runner 的实际 summary/artifact；历史数据、跨提交产物和推算值只能作为背景信息。
+`v3.5.3` 已在最终 SHA `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 完成 Release、连续 8h、生产证据汇总、tag publish 和线上资产独立验签。当前阶段不移动已发布 tag，也不直接扩大业务或协议面；先修正容量证据的资源隔离与统计口径，再根据可归因数据决定运行时优化和下一 minor 的范围。
 
 ## 优先级与验收标准
 
 | 优先级 | 工作项 | 交付物 | 完成标准 |
 |---|---|---|---|
-| P0 | Specialized E2E 测试选择真实性 | Redis/Raft 测试组清单、实际匹配数和逐组结果 | filter 与 GoogleTest 实际名称一致；任何零匹配组直接失败；Redis live 与 Raft 组均有可追溯结果 |
-| P0 | Redis/Raft 真实故障恢复 | 运行中 stop/partition/recover、持续 SDK 流量和一致性 summary | 记录 RTO、失败请求、重复/丢失写入；Raft 覆盖重新选主及落后 follower catch-up |
-| P0 | 告警生命周期闭环 | Prometheus 查询证据和 recovery drill summary | 关键告警可观察到 `inactive -> pending -> firing -> resolved`；未连接外部告警系统时不得声称告警已验证 |
-| P1 | 专项性能矩阵 | 1/2/4 核、matchmaking、leaderboard、TLS、OTel 对照 summary | 使用 CPU affinity/cgroup 限额；至少三轮；输出 P99、吞吐、CPU、RSS、失败率和回归判定 |
-| P1 | 同一候选 8h soak 与容量证据 | 8h、capacity、business-capacity 和专项 E2E artifact | 所有核心产物绑定同一冻结 SHA；8h 实际持续时间不少于 28800 秒；失败轮与复测均保留 |
-| P2 | Runner 与工作流稳定性 | 统一 preflight、工具版本与缓存身份记录 | Python/Go/CMake/Conan/kind/kubectl 版本可复现；workspace、磁盘和缓存身份在运行前检查 |
-| P2 | 文档事实治理 | 开发者入口、性能口径和 workflow 契约检查 | 文档命令可执行；触发方式与 `.github/workflows/` 一致；已完成计划不再作为当前 TODO |
+| P0 | Service/load generator CPU 隔离 | 独立 CPU set、固定 loadgen I/O 线程数、逐进程 affinity 证据 | service 与 loadgen CPU set 均来自 Linux 实际 affinity，集合不重叠；summary 记录两侧约束和线程数 |
+| P0 | 逐轮资源差值纠偏 | 每轮 before/after 快照和 CPU/RSS/fd/thread delta | CPU 使用率只使用相邻快照与本轮时长计算；单进程结果不超过分配 CPU 的物理上限与允许误差 |
+| P1 | 可归因的 1/2/4 CPU 矩阵 | 隔离后的 echo/battle/business 三轮 summary | workload identity 一致；0 rejected/failed；P99、吞吐、CPU、RSS 和变异度可比较 |
+| P1 | 单核 `io_cores` 单变量实验 | `io_cores=1/2/4` 的 echo-5K/10K 对照 | loadgen 隔离且其它参数固定；只有三轮稳定结果证明收益后才调整默认或部署配置 |
+| P1 | 长任务中断取证 | 原子 checkpoint、取消 summary、完整子进程组清理 | SIGINT/SIGTERM 可记录当前步骤、连续时长、完成轮数和资源样本；中断段不得累计成 2h/8h 通过 |
+| P1 | SBOM 语义质量 | 非占位文件 hash、依赖组件/version 清单和发布前/发布后门禁 | 禁止全零 checksum；运行时资产与 Conan 依赖可追溯；签名验证与内容质量分别阻断 |
+| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 每项明确兼容策略、迁移窗口、发布资产和验证矩阵；未通过 ADR 不进入默认生产链路 |
 
 ## 执行顺序
 
-1. 先修正 Specialized E2E 的测试发现和零匹配失败语义，重新生成 Redis/Raft 证据。
-2. 在真实 Redis/Raft 进程上执行故障恢复，并在故障窗口持续发送 SDK 业务流量。
-3. 将 Prometheus 告警状态查询纳入恢复演练，明确区分指标存在、规则加载和告警生命周期通过。
-4. 完成专项性能矩阵后冻结候选 SHA；冻结后不再修改采集器、门禁或阈值。
-5. 在该 SHA 上运行 8h soak、capacity、business-capacity、Redis/Raft 和告警演练，最后汇总准入结论。
+1. 将现有 `--cpu-set` 明确定义为 service CPU set，load generator 使用独立且不重叠的 CPU set，并固定其 I/O 线程数。
+2. 修复资源分析的累计基线问题，按每轮相邻进程快照计算 CPU 时间差；聚合器拒绝缺少隔离证据的新矩阵。
+3. 先在 fixed runner 只运行 echo-5K/10K 三轮诊断，再执行单核 `io_cores=1/2/4` 单变量实验。
+4. 根据纠偏结果定义 1/2/4 vCPU 支持范围；不得用旧的整栈共核矩阵推断 Gateway 独占 CPU 扩展率，也不得为通过而放宽 P99 门槛。
+5. 增加长稳取消与 checkpoint 契约。checkpoint 只保留诊断事实，最终 long/overnight 仍要求单一 run ID 连续运行不少于 7200/28800 秒。
+6. 修正 SBOM 生成源并增加语义门禁，避免“文件已签名”被误解为“组件清单完整”。
+7. 完成以上证据工程后，再为 JWKS/多 `kid`、跨语言 SDK 正式分发、内部 Raft schema 迁移和 macOS ARM64 建立下一 minor ADR。
 
-## 当前实现进度
+## 当前事实
 
-- Specialized E2E 已在运行前发现并验证每个 GTest filter，任一 pattern 零匹配或执行数不一致都会失败。
-- Redis Compose 恢复演练已提供 opt-in：持久标记、停服降级、恢复、数据校验和恢复后 SDK full-flow。
-- Prometheus verifier 已可与 Redis 故障窗口并发执行，并验证 `BoostGatewayRedisUnavailable` 的 `inactive -> pending -> firing -> resolved`。
-- Raft 集成测试已覆盖三节点 TCP Backend RPC、实际 leader 停止、存活节点重新选主、故障期写入和同对象 logical restart 后的缺失日志追赶；持久化进程级恢复仍需 fixed-runner 专项。
-- 性能采集器已支持 Linux `--cpu-set`、记录实际 affinity 并聚合 1/2/4 核矩阵；阶段性 fixed-runner 数据已覆盖三档资源边界，最终冻结 SHA 仍需刷新。
-- Matchmaking join/status/leave 与 Leaderboard submit/top/rank 已具备 opt-in 并发采集、分操作吞吐/P50/P99 和失败门禁；Redis on/off 对照已包含真实 persistence 证明，最终冻结 SHA 仍需刷新。
-- TLS off/on、Redis 告警生命周期和 Redis/Raft 恢复已有阶段性 fixed-runner 证据；OTel off/on 采集器使用回环 collector，并以 exporter、collector 和后端路由计数对账，待最终 SHA 实跑。
+- `v3.5.3` tag Release run `29708970775` 成功，GitHub Release 包含 Linux x64 tarball、SPDX SBOM 和 `SHA256SUMS.txt`。
+- 同 SHA 8h run `29711044558` 连续执行 `28801.652s`，完成 3207 轮；960 个资源样本覆盖 `28801.542s`，最大间隔 `30.073s`，FD 起止均为 4。
+- 线上资产验证 run `29740136895` 的 checksum、archive layout、离线 runtime consumer、provenance attestation 和 SBOM attestation 全部通过。
+- 独立验签只证明已发布 SBOM 未被替换；`v3.5.3` SPDX 内容仍只有顶层 package 和 13 个 bin/lib 文件，文件 SHA1 为占位全零且未列出 Conan 第三方组件。后续发布必须增加独立的 SBOM semantic gate。
+- 已发布 CPU 矩阵的延迟、吞吐和失败数是有效的整栈端到端事实，但 collector 在启动子进程前约束自身 affinity，使服务端与 load generator 共用 CPU set；它不能作为 Gateway 独占 1/2/4 vCPU 的扩展结论。
+- 旧资源分析使用实验初始 CPU 时间反复计算每轮差值，出现单核进程超过 100% 的不可解释结果；下一矩阵必须使用相邻快照。
 
 ## 证据约束
 
-- summary 必须记录候选 SHA、实际 checkout SHA、workflow/run、runner 标签、构建类型、Conan profile 和 lockfile 摘要。
-- 核心结论不得组合不同 SHA 的 artifact；失败运行不得删除或覆盖。
-- 测试程序返回成功不足以证明覆盖完成，测试组必须记录 discovered/matched/executed 数量。
-- 1/2 核结果必须来自操作系统 CPU 配额或 affinity，不以 `--io-cores` 代替机器资源约束。
-- 8h soak 必须记录实际持续时间、轮次、失败事件、CPU/RSS/fd 和宿主机资源快照。
+- summary 必须记录候选 SHA、实际 checkout SHA、workflow/run、runner、构建类型、Conan lockfile、service/loadgen CPU set 和 loadgen I/O 线程数。
+- service 与 loadgen affinity 必须在进程启动后回读；只记录请求参数不足以证明隔离生效。
+- 每轮资源统计必须携带 before/after 原始计数和 elapsed time，使聚合结果可独立复算。
+- 旧 schema 继续可读取用于历史归档；新的可归因 CPU matrix 必须拒绝旧 schema 或缺失隔离证据。
+- 取消的 soak 必须保留 `interrupted=true` 的失败证据；不同 run、不同进程或不连续区间的时长不得合并。
 
 ## 当前边界
 
-- 不恢复 Windows 支持，不把历史 Windows 数据作为发布容量事实。
-- 不扩展 demo、ECS、AOI 或新业务功能。
-- gRPC 继续保持 `experimental_only` / `defer_default_transport`。只有 `grpc-experimental.yml` 的 fixed-runner run 在 `BOOST_BUILD_GRPC=ON` 下刷新证据，也不自动改变默认传输结论。
-- 不立即删除内部 Raft legacy raw JSON；先增加使用计数、allowlist 和拒绝开关，再通过 ADR 决定迁移窗口。
-- Python/C# wrapper、wheel/NuGet、macOS ARM64、JWKS/多 `kid` 和独立 debug symbols 进入 v3.6 ADR，不属于 v3.5.3 实现范围。
+- 不移动或重建 `v3.5.3` tag，不用发布后文档或采集器提交冒充已发布 SHA 的证据。
+- 不在完成 loadgen 隔离前调整 Gateway 线程默认值、backend pool 或 battle worker 数量。
+- gRPC 继续保持 `experimental_only` / `defer_default_transport`。`grpc-experimental.yml` 已有 `BOOST_BUILD_GRPC=ON` 的 fixed-runner run，但实验交付完整不等于默认传输具备升级收益。
+- 不把多个中断 soak 片段拼接成连续长稳结论。
+- Python/C# wheel/NuGet、JWKS/多 `kid`、Raft raw JSON 迁移、macOS ARM64 和独立 debug symbols 先进入下一 minor ADR。
 
 ## 阶段退出条件
 
-v3.5.3 只有同时满足以下条件才可结束：P0 全部通过；专项性能矩阵不存在未解释的 critical regression；8h 与所有高风险证据来自同一候选 SHA；告警生命周期有真实查询记录；发布清单能够直接定位每个原始 artifact。
+本阶段只有同时满足以下条件才可结束：service/loadgen affinity 隔离可审计；逐轮 CPU 资源差值可复算；隔离后的 1/2/4 CPU 矩阵完成；单核 `io_cores` 结论来自固定变量的三轮实验；长稳取消不会遗留子进程且能生成部分失败证据；下一 minor 的功能范围由 ADR 而不是实现先行决定。

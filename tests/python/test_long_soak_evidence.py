@@ -12,6 +12,60 @@ from scripts.gates.production.run_long_soak_capacity import attach_provenance, p
 
 
 class LongSoakEvidenceTest(unittest.TestCase):
+    def test_capacity_accepts_disjoint_loadgen_contract(self):
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "run_long_soak_capacity.py",
+                "--run-capacity",
+                "--cpu-set",
+                "0",
+                "--loadgen-cpu-set",
+                "4-7",
+                "--loadgen-io-threads",
+                "4",
+                "--io-cores",
+                "2",
+                "--capacity-case",
+                "echo-5000-30s",
+                "--capacity-case",
+                "echo-10000-30s",
+            ],
+        ):
+            args = parse_args()
+        self.assertEqual(args.cpu_set, "0")
+        self.assertEqual(args.loadgen_cpu_set, "4-7")
+        self.assertEqual(args.loadgen_io_threads, 4)
+        self.assertEqual(args.io_cores, 2)
+        self.assertEqual(args.capacity_case, ["echo-5000-30s", "echo-10000-30s"])
+
+    def test_capacity_rejects_non_positive_loadgen_threads(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["run_long_soak_capacity.py", "--run-capacity", "--loadgen-io-threads", "0"],
+            ),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_capacity_requires_explicit_loadgen_set_when_services_are_constrained(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["run_long_soak_capacity.py", "--run-capacity", "--cpu-set", "0"],
+            ),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
     def test_business_operation_perf_requires_capacity_profile(self):
         with (
             patch.object(sys, "argv", ["run_long_soak_capacity.py", "--run-business-operation-perf"]),

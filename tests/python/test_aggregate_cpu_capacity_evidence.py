@@ -40,23 +40,92 @@ def perf_summary(cpu_count: int, preset: str, cases: list[str], gates_passed: bo
             "failed_clients": {"min": 0, "median": 0, "max": 0},
             "rejected_clients": {"min": 0, "median": 0, "max": 0},
         })
+    service_constraint = {
+        "type": "linux_cpu_affinity",
+        "requested": cpu_set(cpu_count),
+        "applied": True,
+        "effective_cpu_set": cpu_set(cpu_count),
+        "cpu_count": cpu_count,
+        "processes": [{
+            "service_name": "gateway",
+            "requested_cpu_set": cpu_set(cpu_count),
+            "effective_cpu_set": cpu_set(cpu_count),
+            "verified": True,
+        }],
+    }
+    loadgen_constraint = {
+        "type": "linux_cpu_affinity",
+        "requested": "4-7",
+        "applied": True,
+        "effective_cpu_set": "4-7",
+        "cpu_count": 4,
+        "processes": [{
+            "workload": "pressure",
+            "requested_cpu_set": "4-7",
+            "effective_cpu_set": "4-7",
+            "verified": True,
+        }],
+    }
+    run_cases = [
+        {
+            "case_name": f"{case}.run{repetition}",
+            "base_case_name": case,
+            "elapsed_seconds": 30.0,
+            "connected_clients": 100,
+        }
+        for case in cases
+        for repetition in range(1, 4)
+    ]
     summary = {
         "summary_version": 2,
         "git_commit": SHA,
         "preset": preset,
         "repetitions": 3,
-        "resource_constraint": {
-            "type": "linux_cpu_affinity",
-            "requested": cpu_set(cpu_count),
-            "applied": True,
-            "effective_cpu_set": cpu_set(cpu_count),
-            "cpu_count": cpu_count,
+        "resource_constraint": service_constraint,
+        "service_resource_constraint": service_constraint,
+        "loadgen_resource_constraint": loadgen_constraint,
+        "topology": {"io_cores": 4, "loadgen_io_threads": 4},
+        "cases": run_cases,
+        "process_snapshots": {
+            run["case_name"]: {
+                "before": [{"service_name": "gateway", "cpu_seconds": 10.0}],
+                "after": [{"service_name": "gateway", "cpu_seconds": 32.5}],
+                "loadgen": {
+                    "before": {"cpu_seconds": 10.0},
+                    "after": {"cpu_seconds": 85.0},
+                },
+                "elapsed_seconds": 30.0,
+                "quiescence": {"quiesced": True},
+            }
+            for run in run_cases
         },
         "case_aggregates": aggregates,
+        "resource_analysis": {
+            "per_run": [{
+                "case_name": run["case_name"],
+                "elapsed_seconds": run["elapsed_seconds"],
+                "services": {
+                    "gateway": {"cpu_percent_from_cpu_seconds": 75.0 * cpu_count},
+                },
+                "loadgen": {"cpu_percent_from_cpu_seconds": 250.0},
+            } for run in run_cases],
+        },
         "release_gates": {"overall_pass": gates_passed, "checks": []},
     }
     if preset == "business-capacity":
         summary["business_operation_perf"] = {
+            "resource_evidence": {
+                "elapsed_seconds": 30.0,
+                "quiescence": {"quiesced": True},
+                "services": {"gateway": {"cpu_percent_from_cpu_seconds": 75.0 * cpu_count}},
+                "loadgen": {"cpu_percent_from_cpu_seconds": 100.0},
+                "raw": {
+                    "service_before": [{"service_name": "gateway", "cpu_seconds": 1.0}],
+                    "service_after": [{"service_name": "gateway", "cpu_seconds": 2.0}],
+                    "loadgen_before": {"cpu_seconds": 1.0},
+                    "loadgen_after": {"cpu_seconds": 2.0},
+                },
+            },
             "scenario_aggregates": [
                 {
                     "scenario": "matchmaking",
@@ -94,6 +163,9 @@ def write_source(root: Path, cpu_count: int, run_id: str, gates_passed: bool = T
         "summary_version": 2,
         "provenance": {"candidate_revision": SHA, "run_id": run_id},
         "cpu_set": cpu_set(cpu_count),
+        "loadgen_cpu_set": "4-7",
+        "loadgen_io_threads": 4,
+        "io_cores": 4,
         "perf_repetitions": 3,
         "backend_pool_size": 8,
         "battle_route_workers": 8,
@@ -167,7 +239,7 @@ class AggregateCpuCapacityEvidenceTest(unittest.TestCase):
                 if mutation == "revision":
                     payload["git_commit"] = "b" * 40
                 elif mutation == "affinity":
-                    payload["resource_constraint"]["effective_cpu_set"] = "0-2"
+                    payload["service_resource_constraint"]["effective_cpu_set"] = "0-2"
                 elif mutation == "repetitions":
                     payload["repetitions"] = 2
                 else:
@@ -182,6 +254,39 @@ class AggregateCpuCapacityEvidenceTest(unittest.TestCase):
                 self.assertTrue(summary["failed_step"])
                 self.assertEqual(summary["case_comparisons"], [])
                 self.assertEqual(summary["business_operation_comparisons"], [])
+
+    def test_rejects_overlapping_loadgen_and_unphysical_resource_delta(self) -> None:
+        for mutation in ("overlap", "unphysical_cpu", "unphysical_total_cpu"):
+            with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as temp:
+                root = Path(temp)
+                specs = [
+                    write_source(root / "one", 1, "401"),
+                    write_source(root / "two", 2, "402"),
+                    write_source(root / "four", 4, "404"),
+                ]
+                target = root / "one" / "perf" / "fixed-runner-capacity" / "summary.json"
+                payload = json.loads(target.read_text(encoding="utf-8"))
+                if mutation == "overlap":
+                    constraint = payload["loadgen_resource_constraint"]
+                    constraint.update({"requested": "0,4-6", "effective_cpu_set": "0,4-6"})
+                    constraint["processes"][0].update({
+                        "requested_cpu_set": "0,4-6",
+                        "effective_cpu_set": "0,4-6",
+                    })
+                elif mutation == "unphysical_cpu":
+                    payload["resource_analysis"]["per_run"][0]["services"]["gateway"][
+                        "cpu_percent_from_cpu_seconds"
+                    ] = 200.0
+                else:
+                    services = payload["resource_analysis"]["per_run"][0]["services"]
+                    services["gateway"]["cpu_percent_from_cpu_seconds"] = 80.0
+                    services["backend"] = {"cpu_percent_from_cpu_seconds": 80.0}
+                target.write_text(json.dumps(payload), encoding="utf-8")
+
+                summary = aggregate_sources(specs)
+
+                self.assertFalse(summary["evidence_complete"])
+                self.assertTrue(summary["failed_step"])
 
     def test_requires_exactly_one_source_for_each_cpu_count(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

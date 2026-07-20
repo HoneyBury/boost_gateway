@@ -113,14 +113,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-capacity", action="store_true")
     parser.add_argument("--run-business-capacity", action="store_true")
     parser.add_argument("--perf-repetitions", type=int, default=3)
+    parser.add_argument(
+        "--capacity-case",
+        action="append",
+        default=[],
+        help="Optional capacity preset case selection for focused diagnostics.",
+    )
     parser.add_argument("--business-flow-clients", type=int, default=3)
     parser.add_argument("--backend-pool-size", type=int, default=8)
     parser.add_argument("--battle-route-workers", type=int, default=8)
+    parser.add_argument("--io-cores", type=int, default=4)
     parser.add_argument(
         "--cpu-set",
         default="",
-        help="Linux CPU affinity list passed to capacity performance collectors.",
+        help="Linux CPU affinity list for managed service processes in capacity collectors.",
     )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help="Disjoint Linux CPU affinity list for capacity load generation.",
+    )
+    parser.add_argument("--loadgen-io-threads", type=int, default=4)
     parser.add_argument("--run-business-operation-perf", action="store_true")
     parser.add_argument("--business-operation-clients", type=int, default=16)
     parser.add_argument("--business-operation-iterations", type=int, default=10)
@@ -146,6 +159,20 @@ def parse_args() -> argparse.Namespace:
         parser.error("--run-otel-comparison requires --run-business-capacity")
     if args.run_otel_comparison and args.perf_repetitions < 3:
         parser.error("--run-otel-comparison requires --perf-repetitions >= 3")
+    if args.loadgen_io_threads <= 0:
+        parser.error("--loadgen-io-threads must be positive")
+    if args.io_cores <= 0:
+        parser.error("--io-cores must be positive")
+    if (
+        args.cpu_set
+        and (args.run_capacity or args.run_business_capacity)
+        and not args.loadgen_cpu_set
+    ):
+        parser.error(
+            "capacity evidence with --cpu-set requires an explicit, reusable --loadgen-cpu-set"
+        )
+    if args.loadgen_cpu_set and not args.cpu_set:
+        parser.error("--loadgen-cpu-set requires --cpu-set")
     return args
 
 
@@ -245,6 +272,8 @@ def main() -> int:
             str(args.backend_pool_size),
             "--battle-route-workers",
             str(args.battle_route_workers),
+            "--io-cores",
+            str(args.io_cores),
             "--summary-path",
             str(ROOT / "runtime/validation/capacity-baseline-summary.json"),
             "--perf-output-root",
@@ -253,6 +282,11 @@ def main() -> int:
         ]
         if args.cpu_set:
             cmd.extend(["--cpu-set", args.cpu_set])
+        if args.loadgen_cpu_set:
+            cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+        cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
+        for case_name in args.capacity_case:
+            cmd.extend(["--perf-case", case_name])
         if args.run_business_operation_perf and not args.run_business_capacity:
             cmd.extend([
                 "--business-operation-scenario",
@@ -279,6 +313,8 @@ def main() -> int:
             str(args.backend_pool_size),
             "--battle-route-workers",
             str(args.battle_route_workers),
+            "--io-cores",
+            str(args.io_cores),
             "--summary-path",
             str(ROOT / "runtime/validation/business-capacity-baseline-summary.json"),
             "--perf-output-root",
@@ -290,6 +326,9 @@ def main() -> int:
         ]
         if args.cpu_set:
             cmd.extend(["--cpu-set", args.cpu_set])
+        if args.loadgen_cpu_set:
+            cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+        cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
         if args.run_business_operation_perf:
             cmd.extend([
                 "--business-operation-scenario",
@@ -327,10 +366,14 @@ def main() -> int:
         "run_capacity": args.run_capacity,
         "run_business_capacity": args.run_business_capacity,
         "perf_repetitions": args.perf_repetitions,
+        "capacity_cases": args.capacity_case,
         "business_flow_clients": args.business_flow_clients,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
+        "io_cores": args.io_cores,
         "cpu_set": args.cpu_set,
+        "loadgen_cpu_set": args.loadgen_cpu_set,
+        "loadgen_io_threads": args.loadgen_io_threads,
         "run_business_operation_perf": args.run_business_operation_perf,
         "business_operation_clients": args.business_operation_clients,
         "business_operation_iterations": args.business_operation_iterations,

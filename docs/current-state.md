@@ -1,8 +1,8 @@
 # 当前项目事实源
 
-更新时间：2026-07-19
+更新时间：2026-07-20
 
-本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.3` 为准；提交状态以 `git HEAD` 为准。`v3.5.2` 已发布，`v3.5.3` 正在执行最终同 SHA 冻结，维护范围按 `docs/v3.5.x-maintenance-plan.md` 执行。
+本文档作为当前进度的入口事实源。版本号以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.5.3` 为准；提交状态以 `git HEAD` 为准。`v3.5.3` 已在最终 SHA `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 发布并完成线上资产独立验签；后续实现不得移动该 tag，维护范围按 `docs/v3.5.x-maintenance-plan.md` 执行。
 
 legacy/helper 迁移边界与 v1 兼容面清单见 `docs/legacy/legacy-helper-inventory.md`。
 普通 branch push / PR 不再自动触发流水线；自动触发只保留特定 release tag，当前约定为 `v*`。`.github/workflows/release.yml` 在推送 `v*` tag 时自动执行 release package/publish；`.github/workflows/ci.yml` 仅保留手动 dispatch，用作 GitHub-hosted 主线回归兜底，避免 tag 发布时重复构建。`.github/runner-matrix.json` 作为版本化 runner/默认标签配置源，`scripts/check_workflow_catalog.py` 会阻断 workflow 清单、runner matrix 与 `.github/CI-CD.md` 漂移。性能 smoke/baseline/capacity、bounded stability、fixed-runner evidence、release/capacity 等入口保留 `workflow_dispatch`，具体触发条件以 `.github/workflows/*.yml` 为准。
@@ -191,9 +191,9 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 
 下一阶段执行优先级概括为：
 
-1. 当前发布主线：`v3.5.3` 的采集器与治理缺口已收口；下一步在新冻结 SHA 上刷新 Release/R0、1/2/4 核和专项性能、R4、R5/R6、Raft、2h/8h，最后执行严格 SHA 绑定的 R2/R3 并创建不可变 tag。`verify_stability_soak.py` 的 long/overnight profile 分别强制不少于 7200/28800 秒。
+1. 当前主线：`v3.5.3` 的 Release、R0、R4、R5/R6、Raft、2h/8h、R2/R3、tag publish 和线上资产验证已在 `b9c348b4` 闭环。下一步先纠正容量采集器的 service/load-generator CPU 隔离和逐轮资源差值，再刷新可归因的 1/2/4 CPU 矩阵；旧矩阵只表示整套服务与 load generator 共用 affinity 集合时的端到端容量边界，不能解释为 Gateway 独占 vCPU 的扩展结果。
 2. 已闭环的实验项：generated proto/gRPC 已由 fixed-runner run `29465329265` 完成严格离线构建、测试、安装包 consumer 与 N6 决策证据；默认生产传输结论继续保持 `defer_default_transport`，本轮不再扩展或升格 gRPC。
-3. 后续项：持续维护 Conan `nosqlite` 严格主线及其 ABI-safe cache；外部身份提供方的 JWKS/多 `kid`、持久化账户和可撤销 refresh token 作为独立集成，不与当前 login backend 的进程内演示状态混合。
+3. 后续项：为长稳任务增加取消信号、原子 checkpoint 和部分失败 summary，但 checkpoint 只用于审计，不允许把多个中断段累计成 2h/8h 通过；同时持续维护 Conan `nosqlite` 严格主线及其 ABI-safe cache。
 4. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：

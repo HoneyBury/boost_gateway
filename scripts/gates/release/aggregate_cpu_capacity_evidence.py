@@ -149,23 +149,166 @@ def validate_affinity(
     label: str,
     summary: dict[str, Any],
     expected_cpu_count: int,
-) -> None:
-    constraint = summary.get("resource_constraint")
+    constraint_key: str,
+) -> set[int]:
+    constraint = summary.get(constraint_key)
     constraint = constraint if isinstance(constraint, dict) else {}
     requested = parse_cpu_set(constraint.get("requested"))
     effective = parse_cpu_set(constraint.get("effective_cpu_set"))
+    processes = constraint.get("processes")
+    process_evidence_valid = (
+        isinstance(processes, list)
+        and bool(processes)
+        and all(
+            isinstance(item, dict)
+            and item.get("verified") is True
+            and parse_cpu_set(item.get("requested_cpu_set")) == requested
+            and parse_cpu_set(item.get("effective_cpu_set")) == effective
+            for item in processes
+        )
+    )
     valid = (
         constraint.get("type") == "linux_cpu_affinity"
         and constraint.get("applied") is True
         and requested == effective
         and len(effective) == expected_cpu_count
         and constraint.get("cpu_count") == expected_cpu_count
+        and process_evidence_valid
     )
     add_check(
         checks,
         f"{label}:cpu-affinity",
         valid,
-        f"requested={sorted(requested)} effective={sorted(effective)} expected_count={expected_cpu_count}",
+        f"constraint={constraint_key} requested={sorted(requested)} effective={sorted(effective)} "
+        f"expected_count={expected_cpu_count} processes={len(processes) if isinstance(processes, list) else 0}",
+    )
+    return effective
+
+
+def validate_resource_deltas(
+    checks: list[dict[str, Any]],
+    label: str,
+    summary: dict[str, Any],
+    service_cpu_count: int,
+    loadgen_cpu_count: int,
+) -> None:
+    resource_analysis = summary.get("resource_analysis")
+    per_run = resource_analysis.get("per_run") if isinstance(resource_analysis, dict) else None
+    process_snapshots = summary.get("process_snapshots")
+    process_snapshots = process_snapshots if isinstance(process_snapshots, dict) else {}
+    cases = summary.get("cases")
+    expected_runs = len(cases) if isinstance(cases, list) else 0
+    valid = isinstance(per_run, list) and len(per_run) == expected_runs and expected_runs > 0
+    violations: list[str] = []
+    if valid:
+        for run in per_run:
+            if not isinstance(run, dict) or float(run.get("elapsed_seconds", 0.0)) <= 0:
+                valid = False
+                violations.append("invalid run or elapsed time")
+                continue
+            services = run.get("services")
+            loadgen = run.get("loadgen")
+            raw = process_snapshots.get(run.get("case_name"))
+            raw_valid = (
+                isinstance(raw, dict)
+                and isinstance(raw.get("before"), list)
+                and bool(raw.get("before"))
+                and isinstance(raw.get("after"), list)
+                and bool(raw.get("after"))
+                and isinstance(raw.get("loadgen"), dict)
+                and isinstance(raw["loadgen"].get("before"), dict)
+                and isinstance(raw["loadgen"].get("after"), dict)
+                and float(raw.get("elapsed_seconds", 0.0)) > 0
+                and isinstance(raw.get("quiescence"), dict)
+                and raw["quiescence"].get("quiesced") is True
+            )
+            if (
+                not isinstance(services, dict)
+                or not services
+                or not isinstance(loadgen, dict)
+                or not raw_valid
+            ):
+                valid = False
+                violations.append(f"{run.get('case_name')}: missing raw service/loadgen snapshots or deltas")
+                continue
+            cpu_values = [
+                item.get("cpu_percent_from_cpu_seconds")
+                for item in services.values()
+                if isinstance(item, dict)
+            ]
+            loadgen_cpu = loadgen.get("cpu_percent_from_cpu_seconds")
+            if (
+                any(
+                    not isinstance(value, (int, float))
+                    or isinstance(value, bool)
+                    or value < 0
+                    or value > service_cpu_count * 100 + 5
+                    for value in cpu_values
+                )
+                or len(cpu_values) != len(services)
+                or sum(float(value) for value in cpu_values if isinstance(value, (int, float)))
+                > service_cpu_count * 100 + 5
+                or not isinstance(loadgen_cpu, (int, float))
+                or isinstance(loadgen_cpu, bool)
+                or loadgen_cpu < 0
+                or loadgen_cpu > loadgen_cpu_count * 100 + 5
+            ):
+                valid = False
+                violations.append(f"{run.get('case_name')}: CPU delta outside physical constraint")
+    add_check(
+        checks,
+        f"{label}:per-run-resource-deltas",
+        valid,
+        f"runs={len(per_run) if isinstance(per_run, list) else 0}/{expected_runs} violations={violations[:3]}",
+    )
+
+
+def validate_business_resource_window(
+    checks: list[dict[str, Any]],
+    label: str,
+    summary: dict[str, Any],
+    service_cpu_count: int,
+    loadgen_cpu_count: int,
+) -> None:
+    business = summary.get("business_operation_perf")
+    evidence = business.get("resource_evidence") if isinstance(business, dict) else None
+    services = evidence.get("services") if isinstance(evidence, dict) else None
+    loadgen = evidence.get("loadgen") if isinstance(evidence, dict) else None
+    raw = evidence.get("raw") if isinstance(evidence, dict) else None
+    service_cpu_values = [
+        item.get("cpu_percent_from_cpu_seconds")
+        for item in services.values()
+        if isinstance(item, dict)
+    ] if isinstance(services, dict) else []
+    loadgen_cpu = loadgen.get("cpu_percent_from_cpu_seconds") if isinstance(loadgen, dict) else None
+    valid = (
+        isinstance(evidence, dict)
+        and float(evidence.get("elapsed_seconds", 0.0)) > 0
+        and isinstance(evidence.get("quiescence"), dict)
+        and evidence["quiescence"].get("quiesced") is True
+        and isinstance(services, dict)
+        and bool(services)
+        and isinstance(raw, dict)
+        and all(isinstance(raw.get(key), (list, dict)) for key in (
+            "service_before", "service_after", "loadgen_before", "loadgen_after"
+        ))
+        and len(service_cpu_values) == len(services)
+        and all(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and 0 <= value <= service_cpu_count * 100 + 5
+            for value in service_cpu_values
+        )
+        and sum(float(value) for value in service_cpu_values) <= service_cpu_count * 100 + 5
+        and isinstance(loadgen_cpu, (int, float))
+        and not isinstance(loadgen_cpu, bool)
+        and 0 <= loadgen_cpu <= loadgen_cpu_count * 100 + 5
+    )
+    add_check(
+        checks,
+        f"{label}:business-operation-resource-window",
+        valid,
+        f"services={len(services) if isinstance(services, dict) else 0} loadgen_cpu={loadgen_cpu}",
     )
 
 
@@ -206,14 +349,59 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
         f"expected={spec.run_id} observed={provenance.get('run_id', '')}",
     )
 
-    validate_affinity(checks, f"cpu-{spec.cpu_count}:capacity", capacity, spec.cpu_count)
-    validate_affinity(checks, f"cpu-{spec.cpu_count}:business", business, spec.cpu_count)
+    capacity_service_set = validate_affinity(
+        checks, f"cpu-{spec.cpu_count}:capacity-service", capacity, spec.cpu_count,
+        "service_resource_constraint",
+    )
+    business_service_set = validate_affinity(
+        checks, f"cpu-{spec.cpu_count}:business-service", business, spec.cpu_count,
+        "service_resource_constraint",
+    )
+    capacity_loadgen_constraint = capacity.get("loadgen_resource_constraint")
+    capacity_loadgen_constraint = (
+        capacity_loadgen_constraint if isinstance(capacity_loadgen_constraint, dict) else {}
+    )
+    loadgen_cpu_count = capacity_loadgen_constraint.get("cpu_count")
+    loadgen_cpu_count = loadgen_cpu_count if isinstance(loadgen_cpu_count, int) else 0
+    capacity_loadgen_set = validate_affinity(
+        checks, f"cpu-{spec.cpu_count}:capacity-loadgen", capacity, loadgen_cpu_count,
+        "loadgen_resource_constraint",
+    )
+    business_loadgen_set = validate_affinity(
+        checks, f"cpu-{spec.cpu_count}:business-loadgen", business, loadgen_cpu_count,
+        "loadgen_resource_constraint",
+    )
+    isolated = (
+        bool(capacity_service_set)
+        and capacity_service_set == business_service_set
+        and bool(capacity_loadgen_set)
+        and capacity_loadgen_set == business_loadgen_set
+        and capacity_service_set.isdisjoint(capacity_loadgen_set)
+    )
+    add_check(
+        checks,
+        f"cpu-{spec.cpu_count}:service-loadgen-isolation",
+        isolated,
+        f"service={sorted(capacity_service_set)} loadgen={sorted(capacity_loadgen_set)}",
+    )
+    validate_resource_deltas(
+        checks, f"cpu-{spec.cpu_count}:capacity", capacity, spec.cpu_count, loadgen_cpu_count,
+    )
+    validate_resource_deltas(
+        checks, f"cpu-{spec.cpu_count}:business", business, spec.cpu_count, loadgen_cpu_count,
+    )
+    validate_business_resource_window(
+        checks, f"cpu-{spec.cpu_count}:business", business, spec.cpu_count, loadgen_cpu_count,
+    )
     long_cpu_set = parse_cpu_set(long_soak.get("cpu_set"))
+    long_loadgen_cpu_set = parse_cpu_set(long_soak.get("loadgen_cpu_set"))
     add_check(
         checks,
         f"cpu-{spec.cpu_count}:orchestrator-affinity",
-        len(long_cpu_set) == spec.cpu_count,
-        f"cpu_set={sorted(long_cpu_set)}",
+        len(long_cpu_set) == spec.cpu_count
+        and long_cpu_set == capacity_service_set
+        and long_loadgen_cpu_set == capacity_loadgen_set,
+        f"service_cpu_set={sorted(long_cpu_set)} loadgen_cpu_set={sorted(long_loadgen_cpu_set)}",
     )
 
     repetitions = capacity.get("repetitions")
@@ -295,6 +483,27 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
         f"overall_pass={r4.get('overall_pass')}",
     )
 
+    capacity_topology = capacity.get("topology")
+    business_topology = business.get("topology")
+    capacity_topology = capacity_topology if isinstance(capacity_topology, dict) else {}
+    business_topology = business_topology if isinstance(business_topology, dict) else {}
+    topology_valid = (
+        isinstance(long_soak.get("io_cores"), int)
+        and long_soak.get("io_cores") > 0
+        and capacity_topology.get("io_cores") == long_soak.get("io_cores")
+        and business_topology.get("io_cores") == long_soak.get("io_cores")
+        and isinstance(long_soak.get("loadgen_io_threads"), int)
+        and long_soak.get("loadgen_io_threads") > 0
+        and capacity_topology.get("loadgen_io_threads") == long_soak.get("loadgen_io_threads")
+        and business_topology.get("loadgen_io_threads") == long_soak.get("loadgen_io_threads")
+    )
+    add_check(
+        checks,
+        f"cpu-{spec.cpu_count}:topology-identity",
+        topology_valid,
+        f"io_cores={long_soak.get('io_cores')} loadgen_io_threads={long_soak.get('loadgen_io_threads')}",
+    )
+
     workload_identity = {
         "repetitions": repetitions,
         "backend_pool_size": long_soak.get("backend_pool_size"),
@@ -303,6 +512,9 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
         "business_operation_clients": long_soak.get("business_operation_clients"),
         "business_operation_iterations": long_soak.get("business_operation_iterations"),
         "leaderboard_redis_comparison": bool(long_soak.get("leaderboard_redis_comparison", False)),
+        "loadgen_cpu_count": loadgen_cpu_count,
+        "loadgen_io_threads": long_soak.get("loadgen_io_threads"),
+        "gateway_io_cores": long_soak.get("io_cores"),
         "capacity_cases": sorted(capacity_cases),
         "business_capacity_cases": sorted(business_cases),
     }
@@ -312,8 +524,9 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
         "extracted_dir": str(spec.extracted_dir),
         "artifact_name": f"long-soak-capacity-{spec.run_id}",
         "candidate_revision": next(iter(revisions.values()), ""),
-        "requested_cpu_set": capacity.get("resource_constraint", {}).get("requested", ""),
-        "effective_cpu_set": capacity.get("resource_constraint", {}).get("effective_cpu_set", ""),
+        "requested_cpu_set": capacity.get("service_resource_constraint", {}).get("requested", ""),
+        "effective_cpu_set": capacity.get("service_resource_constraint", {}).get("effective_cpu_set", ""),
+        "loadgen_cpu_set": capacity.get("loadgen_resource_constraint", {}).get("effective_cpu_set", ""),
         "workload_identity": workload_identity,
         "capacity_release_gates_passed": capacity.get("release_gates", {}).get("overall_pass") is True,
         "business_release_gates_passed": business.get("release_gates", {}).get("overall_pass") is True,

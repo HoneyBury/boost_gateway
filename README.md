@@ -18,7 +18,7 @@
   - `v3.5.0` 同一候选的真实 2h、R4、R5、R6、R2/R3 冻结链通过
   - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
   - `v3.5.2` 同 SHA Release/R0、clean CMake consumer、tag publish/attestations 与双 runner 线上资产验收通过
-  - `v3.5.3` 已形成 2h/8h、1/2/4 核与业务专项、Redis/Raft 恢复、告警生命周期和 TLS 的阶段证据，并补齐 OTel 对照入口及同 SHA readiness 治理；正式结论和 tag 以最终冻结 SHA 的刷新结果为准
+  - `v3.5.3` 已在同一冻结 SHA 完成 Release/R0、2h/8h、受限 CPU 容量与业务专项、Redis/Raft 恢复、告警生命周期、TLS/OTel 对照、R2/R3、tag publish 和线上资产独立验签
 
 ## 发布事实与边界
 
@@ -29,6 +29,8 @@
 - Operator kind run `29563770679` 在候选 `21a4815` 上通过：kind `v0.32.0`、kubectl `v1.36.1`、固定 Kubernetes `v1.36.1` node digest，覆盖六组件 Ready、scale、rollout restart/undo、Operator restart、CR delete 和集群清理；summary artifact 为 `8400330394`。
 - 最终 SHA 的 `myserver` Release `29587996645`（artifact `8409986789`）和增强 R0 `29588720453`（artifact `8410441198`）通过；R0 provenance 的 candidate/checkout/runner/Release/lockfile 全部匹配，scope 包含 Redis live、runtime HTTP、release baseline 与真实 kind。
 - 线上 tarball SHA-256 为 `3142ffe7578e457e7d6fba63a6a00c3366874252b9f56894e9e8f9c7a31e047b`，SPDX SHA-256 为 `21a9fc4f0580da6785d0e5183ce9da78417e6aec9b74d8f6f77c5d7212656a33`；provenance/SPDX attestations 均已验签。AOI 发布后独立验收 run `29591469812` 的 artifact `8411254103` 为 `overall_pass=true`，`myserver` 也已独立完成 checksum、runtime/CMake consumer 与验签。Python/C# 保持源码 wrapper，独立 wheel/NuGet 与 debug-symbol 分发不进入 `v3.5.x`。
+- `v3.5.3` annotated tag 固定在 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78`；[GitHub Release](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.5.3) 的 package/publish run 为 `29708970775`，同 SHA 8h run `29711044558` 连续执行 `28801.652s`，完成 3207 轮和 960 个资源样本。
+- `v3.5.3` 线上 tarball SHA-256 为 `4ad6945b08b4f7bfceac7e0b8e41a1d61c9ae12c0075d85e4268b209cc4ab4d8`，SPDX SHA-256 为 `d7260a1e44396c06de838d1290a1cbe3adab3f6ddac1c9eba43a8bfb28b97d8d`；独立验收 run `29740136895` 已通过 checksum、archive layout、离线 runtime consumer 和双 attestation 验证。
 
 ## 快速入口
 

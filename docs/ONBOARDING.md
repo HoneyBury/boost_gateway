@@ -143,7 +143,7 @@ python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整 baseline（需要固定性能机器）
 python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
-  --cpu-set 0-1
+  --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
 
 # Matchmaking/Leaderboard 并发专项
 python3 scripts/collect_release_baseline.py --perf-preset business-capacity \
@@ -310,10 +310,10 @@ python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整基线
 python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
-  --cpu-set 0-1
+  --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
 ```
 
-`--cpu-set` 仅支持 Linux，并会约束采集器及其全部子进程；指定 CPU 必须属于 runner 的当前 allowed set。性能门禁见 `config/perf/v2_arch_baseline_gates.json`。
+CPU 隔离仅支持 Linux：`--cpu-set` 只约束 Gateway 和后端服务，`--loadgen-cpu-set` 约束采集器、pressure 和进程内业务客户端；两者必须显式不重叠，指定 CPU 必须属于 runner 的当前 allowed set。性能门禁见 `config/perf/v2_arch_baseline_gates.json`。
 
 ## 协议开发指南
 

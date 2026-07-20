@@ -89,14 +89,22 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-business-flow", action="store_true")
     parser.add_argument("--business-flow-clients", type=int, default=1)
     parser.add_argument("--perf-repetitions", type=int, default=3)
+    parser.add_argument("--perf-case", action="append", default=[])
     parser.add_argument("--perf-timeout-seconds", type=int, default=600)
     parser.add_argument("--backend-pool-size", type=int, default=0)
     parser.add_argument("--battle-route-workers", type=int, default=0)
+    parser.add_argument("--io-cores", type=int, default=4)
     parser.add_argument(
         "--cpu-set",
         default="",
-        help="Linux CPU affinity list passed to the multi-process performance collector.",
+        help="Linux CPU affinity list for managed service processes.",
     )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help="Linux CPU affinity list for load generation; defaults to CPUs outside --cpu-set.",
+    )
+    parser.add_argument("--loadgen-io-threads", type=int, default=4)
     parser.add_argument(
         "--business-operation-scenario",
         action="append",
@@ -120,6 +128,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.loadgen_io_threads <= 0:
+        raise SystemExit("--loadgen-io-threads must be positive")
     if args.perf_preset in {"capacity", "business-capacity"}:
         if args.backend_pool_size <= 0:
             args.backend_pool_size = 8
@@ -255,11 +265,18 @@ def main() -> int:
             str(args.backend_pool_size),
             "--battle-route-workers",
             str(args.battle_route_workers),
+            "--io-cores",
+            str(args.io_cores),
         ]
+        for case_name in args.perf_case:
+            perf_cmd.extend(["--case", case_name])
         if args.include_business_flow:
             perf_cmd.extend(["--include-business-flow", "--business-flow-clients", str(args.business_flow_clients)])
         if args.cpu_set:
             perf_cmd.extend(["--cpu-set", args.cpu_set])
+        if args.loadgen_cpu_set:
+            perf_cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+        perf_cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
         for scenario in args.business_operation_scenario:
             perf_cmd.extend(["--business-operation-scenario", scenario])
         if args.business_operation_scenario:
