@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from urllib.parse import urlparse
 from pathlib import Path
 from typing import Any
 
@@ -32,8 +33,24 @@ def check_login_backend_config(root: Path, errors: list[str], warnings: list[str
             "config/environments/production/login.json must use auth.mode=external-jwt; "
             "the production login backend validates externally issued RS256 JWTs only"
         )
-    if not str(auth.get("jwt_public_key_pem", "")):
-        errors.append("production login config must declare auth.jwt_public_key_pem")
+    public_sources = [
+        bool(str(auth.get("jwt_public_key_pem", ""))),
+        isinstance(auth.get("jwt_key_ring"), dict) and bool(auth.get("jwt_key_ring")),
+        bool(str(auth.get("jwks_uri", ""))),
+    ]
+    if sum(public_sources) != 1:
+        errors.append("production login config must declare exactly one RS256 public key source")
+    if public_sources[2]:
+        uri = urlparse(str(auth.get("jwks_uri", "")))
+        allowed_hosts = {
+            host.strip().lower()
+            for host in str(auth.get("jwks_allowed_hosts", "")).split(",")
+            if host.strip()
+        }
+        if uri.scheme != "https" or not uri.hostname or uri.hostname.lower() not in allowed_hosts:
+            errors.append("production JWKS URI must use HTTPS and an explicitly allowlisted host")
+        if auth.get("jwks_allow_loopback_http") is True:
+            errors.append("production login config must not allow loopback HTTP JWKS")
     if str(auth.get("jwt_secret", "")) or str(auth.get("jwt_private_key_pem", "")):
         errors.append("production login config must not declare local JWT signing material")
     if not str(auth.get("jwt_issuer", "")) or not str(auth.get("jwt_audience", "")):
@@ -52,10 +69,10 @@ def check_source_contracts(root: Path, errors: list[str]) -> None:
     release_governance_doc = root / "docs" / "release-governance.md"
 
     required_snippets = {
-        login_header: ["production_auth_required", "RS256"],
-        login_source: ["external_identity_provider_required", "require_expiration", "production auth requires"],
+        login_header: ["production_auth_required", "RS256", "jwt_key_ring", "jwks_http"],
+        login_source: ["external_identity_provider_required", "require_expiration", "production auth requires", "StaticJwtKeyResolver", "JwksKeyResolver"],
         login_main: ["resolve_backend_config_path", "load_backend_service_config"],
-        config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_PUBLIC_KEY"],
+        config_source: ["V2_LOGIN_AUTH_MODE", "V2_LOGIN_JWT_PUBLIC_KEY", "V2_LOGIN_JWT_KEY_RING", "V2_LOGIN_JWKS_URI"],
         admin_doc: ["admin_invoke", "admin_denied", "ACL"],
         release_governance_doc: ["legacy demo admin surface", "不代表当前 v2 主线提供正式 admin 控制面"],
         current_state_doc: ["admin_service", "legacy-v1 / demo-only", "不进入默认 gate"],

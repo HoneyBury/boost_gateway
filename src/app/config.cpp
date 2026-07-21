@@ -277,6 +277,42 @@ void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& con
     if (const auto value = store.get_string("auth.jwt_private_key_pem")) {
         config.jwt.private_key_pem = *value;
     }
+    config.jwt.key_ring = store.get_prefixed("auth.jwt_key_ring.");
+    if (const auto value = store.get_string("auth.jwks_uri")) {
+        config.jwt.jwks_uri = *value;
+    }
+    if (const auto value = store.get_string("auth.jwks_allowed_hosts")) {
+        std::stringstream stream(*value);
+        std::string host;
+        while (std::getline(stream, host, ',')) {
+            host = trim(host);
+            if (!host.empty()) config.jwt.jwks_allowed_hosts.push_back(host);
+        }
+    }
+    if (const auto value = store.get_bool("auth.jwks_allow_loopback_http")) {
+        config.jwt.jwks_allow_loopback_http = *value;
+    }
+    if (const auto value = store.get_milliseconds("auth.jwks_connect_timeout_ms")) {
+        config.jwt.jwks_connect_timeout = *value;
+    }
+    if (const auto value = store.get_milliseconds("auth.jwks_read_timeout_ms")) {
+        config.jwt.jwks_read_timeout = *value;
+    }
+    if (const auto value = store.get_milliseconds("auth.jwks_ttl_ms")) {
+        config.jwt.jwks_ttl = *value;
+    }
+    if (const auto value = store.get_milliseconds("auth.jwks_stale_grace_ms")) {
+        config.jwt.jwks_stale_grace = *value;
+    }
+    if (const auto value = store.get_milliseconds("auth.jwks_minimum_refresh_interval_ms")) {
+        config.jwt.jwks_minimum_refresh_interval = *value;
+    }
+    if (const auto value = store.get_size("auth.jwks_max_response_bytes")) {
+        config.jwt.jwks_max_response_bytes = *value;
+    }
+    if (const auto value = store.get_size("auth.jwks_max_keys")) {
+        config.jwt.jwks_max_keys = *value;
+    }
     if (const auto value = store.get_string("auth.jwt_issuer")) {
         config.jwt.issuer = *value;
     }
@@ -416,6 +452,47 @@ void apply_backend_env_overlay(const std::string& service_name, BackendServiceCo
     }
     if (const auto value = env_value("V2_LOGIN_JWT_PRIVATE_KEY")) {
         config.jwt.private_key_pem = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWT_KEY_RING")) {
+        const auto document = nlohmann::json::parse(*value, nullptr, false);
+        if (document.is_object()) {
+            config.jwt.key_ring.clear();
+            for (const auto& [kid, pem] : document.items()) {
+                if (pem.is_string()) config.jwt.key_ring.emplace(kid, pem.get<std::string>());
+            }
+        }
+    }
+    if (const auto value = env_value("V2_LOGIN_JWKS_URI")) {
+        config.jwt.jwks_uri = *value;
+    }
+    if (const auto value = env_value("V2_LOGIN_JWKS_ALLOWED_HOSTS")) {
+        config.jwt.jwks_allowed_hosts.clear();
+        std::stringstream stream(*value);
+        std::string host;
+        while (std::getline(stream, host, ',')) {
+            host = trim(host);
+            if (!host.empty()) config.jwt.jwks_allowed_hosts.push_back(host);
+        }
+    }
+    if (const auto value = env_value("V2_LOGIN_JWKS_ALLOW_LOOPBACK_HTTP")) {
+        config.jwt.jwks_allow_loopback_http = parse_bool(*value).value_or(false);
+    }
+    config.jwt.jwks_connect_timeout = read_milliseconds_or(
+        env_value("V2_LOGIN_JWKS_CONNECT_TIMEOUT_MS"), config.jwt.jwks_connect_timeout);
+    config.jwt.jwks_read_timeout = read_milliseconds_or(
+        env_value("V2_LOGIN_JWKS_READ_TIMEOUT_MS"), config.jwt.jwks_read_timeout);
+    config.jwt.jwks_ttl = read_milliseconds_or(
+        env_value("V2_LOGIN_JWKS_TTL_MS"), config.jwt.jwks_ttl);
+    config.jwt.jwks_stale_grace = read_milliseconds_or(
+        env_value("V2_LOGIN_JWKS_STALE_GRACE_MS"), config.jwt.jwks_stale_grace);
+    config.jwt.jwks_minimum_refresh_interval = read_milliseconds_or(
+        env_value("V2_LOGIN_JWKS_MINIMUM_REFRESH_INTERVAL_MS"),
+        config.jwt.jwks_minimum_refresh_interval);
+    if (const auto value = env_value("V2_LOGIN_JWKS_MAX_RESPONSE_BYTES")) {
+        config.jwt.jwks_max_response_bytes = static_cast<std::size_t>(std::stoull(*value));
+    }
+    if (const auto value = env_value("V2_LOGIN_JWKS_MAX_KEYS")) {
+        config.jwt.jwks_max_keys = static_cast<std::size_t>(std::stoull(*value));
     }
     if (const auto value = env_value("V2_LOGIN_JWT_ISSUER")) {
         config.jwt.issuer = *value;
@@ -614,6 +691,17 @@ std::optional<std::chrono::milliseconds> ConfigStore::get_milliseconds(const std
         return std::nullopt;
     }
     return std::chrono::milliseconds(*parsed);
+}
+
+std::unordered_map<std::string, std::string> ConfigStore::get_prefixed(
+    const std::string& prefix) const {
+    std::unordered_map<std::string, std::string> result;
+    for (const auto& [key, value] : values_) {
+        if (key.starts_with(prefix) && key.size() > prefix.size()) {
+            result.emplace(key.substr(prefix.size()), value);
+        }
+    }
+    return result;
 }
 
 std::filesystem::path resolve_backend_config_path(const std::string& service_name,

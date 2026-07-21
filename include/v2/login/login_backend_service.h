@@ -1,10 +1,14 @@
 #pragma once
 
 #include <cstdint>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <vector>
 
+#include "v2/auth/jwks_key_resolver.h"
 #include "v3/cluster/tls_config.h"
 
 namespace v2::login {
@@ -22,6 +26,12 @@ struct LoginBackendOptions {
     std::string jwt_secret;
     std::string jwt_public_key_pem;
     std::string jwt_private_key_pem;
+    std::unordered_map<std::string, std::string> jwt_key_ring;
+    std::optional<v2::auth::JwksHttpOptions> jwks_http;
+    std::chrono::seconds jwks_ttl{300};
+    std::chrono::seconds jwks_stale_grace{900};
+    std::chrono::seconds jwks_minimum_refresh_interval{30};
+    std::size_t jwks_max_keys = 32;
     std::string jwt_issuer = "boost-gateway";
     std::string jwt_audience;
     std::optional<v3::cluster::TlsSessionConfig> tls_config;
@@ -36,6 +46,7 @@ public:
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
+    [[nodiscard]] v2::auth::JwtKeyResolverMetrics identity_key_metrics() const;
 
 private:
     class Impl;

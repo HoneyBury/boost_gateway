@@ -133,20 +133,44 @@ public:
         : port_(options.port),
           production_auth_required_(options.production_auth_required) {
         tls_config_ = std::move(options.tls_config);
+        const auto key_source_count = static_cast<int>(!options.jwt_public_key_pem.empty()) +
+                                      static_cast<int>(!options.jwt_key_ring.empty()) +
+                                      static_cast<int>(options.jwks_http.has_value());
         if (production_auth_required_) {
-            if (options.jwt_public_key_pem.empty() || !options.jwt_secret.empty() ||
+            if (key_source_count != 1 || !options.jwt_secret.empty() ||
                 !options.jwt_private_key_pem.empty() || options.jwt_issuer.empty() ||
                 options.jwt_audience.empty()) {
                 throw std::invalid_argument(
-                    "production auth requires an RS256 public key, issuer, and audience; "
+                    "production auth requires exactly one RS256 public key source, issuer, and audience; "
                     "local signing and symmetric JWT secrets are not allowed");
             }
         }
-        if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty()) {
+        if (key_source_count > 1) {
+            throw std::invalid_argument("JWT public key sources are mutually exclusive");
+        }
+        if (!options.jwt_key_ring.empty()) {
+            key_resolver_ = std::make_shared<v2::auth::StaticJwtKeyResolver>(
+                std::move(options.jwt_key_ring));
+        } else if (options.jwks_http.has_value()) {
+            auto http = std::move(*options.jwks_http);
+            auto resolver = std::make_shared<v2::auth::JwksKeyResolver>(
+                v2::auth::JwksKeyResolver::Options{
+                    .fetcher = [http] { return v2::auth::fetch_jwks_document(http); },
+                    .ttl = options.jwks_ttl,
+                    .stale_grace = options.jwks_stale_grace,
+                    .minimum_refresh_interval = options.jwks_minimum_refresh_interval,
+                    .max_response_bytes = http.max_response_bytes,
+                    .max_keys = options.jwks_max_keys,
+                });
+            resolver->refresh_now();
+            key_resolver_ = std::move(resolver);
+        }
+        if (!options.jwt_secret.empty() || !options.jwt_public_key_pem.empty() || key_resolver_) {
             jwt_validator_.emplace(v2::auth::JwtValidator::Config{
                 .secret = options.jwt_secret,
                 .public_key_pem = options.jwt_public_key_pem,
                 .private_key_pem = options.jwt_private_key_pem,
+                .key_resolver = key_resolver_,
                 .issuer = options.jwt_issuer,
                 .audience = options.jwt_audience,
                 .require_expiration = production_auth_required_,
@@ -154,7 +178,7 @@ public:
         }
         if (production_auth_required_ && !jwt_validator_.has_value()) {
             throw std::invalid_argument(
-                "production auth requires V2_LOGIN_JWT_PUBLIC_KEY");
+                "production auth requires an RS256 public key source");
         }
     }
 
@@ -228,6 +252,18 @@ public:
         return server_ ? server_->local_port() : port_;
     }
 
+    v2::auth::JwtKeyResolverMetrics identity_key_metrics() const {
+        if (key_resolver_) {
+            return key_resolver_->metrics();
+        }
+        return v2::auth::JwtKeyResolverMetrics{
+            .snapshot_available = jwt_validator_.has_value(),
+            .snapshot_stale = false,
+            .snapshot_age_seconds = jwt_validator_.has_value() ? 0 : -1,
+            .key_count = jwt_validator_.has_value() ? 1U : 0U,
+        };
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
@@ -235,6 +271,7 @@ private:
     AccountStore account_store_;
     BackendPlayerState state_;
     std::optional<v2::auth::JwtValidator> jwt_validator_;
+    std::shared_ptr<v2::auth::JwtKeyResolver> key_resolver_;
     bool production_auth_required_ = false;
 
     // v2.2.0: Diagnostics integration — snapshot collector for health /metrics
@@ -437,7 +474,12 @@ private:
 
         bool valid = !token.empty();
         if (jwt_validator_.has_value() && valid) {
-            valid = jwt_validator_->validate(token).valid;
+            const auto result = jwt_validator_->validate(token);
+            valid = result.valid;
+            if (valid && doc.contains("user_id")) {
+                valid = doc["user_id"].is_string() &&
+                        result.payload.sub == doc["user_id"].get<std::string>();
+            }
         } else if (production_auth_required_) {
             valid = false;
         }
@@ -689,5 +731,8 @@ LoginBackendService::~LoginBackendService() = default;
 void LoginBackendService::start() { impl_->start(); }
 void LoginBackendService::stop() { impl_->stop(); }
 std::uint16_t LoginBackendService::local_port() const { return impl_->local_port(); }
+v2::auth::JwtKeyResolverMetrics LoginBackendService::identity_key_metrics() const {
+    return impl_->identity_key_metrics();
+}
 
 }  // namespace v2::login

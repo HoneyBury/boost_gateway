@@ -23,6 +23,8 @@ public:
     [[nodiscard]] std::optional<std::uint32_t> get_uint32(const std::string& key) const;
     [[nodiscard]] std::optional<std::size_t> get_size(const std::string& key) const;
     [[nodiscard]] std::optional<std::chrono::milliseconds> get_milliseconds(const std::string& key) const;
+    [[nodiscard]] std::unordered_map<std::string, std::string> get_prefixed(
+        const std::string& prefix) const;
 
 private:
     std::unordered_map<std::string, std::string> values_;
@@ -68,6 +70,17 @@ struct JwtServiceConfig {
     std::string secret;
     std::string public_key_pem;
     std::string private_key_pem;
+    std::unordered_map<std::string, std::string> key_ring;
+    std::string jwks_uri;
+    std::vector<std::string> jwks_allowed_hosts;
+    bool jwks_allow_loopback_http = false;
+    std::chrono::milliseconds jwks_connect_timeout{2000};
+    std::chrono::milliseconds jwks_read_timeout{3000};
+    std::chrono::milliseconds jwks_ttl{300000};
+    std::chrono::milliseconds jwks_stale_grace{900000};
+    std::chrono::milliseconds jwks_minimum_refresh_interval{30000};
+    std::size_t jwks_max_response_bytes = 1024U * 1024U;
+    std::size_t jwks_max_keys = 32;
     std::string issuer = "boost-gateway";
     std::string audience;
 };
