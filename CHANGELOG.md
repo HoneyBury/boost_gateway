@@ -7,7 +7,7 @@
 - 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
 - Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。
 - 线上资产复验将独立发布的 SPDX SBOM 与已验证 attestation 中的 SPDX 2.3 predicate 做结构等值校验，不再只验证 archive subject digest。
-- 长稳与生产 resilience 编排器捕获 SIGINT/SIGTERM，分层回收子进程组并原子写出中断步骤、完成步骤和部分失败证据，取消片段不能误计为通过。
+- 长稳与生产 resilience 编排器捕获 SIGINT/SIGTERM，Linux runner 通过 parent-death signal 与 workflow PID bridge 转发 step 取消，分层回收子进程组并原子写出中断步骤、完成步骤和部分失败证据；取消片段不能误计为通过，临时 Redis 也由独立 `always()` 步骤清理。
 - AOI fixed runner 在同一候选 `375910f3` 上完成隔离后的 1/2/4 CPU 三轮矩阵；72 项来源与资源契约检查、三档 capacity/business-capacity/R4 门禁全部通过。
 
 ## v3.5.3 — 高风险部署证据闭环（2026-07-20）

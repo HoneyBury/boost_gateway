@@ -41,6 +41,7 @@
 - 候选 `375910f3` 的 AOI runs `29790072882`、`29791850363`、`29793036782` 已分别完成 service CPU `0`、`0-1`、`0-3` 的完整三轮矩阵，三档均固定 loadgen CPU `4-7`、loadgen I/O threads 4、Gateway `io_cores=4` 和相同 workload identity。聚合 summary 为 `evidence_complete=true`、`all_workload_gates_passed=true`，72 项检查全过；所有 case 均为 0 rejected/failed，三档 R4 均通过。
 - 当前 workload 下各 case 的 2/4 CPU 吞吐相对 1 CPU 仅为 `0.9975x-1.0085x`。echo-10K 的 P99 median 从 1 CPU 的 10ms 降至 2/4 CPU 的 1ms，但吞吐只从 59231.55 增至 59697.76/59736.21 msg/s；这证明当前负载已进入 offered-load/场景平台期，不能宣称 CPU 线性扩展。后续若继续性能优化，应先提高可控 offered load 并确认服务 CPU 饱和，再讨论默认线程数。
 - 长任务取消取证已覆盖 `run_long_soak_capacity.py` 和 `verify_production_resilience_gate.py`：SIGINT/SIGTERM 分层 TERM/KILL 进程组、停止后续步骤、清除旧目标 summary，并在 `finally` 原子记录 `interrupted`、signal、当前步骤和完成步骤。发布后 SBOM 复验也新增 standalone JSON 与已验证 SPDX predicate 的 fail-closed 结构绑定。
+- AOI runner 取消探针 run `29795945950`（`c33c50a1`）验证了 GitHub step 取消桥接：Linux parent-death signal 触发外层收尾，workflow 在上传前等待记录的 orchestrator PID 退出。顶层、P5 resilience 和 stability summary 均为 `interrupted=true`、`overall_pass=false`、`SIGTERM`；stability 保留 38.766 秒、9 轮、3 个资源样本和 partial resource summary，job cleanup 未再终止 orphan process。前序 run `29795322300` 只形成 fail-closed 初始 summary，证明仅有 Python handler 不足，保留为桥接修复前的失败诊断。
 
 ## 证据约束
 
