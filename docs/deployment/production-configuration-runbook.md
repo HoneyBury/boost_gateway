@@ -169,6 +169,14 @@ Secret 通过环境变量注入：
 
 `RAFT_*` 环境变量仍兼容，但只作为部署层 overlay。
 
+配置了非空 `raft.storage_dir` 时，`raft.node_id` 必须是非空、最长 256 bytes 且不含 `/`、`\\`、NUL、`.` 或 `..` 的安全路径段，Raft 持久化状态位于 `raft.storage_dir/<node_id>.raft.json`。v3.6 Phase A 写入严格 v1 JSON，包含 schema version、node identity 和 SHA-256 完整性校验；节点启动时会校验字段类型、term/index/log 不变量、checksum 与配置中的 `raft.node_id`。peer ID 作为 opaque 标识允许普通路径字符，但同样要求非空、最长 256 bytes 且不含 NUL。`leader_id` 是易失状态，不写入磁盘。legacy v0 文件首次成功读取后会在同目录保留 `<node_id>.raft.json.v0.bak` 和 `<node_id>.raft.json.migration-v0-v1.json`，再以 durable atomic replace 写入 v1；主文件和两个 sidecar 必须作为同一恢复单元保留。
+
+损坏、截断、未知未来版本、identity 不匹配或迁移 sidecar 冲突都属于启动阻断项；matchmaking 在状态恢复和首次持久化成功前不会监听端口。不要通过删除或清空 `.raft.json` 恢复服务，这会把节点变成全新 Raft 身份状态并可能破坏一致性。应先停止节点，保留主文件及全部 sidecar，采集日志与文件 checksum，再使用已验证备份或 `raft_state_tool downgrade` 处理受支持的 v1-to-v0 回滚；工具失败或不符合 `docs/deployment/raft-schema-migration-runbook.md` 的场景必须保持节点离线。
+
+默认 codec 上限为单个 state 64 MiB、100000 条 log entry、单条 command 1 MiB、node/peer ID 256 bytes。单条非法 RPC/command 会在修改 term/log 前被拒绝，不会污染节点健康状态；本地 state 累积越过总容量或实际 durable write 失败属于 fail-closed 容量/存储故障，节点会锁存为 unhealthy，即使目录随后恢复也不会自动重新加入一致性读写。应在到达上限前规划后续 snapshot/compaction；当前 Phase A 不包含在线压缩或自动清除 state。
+
+Phase B 默认构建会以 `with_raft_protobuf=True` 引入内部 protobuf runtime，但这不会启用 gRPC。Raft reader 可识别严格 legacy JSON 和带 `BGRT` framing/protocol version 的 protobuf v1，节点通过独立 `raft_capabilities` 消息显式记录 peer 能力；超时、无响应或错误响应都不会被推断为支持。当前 RequestVote/AppendEntries writer 仍固定发送 legacy JSON，部署配置没有 protobuf writer 开关；在 Phase C 混合集群门禁完成前不得通过非受支持补丁切换 writer。
+
 ### Leaderboard
 
 文件：`config/environments/<env>/leaderboard.json`
@@ -182,6 +190,8 @@ Secret 通过环境变量注入：
 - `raft.*`
 
 `REDIS_PASSWORD` 属于 secret，不建议写入普通 JSON 文件。未配置 `redis.host` 时使用内存 leaderboard。
+
+Leaderboard 使用与 matchmaking 相同的 `raft.storage_dir/<node_id>.raft.json` v1 状态格式、迁移 sidecar 和 fail-closed 恢复规则；Raft 状态未通过校验或首次持久化失败时，服务不会监听端口。Redis 数据恢复不能替代 Raft state 恢复。
 
 ## 修改流程
 

@@ -4,6 +4,8 @@
 
 ### 证据与发布工程
 
+- 完成 v3.6 Raft Phase A 并形成 Phase B 实现候选：节点磁盘状态使用带 `schema_version`、`node_id` 和 SHA-256 的严格 v1 codec，legacy v0 以旁路备份和迁移记录原子升级；默认 Conan 图独立引入 protobuf runtime，新增 `raft.proto`、确定性 golden vectors、严格 legacy JSON/protobuf v1 双读和显式 peer capability。RequestVote/AppendEntries writer 仍固定使用 legacy JSON，command codec、Phase C writer 和 fixed-runner 发布证据尚未完成，默认激活状态不变。
+- 加固 Raft Phase B 回滚与发布证据：capability 探测失败会撤销旧缓存，三节点 protocol-profile E2E 覆盖逐节点升级/回滚、leader 重选和 committed log catch-up；新增严格 `raft_state_tool` v1-to-v0 转换、每方向最多八对的内容寻址迁移历史及中断续写，并用真实 `v3.5.3`/候选 backend 完成本地十三阶段双周期三进程门禁。Release 在签名前额外校验旧制品预期 SHA-256、三节点读回、提交索引、双周期 schema 轨迹、六次 downgrade 和第二周期独立 history sidecar，再与 strict-offline Conan、Raft 专项、data recovery、clean package consumer 与 protobuf/abseil SBOM 做同 run 绑定。exact SHA 的 Linux fixed-runner run 仍待完成。
 - 接受 v3.6 身份、SDK 分发、Raft schema、macOS ARM64 和独立 debug symbols 五项 ADR，并增加机器可读决策 manifest 与 fail-closed 治理门禁；本次只固定实现边界和顺序，不声明这些能力或发布资产已交付。
 - 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
 - Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。

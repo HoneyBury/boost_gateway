@@ -10,6 +10,7 @@
 #include "v2/match/matchmaking_service.h"
 #include "v3/cluster/cluster_router.h"
 #include "v3/cluster/raft.h"
+#include "v3/cluster/raft_state_codec.h"
 #include "v3/tracing/otel_exporter.h"
 
 #include <boost/asio.hpp>
@@ -21,6 +22,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
@@ -28,7 +30,9 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -43,6 +47,39 @@ namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 constexpr const char* kGatewayHost = "127.0.0.1";
+
+class ScopedBackendRaftStorage {
+  public:
+    explicit ScopedBackendRaftStorage(std::string_view label) {
+        static std::atomic<std::uint64_t> sequence{0};
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        path_ = std::filesystem::temp_directory_path() /
+                (std::string(label) + "_" + std::to_string(stamp) + "_" +
+                 std::to_string(sequence.fetch_add(1)));
+        std::filesystem::create_directories(path_);
+    }
+
+    ~ScopedBackendRaftStorage() {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+
+    void write_state(std::string_view node_id, std::string_view contents) const {
+        std::ofstream output(path_ / (std::string(node_id) + ".raft.json"),
+                             std::ios::binary | std::ios::trunc);
+        if (!output.is_open()) {
+            throw std::runtime_error("failed to create backend Raft fixture");
+        }
+        output << contents;
+    }
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
+        return path_;
+    }
+
+  private:
+    std::filesystem::path path_;
+};
 
 class ScopedEnvironmentOverride {
 public:
@@ -2200,7 +2237,10 @@ TEST(V2BackendRoutingTest, RaftRequestVoteHandlerRespondsToRpc) {
     request.target_service = v2::service::ServiceId::kGateway;
     request.kind = v2::service::MessageKind::kRequest;
     request.message_type = "raft_request_vote";
-    request.payload = R"({"term":1,"candidate_id":"peer-1","last_log_term":0,"last_log_index":0})";
+    request.payload = v3::cluster::serialize_request_vote(v3::cluster::RequestVoteArgs{
+        .term = 1,
+        .candidate_id = "peer-1",
+    });
 
     auto response = conn.send_request(request);
     ASSERT_TRUE(response.has_value());
@@ -2244,7 +2284,10 @@ TEST(V2BackendRoutingTest, RaftAppendEntriesHandlerRespondsToRpc) {
     request.target_service = v2::service::ServiceId::kGateway;
     request.kind = v2::service::MessageKind::kRequest;
     request.message_type = "raft_append_entries";
-    request.payload = R"({"term":1,"leader_id":"peer-1"})";
+    request.payload = v3::cluster::serialize_append_entries(v3::cluster::AppendEntriesArgs{
+        .term = 1,
+        .leader_id = "peer-1",
+    });
 
     auto response = conn.send_request(request);
     ASSERT_TRUE(response.has_value());
@@ -2254,6 +2297,82 @@ TEST(V2BackendRoutingTest, RaftAppendEntriesHandlerRespondsToRpc) {
     EXPECT_FALSE(doc.is_discarded());
     EXPECT_TRUE(doc.contains("term"));
     EXPECT_TRUE(doc.contains("success"));
+
+    conn.close();
+    matchmaking.stop();
+}
+
+TEST(V2BackendRoutingTest, RaftProtobufRequestVoteReturnsProtobufReply) {
+    app::logging::init("project_tests");
+    v2::match::MatchmakingService matchmaking(0);
+
+    v3::cluster::RaftConfig raft_cfg;
+    raft_cfg.node_id = "match-protobuf";
+    raft_cfg.peers = {{"match-protobuf", "127.0.0.1", 0}};
+    matchmaking.set_raft_config(std::move(raft_cfg));
+    matchmaking.start();
+
+    v2::service::BackendConnection conn({
+        .host = "127.0.0.1",
+        .port = matchmaking.local_port(),
+    });
+    ASSERT_TRUE(conn.connect());
+
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kGateway;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "raft_request_vote";
+    request.payload = v3::cluster::serialize_request_vote(
+        v3::cluster::RequestVoteArgs{.term = 2, .candidate_id = "peer-protobuf"},
+        v3::cluster::RaftWireFormat::kProtobufV1);
+
+    const auto response = conn.send_request(std::move(request));
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+    EXPECT_EQ(v3::cluster::detect_raft_wire_format(response->payload),
+              v3::cluster::RaftWireFormat::kProtobufV1);
+    const auto reply = v3::cluster::parse_request_vote_reply(response->payload);
+    EXPECT_EQ(reply.term, 2U);
+    EXPECT_TRUE(reply.vote_granted);
+
+    conn.close();
+    matchmaking.stop();
+}
+
+TEST(V2BackendRoutingTest, RaftCapabilityHandlerRequiresExplicitProtobufMessage) {
+    app::logging::init("project_tests");
+    v2::match::MatchmakingService matchmaking(0);
+
+    v3::cluster::RaftConfig raft_cfg;
+    raft_cfg.node_id = "match-capabilities";
+    raft_cfg.peers = {{"match-capabilities", "127.0.0.1", 0},
+                      {"peer-capabilities", "127.0.0.1", 1}};
+    matchmaking.set_raft_config(std::move(raft_cfg));
+    matchmaking.start();
+
+    v2::service::BackendConnection conn({
+        .host = "127.0.0.1",
+        .port = matchmaking.local_port(),
+    });
+    ASSERT_TRUE(conn.connect());
+
+    v2::service::BackendEnvelope request;
+    request.target_service = v2::service::ServiceId::kGateway;
+    request.kind = v2::service::MessageKind::kRequest;
+    request.message_type = "raft_capabilities";
+    request.payload = v3::cluster::serialize_raft_capability_request(
+        v3::cluster::RaftCapabilityRequest{
+            .node_id = "peer-capabilities",
+            .supported_protocol_versions = {1U},
+        });
+
+    const auto response = conn.send_request(std::move(request));
+    ASSERT_TRUE(response.has_value());
+    EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+    const auto reply = v3::cluster::parse_raft_capability_reply(response->payload);
+    EXPECT_EQ(reply.node_id, "match-capabilities");
+    EXPECT_EQ(reply.selected_protocol_version, 1U);
+    EXPECT_TRUE(reply.protobuf_supported);
 
     conn.close();
     matchmaking.stop();
@@ -2776,6 +2895,49 @@ TEST(V2BackendRoutingTest, LeaderboardRestoresCommittedScoresAfterRestart) {
     }
 
     std::filesystem::remove_all(storage_root, ec);
+}
+
+TEST(V2BackendRoutingTest, LeaderboardRejectsCorruptRaftStateBeforeListening) {
+    app::logging::init("project_tests");
+    DisableRedisAutoConnectForTest redis_guard;
+    ScopedBackendRaftStorage storage("boost_lb_corrupt_state");
+    storage.write_state("lb-corrupt", R"({"schema_version":1)");
+
+    v3::cluster::RaftConfig config;
+    config.node_id = "lb-corrupt";
+    config.storage_dir = storage.path().string();
+    config.peers = {{"lb-corrupt", "127.0.0.1", 0}};
+
+    v2::leaderboard::LeaderboardService service(0);
+    service.set_raft_config(std::move(config));
+    try {
+        service.start();
+        FAIL() << "corrupt Raft state must reject service startup";
+    } catch (const v3::cluster::RaftStateException& error) {
+        EXPECT_EQ(error.code(), v3::cluster::RaftStateErrorCode::kMalformedJson);
+    }
+    EXPECT_EQ(service.local_port(), 0U);
+}
+
+TEST(V2BackendRoutingTest, MatchmakingRejectsFutureRaftStateBeforeListening) {
+    app::logging::init("project_tests");
+    ScopedBackendRaftStorage storage("boost_match_future_state");
+    storage.write_state("match-future", R"({"schema_version":2})");
+
+    v3::cluster::RaftConfig config;
+    config.node_id = "match-future";
+    config.storage_dir = storage.path().string();
+    config.peers = {{"match-future", "127.0.0.1", 0}};
+
+    v2::match::MatchmakingService service(0);
+    service.set_raft_config(std::move(config));
+    try {
+        service.start();
+        FAIL() << "future Raft state must reject service startup";
+    } catch (const v3::cluster::RaftStateException& error) {
+        EXPECT_EQ(error.code(), v3::cluster::RaftStateErrorCode::kUnsupportedVersion);
+    }
+    EXPECT_EQ(service.local_port(), 0U);
 }
 
 TEST(V2BackendRoutingTest, MatchmakingRestoresCommittedMatchAfterRestart) {

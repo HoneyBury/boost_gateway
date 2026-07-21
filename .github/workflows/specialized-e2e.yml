@@ -2,6 +2,8 @@ name: Infrastructure / Redis, Raft & Operator E2E
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
+  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
 on:
   workflow_dispatch:
@@ -149,11 +151,13 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          args=(conan install . --output-folder=build/conan-specialized --build=never --no-remote -s build_type=${{ inputs.configuration }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
-          if [ -n "${{ inputs.conan_lockfile }}" ]; then
-            args+=(--lockfile "${{ inputs.conan_lockfile }}")
-          fi
-          "${args[@]}"
+          python scripts/tools/verify_conan_offline_install.py \
+            --profile "${{ inputs.conan_profile }}" \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --output-folder build/conan-specialized \
+            --build-type "${{ inputs.configuration }}" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/raft-conan-offline-summary.json
           cmake -S . -B build/conan-specialized-cmake -G Ninja \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=OFF \
@@ -178,6 +182,16 @@ jobs:
             args+=(--require-kind)
           fi
           python "${args[@]}"
+
+      - name: Raft data recovery evidence
+        if: inputs.specialized_profile != 'redis-live'
+        shell: bash
+        run: |
+          python scripts/verify_data_recovery_gate.py \
+            --build-dir "${{ inputs.build_dir }}" \
+            --configuration "${{ inputs.configuration }}" \
+            --skip-build \
+            --summary-path runtime/validation/raft-data-recovery-summary.json
 
       - name: Configure
         shell: bash
@@ -221,7 +235,9 @@ jobs:
           summaries=()
           for path in \
             runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/specialized-e2e-summary.json; do
+            runtime/validation/raft-conan-offline-summary.json \
+            runtime/validation/specialized-e2e-summary.json \
+            runtime/validation/raft-data-recovery-summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
             fi
@@ -237,5 +253,7 @@ jobs:
           name: specialized-e2e-${{ github.run_id }}
           path: |
             runtime/validation/fixed-runner-preflight-summary.json
+            runtime/validation/raft-conan-offline-summary.json
             runtime/validation/specialized-e2e-summary.json
+            runtime/validation/raft-data-recovery-summary.json
           if-no-files-found: warn

@@ -14,10 +14,12 @@ class BoostGatewayConan(ConanFile):
     settings = "os", "arch", "compiler", "build_type"
     options = {
         "with_grpc": [True, False],
+        "with_raft_protobuf": [True, False],
         "with_sqlite": [True, False],
     }
     default_options = {
         "&:with_grpc": False,
+        "&:with_raft_protobuf": True,
         "&:with_sqlite": False,
         "fmt/*:header_only": False,
         "spdlog/*:header_only": False,
@@ -34,13 +36,16 @@ class BoostGatewayConan(ConanFile):
         if bool(self.options.get_safe("with_sqlite")):
             self.requires("sqlite3/3.46.1")
         self.requires("gtest/1.15.0")
-        if bool(self.options.get_safe("with_grpc")):
+        if bool(self.options.get_safe("with_raft_protobuf")) or bool(self.options.get_safe("with_grpc")):
             self.requires("protobuf/5.27.0")
+        if bool(self.options.get_safe("with_grpc")):
             self.requires("grpc/1.67.1")
 
     def configure(self):
         if self.options.get_safe("with_grpc") is None:
             self.options.with_grpc = False
+        if self.options.get_safe("with_raft_protobuf") is None:
+            self.options.with_raft_protobuf = True
         if self.options.get_safe("with_sqlite") is None:
             self.options.with_sqlite = False
 
@@ -54,5 +59,8 @@ class BoostGatewayConan(ConanFile):
         tc = CMakeToolchain(self)
         tc.variables["BOOST_DEPENDENCY_PROVIDER"] = "conan"
         tc.variables["BOOST_BUILD_GRPC"] = bool(self.options.get_safe("with_grpc"))
+        tc.variables["BOOST_BUILD_RAFT_PROTOBUF"] = bool(
+            self.options.get_safe("with_raft_protobuf")
+        )
         tc.variables["BOOST_BUILD_SQLITE"] = bool(self.options.get_safe("with_sqlite"))
         tc.generate()

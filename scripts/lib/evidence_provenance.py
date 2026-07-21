@@ -146,6 +146,8 @@ def validate_evidence_provenance(
 
     if provenance.get("revision_matches_checkout") is not True:
         errors.append("provenance candidate_revision does not match git_commit")
+    if provenance.get("candidate_revision") != provenance.get("git_commit"):
+        errors.append("provenance candidate_revision and git_commit differ")
     if expected_candidate_revision and provenance.get("candidate_revision") != expected_candidate_revision:
         errors.append(
             "provenance candidate_revision does not match expected revision "

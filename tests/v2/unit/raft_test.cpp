@@ -3,18 +3,53 @@
 
 #include <gtest/gtest.h>
 #include "v3/cluster/raft.h"
+#include "v3/cluster/raft_state_codec.h"
 
 #include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <mutex>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 
 using namespace v3::cluster;
+
+namespace {
+
+class ScopedRaftTempDirectory {
+  public:
+    explicit ScopedRaftTempDirectory(std::string_view label) {
+        static std::atomic<std::uint64_t> sequence{0};
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        path_ = std::filesystem::temp_directory_path() /
+                (std::string(label) + "_" + std::to_string(stamp) + "_" +
+                 std::to_string(sequence.fetch_add(1)));
+        std::filesystem::create_directories(path_);
+    }
+
+    ~ScopedRaftTempDirectory() {
+        std::error_code ec;
+        std::filesystem::remove_all(path_, ec);
+    }
+
+    ScopedRaftTempDirectory(const ScopedRaftTempDirectory&) = delete;
+    ScopedRaftTempDirectory& operator=(const ScopedRaftTempDirectory&) = delete;
+
+    [[nodiscard]] const std::filesystem::path& path() const noexcept {
+        return path_;
+    }
+
+  private:
+    std::filesystem::path path_;
+};
+
+} // namespace
 
 TEST(RaftTest, InitialStateIsFollower) {
     RaftConfig config{.node_id = "node-1"};
@@ -49,17 +84,17 @@ TEST(RaftTest, SingleNodeBecomesLeaderImmediately) {
     };
     RaftNode node(config);
 
-    bool became_leader = false;
-    node.on_become_leader([&]() { became_leader = true; });
+    std::atomic_bool became_leader{false};
+    node.on_become_leader([&]() { became_leader.store(true); });
     node.start();
 
     // Wait for election
-    for (int i = 0; i < 30 && !became_leader; ++i) {
+    for (int i = 0; i < 30 && !became_leader.load(); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 
     node.stop();
-    EXPECT_TRUE(became_leader);
+    EXPECT_TRUE(became_leader.load());
     EXPECT_TRUE(node.is_leader());
 }
 
@@ -113,20 +148,21 @@ TEST(RaftTest, HigherTermForcesStepDown) {
         .peers = {{"step-down-test", "", 0}},
     });
 
-    bool leader = false, stepped_down = false;
-    node.on_become_leader([&]() { leader = true; });
-    node.on_step_down([&]() { stepped_down = true; });
+    std::atomic_bool leader{false};
+    std::atomic_bool stepped_down{false};
+    node.on_become_leader([&]() { leader.store(true); });
+    node.on_step_down([&]() { stepped_down.store(true); });
     node.start();
 
     // Wait to become leader
-    for (int i = 0; i < 30 && !leader; ++i)
+    for (int i = 0; i < 30 && !leader.load(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    EXPECT_TRUE(leader);
+    EXPECT_TRUE(leader.load());
 
     // Receive heartbeat from higher term → step down
     AppendEntriesArgs hb{.term = 10, .leader_id = "new-leader"};
     node.handle_append_entries(hb);
-    EXPECT_TRUE(stepped_down);
+    EXPECT_TRUE(stepped_down.load());
 
     node.stop();
 }
@@ -166,18 +202,18 @@ TEST(RaftTest, TwoNodesWithThreePeersElectLeader) {
     };
     RaftNode node_a(config);
 
-    bool a_leader = false;
-    node_a.on_become_leader([&]() { a_leader = true; });
+    std::atomic_bool a_leader{false};
+    node_a.on_become_leader([&]() { a_leader.store(true); });
     node_a.start();
 
     // Wait up to ~3s for election to complete
-    for (int i = 0; i < 60 && !a_leader; ++i)
+    for (int i = 0; i < 60 && !a_leader.load(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     node_a.stop();
     // Single node with 3 peers: quorum is 2, self-vote is 1,
     // internal simulated votes from 2 peers = enough to win
-    EXPECT_TRUE(a_leader) << "Should win election with internal peer votes";
+    EXPECT_TRUE(a_leader.load()) << "Should win election with internal peer votes";
 }
 
 TEST(RaftTest, LeaderIdIsTracked) {
@@ -211,20 +247,20 @@ auto make_rpc_sender(std::unordered_map<std::string, RaftNode*>& registry,
         if (!target_node) return {};
 
         try {
-            auto j = nlohmann::json::parse(data, nullptr, false);
-            if (j.is_discarded()) return {};
-
-            std::string msg_type = j.value("type", "");
-
-            if (msg_type == "request_vote") {
+            const auto kind = detect_raft_rpc_kind(data);
+            if (kind == RaftRpcKind::kRequestVote) {
                 auto args = parse_request_vote(data);
                 return serialize_request_vote_reply(
                     target_node->handle_request_vote(args));
             }
-            if (msg_type == "append_entries") {
+            if (kind == RaftRpcKind::kAppendEntries) {
                 auto args = parse_append_entries(data);
                 return serialize_append_entries_reply(
                     target_node->handle_append_entries(args));
+            }
+            if (kind == RaftRpcKind::kCapabilityRequest) {
+                return serialize_raft_capability_reply(target_node->handle_capability_request(
+                    parse_raft_capability_request(data)));
             }
         } catch (const std::exception&) {
             // Log swallowed — RPC timeout is the signal.
@@ -454,6 +490,17 @@ TEST(RaftTest, PersistentLogAndCommitStateRestoreAfterRestart) {
     }
 
     {
+        std::ifstream input(storage_root / "persist-node.raft.json");
+        ASSERT_TRUE(input.is_open());
+        nlohmann::json persisted;
+        ASSERT_NO_THROW(input >> persisted);
+        EXPECT_EQ(persisted.value("schema_version", 0U), 1U);
+        EXPECT_EQ(persisted.value("node_id", std::string{}), "persist-node");
+        EXPECT_EQ(persisted.value("checksum_sha256", std::string{}).size(), 64U);
+        EXPECT_FALSE(persisted.contains("leader_id"));
+    }
+
+    {
         RaftNode recovered(RaftConfig{
             .node_id = "persist-node",
             .storage_dir = storage_root.string(),
@@ -468,6 +515,153 @@ TEST(RaftTest, PersistentLogAndCommitStateRestoreAfterRestart) {
     }
 
     std::filesystem::remove_all(storage_root, ec);
+}
+
+TEST(RaftTest, InitialPersistenceFailureMarksNodeUnhealthyAndDoesNotStart) {
+    ScopedRaftTempDirectory storage("boost_raft_start_failure");
+    RaftNode node(RaftConfig{
+        .node_id = "storage-failure-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"storage-failure-node", "", 0}},
+    });
+
+    std::filesystem::remove_all(storage.path());
+    {
+        std::ofstream blocker(storage.path());
+        ASSERT_TRUE(blocker.is_open());
+        blocker << "not a directory";
+    }
+
+    EXPECT_THROW(node.start(), std::runtime_error);
+    EXPECT_FALSE(node.healthy());
+    EXPECT_FALSE(node.last_error().empty());
+    EXPECT_EQ(node.state(), RaftState::kFollower);
+    EXPECT_FALSE(node.is_leader());
+}
+
+TEST(RaftTest, MultiNodeInitialPersistenceFailureDoesNotStart) {
+    ScopedRaftTempDirectory storage("boost_raft_multi_start_failure");
+    RaftNode node(RaftConfig{
+        .node_id = "multi-storage-failure-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"multi-storage-failure-node", "", 0}, {"peer-1", "", 0}},
+    });
+
+    std::filesystem::remove_all(storage.path());
+    {
+        std::ofstream blocker(storage.path());
+        ASSERT_TRUE(blocker.is_open());
+        blocker << "not a directory";
+    }
+
+    EXPECT_THROW(node.start(), std::runtime_error);
+    EXPECT_FALSE(node.healthy());
+    EXPECT_EQ(node.state(), RaftState::kFollower);
+}
+
+TEST(RaftTest, InvalidRequestVoteDoesNotPoisonPersistentNode) {
+    ScopedRaftTempDirectory storage("boost_raft_invalid_vote");
+    RaftNode node(RaftConfig{
+        .node_id = "vote-guard-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"vote-guard-node", "", 0}, {"peer-1", "", 0}},
+    });
+
+    const auto reply = node.handle_request_vote(RequestVoteArgs{
+        .term = 5,
+        .candidate_id = "",
+    });
+
+    EXPECT_FALSE(reply.vote_granted);
+    EXPECT_EQ(reply.term, 0U);
+    EXPECT_EQ(node.current_term(), 0U);
+    EXPECT_TRUE(node.healthy());
+    EXPECT_TRUE(node.last_error().empty());
+    EXPECT_FALSE(std::filesystem::exists(storage.path() / "vote-guard-node.raft.json"));
+
+    const auto valid_reply = node.handle_request_vote(RequestVoteArgs{
+        .term = 1,
+        .candidate_id = "candidate-1",
+    });
+    EXPECT_TRUE(valid_reply.vote_granted);
+    EXPECT_TRUE(node.healthy());
+}
+
+TEST(RaftTest, InvalidAppendEntriesDoesNotPoisonPersistentNode) {
+    ScopedRaftTempDirectory storage("boost_raft_invalid_append");
+    RaftNode node(RaftConfig{
+        .node_id = "append-guard-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"append-guard-node", "", 0}, {"peer-1", "", 0}},
+    });
+
+    const auto reply = node.handle_append_entries(AppendEntriesArgs{
+        .term = 5,
+        .leader_id = "leader-1",
+        .entries = {{.term = 6, .command = "invalid-future-term"}},
+    });
+
+    EXPECT_FALSE(reply.success);
+    EXPECT_EQ(reply.term, 0U);
+    EXPECT_EQ(node.current_term(), 0U);
+    EXPECT_EQ(node.log_size(), 0U);
+    EXPECT_TRUE(node.healthy());
+    EXPECT_TRUE(node.last_error().empty());
+    EXPECT_FALSE(std::filesystem::exists(storage.path() / "append-guard-node.raft.json"));
+
+    const auto valid_reply = node.handle_append_entries(AppendEntriesArgs{
+        .term = 1,
+        .leader_id = "leader-1",
+    });
+    EXPECT_TRUE(valid_reply.success);
+    EXPECT_TRUE(node.healthy());
+}
+
+TEST(RaftTest, OversizedLocalCommandIsRejectedWithoutPoisoningLeader) {
+    ScopedRaftTempDirectory storage("boost_raft_oversized_command");
+    RaftNode node(RaftConfig{
+        .node_id = "command-guard-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"command-guard-node", "", 0}},
+    });
+    node.start();
+
+    const RaftStateCodecLimits limits;
+    EXPECT_FALSE(node.append_command(std::string(limits.max_command_bytes + 1, 'x')));
+    EXPECT_EQ(node.log_size(), 0U);
+    EXPECT_TRUE(node.healthy());
+    EXPECT_TRUE(node.last_error().empty());
+    node.stop();
+}
+
+TEST(RaftTest, RuntimePersistenceFailureLatchesUnhealthyAfterStorageRecovers) {
+    ScopedRaftTempDirectory storage("boost_raft_runtime_failure");
+    RaftNode node(RaftConfig{
+        .node_id = "runtime-failure-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"runtime-failure-node", "", 0}},
+    });
+    std::size_t applied = 0;
+    node.on_apply([&](std::uint64_t, const LogEntry&) { ++applied; });
+    node.start();
+
+    std::filesystem::remove_all(storage.path());
+    {
+        std::ofstream blocker(storage.path());
+        ASSERT_TRUE(blocker.is_open());
+        blocker << "not a directory";
+    }
+
+    EXPECT_FALSE(node.append_command("must-not-commit"));
+    EXPECT_FALSE(node.healthy());
+    EXPECT_EQ(applied, 0U);
+
+    std::filesystem::remove(storage.path());
+    std::filesystem::create_directories(storage.path());
+    EXPECT_FALSE(node.append_command("must-remain-rejected"));
+    EXPECT_FALSE(node.healthy());
+    EXPECT_EQ(applied, 0U);
+    node.stop();
 }
 
 TEST(RaftTest, ApplyCallbackReplaysCommittedEntriesAfterRestart) {

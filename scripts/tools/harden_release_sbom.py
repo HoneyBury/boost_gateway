@@ -9,10 +9,18 @@ import json
 import os
 import re
 import tarfile
+import sys
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Any
 from urllib.parse import parse_qs, quote, unquote, urlsplit
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib.evidence_provenance import build_evidence_provenance
 
 
 DEFAULT_POLICY = Path("config/release/sbom-policy.json")
@@ -680,6 +688,8 @@ def build_parser() -> argparse.ArgumentParser:
         child.add_argument("--lockfile", type=Path, required=True)
         child.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
         child.add_argument("--summary-path", type=Path, default=DEFAULT_SUMMARY)
+        child.add_argument("--configuration", default="Release")
+        child.add_argument("--candidate-revision")
         sources = child.add_mutually_exclusive_group(required=True)
         sources.add_argument("--package-root", type=Path)
         sources.add_argument("--archive", type=Path)
@@ -776,6 +786,16 @@ def main() -> int:
             "checks": {},
             "failures": [str(exc)],
         }
+    summary["provenance"] = build_evidence_provenance(
+        ROOT,
+        build_configuration=args.configuration,
+        conan_lockfile=args.lockfile,
+        candidate_revision=args.candidate_revision,
+    )
+    summary["artifacts"] = {
+        "summary_path": str(args.summary_path),
+        "sbom_path": str(args.sbom),
+    }
     write_json(args.summary_path, summary)
     if summary["overall_pass"]:
         print(

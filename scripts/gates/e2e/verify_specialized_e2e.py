@@ -20,16 +20,29 @@ from scripts.lib.evidence_provenance import build_evidence_provenance
 
 RAFT_UNIT_FILTER = (
     "RaftClusterTest.*:"
+    "RaftStateCodecTest.*:"
+    "RaftWireCodecTest.*:"
+    "RaftTest.InitialPersistenceFailureMarksNodeUnhealthyAndDoesNotStart:"
+    "RaftTest.MultiNodeInitialPersistenceFailureDoesNotStart:"
+    "RaftTest.InvalidRequestVoteDoesNotPoisonPersistentNode:"
+    "RaftTest.InvalidAppendEntriesDoesNotPoisonPersistentNode:"
+    "RaftTest.OversizedLocalCommandIsRejectedWithoutPoisoningLeader:"
+    "RaftTest.RuntimePersistenceFailureLatchesUnhealthyAfterStorageRecovers:"
     "RaftTest.PersistentLogAndCommitStateRestoreAfterRestart:"
     "RaftTest.ApplyCallbackReplaysCommittedEntriesAfterRestart"
 )
 
 RAFT_INTEGRATION_FILTER = (
+    "RaftE2ETest.E2E_MixedVersionRollingUpgradeAndRollbackKeepsLegacyWriterAndCommittedLog:"
     "V2BackendRoutingTest.LeaderboardReplicatesCommittedScoresAcrossRaftFollowers:"
     "V2BackendRoutingTest.MatchmakingReplicatesQueuedPlayersAndMatchesAcrossFollowers:"
     "V2BackendRoutingTest.MatchmakingReplicatesExpiredQueuePurgeAcrossFollowers:"
     "V2BackendRoutingTest.LeaderboardRestoresCommittedScoresAfterRestart:"
     "V2BackendRoutingTest.MatchmakingRestoresCommittedMatchAfterRestart:"
+    "V2BackendRoutingTest.LeaderboardRejectsCorruptRaftStateBeforeListening:"
+    "V2BackendRoutingTest.MatchmakingRejectsFutureRaftStateBeforeListening:"
+    "V2BackendRoutingTest.RaftProtobufRequestVoteReturnsProtobufReply:"
+    "V2BackendRoutingTest.RaftCapabilityHandlerRequiresExplicitProtobufMessage:"
     "V2BackendRoutingTest.LeaderboardReelectsAndLogicalRestartCatchesUpOverBackendRpc"
 )
 

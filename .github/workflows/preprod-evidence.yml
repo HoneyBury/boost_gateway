@@ -179,6 +179,7 @@ jobs:
             --profile:build "${{ inputs.conan_profile }}" \
             --lockfile "${{ inputs.conan_lockfile }}" \
             -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False"
 
       - name: Configure

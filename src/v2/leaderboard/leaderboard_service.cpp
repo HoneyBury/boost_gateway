@@ -4,12 +4,12 @@
 
 #include "v2/leaderboard/leaderboard_service.h"
 #include "v2/service/backend_connection.h"
-#include "v2/service/error_codes.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
+#include "v2/service/error_codes.h"
 #include "v3/cluster/raft.h"
-#include "v3/persistence/redis_leaderboard.h"
 #include "v3/persistence/redis_event_store.h"
+#include "v3/persistence/redis_leaderboard.h"
 
 #include <spdlog/spdlog.h>
 
@@ -34,17 +34,17 @@ namespace {
 struct ScoreCompare {
     bool operator()(const std::pair<std::int64_t, std::string>& a,
                     const std::pair<std::int64_t, std::string>& b) const {
-        if (a.first != b.first) return a.first > b.first;  // descending score
-        return a.second < b.second;  // ascending user_id for tiebreak
+        if (a.first != b.first)
+            return a.first > b.first; // descending score
+        return a.second < b.second;   // ascending user_id for tiebreak
     }
 };
 
 // ── SortedSet ───────────────────────────────────────────────────────────
 
 class SortedSet {
-public:
-    void submit(const std::string& user_id, const std::string& display_name,
-                std::int64_t score) {
+  public:
+    void submit(const std::string& user_id, const std::string& display_name, std::int64_t score) {
         std::lock_guard lock(mutex_);
         // Remove old entry if exists
         auto old = user_scores_.find(user_id);
@@ -63,13 +63,15 @@ public:
         std::vector<LeaderboardEntry> result;
         std::int64_t rank = 1;
         for (const auto& [score, user_id] : sorted_) {
-            if (result.size() >= k) break;
+            if (result.size() >= k)
+                break;
             LeaderboardEntry entry;
             entry.user_id = user_id;
             entry.score = score;
             entry.rank = rank++;
             auto name_it = display_names_.find(user_id);
-            if (name_it != display_names_.end()) entry.display_name = name_it->second;
+            if (name_it != display_names_.end())
+                entry.display_name = name_it->second;
             result.push_back(entry);
         }
         return result;
@@ -78,7 +80,8 @@ public:
     std::optional<LeaderboardEntry> rank_of(const std::string& user_id) const {
         std::lock_guard lock(mutex_);
         auto score_it = user_scores_.find(user_id);
-        if (score_it == user_scores_.end()) return std::nullopt;
+        if (score_it == user_scores_.end())
+            return std::nullopt;
 
         LeaderboardEntry entry;
         entry.user_id = user_id;
@@ -86,12 +89,16 @@ public:
 
         std::int64_t rank = 1;
         for (const auto& [s, uid] : sorted_) {
-            if (uid == user_id) { entry.rank = rank; break; }
+            if (uid == user_id) {
+                entry.rank = rank;
+                break;
+            }
             ++rank;
         }
 
         auto name_it = display_names_.find(user_id);
-        if (name_it != display_names_.end()) entry.display_name = name_it->second;
+        if (name_it != display_names_.end())
+            entry.display_name = name_it->second;
         return entry;
     }
 
@@ -100,7 +107,7 @@ public:
         return sorted_.size();
     }
 
-private:
+  private:
     mutable std::mutex mutex_;
     std::multiset<std::pair<std::int64_t, std::string>, ScoreCompare> sorted_;
     std::map<std::string, std::int64_t> user_scores_;
@@ -108,24 +115,16 @@ private:
 };
 
 auto make_raft_rpc_sender() {
-    return [](const v3::cluster::RaftNodeId& target,
-              const std::string& data) -> std::string {
+    return [](const v3::cluster::RaftNodeId& target, const std::string& data) -> std::string {
         if (target.host.empty() || target.port == 0) {
             return {};
         }
 
-        auto doc = nlohmann::json::parse(data, nullptr, false);
-        if (doc.is_discarded()) {
-            return {};
-        }
-
-        const auto rpc_type = doc.value("type", "");
         std::string message_type;
-        if (rpc_type == "request_vote") {
-            message_type = "raft_request_vote";
-        } else if (rpc_type == "append_entries") {
-            message_type = "raft_append_entries";
-        } else {
+        try {
+            message_type = v3::cluster::raft_rpc_message_type(
+                v3::cluster::detect_raft_rpc_kind(data));
+        } catch (const std::exception&) {
             return {};
         }
 
@@ -153,8 +152,7 @@ auto make_raft_rpc_sender() {
     };
 }
 
-std::string make_submit_command(const std::string& user_id,
-                                const std::string& display_name,
+std::string make_submit_command(const std::string& user_id, const std::string& display_name,
                                 std::int64_t score) {
     return nlohmann::json{
         {"v", 1},
@@ -162,15 +160,16 @@ std::string make_submit_command(const std::string& user_id,
         {"user_id", user_id},
         {"display_name", display_name},
         {"score", score},
-    }.dump();
+    }
+        .dump();
 }
 
-}  // namespace
+} // namespace
 
 // ── Implementation ──────────────────────────────────────────────────────
 
 class LeaderboardService::Impl {
-public:
+  public:
     explicit Impl(std::uint16_t port) : port_(port) {}
 
     void start() {
@@ -178,57 +177,63 @@ public:
         try_auto_connect_redis();
 
         v2::service::BackendServer::HandlerMap handlers;
-        handlers["leaderboard_submit"] = [this](const auto& req) {
-            return handle_submit(req);
-        };
-        handlers["leaderboard_top"] = [this](const auto& req) {
-            return handle_top(req);
-        };
-        handlers["leaderboard_rank"] = [this](const auto& req) {
-            return handle_rank(req);
-        };
+        handlers["leaderboard_submit"] = [this](const auto& req) { return handle_submit(req); };
+        handlers["leaderboard_top"] = [this](const auto& req) { return handle_top(req); };
+        handlers["leaderboard_rank"] = [this](const auto& req) { return handle_rank(req); };
         handlers["raft_request_vote"] = [this](const auto& req) {
             return handle_raft_request_vote(req);
         };
         handlers["raft_append_entries"] = [this](const auto& req) {
             return handle_raft_append_entries(req);
         };
+        handlers["raft_capabilities"] = [this](const auto& req) {
+            return handle_raft_capabilities(req);
+        };
 
         server_ = std::make_unique<v2::service::BackendServer>(
             v2::service::BackendServerOptions{.port = port_, .tls_config = tls_config_},
             std::move(handlers));
-        server_->start();
 
-        if (!raft_config_.node_id.empty() && !raft_config_.peers.empty()) {
-            raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
-            raft_node_->set_rpc_sender(make_raft_rpc_sender());
-            raft_node_->on_become_leader([this]() {
-                leader_.store(true);
-            });
-            raft_node_->on_step_down([this]() {
-                leader_.store(false);
-            });
-            raft_node_->on_apply([this](std::uint64_t /*index*/,
-                                        const v3::cluster::LogEntry& entry) {
-                apply_raft_entry(entry.command);
-            });
-            raft_node_->start();
+        try {
+            if (!raft_config_.node_id.empty() && !raft_config_.peers.empty()) {
+                raft_node_ = std::make_unique<v3::cluster::RaftNode>(raft_config_);
+                raft_node_->set_rpc_sender(make_raft_rpc_sender());
+                raft_node_->on_become_leader([this]() { leader_.store(true); });
+                raft_node_->on_step_down([this]() { leader_.store(false); });
+                raft_node_->on_apply(
+                    [this](std::uint64_t /*index*/, const v3::cluster::LogEntry& entry) {
+                        apply_raft_entry(entry.command);
+                    });
+                raft_node_->start();
+            }
+
+            server_->start();
+            if (raft_node_)
+                raft_node_->refresh_peer_capabilities();
+        } catch (...) {
+            if (raft_node_)
+                raft_node_->stop();
+            if (server_)
+                server_->stop();
+            throw;
         }
     }
 
     void stop() {
-        if (raft_node_) raft_node_->stop();
-        if (server_) server_->stop();
+        if (raft_node_)
+            raft_node_->stop();
+        if (server_)
+            server_->stop();
     }
-    std::uint16_t local_port() const { return server_ ? server_->local_port() : port_; }
+    std::uint16_t local_port() const {
+        return server_ ? server_->local_port() : port_;
+    }
 
-    void set_redis_leaderboard(
-        std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
+    void set_redis_leaderboard(std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
         redis_lb_ = std::move(redis_lb);
     }
 
-    void set_redis_event_store(
-        std::shared_ptr<v3::persistence::RedisEventStore> event_store) {
+    void set_redis_event_store(std::shared_ptr<v3::persistence::RedisEventStore> event_store) {
         event_store_ = std::move(event_store);
     }
 
@@ -242,12 +247,15 @@ public:
 
     // v3.4.0: Non-leader redirect with leader hint.
     std::string get_leader_hint() const {
-        if (!raft_node_) return {};
+        if (!raft_node_)
+            return {};
         auto lid = raft_node_->leader_id();
-        if (lid.empty()) return {};
+        if (lid.empty())
+            return {};
         for (const auto& peer : raft_config_.peers) {
             if (peer.id == lid) {
-                return "{\"leader_id\":\"" + lid + "\",\"leader_host\":\"" + peer.host + "\",\"leader_port\":" + std::to_string(peer.port) + "}";
+                return "{\"leader_id\":\"" + lid + "\",\"leader_host\":\"" + peer.host +
+                       "\",\"leader_port\":" + std::to_string(peer.port) + "}";
             }
         }
         return "{\"leader_id\":\"" + lid + "\"}";
@@ -260,7 +268,8 @@ public:
     // Batch C: Try auto-connect Redis on startup, fallback to in-memory.
     // Batch C: Try auto-connect Redis on startup, fallback to in-memory.
     void try_auto_connect_redis() {
-        if (redis_lb_) return;  // already configured explicitly
+        if (redis_lb_)
+            return; // already configured explicitly
 
         const char* disable_env = std::getenv("BOOST_DISABLE_REDIS_AUTO_CONNECT");
         if (disable_env && std::string(disable_env) != "0") {
@@ -284,19 +293,21 @@ public:
             auto conn = pool->acquire();
             if (!conn) {
                 SPDLOG_WARN("LeaderboardService: Redis not available at {}:{}, "
-                           "using in-memory storage", host, port);
+                            "using in-memory storage",
+                            host, port);
                 return;
             }
-            conn = {};  // release connection back to pool
+            conn = {}; // release connection back to pool
 
             v3::persistence::RedisLeaderboard::Config lb_cfg;
             lb_cfg.redis.host = host;
             lb_cfg.redis.port = static_cast<std::uint16_t>(port);
             lb_cfg.key = "lb:global";
-            redis_lb_ = std::make_shared<v3::persistence::RedisLeaderboard>(
-                lb_cfg, std::move(pool));
+            redis_lb_ =
+                std::make_shared<v3::persistence::RedisLeaderboard>(lb_cfg, std::move(pool));
             SPDLOG_INFO("LeaderboardService: Redis connected at {}:{}, "
-                       "using Redis backend", host, port);
+                        "using Redis backend",
+                        host, port);
 
             // Also set up event store
             v3::persistence::RedisEventStore::Config es_cfg;
@@ -307,11 +318,12 @@ public:
             SPDLOG_INFO("LeaderboardService: Redis event store connected");
         } catch (const std::exception& e) {
             SPDLOG_WARN("LeaderboardService: Redis connection failed ({}), "
-                       "using in-memory storage", e.what());
+                        "using in-memory storage",
+                        e.what());
         }
     }
 
-private:
+  private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
     std::optional<v3::cluster::TlsSessionConfig> tls_config_;
@@ -339,8 +351,7 @@ private:
         return resp;
     }
 
-    v2::service::BackendEnvelope handle_submit(
-        const v2::service::BackendEnvelope& req) {
+    v2::service::BackendEnvelope handle_submit(const v2::service::BackendEnvelope& req) {
         auto decoded = v2::service::decode_handler_payload(req);
         if (!decoded.has_value() || !decoded->payload.is_object()) {
             return make_error(-1004, "invalid_json");
@@ -352,22 +363,20 @@ private:
         const std::int64_t score = doc.value("score", 0);
         const std::string idempotency_key = doc.value("idempotency_key", "");
 
-        if (user_id.empty()) return make_error(-1004, "empty_user_id");
+        if (user_id.empty())
+            return make_error(-1004, "empty_user_id");
 
         if (!idempotency_key.empty()) {
             std::lock_guard lock(idempotency_mutex_);
             const auto [_, inserted] = applied_idempotency_keys_.insert(idempotency_key);
             if (!inserted) {
-                nlohmann::json body{{"status", "ok"},
-                                    {"user_id", user_id},
-                                    {"idempotent", true}};
+                nlohmann::json body{{"status", "ok"}, {"user_id", user_id}, {"idempotent", true}};
                 if (auto current_rank = rank_of(user_id); current_rank.has_value()) {
                     body["rank"] = *current_rank;
                 }
                 auto resp = make_response(body);
                 return v2::service::wrap_typed_response_if_needed(
-                    decoded->typed_request,
-                    std::move(resp),
+                    decoded->typed_request, std::move(resp),
                     v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
         }
@@ -376,16 +385,13 @@ private:
             if (!raft_node_->is_leader()) {
                 auto resp = make_error(-1003, "not_raft_leader:" + get_leader_hint());
                 return v2::service::wrap_typed_response_if_needed(
-                    decoded->typed_request,
-                    std::move(resp),
+                    decoded->typed_request, std::move(resp),
                     v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
-            if (!raft_node_->append_command(
-                    make_submit_command(user_id, display_name, score))) {
+            if (!raft_node_->append_command(make_submit_command(user_id, display_name, score))) {
                 auto resp = make_error(-1005, "raft_commit_failed");
                 return v2::service::wrap_typed_response_if_needed(
-                    decoded->typed_request,
-                    std::move(resp),
+                    decoded->typed_request, std::move(resp),
                     v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
         } else {
@@ -398,20 +404,19 @@ private:
         }
         auto resp = make_response(body);
         return v2::service::wrap_typed_response_if_needed(
-            decoded->typed_request,
-            std::move(resp),
+            decoded->typed_request, std::move(resp),
             v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
     }
 
-    v2::service::BackendEnvelope handle_top(
-        const v2::service::BackendEnvelope& req) {
+    v2::service::BackendEnvelope handle_top(const v2::service::BackendEnvelope& req) {
         auto decoded = v2::service::decode_handler_payload(req);
         if (!decoded.has_value() || !decoded->payload.is_object()) {
             return make_error(-1004, "invalid_json");
         }
         const auto& doc = decoded->payload;
         std::size_t k = doc.value("k", 10);
-        if (k > 100) k = 100;  // cap
+        if (k > 100)
+            k = 100; // cap
 
         nlohmann::json arr = nlohmann::json::array();
 
@@ -451,20 +456,19 @@ private:
         auto body = nlohmann::json{{"status", "ok"}, {"entries", std::move(arr)}};
         auto resp = make_response(body);
         return v2::service::wrap_typed_response_if_needed(
-            decoded->typed_request,
-            std::move(resp),
+            decoded->typed_request, std::move(resp),
             v3::proto::EnvelopeMessageKind::kLeaderboardTopResponse);
     }
 
-    v2::service::BackendEnvelope handle_rank(
-        const v2::service::BackendEnvelope& req) {
+    v2::service::BackendEnvelope handle_rank(const v2::service::BackendEnvelope& req) {
         auto decoded = v2::service::decode_handler_payload(req);
         if (!decoded.has_value() || !decoded->payload.is_object()) {
             return make_error(-1004, "invalid_json");
         }
         const auto& doc = decoded->payload;
         std::string user_id = doc.value("user_id", "");
-        if (user_id.empty()) return make_error(-1004, "empty_user_id");
+        if (user_id.empty())
+            return make_error(-1004, "empty_user_id");
 
         std::optional<v3::persistence::LeaderboardEntry> entry;
 
@@ -484,9 +488,8 @@ private:
         }
 
         if (!entry.has_value()) {
-            return make_error(
-                static_cast<std::int32_t>(v2::service::ServiceErrorCode::kRejected),
-                "user_not_found");
+            return make_error(static_cast<std::int32_t>(v2::service::ServiceErrorCode::kRejected),
+                              "user_not_found");
         }
         auto body = nlohmann::json{
             {"status", "ok"},
@@ -496,13 +499,11 @@ private:
         };
         auto resp = make_response(body);
         return v2::service::wrap_typed_response_if_needed(
-            decoded->typed_request,
-            std::move(resp),
+            decoded->typed_request, std::move(resp),
             v3::proto::EnvelopeMessageKind::kLeaderboardRankResponse);
     }
 
-    v2::service::BackendEnvelope handle_raft_request_vote(
-        const v2::service::BackendEnvelope& req) {
+    v2::service::BackendEnvelope handle_raft_request_vote(const v2::service::BackendEnvelope& req) {
         if (!raft_node_) {
             return make_error(-1003, "raft_not_initialized");
         }
@@ -517,12 +518,13 @@ private:
         auto reply = raft_node_->handle_request_vote(args);
         v2::service::BackendEnvelope resp;
         resp.kind = v2::service::MessageKind::kResponse;
-        resp.payload = v3::cluster::serialize_request_vote_reply(reply);
+        resp.payload = v3::cluster::serialize_request_vote_reply(
+            reply, v3::cluster::detect_raft_wire_format(req.payload));
         return resp;
     }
 
-    v2::service::BackendEnvelope handle_raft_append_entries(
-        const v2::service::BackendEnvelope& req) {
+    v2::service::BackendEnvelope
+    handle_raft_append_entries(const v2::service::BackendEnvelope& req) {
         if (!raft_node_) {
             return make_error(-1003, "raft_not_initialized");
         }
@@ -537,12 +539,29 @@ private:
         auto reply = raft_node_->handle_append_entries(args);
         v2::service::BackendEnvelope resp;
         resp.kind = v2::service::MessageKind::kResponse;
-        resp.payload = v3::cluster::serialize_append_entries_reply(reply);
+        resp.payload = v3::cluster::serialize_append_entries_reply(
+            reply, v3::cluster::detect_raft_wire_format(req.payload));
         return resp;
     }
 
-    void apply_submit(const std::string& user_id,
-                      const std::string& display_name,
+    v2::service::BackendEnvelope handle_raft_capabilities(
+        const v2::service::BackendEnvelope& req) {
+        if (!raft_node_) {
+            return make_error(-1003, "raft_not_initialized");
+        }
+        try {
+            const auto reply = raft_node_->handle_capability_request(
+                v3::cluster::parse_raft_capability_request(req.payload));
+            v2::service::BackendEnvelope resp;
+            resp.kind = v2::service::MessageKind::kResponse;
+            resp.payload = v3::cluster::serialize_raft_capability_reply(reply);
+            return resp;
+        } catch (const std::exception&) {
+            return make_error(-1004, "invalid_raft_capability");
+        }
+    }
+
+    void apply_submit(const std::string& user_id, const std::string& display_name,
                       std::int64_t score) {
         // Capture previous score before submission
         std::int64_t previous_score = 0;
@@ -612,18 +631,21 @@ private:
         if (user_id.empty()) {
             return;
         }
-        apply_submit(user_id,
-                     doc.value("display_name", ""),
-                     doc.value("score", std::int64_t{0}));
+        apply_submit(user_id, doc.value("display_name", ""), doc.value("score", std::int64_t{0}));
     }
 };
 
-LeaderboardService::LeaderboardService(std::uint16_t port)
-    : impl_(std::make_unique<Impl>(port)) {}
+LeaderboardService::LeaderboardService(std::uint16_t port) : impl_(std::make_unique<Impl>(port)) {}
 LeaderboardService::~LeaderboardService() = default;
-void LeaderboardService::start() { impl_->start(); }
-void LeaderboardService::stop() { impl_->stop(); }
-std::uint16_t LeaderboardService::local_port() const { return impl_->local_port(); }
+void LeaderboardService::start() {
+    impl_->start();
+}
+void LeaderboardService::stop() {
+    impl_->stop();
+}
+std::uint16_t LeaderboardService::local_port() const {
+    return impl_->local_port();
+}
 
 void LeaderboardService::set_redis_leaderboard(
     std::shared_ptr<v3::persistence::RedisLeaderboard> redis_lb) {
@@ -643,9 +665,8 @@ bool LeaderboardService::is_raft_leader() const {
     return impl_->is_raft_leader();
 }
 
-void LeaderboardService::set_tls_config(
-    std::optional<v3::cluster::TlsSessionConfig> tls_config) {
+void LeaderboardService::set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
     impl_->set_tls_config(std::move(tls_config));
 }
 
-}  // namespace v2::leaderboard
+} // namespace v2::leaderboard

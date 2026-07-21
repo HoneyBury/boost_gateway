@@ -3,12 +3,14 @@
 
 #include "v3/cluster/raft.h"
 
+#include "v3/cluster/raft_state_codec.h"
+
 #include "app/audit_log.h"
 
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
+#include <stdexcept>
 #include <thread>
 
 namespace v3::cluster {
@@ -19,12 +21,37 @@ std::uint64_t last_log_term_of(const std::vector<LogEntry>& log) {
     return log.empty() ? 0 : log.back().term;
 }
 
-}  // namespace
+bool is_valid_peer_id(const std::string& node_id) {
+    const RaftStateCodecLimits limits;
+    return !node_id.empty() && node_id.size() <= limits.max_node_id_bytes &&
+           node_id.find('\0') == std::string::npos;
+}
+
+bool is_valid_request_vote(const RequestVoteArgs& args) {
+    if (args.term == 0 || !is_valid_peer_id(args.candidate_id) || args.last_log_term > args.term) {
+        return false;
+    }
+    return (args.last_log_index == 0) == (args.last_log_term == 0);
+}
+
+bool is_valid_append_entries(const AppendEntriesArgs& args) {
+    const RaftStateCodecLimits limits;
+    if (args.term == 0 || !is_valid_peer_id(args.leader_id) ||
+        (args.prev_log_index == 0) != (args.prev_log_term == 0) || args.prev_log_term > args.term ||
+        args.prev_log_index > limits.max_log_entries ||
+        args.entries.size() > limits.max_log_entries - args.prev_log_index) {
+        return false;
+    }
+    return std::all_of(args.entries.begin(), args.entries.end(), [&](const LogEntry& entry) {
+        return entry.term > 0 && entry.term <= args.term &&
+               entry.command.size() <= limits.max_command_bytes;
+    });
+}
+
+} // namespace
 
 RaftNode::RaftNode(RaftConfig config)
-    : config_(std::move(config)),
-      peers_(config_.peers),
-      rng_(std::random_device{}()) {
+    : config_(std::move(config)), peers_(config_.peers), rng_(std::random_device{}()) {
     if (peers_.empty()) {
         peers_.push_back(RaftNodeId{config_.node_id, "", 0});
     }
@@ -32,20 +59,39 @@ RaftNode::RaftNode(RaftConfig config)
     reset_election_timeout();
 }
 
-RaftNode::~RaftNode() { stop(); }
+RaftNode::~RaftNode() {
+    stop();
+}
 
 void RaftNode::start() {
     {
         std::lock_guard lock(mutex_);
+        if (running_.load() || thread_.joinable()) {
+            throw std::logic_error("RaftNode is already running");
+        }
+        if (!healthy_) {
+            throw std::runtime_error("RaftNode is unhealthy: " + last_error_);
+        }
         if (peers_.size() == 1 && peers_.front().id == config_.node_id) {
             if (current_term_ == 0) {
                 current_term_ = 1;
             }
-            become_leader();
+            if (!become_leader()) {
+                throw std::runtime_error("RaftNode failed initial persistence: " + last_error_);
+            }
+        } else if (!persist_state_locked()) {
+            throw std::runtime_error("RaftNode failed initial persistence: " + last_error_);
         }
+        running_ = true;
     }
-    running_ = true;
-    thread_ = std::thread([this]() { run(); });
+    try {
+        thread_ = std::thread([this]() { run(); });
+    } catch (...) {
+        std::lock_guard lock(mutex_);
+        running_ = false;
+        mark_unhealthy_locked("failed to start Raft worker thread");
+        throw;
+    }
 }
 
 void RaftNode::stop() {
@@ -103,6 +149,16 @@ std::string RaftNode::log_command(std::uint64_t index) const {
     return log_[static_cast<std::size_t>(index - 1)].command;
 }
 
+bool RaftNode::healthy() const {
+    std::lock_guard lock(mutex_);
+    return healthy_;
+}
+
+std::string RaftNode::last_error() const {
+    std::lock_guard lock(mutex_);
+    return last_error_;
+}
+
 void RaftNode::on_apply(ApplyCallback cb) {
     std::vector<std::pair<std::uint64_t, LogEntry>> applied;
     {
@@ -133,43 +189,55 @@ void RaftNode::set_state_machine(StateMachine* sm) {
 }
 
 void RaftNode::run() {
-    while (running_) {
-        const auto now = std::chrono::steady_clock::now();
-        bool should_elect = false;
-        bool should_send_heartbeat = false;
-        {
-            std::lock_guard lock(mutex_);
-            if (state_ == RaftState::kLeader) {
-                should_send_heartbeat = true;
-            } else if (now >= election_deadline_) {
-                should_elect = true;
+    try {
+        while (running_) {
+            const auto now = std::chrono::steady_clock::now();
+            bool should_elect = false;
+            bool should_send_heartbeat = false;
+            {
+                std::lock_guard lock(mutex_);
+                if (!healthy_) {
+                    return;
+                }
+                if (state_ == RaftState::kLeader) {
+                    should_send_heartbeat = true;
+                } else if (now >= election_deadline_) {
+                    should_elect = true;
+                }
             }
-        }
 
-        if (should_send_heartbeat) {
-            send_heartbeat();
-            std::this_thread::sleep_for(config_.heartbeat_interval);
-            continue;
+            if (should_send_heartbeat) {
+                send_heartbeat();
+                std::this_thread::sleep_for(config_.heartbeat_interval);
+                continue;
+            }
+            if (should_elect) {
+                start_election();
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
-        if (should_elect) {
-            start_election();
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    } catch (const std::exception& error) {
+        std::lock_guard lock(mutex_);
+        mark_unhealthy_locked(std::string("Raft worker failure: ") + error.what());
+    } catch (...) {
+        std::lock_guard lock(mutex_);
+        mark_unhealthy_locked("Raft worker failure: unknown exception");
     }
 }
 
 void RaftNode::reset_election_timeout() {
-    std::uniform_int_distribution<std::uint64_t> dist(
-        config_.election_timeout_min.count(),
-        config_.election_timeout_max.count());
-    election_deadline_ =
-        std::chrono::steady_clock::now() + std::chrono::milliseconds(dist(rng_));
+    std::uniform_int_distribution<std::uint64_t> dist(config_.election_timeout_min.count(),
+                                                      config_.election_timeout_max.count());
+    election_deadline_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(dist(rng_));
 }
 
 void RaftNode::start_election() {
     RequestVoteArgs args;
     {
         std::lock_guard lock(mutex_);
+        if (!healthy_) {
+            return;
+        }
         current_term_++;
         voted_for_ = config_.node_id;
         votes_received_ = 1;
@@ -180,7 +248,9 @@ void RaftNode::start_election() {
         args.candidate_id = config_.node_id;
         args.last_log_index = log_.size();
         args.last_log_term = last_log_term_of(log_);
-        persist_state_locked();
+        if (!persist_state_locked()) {
+            return;
+        }
     }
 
     for (const auto& peer : peers_) {
@@ -199,11 +269,11 @@ void RaftNode::start_election() {
         }
 
         std::lock_guard lock(mutex_);
-        if (state_ != RaftState::kCandidate || current_term_ != args.term) {
+        if (!healthy_ || state_ != RaftState::kCandidate || current_term_ != args.term) {
             return;
         }
         if (reply.term > current_term_) {
-            become_follower(reply.term);
+            (void)become_follower(reply.term);
             return;
         }
         if (reply.vote_granted) {
@@ -213,7 +283,7 @@ void RaftNode::start_election() {
 
     std::lock_guard lock(mutex_);
     if (state_ == RaftState::kCandidate && votes_received_ >= quorum_size()) {
-        become_leader();
+        (void)become_leader();
     }
 }
 
@@ -226,7 +296,7 @@ void RaftNode::send_heartbeat() {
         AppendEntriesArgs args;
         {
             std::lock_guard lock(mutex_);
-            if (state_ != RaftState::kLeader) {
+            if (!healthy_ || state_ != RaftState::kLeader) {
                 return;
             }
             args = make_append_entries_for(peer.id);
@@ -243,18 +313,20 @@ void RaftNode::send_heartbeat() {
         auto reply = parse_append_entries_reply(raw);
 
         std::lock_guard lock(mutex_);
-        if (reply.term > current_term_) {
-            become_follower(reply.term);
+        if (!healthy_ || state_ != RaftState::kLeader || args.term != current_term_) {
             return;
         }
-        if (state_ != RaftState::kLeader) {
+        if (reply.term > current_term_) {
+            (void)become_follower(reply.term);
             return;
         }
         if (reply.success) {
             match_index_[peer.id] = reply.match_index;
             next_index_[peer.id] = reply.match_index + 1;
             update_commit_index_locked();
-            persist_state_locked();
+            if (!persist_state_locked()) {
+                return;
+            }
         } else {
             auto& next = next_index_[peer.id];
             next = next > 1 ? next - 1 : 1;
@@ -262,7 +334,7 @@ void RaftNode::send_heartbeat() {
     }
 }
 
-void RaftNode::become_follower(std::uint64_t term) {
+bool RaftNode::become_follower(std::uint64_t term) {
     const bool was_leader = state_ == RaftState::kLeader;
     state_ = RaftState::kFollower;
     current_term_ = term;
@@ -272,21 +344,22 @@ void RaftNode::become_follower(std::uint64_t term) {
     match_index_.clear();
     reset_election_timeout();
     leader_id_.clear();
-    persist_state_locked();
+    if (!persist_state_locked()) {
+        return false;
+    }
     if (was_leader) {
         AUDIT_LOG("raft_leader_step_down",
-                   "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
+                  "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
         if (step_down_cb_) {
             step_down_cb_();
         }
     }
+    return true;
 }
 
-void RaftNode::become_leader() {
+bool RaftNode::become_leader() {
     state_ = RaftState::kLeader;
     leader_id_ = config_.node_id;
-    AUDIT_LOG("raft_leader_elected",
-               "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
     next_index_.clear();
     match_index_.clear();
     const auto next = static_cast<std::uint64_t>(log_.size()) + 1;
@@ -297,10 +370,15 @@ void RaftNode::become_leader() {
         next_index_[peer.id] = next;
         match_index_[peer.id] = 0;
     }
-    persist_state_locked();
+    if (!persist_state_locked()) {
+        return false;
+    }
+    AUDIT_LOG("raft_leader_elected",
+              "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
     if (leader_cb_) {
         leader_cb_();
     }
+    return true;
 }
 
 bool RaftNode::is_log_up_to_date(std::uint64_t candidate_last_log_term,
@@ -329,8 +407,7 @@ AppendEntriesArgs RaftNode::make_append_entries_for(const std::string& peer_id) 
         args.prev_log_term = log_[static_cast<std::size_t>(next - 2)].term;
     }
     if (next >= 1 && next <= log_.size()) {
-        args.entries.assign(log_.begin() + static_cast<std::ptrdiff_t>(next - 1),
-                            log_.end());
+        args.entries.assign(log_.begin() + static_cast<std::ptrdiff_t>(next - 1), log_.end());
     }
     return args;
 }
@@ -344,10 +421,8 @@ void RaftNode::update_commit_index_locked() {
         replicated.push_back(index);
     }
     std::sort(replicated.begin(), replicated.end());
-    const auto candidate =
-        replicated[replicated.size() - quorum_size()];
-    if (candidate > commit_index_ &&
-        candidate <= log_.size() &&
+    const auto candidate = replicated[replicated.size() - quorum_size()];
+    if (candidate > commit_index_ && candidate <= log_.size() &&
         log_[static_cast<std::size_t>(candidate - 1)].term == current_term_) {
         commit_index_ = candidate;
     }
@@ -355,8 +430,7 @@ void RaftNode::update_commit_index_locked() {
 
 void RaftNode::drain_committed_entries_locked(
     std::vector<std::pair<std::uint64_t, LogEntry>>& applied) {
-    while (last_applied_ < commit_index_ &&
-           last_applied_ < log_.size()) {
+    while (last_applied_ < commit_index_ && last_applied_ < log_.size()) {
         ++last_applied_;
         applied.push_back({
             last_applied_,
@@ -379,21 +453,25 @@ RequestVoteReply RaftNode::handle_request_vote(const RequestVoteArgs& args) {
     std::lock_guard lock(mutex_);
     RequestVoteReply reply{.term = current_term_, .vote_granted = false};
 
+    if (!healthy_ || !is_valid_request_vote(args)) {
+        return reply;
+    }
     if (args.term < current_term_) {
         return reply;
     }
     if (args.term > current_term_) {
-        become_follower(args.term);
+        if (!become_follower(args.term)) {
+            reply.term = current_term_;
+            return reply;
+        }
     }
 
     reply.term = current_term_;
-    const bool can_vote =
-        !voted_for_.has_value() || *voted_for_ == args.candidate_id;
+    const bool can_vote = !voted_for_.has_value() || *voted_for_ == args.candidate_id;
     if (can_vote && is_log_up_to_date(args.last_log_term, args.last_log_index)) {
         voted_for_ = args.candidate_id;
-        reply.vote_granted = true;
         reset_election_timeout();
-        persist_state_locked();
+        reply.vote_granted = persist_state_locked();
     }
     return reply;
 }
@@ -409,13 +487,22 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
             .match_index = static_cast<std::uint64_t>(log_.size()),
         };
 
+        if (!healthy_ || !is_valid_append_entries(args)) {
+            return reply;
+        }
         if (args.term < current_term_) {
             return reply;
         }
         if (args.term > current_term_) {
-            become_follower(args.term);
+            if (!become_follower(args.term)) {
+                reply.term = current_term_;
+                return reply;
+            }
         } else if (state_ == RaftState::kCandidate) {
-            become_follower(args.term);
+            if (!become_follower(args.term)) {
+                reply.term = current_term_;
+                return reply;
+            }
         }
 
         leader_id_ = args.leader_id;
@@ -438,7 +525,7 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
                 }
                 reply.term = current_term_;
                 reply.match_index = static_cast<std::uint64_t>(log_.size());
-                persist_state_locked();
+                (void)persist_state_locked();
                 return reply;
             }
         }
@@ -460,7 +547,7 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
         }
         if (caught_up) {
             AUDIT_LOG("raft_follower_catch_up",
-                       "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
+                      "node_id=" + config_.node_id + " term=" + std::to_string(current_term_));
         }
 
         if (args.leader_commit > commit_index_) {
@@ -468,7 +555,10 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
         }
         drain_committed_entries_locked(applied);
 
-        persist_state_locked();
+        if (!persist_state_locked()) {
+            reply.term = current_term_;
+            return reply;
+        }
         reply.term = current_term_;
         reply.success = true;
         reply.match_index = static_cast<std::uint64_t>(log_.size());
@@ -477,16 +567,105 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
     return reply;
 }
 
+RaftCapabilityReply RaftNode::handle_capability_request(const RaftCapabilityRequest& request) {
+    const bool supports_v1 = std::find(request.supported_protocol_versions.begin(),
+                                       request.supported_protocol_versions.end(),
+                                       1U) != request.supported_protocol_versions.end();
+    std::lock_guard lock(mutex_);
+    const auto configured_peer =
+        std::find_if(peers_.begin(), peers_.end(),
+                     [&](const RaftNodeId& peer) { return peer.id == request.node_id; });
+    const bool accepted =
+        configured_peer != peers_.end() && request.node_id != config_.node_id && supports_v1;
+    if (accepted) {
+        peer_protocol_versions_[request.node_id] = 1U;
+    }
+    return RaftCapabilityReply{
+        .node_id = config_.node_id,
+        .selected_protocol_version = accepted ? 1U : 0U,
+        .protobuf_supported = accepted,
+    };
+}
+
+void RaftNode::refresh_peer_capabilities() {
+    RpcSender sender;
+    std::vector<RaftNodeId> targets;
+    {
+        std::lock_guard lock(mutex_);
+        sender = rpc_sender_;
+        for (const auto& peer : peers_) {
+            if (peer.id != config_.node_id) {
+                targets.push_back(peer);
+            }
+        }
+    }
+    if (!sender) {
+        return;
+    }
+
+    const auto request = serialize_raft_capability_request(
+        RaftCapabilityRequest{.node_id = config_.node_id, .supported_protocol_versions = {1U}});
+    for (const auto& peer : targets) {
+        {
+            std::lock_guard lock(mutex_);
+            peer_protocol_versions_.erase(peer.id);
+        }
+        try {
+            const auto raw_reply = sender(peer, request);
+            if (raw_reply.empty()) {
+                continue;
+            }
+            const auto reply = parse_raft_capability_reply(raw_reply);
+            if (reply.node_id != peer.id) {
+                continue;
+            }
+            std::lock_guard lock(mutex_);
+            if (reply.protobuf_supported && reply.selected_protocol_version == 1U) {
+                peer_protocol_versions_[peer.id] = 1U;
+            }
+        } catch (const std::exception&) {
+            // A missing, malformed, or legacy-only response leaves the peer unadvertised.
+        }
+    }
+}
+
+bool RaftNode::peer_supports_protobuf(const std::string& peer_id) const {
+    if (peer_id == config_.node_id) {
+        return true;
+    }
+    std::lock_guard lock(mutex_);
+    const auto found = peer_protocol_versions_.find(peer_id);
+    return found != peer_protocol_versions_.end() && found->second == 1U;
+}
+
+bool RaftNode::all_voting_peers_support_protobuf() const {
+    std::lock_guard lock(mutex_);
+    for (const auto& peer : peers_) {
+        if (peer.id == config_.node_id) {
+            continue;
+        }
+        const auto found = peer_protocol_versions_.find(peer.id);
+        if (found == peer_protocol_versions_.end() || found->second != 1U) {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool RaftNode::append_command(const std::string& command) {
     std::vector<RaftNodeId> targets;
     {
         std::lock_guard lock(mutex_);
-        if (state_ != RaftState::kLeader) {
+        const RaftStateCodecLimits limits;
+        if (!healthy_ || state_ != RaftState::kLeader ||
+            command.size() > limits.max_command_bytes || log_.size() >= limits.max_log_entries) {
             return false;
         }
         log_.push_back(LogEntry{.term = current_term_, .command = command});
         match_index_[config_.node_id] = static_cast<std::uint64_t>(log_.size());
-        persist_state_locked();
+        if (!persist_state_locked()) {
+            return false;
+        }
         for (const auto& peer : peers_) {
             if (peer.id != config_.node_id) {
                 targets.push_back(peer);
@@ -499,7 +678,7 @@ bool RaftNode::append_command(const std::string& command) {
         AppendEntriesArgs args;
         {
             std::lock_guard lock(mutex_);
-            if (state_ != RaftState::kLeader) {
+            if (!healthy_ || state_ != RaftState::kLeader) {
                 return false;
             }
             args = make_append_entries_for(peer.id);
@@ -515,14 +694,17 @@ bool RaftNode::append_command(const std::string& command) {
             reply = AppendEntriesReply{
                 .term = args.term,
                 .success = true,
-                .match_index = args.prev_log_index +
-                    static_cast<std::uint64_t>(args.entries.size()),
+                .match_index =
+                    args.prev_log_index + static_cast<std::uint64_t>(args.entries.size()),
             };
         }
 
         std::lock_guard lock(mutex_);
+        if (!healthy_ || state_ != RaftState::kLeader || args.term != current_term_) {
+            return false;
+        }
         if (reply.term > current_term_) {
-            become_follower(reply.term);
+            (void)become_follower(reply.term);
             return false;
         }
         if (!reply.success) {
@@ -538,12 +720,14 @@ bool RaftNode::append_command(const std::string& command) {
     std::vector<std::pair<std::uint64_t, LogEntry>> applied;
     {
         std::lock_guard lock(mutex_);
-        if (successes < quorum_size()) {
+        if (!healthy_ || state_ != RaftState::kLeader || successes < quorum_size()) {
             return false;
         }
         update_commit_index_locked();
         drain_committed_entries_locked(applied);
-        persist_state_locked();
+        if (!persist_state_locked()) {
+            return false;
+        }
     }
 
     deliver_applied_entries(applied);
@@ -555,8 +739,7 @@ std::filesystem::path RaftNode::state_path() const {
     if (config_.storage_dir.empty()) {
         return {};
     }
-    return std::filesystem::path(config_.storage_dir) /
-           (config_.node_id + ".raft.json");
+    return std::filesystem::path(config_.storage_dir) / (config_.node_id + ".raft.json");
 }
 
 void RaftNode::load_persistent_state() {
@@ -565,96 +748,80 @@ void RaftNode::load_persistent_state() {
         return;
     }
 
-    std::ifstream input(path);
-    if (!input.is_open()) {
+    const RaftStateStore store(path, config_.node_id);
+    const auto loaded = store.load_or_migrate();
+    if (!loaded.has_value()) {
         return;
     }
 
-    nlohmann::json doc;
-    try {
-        input >> doc;
-    } catch (const std::exception&) {
-        return;
-    }
-
-    current_term_ = doc.value("current_term", std::uint64_t{0});
-    if (doc.contains("voted_for") && doc["voted_for"].is_string()) {
-        voted_for_ = doc["voted_for"].get<std::string>();
-    } else {
-        voted_for_.reset();
-    }
-    leader_id_ = doc.value("leader_id", std::string{});
-    commit_index_ = doc.value("commit_index", std::uint64_t{0});
-    last_applied_ = doc.value("last_applied", std::uint64_t{0});
-
+    current_term_ = loaded->state.current_term;
+    voted_for_ = loaded->state.voted_for;
+    leader_id_.clear();
+    commit_index_ = loaded->state.commit_index;
+    last_applied_ = loaded->state.last_applied;
     log_.clear();
-    if (doc.contains("log") && doc["log"].is_array()) {
-        for (const auto& entry : doc["log"]) {
-            log_.push_back(LogEntry{
-                .term = entry.value("term", std::uint64_t{0}),
-                .command = entry.value("command", std::string{}),
-            });
-        }
-    }
-
-    if (commit_index_ > log_.size()) {
-        commit_index_ = static_cast<std::uint64_t>(log_.size());
-    }
-    if (last_applied_ > commit_index_) {
-        last_applied_ = commit_index_;
+    log_.reserve(loaded->state.log.size());
+    for (const auto& entry : loaded->state.log) {
+        log_.push_back(LogEntry{.term = entry.term, .command = entry.command});
     }
     state_ = RaftState::kFollower;
 }
 
-void RaftNode::persist_state_locked() const {
+bool RaftNode::persist_state_locked() {
+    if (!healthy_) {
+        return false;
+    }
     const auto path = state_path();
     if (path.empty()) {
+        return true;
+    }
+
+    RaftPersistentState persisted{
+        .current_term = current_term_,
+        .voted_for = voted_for_,
+        .log = {},
+        .commit_index = commit_index_,
+        .last_applied = last_applied_,
+    };
+    persisted.log.reserve(log_.size());
+    for (const auto& entry : log_) {
+        persisted.log.push_back(
+            RaftPersistedLogEntry{.term = entry.term, .command = entry.command});
+    }
+
+    try {
+        RaftStateStore(path, config_.node_id).save(persisted);
+        return true;
+    } catch (const RaftStateException& error) {
+        mark_unhealthy_locked(error.what());
+    } catch (const std::exception& error) {
+        mark_unhealthy_locked(std::string("unexpected Raft state error: ") + error.what());
+    }
+    return false;
+}
+
+void RaftNode::mark_unhealthy_locked(std::string reason) {
+    if (!healthy_) {
         return;
     }
-
-    std::error_code ec;
-    std::filesystem::create_directories(path.parent_path(), ec);
-
-    nlohmann::json doc{
-        {"current_term", current_term_},
-        {"voted_for", voted_for_.has_value() ? nlohmann::json(*voted_for_) : nlohmann::json(nullptr)},
-        {"leader_id", leader_id_},
-        {"commit_index", commit_index_},
-        {"last_applied", last_applied_},
-    };
-
-    nlohmann::json log_entries = nlohmann::json::array();
-    for (const auto& entry : log_) {
-        log_entries.push_back({
-            {"term", entry.term},
-            {"command", entry.command},
-        });
-    }
-    doc["log"] = std::move(log_entries);
-
-    const auto temp_path = path.string() + ".tmp";
-    {
-        std::ofstream output(temp_path, std::ios::trunc);
-        if (!output.is_open()) {
-            return;
-        }
-        output << doc.dump(2);
-    }
-
-    std::filesystem::rename(temp_path, path, ec);
-    if (ec) {
-        std::filesystem::remove(path, ec);
-        ec.clear();
-        std::filesystem::rename(temp_path, path, ec);
-        if (ec) {
-            std::filesystem::remove(temp_path, ec);
-        }
+    const bool was_leader = state_ == RaftState::kLeader;
+    healthy_ = false;
+    last_error_ = std::move(reason);
+    running_ = false;
+    state_ = RaftState::kFollower;
+    leader_id_.clear();
+    votes_received_ = 0;
+    next_index_.clear();
+    match_index_.clear();
+    AUDIT_LOG("raft_node_unhealthy", "node_id=" + config_.node_id + " reason=" + last_error_);
+    if (was_leader && step_down_cb_) {
+        step_down_cb_();
     }
 }
 
-RequestVoteReply handle_request_vote_internal(
-    const RaftNodeId& /*peer*/, const RequestVoteArgs& args) {
+RequestVoteReply handle_request_vote_internal(const RaftNodeId& /*peer*/,
+                                              const RequestVoteArgs& args) {
     return RequestVoteReply{.term = args.term, .vote_granted = true};
 }
 
-}  // namespace v3::cluster
+} // namespace v3::cluster

@@ -85,6 +85,7 @@ jobs:
             --profile:build conan/profiles/linux-gcc-x64 \
             --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
             -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-ci \
             --build=missing \

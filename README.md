@@ -76,7 +76,7 @@ Conan PoC 入口：
 ```bash
 export CONAN_HOME=$PWD/.conan2-local
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
 cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build build/linux-ninja-debug-conan --parallel
 ```
@@ -94,7 +94,7 @@ cmake --build build/linux-ninja-debug-conan --parallel
 - 当前依赖分层已经收敛为：
   - Conan 严格主线：`fmt`、`spdlog`、`nlohmann_json`、`hiredis`、`boost::headers`、`OpenSSL`
   - 实验保留：`protobuf`、`grpc`、`sqlite3`
-- 当前已打通的 Conan 主线路径以 `with_grpc=False`、`with_sqlite=False` 为默认 lockfile 口径；`sqlite3` 保留为可选/实验层，不阻塞主线 Conan install。
+- 当前 Conan 主线路径以 `with_grpc=False`、`with_raft_protobuf=True`、`with_sqlite=False` 为默认 lockfile 口径。protobuf runtime 仅供内部 Raft codec 使用，不启用 gRPC transport；`grpc/sqlite3` 仍保留为实验或可选层。
 - 当前已落仓的 lockfile：
   - `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`
   - `conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock`

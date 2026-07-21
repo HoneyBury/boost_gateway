@@ -288,6 +288,15 @@ def main() -> int:
     )
     add(
         checks,
+        "specialized-e2e:raft-phase-b-evidence",
+        "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
+        and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow
+        and "scripts/verify_data_recovery_gate.py" in specialized_workflow
+        and "runtime/validation/raft-data-recovery-summary.json" in specialized_workflow,
+        "specialized E2E archives strict offline Conan and Raft recovery evidence",
+    )
+    add(
+        checks,
         "candidate-evidence:pinned-kind-bootstrap",
         "scripts/tools/bootstrap_kind_tools.py" in candidate_workflow
         and "if: inputs.include_kind" in candidate_workflow
@@ -364,6 +373,21 @@ def main() -> int:
         and "attestations: write" in release_workflow
         and "id-token: write" in release_workflow,
         "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
+    )
+    raft_release_gate = "scripts/verify_raft_release_evidence.py"
+    add(
+        checks,
+        "release:raft-phase-b-same-run-evidence",
+        "scripts/tools/verify_conan_offline_install.py" in release_workflow
+        and "scripts/verify_specialized_e2e.py" in release_workflow
+        and "--profile raft-ha" in release_workflow
+        and "scripts/verify_data_recovery_gate.py" in release_workflow
+        and raft_release_gate in release_workflow
+        and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
+        < release_workflow.index(raft_release_gate)
+        < release_workflow.index("Attest release archive provenance")
+        and "runtime/validation/raft-release-evidence-summary.json" in release_workflow,
+        "release binds Raft mixed-version, recovery, offline Conan, package and SBOM evidence before attestation",
     )
     add(
         checks,

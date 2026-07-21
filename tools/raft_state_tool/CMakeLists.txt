@@ -1,0 +1,3 @@
+add_executable(raft_state_tool main.cpp)
+target_link_libraries(raft_state_tool PRIVATE project_v3 nlohmann_json::nlohmann_json)
+apply_project_warnings(raft_state_tool)

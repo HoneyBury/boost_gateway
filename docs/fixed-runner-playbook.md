@@ -58,12 +58,12 @@ set -a; . "$cache_env"; set +a
 python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public --disable-example-internal
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-  -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
+  -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-release --build=missing -s build_type=Release
 python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
 python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-  -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
+  -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
 ```
 
 ### Conan 图哈希变化后的离线迁移
@@ -88,7 +88,7 @@ CONAN_HOME="$new_conan_home" conan install . \
   --profile:host conan/profiles/linux-gcc-x64 \
   --profile:build conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-  -o "&:with_grpc=False" -o "&:with_sqlite=False" \
+  -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" \
   --output-folder=build/conan-cache-acceptance \
   --build=never --no-remote -s build_type=Release
 ```
@@ -223,14 +223,14 @@ conan install . --output-folder=build/conan-preprod-warm --build=missing \
   -s build_type=Release --profile:host conan/profiles/linux-gcc-x64 \
   --profile:build conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-  -o "&:with_grpc=False" -o "&:with_sqlite=False"
+  -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False"
 python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
 python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 conan install . --output-folder=build/conan-preprod-offline-check --build=never --no-remote \
   -s build_type=Release --profile:host conan/profiles/linux-gcc-x64 \
   --profile:build conan/profiles/linux-gcc-x64 \
   --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-  -o "&:with_grpc=False" -o "&:with_sqlite=False"
+  -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False"
 ```
 
 4. 预热或 import Docker images，然后严格检查离线 cache：
@@ -382,6 +382,9 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ga
 | `perf_repetitions` | `3` | `3` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 | `prepare_cmake_consumer_image` | 仅 runner 镜像缺失时为 `true` | 通常为 `false` |
+| `legacy_raft_binary` | runner 上预置的 `v3.5.3` leaderboard backend | 同 baseline |
+| `legacy_raft_revision` | `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` | 同 baseline |
+| `legacy_raft_sha256` | 预置 Linux x64 binary 的实际 SHA-256 | 同 baseline |
 
 `prepare_cmake_consumer_image=true` 只用于手动候选运行恢复固定 digest Dockerfile 对应的 compiler image。构建完成后的 consumer 仍强制 `--network=none --pull=never`；正式 tag 触发没有该输入，必须消费候选阶段已经准入的本地镜像，不能在发布时隐式联网预热。
 
@@ -618,6 +621,22 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 子 summary `p6-stability-soak-summary.json`、`p6-data-recovery-summary.json`、`p6-specialized-e2e-summary.json`、`p6-candidate-audit-summary.json` 均为 `passed=true`。
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
+
+## Raft Phase B release evidence
+
+Raft Phase B 必须从同一 exact SHA 触发 `release.yml`。runner 必须预置来自完整提交 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 的 `v3.5.3` leaderboard backend，并通过 `legacy_raft_sha256` 或 `LEGACY_RAFT_SHA256` 固定其平台摘要。该 workflow 在签名之前依次生成严格离线 Conan、`raft-ha`、data recovery、真实三进程 mixed-binary、clean package consumer 和 SBOM semantic summary，并由 `scripts/verify_raft_release_evidence.py` 拒绝跨 SHA、跨 workflow run、跨 runner、lockfile digest 漂移或旧制品摘要不符。
+
+通过标准：
+
+- `runtime/validation/raft-release-evidence-summary.json` 为 `overall_pass=true`。
+- mixed-version protocol-profile 测试出现在 specialized summary 的 `matched_tests` 与实际执行计数中。
+- mixed-binary summary 必须完成十三阶段双周期 `v0 -> v1 -> v0 -> v1 -> v0`，每阶段三节点读回一致、提交索引推进且 schema 轨迹符合门禁；六个回滚动作都必须携带 v1 备份与 downgrade 审计记录，第二周期三节点必须使用不同的内容寻址 history sidecar。
+- Conan summary 固定 `--no-remote` / `--build=never`、`with_raft_protobuf=True`、`with_grpc=False`。
+- SBOM 同时包含 `protobuf`、`abseil`，且不包含 `grpc`。
+- legacy/candidate binary SHA-256 必须不同，legacy SHA-256 必须与 runner 预置值相同；同进程 protocol-profile E2E 不替代该事实。
+
+完整操作边界见 `docs/deployment/raft-schema-migration-runbook.md`。
+
 ## R2/R3 cross-workflow aggregation
 
 R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。开始这一轮前先冻结候选提交，并确保四个 workflow 都从该完整 SHA dispatch。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再分别运行 bounded/fixed 两份 R2 和最终 R3 readiness report。R2 直接验证 `long-soak-2h-summary.json` 的 `soak_profile=long`、成功状态、时效和 provenance，并独立验证 capacity run 的 R4 summary；capacity-only batch 不能替代 2h soak，capacity 失败也不会使已通过的 2h summary 失效：

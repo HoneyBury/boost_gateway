@@ -1,6 +1,6 @@
 # v3.5.3 发布后主线执行计划
 
-更新时间：2026-07-21
+更新时间：2026-07-22
 
 ## 阶段目标
 
@@ -16,7 +16,7 @@
 | P1 | 单核 `io_cores` 单变量实验 | 同一 fixed-case 的 `io_cores=1/2/4` 三轮对照 | loadgen 隔离且其它参数固定；只有聚合决策支持且人工评审通过后才调整默认或部署配置 |
 | P1 | 长任务中断取证 | 原子 checkpoint、取消 summary、完整子进程组清理 | SIGINT/SIGTERM 可记录当前步骤、连续时长、完成轮数和资源样本；中断段不得累计成 2h/8h 通过 |
 | P1 | SBOM 语义质量 | 非占位文件 hash、依赖组件/version 清单和发布前/发布后门禁 | 禁止全零 checksum；运行时资产与 Conan 依赖可追溯；签名验证与内容质量分别阻断 |
-| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 五项 ADR 已接受并进入机器可校验 manifest；实现、平台证据和发布资产仍未开始，未满足各 ADR 退出条件前不进入默认生产链路 |
+| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 五项 ADR 已接受并进入机器可校验 manifest；Raft Phase A 与 Phase B 实现候选已进入验证，Phase C、其它四项实现、平台证据和发布资产仍未完成，未满足各 ADR 退出条件前不进入默认生产链路 |
 
 ## 执行顺序
 
@@ -27,6 +27,7 @@
 5. 增加长稳取消与 checkpoint 契约。checkpoint 只保留诊断事实，最终 long/overnight 仍要求单一 run ID 连续运行不少于 7200/28800 秒。
 6. 修正 SBOM 生成源并增加语义门禁，避免“文件已签名”被误解为“组件清单完整”。
 7. 五项下一 minor ADR 已接受并登记到 `docs/decisions/v3.6-decision-manifest.json`；后续实现必须按 manifest 的依赖顺序推进，并由 `scripts/check_next_minor_decisions.py` 保持默认阻断和事实口径。
+8. Raft schema 已按 ADR 完成 Phase A，并形成 Phase B protobuf schema/runtime、dual reader、golden vectors 与 peer capability 实现候选；严格 v1-to-v0 工具、内容寻址有界迁移历史和真实 `v3.5.3`/候选三进程十三阶段双周期本地门禁已落地。下一步在 exact SHA 的 Linux fixed runner 上生成绑定旧制品摘要的 Conan/SBOM/package/混合 binary 同 run 证据。RequestVote/AppendEntries writer 继续使用 legacy JSON，command codec 与 Phase C writer 不得提前启用。
 
 ## 当前事实
 
@@ -59,8 +60,8 @@
 - 不因一次轴实验自动调整 Gateway 线程默认值、backend pool 或 battle worker 数量；本轮聚合决策明确要求保留当前默认值并进入人工评审。
 - gRPC 继续保持 `experimental_only` / `defer_default_transport`。`grpc-experimental.yml` 已有 `BOOST_BUILD_GRPC=ON` 的 fixed-runner run，但实验交付完整不等于默认传输具备升级收益。
 - 不把多个中断 soak 片段拼接成连续长稳结论。
-- Python/C# wheel/NuGet、JWKS/多 `kid`、Raft raw JSON 迁移、macOS ARM64 和独立 debug symbols 的 ADR 已接受，但对应实现、平台证据和发布资产均未交付；在 manifest 退出条件完成前继续保持默认阻断。
+- Python/C# wheel/NuGet、JWKS/多 `kid`、Raft RPC/command raw JSON 迁移、macOS ARM64 和独立 debug symbols 的 ADR 已接受；其中 Raft Phase A/B、downgrade 工具、多周期迁移和本地真实混合 binary 门禁已落地，但 Phase C、command codec、Linux fixed-runner 证据和完整发布资产仍未交付。在 manifest 退出条件完成前继续保持默认阻断。
 
 ## 阶段退出条件
 
-P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成：service/loadgen affinity 可审计、逐轮 CPU 资源差值可复算、隔离后的 1/2/4 service CPU 矩阵和单核 `io_cores` 三轮实验已聚合、长稳取消可生成部分失败证据且无遗留子进程、SBOM 语义门禁已实现。P2 的身份、SDK 分发、Raft schema、平台与符号包 ADR 现已接受并进入机器可校验 manifest；这只完成决策阶段，不代表五项实现或发布资产已经交付。下一步从 manifest 声明的首个实现依赖开始，任何默认链路变化仍必须等待对应退出条件。上述 P0/P1 证据的事实锚点始终是 `37897e8`，不能用后续决策或文档提交、`v3.5.3` tag 代替。
+P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成：service/loadgen affinity 可审计、逐轮 CPU 资源差值可复算、隔离后的 1/2/4 service CPU 矩阵和单核 `io_cores` 三轮实验已聚合、长稳取消可生成部分失败证据且无遗留子进程、SBOM 语义门禁已实现。P2 的身份、SDK 分发、Raft schema、平台与符号包 ADR 已接受并进入机器可校验 manifest；Raft Phase A/B 实现候选已落地，但这不代表五项实现或发布资产已经交付。下一步固化 Phase A/B 专项、混合集群和依赖交付证据，再进入 command codec/Phase C；任何默认链路变化仍必须等待对应退出条件。上述 P0/P1 证据的事实锚点始终是 `37897e8`，不能用后续决策或文档提交、`v3.5.3` tag 代替。

@@ -32,7 +32,7 @@ python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
 source .venv/conan-2.8.1/bin/activate
 export CONAN_HOME="$PWD/.conan2-local"
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
 cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_tests
 ```
@@ -51,7 +51,7 @@ python scripts/tools/resolve_runner_cache.py --build-type Release \
 set -a; . "$cache_env"; set +a
 python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
 python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
 cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan-release-offline/build/Release/generators/conan_toolchain.cmake
 cmake --build build/release --parallel
 python scripts/tools/prepare_docker_runtime_context.py --build-dir build/release

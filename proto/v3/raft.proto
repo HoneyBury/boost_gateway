@@ -1,0 +1,61 @@
+syntax = "proto3";
+
+package boost.gateway.v3.raft;
+
+option optimize_for = LITE_RUNTIME;
+
+message LogEntry {
+  uint64 term = 1;
+  bytes command = 2;
+}
+
+message RequestVote {
+  uint64 term = 1;
+  string candidate_id = 2;
+  uint64 last_log_term = 3;
+  uint64 last_log_index = 4;
+}
+
+message RequestVoteReply {
+  uint64 term = 1;
+  bool vote_granted = 2;
+}
+
+message AppendEntries {
+  uint64 term = 1;
+  string leader_id = 2;
+  uint64 prev_log_index = 3;
+  uint64 prev_log_term = 4;
+  repeated LogEntry entries = 5;
+  uint64 leader_commit = 6;
+}
+
+message AppendEntriesReply {
+  uint64 term = 1;
+  bool success = 2;
+  uint64 match_index = 3;
+}
+
+message CapabilityRequest {
+  string node_id = 1;
+  repeated uint32 supported_protocol_versions = 2;
+}
+
+message CapabilityReply {
+  string node_id = 1;
+  uint32 selected_protocol_version = 2;
+  bool protobuf_supported = 3;
+}
+
+message WireEnvelope {
+  uint32 protocol_version = 1;
+
+  oneof payload {
+    RequestVote request_vote = 10;
+    RequestVoteReply request_vote_reply = 11;
+    AppendEntries append_entries = 12;
+    AppendEntriesReply append_entries_reply = 13;
+    CapabilityRequest capability_request = 14;
+    CapabilityReply capability_reply = 15;
+  }
+}

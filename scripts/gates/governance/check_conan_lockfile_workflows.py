@@ -44,6 +44,7 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
 CONAN_VENV_HELPER = "scripts/tools/ensure_conan_venv.py"
+RAFT_OFFLINE_INSTALLER = "scripts/tools/verify_conan_offline_install.py"
 PINNED_CONAN_VERSION = "2.8.1"
 FLOATING_CONAN_REQUIREMENT = "conan>=2.0,<2.9"
 
@@ -74,6 +75,10 @@ def uses_composite_conan_action(content: str) -> bool:
     return "uses: ./.github/actions/setup-cpp-conan" in content
 
 
+def uses_raft_offline_installer(content: str) -> bool:
+    return RAFT_OFFLINE_INSTALLER in content
+
+
 def composite_uses_pinned_venv(content: str) -> bool:
     return all(
         token in content
@@ -95,12 +100,20 @@ def named_workflow_step(content: str, name: str) -> str:
 
 
 def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content: str) -> None:
+    uses_offline_installer = uses_raft_offline_installer(content)
     add(checks, f"workflow:{name}:exists", exists(path), f"{path} exists")
     add(checks, f"workflow:{name}:linux-lockfile-default", LOCKFILE in content, f"{path} references {LOCKFILE}")
     add(checks, f"workflow:{name}:linux-profile-default", PROFILE in content, f"{path} references {PROFILE}")
-    add(checks, f"workflow:{name}:grpc-disabled", '-o "&:with_grpc=False"' in content, f"{path} disables gRPC in default Conan graph")
+    add(checks, f"workflow:{name}:grpc-disabled", '-o "&:with_grpc=False"' in content or uses_offline_installer, f"{path} disables gRPC in default Conan graph")
+    add(
+        checks,
+        f"workflow:{name}:raft-protobuf-enabled",
+        '-o "&:with_raft_protobuf=True"' in content or uses_offline_installer,
+        f"{path} explicitly enables the default internal Raft protobuf runtime",
+    )
     sqlite_disabled = (
         '-o "&:with_sqlite=False"' in content
+        or uses_offline_installer
         or (
             "with_sqlite:" in content
             and "default: false" in content
@@ -108,7 +121,7 @@ def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content:
         )
     )
     add(checks, f"workflow:{name}:sqlite-disabled", sqlite_disabled, f"{path} keeps sqlite disabled by default for nosqlite mainline")
-    add(checks, f"workflow:{name}:lockfile-consumed", "--lockfile" in content and "conan install" in content, f"{path} consumes lockfile during conan install")
+    add(checks, f"workflow:{name}:lockfile-consumed", "--lockfile" in content and ("conan install" in content or uses_offline_installer), f"{path} consumes lockfile during conan install")
     if "cmake " in content:
         add(
             checks,
@@ -146,6 +159,12 @@ def main() -> int:
     add(checks, "lockfile:linux-grpc-nosqlite-exists", exists(GRPC_LOCKFILE), f"{GRPC_LOCKFILE} exists")
     add(checks, "profile:linux-gcc-x64-exists", exists(PROFILE), f"{PROFILE} exists")
     add(checks, "conanfile:grpc-default-off", '"&:with_grpc": False' in read("conanfile.py"), "conanfile default disables gRPC")
+    add(
+        checks,
+        "conanfile:raft-protobuf-default-on",
+        '"&:with_raft_protobuf": True' in read("conanfile.py"),
+        "conanfile enables the internal Raft protobuf runtime by default",
+    )
     add(checks, "conanfile:sqlite-default-off", '"&:with_sqlite": False' in read("conanfile.py"), "conanfile default disables sqlite")
     root_cmake = read("CMakeLists.txt")
     dependencies_cmake = read("cmake/Dependencies.cmake")
@@ -175,9 +194,41 @@ def main() -> int:
     )
     add(
         checks,
+        "provider:raft-protobuf-required",
+        "find_package(Protobuf CONFIG REQUIRED)" in dependencies_cmake
+        and "BOOST_BUILD_RAFT_PROTOBUF" in root_cmake,
+        "the default Raft protobuf codec requires protobuf without enabling gRPC",
+    )
+    default_lock = read(LOCKFILE)
+    add(
+        checks,
+        "lockfile:linux-nosqlite-contains-raft-protobuf-runtime",
+        "protobuf/5.27.0#" in default_lock and "abseil/20250127.0#" in default_lock,
+        "the default Linux lockfile pins protobuf and its runtime dependency graph",
+    )
+    add(
+        checks,
         "provider:no-legacy-toggle-or-fallback",
         "BOOST_USE_CONAN_DEPS" not in provider_contract and "falling back to FetchContent" not in dependencies_cmake,
         "the dependency contract contains no legacy boolean or implicit fallback",
+    )
+    offline_installer = read(RAFT_OFFLINE_INSTALLER) if exists(RAFT_OFFLINE_INSTALLER) else ""
+    add(
+        checks,
+        "raft-offline-installer:strict-contract",
+        all(
+            token in offline_installer
+            for token in (
+                '"install"',
+                '"&:with_grpc=False"',
+                '"&:with_raft_protobuf=True"',
+                '"&:with_sqlite=False"',
+                '"--build=never"',
+                '"--no-remote"',
+                "build_evidence_provenance",
+            )
+        ),
+        "the shared Raft Conan producer fixes offline options and records provenance",
     )
 
     contents = {name: read(path) if exists(path) else "" for name, path in WORKFLOWS.items()}
@@ -269,7 +320,9 @@ def main() -> int:
         add(
             checks,
             f"workflow:{name}:offline-build-never",
-            "--no-remote" not in content or "--build=never" in content,
+            "--no-remote" not in content
+            or "--build=never" in content
+            or uses_raft_offline_installer(content),
             f"{path} rejects missing packages instead of building or downloading sources when remotes are disabled",
         )
 

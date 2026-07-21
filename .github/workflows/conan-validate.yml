@@ -130,7 +130,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=(conan install . --output-folder=build/conan-${{ inputs.build_type }} -s build_type=${{ inputs.build_type }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=${{ inputs.with_sqlite && 'True' || 'False' }}")
+          args=(conan install . --output-folder=build/conan-${{ inputs.build_type }} -s build_type=${{ inputs.build_type }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=${{ inputs.with_sqlite && 'True' || 'False' }}")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             args+=(--lockfile "${{ inputs.conan_lockfile }}")
           fi

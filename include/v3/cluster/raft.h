@@ -1,20 +1,18 @@
 #pragma once
 // v3.0.0 D4: Simplified Raft consensus for leader election.
-// v3.2.0: Real inter-node RPC with JSON serialization.
+// v3.2.0: Real inter-node RPC with a versioned compatibility codec.
 // v3.4.0: In-memory log replication for singleton services.
-
-#include <nlohmann/json.hpp>
 
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <mutex>
 #include <optional>
 #include <random>
 #include <string>
 #include <thread>
-#include <filesystem>
 #include <unordered_map>
 #include <vector>
 
@@ -76,97 +74,51 @@ struct RaftConfig {
     std::vector<RaftNodeId> peers;
 };
 
-inline std::string serialize_request_vote(const RequestVoteArgs& args) {
-    return nlohmann::json{
-        {"type", "request_vote"},
-        {"term", args.term},
-        {"candidate_id", args.candidate_id},
-        {"last_log_term", args.last_log_term},
-        {"last_log_index", args.last_log_index},
-    }.dump();
-}
+enum class RaftWireFormat : std::uint8_t {
+    kLegacyJson = 0,
+    kProtobufV1 = 1,
+};
 
-inline RequestVoteArgs parse_request_vote(const std::string& data) {
-    auto j = nlohmann::json::parse(data);
-    return {
-        j.value("term", std::uint64_t{0}),
-        j.value("candidate_id", std::string{}),
-        j.value("last_log_term", std::uint64_t{0}),
-        j.value("last_log_index", std::uint64_t{0}),
-    };
-}
+enum class RaftRpcKind : std::uint8_t {
+    kRequestVote = 0,
+    kRequestVoteReply = 1,
+    kAppendEntries = 2,
+    kAppendEntriesReply = 3,
+    kCapabilityRequest = 4,
+    kCapabilityReply = 5,
+};
 
-inline std::string serialize_request_vote_reply(const RequestVoteReply& r) {
-    return nlohmann::json{
-        {"type", "request_vote_reply"},
-        {"term", r.term},
-        {"vote_granted", r.vote_granted},
-    }.dump();
-}
+struct RaftCapabilityRequest {
+    std::string node_id;
+    std::vector<std::uint32_t> supported_protocol_versions;
+};
 
-inline RequestVoteReply parse_request_vote_reply(const std::string& data) {
-    auto j = nlohmann::json::parse(data);
-    return {
-        j.value("term", std::uint64_t{0}),
-        j.value("vote_granted", false),
-    };
-}
+struct RaftCapabilityReply {
+    std::string node_id;
+    std::uint32_t selected_protocol_version = 0;
+    bool protobuf_supported = false;
+};
 
-inline std::string serialize_append_entries(const AppendEntriesArgs& args) {
-    nlohmann::json entries = nlohmann::json::array();
-    for (const auto& entry : args.entries) {
-        entries.push_back({
-            {"term", entry.term},
-            {"command", entry.command},
-        });
-    }
-    return nlohmann::json{
-        {"type", "append_entries"},
-        {"term", args.term},
-        {"leader_id", args.leader_id},
-        {"prev_log_index", args.prev_log_index},
-        {"prev_log_term", args.prev_log_term},
-        {"entries", std::move(entries)},
-        {"leader_commit", args.leader_commit},
-    }.dump();
-}
-
-inline AppendEntriesArgs parse_append_entries(const std::string& data) {
-    auto j = nlohmann::json::parse(data);
-    AppendEntriesArgs args;
-    args.term = j.value("term", std::uint64_t{0});
-    args.leader_id = j.value("leader_id", std::string{});
-    args.prev_log_index = j.value("prev_log_index", std::uint64_t{0});
-    args.prev_log_term = j.value("prev_log_term", std::uint64_t{0});
-    args.leader_commit = j.value("leader_commit", std::uint64_t{0});
-    if (j.contains("entries") && j["entries"].is_array()) {
-        for (const auto& item : j["entries"]) {
-            args.entries.push_back(LogEntry{
-                .term = item.value("term", std::uint64_t{0}),
-                .command = item.value("command", std::string{}),
-            });
-        }
-    }
-    return args;
-}
-
-inline std::string serialize_append_entries_reply(const AppendEntriesReply& r) {
-    return nlohmann::json{
-        {"type", "append_entries_reply"},
-        {"term", r.term},
-        {"success", r.success},
-        {"match_index", r.match_index},
-    }.dump();
-}
-
-inline AppendEntriesReply parse_append_entries_reply(const std::string& data) {
-    auto j = nlohmann::json::parse(data);
-    return {
-        j.value("term", std::uint64_t{0}),
-        j.value("success", false),
-        j.value("match_index", std::uint64_t{0}),
-    };
-}
+[[nodiscard]] std::string serialize_request_vote(
+    const RequestVoteArgs& args, RaftWireFormat format = RaftWireFormat::kLegacyJson);
+[[nodiscard]] RequestVoteArgs parse_request_vote(const std::string& data);
+[[nodiscard]] std::string serialize_request_vote_reply(
+    const RequestVoteReply& reply, RaftWireFormat format = RaftWireFormat::kLegacyJson);
+[[nodiscard]] RequestVoteReply parse_request_vote_reply(const std::string& data);
+[[nodiscard]] std::string serialize_append_entries(
+    const AppendEntriesArgs& args, RaftWireFormat format = RaftWireFormat::kLegacyJson);
+[[nodiscard]] AppendEntriesArgs parse_append_entries(const std::string& data);
+[[nodiscard]] std::string serialize_append_entries_reply(
+    const AppendEntriesReply& reply, RaftWireFormat format = RaftWireFormat::kLegacyJson);
+[[nodiscard]] AppendEntriesReply parse_append_entries_reply(const std::string& data);
+[[nodiscard]] std::string serialize_raft_capability_request(
+    const RaftCapabilityRequest& request);
+[[nodiscard]] RaftCapabilityRequest parse_raft_capability_request(const std::string& data);
+[[nodiscard]] std::string serialize_raft_capability_reply(const RaftCapabilityReply& reply);
+[[nodiscard]] RaftCapabilityReply parse_raft_capability_reply(const std::string& data);
+[[nodiscard]] RaftWireFormat detect_raft_wire_format(const std::string& data);
+[[nodiscard]] RaftRpcKind detect_raft_rpc_kind(const std::string& data);
+[[nodiscard]] const char* raft_rpc_message_type(RaftRpcKind kind);
 
 RequestVoteReply handle_request_vote_internal(
     const RaftNodeId& peer, const RequestVoteArgs& args);
@@ -205,6 +157,8 @@ public:
     [[nodiscard]] std::uint64_t last_applied() const;
     [[nodiscard]] std::size_t log_size() const;
     [[nodiscard]] std::string log_command(std::uint64_t index) const;
+    [[nodiscard]] bool healthy() const;
+    [[nodiscard]] std::string last_error() const;
 
     void on_become_leader(LeaderCallback cb) { leader_cb_ = std::move(cb); }
     void on_step_down(StepDownCallback cb) { step_down_cb_ = std::move(cb); }
@@ -213,7 +167,11 @@ public:
 
     RequestVoteReply handle_request_vote(const RequestVoteArgs& args);
     AppendEntriesReply handle_append_entries(const AppendEntriesArgs& args);
+    RaftCapabilityReply handle_capability_request(const RaftCapabilityRequest& request);
     void set_rpc_sender(RpcSender sender) { rpc_sender_ = std::move(sender); }
+    void refresh_peer_capabilities();
+    [[nodiscard]] bool peer_supports_protobuf(const std::string& peer_id) const;
+    [[nodiscard]] bool all_voting_peers_support_protobuf() const;
 
     [[nodiscard]] bool append_command(const std::string& command);
 
@@ -225,8 +183,8 @@ private:
     void reset_election_timeout();
     void start_election();
     void send_heartbeat();
-    void become_follower(std::uint64_t term);
-    void become_leader();
+    [[nodiscard]] bool become_follower(std::uint64_t term);
+    [[nodiscard]] bool become_leader();
     [[nodiscard]] bool is_log_up_to_date(std::uint64_t last_log_term,
                                          std::uint64_t last_log_index) const;
     [[nodiscard]] AppendEntriesArgs make_append_entries_for(
@@ -237,7 +195,8 @@ private:
     void deliver_applied_entries(
         const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) const;
     void load_persistent_state();
-    void persist_state_locked() const;
+    [[nodiscard]] bool persist_state_locked();
+    void mark_unhealthy_locked(std::string reason);
     [[nodiscard]] std::filesystem::path state_path() const;
 
     RaftConfig config_;
@@ -251,6 +210,8 @@ private:
     RaftState state_ = RaftState::kFollower;
     std::string leader_id_;
     std::vector<LogEntry> log_;
+    bool healthy_ = true;
+    std::string last_error_;
 
     std::chrono::steady_clock::time_point election_deadline_;
     std::mt19937 rng_;
@@ -259,6 +220,7 @@ private:
     std::uint64_t last_applied_ = 0;
     std::unordered_map<std::string, std::uint64_t> next_index_;
     std::unordered_map<std::string, std::uint64_t> match_index_;
+    std::unordered_map<std::string, std::uint32_t> peer_protocol_versions_;
 
     RpcSender rpc_sender_;
     LeaderCallback leader_cb_;

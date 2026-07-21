@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
 
 from scripts.tools.prepare_docker_runtime_context import validate_runtime_dependencies
 from scripts.tools.verify_release_archive import verify_archive
+from scripts.lib.evidence_provenance import build_evidence_provenance
 
 
 REQUIRED_BINARIES = (
@@ -29,6 +30,7 @@ REQUIRED_BINARIES = (
     "v2_battle_backend",
     "v2_match_backend",
     "v2_leaderboard_backend",
+    "raft_state_tool",
     "example_hello_world",
 )
 
@@ -139,6 +141,9 @@ def main() -> int:
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--expected-root", required=True)
     parser.add_argument("--image", default="ubuntu:24.04")
+    parser.add_argument("--configuration", default="Release")
+    parser.add_argument("--candidate-revision")
+    parser.add_argument("--lockfile", type=Path)
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -150,6 +155,16 @@ def main() -> int:
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"release package clean-environment validation: FAIL ({exc})")
         return 1
+    summary["provenance"] = build_evidence_provenance(
+        ROOT,
+        build_configuration=args.configuration,
+        conan_lockfile=args.lockfile,
+        candidate_revision=args.candidate_revision,
+    )
+    summary["artifacts"] = {
+        "summary_path": str(args.summary_path),
+        "archive_path": str(args.archive),
+    }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"release package clean-environment validation: PASS ({args.image}, network=none, pull=never)")
