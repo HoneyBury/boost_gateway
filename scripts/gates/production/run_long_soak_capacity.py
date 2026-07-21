@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import signal
 import socket
@@ -14,6 +15,7 @@ from pathlib import Path
 
 from scripts.lib.cancellable_process import (
     CancellationState,
+    arm_parent_death_signal,
     atomic_write_json,
     installed_signal_handlers,
     run_cancellable_process,
@@ -193,6 +195,7 @@ def validate_child_summary(summary_path: Path) -> str:
 
 def main() -> int:
     args = parse_args()
+    parent_pid_at_start = os.getppid()
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     atomic_write_json(
@@ -238,6 +241,7 @@ def main() -> int:
     interrupted = False
     interruption_signal = ""
     unexpected_error = ""
+    parent_death_signal_armed = False
 
     def execute_step(
         name: str,
@@ -306,6 +310,9 @@ def main() -> int:
         "leaderboard_redis_port": args.leaderboard_redis_port if args.leaderboard_redis_comparison else 0,
         "run_otel_comparison": args.run_otel_comparison,
         "environment": environment_snapshot(),
+        "parent_pid_at_start": parent_pid_at_start,
+        "parent_death_signal_armed": False,
+        "parent_death_signal_policy": "linux-prctl-fail-closed",
         "overall_pass": False,
         "passed": False,
         "interrupted": False,
@@ -327,8 +334,17 @@ def main() -> int:
     }
 
     with installed_signal_handlers(cancellation):
-        atomic_write_json(summary_path, summary)
         try:
+            parent_death_signal_armed = arm_parent_death_signal(
+                expected_parent_pid=parent_pid_at_start
+            )
+            summary["parent_death_signal_armed"] = parent_death_signal_armed
+            environment = summary["environment"]
+            if isinstance(environment, dict):
+                environment["parent_pid_at_start"] = parent_pid_at_start
+                environment["parent_death_signal_armed"] = parent_death_signal_armed
+            atomic_write_json(summary_path, summary)
+
             if args.run_2h_soak and not cancellation.cancelled:
                 preset = LONG_SOAK_PRESETS["2h"]
                 cmd = [

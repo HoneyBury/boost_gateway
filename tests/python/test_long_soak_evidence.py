@@ -2,6 +2,7 @@ import json
 import io
 import os
 import signal
+import subprocess
 import sys
 import tempfile
 import threading
@@ -9,19 +10,157 @@ import time
 import unittest
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from scripts.gates.production.check_production_evidence_manifest import check_evidence
 from scripts.gates.production import run_long_soak_capacity
 from scripts.gates.production.run_long_soak_capacity import attach_provenance, parse_args
 from scripts.lib.cancellable_process import (
     CancellationState,
+    arm_parent_death_signal,
     installed_signal_handlers,
     run_cancellable_process,
 )
+from scripts.lib import cancellable_process
 
 
 class LongSoakEvidenceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        parent_death_patcher = patch.object(
+            run_long_soak_capacity,
+            "arm_parent_death_signal",
+            return_value=False,
+        )
+        parent_death_patcher.start()
+        self.addCleanup(parent_death_patcher.stop)
+
+    def test_parent_death_signal_is_noop_off_linux(self):
+        with (
+            patch.object(cancellable_process.sys, "platform", "darwin"),
+            patch.object(cancellable_process.ctypes, "CDLL") as load_libc,
+        ):
+            self.assertFalse(arm_parent_death_signal(expected_parent_pid=123))
+        load_libc.assert_not_called()
+
+    def test_parent_death_signal_prctl_failure_is_fail_closed(self):
+        libc = Mock()
+        libc.prctl.return_value = -1
+        with (
+            patch.object(cancellable_process.sys, "platform", "linux"),
+            patch.object(cancellable_process.ctypes, "CDLL", return_value=libc),
+            patch.object(cancellable_process.ctypes, "get_errno", return_value=1),
+            self.assertRaises(PermissionError),
+        ):
+            arm_parent_death_signal(expected_parent_pid=123)
+
+    def test_parent_death_signal_detects_parent_exit_during_arm(self):
+        libc = Mock()
+        libc.prctl.return_value = 0
+        with (
+            patch.object(cancellable_process.sys, "platform", "linux"),
+            patch.object(cancellable_process.ctypes, "CDLL", return_value=libc),
+            patch.object(cancellable_process.os, "getppid", return_value=1),
+            patch.object(cancellable_process.os, "getpid", return_value=456),
+            patch.object(cancellable_process.os, "kill") as kill,
+        ):
+            self.assertTrue(arm_parent_death_signal(expected_parent_pid=123))
+
+        libc.prctl.assert_called_once_with(1, signal.SIGTERM, 0, 0, 0)
+        kill.assert_called_once_with(456, signal.SIGTERM)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "requires Linux prctl")
+    def test_parent_death_signal_fires_when_direct_parent_exits(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            ready_path = directory / "ready"
+            worker_pid_path = directory / "worker.pid"
+            result_path = directory / "result"
+            worker_pid: int | None = None
+            worker = (
+                "import os, signal, time\n"
+                "from pathlib import Path\n"
+                "from scripts.lib.cancellable_process import (\n"
+                "    CancellationState, arm_parent_death_signal, installed_signal_handlers\n"
+                ")\n"
+                "state = CancellationState()\n"
+                "parent_pid = os.getppid()\n"
+                "with installed_signal_handlers(state):\n"
+                "    arm_parent_death_signal(expected_parent_pid=parent_pid)\n"
+                f"    Path({str(worker_pid_path)!r}).write_text(str(os.getpid()))\n"
+                f"    Path({str(ready_path)!r}).write_text('ready')\n"
+                "    deadline = time.monotonic() + 5\n"
+                "    while not state.cancelled and time.monotonic() < deadline:\n"
+                "        time.sleep(0.01)\n"
+                f"    Path({str(result_path)!r}).write_text(state.signal_name)\n"
+            )
+            mediator = (
+                "import subprocess, sys, time\n"
+                "from pathlib import Path\n"
+                f"worker = {worker!r}\n"
+                "subprocess.Popen(\n"
+                "    [sys.executable, '-c', worker],\n"
+                f"    cwd={str(Path.cwd())!r},\n"
+                "    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,\n"
+                ")\n"
+                f"ready = Path({str(ready_path)!r})\n"
+                "deadline = time.monotonic() + 3\n"
+                "while not ready.exists() and time.monotonic() < deadline:\n"
+                "    time.sleep(0.01)\n"
+                "raise SystemExit(0 if ready.exists() else 1)\n"
+            )
+            try:
+                subprocess.run(
+                    [sys.executable, "-c", mediator],
+                    cwd=Path.cwd(),
+                    check=True,
+                    timeout=5,
+                )
+                worker_pid = int(worker_pid_path.read_text(encoding="utf-8"))
+                deadline = time.monotonic() + 3
+                while not result_path.exists() and time.monotonic() < deadline:
+                    time.sleep(0.01)
+                self.assertEqual(result_path.read_text(encoding="utf-8"), "SIGTERM")
+            finally:
+                if worker_pid is not None:
+                    try:
+                        os.kill(worker_pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+
+    def test_outer_prctl_failure_writes_failure_summary_and_reraises(self):
+        with tempfile.TemporaryDirectory() as temp:
+            summary_path = Path(temp) / "summary.json"
+            with (
+                patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "run_long_soak_capacity.py",
+                        "--run-capacity",
+                        "--summary-path",
+                        str(summary_path),
+                    ],
+                ),
+                patch.object(
+                    run_long_soak_capacity,
+                    "arm_parent_death_signal",
+                    side_effect=PermissionError("prctl denied"),
+                ),
+                patch.object(
+                    run_long_soak_capacity,
+                    "build_evidence_provenance",
+                    return_value={"candidate_revision": "a" * 40},
+                ),
+                self.assertRaisesRegex(PermissionError, "prctl denied"),
+            ):
+                run_long_soak_capacity.main()
+
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertFalse(summary["overall_pass"])
+            self.assertFalse(summary["parent_death_signal_armed"])
+            self.assertEqual(summary["failed_category"], "orchestrator")
+            self.assertIn("PermissionError: prctl denied", summary["failed_step"])
+
     def test_no_action_replaces_stale_outer_summary(self):
         with tempfile.TemporaryDirectory() as temp:
             summary_path = Path(temp) / "summary.json"

@@ -155,6 +155,66 @@ def main() -> int:
         and "runtime/validation/leaderboard-redis-image.json" in long_soak_workflow,
         "leaderboard comparison consumes the prewarmed Redis image offline and archives its image identity",
     )
+    pid_marker = 'pid_marker="runtime/validation/long-soak-capacity.pid"'
+    background_launch = 'python "${args[@]}" &'
+    pid_capture = "long_soak_pid=$!"
+    atomic_pid_publish = 'mv -f "$pid_marker_tmp" "$pid_marker"'
+    process_wait = 'wait "$long_soak_pid" || long_soak_status=$?'
+    pid_cleanup = 'rm -f "$pid_marker"'
+    add(
+        checks,
+        "long-soak-capacity:cancellation-pid-bridge",
+        long_soak_workflow.count(pid_marker) == 2
+        and background_launch in long_soak_workflow
+        and pid_capture in long_soak_workflow
+        and 'mktemp "${pid_marker}.tmp.XXXXXX"' in long_soak_workflow
+        and atomic_pid_publish in long_soak_workflow
+        and process_wait in long_soak_workflow
+        and 'exit "$long_soak_status"' in long_soak_workflow
+        and long_soak_workflow.index(background_launch)
+        < long_soak_workflow.index(pid_capture)
+        < long_soak_workflow.index(atomic_pid_publish)
+        < long_soak_workflow.index(process_wait)
+        < long_soak_workflow.rindex(pid_cleanup),
+        "long-soak capacity publishes its background orchestrator PID atomically and preserves wait status",
+    )
+    render_step = "- name: Render long-soak capacity summary"
+    render_pid_check = 'if [ -f "$pid_marker" ]; then'
+    render_pid_validation = '[[ "$long_soak_pid" =~ ^[1-9][0-9]*$ ]]'
+    render_process_wait = 'while kill -0 "$long_soak_pid" 2>/dev/null; do'
+    render_timeout = "wait_deadline=$((SECONDS + 20))"
+    render_summaries = "summaries=()"
+    add(
+        checks,
+        "long-soak-capacity:render-waits-for-cancelled-process",
+        render_step in long_soak_workflow
+        and render_pid_check in long_soak_workflow
+        and render_pid_validation in long_soak_workflow
+        and render_process_wait in long_soak_workflow
+        and render_timeout in long_soak_workflow
+        and "still running after 20 seconds" in long_soak_workflow
+        and long_soak_workflow.index(render_step)
+        < long_soak_workflow.index(render_pid_check)
+        < long_soak_workflow.index(render_process_wait)
+        < long_soak_workflow.index(render_summaries),
+        "always-render waits up to 20 seconds for a valid recorded PID before reading fail-closed evidence",
+    )
+    redis_cleanup_step = "- name: Cleanup long-soak Redis"
+    render_summary_step = "- name: Render long-soak capacity summary"
+    upload_evidence_step = "- name: Upload long-soak capacity evidence"
+    add(
+        checks,
+        "long-soak-capacity:always-cleans-redis",
+        redis_cleanup_step in long_soak_workflow
+        and "if: always() && inputs.leaderboard_redis_comparison"
+        in long_soak_workflow
+        and 'docker rm -f "boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"'
+        in long_soak_workflow
+        and long_soak_workflow.index(redis_cleanup_step)
+        < long_soak_workflow.index(render_summary_step)
+        < long_soak_workflow.index(upload_evidence_step),
+        "an independent always step removes the deterministic Redis container before evidence rendering and upload",
+    )
     add(
         checks,
         "specialized-e2e:pinned-kind-bootstrap",

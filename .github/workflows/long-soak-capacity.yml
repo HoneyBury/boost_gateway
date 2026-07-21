@@ -294,7 +294,18 @@ jobs:
           if [ "${{ inputs.otel_comparison }}" = "true" ]; then
             args+=(--run-otel-comparison)
           fi
-          python "${args[@]}"
+          pid_marker="runtime/validation/long-soak-capacity.pid"
+          rm -f "$pid_marker"
+          python "${args[@]}" &
+          long_soak_pid=$!
+          pid_marker_tmp="$(mktemp "${pid_marker}.tmp.XXXXXX")"
+          printf '%s\n' "$long_soak_pid" > "$pid_marker_tmp"
+          mv -f "$pid_marker_tmp" "$pid_marker"
+
+          long_soak_status=0
+          wait "$long_soak_pid" || long_soak_status=$?
+          rm -f "$pid_marker"
+          exit "$long_soak_status"
 
       - name: R4 fixed-runner release/capacity gate
         if: always() && inputs.run_capacity && inputs.run_business_capacity
@@ -319,10 +330,36 @@ jobs:
           fi
           python "${args[@]}"
 
+      - name: Cleanup long-soak Redis
+        if: always() && inputs.leaderboard_redis_comparison
+        shell: bash
+        run: |
+          docker rm -f "boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true
+
       - name: Render long-soak capacity summary
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
+          pid_marker="runtime/validation/long-soak-capacity.pid"
+          if [ -f "$pid_marker" ]; then
+            long_soak_pid=""
+            if ! IFS= read -r long_soak_pid < "$pid_marker"; then
+              echo "::warning::long-soak PID marker disappeared before it could be read: $pid_marker"
+            elif [[ "$long_soak_pid" =~ ^[1-9][0-9]*$ ]]; then
+              wait_deadline=$((SECONDS + 20))
+              while kill -0 "$long_soak_pid" 2>/dev/null; do
+                if (( SECONDS >= wait_deadline )); then
+                  echo "::warning::long-soak process $long_soak_pid is still running after 20 seconds; rendering fail-closed evidence"
+                  break
+                fi
+                sleep 1
+              done
+            else
+              echo "::warning::ignoring invalid long-soak PID marker: $pid_marker"
+            fi
+          fi
+
           summaries=()
           for path in \
             runtime/validation/long-soak-capacity-preflight-summary.json \

@@ -3,15 +3,21 @@
 
 from __future__ import annotations
 
+import ctypes
+import errno
 import json
 import os
 import signal
 import subprocess
+import sys
 import threading
 import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Iterator
+
+
+PR_SET_PDEATHSIG = 1
 
 
 class CancellationState:
@@ -52,6 +58,27 @@ def installed_signal_handlers(state: CancellationState) -> Iterator[None]:
     finally:
         for signal_number, handler in previous.items():
             signal.signal(signal_number, handler)
+
+
+def arm_parent_death_signal(
+    signal_number: int = signal.SIGTERM,
+    *,
+    expected_parent_pid: int | None = None,
+) -> bool:
+    """Ask Linux to signal this process when its current parent exits."""
+    if not sys.platform.startswith("linux"):
+        return False
+
+    parent_pid = os.getppid() if expected_parent_pid is None else expected_parent_pid
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, int(signal_number), 0, 0, 0) != 0:
+        error_number = ctypes.get_errno() or errno.EINVAL
+        raise OSError(error_number, os.strerror(error_number))
+
+    # The parent can exit between the caller's PID snapshot and prctl().
+    if os.getppid() != parent_pid:
+        os.kill(os.getpid(), signal_number)
+    return True
 
 
 def terminate_process_group(
