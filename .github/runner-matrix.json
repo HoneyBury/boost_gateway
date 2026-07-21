@@ -93,10 +93,17 @@
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "redis": true, "kind": true },
       "vars_hint": "SPECIALIZED_E2E_RUNNER"
+    },
+    "macos-arm64": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"macOS\",\"ARM64\"]",
+      "labels": { "os": "macos", "arch": "arm64", "mode": "platform-candidate" },
+      "capabilities": { "native_arm64": true, "capacity_claimed": false },
+      "vars_hint": "MACOS_ARM64_RUNNER"
     }
   },
   "deprecated_platforms": {
     "windows": "Support deferred. Restore from git history if needed.",
-    "macos": "CI smoke target. No capacity/long-soak commitments."
+    "macos-x64": "Not supported; v3.6 macOS candidate is ARM64 only."
   }
 }

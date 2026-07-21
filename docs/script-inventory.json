@@ -18,7 +18,8 @@
     "scripts/verify_sdk_enterprise_delivery.py",
     "scripts/verify_preprod_recovery_drill.py",
     "scripts/verify_prometheus_alert_states.py",
-    "scripts/verify_tls_preprod_multi_run.py"
+    "scripts/verify_tls_preprod_multi_run.py",
+    "scripts/verify_macos_arm64_package.py"
   ],
   "scripts": {
     "scripts/README.md": {"category": "tool"},
@@ -108,6 +109,7 @@
     "scripts/verify_release_candidate.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/verify_release_candidate.py"},
     "scripts/verify_raft_release_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_raft_release_evidence.py"},
     "scripts/verify_raft_mixed_binary.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_raft_mixed_binary.py"},
+    "scripts/verify_macos_arm64_package.py": {"category": "public_entrypoint", "canonical": "scripts/tools/verify_macos_arm64_package.py"},
     "scripts/verify_stability_soak.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_stability_soak.py"},
 
     "scripts/check_sdk_distribution.py": {"category": "aggregate_gate", "canonical": "scripts/gates/sdk/check_sdk_distribution.py"},
@@ -122,6 +124,7 @@
     "scripts/verify_tls_production_readiness.py": {"category": "aggregate_gate", "canonical": "scripts/gates/transport/verify_tls_production_readiness.py"},
 
     "scripts/verify_specialized_e2e.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_specialized_e2e.py"},
+    "scripts/tools/verify_macos_arm64_package.py": {"category": "tool"},
 
     "scripts/verify_preprod_recovery_drill.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_preprod_recovery_drill.py"},
     "scripts/verify_prometheus_alert_states.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_prometheus_alert_states.py"},

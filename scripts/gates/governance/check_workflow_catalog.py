@@ -18,6 +18,7 @@ EXPECTED_NAMES = {
     "conan-validate": "Dependencies / Conan Graph Validation",
     "grpc-experimental": "Experimental / gRPC",
     "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
+    "macos-arm64": "Platform / macOS ARM64 Candidate",
     "nightly-stability": "Stability / Bounded Soak",
     "perf-regression": "Performance / Baseline & Regression",
     "preprod-evidence": "Production / Preproduction Evidence",
@@ -98,7 +99,7 @@ def main() -> int:
     actual = {path.stem for path in workflow_paths}
     expected = set(EXPECTED_NAMES)
 
-    add(checks, "workflow-count", len(actual) == 13, f"actual={len(actual)}")
+    add(checks, "workflow-count", len(actual) == len(EXPECTED_NAMES), f"actual={len(actual)}")
     add(checks, "workflow-set:expected", actual == expected, f"actual={sorted(actual)} expected={sorted(expected)}")
 
     matrix_path = ROOT / ".github" / "runner-matrix.json"

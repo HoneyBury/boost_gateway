@@ -23,11 +23,13 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | 构建 → 测试 → 门禁 → baseline；仅 tag push 进入发布 |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
+| `macos-arm64.yml` | Platform / macOS ARM64 Candidate | 手动 | 原生 ARM64 Conan build、CTest、install、SDK consumer 与候选资产 |
 
 ## Runner 要求
 
 - **主线回归兜底**: GitHub-hosted `ubuntu-latest`
 - **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
+- **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；不声明容量或生产长稳
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
@@ -48,6 +50,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 ## 产物命名约定
 
 - Release 包: `boost-gateway-{version}-linux-x64.tar.gz`
+- macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
 - 验证 summary: `runtime/validation/*-summary.json`
 - 性能基线: `runtime/perf/release-baseline/summary.json`
 

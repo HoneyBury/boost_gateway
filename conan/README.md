@@ -37,6 +37,12 @@ cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER
 cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_tests
 ```
 
+macOS ARM64 uses `conan/profiles/macos-apple-clang-arm64` and
+`conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock`. The profile
+uses Conan's latest supported Apple Clang compatibility model while the platform
+summary records the actual Xcode/Clang version. It always sets
+`CMAKE_OSX_ARCHITECTURES=arm64`; Rosetta/x86_64 artifacts fail the package gate.
+
 Linux fixed-runner example:
 
 ```bash

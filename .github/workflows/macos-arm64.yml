@@ -1,0 +1,107 @@
+name: Platform / macOS ARM64 Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner JSON array"
+        required: true
+        default: '["self-hosted","macOS","ARM64"]'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 90
+    env:
+      CONAN_HOME: ${{ github.workspace }}/.conan2-macos-arm64
+      LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify native toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          xcrun clang --version
+          xcrun --show-sdk-version
+          cmake --version
+          ninja --version
+
+      - name: Install pinned Conan
+        shell: bash
+        run: |
+          python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
+          echo "$GITHUB_WORKSPACE/.venv/conan-2.8.1/bin" >> "$GITHUB_PATH"
+
+      - name: Install locked dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/bootstrap_conan.py --allow-public
+          conan install . \
+            --profile:host conan/profiles/macos-apple-clang-arm64 \
+            --profile:build conan/profiles/macos-apple-clang-arm64 \
+            --lockfile "$LOCKFILE" \
+            -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" \
+            --output-folder build/conan-macos-arm64 --build=missing -s build_type=Release
+
+      - name: Configure and build
+        shell: bash
+        run: |
+          cmake -S . -B build/macos-arm64-release -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-macos-arm64/build/Release/generators/conan_toolchain.cmake
+          cmake --build build/macos-arm64-release --parallel
+
+      - name: Bounded test
+        run: ctest --test-dir build/macos-arm64-release --output-on-failure --timeout 300
+
+      - name: Install and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$RUNNER_TEMP/boost-gateway-v3.6.0-macos-arm64"
+          cmake --install build/macos-arm64-release --prefix "$install_root"
+          cp README.md CHANGELOG.md LICENSE "$install_root/"
+          python3 scripts/verify_macos_arm64_package.py \
+            --install-root "$install_root" \
+            --lockfile "$LOCKFILE" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-arm64-summary.json
+          (cd "$RUNNER_TEMP" && cmake -E tar czfv \
+            "$GITHUB_WORKSPACE/boost-gateway-v3.6.0-macos-arm64.tar.gz" \
+            --format=gnutar boost-gateway-v3.6.0-macos-arm64)
+
+      - name: Verify archive and create SBOM
+        shell: bash
+        run: |
+          python3 scripts/tools/verify_release_archive.py \
+            --archive boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            --expected-root boost-gateway-v3.6.0-macos-arm64
+          syft packages boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            -o spdx-json=boost-gateway-v3.6.0-macos-arm64.spdx.json
+          shasum -a 256 \
+            boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            boost-gateway-v3.6.0-macos-arm64.spdx.json > SHA256SUMS-macos-arm64.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64-${{ github.sha }}
+          path: |
+            boost-gateway-v3.6.0-macos-arm64.tar.gz
+            boost-gateway-v3.6.0-macos-arm64.spdx.json
+            SHA256SUMS-macos-arm64.txt
+            runtime/validation/macos-arm64-summary.json
+          retention-days: 30
