@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -51,6 +52,7 @@ def main() -> int:
     parser.add_argument("--nuget", type=Path)
     parser.add_argument("--rid", required=True)
     parser.add_argument("--require-nuget", action="store_true")
+    parser.add_argument("--require-auditwheel", action="store_true")
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()
     checks: list[dict[str, object]] = []
@@ -74,6 +76,14 @@ def main() -> int:
             )
             if len(native_names) == 1 and len(manifest_names) == 1:
                 validate_native_manifest(archive, manifest_names[0], native_names[0], args.rid, checks, "wheel")
+        if args.require_auditwheel:
+            auditwheel = shutil.which("auditwheel")
+            add(checks, "wheel:auditwheel-available", auditwheel is not None, str(auditwheel or "missing"))
+            if auditwheel:
+                audit = subprocess.run([auditwheel, "show", str(wheel)], text=True, capture_output=True)
+                policy_versions = [int(value) for value in re.findall(r"manylinux_2_(\d+)_x86_64", audit.stdout)]
+                compatible = audit.returncode == 0 and bool(policy_versions) and min(policy_versions) <= 35
+                add(checks, "wheel:manylinux-policy", compatible, audit.stdout + audit.stderr)
 
         with tempfile.TemporaryDirectory(prefix="boost-sdk-wheel-consumer-") as temp_text:
             venv = Path(temp_text) / "venv"
@@ -135,13 +145,19 @@ def main() -> int:
                     "using BoostGateway.Sdk; Console.WriteLine(SdkClient.Version); if (SdkClient.Version != SdkClient.ExpectedVersion) return 1; return 0;\n",
                     encoding="utf-8",
                 )
-                consume = subprocess.run(
-                    [dotnet, "run", "--configuration", "Release", "--configfile", str(project / "NuGet.Config")],
+                restore = subprocess.run(
+                    [dotnet, "restore", "--configfile", str(project / "NuGet.Config")],
                     cwd=project,
                     text=True,
                     capture_output=True,
                 )
-                add(checks, "nuget:clean-consumer", consume.returncode == 0 and SDK_VERSION in consume.stdout, consume.stdout + consume.stderr)
+                consume = subprocess.run(
+                    [dotnet, "run", "--configuration", "Release", "--no-restore"],
+                    cwd=project,
+                    text=True,
+                    capture_output=True,
+                ) if restore.returncode == 0 else restore
+                add(checks, "nuget:clean-consumer", consume.returncode == 0 and SDK_VERSION in consume.stdout, restore.stdout + restore.stderr + consume.stdout + consume.stderr)
         elif args.require_nuget:
             add(checks, "nuget:dotnet-available", False, "dotnet executable not found")
 

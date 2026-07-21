@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -60,6 +61,13 @@ def main() -> int:
         parser.error(f"native library does not exist: {native}")
     if args.skip_nuget and args.require_nuget:
         parser.error("--skip-nuget and --require-nuget are mutually exclusive")
+    current_platform = (platform.system(), platform.machine().lower())
+    expected_platforms = {
+        "linux-x64": {("Linux", "x86_64"), ("Linux", "amd64")},
+        "osx-arm64": {("Darwin", "arm64"), ("Darwin", "aarch64")},
+    }
+    if args.rid in expected_platforms and current_platform not in expected_platforms[args.rid]:
+        parser.error(f"RID {args.rid} cannot be packaged on native platform {current_platform}")
 
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)

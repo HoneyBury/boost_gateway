@@ -33,6 +33,7 @@ jobs:
           test "$(uname -m)" = x86_64
           test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
           python -c 'import setuptools, wheel'
+          auditwheel --version
           dotnet --version
           syft version
 
@@ -84,7 +85,7 @@ jobs:
           wheel=$(find runtime/sdk-packages -maxdepth 1 -name '*.whl' -print -quit)
           nuget=$(find runtime/sdk-packages -maxdepth 1 -name '*.nupkg' -print -quit)
           python scripts/tools/verify_sdk_distribution_packages.py \
-            --wheel "$wheel" --nuget "$nuget" --rid linux-x64 --require-nuget \
+            --wheel "$wheel" --nuget "$nuget" --rid linux-x64 --require-nuget --require-auditwheel \
             --summary-path runtime/validation/sdk-package-summary.json
           python -m venv runtime/sdk-package-flow-venv
           runtime/sdk-package-flow-venv/bin/pip install --no-index --no-deps "$wheel"
