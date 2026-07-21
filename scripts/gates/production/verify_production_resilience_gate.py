@@ -9,13 +9,18 @@ and Kubernetes kind control-plane exercises.
 from __future__ import annotations
 
 import argparse
-import json
 import platform
-import subprocess
+import signal
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+from scripts.lib.cancellable_process import (
+    CancellationState,
+    atomic_write_json,
+    installed_signal_handlers,
+    run_cancellable_process,
+)
 
 
 def normalize_output(text: str | bytes | None) -> str:
@@ -40,36 +45,25 @@ def emit_text(text: str, *, stderr: bool = False) -> None:
         stream.buffer.write(text.encode(encoding, errors="replace"))
 
 
-def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict[str, object]:
+def run_step(
+    name: str,
+    category: str,
+    cmd: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    cancellation: CancellationState | None = None,
+) -> dict[str, object]:
     print(f"==> {name}", flush=True)
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            cmd,
-            cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "name": name,
-            "category": category,
-            "command": cmd,
-            "cwd": str(cwd),
-            "timeout_seconds": timeout_seconds,
-            "status": "timeout",
-            "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout),
-            "stderr_tail": tail(exc.stderr),
-        }
-
-    stdout = normalize_output(completed.stdout)
-    stderr = normalize_output(completed.stderr)
+    result = run_cancellable_process(
+        cmd,
+        cwd,
+        timeout_seconds,
+        cancellation or CancellationState(),
+        cancellation_grace_seconds=3.0,
+        timeout_grace_seconds=0.5,
+    )
+    stdout = normalize_output(result.get("stdout"))
+    stderr = normalize_output(result.get("stderr"))
     if stdout:
         emit_text(stdout)
     if stderr:
@@ -80,9 +74,10 @@ def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_second
         "command": cmd,
         "cwd": str(cwd),
         "timeout_seconds": timeout_seconds,
-        "status": "passed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
-        "duration_seconds": round(time.monotonic() - started, 3),
+        "status": result["status"],
+        "returncode": result.get("returncode"),
+        "signal": result.get("signal", ""),
+        "duration_seconds": result["duration_seconds"],
         "stdout_tail": tail(stdout),
         "stderr_tail": tail(stderr),
     }
@@ -116,6 +111,14 @@ def main() -> int:
     args = parse_args()
     root = Path(__file__).resolve().parents[3]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
+    summary_path.unlink(missing_ok=True)
+    cancellation = CancellationState()
+    steps: list[dict[str, object]] = []
+    completed_steps: list[str] = []
+    current_step = ""
+    interrupted = False
+    interruption_signal = ""
+    unexpected_error = ""
     summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -135,9 +138,13 @@ def main() -> int:
         },
         "overall_pass": False,
         "passed": False,
+        "interrupted": False,
+        "interruption_signal": "",
+        "current_step": "",
+        "completed_steps": [],
         "failed_category": "",
         "failed_step": "",
-        "steps": [],
+        "steps": steps,
         "artifacts": {
             "summary_path": str(summary_path),
             "preflight_summary_path": str(root / "runtime" / "validation" / "p5-fixed-runner-preflight-summary.json"),
@@ -154,163 +161,220 @@ def main() -> int:
         },
     }
 
-    preflight_cmd = [
-        sys.executable,
-        str(root / "scripts" / "check_fixed_runner_environment.py"),
-        "--profile",
-        "production-resilience",
-        "--build-dir",
-        str(args.build_dir),
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-fixed-runner-preflight-summary.json"),
-    ]
-    if args.include_redis_live:
-        preflight_cmd.append("--require-redis")
-    if args.include_operator_kind:
-        preflight_cmd.append("--require-kind")
+    def execute_step(
+        name: str,
+        category: str,
+        command: list[str],
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        nonlocal current_step, interrupted, interruption_signal
+        current_step = name
+        result = run_step(name, category, command, root, timeout_seconds, cancellation)
+        steps.append(result)
+        if result.get("status") == "cancelled":
+            interrupted = True
+            interruption_signal = str(result.get("signal", ""))
+            if not cancellation.cancelled:
+                cancellation.request(int(getattr(signal, interruption_signal, signal.SIGTERM)))
+        else:
+            completed_steps.append(name)
+            current_step = ""
+        return result
 
-    steps = [
-        run_step("P5 fixed-runner preflight", "preflight", preflight_cmd, root, 60),
-    ]
+    with installed_signal_handlers(cancellation):
+        atomic_write_json(summary_path, summary)
+        try:
+            preflight_cmd = [
+                sys.executable,
+                str(root / "scripts" / "check_fixed_runner_environment.py"),
+                "--profile", "production-resilience",
+                "--build-dir", str(args.build_dir),
+                "--summary-path", str(root / "runtime/validation/p5-fixed-runner-preflight-summary.json"),
+            ]
+            if args.include_redis_live:
+                preflight_cmd.append("--require-redis")
+            if args.include_operator_kind:
+                preflight_cmd.append("--require-kind")
+            if not cancellation.cancelled:
+                execute_step("P5 fixed-runner preflight", "preflight", preflight_cmd, 60)
 
-    recovery_cmd = [
-        sys.executable,
-        str(root / "scripts" / "check_production_recovery_gate.py"),
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-production-recovery-summary.json"),
-    ]
-    steps.append(run_step("P5/N3 deployment recovery and rollback evidence", "recovery", recovery_cmd, root, 60))
+            if not cancellation.cancelled:
+                execute_step(
+                    "P5/N3 deployment recovery and rollback evidence",
+                    "recovery",
+                    [
+                        sys.executable,
+                        str(root / "scripts/check_production_recovery_gate.py"),
+                        "--summary-path", str(root / "runtime/validation/p5-production-recovery-summary.json"),
+                    ],
+                    60,
+                )
 
-    transport_config_cmd = [
-        sys.executable,
-        str(root / "scripts" / "check_transport_config_governance.py"),
-        "--generate-dev-certs",
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-transport-config-governance-summary.json"),
-    ]
-    steps.append(
-        run_step(
-            "P5/N4 transport security and config drift evidence",
-            "transport_config",
-            transport_config_cmd,
-            root,
-            90,
-        )
-    )
+            if not cancellation.cancelled:
+                execute_step(
+                    "P5/N4 transport security and config drift evidence",
+                    "transport_config",
+                    [
+                        sys.executable,
+                        str(root / "scripts/check_transport_config_governance.py"),
+                        "--generate-dev-certs",
+                        "--summary-path", str(root / "runtime/validation/p5-transport-config-governance-summary.json"),
+                    ],
+                    90,
+                )
 
-    stability_cmd = [
-        sys.executable,
-        str(root / "scripts" / "verify_stability_soak.py"),
-        "--build-dir",
-        str(args.build_dir),
-        "--configuration",
-        args.configuration,
-        "--soak-profile",
-        args.soak_profile,
-        "--baseline-profile",
-        args.baseline_profile,
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-long-soak-summary.json"),
-    ]
-    if args.skip_build:
-        stability_cmd.append("--skip-build")
-    steps.append(run_step("P5 bounded long-soak evidence", "soak", stability_cmd, root, args.step_timeout_seconds))
+            if not cancellation.cancelled:
+                stability_cmd = [
+                    sys.executable,
+                    str(root / "scripts/verify_stability_soak.py"),
+                    "--build-dir", str(args.build_dir),
+                    "--configuration", args.configuration,
+                    "--soak-profile", args.soak_profile,
+                    "--baseline-profile", args.baseline_profile,
+                    "--summary-path", str(root / "runtime/validation/p5-long-soak-summary.json"),
+                ]
+                if args.skip_build:
+                    stability_cmd.append("--skip-build")
+                execute_step(
+                    "P5 bounded long-soak evidence", "soak", stability_cmd,
+                    args.step_timeout_seconds,
+                )
 
-    data_cmd = [
-        sys.executable,
-        str(root / "scripts" / "verify_data_recovery_gate.py"),
-        "--build-dir",
-        str(args.build_dir),
-        "--configuration",
-        args.configuration,
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-fault-data-recovery-summary.json"),
-    ]
-    if args.skip_build:
-        data_cmd.append("--skip-build")
-    if args.include_redis_live:
-        data_cmd.append("--include-redis-live")
-    steps.append(run_step("P5 fault recovery and data resilience evidence", "fault_recovery", data_cmd, root, args.step_timeout_seconds))
+            if not cancellation.cancelled:
+                data_cmd = [
+                    sys.executable,
+                    str(root / "scripts/verify_data_recovery_gate.py"),
+                    "--build-dir", str(args.build_dir),
+                    "--configuration", args.configuration,
+                    "--summary-path", str(root / "runtime/validation/p5-fault-data-recovery-summary.json"),
+                ]
+                if args.skip_build:
+                    data_cmd.append("--skip-build")
+                if args.include_redis_live:
+                    data_cmd.append("--include-redis-live")
+                execute_step(
+                    "P5 fault recovery and data resilience evidence", "fault_recovery",
+                    data_cmd, args.step_timeout_seconds,
+                )
 
-    specialized_cmd = [
-        sys.executable,
-        str(root / "scripts" / "verify_specialized_e2e.py"),
-        "--build-dir",
-        str(args.build_dir),
-        "--configuration",
-        args.configuration,
-        "--summary-path",
-        str(root / "runtime" / "validation" / "p5-specialized-failure-summary.json"),
-    ]
-    if args.skip_build:
-        specialized_cmd.append("--skip-build")
-    if args.include_redis_live:
-        specialized_cmd.append("--include-redis-live")
-    if args.include_operator_kind:
-        specialized_cmd.append("--include-operator-kind")
-    steps.append(run_step("P5 Redis/Raft/Operator failure-path evidence", "specialized", specialized_cmd, root, args.step_timeout_seconds))
+            if not cancellation.cancelled:
+                specialized_cmd = [
+                    sys.executable,
+                    str(root / "scripts/verify_specialized_e2e.py"),
+                    "--build-dir", str(args.build_dir),
+                    "--configuration", args.configuration,
+                    "--summary-path", str(root / "runtime/validation/p5-specialized-failure-summary.json"),
+                ]
+                if args.skip_build:
+                    specialized_cmd.append("--skip-build")
+                append_if(args, specialized_cmd, "include_redis_live", "--include-redis-live")
+                append_if(args, specialized_cmd, "include_operator_kind", "--include-operator-kind")
+                execute_step(
+                    "P5 Redis/Raft/Operator failure-path evidence", "specialized",
+                    specialized_cmd, args.step_timeout_seconds,
+                )
 
-    if args.include_runtime_http:
-        observability_cmd = [
-            sys.executable,
-            str(root / "scripts" / "verify_observability_gate.py"),
-            "--build-dir",
-            str(args.build_dir),
-            "--configuration",
-            args.configuration,
-            "--include-runtime-http",
-            "--summary-path",
-            str(root / "runtime" / "validation" / "p5-runtime-observability-summary.json"),
-        ]
-        if args.skip_build:
-            observability_cmd.append("--skip-build")
-        steps.append(run_step("P5 runtime HTTP observability during resilience gate", "observability", observability_cmd, root, args.step_timeout_seconds))
+            if args.include_runtime_http and not cancellation.cancelled:
+                observability_cmd = [
+                    sys.executable,
+                    str(root / "scripts/verify_observability_gate.py"),
+                    "--build-dir", str(args.build_dir),
+                    "--configuration", args.configuration,
+                    "--include-runtime-http",
+                    "--summary-path", str(root / "runtime/validation/p5-runtime-observability-summary.json"),
+                ]
+                if args.skip_build:
+                    observability_cmd.append("--skip-build")
+                execute_step(
+                    "P5 runtime HTTP observability during resilience gate", "observability",
+                    observability_cmd, args.step_timeout_seconds,
+                )
 
-    if args.include_operator_kind:
-        control_plane_cmd = [
-            sys.executable,
-            str(root / "scripts" / "verify_control_plane_gate.py"),
-            "--include-kind",
-            "--kind-timeout-seconds",
-            str(args.kind_timeout_seconds),
-            "--summary-path",
-            str(root / "runtime" / "validation" / "p5-control-plane-kind-summary.json"),
-        ]
-        steps.append(run_step("P5 Kubernetes rollout/delete smoke evidence", "control_plane", control_plane_cmd, root, args.kind_timeout_seconds + 120))
+            if args.include_operator_kind and not cancellation.cancelled:
+                execute_step(
+                    "P5 Kubernetes rollout/delete smoke evidence",
+                    "control_plane",
+                    [
+                        sys.executable,
+                        str(root / "scripts/verify_control_plane_gate.py"),
+                        "--include-kind",
+                        "--kind-timeout-seconds", str(args.kind_timeout_seconds),
+                        "--summary-path", str(root / "runtime/validation/p5-control-plane-kind-summary.json"),
+                    ],
+                    args.kind_timeout_seconds + 120,
+                )
 
-    if args.include_release_baseline or args.include_capacity_baseline:
-        perf_preset = "capacity" if args.include_capacity_baseline else "baseline"
-        release_cmd = [
-            sys.executable,
-            str(root / "scripts" / "collect_release_baseline.py"),
-            "--build-dir",
-            str(args.build_dir),
-            "--configuration",
-            args.configuration,
-            "--perf-preset",
-            perf_preset,
-            "--perf-repetitions",
-            str(args.perf_repetitions),
-            "--summary-path",
-            str(root / "runtime" / "validation" / "p5-release-baseline-summary.json"),
-        ]
-        if args.skip_build:
-            release_cmd.append("--skip-build")
-        steps.append(run_step("P5 release/capacity regression evidence", "release_baseline", release_cmd, root, args.step_timeout_seconds))
+            if (
+                (args.include_release_baseline or args.include_capacity_baseline)
+                and not cancellation.cancelled
+            ):
+                perf_preset = "capacity" if args.include_capacity_baseline else "baseline"
+                release_cmd = [
+                    sys.executable,
+                    str(root / "scripts/collect_release_baseline.py"),
+                    "--build-dir", str(args.build_dir),
+                    "--configuration", args.configuration,
+                    "--perf-preset", perf_preset,
+                    "--perf-repetitions", str(args.perf_repetitions),
+                    "--summary-path", str(root / "runtime/validation/p5-release-baseline-summary.json"),
+                ]
+                if args.skip_build:
+                    release_cmd.append("--skip-build")
+                execute_step(
+                    "P5 release/capacity regression evidence", "release_baseline",
+                    release_cmd, args.step_timeout_seconds,
+                )
+        except Exception as exc:
+            unexpected_error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            def finalize_summary() -> None:
+                nonlocal interrupted, interruption_signal, current_step
+                if cancellation.cancelled and not interrupted:
+                    interrupted = True
+                    interruption_signal = cancellation.signal_name
+                    if not current_step:
+                        current_step = "between_steps"
+                failed = next(
+                    (step for step in steps if step.get("status") != "passed"), None
+                )
+                passed = not interrupted and not unexpected_error and failed is None
+                summary.update({
+                    "generated_at": datetime.now(UTC)
+                    .isoformat(timespec="seconds")
+                    .replace("+00:00", "Z"),
+                    "steps": steps,
+                    "duration_seconds": round(
+                        sum(float(step.get("duration_seconds", 0.0)) for step in steps),
+                        3,
+                    ),
+                    "interrupted": interrupted,
+                    "interruption_signal": interruption_signal,
+                    "current_step": current_step,
+                    "completed_steps": completed_steps,
+                    "overall_pass": passed,
+                    "passed": passed,
+                    "failed_category": (
+                        "interrupted" if interrupted else "orchestrator"
+                        if unexpected_error else "" if failed is None
+                        else str(failed.get("category", "unknown"))
+                    ),
+                    "failed_step": (
+                        current_step if interrupted else unexpected_error
+                        if unexpected_error else "" if failed is None
+                        else str(failed.get("name", "unknown"))
+                    ),
+                })
+                atomic_write_json(summary_path, summary)
 
-    summary["steps"] = steps
-    summary["duration_seconds"] = round(sum(float(step.get("duration_seconds", 0.0)) for step in steps), 3)
-    failed = next((step for step in steps if step.get("status") != "passed"), None)
-    if failed:
-        summary["failed_category"] = str(failed.get("category", "unknown"))
-        summary["failed_step"] = str(failed.get("name", "unknown"))
-    else:
-        summary["overall_pass"] = True
-        summary["passed"] = True
+            finalize_summary()
+            if cancellation.cancelled and summary.get("interrupted") is not True:
+                finalize_summary()
+            print(f"summary: {summary_path}")
 
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"summary: {summary_path}")
+    if interrupted:
+        signal_number = cancellation.signal_number or getattr(signal, interruption_signal, 1)
+        return 128 + int(signal_number)
     return 0 if summary["passed"] else 1
 
 

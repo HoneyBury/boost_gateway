@@ -5,7 +5,10 @@ from __future__ import annotations
 import copy
 import json
 import os
+import signal
+import sys
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -309,6 +312,299 @@ class SustainedBaselineConfirmationTest(unittest.TestCase):
 
         self.assertEqual("failed", result["status"])
         self.assertTrue(result["resource_evidence_failure"])
+
+
+class StabilitySoakCancellationTest(unittest.TestCase):
+    def test_first_sigterm_during_successful_final_write_forces_second_finalize(self) -> None:
+        atomic_calls = 0
+        final_handler_seen = False
+        original_atomic_write = verify_stability_soak.atomic_write_json
+        resource_evidence = {
+            "passed": True,
+            "overall_pass": True,
+            "samples_path": "resource-samples.jsonl",
+            "summary_path": "resource-summary.json",
+        }
+
+        def signal_during_first_finalize(path: Path, payload: dict[str, object]) -> None:
+            nonlocal atomic_calls, final_handler_seen
+            atomic_calls += 1
+            if atomic_calls == 2:
+                handler = signal.getsignal(signal.SIGTERM)
+                self.assertTrue(callable(handler), "final summary ran outside signal handler scope")
+                final_handler_seen = True
+                handler(signal.SIGTERM, None)
+            original_atomic_write(path, payload)
+
+        def passed_step(
+            name: str,
+            category: str,
+            _command: list[str],
+            _cwd: Path,
+            _timeout: int,
+            **_kwargs,
+        ) -> dict[str, object]:
+            return {
+                "name": name,
+                "category": category,
+                "status": "passed",
+                "returncode": 0,
+                "signal": "",
+                "duration_seconds": 0.01,
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
+
+        sustained_step = {
+            "name": "sustained arch baseline with external gates",
+            "category": "baseline",
+            "status": "passed",
+            "duration_seconds": 0.1,
+            "completed_runs": 1,
+            "resource_evidence": resource_evidence,
+        }
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            summary_path = root / "stability-summary.json"
+            with (
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "verify_stability_soak.py",
+                        "--skip-build",
+                        "--build-dir",
+                        str(root),
+                        "--summary-path",
+                        str(summary_path),
+                    ],
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "find_executable",
+                    return_value=root / "test-binary",
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "run_step",
+                    side_effect=passed_step,
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "run_sustained_arch_baseline",
+                    return_value=sustained_step,
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "atomic_write_json",
+                    side_effect=signal_during_first_finalize,
+                ),
+            ):
+                returncode = verify_stability_soak.main()
+
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(143, returncode)
+        self.assertEqual(3, atomic_calls)
+        self.assertTrue(final_handler_seen)
+        self.assertTrue(summary["interrupted"])
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["passed"])
+        self.assertEqual("SIGTERM", summary["interruption_signal"])
+        self.assertEqual("between_steps", summary["current_step"])
+        self.assertEqual("interrupted", summary["failed_category"])
+        self.assertEqual(4, len(summary["completed_steps"]))
+
+    def test_unexpected_error_writes_summary_before_reraising(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            summary_path = root / "stability-summary.json"
+            with (
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "verify_stability_soak.py",
+                        "--skip-build",
+                        "--build-dir",
+                        str(root),
+                        "--summary-path",
+                        str(summary_path),
+                    ],
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "find_executable",
+                    side_effect=ValueError("unexpected discovery error"),
+                ),
+                self.assertRaisesRegex(ValueError, "unexpected discovery error"),
+            ):
+                verify_stability_soak.main()
+
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["interrupted"])
+        self.assertEqual("discovery", summary["failed_category"])
+        self.assertEqual("ValueError: unexpected discovery error", summary["failed_step"])
+
+    def test_run_step_preserves_timeout_classification(self) -> None:
+        result = verify_stability_soak.run_step(
+            "timeout probe",
+            "probe",
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            Path.cwd(),
+            0.05,
+        )
+
+        self.assertEqual("timeout", result["status"])
+        self.assertEqual("", result["signal"])
+        self.assertIsNotNone(result["returncode"])
+
+    def test_sigterm_writes_partial_summary_and_stops_confirmation(self) -> None:
+        sustained_started = threading.Event()
+        partial_resource_evidence = {
+            "summary_version": 1,
+            "passed": False,
+            "overall_pass": False,
+            "sample_count": 2,
+            "coverage_seconds": 0.1,
+            "samples_path": "partial-resource-samples.jsonl",
+            "summary_path": "partial-resource-summary.json",
+        }
+        calls: list[str] = []
+        atomic_calls = 0
+        finalize_handler_seen = False
+        original_atomic_write = verify_stability_soak.atomic_write_json
+
+        def observe_atomic_write(path: Path, payload: dict[str, object]) -> None:
+            nonlocal atomic_calls, finalize_handler_seen
+            atomic_calls += 1
+            if atomic_calls == 2:
+                handler = signal.getsignal(signal.SIGTERM)
+                self.assertTrue(callable(handler), "SIGTERM handler was restored before final summary")
+                finalize_handler_seen = True
+                handler(signal.SIGTERM, None)
+            original_atomic_write(path, payload)
+
+        def controlled_step(
+            name: str,
+            category: str,
+            _command: list[str],
+            _cwd: Path,
+            _timeout: int,
+            *,
+            emit_output: bool = True,
+            cancellation=None,
+        ) -> dict[str, object]:
+            del emit_output
+            calls.append(name)
+            if name.startswith("sustained arch baseline"):
+                sustained_started.set()
+                self.assertIsNotNone(cancellation)
+                while not cancellation.cancelled:
+                    time.sleep(0.01)
+                return {
+                    "name": name,
+                    "category": "baseline",
+                    "status": "cancelled",
+                    "returncode": -signal.SIGTERM,
+                    "signal": "SIGTERM",
+                    "duration_seconds": 0.1,
+                    "stdout_tail": "",
+                    "stderr_tail": "",
+                }
+            return {
+                "name": name,
+                "category": category,
+                "status": "passed",
+                "returncode": 0,
+                "signal": "",
+                "duration_seconds": 0.01,
+                "stdout_tail": "",
+                "stderr_tail": "",
+            }
+
+        def send_sigterm() -> None:
+            self.assertTrue(sustained_started.wait(timeout=2))
+            os.kill(os.getpid(), signal.SIGTERM)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            summary_path = root / "stability-summary.json"
+            summary_path.write_text(
+                json.dumps({"overall_pass": True, "passed": True, "stale": True}),
+                encoding="utf-8",
+            )
+            sampler = mock.MagicMock()
+            sampler.stop.return_value = partial_resource_evidence
+            sender = threading.Thread(target=send_sigterm, daemon=True)
+            with (
+                mock.patch.object(
+                    sys,
+                    "argv",
+                    [
+                        "verify_stability_soak.py",
+                        "--skip-build",
+                        "--build-dir",
+                        str(root),
+                        "--minimum-duration-seconds",
+                        "30",
+                        "--resource-sample-interval-seconds",
+                        "0.1",
+                        "--summary-path",
+                        str(summary_path),
+                    ],
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "find_executable",
+                    return_value=root / "test-binary",
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "run_step",
+                    side_effect=controlled_step,
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "host_resource_snapshot",
+                    return_value={},
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "ResourceSampler",
+                    return_value=sampler,
+                ),
+                mock.patch.object(
+                    verify_stability_soak,
+                    "atomic_write_json",
+                    side_effect=observe_atomic_write,
+                ),
+            ):
+                sender.start()
+                returncode = verify_stability_soak.main()
+            sender.join(timeout=1)
+
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(143, returncode)
+        self.assertTrue(summary["interrupted"])
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["passed"])
+        self.assertNotIn("stale", summary)
+        self.assertEqual("SIGTERM", summary["interruption_signal"])
+        self.assertEqual("sustained arch baseline with external gates", summary["current_step"])
+        self.assertEqual("interrupted", summary["failed_category"])
+        self.assertEqual(3, len(summary["completed_steps"]))
+        self.assertEqual(4, len(summary["steps"]))
+        self.assertEqual("cancelled", summary["steps"][-1]["status"])
+        self.assertEqual(partial_resource_evidence, summary["resource_evidence"])
+        self.assertEqual(1, sum(name.startswith("sustained arch baseline") for name in calls))
+        self.assertEqual(2, atomic_calls)
+        self.assertTrue(finalize_handler_seen)
+        sampler.start.assert_called_once_with()
+        sampler.stop.assert_called_once_with()
 
 
 if __name__ == "__main__":

@@ -8,12 +8,19 @@ import json
 import os
 import platform
 import shutil
-import subprocess
+import signal
 import sys
 import threading
 import time
 from datetime import UTC, datetime
 from pathlib import Path
+
+from scripts.lib.cancellable_process import (
+    CancellationState,
+    atomic_write_json,
+    installed_signal_handlers,
+    run_cancellable_process,
+)
 
 
 IO_FILTER = (
@@ -137,37 +144,19 @@ def run_step(
     timeout_seconds: int,
     *,
     emit_output: bool = True,
+    cancellation: CancellationState | None = None,
 ) -> dict[str, object]:
     if emit_output:
         print(f"==> {name}", flush=True)
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            cmd,
-            cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "name": name,
-            "category": category,
-            "command": cmd,
-            "cwd": str(cwd),
-            "timeout_seconds": timeout_seconds,
-            "status": "timeout",
-            "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout or ""),
-            "stderr_tail": tail(exc.stderr or ""),
-        }
-
-    stdout = normalize_output(completed.stdout)
-    stderr = normalize_output(completed.stderr)
+    result = run_cancellable_process(
+        cmd,
+        cwd,
+        timeout_seconds,
+        cancellation or CancellationState(),
+        termination_grace_seconds=3.0,
+    )
+    stdout = normalize_output(result.get("stdout"))
+    stderr = normalize_output(result.get("stderr"))
     if stdout and emit_output:
         print(stdout, end="")
     if stderr and emit_output:
@@ -178,9 +167,10 @@ def run_step(
         "command": cmd,
         "cwd": str(cwd),
         "timeout_seconds": timeout_seconds,
-        "status": "passed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
-        "duration_seconds": round(time.monotonic() - started, 3),
+        "status": result["status"],
+        "returncode": result.get("returncode"),
+        "signal": result.get("signal", ""),
+        "duration_seconds": result["duration_seconds"],
         "stdout_tail": tail(stdout),
         "stderr_tail": tail(stderr),
     }
@@ -667,7 +657,9 @@ def run_sustained_arch_baseline(
     baseline_profile: str,
     minimum_duration_seconds: int,
     resource_sample_interval_seconds: float = DEFAULT_RESOURCE_SAMPLE_INTERVAL_SECONDS,
+    cancellation: CancellationState | None = None,
 ) -> dict[str, object]:
+    cancellation = cancellation or CancellationState()
     name = "sustained arch baseline with external gates"
     started = time.monotonic()
     completed_runs = 0
@@ -681,131 +673,176 @@ def run_sustained_arch_baseline(
     sampler = ResourceSampler(output_root, resource_sample_interval_seconds, minimum_duration_seconds)
     sampler.start()
     started = time.monotonic()
+    resource_evidence: dict[str, object] | None = None
+    sampler_stopped = False
+
+    def stop_sampler() -> dict[str, object]:
+        nonlocal resource_evidence, sampler_stopped
+        if not sampler_stopped:
+            sampler_stopped = True
+            resource_evidence = sampler.stop()
+        if resource_evidence is None:
+            raise RuntimeError("resource sampler stopped without producing evidence")
+        return resource_evidence
 
     def finish(result: dict[str, object]) -> dict[str, object]:
-        resource_evidence = sampler.stop()
-        result["resource_evidence"] = resource_evidence
-        if minimum_duration_seconds > 0 and resource_evidence.get("passed") is not True:
+        evidence = stop_sampler()
+        result["resource_evidence"] = evidence
+        if (
+            result.get("status") != "cancelled"
+            and minimum_duration_seconds > 0
+            and evidence.get("passed") is not True
+        ):
             result["status"] = "failed"
             result["resource_evidence_failure"] = True
         return result
 
-    while completed_runs == 0 or time.monotonic() - started < minimum_duration_seconds:
-        completed_runs += 1
-        resources_before = host_resource_snapshot()
-        last_run = run_step(
-            f"{name} (pass {completed_runs})",
-            "baseline",
-            arch_baseline_command(
-                root, build_dir, output_root, soak_profile, baseline_timeout_seconds, baseline_profile
-            ),
-            root,
-            baseline_timeout_seconds + 10,
-            emit_output=completed_runs == 1,
-        )
-        resources_after = host_resource_snapshot()
-        if last_run["status"] != "passed":
-            sample_failures = failed_arch_checks(summary_path)
-            failure_events.append(archive_failed_arch_run(
-                output_root,
-                completed_runs,
-                "initial",
-                resources_before,
-                resources_after,
-                failed_checks=sample_failures,
-            ))
-            # A benchmark gate failure is evidence to aggregate across the full soak,
-            # while a missing/invalid summary or process failure must stop immediately.
-            if last_run.get("returncode") == 2 and sample_failures:
-                checks_by_run = [sample_failures]
-                confirmation_runs = (
-                    SUSTAINED_GATE_CONFIRMATION_RUNS if minimum_duration_seconds > 0 else 0
-                )
-                for confirmation in range(1, confirmation_runs + 1):
-                    completed_runs += 1
-                    resources_before = host_resource_snapshot()
-                    confirmation_run = run_step(
-                        f"{name} (pass {completed_runs}, confirmation {confirmation})",
-                        "baseline",
-                        arch_baseline_command(
-                            root, build_dir, output_root, soak_profile,
-                            baseline_timeout_seconds, baseline_profile
-                        ),
-                        root,
-                        baseline_timeout_seconds + 10,
-                        emit_output=False,
+    def cancelled_result(run: dict[str, object] | None = None) -> dict[str, object]:
+        return finish({
+            "name": name,
+            "category": "interrupted",
+            "status": "cancelled",
+            "signal": cancellation.signal_name,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "minimum_duration_seconds": minimum_duration_seconds,
+            "completed_runs": completed_runs,
+            "last_run": run or last_run,
+            "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
+            "failure_events": failure_events,
+        })
+
+    try:
+        while completed_runs == 0 or time.monotonic() - started < minimum_duration_seconds:
+            if cancellation.cancelled:
+                return cancelled_result()
+            completed_runs += 1
+            resources_before = host_resource_snapshot()
+            last_run = run_step(
+                f"{name} (pass {completed_runs})",
+                "baseline",
+                arch_baseline_command(
+                    root, build_dir, output_root, soak_profile,
+                    baseline_timeout_seconds, baseline_profile
+                ),
+                root,
+                baseline_timeout_seconds + 10,
+                emit_output=completed_runs == 1,
+                cancellation=cancellation,
+            )
+            resources_after = host_resource_snapshot()
+            if last_run["status"] == "cancelled" or cancellation.cancelled:
+                return cancelled_result(last_run)
+            if last_run["status"] != "passed":
+                sample_failures = failed_arch_checks(summary_path)
+                failure_events.append(archive_failed_arch_run(
+                    output_root,
+                    completed_runs,
+                    "initial",
+                    resources_before,
+                    resources_after,
+                    failed_checks=sample_failures,
+                ))
+                # A benchmark gate failure is evidence to aggregate across the full soak,
+                # while a missing/invalid summary or process failure must stop immediately.
+                if last_run.get("returncode") == 2 and sample_failures:
+                    checks_by_run = [sample_failures]
+                    confirmation_runs = (
+                        SUSTAINED_GATE_CONFIRMATION_RUNS if minimum_duration_seconds > 0 else 0
                     )
-                    resources_after = host_resource_snapshot()
-                    confirmation_failures = (
-                        failed_arch_checks(summary_path)
-                        if confirmation_run.get("returncode") == 2
-                        else []
-                    )
-                    checks_by_run.append(confirmation_failures)
-                    failure_events.append(archive_failed_arch_run(
-                        output_root,
-                        completed_runs,
-                        f"confirmation-{confirmation}",
-                        resources_before,
-                        resources_after,
-                        status=str(confirmation_run["status"]),
-                        failed_checks=confirmation_failures,
-                    ))
-                    if confirmation_run["status"] != "passed" and not confirmation_failures:
-                        return finish({
-                            "name": name,
-                            "category": "baseline",
-                            "status": confirmation_run["status"],
-                            "duration_seconds": round(time.monotonic() - started, 3),
-                            "minimum_duration_seconds": minimum_duration_seconds,
-                            "completed_runs": completed_runs,
-                            "last_run": confirmation_run,
-                            "failed_checks": sorted(
-                                failures.values(), key=lambda check: str(check["name"])
+                    for confirmation in range(1, confirmation_runs + 1):
+                        if cancellation.cancelled:
+                            return cancelled_result(last_run)
+                        completed_runs += 1
+                        resources_before = host_resource_snapshot()
+                        confirmation_run = run_step(
+                            f"{name} (pass {completed_runs}, confirmation {confirmation})",
+                            "baseline",
+                            arch_baseline_command(
+                                root, build_dir, output_root, soak_profile,
+                                baseline_timeout_seconds, baseline_profile
                             ),
-                            "failure_events": failure_events,
-                        })
-                    last_run = confirmation_run
-                record_failure_episode(failures, checks_by_run)
-                continue
-            if completed_runs > 1:
-                if last_run.get("stdout_tail"):
-                    print(last_run["stdout_tail"], end="")
-                if last_run.get("stderr_tail"):
-                    print(last_run["stderr_tail"], end="", file=sys.stderr)
-            return finish({
-                "name": name,
-                "category": "baseline",
-                "status": last_run["status"],
-                "duration_seconds": round(time.monotonic() - started, 3),
-                "minimum_duration_seconds": minimum_duration_seconds,
-                "completed_runs": completed_runs,
-                "last_run": last_run,
-                "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
-                "failure_events": failure_events,
-            })
-    violating_checks = sustained_failure_violations(failures, completed_runs)
-    status = "failed" if violating_checks else "passed"
-    return finish({
-        "name": name,
-        "category": "baseline",
-        "status": status,
-        "duration_seconds": round(time.monotonic() - started, 3),
-        "minimum_duration_seconds": minimum_duration_seconds,
-        "completed_runs": completed_runs,
-        "last_run": last_run,
-        "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
-        "violating_checks": violating_checks,
-        "failure_events": failure_events,
-        "transient_failure_policy": {
-            "max_failure_rate": SUSTAINED_GATE_MAX_FAILURE_RATE,
-            "max_deviation_ratio": SUSTAINED_GATE_MAX_DEVIATION_RATIO,
-            "rare_max_failure_rate": SUSTAINED_GATE_RARE_MAX_FAILURE_RATE,
-            "rare_max_deviation_ratio": SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO,
-            "confirmation_runs": SUSTAINED_GATE_CONFIRMATION_RUNS,
-            "confirmation_required_failures": 2,
-        },
-    })
+                            root,
+                            baseline_timeout_seconds + 10,
+                            emit_output=False,
+                            cancellation=cancellation,
+                        )
+                        resources_after = host_resource_snapshot()
+                        if confirmation_run["status"] == "cancelled" or cancellation.cancelled:
+                            return cancelled_result(confirmation_run)
+                        confirmation_failures = (
+                            failed_arch_checks(summary_path)
+                            if confirmation_run.get("returncode") == 2
+                            else []
+                        )
+                        checks_by_run.append(confirmation_failures)
+                        failure_events.append(archive_failed_arch_run(
+                            output_root,
+                            completed_runs,
+                            f"confirmation-{confirmation}",
+                            resources_before,
+                            resources_after,
+                            status=str(confirmation_run["status"]),
+                            failed_checks=confirmation_failures,
+                        ))
+                        if confirmation_run["status"] != "passed" and not confirmation_failures:
+                            return finish({
+                                "name": name,
+                                "category": "baseline",
+                                "status": confirmation_run["status"],
+                                "duration_seconds": round(time.monotonic() - started, 3),
+                                "minimum_duration_seconds": minimum_duration_seconds,
+                                "completed_runs": completed_runs,
+                                "last_run": confirmation_run,
+                                "failed_checks": sorted(
+                                    failures.values(), key=lambda check: str(check["name"])
+                                ),
+                                "failure_events": failure_events,
+                            })
+                        last_run = confirmation_run
+                    record_failure_episode(failures, checks_by_run)
+                    continue
+                if completed_runs > 1:
+                    if last_run.get("stdout_tail"):
+                        print(last_run["stdout_tail"], end="")
+                    if last_run.get("stderr_tail"):
+                        print(last_run["stderr_tail"], end="", file=sys.stderr)
+                return finish({
+                    "name": name,
+                    "category": "baseline",
+                    "status": last_run["status"],
+                    "duration_seconds": round(time.monotonic() - started, 3),
+                    "minimum_duration_seconds": minimum_duration_seconds,
+                    "completed_runs": completed_runs,
+                    "last_run": last_run,
+                    "failed_checks": sorted(
+                        failures.values(), key=lambda check: str(check["name"])
+                    ),
+                    "failure_events": failure_events,
+                })
+        violating_checks = sustained_failure_violations(failures, completed_runs)
+        status = "failed" if violating_checks else "passed"
+        return finish({
+            "name": name,
+            "category": "baseline",
+            "status": status,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "minimum_duration_seconds": minimum_duration_seconds,
+            "completed_runs": completed_runs,
+            "last_run": last_run,
+            "failed_checks": sorted(failures.values(), key=lambda check: str(check["name"])),
+            "violating_checks": violating_checks,
+            "failure_events": failure_events,
+            "transient_failure_policy": {
+                "max_failure_rate": SUSTAINED_GATE_MAX_FAILURE_RATE,
+                "max_deviation_ratio": SUSTAINED_GATE_MAX_DEVIATION_RATIO,
+                "rare_max_failure_rate": SUSTAINED_GATE_RARE_MAX_FAILURE_RATE,
+                "rare_max_deviation_ratio": SUSTAINED_GATE_RARE_MAX_DEVIATION_RATIO,
+                "confirmation_runs": SUSTAINED_GATE_CONFIRMATION_RUNS,
+                "confirmation_required_failures": 2,
+            },
+        })
+    finally:
+        stop_sampler()
 
 
 def main() -> int:
@@ -826,6 +863,7 @@ def main() -> int:
         if args.minimum_duration_seconds is None
         else max(0, args.minimum_duration_seconds)
     )
+    steps: list[dict[str, object]] = []
     summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -844,9 +882,13 @@ def main() -> int:
         },
         "overall_pass": False,
         "passed": False,
+        "interrupted": False,
+        "interruption_signal": "",
+        "current_step": "initializing",
+        "completed_steps": [],
         "failed_category": "",
         "failed_step": "",
-        "steps": [],
+        "steps": steps,
         "artifacts": {
             "summary_path": str(summary_path),
             "arch_baseline_output_root": str(root / "runtime" / "perf" / "v2-stability-soak"),
@@ -857,69 +899,165 @@ def main() -> int:
             "This profile repeats the architecture baseline until the required wall-clock duration is reached; "
             "it is intended for fixed runners with dedicated machine access."
         )
+    atomic_write_json(summary_path, summary)
 
-    try:
-        if not args.skip_build:
-            step = run_step(
-                "build stability focused targets",
-                "build",
-                cmake_build_args(args, ["project_v2_unit_tests", "project_v2_integration_tests", "v2_arch_benchmark"]),
-                root,
-                args.build_timeout_seconds,
-            )
-            summary["steps"].append(step)
-            if step["status"] != "passed":
-                raise RuntimeError(step["name"])
+    cancellation = CancellationState()
+    completed_steps: list[str] = []
+    current_step = ""
+    unexpected_error = ""
+    unexpected_exception: Exception | None = None
 
-        unit_tests = find_executable(build_dir, "project_v2_unit_tests")
-        integration_tests = find_executable(build_dir, "project_v2_integration_tests")
-        steps = [
-            run_step("I/O policy and bounded accept checks", "io", [str(unit_tests), f"--gtest_filter={IO_FILTER}"], unit_tests.parent, args.test_timeout_seconds),
-            run_step("WriteBehind drain/failure checks", "data", [str(unit_tests), f"--gtest_filter={DATA_FILTER}"], unit_tests.parent, args.test_timeout_seconds),
-            run_step("backend timeout/recovery checks", "recovery", [str(integration_tests), f"--gtest_filter={RECOVERY_FILTER}"], integration_tests.parent, args.test_timeout_seconds),
-            run_sustained_arch_baseline(
-                root,
-                build_dir,
-                root / "runtime" / "perf" / "v2-stability-soak",
-                soak_profile,
-                args.baseline_timeout_seconds,
-                args.baseline_profile,
-                minimum_duration_seconds,
-                args.resource_sample_interval_seconds,
+    def record_step(step: dict[str, object]) -> dict[str, object]:
+        nonlocal current_step
+        steps.append(step)
+        if step.get("status") != "cancelled":
+            completed_steps.append(str(step.get("name", current_step)))
+            current_step = ""
+        return step
+
+    def execute_process_step(
+        name: str,
+        category: str,
+        command: list[str],
+        cwd: Path,
+        timeout_seconds: int,
+    ) -> dict[str, object]:
+        nonlocal current_step
+        current_step = name
+        return record_step(run_step(
+            name,
+            category,
+            command,
+            cwd,
+            timeout_seconds,
+            cancellation=cancellation,
+        ))
+
+    def finalize_summary() -> None:
+        nonlocal current_step
+        interrupted = cancellation.cancelled or any(
+            step.get("status") == "cancelled" for step in steps
+        )
+        if interrupted and not current_step:
+            current_step = "between_steps"
+        failed = next((step for step in steps if step.get("status") != "passed"), None)
+        summary.update({
+            "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "interrupted": interrupted,
+            "interruption_signal": cancellation.signal_name if interrupted else "",
+            "current_step": current_step,
+            "completed_steps": completed_steps,
+            "overall_pass": not interrupted and not unexpected_error and failed is None,
+            "passed": not interrupted and not unexpected_error and failed is None,
+            "failed_category": (
+                "interrupted" if interrupted else str(failed.get("category", "unknown"))
+                if failed is not None else "discovery" if unexpected_error else ""
             ),
-        ]
-        summary["steps"].extend(steps)
-        sustained_step = next(step for step in steps if step["name"] == "sustained arch baseline with external gates")
-        summary["sustained_duration_seconds"] = sustained_step["duration_seconds"]
-        summary["sustained_completed_runs"] = sustained_step["completed_runs"]
-        summary["resource_evidence"] = sustained_step["resource_evidence"]
-        summary["artifacts"]["resource_samples_path"] = sustained_step["resource_evidence"]["samples_path"]
-        summary["artifacts"]["resource_summary_path"] = sustained_step["resource_evidence"]["summary_path"]
-        for step in steps:
-            if step["status"] != "passed":
-                raise RuntimeError(step["name"])
-    except (FileNotFoundError, RuntimeError) as exc:
-        failed = next((s for s in summary["steps"] if s.get("status") != "passed"), None)
-        if failed:
-            summary["failed_category"] = str(failed.get("category", "unknown"))
-            summary["failed_step"] = str(failed.get("name", "unknown"))
-        else:
-            summary["failed_category"] = "discovery"
-            summary["failed_step"] = str(exc)
-        summary_path.parent.mkdir(parents=True, exist_ok=True)
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-        print(f"stability soak failed: {exc}", file=sys.stderr)
+            "failed_step": (
+                current_step if interrupted else str(failed.get("name", "unknown"))
+                if failed is not None else unexpected_error
+            ),
+            "duration_seconds": round(
+                sum(float(step.get("duration_seconds", 0.0)) for step in steps),
+                3,
+            ),
+            "steps": steps,
+        })
+        atomic_write_json(summary_path, summary)
+
+    with installed_signal_handlers(cancellation):
+        try:
+            if not args.skip_build and not cancellation.cancelled:
+                step = execute_process_step(
+                    "build stability focused targets",
+                    "build",
+                    cmake_build_args(
+                        args,
+                        ["project_v2_unit_tests", "project_v2_integration_tests", "v2_arch_benchmark"],
+                    ),
+                    root,
+                    args.build_timeout_seconds,
+                )
+                if step["status"] != "passed" and step["status"] != "cancelled":
+                    raise RuntimeError(str(step["name"]))
+
+            if not cancellation.cancelled:
+                unit_tests = find_executable(build_dir, "project_v2_unit_tests")
+                integration_tests = find_executable(build_dir, "project_v2_integration_tests")
+                process_steps = (
+                    (
+                        "I/O policy and bounded accept checks",
+                        "io",
+                        [str(unit_tests), f"--gtest_filter={IO_FILTER}"],
+                        unit_tests.parent,
+                    ),
+                    (
+                        "WriteBehind drain/failure checks",
+                        "data",
+                        [str(unit_tests), f"--gtest_filter={DATA_FILTER}"],
+                        unit_tests.parent,
+                    ),
+                    (
+                        "backend timeout/recovery checks",
+                        "recovery",
+                        [str(integration_tests), f"--gtest_filter={RECOVERY_FILTER}"],
+                        integration_tests.parent,
+                    ),
+                )
+                for name, category, command, cwd in process_steps:
+                    if cancellation.cancelled:
+                        break
+                    execute_process_step(
+                        name,
+                        category,
+                        command,
+                        cwd,
+                        args.test_timeout_seconds,
+                    )
+
+            if not cancellation.cancelled:
+                current_step = "sustained arch baseline with external gates"
+                sustained_step = record_step(run_sustained_arch_baseline(
+                    root,
+                    build_dir,
+                    root / "runtime" / "perf" / "v2-stability-soak",
+                    soak_profile,
+                    args.baseline_timeout_seconds,
+                    args.baseline_profile,
+                    minimum_duration_seconds,
+                    args.resource_sample_interval_seconds,
+                    cancellation,
+                ))
+                summary["sustained_duration_seconds"] = sustained_step["duration_seconds"]
+                summary["sustained_completed_runs"] = sustained_step["completed_runs"]
+                summary["resource_evidence"] = sustained_step["resource_evidence"]
+                summary["artifacts"]["resource_samples_path"] = sustained_step[
+                    "resource_evidence"
+                ]["samples_path"]
+                summary["artifacts"]["resource_summary_path"] = sustained_step[
+                    "resource_evidence"
+                ]["summary_path"]
+        except (FileNotFoundError, RuntimeError) as exc:
+            unexpected_error = str(exc)
+        except Exception as exc:
+            unexpected_error = f"{type(exc).__name__}: {exc}"
+            unexpected_exception = exc
+        finally:
+            finalize_summary()
+            if cancellation.cancelled and summary.get("interrupted") is not True:
+                finalize_summary()
+
+    if unexpected_exception is not None:
+        raise unexpected_exception
+    if summary["interrupted"]:
+        signal_number = cancellation.signal_number or signal.SIGTERM
+        print(f"stability soak interrupted by {summary['interruption_signal']}", file=sys.stderr)
+        print(f"summary: {summary_path}", file=sys.stderr)
+        return 128 + int(signal_number)
+    if not summary["passed"]:
+        print(f"stability soak failed: {summary['failed_step']}", file=sys.stderr)
         print(f"summary: {summary_path}", file=sys.stderr)
         return 1
-
-    summary["passed"] = True
-    summary["overall_pass"] = True
-    summary["duration_seconds"] = round(
-        sum(float(step.get("duration_seconds", 0.0)) for step in summary["steps"] if isinstance(step, dict)),
-        3,
-    )
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print("stability soak completed.")
     print(f"summary: {summary_path}")
     return 0
