@@ -30,6 +30,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/production-configuration-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/tls-mtls-runbook.md",
+    "docs/decisions/v3.6-decision-manifest.json",
     "docs/production/production-candidate-evidence-manifest.json",
     "docs/production/production-recovery-drill-record-template.json",
 ]
@@ -124,6 +125,20 @@ def main() -> int:
         "cmake:archives-installed-as-archive",
         'DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/archive"' in cmake,
         "docs/archive installs under docs/archive",
+    )
+    add(
+        checks,
+        "cmake:decisions-installed",
+        'install(DIRECTORY docs/decisions/' in cmake
+        and 'DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/decisions"' in cmake,
+        "accepted next-minor decisions install under docs/decisions",
+    )
+    add(
+        checks,
+        "docs:next-minor-decisions-indexed",
+        "decisions/v3.6-decision-manifest.json" in docs_index
+        and "scripts/check_next_minor_decisions.py" in (ROOT / "docs/current-state.md").read_text(encoding="utf-8"),
+        "docs index and current state point to the governed next-minor decisions",
     )
 
     failed = [check for check in checks if not check["passed"]]

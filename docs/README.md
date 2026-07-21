@@ -13,6 +13,7 @@
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
+| [v3.6 决策清单](decisions/v3.6-decision-manifest.json) | 下一 minor 的身份、SDK、Raft schema、平台和符号包 ADR 状态与实现阻断条件 |
 | [v3.5.x 维护计划](v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 的补丁版本边界、顺序和冻结条件 |
 | [v3.5.2 历史冻结清单](v3.5.2-freeze-todo.md) | 已关闭的第二 runner、同资产复验和最终 tag 冻结记录；不属于当前待办 |
 | [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
@@ -48,6 +49,7 @@
 |---|---|
 | [deployment/](deployment/) | 部署快速入门、生产部署/运维/配置 Runbook |
 | [production/](production/) | 生产候选证据 manifest、恢复演练模板 |
+| [decisions/](decisions/) | 已接受的下一 minor ADR 与机器可校验决策清单；接受决策不代表对应能力已交付 |
 | [legacy/](legacy/) | Legacy helper 清单、控制面预案、脚本整合计划 |
 | [archive/](archive/) | 历史版本文档（仓库路径 `docs/archive/`，仅供参考，不作为当前事实源） |
 

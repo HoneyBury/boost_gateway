@@ -127,6 +127,31 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     add(checks, "p2:fixed-runner-r5", "verify_preprod_recovery_drill.py" in fixed_runner, "fixed runner playbook documents R5")
     add(checks, "p2:fixed-runner-r6", "verify_tls_preprod_multi_run.py" in fixed_runner, "fixed runner playbook documents R6")
 
+    next_minor_manifest = "docs/decisions/v3.6-decision-manifest.json"
+    current = read("docs/current-state.md")
+    execution_plan = read("docs/mainline-execution-plan.md")
+    add(
+        checks,
+        "p2:next-minor-decision-manifest",
+        exists(next_minor_manifest),
+        "v3.6 next-minor decision manifest exists",
+    )
+    add(
+        checks,
+        "p2:next-minor-decision-gate",
+        exists("scripts/check_next_minor_decisions.py")
+        and exists("scripts/gates/governance/check_next_minor_decisions.py"),
+        "next-minor decision gate has stable and canonical entrypoints",
+    )
+    add(
+        checks,
+        "p2:next-minor-not-delivered-boundary",
+        "已接受" in current
+        and "尚未完成实现或发布" in current
+        and "不代表五项实现或发布资产已经交付" in execution_plan,
+        "maintained docs distinguish accepted decisions from delivered capabilities",
+    )
+
 
 def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     inventory = json.loads(read("docs/script-inventory.json"))
@@ -194,6 +219,13 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         "R5 Docker image policy contract gate" in ci_workflow
         and "scripts/check_r5_docker_image_policy_contract.py" in ci_workflow,
         "CI runs the R5 Docker image policy contract governance gate",
+    )
+    add(
+        checks,
+        "p3:ci-runs-next-minor-decision-gate",
+        "Next minor decision gate" in ci_workflow
+        and "scripts/check_next_minor_decisions.py" in ci_workflow,
+        "CI runs the accepted next-minor decision governance gate",
     )
 
     root_cmake = read("CMakeLists.txt")

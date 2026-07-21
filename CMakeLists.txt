@@ -111,6 +111,10 @@ install(DIRECTORY docs/production/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/production"
 )
 
+install(DIRECTORY docs/decisions/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/decisions"
+)
+
 install(DIRECTORY docs/legacy/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/legacy"
 )

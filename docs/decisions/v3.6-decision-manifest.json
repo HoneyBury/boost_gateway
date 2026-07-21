@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "target_minor": "v3.6.0",
+  "default_activation_policy": "blocked_until_gates_pass",
+  "decisions": [
+    {
+      "id": "v36-raft-wire-schema",
+      "title": "Raft schema and rolling migration",
+      "status": "accepted_for_implementation",
+      "target_minor": "v3.6.0",
+      "document": "docs/decisions/v3.6-raft-wire-schema.md",
+      "default_activation": "blocked_until_gates_pass",
+      "implementation_order": 1,
+      "dependencies": [],
+      "compatibility_window": "v3.6.x keeps legacy JSON readers and at least one release keeps the legacy writer rollback path; removal requires a new v3.7+ ADR",
+      "migration_window": "disk codec first, then dual-read legacy-write, followed by an explicitly gated protobuf writer while legacy rollback remains available",
+      "release_assets": [
+        "proto/v3/raft.proto and golden fixtures",
+        "protobuf runtime lockfile and SPDX dependency evidence",
+        "mixed-version cluster and state migration summaries"
+      ],
+      "validation_gates": [
+        "strict wire, disk-state and command codec tests",
+        "three-node mixed-version rolling upgrade and rollback",
+        "Raft recovery and strict offline release dependency gates"
+      ]
+    },
+    {
+      "id": "v36-identity-jwks",
+      "title": "External identity JWKS and multiple kid support",
+      "status": "accepted_for_implementation",
+      "target_minor": "v3.6.0",
+      "document": "docs/decisions/v3.6-identity-jwks.md",
+      "default_activation": "blocked_until_gates_pass",
+      "implementation_order": 2,
+      "dependencies": [],
+      "compatibility_window": "static RS256 PEM remains supported throughout v3.6.x; removal or deprecation requires a later ADR",
+      "migration_window": "deploy a static multi-kid key ring before enabling bounded JWKS refresh, and retain the static key ring as the independent rollback configuration",
+      "release_assets": [
+        "production identity configuration schema",
+        "key rotation and rollback runbook",
+        "security gate and refresh observability summary"
+      ],
+      "validation_gates": [
+        "JWT key selection and malformed claim unit tests",
+        "bounded JWKS cache, refresh and failure integration tests",
+        "production identity security and rotation drill gates"
+      ]
+    },
+    {
+      "id": "v36-macos-arm64",
+      "title": "macOS ARM64 build, test and install support",
+      "status": "accepted_for_implementation",
+      "target_minor": "v3.6.0",
+      "document": "docs/decisions/v3.6-macos-arm64.md",
+      "default_activation": "blocked_until_gates_pass",
+      "implementation_order": 3,
+      "dependencies": [],
+      "compatibility_window": "platform remains candidate until same-revision build, install and published-asset gates pass; Linux remains the capacity fact source",
+      "migration_window": "land the toolchain and smoke profile first, validate an unpublished archive second, and add the immutable release asset only at candidate freeze",
+      "release_assets": [
+        "macOS ARM64 runtime and C++ SDK archive",
+        "SPDX SBOM, checksums and provenance",
+        "platform toolchain and package-consumer summary"
+      ],
+      "validation_gates": [
+        "native ARM64 Conan and Release build",
+        "bounded CTest, SDK and loopback full-flow smoke",
+        "Mach-O install and published-asset consumer verification"
+      ]
+    },
+    {
+      "id": "v36-sdk-distribution",
+      "title": "Python wheel and NuGet distribution",
+      "status": "accepted_for_implementation",
+      "target_minor": "v3.6.0",
+      "document": "docs/decisions/v3.6-sdk-distribution.md",
+      "default_activation": "blocked_until_gates_pass",
+      "implementation_order": 4,
+      "dependencies": [
+        "v36-macos-arm64"
+      ],
+      "compatibility_window": "source wrappers and explicit native-library loading remain available throughout v3.6.x; SDK 4.x compatibility is retained",
+      "migration_window": "validate SDK 4.2.0 candidate packages and GitHub Release assets before independently enabling immutable PyPI or NuGet.org publication",
+      "release_assets": [
+        "platform Python wheels",
+        "BoostGateway.Sdk NuGet package",
+        "per-package SBOM, checksums, provenance and compatibility matrix"
+      ],
+      "validation_gates": [
+        "reproducible package build and content policy",
+        "clean Python and .NET install, uninstall and native resolution",
+        "real Gateway full-flow and independent published-asset verification"
+      ]
+    },
+    {
+      "id": "v36-debug-symbols",
+      "title": "Independent debug symbol release assets",
+      "status": "accepted_for_implementation",
+      "target_minor": "v3.6.0",
+      "document": "docs/decisions/v3.6-debug-symbols.md",
+      "default_activation": "blocked_until_gates_pass",
+      "implementation_order": 5,
+      "dependencies": [],
+      "compatibility_window": "symbols are additive beginning with v3.6; no v3.5.x asset is rebuilt or republished",
+      "migration_window": "validate unpublished runtime-symbol pairs before adding both assets and their subject-bound attestations to the required release manifest",
+      "release_assets": [
+        "Linux x64 stripped runtime archive",
+        "Linux x64 debug-symbols archive and build-id manifest",
+        "asset-specific SBOM, checksums and attestations"
+      ],
+      "validation_gates": [
+        "ELF strip, debuglink and build-id mapping",
+        "known-address and controlled-crash symbolization",
+        "runtime regression and independent supply-chain verification"
+      ]
+    }
+  ]
+}

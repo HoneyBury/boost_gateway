@@ -165,10 +165,18 @@ def main() -> int:
                 )
 
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    ci_workflow = read(WORKFLOWS_ROOT / "ci.yml")
     release_asset_verification = read(WORKFLOWS_ROOT / "release-asset-verification.yml")
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
+    add(
+        checks,
+        "ci:next-minor-decision-gate",
+        "- name: Next minor decision gate" in ci_workflow
+        and "python3 scripts/check_next_minor_decisions.py" in ci_workflow,
+        "mainline CI enforces the accepted next-minor decision manifest",
+    )
     add(
         checks,
         "long-soak-capacity:leaderboard-redis-comparison-input-forwarding",

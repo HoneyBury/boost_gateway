@@ -147,6 +147,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_workflow_catalog.py
 
+      - name: Next minor decision gate
+        shell: bash
+        run: python3 scripts/check_next_minor_decisions.py
+
       - name: Evidence provenance contract gate
         shell: bash
         run: python3 scripts/check_evidence_provenance_contract.py
