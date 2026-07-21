@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 DEFAULT_POLICY = Path("config/release/sbom-policy.json")
 DEFAULT_SUMMARY = Path("runtime/validation/release-sbom-semantics-summary.json")
+SPDX_PREDICATE_TYPE = "https://spdx.dev/Document/v2.3"
 CONAN_REF_RE = re.compile(
     r"^(?P<name>[A-Za-z0-9_.+-]+)/(?P<version>[^#%/]+)#(?P<revision>[0-9a-fA-F]+)(?:%(?P<timestamp>.+))?$"
 )
@@ -46,6 +47,16 @@ def load_json_object(path: Path, label: str) -> dict[str, Any]:
         raise SbomSemanticError(f"unable to read {label} {path}: {exc}") from exc
     if not isinstance(document, dict):
         raise SbomSemanticError(f"{label} must be a JSON object: {path}")
+    return document
+
+
+def load_json_array(path: Path, label: str) -> list[Any]:
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise SbomSemanticError(f"unable to read {label} {path}: {exc}") from exc
+    if not isinstance(document, list):
+        raise SbomSemanticError(f"{label} must be a JSON array: {path}")
     return document
 
 
@@ -574,6 +585,83 @@ def verify_sbom_document(
     }
 
 
+def verify_attested_sbom_predicate(
+    standalone_sbom: dict[str, Any], attestation_results: list[Any]
+) -> dict[str, Any]:
+    failures: list[str] = []
+    predicate_count = 0
+    matching_predicate_count = 0
+    if not attestation_results:
+        failures.append("SBOM attestation verification returned no results")
+
+    for index, result in enumerate(attestation_results):
+        if not isinstance(result, dict):
+            failures.append(f"SBOM attestation result {index} is not a JSON object")
+            continue
+        verification_result = result.get("verificationResult")
+        if not isinstance(verification_result, dict):
+            failures.append(
+                f"SBOM attestation result {index} has no verificationResult object"
+            )
+            continue
+        statement = verification_result.get("statement")
+        if not isinstance(statement, dict):
+            failures.append(
+                f"SBOM attestation result {index} has no verified statement object"
+            )
+            continue
+        predicate_type = statement.get("predicateType")
+        if predicate_type != SPDX_PREDICATE_TYPE:
+            failures.append(
+                f"SBOM attestation result {index} has unexpected predicateType: {predicate_type!r}"
+            )
+            continue
+        predicate_count += 1
+        predicate = statement.get("predicate")
+        if not isinstance(predicate, dict):
+            failures.append(
+                f"SBOM attestation result {index} has no SPDX predicate object"
+            )
+            continue
+        canonical_predicate = json.dumps(
+            predicate, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        canonical_standalone = json.dumps(
+            standalone_sbom, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        )
+        if canonical_predicate == canonical_standalone:
+            matching_predicate_count += 1
+        else:
+            failures.append(
+                f"SBOM attestation result {index} predicate does not match the published standalone SBOM"
+            )
+
+    predicate_matches = (
+        predicate_count > 0 and matching_predicate_count == predicate_count
+    )
+    checks = {
+        "verified_attestation_results_present": bool(attestation_results),
+        "spdx_predicates_present": predicate_count > 0,
+        "predicate_matches_published_sbom": predicate_matches,
+    }
+    passed = not failures and all(checks.values())
+    return {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
+        "overall_pass": passed,
+        "passed": passed,
+        "predicate_matches_published_sbom": predicate_matches,
+        "predicate_type": SPDX_PREDICATE_TYPE,
+        "verified_result_count": len(attestation_results),
+        "spdx_predicate_count": predicate_count,
+        "matching_predicate_count": matching_predicate_count,
+        "checks": checks,
+        "failures": failures,
+    }
+
+
 def write_json(path: Path, document: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp")
@@ -596,12 +684,62 @@ def build_parser() -> argparse.ArgumentParser:
         sources.add_argument("--package-root", type=Path)
         sources.add_argument("--archive", type=Path)
         child.add_argument("--expected-root")
+    attestation = subparsers.add_parser("verify-attestation")
+    attestation.add_argument("--sbom", type=Path, required=True)
+    attestation.add_argument("--attestation-verification", type=Path, required=True)
+    attestation.add_argument("--summary-path", type=Path, default=DEFAULT_SUMMARY)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
     summary: dict[str, Any]
+    if args.command == "verify-attestation":
+        try:
+            standalone_sbom = load_json_object(
+                args.sbom, "published standalone SPDX SBOM"
+            )
+            attestation_results = load_json_array(
+                args.attestation_verification, "SBOM attestation verification"
+            )
+            summary = verify_attested_sbom_predicate(
+                standalone_sbom, attestation_results
+            )
+            summary["standalone_sbom"] = {
+                "path": str(args.sbom),
+                "sha256": sha256_file(args.sbom),
+            }
+            summary["attestation_verification"] = {
+                "path": str(args.attestation_verification),
+                "sha256": sha256_file(args.attestation_verification),
+            }
+        except (OSError, SbomSemanticError, ValueError) as exc:
+            summary = {
+                "summary_version": 2,
+                "generated_at": datetime.now(UTC)
+                .isoformat(timespec="seconds")
+                .replace("+00:00", "Z"),
+                "overall_pass": False,
+                "passed": False,
+                "predicate_matches_published_sbom": False,
+                "predicate_type": SPDX_PREDICATE_TYPE,
+                "checks": {},
+                "failures": [str(exc)],
+            }
+        write_json(args.summary_path, summary)
+        if summary["overall_pass"]:
+            print(
+                "published SBOM attestation binding: PASS "
+                f"({summary['matching_predicate_count']} matching SPDX predicate)"
+            )
+            print(f"summary: {args.summary_path}")
+            return 0
+        print("published SBOM attestation binding: FAIL")
+        for failure in summary.get("failures", []):
+            print(f"  - {failure}")
+        print(f"summary: {args.summary_path}")
+        return 1
+
     try:
         if args.archive is not None and not args.expected_root:
             raise SbomSemanticError("--expected-root is required with --archive")

@@ -18,6 +18,7 @@ from scripts.tools.harden_release_sbom import (
     load_policy,
     load_runtime_dependencies,
     main,
+    verify_attested_sbom_predicate,
     verify_sbom_document,
 )
 
@@ -293,6 +294,103 @@ class HardenReleaseSbomTest(unittest.TestCase):
             SbomSemanticError, "unsupported Conan lock reference"
         ):
             load_runtime_dependencies(self.lockfile, policy)
+
+    @staticmethod
+    def attestation_result(predicate: object) -> dict[str, object]:
+        return {
+            "verificationResult": {
+                "statement": {
+                    "predicateType": "https://spdx.dev/Document/v2.3",
+                    "predicate": predicate,
+                }
+            }
+        }
+
+    def test_attested_predicate_matches_standalone_sbom_structurally(self) -> None:
+        standalone = self.base_sbom()
+        predicate = json.loads(json.dumps(standalone, sort_keys=True))
+        summary = verify_attested_sbom_predicate(
+            standalone, [self.attestation_result(predicate)]
+        )
+
+        self.assertTrue(summary["overall_pass"])
+        self.assertTrue(summary["predicate_matches_published_sbom"])
+        self.assertEqual(summary["matching_predicate_count"], 1)
+
+    def test_attested_predicate_mismatch_fails_closed(self) -> None:
+        standalone = self.base_sbom()
+        mismatched = deepcopy(standalone)
+        mismatched["name"] = "different-release"
+        summary = verify_attested_sbom_predicate(
+            standalone, [self.attestation_result(mismatched)]
+        )
+
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["predicate_matches_published_sbom"])
+        self.assertTrue(
+            any("does not match" in failure for failure in summary["failures"])
+        )
+
+    def test_all_verified_spdx_predicates_must_match(self) -> None:
+        standalone = self.base_sbom()
+        mismatched = deepcopy(standalone)
+        mismatched["files"] = []
+        summary = verify_attested_sbom_predicate(
+            standalone,
+            [
+                self.attestation_result(deepcopy(standalone)),
+                self.attestation_result(mismatched),
+            ],
+        )
+
+        self.assertFalse(summary["overall_pass"])
+        self.assertEqual(summary["spdx_predicate_count"], 2)
+        self.assertEqual(summary["matching_predicate_count"], 1)
+
+    def test_attested_predicate_preserves_json_boolean_and_number_types(self) -> None:
+        standalone = self.base_sbom()
+        standalone["packages"][0]["filesAnalyzed"] = True
+        mismatched = deepcopy(standalone)
+        mismatched["packages"][0]["filesAnalyzed"] = 1
+
+        summary = verify_attested_sbom_predicate(
+            standalone, [self.attestation_result(mismatched)]
+        )
+
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["predicate_matches_published_sbom"])
+
+    def test_attestation_cli_records_match_and_returns_nonzero_on_mismatch(
+        self,
+    ) -> None:
+        sbom = self.directory / "published.spdx.json"
+        sbom.write_text(json.dumps(self.base_sbom()), encoding="utf-8")
+        verification = self.directory / "attestation.json"
+        verification.write_text(
+            json.dumps([self.attestation_result({"spdxVersion": "SPDX-2.3"})]),
+            encoding="utf-8",
+        )
+        summary_path = self.directory / "attestation-summary.json"
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "harden_release_sbom.py",
+                    "verify-attestation",
+                    "--sbom",
+                    str(sbom),
+                    "--attestation-verification",
+                    str(verification),
+                    "--summary-path",
+                    str(summary_path),
+                ],
+            ),
+            redirect_stdout(io.StringIO()),
+        ):
+            self.assertEqual(main(), 1)
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertFalse(summary["overall_pass"])
+        self.assertFalse(summary["predicate_matches_published_sbom"])
 
 
 if __name__ == "__main__":

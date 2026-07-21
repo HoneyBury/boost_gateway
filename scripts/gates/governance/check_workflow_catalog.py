@@ -250,6 +250,30 @@ def main() -> int:
         and '"sbom_semantics": sbom_semantics' in release_asset_verification,
         "published asset verification rechecks SBOM file digests and Conan dependency semantics",
     )
+    binding_command = "scripts/tools/harden_release_sbom.py verify-attestation"
+    binding_summary = "published-release-sbom-attestation-binding-summary.json"
+    add(
+        checks,
+        "release:published-sbom-attestation-binding",
+        binding_command in release_asset_verification
+        and binding_summary in release_asset_verification
+        and "published-release-sbom-verification.json" in release_asset_verification
+        and "Render published asset summary" in release_asset_verification
+        and release_asset_verification.index("published-release-sbom-verification.json")
+        < release_asset_verification.index(binding_command)
+        < release_asset_verification.index("Render published asset summary")
+        and 'sbom_attestation_binding.get("overall_pass") is True'
+        in release_asset_verification
+        and 'sbom_attestation_binding.get("predicate_matches_published_sbom") is True'
+        in release_asset_verification
+        and '"predicate_matches_published_sbom": predicate_matches_published_sbom'
+        in release_asset_verification
+        and '"sbom_attestation_binding": sbom_attestation_binding'
+        in release_asset_verification
+        and "path: runtime/validation/published-release-*.json"
+        in release_asset_verification,
+        "published asset verification binds the standalone SBOM to its verified SPDX predicate",
+    )
     add(
         checks,
         "release:sbom-published-and-checksummed",
