@@ -1,6 +1,6 @@
 # v3.5.3 发布后主线执行计划
 
-更新时间：2026-07-20
+更新时间：2026-07-21
 
 ## 阶段目标
 
@@ -38,6 +38,9 @@
 - 已发布 CPU 矩阵的延迟、吞吐和失败数是有效的整栈端到端事实，但 collector 在启动子进程前约束自身 affinity，使服务端与 load generator 共用 CPU set；它不能作为 Gateway 独占 1/2/4 vCPU 的扩展结论。
 - 旧资源分析使用实验初始 CPU 时间反复计算每轮差值，出现单核进程超过 100% 的不可解释结果；下一矩阵必须使用相邻快照。
 - 纠偏提交 `29fc4cff` 的 AOI focused run `29742852766` 已验证 service CPU `0` 与 loadgen CPU `4-7` 的进程级隔离。echo-5K 三轮 P99 均为 2ms、吞吐中位数 58010.88 msg/s；echo-10K P99 为 5/10/20ms、吞吐中位数 59251.73 msg/s；0 rejected/failed，六轮资源隔离 gate 全部通过。Gateway CPU 约 56-59%，整套服务总 CPU 约 56-62.5%，因此暂不调整 `io_cores` 默认值。
+- 候选 `375910f3` 的 AOI runs `29790072882`、`29791850363`、`29793036782` 已分别完成 service CPU `0`、`0-1`、`0-3` 的完整三轮矩阵，三档均固定 loadgen CPU `4-7`、loadgen I/O threads 4、Gateway `io_cores=4` 和相同 workload identity。聚合 summary 为 `evidence_complete=true`、`all_workload_gates_passed=true`，72 项检查全过；所有 case 均为 0 rejected/failed，三档 R4 均通过。
+- 当前 workload 下各 case 的 2/4 CPU 吞吐相对 1 CPU 仅为 `0.9975x-1.0085x`。echo-10K 的 P99 median 从 1 CPU 的 10ms 降至 2/4 CPU 的 1ms，但吞吐只从 59231.55 增至 59697.76/59736.21 msg/s；这证明当前负载已进入 offered-load/场景平台期，不能宣称 CPU 线性扩展。后续若继续性能优化，应先提高可控 offered load 并确认服务 CPU 饱和，再讨论默认线程数。
+- 长任务取消取证已覆盖 `run_long_soak_capacity.py` 和 `verify_production_resilience_gate.py`：SIGINT/SIGTERM 分层 TERM/KILL 进程组、停止后续步骤、清除旧目标 summary，并在 `finally` 原子记录 `interrupted`、signal、当前步骤和完成步骤。发布后 SBOM 复验也新增 standalone JSON 与已验证 SPDX predicate 的 fail-closed 结构绑定。
 
 ## 证据约束
 

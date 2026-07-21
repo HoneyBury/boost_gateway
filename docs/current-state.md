@@ -192,9 +192,10 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 下一阶段执行优先级概括为：
 
 1. 当前主线：`v3.5.3` 的 Release、R0、R4、R5/R6、Raft、2h/8h、R2/R3、tag publish 和线上资产验证已在 `b9c348b4` 闭环。发布后分支 `codex/v36-capacity-evidence` 已将 service/load generator CPU 隔离、逐轮相邻资源快照和 quiescence 纳入硬门禁；AOI run `29742852766` 在 service CPU `0`、loadgen CPU `4-7` 下通过 echo-5K/10K 各三轮，P99 median 分别为 2ms/10ms，0 rejected/failed。旧矩阵只表示整套服务与 load generator 共用 affinity 集合时的端到端容量边界，不能解释为 Gateway 独占 vCPU 的扩展结果。
-2. 已闭环的实验项：generated proto/gRPC 已由 fixed-runner run `29465329265` 完成严格离线构建、测试、安装包 consumer 与 N6 决策证据；默认生产传输结论继续保持 `defer_default_transport`，本轮不再扩展或升格 gRPC。
-3. 后续项：为长稳任务增加取消信号、原子 checkpoint 和部分失败 summary，但 checkpoint 只用于审计，不允许把多个中断段累计成 2h/8h 通过；同时持续维护 Conan `nosqlite` 严格主线及其 ABI-safe cache。
-4. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
+2. 隔离后的完整矩阵已在候选 `375910f3` 上由 AOI runs `29790072882` / `29791850363` / `29793036782` 完成。三档只改变 service CPU `0` / `0-1` / `0-3`，loadgen 固定 `4-7`；72 项来源、affinity、资源窗口、workload identity 与 R4 检查全过，`evidence_complete=true`、`all_workload_gates_passed=true`。当前固定 workload 的 2/4 CPU 吞吐仅为 1 CPU 的 `0.9975x-1.0085x`，因此结论是“当前负载未触及 CPU 扩展上限”，不是线性扩展声明。
+3. 已闭环的实验项：generated proto/gRPC 已由 fixed-runner run `29465329265` 完成严格离线构建、测试、安装包 consumer 与 N6 决策证据；默认生产传输结论继续保持 `defer_default_transport`，本轮不再扩展或升格 gRPC。
+4. 当前证据工程：长稳/生产 resilience 编排器已增加取消信号、分层进程组回收和原子部分失败 summary；线上资产复验已增加 standalone SBOM 与已验证 SPDX predicate 的结构绑定。checkpoint 只用于审计，不允许把多个中断段累计成 2h/8h 通过。
+5. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：
 
