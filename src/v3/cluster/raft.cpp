@@ -159,8 +159,13 @@ std::string RaftNode::last_error() const {
     return last_error_;
 }
 
+std::optional<std::uint64_t> RaftNode::failed_apply_index() const {
+    std::lock_guard lock(mutex_);
+    return failed_apply_index_;
+}
+
 void RaftNode::on_apply(ApplyCallback cb) {
-    std::vector<std::pair<std::uint64_t, LogEntry>> applied;
+    std::vector<std::pair<std::uint64_t, LogEntry>> replayed;
     {
         std::lock_guard lock(mutex_);
         apply_cb_ = std::move(cb);
@@ -168,20 +173,57 @@ void RaftNode::on_apply(ApplyCallback cb) {
             return;
         }
         for (std::uint64_t index = 1; index <= last_applied_ && index <= log_.size(); ++index) {
-            applied.push_back({
+            replayed.push_back({
                 index,
                 log_[static_cast<std::size_t>(index - 1)],
             });
         }
     }
-    deliver_applied_entries(applied);
+    ApplyCallback callback;
+    {
+        std::lock_guard lock(mutex_);
+        callback = apply_cb_;
+    }
+    for (const auto& [index, entry] : replayed) {
+        try {
+            if (callback && !callback(index, entry)) {
+                std::lock_guard lock(mutex_);
+                failed_apply_index_ = index;
+                mark_unhealthy_locked("state machine rejected committed entry at index " +
+                                      std::to_string(index));
+                return;
+            }
+        } catch (const std::exception& error) {
+            std::lock_guard lock(mutex_);
+            failed_apply_index_ = index;
+            mark_unhealthy_locked("state machine replay failed at index " +
+                                  std::to_string(index) + ": " + error.what());
+            return;
+        } catch (...) {
+            std::lock_guard lock(mutex_);
+            failed_apply_index_ = index;
+            mark_unhealthy_locked("state machine replay failed at index " +
+                                  std::to_string(index));
+            return;
+        }
+    }
+
+    std::vector<std::pair<std::uint64_t, LogEntry>> pending;
+    {
+        std::lock_guard lock(mutex_);
+        if (!healthy_) {
+            return;
+        }
+        drain_committed_entries_locked(pending);
+    }
+    (void)deliver_applied_entries(pending);
 }
 
 void RaftNode::set_state_machine(StateMachine* sm) {
     state_machine_ = sm;
     if (sm) {
         on_apply([this](std::uint64_t index, const LogEntry& entry) {
-            state_machine_->apply(index, entry);
+            return state_machine_->apply(index, entry);
         });
     } else {
         on_apply(nullptr);
@@ -233,6 +275,7 @@ void RaftNode::reset_election_timeout() {
 
 void RaftNode::start_election() {
     RequestVoteArgs args;
+    RaftWireFormat writer_format = RaftWireFormat::kLegacyJson;
     {
         std::lock_guard lock(mutex_);
         if (!healthy_) {
@@ -248,6 +291,7 @@ void RaftNode::start_election() {
         args.candidate_id = config_.node_id;
         args.last_log_index = log_.size();
         args.last_log_term = last_log_term_of(log_);
+        writer_format = active_writer_format_locked();
         if (!persist_state_locked()) {
             return;
         }
@@ -260,7 +304,7 @@ void RaftNode::start_election() {
 
         RequestVoteReply reply;
         if (rpc_sender_) {
-            auto raw = rpc_sender_(peer, serialize_request_vote(args));
+            auto raw = rpc_sender_(peer, serialize_request_vote(args, writer_format));
             if (!raw.empty()) {
                 reply = parse_request_vote_reply(raw);
             }
@@ -294,19 +338,21 @@ void RaftNode::send_heartbeat() {
         }
 
         AppendEntriesArgs args;
+        RaftWireFormat writer_format = RaftWireFormat::kLegacyJson;
         {
             std::lock_guard lock(mutex_);
             if (!healthy_ || state_ != RaftState::kLeader) {
                 return;
             }
             args = make_append_entries_for(peer.id);
+            writer_format = active_writer_format_locked();
         }
 
         if (!rpc_sender_) {
             continue;
         }
 
-        auto raw = rpc_sender_(peer, serialize_append_entries(args));
+        auto raw = rpc_sender_(peer, serialize_append_entries(args, writer_format));
         if (raw.empty()) {
             continue;
         }
@@ -430,23 +476,62 @@ void RaftNode::update_commit_index_locked() {
 
 void RaftNode::drain_committed_entries_locked(
     std::vector<std::pair<std::uint64_t, LogEntry>>& applied) {
-    while (last_applied_ < commit_index_ && last_applied_ < log_.size()) {
-        ++last_applied_;
+    auto next = last_applied_;
+    while (next < commit_index_ && next < log_.size()) {
+        ++next;
         applied.push_back({
-            last_applied_,
-            log_[static_cast<std::size_t>(last_applied_ - 1)],
+            next,
+            log_[static_cast<std::size_t>(next - 1)],
         });
     }
 }
 
-void RaftNode::deliver_applied_entries(
-    const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) const {
-    if (!apply_cb_) {
-        return;
-    }
+bool RaftNode::deliver_applied_entries(
+    const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) {
     for (const auto& [index, entry] : applied) {
-        apply_cb_(index, entry);
+        ApplyCallback callback;
+        {
+            std::lock_guard lock(mutex_);
+            if (!healthy_ || index != last_applied_ + 1) {
+                return false;
+            }
+            callback = apply_cb_;
+        }
+
+        try {
+            if (callback && !callback(index, entry)) {
+                std::lock_guard lock(mutex_);
+                failed_apply_index_ = index;
+                mark_unhealthy_locked("state machine rejected committed entry at index " +
+                                      std::to_string(index));
+                return false;
+            }
+        } catch (const std::exception& error) {
+            std::lock_guard lock(mutex_);
+            failed_apply_index_ = index;
+            mark_unhealthy_locked("state machine apply failed at index " +
+                                  std::to_string(index) + ": " + error.what());
+            return false;
+        } catch (...) {
+            std::lock_guard lock(mutex_);
+            failed_apply_index_ = index;
+            mark_unhealthy_locked("state machine apply failed at index " +
+                                  std::to_string(index));
+            return false;
+        }
+
+        std::lock_guard lock(mutex_);
+        if (!healthy_ || index != last_applied_ + 1) {
+            return false;
+        }
+        const auto previous = last_applied_;
+        last_applied_ = index;
+        if (!persist_state_locked()) {
+            last_applied_ = previous;
+            return false;
+        }
     }
+    return true;
 }
 
 RequestVoteReply RaftNode::handle_request_vote(const RequestVoteArgs& args) {
@@ -477,6 +562,7 @@ RequestVoteReply RaftNode::handle_request_vote(const RequestVoteArgs& args) {
 }
 
 AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args) {
+    std::lock_guard pipeline_lock(apply_pipeline_mutex_);
     std::vector<std::pair<std::uint64_t, LogEntry>> applied;
     AppendEntriesReply reply{};
     {
@@ -563,7 +649,9 @@ AppendEntriesReply RaftNode::handle_append_entries(const AppendEntriesArgs& args
         reply.success = true;
         reply.match_index = static_cast<std::uint64_t>(log_.size());
     }
-    deliver_applied_entries(applied);
+    if (!deliver_applied_entries(applied)) {
+        reply.success = false;
+    }
     return reply;
 }
 
@@ -652,7 +740,29 @@ bool RaftNode::all_voting_peers_support_protobuf() const {
     return true;
 }
 
+RaftWireFormat RaftNode::active_writer_format_locked() const {
+    if (!config_.protobuf_writer_enabled || !healthy_) {
+        return RaftWireFormat::kLegacyJson;
+    }
+    for (const auto& peer : peers_) {
+        if (peer.id == config_.node_id) {
+            continue;
+        }
+        const auto found = peer_protocol_versions_.find(peer.id);
+        if (found == peer_protocol_versions_.end() || found->second != 1U) {
+            return RaftWireFormat::kLegacyJson;
+        }
+    }
+    return RaftWireFormat::kProtobufV1;
+}
+
+RaftWireFormat RaftNode::active_writer_format() const {
+    std::lock_guard lock(mutex_);
+    return active_writer_format_locked();
+}
+
 bool RaftNode::append_command(const std::string& command) {
+    std::lock_guard pipeline_lock(apply_pipeline_mutex_);
     std::vector<RaftNodeId> targets;
     {
         std::lock_guard lock(mutex_);
@@ -676,17 +786,19 @@ bool RaftNode::append_command(const std::string& command) {
     std::size_t successes = 1;
     for (const auto& peer : targets) {
         AppendEntriesArgs args;
+        RaftWireFormat writer_format = RaftWireFormat::kLegacyJson;
         {
             std::lock_guard lock(mutex_);
             if (!healthy_ || state_ != RaftState::kLeader) {
                 return false;
             }
             args = make_append_entries_for(peer.id);
+            writer_format = active_writer_format_locked();
         }
 
         AppendEntriesReply reply;
         if (rpc_sender_) {
-            auto raw = rpc_sender_(peer, serialize_append_entries(args));
+            auto raw = rpc_sender_(peer, serialize_append_entries(args, writer_format));
             if (!raw.empty()) {
                 reply = parse_append_entries_reply(raw);
             }
@@ -730,7 +842,9 @@ bool RaftNode::append_command(const std::string& command) {
         }
     }
 
-    deliver_applied_entries(applied);
+    if (!deliver_applied_entries(applied)) {
+        return false;
+    }
     send_heartbeat();
     return true;
 }

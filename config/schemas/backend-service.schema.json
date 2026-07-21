@@ -47,6 +47,7 @@
         "election_timeout_min_ms": { "type": "integer", "minimum": 1 },
         "election_timeout_max_ms": { "type": "integer", "minimum": 1 },
         "heartbeat_interval_ms": { "type": "integer", "minimum": 1 },
+        "protobuf_writer_enabled": { "type": "boolean", "default": false },
         "peers": {
           "type": "array",
           "items": {

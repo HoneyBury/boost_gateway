@@ -71,6 +71,7 @@ struct RaftConfig {
     std::chrono::milliseconds election_timeout_min{150};
     std::chrono::milliseconds election_timeout_max{300};
     std::chrono::milliseconds heartbeat_interval{50};
+    bool protobuf_writer_enabled = false;
     std::vector<RaftNodeId> peers;
 };
 
@@ -126,14 +127,14 @@ RequestVoteReply handle_request_vote_internal(
 class StateMachine {
 public:
     virtual ~StateMachine() = default;
-    virtual void apply(std::uint64_t index, const LogEntry& entry) = 0;
+    virtual bool apply(std::uint64_t index, const LogEntry& entry) = 0;
 };
 
 class RaftNode {
 public:
     using LeaderCallback = std::function<void()>;
     using StepDownCallback = std::function<void()>;
-    using ApplyCallback = std::function<void(std::uint64_t index,
+    using ApplyCallback = std::function<bool(std::uint64_t index,
                                              const LogEntry& entry)>;
     using RpcSender = std::function<std::string(const RaftNodeId& target,
                                                 const std::string& rpc_data)>;
@@ -159,6 +160,7 @@ public:
     [[nodiscard]] std::string log_command(std::uint64_t index) const;
     [[nodiscard]] bool healthy() const;
     [[nodiscard]] std::string last_error() const;
+    [[nodiscard]] std::optional<std::uint64_t> failed_apply_index() const;
 
     void on_become_leader(LeaderCallback cb) { leader_cb_ = std::move(cb); }
     void on_step_down(StepDownCallback cb) { step_down_cb_ = std::move(cb); }
@@ -172,6 +174,7 @@ public:
     void refresh_peer_capabilities();
     [[nodiscard]] bool peer_supports_protobuf(const std::string& peer_id) const;
     [[nodiscard]] bool all_voting_peers_support_protobuf() const;
+    [[nodiscard]] RaftWireFormat active_writer_format() const;
 
     [[nodiscard]] bool append_command(const std::string& command);
 
@@ -192,8 +195,9 @@ private:
     void update_commit_index_locked();
     void drain_committed_entries_locked(
         std::vector<std::pair<std::uint64_t, LogEntry>>& applied);
-    void deliver_applied_entries(
-        const std::vector<std::pair<std::uint64_t, LogEntry>>& applied) const;
+    [[nodiscard]] bool deliver_applied_entries(
+        const std::vector<std::pair<std::uint64_t, LogEntry>>& applied);
+    [[nodiscard]] RaftWireFormat active_writer_format_locked() const;
     void load_persistent_state();
     [[nodiscard]] bool persist_state_locked();
     void mark_unhealthy_locked(std::string reason);
@@ -205,6 +209,7 @@ private:
     std::thread thread_;
 
     mutable std::mutex mutex_;
+    std::mutex apply_pipeline_mutex_;
     std::uint64_t current_term_ = 0;
     std::optional<std::string> voted_for_;
     RaftState state_ = RaftState::kFollower;
@@ -212,6 +217,7 @@ private:
     std::vector<LogEntry> log_;
     bool healthy_ = true;
     std::string last_error_;
+    std::optional<std::uint64_t> failed_apply_index_;
 
     std::chrono::steady_clock::time_point election_deadline_;
     std::mt19937 rng_;

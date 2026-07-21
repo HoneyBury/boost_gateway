@@ -642,7 +642,10 @@ TEST(RaftTest, RuntimePersistenceFailureLatchesUnhealthyAfterStorageRecovers) {
         .peers = {{"runtime-failure-node", "", 0}},
     });
     std::size_t applied = 0;
-    node.on_apply([&](std::uint64_t, const LogEntry&) { ++applied; });
+    node.on_apply([&](std::uint64_t, const LogEntry&) {
+        ++applied;
+        return true;
+    });
     node.start();
 
     std::filesystem::remove_all(storage.path());
@@ -698,6 +701,7 @@ TEST(RaftTest, ApplyCallbackReplaysCommittedEntriesAfterRestart) {
         std::vector<std::string> replayed;
         recovered.on_apply([&replayed](std::uint64_t /*index*/, const LogEntry& entry) {
             replayed.push_back(entry.command);
+            return true;
         });
 
         ASSERT_EQ(replayed.size(), 2U);
@@ -706,4 +710,50 @@ TEST(RaftTest, ApplyCallbackReplaysCommittedEntriesAfterRestart) {
     }
 
     std::filesystem::remove_all(storage_root, ec);
+}
+
+TEST(RaftTest, ApplyFailureDoesNotAdvanceAppliedIndexAndLatchesUnhealthy) {
+    ScopedRaftTempDirectory storage("boost_raft_apply_failure");
+    RaftNode node(RaftConfig{
+        .node_id = "apply-failure-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"apply-failure-node", "", 0}},
+    });
+    node.on_apply([](std::uint64_t, const LogEntry&) { return false; });
+    node.start();
+
+    EXPECT_FALSE(node.append_command("unsupported-command"));
+    EXPECT_EQ(node.commit_index(), 1U);
+    EXPECT_EQ(node.last_applied(), 0U);
+    EXPECT_FALSE(node.healthy());
+    EXPECT_EQ(node.failed_apply_index(), 1U);
+    EXPECT_NE(node.last_error().find("index 1"), std::string::npos);
+    node.stop();
+}
+
+TEST(RaftTest, CommittedButUnappliedEntryFailsClosedAgainAfterRestart) {
+    ScopedRaftTempDirectory storage("boost_raft_apply_restart_failure");
+    {
+        RaftNode node(RaftConfig{
+            .node_id = "apply-restart-node",
+            .storage_dir = storage.path().string(),
+            .peers = {{"apply-restart-node", "", 0}},
+        });
+        node.on_apply([](std::uint64_t, const LogEntry&) { return false; });
+        node.start();
+        EXPECT_FALSE(node.append_command("unsupported-command"));
+        node.stop();
+    }
+
+    RaftNode recovered(RaftConfig{
+        .node_id = "apply-restart-node",
+        .storage_dir = storage.path().string(),
+        .peers = {{"apply-restart-node", "", 0}},
+    });
+    recovered.on_apply([](std::uint64_t, const LogEntry&) { return false; });
+    EXPECT_FALSE(recovered.healthy());
+    EXPECT_EQ(recovered.commit_index(), 1U);
+    EXPECT_EQ(recovered.last_applied(), 0U);
+    EXPECT_EQ(recovered.failed_apply_index(), 1U);
+    EXPECT_THROW(recovered.start(), std::runtime_error);
 }

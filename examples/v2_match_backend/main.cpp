@@ -38,6 +38,7 @@ std::optional<v3::cluster::RaftConfig> to_raft_config(
     config.election_timeout_min = source.election_timeout_min;
     config.election_timeout_max = source.election_timeout_max;
     config.heartbeat_interval = source.heartbeat_interval;
+    config.protobuf_writer_enabled = source.protobuf_writer_enabled;
 
     for (const auto& peer : source.peers) {
         config.peers.push_back(v3::cluster::RaftNodeId{

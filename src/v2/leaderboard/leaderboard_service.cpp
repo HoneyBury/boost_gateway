@@ -8,6 +8,7 @@
 #include "v2/service/envelope_adapter.h"
 #include "v2/service/error_codes.h"
 #include "v3/cluster/raft.h"
+#include "v3/cluster/raft_command_codec.h"
 #include "v3/persistence/redis_event_store.h"
 #include "v3/persistence/redis_leaderboard.h"
 
@@ -23,6 +24,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -153,15 +155,13 @@ auto make_raft_rpc_sender() {
 }
 
 std::string make_submit_command(const std::string& user_id, const std::string& display_name,
-                                std::int64_t score) {
-    return nlohmann::json{
-        {"v", 1},
-        {"op", "leaderboard_submit"},
-        {"user_id", user_id},
-        {"display_name", display_name},
-        {"score", score},
-    }
-        .dump();
+                                std::int64_t score, v3::cluster::RaftWireFormat format) {
+    return v3::cluster::serialize_raft_command(v3::cluster::RaftCommand{
+        .kind = v3::cluster::RaftCommandKind::kLeaderboardSubmit,
+        .user_id = user_id,
+        .display_name = display_name,
+        .score = score,
+    }, format);
 }
 
 } // namespace
@@ -202,7 +202,7 @@ class LeaderboardService::Impl {
                 raft_node_->on_step_down([this]() { leader_.store(false); });
                 raft_node_->on_apply(
                     [this](std::uint64_t /*index*/, const v3::cluster::LogEntry& entry) {
-                        apply_raft_entry(entry.command);
+                        return apply_raft_entry(entry.command);
                     });
                 raft_node_->start();
             }
@@ -388,7 +388,8 @@ class LeaderboardService::Impl {
                     decoded->typed_request, std::move(resp),
                     v3::proto::EnvelopeMessageKind::kLeaderboardSubmitResponse);
             }
-            if (!raft_node_->append_command(make_submit_command(user_id, display_name, score))) {
+            if (!raft_node_->append_command(make_submit_command(
+                    user_id, display_name, score, raft_node_->active_writer_format()))) {
                 auto resp = make_error(-1005, "raft_commit_failed");
                 return v2::service::wrap_typed_response_if_needed(
                     decoded->typed_request, std::move(resp),
@@ -616,22 +617,13 @@ class LeaderboardService::Impl {
         return std::nullopt;
     }
 
-    void apply_raft_entry(const std::string& command) {
-        auto doc = nlohmann::json::parse(command, nullptr, false);
-        if (doc.is_discarded()) {
-            return;
+    bool apply_raft_entry(const std::string& encoded) {
+        const auto command = v3::cluster::parse_raft_command(encoded);
+        if (command.kind != v3::cluster::RaftCommandKind::kLeaderboardSubmit) {
+            throw std::invalid_argument("matchmaking command routed to leaderboard state machine");
         }
-        if (doc.value("v", 0) != 1) {
-            return;
-        }
-        if (doc.value("op", "") != "leaderboard_submit") {
-            return;
-        }
-        const auto user_id = doc.value("user_id", "");
-        if (user_id.empty()) {
-            return;
-        }
-        apply_submit(user_id, doc.value("display_name", ""), doc.value("score", std::int64_t{0}));
+        apply_submit(command.user_id, command.display_name, command.score);
+        return true;
     }
 };
 

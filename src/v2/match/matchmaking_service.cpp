@@ -7,6 +7,7 @@
 #include "v2/service/backend_server.h"
 #include "v2/service/envelope_adapter.h"
 #include "v3/cluster/raft.h"
+#include "v3/cluster/raft_command_codec.h"
 
 #include <spdlog/spdlog.h>
 
@@ -17,6 +18,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -82,48 +84,67 @@ MatchMode parse_mode(const std::string& mode_str) {
     return MatchMode::k1v1;
 }
 
-std::string make_join_command(const MatchPlayer& player) {
-    return nlohmann::json{
-        {"v", 1},
-        {"op", "match_join"},
-        {"user_id", player.user_id},
-        {"mmr", player.mmr},
-        {"queued_at_ms", player.queued_at_ms},
-        {"mode", to_string(player.mode)},
+v3::cluster::RaftMatchMode to_raft_mode(MatchMode mode) {
+    switch (mode) {
+        case MatchMode::k1v1:
+            return v3::cluster::RaftMatchMode::kOneVsOne;
+        case MatchMode::k2v2:
+            return v3::cluster::RaftMatchMode::kTwoVsTwo;
+        case MatchMode::k4v4:
+            return v3::cluster::RaftMatchMode::kFourVsFour;
     }
-        .dump();
+    throw std::invalid_argument("unsupported matchmaking mode");
 }
 
-std::string make_leave_command(const std::string& user_id, MatchMode mode) {
-    return nlohmann::json{
-        {"v", 1},
-        {"op", "match_leave"},
-        {"user_id", user_id},
-        {"mode", to_string(mode)},
+MatchMode from_raft_mode(v3::cluster::RaftMatchMode mode) {
+    switch (mode) {
+        case v3::cluster::RaftMatchMode::kOneVsOne:
+            return MatchMode::k1v1;
+        case v3::cluster::RaftMatchMode::kTwoVsTwo:
+            return MatchMode::k2v2;
+        case v3::cluster::RaftMatchMode::kFourVsFour:
+            return MatchMode::k4v4;
     }
-        .dump();
+    throw std::invalid_argument("unsupported Raft matchmaking mode");
 }
 
-std::string make_match_found_command(const MatchResult& result) {
-    return nlohmann::json{
-        {"v", 1},
-        {"op", "match_found"},
-        {"match_id", result.match_id},
-        {"mode", to_string(result.mode)},
-        {"avg_mmr", result.avg_mmr},
-        {"player_ids", result.player_ids},
-    }
-        .dump();
+std::string make_join_command(const MatchPlayer& player, v3::cluster::RaftWireFormat format) {
+    return v3::cluster::serialize_raft_command(v3::cluster::RaftCommand{
+        .kind = v3::cluster::RaftCommandKind::kMatchJoin,
+        .user_id = player.user_id,
+        .mode = to_raft_mode(player.mode),
+        .mmr = player.mmr,
+        .queued_at_ms = player.queued_at_ms,
+    }, format);
 }
 
-std::string make_purge_command(MatchMode mode, const std::vector<std::string>& user_ids) {
-    return nlohmann::json{
-        {"v", 1},
-        {"op", "match_purge"},
-        {"mode", to_string(mode)},
-        {"user_ids", user_ids},
-    }
-        .dump();
+std::string make_leave_command(const std::string& user_id, MatchMode mode,
+                               v3::cluster::RaftWireFormat format) {
+    return v3::cluster::serialize_raft_command(v3::cluster::RaftCommand{
+        .kind = v3::cluster::RaftCommandKind::kMatchLeave,
+        .user_id = user_id,
+        .mode = to_raft_mode(mode),
+    }, format);
+}
+
+std::string make_match_found_command(const MatchResult& result,
+                                     v3::cluster::RaftWireFormat format) {
+    return v3::cluster::serialize_raft_command(v3::cluster::RaftCommand{
+        .kind = v3::cluster::RaftCommandKind::kMatchFound,
+        .match_id = result.match_id,
+        .mode = to_raft_mode(result.mode),
+        .avg_mmr = result.avg_mmr,
+        .user_ids = result.player_ids,
+    }, format);
+}
+
+std::string make_purge_command(MatchMode mode, const std::vector<std::string>& user_ids,
+                               v3::cluster::RaftWireFormat format) {
+    return v3::cluster::serialize_raft_command(v3::cluster::RaftCommand{
+        .kind = v3::cluster::RaftCommandKind::kMatchPurge,
+        .mode = to_raft_mode(mode),
+        .user_ids = user_ids,
+    }, format);
 }
 
 // MatchQueue
@@ -221,9 +242,11 @@ class Matchmaker {
             thread_.join();
     }
 
-    void join_queue(const MatchPlayer& player) {
+    void join_queue(const MatchPlayer& player, bool match_immediately = true) {
         queues_[static_cast<int>(player.mode)].add(player);
-        try_match_mode(player.mode);
+        if (match_immediately) {
+            try_match_mode(player.mode);
+        }
     }
 
     bool leave_queue(MatchMode mode, const std::string& user_id) {
@@ -329,7 +352,8 @@ class MatchmakingService::Impl {
                 if (!raft_node_->is_leader()) {
                     return;
                 }
-                const auto appended = raft_node_->append_command(make_match_found_command(result));
+                const auto appended = raft_node_->append_command(
+                    make_match_found_command(result, raft_node_->active_writer_format()));
                 (void)appended;
                 return;
             }
@@ -341,7 +365,8 @@ class MatchmakingService::Impl {
                     return;
                 }
                 const auto appended =
-                    raft_node_->append_command(make_purge_command(mode, user_ids));
+                    raft_node_->append_command(
+                        make_purge_command(mode, user_ids, raft_node_->active_writer_format()));
                 (void)appended;
                 return;
             }
@@ -382,7 +407,7 @@ class MatchmakingService::Impl {
                 raft_node_->on_step_down([this]() { leader_.store(false); });
                 raft_node_->on_apply(
                     [this](std::uint64_t /*index*/, const v3::cluster::LogEntry& entry) {
-                        apply_raft_entry(entry.command);
+                        return apply_raft_entry(entry.command);
                     });
                 raft_node_->start();
             }
@@ -582,7 +607,8 @@ class MatchmakingService::Impl {
                                             "not_raft_leader:" + get_leader_hint(),
                                             v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
             }
-            if (!raft_node_->append_command(make_join_command(player))) {
+            if (!raft_node_->append_command(
+                    make_join_command(player, raft_node_->active_writer_format()))) {
                 return wrap_error_if_needed(decoded->typed_request, -1005, "raft_commit_failed",
                                             v3::proto::EnvelopeMessageKind::kMatchJoinResponse);
             }
@@ -613,7 +639,8 @@ class MatchmakingService::Impl {
                                             "not_raft_leader:" + get_leader_hint(),
                                             v3::proto::EnvelopeMessageKind::kMatchLeaveResponse);
             }
-            if (!raft_node_->append_command(make_leave_command(user_id, mode))) {
+            if (!raft_node_->append_command(
+                    make_leave_command(user_id, mode, raft_node_->active_writer_format()))) {
                 return wrap_error_if_needed(decoded->typed_request, -1005, "raft_commit_failed",
                                             v3::proto::EnvelopeMessageKind::kMatchLeaveResponse);
             }
@@ -669,8 +696,8 @@ class MatchmakingService::Impl {
             v3::proto::EnvelopeMessageKind::kMatchStatusResponse);
     }
 
-    void apply_match_join(const MatchPlayer& player) {
-        matchmaker_->join_queue(player);
+    void apply_match_join(const MatchPlayer& player, bool match_immediately = true) {
+        matchmaker_->join_queue(player, match_immediately);
     }
 
     void apply_match_leave(MatchMode mode, const std::string& user_id) {
@@ -702,57 +729,35 @@ class MatchmakingService::Impl {
         }
     }
 
-    void apply_raft_entry(const std::string& command) {
-        auto doc = nlohmann::json::parse(command, nullptr, false);
-        if (doc.is_discarded()) {
-            return;
-        }
-        if (doc.value("v", 0) != 1) {
-            return;
-        }
-
-        const auto op = doc.value("op", "");
-        if (op == "match_join") {
-            const auto user_id = doc.value("user_id", "");
-            if (user_id.empty()) {
-                return;
-            }
+    bool apply_raft_entry(const std::string& encoded) {
+        const auto command = v3::cluster::parse_raft_command(encoded);
+        if (command.kind == v3::cluster::RaftCommandKind::kMatchJoin) {
             apply_match_join(MatchPlayer{
-                .user_id = user_id,
-                .mmr = doc.value("mmr", std::int64_t{1000}),
-                .queued_at_ms = doc.value("queued_at_ms", std::uint64_t{0}),
-                .mode = parse_mode(doc.value("mode", "1v1")),
-            });
-            return;
+                .user_id = command.user_id,
+                .mmr = command.mmr,
+                .queued_at_ms = command.queued_at_ms,
+                .mode = from_raft_mode(command.mode),
+            }, false);
+            return true;
         }
-        if (op == "match_leave") {
-            const auto user_id = doc.value("user_id", "");
-            if (user_id.empty()) {
-                return;
-            }
-            apply_match_leave(parse_mode(doc.value("mode", "1v1")), user_id);
-            return;
+        if (command.kind == v3::cluster::RaftCommandKind::kMatchLeave) {
+            apply_match_leave(from_raft_mode(command.mode), command.user_id);
+            return true;
         }
-        if (op == "match_found") {
+        if (command.kind == v3::cluster::RaftCommandKind::kMatchFound) {
             MatchResult result;
-            result.match_id = doc.value("match_id", "");
-            result.mode = parse_mode(doc.value("mode", "1v1"));
-            result.avg_mmr = doc.value("avg_mmr", std::int64_t{0});
-            if (doc.contains("player_ids") && doc["player_ids"].is_array()) {
-                result.player_ids = doc["player_ids"].get<std::vector<std::string>>();
-            }
-            if (!result.match_id.empty() && !result.player_ids.empty()) {
-                apply_match_found(result);
-            }
-            return;
+            result.match_id = command.match_id;
+            result.mode = from_raft_mode(command.mode);
+            result.avg_mmr = command.avg_mmr;
+            result.player_ids = command.user_ids;
+            apply_match_found(result);
+            return true;
         }
-        if (op == "match_purge") {
-            if (!doc.contains("user_ids") || !doc["user_ids"].is_array()) {
-                return;
-            }
-            const auto user_ids = doc["user_ids"].get<std::vector<std::string>>();
-            apply_match_purge(parse_mode(doc.value("mode", "1v1")), user_ids);
+        if (command.kind == v3::cluster::RaftCommandKind::kMatchPurge) {
+            apply_match_purge(from_raft_mode(command.mode), command.user_ids);
+            return true;
         }
+        throw std::invalid_argument("leaderboard command routed to matchmaking state machine");
     }
 };
 

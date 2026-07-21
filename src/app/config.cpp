@@ -313,6 +313,9 @@ void fill_backend_from_store(const ConfigStore& store, BackendServiceConfig& con
     if (const auto value = store.get_milliseconds("raft.heartbeat_interval_ms")) {
         config.raft.heartbeat_interval = *value;
     }
+    if (const auto value = store.get_bool("raft.protobuf_writer_enabled")) {
+        config.raft.protobuf_writer_enabled = *value;
+    }
     if (const auto value = store.get_string("raft.peers")) {
         config.raft.peers = parse_raft_peers(*value);
     }
@@ -450,6 +453,9 @@ void apply_backend_env_overlay(const std::string& service_name, BackendServiceCo
         env_value("RAFT_ELECTION_TIMEOUT_MAX_MS"), config.raft.election_timeout_max);
     config.raft.heartbeat_interval = read_milliseconds_or(
         env_value("RAFT_HEARTBEAT_INTERVAL_MS"), config.raft.heartbeat_interval);
+    if (const auto value = env_value("RAFT_PROTOBUF_WRITER_ENABLED")) {
+        config.raft.protobuf_writer_enabled = parse_bool(*value).value_or(false);
+    }
 
     if (const auto value = read_uint32(env_value("V2_BATTLE_MAX_FRAMES"))) {
         config.battle_max_frames = *value;

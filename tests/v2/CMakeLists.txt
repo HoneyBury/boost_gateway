@@ -59,6 +59,7 @@ add_executable(project_v2_unit_tests
     unit/cluster_router_test.cpp
     unit/remote_actor_test.cpp
     unit/raft_test.cpp
+    unit/raft_command_codec_test.cpp
     unit/raft_state_codec_test.cpp
     unit/raft_wire_codec_test.cpp
     unit/otel_persistence_test.cpp

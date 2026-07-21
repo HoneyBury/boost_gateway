@@ -3,6 +3,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cctype>
 #include <cstdint>
 #include <filesystem>
@@ -11,6 +12,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <thread>
 
 namespace {
 
@@ -226,6 +228,118 @@ TEST(RaftWireCodecTest, CapabilityRequestRejectsUnknownAndSelfNodes) {
     EXPECT_EQ(peer.selected_protocol_version, 1U);
     EXPECT_TRUE(peer.protobuf_supported);
     EXPECT_TRUE(node.peer_supports_protobuf("node-b"));
+}
+
+TEST(RaftWireCodecTest, ProtobufWriterRequiresExplicitSwitchAndEveryPeerCapability) {
+    const std::vector<RaftNodeId> peers{{"node-a", "", 0}, {"node-b", "", 0}, {"node-c", "", 0}};
+    RaftNode disabled(RaftConfig{
+        .node_id = "node-a",
+        .protobuf_writer_enabled = false,
+        .peers = peers,
+    });
+    EXPECT_EQ(disabled.active_writer_format(), RaftWireFormat::kLegacyJson);
+    disabled.handle_capability_request(
+        RaftCapabilityRequest{.node_id = "node-b", .supported_protocol_versions = {1U}});
+    disabled.handle_capability_request(
+        RaftCapabilityRequest{.node_id = "node-c", .supported_protocol_versions = {1U}});
+    EXPECT_EQ(disabled.active_writer_format(), RaftWireFormat::kLegacyJson);
+
+    RaftNode enabled(RaftConfig{
+        .node_id = "node-a",
+        .protobuf_writer_enabled = true,
+        .peers = peers,
+    });
+    EXPECT_EQ(enabled.active_writer_format(), RaftWireFormat::kLegacyJson);
+    enabled.handle_capability_request(
+        RaftCapabilityRequest{.node_id = "node-b", .supported_protocol_versions = {1U}});
+    EXPECT_EQ(enabled.active_writer_format(), RaftWireFormat::kLegacyJson);
+    enabled.handle_capability_request(
+        RaftCapabilityRequest{.node_id = "node-c", .supported_protocol_versions = {1U}});
+    EXPECT_EQ(enabled.active_writer_format(), RaftWireFormat::kProtobufV1);
+}
+
+TEST(RaftWireCodecTest, ProtobufWriterFallsBackWhenCapabilityRefreshLosesPeer) {
+    const std::vector<RaftNodeId> peers{{"node-a", "", 0}, {"node-b", "", 0}};
+    RaftNode node(RaftConfig{
+        .node_id = "node-a",
+        .protobuf_writer_enabled = true,
+        .peers = peers,
+    });
+    bool advertise = true;
+    node.set_rpc_sender([&](const RaftNodeId& target, const std::string&) {
+        if (!advertise)
+            return std::string{};
+        return serialize_raft_capability_reply(RaftCapabilityReply{
+            .node_id = target.id,
+            .selected_protocol_version = 1U,
+            .protobuf_supported = true,
+        });
+    });
+    node.refresh_peer_capabilities();
+    EXPECT_EQ(node.active_writer_format(), RaftWireFormat::kProtobufV1);
+    advertise = false;
+    node.refresh_peer_capabilities();
+    EXPECT_EQ(node.active_writer_format(), RaftWireFormat::kLegacyJson);
+}
+
+TEST(RaftWireCodecTest, EnabledClusterUsesProtobufForVoteAndAppendRpc) {
+    const std::vector<RaftNodeId> peers{{"node-a", "", 0}, {"node-b", "", 0}, {"node-c", "", 0}};
+    RaftNode node(RaftConfig{
+        .node_id = "node-a",
+        .election_timeout_min = std::chrono::milliseconds(20),
+        .election_timeout_max = std::chrono::milliseconds(30),
+        .heartbeat_interval = std::chrono::milliseconds(10),
+        .protobuf_writer_enabled = true,
+        .peers = peers,
+    });
+    std::atomic_bool saw_protobuf_vote{false};
+    std::atomic_bool saw_protobuf_append{false};
+    node.set_rpc_sender([&](const RaftNodeId& target, const std::string& payload) {
+        switch (detect_raft_rpc_kind(payload)) {
+            case RaftRpcKind::kCapabilityRequest:
+                return serialize_raft_capability_reply(RaftCapabilityReply{
+                    .node_id = target.id,
+                    .selected_protocol_version = 1U,
+                    .protobuf_supported = true,
+                });
+            case RaftRpcKind::kRequestVote: {
+                const auto format = detect_raft_wire_format(payload);
+                saw_protobuf_vote = format == RaftWireFormat::kProtobufV1;
+                const auto request = parse_request_vote(payload);
+                return serialize_request_vote_reply(
+                    RequestVoteReply{.term = request.term, .vote_granted = true}, format);
+            }
+            case RaftRpcKind::kAppendEntries: {
+                const auto format = detect_raft_wire_format(payload);
+                saw_protobuf_append = format == RaftWireFormat::kProtobufV1;
+                const auto request = parse_append_entries(payload);
+                return serialize_append_entries_reply(
+                    AppendEntriesReply{
+                        .term = request.term,
+                        .success = true,
+                        .match_index = request.prev_log_index + request.entries.size(),
+                    },
+                    format);
+            }
+            case RaftRpcKind::kRequestVoteReply:
+            case RaftRpcKind::kAppendEntriesReply:
+            case RaftRpcKind::kCapabilityReply:
+                return std::string{};
+        }
+        return std::string{};
+    });
+
+    node.refresh_peer_capabilities();
+    ASSERT_EQ(node.active_writer_format(), RaftWireFormat::kProtobufV1);
+    node.start();
+    for (int attempt = 0; attempt < 50 && !node.is_leader(); ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    ASSERT_TRUE(node.is_leader());
+    EXPECT_TRUE(saw_protobuf_vote.load());
+    EXPECT_TRUE(node.append_command("command-v1"));
+    EXPECT_TRUE(saw_protobuf_append.load());
+    node.stop();
 }
 
 } // namespace

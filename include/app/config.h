@@ -92,6 +92,7 @@ struct RaftServiceConfig {
     std::chrono::milliseconds election_timeout_min{150};
     std::chrono::milliseconds election_timeout_max{300};
     std::chrono::milliseconds heartbeat_interval{50};
+    bool protobuf_writer_enabled = false;
     std::vector<RaftPeerConfig> peers;
 };
 

@@ -2,9 +2,11 @@
 
 ## Scope
 
-This runbook covers the v3.6 Phase B state: nodes can strictly read legacy JSON and
-protobuf v1 RPC payloads, but RequestVote and AppendEntries writers remain fixed to
-legacy JSON. It does not authorize the Phase C protobuf writer.
+This runbook covers the v3.6 Phase A/B/C implementation candidate. Nodes strictly
+read legacy JSON and protobuf v1 RPC/command payloads. RequestVote, AppendEntries
+and state-machine writers remain legacy by default; Phase C requires the explicit
+`raft.protobuf_writer_enabled` setting and verified capability from every voting
+peer. Repository support for that switch does not authorize production activation.
 
 The repository contains both an in-process protocol-profile E2E and a thirteen-stage
 three-process gate using distinct old/new backend binaries. The process gate performs
@@ -84,6 +86,20 @@ Each direction retains at most eight complete transition pairs: the fixed first 
 plus seven history pairs. The ninth distinct transition fails before replacing the
 main state. Archive and reset beyond that bound requires a separately governed
 operator procedure; do not delete history merely to bypass the limit.
+
+## Phase C writer activation
+
+Keep `raft.protobuf_writer_enabled=false` during the rolling upgrade and rollback
+drill. After every voting peer is on the candidate and capability evidence is
+complete, set it to `true` on one node at a time. The runtime continues writing
+legacy payloads until all configured peers explicitly advertise protocol v1.
+
+Observe protobuf RequestVote, AppendEntries and command fixtures, perform a leader
+change, and append one matchmaking and one leaderboard command. If any peer loses
+capability or becomes unhealthy, the writer returns to legacy. Operational rollback
+sets the flag to `false` on every node before any binary downgrade. The environment
+override is `RAFT_PROTOBUF_WRITER_ENABLED`; it is false unless explicitly parsed as
+a true boolean.
 
 ## Evidence commands
 
