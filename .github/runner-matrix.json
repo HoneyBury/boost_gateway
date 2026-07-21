@@ -107,6 +107,13 @@
       "labels": { "os": "linux", "arch": "x64", "mode": "package-candidate" },
       "capabilities": { "dotnet": true, "syft": true, "glibc_2_35": true },
       "vars_hint": "SDK_DISTRIBUTION_RUNNER"
+    },
+    "debug-symbols": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "release-candidate" },
+      "capabilities": { "binutils": true, "syft": true },
+      "vars_hint": "DEBUG_SYMBOLS_RUNNER"
     }
   },
   "deprecated_platforms": {

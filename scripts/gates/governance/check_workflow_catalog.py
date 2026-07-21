@@ -16,6 +16,7 @@ WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
 EXPECTED_NAMES = {
     "ci": "Mainline / Build, Test & Governance",
     "conan-validate": "Dependencies / Conan Graph Validation",
+    "debug-symbols": "Release / Linux Debug Symbols Candidate",
     "grpc-experimental": "Experimental / gRPC",
     "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
     "macos-arm64": "Platform / macOS ARM64 Candidate",
