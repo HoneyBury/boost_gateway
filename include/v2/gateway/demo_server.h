@@ -130,7 +130,7 @@ private:
     std::unordered_map<std::uint32_t, DemoServerIoCoreSnapshot> io_core_snapshots_by_id_;
     mutable std::mutex scheduler_mutex_;
     SessionWriteScheduler write_scheduler_;
-    SessionId next_session_id_ = 1;
+    std::atomic<SessionId> next_session_id_{1};
 
     // Config hot-reload
     std::unique_ptr<v2::config::ConfigWatcher> config_watcher_;

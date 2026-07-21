@@ -277,8 +277,6 @@ void DemoServer::stop() {
         }
         for (auto& [session_id, session] : sessions_) {
             (void)session_id;
-            session->set_packet_handler({});
-            session->set_close_handler({});
             sessions_to_close.push_back(session);
         }
         sessions_.clear();
@@ -687,7 +685,7 @@ void DemoServer::do_accept() {
 
         // Check connection limit before accepting.
         if (options_.max_connections.has_value() &&
-            io_engine_->total_session_count() >= *options_.max_connections) {
+            io_engine_->total_session_count() > *options_.max_connections) {
             const auto core_id = session->owning_core_id();
             session->start();
             session->send(net::protocol::kErrorResponse,
@@ -702,15 +700,20 @@ void DemoServer::do_accept() {
             return;
         }
 
-        const auto session_id = next_session_id_++;
+        const auto session_id = next_session_id_.fetch_add(1, std::memory_order_relaxed);
         auto session_ref = std::shared_ptr<v2::io::IoSession>(std::move(session));
+        const std::weak_ptr<v2::io::IoSession> weak_session = session_ref;
         const auto session_core = session_ref->owning_core_id();
         session_ref->set_packet_handler(
-            [this, session_id, session_ref](v2::io::IoSession::PacketMessage message) {
+            [this, session_id, weak_session](v2::io::IoSession::PacketMessage message) {
                 if (stop_requested_.load(std::memory_order_acquire)) {
                     return;
                 }
                 if (message.message_id == net::protocol::kHeartbeatRequest) {
+                    const auto session_ref = weak_session.lock();
+                    if (!session_ref) {
+                        return;
+                    }
                     session_ref->send(net::protocol::kHeartbeatResponse,
                                       message.request_id,
                                       static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -720,6 +723,10 @@ void DemoServer::do_accept() {
                     return;
                 }
                 if (message.message_id == net::protocol::kEchoRequest) {
+                    const auto session_ref = weak_session.lock();
+                    if (!session_ref) {
+                        return;
+                    }
                     session_ref->send(net::protocol::kEchoResponse,
                                       message.request_id,
                                       static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -730,6 +737,53 @@ void DemoServer::do_accept() {
                 }
                 enqueue_packet(session_id, std::move(message));
             });
+        bool registered = false;
+        std::string registration_error;
+        {
+            std::scoped_lock lock(sessions_mutex_);
+            if (stop_requested_.load(std::memory_order_acquire)) {
+                registration_error = "server stopping";
+            } else {
+                try {
+                    auto [session_it, session_inserted] =
+                        sessions_.emplace(session_id, session_ref);
+                    if (!session_inserted) {
+                        registration_error = "duplicate session id";
+                    } else {
+                        try {
+                            const auto [core_it, core_inserted] =
+                                session_core_by_id_.emplace(session_id, session_core);
+                            (void)core_it;
+                            if (core_inserted) {
+                                registered = true;
+                            } else {
+                                sessions_.erase(session_it);
+                                registration_error = "duplicate session core mapping";
+                            }
+                        } catch (...) {
+                            sessions_.erase(session_it);
+                            throw;
+                        }
+                    }
+                } catch (const std::exception& ex) {
+                    registration_error = ex.what();
+                } catch (...) {
+                    registration_error = "unknown registration exception";
+                }
+            }
+        }
+        if (!registered) {
+            LOG_ERROR("v2 demo server rejected session registration: session_id={} core_id={} reason={}",
+                      session_id,
+                      session_core,
+                      registration_error);
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        }
+
         session_ref->set_close_handler([this, session_id]() {
             if (stop_requested_.load(std::memory_order_acquire)) {
                 return;
@@ -753,16 +807,6 @@ void DemoServer::do_accept() {
                 }
             }
         });
-
-        {
-            std::scoped_lock lock(sessions_mutex_);
-            sessions_.emplace(session_id, session_ref);
-            session_core_by_id_.emplace(session_id, session_core);
-        }
-        {
-            std::scoped_lock lock(sessions_mutex_);
-            sessions_.at(session_id)->start();
-        }
         {
             std::scoped_lock lock(io_core_snapshot_mutex_);
             auto& snapshot = io_core_snapshots_by_id_[session_core];
@@ -771,6 +815,58 @@ void DemoServer::do_accept() {
             ++snapshot.accepted_sessions;
         }
 
+        try {
+            session_ref->start();
+        } catch (const std::exception& ex) {
+            {
+                std::scoped_lock lock(sessions_mutex_);
+                sessions_.erase(session_id);
+                session_core_by_id_.erase(session_id);
+            }
+            {
+                std::scoped_lock lock(io_core_snapshot_mutex_);
+                auto& snapshot = io_core_snapshots_by_id_[session_core];
+                if (snapshot.active_sessions > 0) {
+                    --snapshot.active_sessions;
+                }
+                if (snapshot.accepted_sessions > 0) {
+                    --snapshot.accepted_sessions;
+                }
+            }
+            LOG_ERROR("v2 demo server failed to start session: session_id={} core_id={} reason={}",
+                      session_id,
+                      session_core,
+                      ex.what());
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        } catch (...) {
+            {
+                std::scoped_lock lock(sessions_mutex_);
+                sessions_.erase(session_id);
+                session_core_by_id_.erase(session_id);
+            }
+            {
+                std::scoped_lock lock(io_core_snapshot_mutex_);
+                auto& snapshot = io_core_snapshots_by_id_[session_core];
+                if (snapshot.active_sessions > 0) {
+                    --snapshot.active_sessions;
+                }
+                if (snapshot.accepted_sessions > 0) {
+                    --snapshot.accepted_sessions;
+                }
+            }
+            LOG_ERROR("v2 demo server failed to start session: session_id={} core_id={} reason=unknown exception",
+                      session_id,
+                      session_core);
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        }
         do_accept();
     });
 }
