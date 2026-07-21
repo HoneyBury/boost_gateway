@@ -1,8 +1,10 @@
+import copy
 import unittest
 
 from scripts.producers.collect_v2_perf_baseline import (
     aggregate_case_runs,
     analyze_resources,
+    battle_p99_limit_ms,
     build_case_resource_evidence,
     build_case_manifest,
     build_run_cases,
@@ -26,6 +28,8 @@ def pressure_run(clients: int, *, scenario: str = "echo") -> dict:
         "failed_clients": 0,
         "rejected_clients": 0,
         "total_messages": 7000 if natural else 1000,
+        "response_messages": 7000 if natural else 1000,
+        "push_messages": 0,
         "throughput_msg_per_sec": 1000.0,
         "latency_p50_ms": 1.0,
         "latency_p90_ms": 2.0,
@@ -80,13 +84,62 @@ class PerfLoadEvidenceTest(unittest.TestCase):
                 mutate(run)
                 self.assertFalse(self.evaluate("echo-100-30s", run)["passed"])
 
+    def test_echo_count_consistency_allows_inflight_sends_but_rejects_mismatch(self) -> None:
+        valid = pressure_run(100)
+        valid["business_send_successes"] = valid["response_messages"] + 100
+        valid["business_send_attempts"] = valid["business_send_successes"] + 10
+        self.assertTrue(self.evaluate("echo-100-30s", valid)["passed"])
+
+        inconsistent = dict(valid)
+        inconsistent["total_messages"] += 1
+        check = self.evaluate("echo-100-30s", inconsistent)
+        self.assertFalse(check["passed"])
+        self.assertFalse(check["observed"]["message_count_consistent"])
+
+    def test_within_ten_percent_warning_excludes_values_above_gate(self) -> None:
+        echo_near = pressure_run(100)
+        echo_near["latency_p99_ms"] = 45.0
+        echo_near_gates = evaluate_release_gates([
+            aggregate_case_runs("echo-100-30s", [echo_near])
+        ])
+        self.assertEqual(len(echo_near_gates["warnings"]), 1)
+
+        echo_over = dict(echo_near)
+        echo_over["latency_p99_ms"] = 75.0
+        echo_over_gates = evaluate_release_gates([
+            aggregate_case_runs("echo-100-30s", [echo_over])
+        ])
+        self.assertEqual(echo_over_gates["warnings"], [])
+
+        battle_limit = battle_p99_limit_ms("battle-100-30s")
+        battle_near = pressure_run(100, scenario="battle")
+        battle_near["latency_p99_ms"] = battle_limit * 0.9
+        battle_near_gates = evaluate_release_gates([
+            aggregate_case_runs("battle-100-30s", [battle_near])
+        ])
+        self.assertEqual(len(battle_near_gates["warnings"]), 1)
+
+        battle_over = dict(battle_near)
+        battle_over["latency_p99_ms"] = battle_limit + 1.0
+        battle_over_gates = evaluate_release_gates([
+            aggregate_case_runs("battle-100-30s", [battle_over])
+        ])
+        self.assertEqual(battle_over_gates["warnings"], [])
+
     def test_battle_natural_completion_is_explicitly_valid(self) -> None:
         run = pressure_run(100, scenario="battle")
+        run["response_messages"] = 2000
+        run["push_messages"] = 5000
         check = self.evaluate("battle-100-30s", run)
         self.assertTrue(check["passed"])
         self.assertEqual(check["observed"]["termination_reasons"], ["natural_completion"])
+        self.assertTrue(check["observed"]["message_count_consistent"])
 
         run["steady_state_completed"] = False
+        self.assertFalse(self.evaluate("battle-100-30s", run)["passed"])
+
+        run["steady_state_completed"] = True
+        run["push_messages"] -= 1
         self.assertFalse(self.evaluate("battle-100-30s", run)["passed"])
 
     def test_capacity_preset_uses_bounded_high_rate_ramp(self) -> None:
@@ -196,6 +249,16 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         self.assertEqual(analysis["conclusion"], "knee_found")
         self.assertEqual(analysis["cpu_saturation_case"], aggregates[1]["case_identity"])
         self.assertEqual(analysis["throughput_knee_case"], aggregates[2]["case_identity"])
+
+        inconsistent_summary = copy.deepcopy(summary)
+        inconsistent_summary["case_aggregates"][0]["message_count_consistent"] = False
+        inconsistent = build_saturation_analysis(inconsistent_summary)
+        self.assertFalse(inconsistent["collection_pass"])
+        self.assertFalse(inconsistent["points"][0]["evidence_valid"])
+        self.assertIn(
+            "inconsistent total/response/push message counts",
+            inconsistent["inconclusive_reason"],
+        )
 
         comparison_summary = {
             **summary,

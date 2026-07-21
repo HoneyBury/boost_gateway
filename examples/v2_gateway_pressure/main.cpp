@@ -8,6 +8,7 @@
 #include "net/protocol.h"
 #include "v2/benchmark/latency_histogram.h"
 #include "v2/benchmark/throughput_tracker.h"
+#include "final_message_counts.h"
 #include "v2/gateway/battle_wire_parser.h"
 
 #include <boost/asio.hpp>
@@ -472,6 +473,9 @@ private:
     }
 
     void dispatch(const net::packet::DecodedPacket& pkt) {
+        if (finished_.load(std::memory_order_relaxed)) {
+            return;
+        }
         touch_progress();
         if (pkt.message_id == net::protocol::kErrorResponse) {
             LOG_WARN("pressure client {} received error: code={} body={}",
@@ -1427,9 +1431,6 @@ int main(int argc, char* argv[]) {
     result.connected_clients = evidence.tcp_connected_clients;
     result.failed_clients = controller->failed_clients();
     result.rejected_clients = controller->rejected_clients();
-    result.total_messages = throughput.total_count();
-    result.response_messages = controller->completed_packets();
-    result.push_messages = controller->push_packets();
     result.elapsed_seconds = evidence.steady_state_elapsed_seconds;
     result.total_elapsed_seconds = static_cast<double>(elapsed.count()) / 1'000'000.0;
     result.ramp_up_seconds = evidence.ramp_up_seconds;
@@ -1446,9 +1447,6 @@ int main(int argc, char* argv[]) {
             ? (controller->global_completion() ? "natural_completion" : "clients_completed")
             : termination_reason;
     }
-    result.throughput_msg_per_sec = result.steady_state_elapsed_seconds > 0.0
-        ? static_cast<double>(result.total_messages) / result.steady_state_elapsed_seconds
-        : 0.0;
     result.configured_request_rate_is_bounded = config.send_interval.count() > 0;
     result.configured_request_rate_ceiling_ops_per_sec =
         result.configured_request_rate_is_bounded
@@ -1459,11 +1457,6 @@ int main(int argc, char* argv[]) {
         ? static_cast<double>(result.business_send_successes) /
               result.steady_state_elapsed_seconds
         : 0.0;
-    result.achieved_response_rate_ops_per_sec = result.steady_state_elapsed_seconds > 0.0
-        ? static_cast<double>(result.response_messages) /
-              result.steady_state_elapsed_seconds
-        : 0.0;
-
     // Merge per-client histograms
     v2::benchmark::LatencyHistogram merged;
     for (const auto& c : clients) {
@@ -1491,6 +1484,18 @@ int main(int argc, char* argv[]) {
     result.latency_min_ms = lat_snap.min_ms;
     result.latency_max_ms = lat_snap.max_ms;
     result.latency_bucket_counts = lat_snap.bucket_counts;
+    const auto message_counts = v2::gateway_pressure::final_message_counts(
+        lat_snap.total_count, controller->push_packets());
+    result.response_messages = message_counts.response_messages;
+    result.push_messages = message_counts.push_messages;
+    result.total_messages = message_counts.total_messages;
+    result.throughput_msg_per_sec = result.steady_state_elapsed_seconds > 0.0
+        ? static_cast<double>(result.total_messages) / result.steady_state_elapsed_seconds
+        : 0.0;
+    result.achieved_response_rate_ops_per_sec = result.steady_state_elapsed_seconds > 0.0
+        ? static_cast<double>(result.response_messages) /
+              result.steady_state_elapsed_seconds
+        : 0.0;
 
     const auto result_json = to_json(result).dump();
 

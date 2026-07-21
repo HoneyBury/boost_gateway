@@ -1,4 +1,5 @@
 #include "../../../examples/v2_gateway_pressure/load_evidence.h"
+#include "../../../examples/v2_gateway_pressure/final_message_counts.h"
 
 #include <gtest/gtest.h>
 
@@ -44,6 +45,19 @@ TEST(GatewayPressureEvidenceTest, CancellationDoesNotMasqueradeAsConnection) {
     EXPECT_EQ(snapshot.cancelled_clients, 1U);
     EXPECT_EQ(snapshot.cancelled_before_connect, 1U);
     EXPECT_FALSE(snapshot.measurement_started);
+}
+
+TEST(GatewayPressureEvidenceTest, FinalMessageCountsUseOnePostIoSnapshot) {
+    const auto echo = v2::gateway_pressure::final_message_counts(1234, 0);
+    EXPECT_EQ(echo.response_messages, 1234U);
+    EXPECT_EQ(echo.push_messages, 0U);
+    EXPECT_EQ(echo.total_messages, echo.response_messages);
+
+    const auto battle = v2::gateway_pressure::final_message_counts(100, 250);
+    EXPECT_EQ(battle.response_messages, 100U);
+    EXPECT_EQ(battle.push_messages, 250U);
+    EXPECT_EQ(battle.total_messages,
+              battle.response_messages + battle.push_messages);
 }
 
 }  // namespace

@@ -1715,6 +1715,8 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     p90 = numeric_series("latency_p90_ms")
     p99 = numeric_series("latency_p99_ms")
     totals = [int(run.get("total_messages", 0)) for run in runs]
+    responses = [int(run.get("response_messages", 0)) for run in runs]
+    pushes = [int(run.get("push_messages", 0)) for run in runs]
     connected = [int(run.get("connected_clients", 0)) for run in runs]
     target = [int(run.get("target_clients", 0)) for run in runs]
     started = [int(run.get("started_clients", 0)) for run in runs]
@@ -1737,6 +1739,18 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     failed = [int(run.get("failed_clients", 0)) for run in runs]
     forced_timeouts = [bool(run.get("forced_timeout") or run.get("collector_forced_timeout")) for run in runs]
     bench_exit_codes = [int(run.get("bench_exit_code", 0)) for run in runs]
+    if case_name.startswith("echo"):
+        message_count_consistent = all(
+            int(run.get("total_messages", 0))
+            == int(run.get("response_messages", 0))
+            for run in runs
+        )
+    else:
+        message_count_consistent = all(
+            int(run.get("total_messages", 0))
+            == int(run.get("response_messages", 0)) + int(run.get("push_messages", 0))
+            for run in runs
+        )
 
     def integer_distribution(values: list[int]) -> dict[str, int]:
         return {
@@ -1780,6 +1794,9 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "median": int(statistics.median(totals)),
             "max": max(totals),
         },
+        "response_messages": integer_distribution(responses),
+        "push_messages": integer_distribution(pushes),
+        "message_count_consistent": message_count_consistent,
         "target_clients": integer_distribution(target),
         "started_clients": integer_distribution(started),
         "tcp_connected_clients": integer_distribution(tcp_connected),
@@ -2358,6 +2375,7 @@ def build_saturation_analysis(
             + int(aggregate.get("rejected_clients", {}).get("max", 0))
             + int(aggregate.get("cancelled_clients", {}).get("max", 0))
         )
+        message_count_consistent = aggregate.get("message_count_consistent") is True
         load_models = aggregate.get("load_models", [])
         boundary_evidence = load_end_boundaries.get(case_name, [])
         load_end_boundary_valid = (
@@ -2380,6 +2398,7 @@ def build_saturation_analysis(
             and int(aggregate.get("authenticated_clients", {}).get("min", 0)) == target
             and int(aggregate.get("peak_active_clients", {}).get("min", 0)) == target
             and int(aggregate.get("cancelled_clients", {}).get("max", 1)) == 0
+            and message_count_consistent
             and load_models == ["closed_loop_one_in_flight_per_client"]
             and isinstance(gateway_cpu, (int, float))
             and not isinstance(gateway_cpu, bool)
@@ -2421,6 +2440,7 @@ def build_saturation_analysis(
             "latency_p99_ms": p99,
             "client_error_count": errors,
             "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
+            "message_count_consistent": message_count_consistent,
             "gateway_cpu_percent": round(gateway_cpu_percent, 3),
             "gateway_cpu_quota_percent": round(quota_utilization, 3),
             "loadgen_cpu_percent": round(float(loadgen_cpu), 3)
@@ -2440,6 +2460,10 @@ def build_saturation_analysis(
     ceilings = [float(point["configured_request_rate_ceiling_ops_per_sec"]) for point in points]
     if any(current <= previous for previous, current in zip(ceilings, ceilings[1:], strict=False)):
         failures.append("configured request-rate ceilings are not strictly increasing")
+    if any(point.get("message_count_consistent") is not True for point in points):
+        failures.append(
+            "one or more saturation points have inconsistent total/response/push message counts"
+        )
     if any(point.get("evidence_valid") is not True for point in points):
         failures.append("one or more saturation points have incomplete lifecycle or resource evidence")
 
@@ -2808,6 +2832,9 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
         forced_timeout = bool(aggregate.get("forced_timeout"))
         bench_exit_code = int(aggregate.get("bench_exit_code", 1))
         total_messages = aggregate["total_messages"]["median"]
+        response_messages = aggregate.get("response_messages", {}).get("median", 0)
+        push_messages = aggregate.get("push_messages", {}).get("median", 0)
+        message_count_consistent = aggregate.get("message_count_consistent") is True
         target_min = int(aggregate.get("target_clients", {}).get("min", 0))
         target_max = int(aggregate.get("target_clients", {}).get("max", 0))
         started_min = int(aggregate.get("started_clients", {}).get("min", 0))
@@ -2875,8 +2902,9 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             passed = (
                 lifecycle_valid and steady_window_valid and rejected == 0 and failed == 0
                 and not forced_timeout and total_messages > 0 and p99 <= 50.0
+                and message_count_consistent and total_messages == response_messages
             )
-            if p99 >= 45.0:
+            if 45.0 <= p99 <= 50.0:
                 gates["warnings"].append({
                     "case": case_name,
                     "warning": "echo p99 is within 10% of the 50ms gate",
@@ -2887,7 +2915,8 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                 "passed": passed,
                 "criteria": (
                     "echo: all target clients started/TCP-connected/authenticated/active before "
-                    "measurement, cancelled=0, steady duration complete, rejected=0, failed=0, p99<=50ms"
+                    "measurement, cancelled=0, steady duration complete, total=response, "
+                    "rejected=0, failed=0, p99<=50ms"
                 ),
                 "observed": {
                     **evidence_observed,
@@ -2897,6 +2926,9 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "failed_clients": failed,
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
+                    "response_messages": response_messages,
+                    "push_messages": push_messages,
+                    "message_count_consistent": message_count_consistent,
                 },
             })
         elif case_name.startswith("battle"):
@@ -2906,9 +2938,10 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             passed = (
                 lifecycle_valid and steady_window_valid and
                 rejected == 0 and failed == 0 and not forced_timeout and
-                min_observed_messages >= min_messages and p99 <= p99_limit
+                min_observed_messages >= min_messages and p99 <= p99_limit and
+                message_count_consistent
             )
-            if p99 >= p99_limit * 0.9:
+            if p99_limit * 0.9 <= p99 <= p99_limit:
                 gates["warnings"].append({
                     "case": case_name,
                     "warning": f"battle p99 is within 10% of the {p99_limit:.0f}ms gate",
@@ -2920,7 +2953,8 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                 "criteria": (
                     "battle: all target clients started/TCP-connected/authenticated/active before "
                     "measurement, cancelled=0, bounded steady window complete, "
-                    f"rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, "
+                    f"total=response+push, rejected=0, failed=0, forced_timeout=false, "
+                    f"min_total_messages>={min_messages}, "
                     f"p99<={p99_limit:.0f}ms"
                 ),
                 "observed": {
@@ -2932,6 +2966,9 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "failed_clients": failed,
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
+                    "response_messages": response_messages,
+                    "push_messages": push_messages,
+                    "message_count_consistent": message_count_consistent,
                     "min_total_messages": min_observed_messages,
                     "required_min_total_messages": min_messages,
                 },
