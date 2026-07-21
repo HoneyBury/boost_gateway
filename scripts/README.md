@@ -41,6 +41,7 @@ Use these stable public entrypoints first:
 - `run_long_soak_capacity.py` for fixed-runner N1 long-soak/capacity evidence.
 - `verify_sdk_enterprise_delivery.py` for N5 SDK delivery.
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
+- `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
 
 R5 offline-cache execution order:
 

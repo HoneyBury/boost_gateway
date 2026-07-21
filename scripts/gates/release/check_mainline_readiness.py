@@ -98,6 +98,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
 
     for script in (
         "scripts/check_script_inventory.py",
+        "scripts/manage_todos.py",
         "scripts/check_validation_summary_contract.py",
         "scripts/check_evidence_provenance_contract.py",
         "scripts/check_r5_docker_image_policy_contract.py",
@@ -147,9 +148,10 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         checks,
         "p2:next-minor-not-delivered-boundary",
         "已接受" in current
-        and "尚未完成实现或发布" in current
-        and "不代表五项实现或发布资产已经交付" in execution_plan,
-        "maintained docs distinguish accepted decisions from delivered capabilities",
+        and "P0-P6 的仓库内实现现已完成" in current
+        and "默认生产链路和 manifest 阻断状态不变" in current
+        and "不代表默认激活或发布资产已经交付" in execution_plan,
+        "maintained docs distinguish repository implementation from activation and published assets",
     )
 
 
@@ -165,6 +167,7 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         "scripts/check_production_evidence_manifest.py",
         "scripts/run_long_soak_capacity.py",
         "scripts/verify_sdk_enterprise_delivery.py",
+        "scripts/manage_todos.py",
     ):
         add(checks, f"p3:public-entrypoint:{entrypoint}", entrypoint in public, f"{entrypoint} is public")
 
@@ -200,6 +203,14 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         "fixed-runner workflows upload the required long-soak/capacity/production evidence summaries",
     )
     ci_workflow = read(".github/workflows/ci.yml")
+    add(
+        checks,
+        "p3:todo-module-governed",
+        exists("docs/todos/tasks.json")
+        and exists("docs/todos/BOARD.md")
+        and "scripts/manage_todos.py check" in ci_workflow,
+        "versioned TODO source, generated board, and CI drift gate are present",
+    )
     add(
         checks,
         "p3:ci-runs-workflow-python-cli-contract-gate",

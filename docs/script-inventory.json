@@ -19,7 +19,8 @@
     "scripts/verify_preprod_recovery_drill.py",
     "scripts/verify_prometheus_alert_states.py",
     "scripts/verify_tls_preprod_multi_run.py",
-    "scripts/verify_macos_arm64_package.py"
+    "scripts/verify_macos_arm64_package.py",
+    "scripts/manage_todos.py"
   ],
   "scripts": {
     "scripts/README.md": {"category": "tool"},
@@ -47,6 +48,8 @@
     "scripts/tools/resolve_runner_cache.py": {"category": "tool"},
     "scripts/render_validation_summary.py": {"category": "tool", "canonical": "scripts/tools/render_validation_summary.py"},
     "scripts/run_tests.py": {"category": "tool"},
+    "scripts/manage_todos.py": {"category": "public_entrypoint", "canonical": "scripts/tools/manage_todos.py"},
+    "scripts/tools/manage_todos.py": {"category": "tool"},
 
     "scripts/build_docker.sh": {"category": "tool", "canonical": "scripts/tools/build_docker.sh"},
     "scripts/deploy_k8s.sh": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.sh"},

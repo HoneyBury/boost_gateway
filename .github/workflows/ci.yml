@@ -152,6 +152,10 @@ jobs:
         shell: bash
         run: python3 scripts/check_next_minor_decisions.py
 
+      - name: Project TODO board gate
+        shell: bash
+        run: python3 scripts/manage_todos.py check
+
       - name: Evidence provenance contract gate
         shell: bash
         run: python3 scripts/check_evidence_provenance_contract.py

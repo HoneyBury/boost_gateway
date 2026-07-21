@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "repository": "HoneyBury/boost_gateway",
+  "next_id": 2,
+  "tasks": [
+    {
+      "id": "TODO-0001",
+      "title": "Provision v3.6 activation and evidence environments",
+      "status": "open",
+      "priority": "P0",
+      "category": "release-environment",
+      "description": "Provision the external runner, package, authentication, and JWKS environments required to turn the completed v3.6 repository implementation into same-revision fixed-runner and immutable release evidence.",
+      "acceptance_criteria": [
+        "Ubuntu 22.04 x86_64 fixed runner is online with self-hosted/Linux/X64 labels, glibc 2.35, GCC 13, CMake, Ninja, sccache, Docker, Python 3.12, .NET 8, Syft, auditwheel, and GNU binutils.",
+        "The runner user can write /opt/boost-gateway/{conan,sccache,tools}; the Conan 2.8.1 Python 3.12 environment and the default v3.6 lockfile graph pass strict offline install.",
+        "The v3.5.3 legacy leaderboard binary is installed on the Linux runner and LEGACY_RAFT_BINARY, LEGACY_RAFT_REVISION, and platform SHA-256 are configured.",
+        "GitHub DNS plus HTTPS/SSH connectivity is available, and GitHub CLI authentication can push the branch, dispatch workflows, read artifacts, and manage repository Issues without timeout.",
+        "A native macOS ARM64 self-hosted runner is registered with Syft and the approved Conan acquisition path.",
+        "A runner-reachable HTTPS JWKS endpoint has trusted TLS, two rotatable RSA/RS256 kids, stable issuer/audience, and a controllable outage mode.",
+        "release.yml, sdk-distribution.yml, debug-symbols.yml, macos-arm64.yml, and the JWKS rotation drill pass on one exact candidate SHA and their artifact/run identifiers are recorded."
+      ],
+      "created_at": "2026-07-22T00:00:00Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": null,
+        "issue_url": null
+      }
+    }
+  ]
+}
