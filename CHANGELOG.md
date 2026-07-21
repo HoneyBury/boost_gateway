@@ -8,7 +8,10 @@
 - Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。
 - 线上资产复验将独立发布的 SPDX SBOM 与已验证 attestation 中的 SPDX 2.3 predicate 做结构等值校验，不再只验证 archive subject digest。
 - 长稳与生产 resilience 编排器捕获 SIGINT/SIGTERM，Linux runner 通过 parent-death signal 与 workflow PID bridge 转发 step 取消，分层回收子进程组并原子写出中断步骤、完成步骤和部分失败证据；取消片段不能误计为通过，临时 Redis 也由独立 `always()` 步骤清理。
-- AOI fixed runner 在同一候选 `375910f3` 上完成隔离后的 1/2/4 CPU 三轮矩阵；72 项来源与资源契约检查、三档 capacity/business-capacity/R4 门禁全部通过。
+- 候选 `375910f3` 的旧 1/2/4 CPU 产物因 pressure client lifecycle 不完整而降级为诊断事实；新的聚合器会拒绝缺少 manifest、真实 TCP/auth/active lifecycle 或单变量身份的来源。
+- Runtime 候选 `37897e8` 通过主线 CI run `29822268701`；AOI run `29822268782` 完成 6 点、每点三轮的 closed-loop 饱和曲线，18/18 轮有效并选出 `echo-sat-c2000-i10-60s` 比较点。该点使用 2,000 个客户端，200K 表示配置请求率上限，不是客户端数。
+- 同一候选的 service CPU 1/2/4 runs `29823733478` / `29823736393` / `29823739153` 聚合为 `partial_cpu_scaling`；`io_cores=1/2/4` runs `29823742465` / `29823745289` / `29823733478` 聚合为 `no_material_io_core_gain`。两条轴证据均完整通过，但不自动修改 runtime 或部署默认值。
+- OTel run `29823748288` 完成 fresh Gateway/Battle Backend 的 off/on 各三轮对照和 routed/exporter/collector 计数对账；吞吐变化 `+0.103%`、P99 与 Gateway CPU 无变化、RSS `+46.695%`，相对变化保持 `observed_not_thresholded`。
 
 ## v3.5.3 — 高风险部署证据闭环（2026-07-20）
 
