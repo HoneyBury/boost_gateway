@@ -114,11 +114,18 @@ std::optional<ParsedBattleInputCommandBody> parse_battle_input_command_body(std:
         return parsed;
     }
 
-    if (body.starts_with("score=")) {
+    if (body.starts_with("score=") || body.starts_with("frame=")) {
         const auto colon_pos = body.find(':');
         if (colon_pos != std::string_view::npos) {
-            const auto score_str = body.substr(6, colon_pos - 6);
-            parsed.score = std::strtoll(std::string(score_str).c_str(), nullptr, 10);
+            const auto metadata = body.substr(0, colon_pos);
+            for (const auto field : split(metadata, ',')) {
+                if (field.starts_with("score=")) {
+                    parsed.score = std::strtoll(field.substr(6).c_str(), nullptr, 10);
+                } else if (field.starts_with("frame=")) {
+                    parsed.submitted_frame = static_cast<std::uint32_t>(
+                        std::strtoul(field.substr(6).c_str(), nullptr, 10));
+                }
+            }
             parsed.input_data = std::string(body.substr(colon_pos + 1));
         } else {
             parsed.input_data = std::string(body);

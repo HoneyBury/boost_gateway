@@ -37,9 +37,9 @@
 - 发布后分支已新增确定性 SBOM enrich/verify：覆盖发行包全部普通文件 SHA-256，并从 Conan lockfile 补入 9 个运行时依赖及 PURL/recipe revision/`DEPENDS_ON`；release 与 published asset verification 在 attestation 前后分别执行同一语义门禁。该修复只影响后续发布，不重写 `v3.5.3` 资产。
 - 已发布 CPU 矩阵的延迟、吞吐和失败数是有效的整栈端到端事实，但 collector 在启动子进程前约束自身 affinity，使服务端与 load generator 共用 CPU set；它不能作为 Gateway 独占 1/2/4 vCPU 的扩展结论。
 - 旧资源分析使用实验初始 CPU 时间反复计算每轮差值，出现单核进程超过 100% 的不可解释结果；下一矩阵必须使用相邻快照。
-- 纠偏提交 `29fc4cff` 的 AOI focused run `29742852766` 已验证 service CPU `0` 与 loadgen CPU `4-7` 的进程级隔离。echo-5K 三轮 P99 均为 2ms、吞吐中位数 58010.88 msg/s；echo-10K P99 为 5/10/20ms、吞吐中位数 59251.73 msg/s；0 rejected/failed，六轮资源隔离 gate 全部通过。Gateway CPU 约 56-59%，整套服务总 CPU 约 56-62.5%，因此暂不调整 `io_cores` 默认值。
-- 候选 `375910f3` 的 AOI runs `29790072882`、`29791850363`、`29793036782` 已分别完成 service CPU `0`、`0-1`、`0-3` 的完整三轮矩阵，三档均固定 loadgen CPU `4-7`、loadgen I/O threads 4、Gateway `io_cores=4` 和相同 workload identity。聚合 summary 为 `evidence_complete=true`、`all_workload_gates_passed=true`，72 项检查全过；所有 case 均为 0 rejected/failed，三档 R4 均通过。
-- 当前 workload 下各 case 的 2/4 CPU 吞吐相对 1 CPU 仅为 `0.9975x-1.0085x`。echo-10K 的 P99 median 从 1 CPU 的 10ms 降至 2/4 CPU 的 1ms，但吞吐只从 59231.55 增至 59697.76/59736.21 msg/s；这证明当前负载已进入 offered-load/场景平台期，不能宣称 CPU 线性扩展。后续若继续性能优化，应先提高可控 offered load 并确认服务 CPU 饱和，再讨论默认线程数。
+- 纠偏提交 `29fc4cff` 的 AOI focused run `29742852766` 验证了 service CPU `0` 与 loadgen CPU `4-7` 的进程级隔离，且实际发出请求的延迟、吞吐和资源数据可用于诊断；但它仍使用旧客户端 lifecycle 口径，不能证明命名中的 5K/10K 客户端全部进入稳态，也不能据此调整 `io_cores`。
+- 候选 `375910f3` 的 AOI runs `29790072882`、`29791850363`、`29793036782` 确实记录了 service/loadgen 隔离 affinity 和资源差值，但旧 pressure client 没有证明所有目标客户端已真实启动、TCP 连接并认证后进入稳态；被计划结束的未启动客户端也会进入旧推导计数。因此旧聚合的 `evidence_complete=true` 已撤销，数据只能用于诊断实际发出流量相对平台期，不能证明 5K/10K 并发或 1/2/4 CPU 支持范围。
+- 当前分支已增加真实 lifecycle、失败即非零退出、完整稳态窗口和饱和曲线；1/2/4 CPU 与单核 `io_cores=1/2/4` 聚合还要求完整曲线选点、同 SHA fixed-runner provenance、三轮重复和单变量身份。AOI 新矩阵完成前不调整线程、backend pool 或部署规格。
 - 长任务取消取证已覆盖 `run_long_soak_capacity.py` 和 `verify_production_resilience_gate.py`：SIGINT/SIGTERM 分层 TERM/KILL 进程组、停止后续步骤、清除旧目标 summary，并在 `finally` 原子记录 `interrupted`、signal、当前步骤和完成步骤。发布后 SBOM 复验也新增 standalone JSON 与已验证 SPDX predicate 的 fail-closed 结构绑定。
 - AOI runner 取消探针 run `29795945950`（`c33c50a1`）验证了 GitHub step 取消桥接：Linux parent-death signal 触发外层收尾，workflow 在上传前等待记录的 orchestrator PID 退出。顶层、P5 resilience 和 stability summary 均为 `interrupted=true`、`overall_pass=false`、`SIGTERM`；stability 保留 38.766 秒、9 轮、3 个资源样本和 partial resource summary，job cleanup 未再终止 orphan process。前序 run `29795322300` 只形成 fail-closed 初始 summary，证明仅有 Python handler 不足，保留为桥接修复前的失败诊断。
 

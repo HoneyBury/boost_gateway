@@ -176,6 +176,31 @@ public:
         return input_result;
     }
 
+    InputResult process_input_immediate(const InputEnvelope& input) {
+        const auto inst = find_instance_shared(input.instance_id);
+        if (!inst) {
+            return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
+        }
+        std::lock_guard<std::mutex> lock(inst->mutex);
+        if (inst->state != InstanceState::kRunning &&
+            inst->state != InstanceState::kWaitingPlayers) {
+            return InputResult{.accepted = false, .reject_reason = "instance_not_active"};
+        }
+        try {
+            return inst->plugin->on_input(inst->ctx, input);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("plugin_on_input_exception",
+                      "instance_id=" + input.instance_id +
+                          " user_id=" + input.user_id +
+                          " what=" + std::string(e.what()));
+        } catch (...) {
+            AUDIT_LOG("plugin_on_input_unknown_exception",
+                      "instance_id=" + input.instance_id +
+                          " user_id=" + input.user_id);
+        }
+        return InputResult{.accepted = false, .reject_reason = "input_processing_failed"};
+    }
+
     void finish_instance(const std::string& instance_id,
                          FinishReason reason) {
         const auto inst = find_instance_shared(instance_id);
@@ -521,6 +546,10 @@ void InstanceRuntime::destroy_instance(const std::string& instance_id) {
 
 InputResult InstanceRuntime::submit_input(const InputEnvelope& input) {
     return impl_->submit_input(input);
+}
+
+InputResult InstanceRuntime::process_input_immediate(const InputEnvelope& input) {
+    return impl_->process_input_immediate(input);
 }
 
 void InstanceRuntime::finish_instance(const std::string& instance_id,

@@ -44,6 +44,11 @@ on:
         required: true
         default: true
         type: boolean
+      run_saturation:
+        description: "Run the isolated closed-loop saturation curve (independent of R4)"
+        required: true
+        default: false
+        type: boolean
       perf_repetitions:
         description: "Repetitions per capacity case"
         required: true
@@ -52,6 +57,18 @@ on:
         description: "Optional comma-separated capacity cases for focused diagnostics"
         required: false
         default: ""
+      saturation_cases:
+        description: "Optional comma-separated saturation manifest cases for fixed CPU/io_cores comparisons"
+        required: false
+        default: ""
+      saturation_cpu_threshold_percent:
+        description: "Gateway CPU quota percentage used to identify saturation"
+        required: true
+        default: "85"
+      saturation_loadgen_headroom_percent:
+        description: "Maximum load-generator CPU quota percentage allowed for Gateway attribution"
+        required: true
+        default: "85"
       business_flow_clients:
         description: "Sequential SDK full-flow passes for business-capacity evidence"
         required: true
@@ -232,6 +249,8 @@ jobs:
             --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
             --io-cores "${{ inputs.io_cores || '4' }}"
+            --saturation-cpu-threshold-percent "${{ inputs.saturation_cpu_threshold_percent || '85' }}"
+            --saturation-loadgen-headroom-percent "${{ inputs.saturation_loadgen_headroom_percent || '85' }}"
             --summary-path runtime/validation/long-soak-capacity-summary.json
           )
           if [ "${{ inputs.run_2h_soak }}" = "true" ]; then
@@ -246,6 +265,9 @@ jobs:
           if [ "${{ inputs.run_business_capacity }}" = "true" ]; then
             args+=(--run-business-capacity)
           fi
+          if [ "${{ inputs.run_saturation }}" = "true" ]; then
+            args+=(--run-saturation)
+          fi
           if [ -n "${{ inputs.cpu_set }}" ]; then
             args+=(--cpu-set "${{ inputs.cpu_set }}")
           fi
@@ -257,6 +279,12 @@ jobs:
             IFS=',' read -r -a capacity_cases <<< "${{ inputs.capacity_cases }}"
             for case_name in "${capacity_cases[@]}"; do
               args+=(--capacity-case "$case_name")
+            done
+          fi
+          if [ -n "${{ inputs.saturation_cases }}" ]; then
+            IFS=',' read -r -a saturation_cases <<< "${{ inputs.saturation_cases }}"
+            for case_name in "${saturation_cases[@]}"; do
+              args+=(--saturation-case "$case_name")
             done
           fi
           if [ "${{ inputs.run_business_operation_perf }}" = "true" ]; then
@@ -369,6 +397,7 @@ jobs:
             runtime/validation/p5-long-soak-summary.json \
             runtime/validation/capacity-baseline-summary.json \
             runtime/validation/business-capacity-baseline-summary.json \
+            runtime/validation/saturation-baseline-summary.json \
             runtime/validation/fixed-runner-release-capacity-summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
@@ -391,10 +420,12 @@ jobs:
             runtime/validation/p5-*-summary.json
             runtime/validation/capacity-baseline-summary.json
             runtime/validation/business-capacity-baseline-summary.json
+            runtime/validation/saturation-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
             runtime/validation/leaderboard-redis-image.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
+            runtime/perf/fixed-runner-saturation/**
             runtime/perf/v2-stability-soak/**
           retention-days: 90
           if-no-files-found: warn

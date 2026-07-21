@@ -64,6 +64,8 @@ struct InputEnvelope {
     std::string payload_type;   // e.g. "tank.input"
     std::string payload;        // opaque business payload
     std::int64_t client_time_ms = 0;
+    std::int64_t score = 0;
+    std::uint32_t submitted_frame = 0;
 };
 
 struct InputResult {

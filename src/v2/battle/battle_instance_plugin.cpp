@@ -144,15 +144,12 @@ v2::realtime::InputResult BattleInstancePlugin::on_input(
     const v2::realtime::InputEnvelope& input) {
     auto& state = get_state(instance_ctx);
 
-    // Process the input authoritatively.  Score and submitted_frame default
-    // to 0 since the InputEnvelope does not carry them; the service handler
-    // may apply scores separately via battle_world_apply_input_score().
     auto result = battle_world_process_input(
         *state.world,
         input.user_id,
         input.payload,
-        0,  // score (not passed via InputEnvelope)
-        0   // submitted_frame (not passed via InputEnvelope)
+        input.score,
+        input.submitted_frame
     );
 
     if (!result.accepted) {

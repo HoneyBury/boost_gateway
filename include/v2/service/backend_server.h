@@ -63,6 +63,7 @@ private:
     std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
     std::unique_ptr<boost::asio::ssl::context> ssl_context_;
     std::mutex session_mutex_;
+    std::mutex stop_mutex_;
     std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> session_sockets_;
     std::thread thread_;
     std::vector<std::thread> session_threads_;

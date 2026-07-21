@@ -688,6 +688,43 @@ class LongSoakEvidenceTest(unittest.TestCase):
             parse_args()
         self.assertEqual(raised.exception.code, 2)
 
+    def test_saturation_requires_isolation_and_preserves_case_identity(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["run_long_soak_capacity.py", "--run-saturation"],
+            ),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
+        with patch.object(
+            sys,
+            "argv",
+            [
+                "run_long_soak_capacity.py",
+                "--run-saturation",
+                "--cpu-set",
+                "0",
+                "--loadgen-cpu-set",
+                "4-7",
+                "--saturation-case",
+                "echo-sat-c1000-i20-60s",
+                "--saturation-cpu-threshold-percent",
+                "90",
+                "--saturation-loadgen-headroom-percent",
+                "80",
+            ],
+        ):
+            args = parse_args()
+        self.assertTrue(args.run_saturation)
+        self.assertEqual(args.saturation_case, ["echo-sat-c1000-i20-60s"])
+        self.assertEqual(args.saturation_cpu_threshold_percent, 90.0)
+        self.assertEqual(args.saturation_loadgen_headroom_percent, 80.0)
+
     def test_capacity_requires_explicit_loadgen_set_when_services_are_constrained(self):
         with (
             patch.object(

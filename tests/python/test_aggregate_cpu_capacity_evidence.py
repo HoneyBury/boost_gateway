@@ -28,8 +28,26 @@ def cpu_set(cpu_count: int) -> str:
 def perf_summary(cpu_count: int, preset: str, cases: list[str], gates_passed: bool) -> dict:
     aggregates = []
     for index, case in enumerate(cases, start=1):
+        identity = {
+            "case_id": case,
+            "case_name": case,
+            "scenario": "battle" if case.startswith("battle") else "echo",
+            "clients": int(case.split("-")[1]),
+            "interval_ms": 0,
+            "duration_seconds": 30,
+            "ramp_clients_per_second": 2000,
+            "ramp_timeout_seconds": 90,
+            "load_model": "closed_loop_one_in_flight_per_client",
+            "configured_request_rate_ceiling_ops_per_sec": None,
+            "service_cpu_set": cpu_set(cpu_count),
+            "service_cpu_count": cpu_count,
+            "io_cores": 4,
+            "comparison_identity": f"{case}|service_cpu_count={cpu_count}|io_cores=4",
+            "comparison_axes": ["service_cpu_count", "io_cores"],
+        }
         aggregates.append({
             "case_name": case,
+            "case_identity": identity,
             "runs": 3,
             "throughput_msg_per_sec": {
                 "min": 90.0 * cpu_count,
@@ -39,6 +57,18 @@ def perf_summary(cpu_count: int, preset: str, cases: list[str], gates_passed: bo
             "latency_p99_ms": {"min": 1.0, "median": 10.0 / cpu_count, "max": 12.0},
             "failed_clients": {"min": 0, "median": 0, "max": 0},
             "rejected_clients": {"min": 0, "median": 0, "max": 0},
+            "target_clients": {"min": 100, "median": 100, "max": 100},
+            "started_clients": {"min": 100, "median": 100, "max": 100},
+            "tcp_connected_clients": {"min": 100, "median": 100, "max": 100},
+            "authenticated_clients": {"min": 100, "median": 100, "max": 100},
+            "peak_active_clients": {"min": 100, "median": 100, "max": 100},
+            "cancelled_clients": {"min": 0, "median": 0, "max": 0},
+            "cancelled_before_connect": {"min": 0, "median": 0, "max": 0},
+            "ramp_completed": True,
+            "measurement_started": True,
+            "steady_state_completed": True,
+            "bench_exit_code": 0,
+            "forced_timeout": False,
         })
     service_constraint = {
         "type": "linux_cpu_affinity",
@@ -78,6 +108,8 @@ def perf_summary(cpu_count: int, preset: str, cases: list[str], gates_passed: bo
     ]
     summary = {
         "summary_version": 2,
+        "case_manifest_version": 1,
+        "case_manifest": [aggregate["case_identity"] for aggregate in aggregates],
         "git_commit": SHA,
         "preset": preset,
         "repetitions": 3,
@@ -287,6 +319,54 @@ class AggregateCpuCapacityEvidenceTest(unittest.TestCase):
 
                 self.assertFalse(summary["evidence_complete"])
                 self.assertTrue(summary["failed_step"])
+
+    def test_rejects_legacy_lifecycle_and_cross_matrix_manifest_drift(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            specs = [
+                write_source(root / "one", 1, "601"),
+                write_source(root / "two", 2, "602"),
+                write_source(root / "four", 4, "604"),
+            ]
+            legacy_path = root / "one/perf/fixed-runner-capacity/summary.json"
+            legacy = json.loads(legacy_path.read_text(encoding="utf-8"))
+            legacy.pop("case_manifest_version")
+            legacy.pop("case_manifest")
+            for aggregate in legacy["case_aggregates"]:
+                for key in (
+                    "case_identity", "target_clients", "started_clients",
+                    "tcp_connected_clients", "authenticated_clients", "peak_active_clients",
+                    "cancelled_clients", "cancelled_before_connect", "ramp_completed",
+                    "measurement_started", "steady_state_completed", "bench_exit_code",
+                ):
+                    aggregate.pop(key, None)
+            legacy_path.write_text(json.dumps(legacy), encoding="utf-8")
+
+            summary = aggregate_sources(specs)
+
+        self.assertFalse(summary["evidence_complete"])
+        failed = {check["name"] for check in summary["validation_checks"] if not check["passed"]}
+        self.assertIn("cpu-1:capacity:case-manifest", failed)
+        self.assertIn("cpu-1:capacity:real-client-lifecycle", failed)
+
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            specs = [
+                write_source(root / "one", 1, "701"),
+                write_source(root / "two", 2, "702"),
+                write_source(root / "four", 4, "704"),
+            ]
+            drift_path = root / "four/perf/fixed-runner-capacity/summary.json"
+            drift = json.loads(drift_path.read_text(encoding="utf-8"))
+            drift["case_manifest"][0]["clients"] += 1
+            drift["case_aggregates"][0]["case_identity"]["clients"] += 1
+            drift_path.write_text(json.dumps(drift), encoding="utf-8")
+
+            summary = aggregate_sources(specs)
+
+        self.assertFalse(summary["evidence_complete"])
+        failed = {check["name"] for check in summary["validation_checks"] if not check["passed"]}
+        self.assertIn("matrix:same-case-manifest", failed)
 
     def test_requires_exactly_one_source_for_each_cpu_count(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

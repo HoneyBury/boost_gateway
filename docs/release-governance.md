@@ -79,7 +79,7 @@
 - Redis 跨进程缓存一致性：已有 data recovery、specialized live/degraded 与 production evidence workflow 聚合入口，仍需固定 Redis 环境持续沉淀数据。
 - Raft 多节点 leader/follower E2E：已有内存 RPC 与 backend recovery 聚合入口，仍需跨进程/真实网络扰动。
 - Kubernetes Operator 真实集群回滚和探针 E2E：已有 control-plane gate、production evidence workflow 与 kind status/delete smoke，仍需固定 kind runner 沉淀更长 rollout/rollback 数据。
-- 长稳 2h/8h soak；10K 连接容量基线已有 `capacity` 采集入口，但尚未沉淀固定机器实测数据。
+- 长稳 2h/8h soak 已有固定机器连续实测。旧 5K/10K 产物因客户端启动、认证和取消生命周期口径不完整，只保留历史诊断价值；新的容量结论必须满足 target/start/TCP connect/authenticate/peak active 全量相等、零取消、完整稳态和进程成功退出后再归档。
 
 ---
 

@@ -53,6 +53,15 @@ std::uint32_t read_uint32_override(const char* name, std::uint32_t fallback) {
     return parsed > 0 ? static_cast<std::uint32_t>(parsed) : fallback;
 }
 
+std::uint32_t read_uint32_override_allow_zero(const char* name,
+                                              std::uint32_t fallback) {
+    const char* raw = std::getenv(name);
+    if (raw == nullptr || raw[0] == '\0') {
+        return fallback;
+    }
+    return static_cast<std::uint32_t>(std::strtoul(raw, nullptr, 10));
+}
+
 std::uint32_t read_nonzero_uint32_override(const char* name, std::uint32_t fallback) {
     const char* raw = std::getenv(name);
     if (raw == nullptr || raw[0] == '\0') {
@@ -144,6 +153,15 @@ Runtime::~Runtime() {
     stop_battle_route_workers();
 }
 
+void Runtime::set_battle_route_completion_dispatcher(
+    BattleRouteCompletionDispatcher dispatcher) {
+    battle_route_completion_dispatcher_ = std::move(dispatcher);
+}
+
+void Runtime::shutdown_battle_route_workers() {
+    stop_battle_route_workers();
+}
+
 void Runtime::set_session_role(SessionId session_id, v2::auth::Role role) {
     session_roles_[session_id] = role;
 }
@@ -175,6 +193,10 @@ Runtime::BattleRouteDiagnostics Runtime::battle_route_diagnostics() const noexce
     return BattleRouteDiagnostics{
         .completed_tasks = battle_route_completed_tasks_.load(std::memory_order_relaxed),
         .queued_tasks = battle_route_queued_tasks_.load(std::memory_order_relaxed),
+        .rejected_tasks = battle_route_rejected_tasks_.load(std::memory_order_relaxed),
+        .dropped_completions =
+            battle_route_dropped_completions_.load(std::memory_order_relaxed),
+        .queue_capacity = battle_route_queue_capacity_,
         .total_queue_wait_us = battle_route_total_queue_wait_us_.load(std::memory_order_relaxed),
         .max_queue_wait_us = battle_route_max_queue_wait_us_.load(std::memory_order_relaxed),
         .total_task_execution_us =
@@ -198,8 +220,12 @@ v2::actor::ActorRef Runtime::create_gateway_actor() {
             "V2_BATTLE_FRAME_PUSH_EVERY", 1);
     }
     if (battle_route_worker_count_ == 0) {
-        battle_route_worker_count_ = read_uint32_override(
+        battle_route_worker_count_ = read_uint32_override_allow_zero(
             "V2_BATTLE_ROUTE_WORKERS", 4);
+    }
+    if (battle_route_queue_capacity_ == 0) {
+        battle_route_queue_capacity_ = read_nonzero_uint32_override(
+            "V2_BATTLE_ROUTE_QUEUE_CAPACITY", 1024);
     }
     start_battle_route_workers();
     auto rate_limiter = std::make_shared<RateLimiter>(load_rate_limiter_config());
@@ -1218,35 +1244,28 @@ bool Runtime::handle(const GatewayCommand& command) {
                                  static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
                                  format_battle_end_accepted_body(battle_input->finish_reason));
 
-                            if (resp.contains("push_to_sessions")) {
+                            bool finished_push_processed = false;
+                            if (resp.contains("push_to_sessions") &&
+                                resp["push_to_sessions"].is_array()) {
                                 for (const auto& push : resp["push_to_sessions"]) {
-                                    std::string kind = push.value("kind", "");
-                                    if (kind == "battle_finished") {
-                                        submit_battle_finished_push_to_leaderboard(
-                                            push, session_room_id);
-                                        broadcast_to_room(
-                                            session_room_id,
-                                            net::protocol::kBattleStatePush,
-                                            push.dump());
+                                    if (push.value("kind", "") == "battle_finished") {
+                                        finished_push_processed = true;
                                     }
+                                    process_bridge_battle_finished_push(
+                                        push, session_room_id, bridge_battle_id);
                                 }
                             }
-                            nlohmann::json room_finish_payload{
-                                {"room_id", session_room_id},
-                                {"battle_id", bridge_battle_id},
-                            };
-                            auto room_finish = bridge_->route(
-                                v2::service::ServiceId::kRoom,
-                                "room_battle_finished",
-                                room_finish_payload.dump(),
-                                session_room_id);
-                            if (!room_finish.success) {
-                                SPDLOG_WARN("Runtime: failed to mark bridge room battle finished for room={} battle={}",
-                                            session_room_id,
-                                            bridge_battle_id);
+                            if (!finished_push_processed) {
+                                process_bridge_battle_finished_push(
+                                    nlohmann::json{
+                                        {"kind", "battle_finished"},
+                                        {"battle_id", bridge_battle_id},
+                                        {"reason", v2::battle::to_string(
+                                            battle_input->finish_reason)},
+                                    },
+                                    session_room_id,
+                                    bridge_battle_id);
                             }
-                            battles_by_room_id_.erase(session_room_id);
-                            room_to_battle_id_.erase(session_room_id);
                             return true;
                         }
                     }
@@ -1264,7 +1283,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                     {"battle_id", bridge_battle_id},
                     {"input_data", battle_input->input_data},
                     {"score", battle_input->score},
-                    {"submitted_frame", battle_input->score},  // approximate
+                    {"submitted_frame", battle_input->submitted_frame},
                 };
 
                 if (battle_route_offload_enabled() && !bridge_battle_id.empty()) {
@@ -1272,8 +1291,9 @@ bool Runtime::handle(const GatewayCommand& command) {
                     const auto request_id = command.request_id;
                     const auto room_id = session_room_id;
                     auto* bridge = bridge_.get();
-                    enqueue_battle_route_task(
+                    const auto queued = enqueue_battle_route_task(
                         [this, bridge, session_id, request_id, room_id,
+                         battle_id = bridge_battle_id,
                          payload = input_payload.dump()]() mutable {
                             const auto route_started_at = std::chrono::steady_clock::now();
                             auto result = bridge->route(v2::service::ServiceId::kBattle,
@@ -1286,60 +1306,37 @@ bool Runtime::handle(const GatewayCommand& command) {
                             battle_route_total_backend_route_us_.fetch_add(
                                 backend_route_us, std::memory_order_relaxed);
                             update_max(battle_route_max_backend_route_us_, backend_route_us);
-                            if (!result.success) {
-                                emit(net::protocol::kErrorResponse,
-                                     session_id,
-                                     request_id,
-                                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
-                                     "backend_error");
-                                return;
+                            const auto dispatched = battle_route_completion_dispatcher_(
+                                [this, session_id, request_id, room_id, battle_id,
+                                 result = std::move(result), route_completed_at]() mutable {
+                                    complete_bridge_battle_input(
+                                        session_id,
+                                        request_id,
+                                        room_id,
+                                        battle_id,
+                                        std::move(result));
+                                    const auto response_dispatch_us = static_cast<std::uint64_t>(
+                                        std::chrono::duration_cast<std::chrono::microseconds>(
+                                            std::chrono::steady_clock::now() - route_completed_at).count());
+                                    battle_route_total_response_dispatch_us_.fetch_add(
+                                        response_dispatch_us, std::memory_order_relaxed);
+                                    update_max(battle_route_max_response_dispatch_us_,
+                                               response_dispatch_us);
+                                });
+                            if (!dispatched) {
+                                battle_route_dropped_completions_.fetch_add(
+                                    1, std::memory_order_relaxed);
                             }
-
-                            auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
-                            if (resp.is_discarded() || resp.value("status", "") != "ok") {
-                                std::string reason = resp.is_discarded() ? "input_rejected"
-                                    : resp.value("reason", "input_rejected");
-                                emit(net::protocol::kErrorResponse,
-                                     session_id,
-                                     request_id,
-                                     static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
-                                     reason);
-                                return;
-                            }
-
-                            auto input_seq = resp.value("input_seq", std::uint64_t{0});
-                            emit(net::protocol::kBattleInputResponse,
-                                 session_id,
-                                 request_id,
-                                 static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                                 format_battle_input_response_body(input_seq));
-
-                            if (!resp.contains("push_to_sessions")) {
-                                return;
-                            }
-                            for (const auto& push : resp["push_to_sessions"]) {
-                                std::string kind = push.value("kind", "");
-                                if (kind == "frame_advanced") {
-                                    const auto frame_number =
-                                        push.value("frame_number", std::uint64_t{0});
-                                    if (should_emit_battle_frame_push(room_id, frame_number)) {
-                                        broadcast_to_room(room_id,
-                                                          net::protocol::kBattleStatePush,
-                                                          push.dump());
-                                    }
-                                } else if (kind == "battle_finished") {
-                                    broadcast_to_room(room_id,
-                                                      net::protocol::kBattleStatePush,
-                                                      push.dump());
-                                }
-                            }
-                            const auto response_dispatch_us = static_cast<std::uint64_t>(
-                                std::chrono::duration_cast<std::chrono::microseconds>(
-                                    std::chrono::steady_clock::now() - route_completed_at).count());
-                            battle_route_total_response_dispatch_us_.fetch_add(
-                                response_dispatch_us, std::memory_order_relaxed);
-                            update_max(battle_route_max_response_dispatch_us_, response_dispatch_us);
                         });
+                    if (!queued) {
+                        emit(net::protocol::kErrorResponse,
+                             command.session_id,
+                             command.request_id,
+                             static_cast<std::int32_t>(
+                                 net::protocol::ErrorCode::kBattleRouteOverloaded),
+                             net::protocol::to_string(
+                                 net::protocol::ErrorCode::kBattleRouteOverloaded));
+                    }
                     return true;
                 }
 
@@ -1347,57 +1344,11 @@ bool Runtime::handle(const GatewayCommand& command) {
                                              "battle_input",
                                              input_payload.dump());
 
-                if (result.success) {
-                    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
-                    if (!resp.is_discarded() && resp.value("status", "") == "ok") {
-                        auto input_seq = resp.value("input_seq", std::uint64_t{0});
-                        emit(net::protocol::kBattleInputResponse,
-                             command.session_id,
-                             command.request_id,
-                             static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
-                             format_battle_input_response_body(input_seq));
-
-                        if (resp.contains("push_to_sessions")) {
-                            for (const auto& push : resp["push_to_sessions"]) {
-                                std::string kind = push.value("kind", "");
-                                if (kind == "frame_advanced") {
-                                    const auto frame_number =
-                                        push.value("frame_number", std::uint64_t{0});
-                                    if (should_emit_battle_frame_push(
-                                            session_room_id, frame_number)) {
-                                        broadcast_to_room(
-                                            session_room_id,
-                                            net::protocol::kBattleStatePush,
-                                            push.dump());
-                                    }
-                                } else if (kind == "battle_finished") {
-                                    submit_battle_finished_push_to_leaderboard(
-                                        push, session_room_id);
-                                    broadcast_to_room(
-                                        session_room_id,
-                                        net::protocol::kBattleStatePush,
-                                        push.dump());
-                                    battles_by_room_id_.erase(session_room_id);
-                                    room_to_battle_id_.erase(session_room_id);
-                                }
-                            }
-                        }
-                        return true;
-                    }
-                    std::string reason = resp.is_discarded() ? "input_rejected"
-                        : resp.value("reason", "input_rejected");
-                    emit(net::protocol::kErrorResponse,
-                         command.session_id,
-                         command.request_id,
-                         static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
-                         reason);
-                    return true;
-                }
-                emit(net::protocol::kErrorResponse,
-                     command.session_id,
-                     command.request_id,
-                     static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
-                     "backend_error");
+                complete_bridge_battle_input(command.session_id,
+                                             command.request_id,
+                                             session_room_id,
+                                             bridge_battle_id,
+                                             std::move(result));
                 return true;
             }
 
@@ -1437,6 +1388,7 @@ bool Runtime::handle(const GatewayCommand& command) {
                 .request_id = command.request_id,
                 .input_data = battle_input->input_data,
                 .score = battle_input->score,
+                .submitted_frame = battle_input->submitted_frame,
             };
             battle_it->second.tell(std::move(input));
             actor_system_.dispatch_all();
@@ -2521,6 +2473,104 @@ void Runtime::process_deferred_finished(const std::string& battle_id) {
     }
 }
 
+void Runtime::complete_bridge_battle_input(
+    SessionId session_id,
+    std::uint32_t request_id,
+    const std::string& room_id,
+    const std::string& battle_id,
+    GatewayServiceBridge::BackendRoutingResult result) {
+    if (!result.success) {
+        emit(net::protocol::kErrorResponse,
+             session_id,
+             request_id,
+             static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
+             "backend_error");
+        return;
+    }
+
+    auto resp = nlohmann::json::parse(result.response_payload, nullptr, false);
+    if (resp.is_discarded() || resp.value("status", "") != "ok") {
+        const auto reason = resp.is_discarded()
+            ? std::string{"input_rejected"}
+            : resp.value("reason", std::string{"input_rejected"});
+        emit(net::protocol::kErrorResponse,
+             session_id,
+             request_id,
+             static_cast<std::int32_t>(net::protocol::ErrorCode::kAuthRequired),
+             reason);
+        return;
+    }
+
+    emit(net::protocol::kBattleInputResponse,
+         session_id,
+         request_id,
+         static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
+         format_battle_input_response_body(resp.value("input_seq", std::uint64_t{0})));
+
+    if (!resp.contains("push_to_sessions") || !resp["push_to_sessions"].is_array()) {
+        return;
+    }
+    for (const auto& push : resp["push_to_sessions"]) {
+        const auto kind = push.value("kind", std::string{});
+        if (kind == "frame_advanced") {
+            const auto current_battle = room_to_battle_id_.find(room_id);
+            if (current_battle == room_to_battle_id_.end() ||
+                current_battle->second != battle_id) {
+                continue;
+            }
+            const auto frame_number = push.value("frame_number", std::uint64_t{0});
+            if (should_emit_battle_frame_push(room_id, frame_number)) {
+                broadcast_to_room(room_id,
+                                  net::protocol::kBattleStatePush,
+                                  push.dump());
+            }
+        } else if (kind == "battle_finished") {
+            process_bridge_battle_finished_push(push, room_id, battle_id);
+        }
+    }
+}
+
+void Runtime::process_bridge_battle_finished_push(
+    const nlohmann::json& push,
+    const std::string& room_id,
+    const std::string& fallback_battle_id) {
+    if (!push.is_object() || push.value("kind", "") != "battle_finished") {
+        return;
+    }
+    const auto battle_id = push.value("battle_id", fallback_battle_id);
+    if (battle_id.empty() || !completed_bridge_battle_ids_.insert(battle_id).second) {
+        return;
+    }
+
+    auto normalized_push = push;
+    normalized_push["battle_id"] = battle_id;
+    submit_battle_finished_push_to_leaderboard(normalized_push, room_id);
+    broadcast_to_room(room_id,
+                      net::protocol::kBattleStatePush,
+                      normalized_push.dump());
+
+    nlohmann::json room_finish_payload{
+        {"room_id", room_id},
+        {"battle_id", battle_id},
+    };
+    auto room_finish = bridge_->route(v2::service::ServiceId::kRoom,
+                                      "room_battle_finished",
+                                      room_finish_payload.dump(),
+                                      room_id);
+    if (!room_finish.success) {
+        SPDLOG_WARN("Runtime: failed to mark bridge room battle finished for room={} battle={}",
+                    room_id,
+                    battle_id);
+    }
+
+    const auto current_battle = room_to_battle_id_.find(room_id);
+    if (current_battle != room_to_battle_id_.end() && current_battle->second == battle_id) {
+        battles_by_room_id_.erase(room_id);
+        room_to_battle_id_.erase(current_battle);
+        last_emitted_battle_frame_.erase(room_id);
+    }
+}
+
 void Runtime::submit_battle_finished_push_to_leaderboard(const nlohmann::json& push,
                                                          const std::string& room_id) {
     if (!push.is_object() || push.value("kind", "") != "battle_finished") {
@@ -2709,15 +2759,15 @@ bool Runtime::should_emit_battle_frame_push(const std::string& room_id,
 }
 
 bool Runtime::battle_route_offload_enabled() {
-    if (battle_route_worker_count_ == 0) {
-        battle_route_worker_count_ = read_uint32_override(
-            "V2_BATTLE_ROUTE_WORKERS", 4);
-    }
-    return battle_route_worker_count_ > 0;
+    return battle_route_worker_count_ > 0 &&
+           !battle_route_workers_.empty() &&
+           static_cast<bool>(battle_route_completion_dispatcher_);
 }
 
 void Runtime::start_battle_route_workers() {
-    if (battle_route_worker_count_ == 0 || !battle_route_workers_.empty()) {
+    if (battle_route_worker_count_ == 0 ||
+        !battle_route_completion_dispatcher_ ||
+        !battle_route_workers_.empty()) {
         return;
     }
     battle_route_stopping_.store(false, std::memory_order_release);
@@ -2749,7 +2799,12 @@ void Runtime::start_battle_route_workers() {
 }
 
 void Runtime::stop_battle_route_workers() {
-    battle_route_stopping_.store(true, std::memory_order_release);
+    {
+        std::scoped_lock lock(battle_route_mutex_);
+        battle_route_stopping_.store(true, std::memory_order_release);
+        battle_route_tasks_.clear();
+        battle_route_queued_tasks_.store(0, std::memory_order_relaxed);
+    }
     battle_route_cv_.notify_all();
     for (auto& worker : battle_route_workers_) {
         if (worker.joinable()) {
@@ -2759,9 +2814,9 @@ void Runtime::stop_battle_route_workers() {
     battle_route_workers_.clear();
 }
 
-void Runtime::enqueue_battle_route_task(std::function<void()> task) {
+bool Runtime::enqueue_battle_route_task(std::function<void()> task) {
     if (!task) {
-        return;
+        return false;
     }
     const auto enqueued_at = std::chrono::steady_clock::now();
     auto measured_task = [this, enqueued_at, task = std::move(task)]() mutable {
@@ -2783,10 +2838,16 @@ void Runtime::enqueue_battle_route_task(std::function<void()> task) {
     };
     {
         std::scoped_lock lock(battle_route_mutex_);
+        if (battle_route_stopping_.load(std::memory_order_acquire) ||
+            battle_route_tasks_.size() >= battle_route_queue_capacity_) {
+            battle_route_rejected_tasks_.fetch_add(1, std::memory_order_relaxed);
+            return false;
+        }
         battle_route_tasks_.push_back(std::move(measured_task));
         battle_route_queued_tasks_.fetch_add(1, std::memory_order_relaxed);
     }
     battle_route_cv_.notify_one();
+    return true;
 }
 
 }  // namespace v2::gateway

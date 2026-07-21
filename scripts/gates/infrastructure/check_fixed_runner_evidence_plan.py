@@ -75,14 +75,17 @@ WORKFLOW_REQUIREMENTS = {
             "build/conan-long-soak-capacity-cmake",
             "runtime/validation/long-soak-capacity-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/saturation-baseline-summary.json",
             "runtime/perf/fixed-runner-capacity/**",
             "runtime/perf/fixed-runner-business-capacity/**",
+            "runtime/perf/fixed-runner-saturation/**",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
             "runtime/validation/long-soak-capacity-summary.json",
             "runtime/validation/long-soak-2h-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/saturation-baseline-summary.json",
         ),
     },
     "production_gates": {
@@ -474,7 +477,13 @@ def main() -> int:
         "timeout-minutes: 1440" in long_soak_workflow,
         ".github/workflows/long-soak-capacity.yml allows the advertised soak/capacity combination to finish",
     )
-    boolean_inputs = ("run_2h_soak", "run_8h_soak", "run_capacity", "run_business_capacity")
+    boolean_inputs = (
+        "run_2h_soak",
+        "run_8h_soak",
+        "run_capacity",
+        "run_business_capacity",
+        "run_saturation",
+    )
     add(
         checks,
         "workflow:long-soak-capacity:preserves-explicit-boolean-inputs",

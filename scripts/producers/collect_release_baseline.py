@@ -85,7 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--baseline-timeout-seconds", type=int, default=60)
-    parser.add_argument("--perf-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="baseline")
+    parser.add_argument(
+        "--perf-preset",
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation"],
+        default="baseline",
+    )
     parser.add_argument("--include-business-flow", action="store_true")
     parser.add_argument("--business-flow-clients", type=int, default=1)
     parser.add_argument("--perf-repetitions", type=int, default=3)
@@ -105,6 +109,8 @@ def parse_args() -> argparse.Namespace:
         help="Linux CPU affinity list for load generation; defaults to CPUs outside --cpu-set.",
     )
     parser.add_argument("--loadgen-io-threads", type=int, default=4)
+    parser.add_argument("--saturation-cpu-threshold-percent", type=float, default=85.0)
+    parser.add_argument("--saturation-loadgen-headroom-percent", type=float, default=85.0)
     parser.add_argument(
         "--business-operation-scenario",
         action="append",
@@ -130,11 +136,13 @@ def main() -> int:
     args = parse_args()
     if args.loadgen_io_threads <= 0:
         raise SystemExit("--loadgen-io-threads must be positive")
-    if args.perf_preset in {"capacity", "business-capacity"}:
+    if args.perf_preset in {"capacity", "business-capacity", "saturation"}:
         if args.backend_pool_size <= 0:
             args.backend_pool_size = 8
         if args.battle_route_workers <= 0:
             args.battle_route_workers = 8
+    if args.perf_preset == "saturation":
+        args.perf_timeout_seconds = max(args.perf_timeout_seconds, 10800)
     root = Path(__file__).resolve().parents[2]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     perf_output = args.perf_output_root if args.perf_output_root is not None else root / "runtime" / "perf" / "release-baseline"
@@ -154,6 +162,8 @@ def main() -> int:
         "perf_repetitions": args.perf_repetitions,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
+        "saturation_cpu_threshold_percent": args.saturation_cpu_threshold_percent,
+        "saturation_loadgen_headroom_percent": args.saturation_loadgen_headroom_percent,
         "cpu_set": args.cpu_set,
         "business_operation_scenarios": args.business_operation_scenario,
         "business_operation_clients": args.business_operation_clients,
@@ -267,6 +277,10 @@ def main() -> int:
             str(args.battle_route_workers),
             "--io-cores",
             str(args.io_cores),
+            "--saturation-cpu-threshold-percent",
+            str(args.saturation_cpu_threshold_percent),
+            "--saturation-loadgen-headroom-percent",
+            str(args.saturation_loadgen_headroom_percent),
         ]
         for case_name in args.perf_case:
             perf_cmd.extend(["--case", case_name])

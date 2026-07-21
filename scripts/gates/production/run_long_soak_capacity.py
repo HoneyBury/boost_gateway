@@ -92,6 +92,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-8h-soak", action="store_true")
     parser.add_argument("--run-capacity", action="store_true")
     parser.add_argument("--run-business-capacity", action="store_true")
+    parser.add_argument("--run-saturation", action="store_true")
     parser.add_argument("--perf-repetitions", type=int, default=3)
     parser.add_argument(
         "--capacity-case",
@@ -99,6 +100,14 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Optional capacity preset case selection for focused diagnostics.",
     )
+    parser.add_argument(
+        "--saturation-case",
+        action="append",
+        default=[],
+        help="Optional saturation manifest case selection for fixed 1/2/4 CPU or io_cores comparisons.",
+    )
+    parser.add_argument("--saturation-cpu-threshold-percent", type=float, default=85.0)
+    parser.add_argument("--saturation-loadgen-headroom-percent", type=float, default=85.0)
     parser.add_argument("--business-flow-clients", type=int, default=3)
     parser.add_argument("--backend-pool-size", type=int, default=8)
     parser.add_argument("--battle-route-workers", type=int, default=8)
@@ -143,9 +152,13 @@ def parse_args() -> argparse.Namespace:
         parser.error("--loadgen-io-threads must be positive")
     if args.io_cores <= 0:
         parser.error("--io-cores must be positive")
+    if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
+        parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
+    if not 0.0 < args.saturation_loadgen_headroom_percent <= 100.0:
+        parser.error("--saturation-loadgen-headroom-percent must be in (0, 100]")
     if (
         args.cpu_set
-        and (args.run_capacity or args.run_business_capacity)
+        and (args.run_capacity or args.run_business_capacity or args.run_saturation)
         and not args.loadgen_cpu_set
     ):
         parser.error(
@@ -153,6 +166,10 @@ def parse_args() -> argparse.Namespace:
         )
     if args.loadgen_cpu_set and not args.cpu_set:
         parser.error("--loadgen-cpu-set requires --cpu-set")
+    if args.run_saturation and (not args.cpu_set or not args.loadgen_cpu_set):
+        parser.error(
+            "--run-saturation requires explicit disjoint --cpu-set and --loadgen-cpu-set"
+        )
     return args
 
 
@@ -217,7 +234,13 @@ def main() -> int:
         },
     )
 
-    if not any((args.run_2h_soak, args.run_8h_soak, args.run_capacity, args.run_business_capacity)):
+    if not any((
+        args.run_2h_soak,
+        args.run_8h_soak,
+        args.run_capacity,
+        args.run_business_capacity,
+        args.run_saturation,
+    )):
         print("no long-soak/capacity action selected", file=sys.stderr)
         return 2
 
@@ -293,8 +316,12 @@ def main() -> int:
         "run_8h_soak": args.run_8h_soak,
         "run_capacity": args.run_capacity,
         "run_business_capacity": args.run_business_capacity,
+        "run_saturation": args.run_saturation,
         "perf_repetitions": args.perf_repetitions,
         "capacity_cases": args.capacity_case,
+        "saturation_cases": args.saturation_case,
+        "saturation_cpu_threshold_percent": args.saturation_cpu_threshold_percent,
+        "saturation_loadgen_headroom_percent": args.saturation_loadgen_headroom_percent,
         "business_flow_clients": args.business_flow_clients,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
@@ -329,6 +356,8 @@ def main() -> int:
             "business_capacity_summary_path": str(ROOT / "runtime/validation/business-capacity-baseline-summary.json") if args.run_business_capacity else "",
             "capacity_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-capacity/summary.json") if args.run_capacity else "",
             "business_capacity_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-business-capacity/summary.json") if args.run_business_capacity else "",
+            "saturation_summary_path": str(ROOT / "runtime/validation/saturation-baseline-summary.json") if args.run_saturation else "",
+            "saturation_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-saturation/summary.json") if args.run_saturation else "",
         },
         "steps": steps,
     }
@@ -412,6 +441,37 @@ def main() -> int:
                     cmd,
                     10800,
                     ROOT / "runtime/validation/capacity-baseline-summary.json",
+                )
+
+            if args.run_saturation and not cancellation.cancelled:
+                cmd = [
+                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    *common,
+                    "--perf-preset", "saturation",
+                    "--perf-repetitions", str(args.perf_repetitions),
+                    "--perf-timeout-seconds", "10800",
+                    "--backend-pool-size", str(args.backend_pool_size),
+                    "--battle-route-workers", str(args.battle_route_workers),
+                    "--io-cores", str(args.io_cores),
+                    "--cpu-set", args.cpu_set,
+                    "--loadgen-cpu-set", args.loadgen_cpu_set,
+                    "--loadgen-io-threads", str(args.loadgen_io_threads),
+                    "--saturation-cpu-threshold-percent",
+                    str(args.saturation_cpu_threshold_percent),
+                    "--saturation-loadgen-headroom-percent",
+                    str(args.saturation_loadgen_headroom_percent),
+                    "--summary-path", str(ROOT / "runtime/validation/saturation-baseline-summary.json"),
+                    "--perf-output-root", str(ROOT / "runtime/perf/fixed-runner-saturation"),
+                    "--skip-r4",
+                ]
+                for case_name in args.saturation_case:
+                    cmd.extend(["--perf-case", case_name])
+                execute_step(
+                    "saturation curve evidence",
+                    "saturation",
+                    cmd,
+                    10800,
+                    ROOT / "runtime/validation/saturation-baseline-summary.json",
                 )
 
             if args.run_business_capacity and not cancellation.cancelled:

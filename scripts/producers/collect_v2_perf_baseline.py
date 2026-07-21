@@ -24,7 +24,7 @@ import zlib
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.request import urlopen
 
 try:
@@ -721,6 +721,7 @@ def invoke_bench_case(
     *,
     loadgen_cpu_set: str = "",
     loadgen_io_threads: int = 4,
+    on_load_end: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     args = [
         "--host", "127.0.0.1",
@@ -729,6 +730,8 @@ def invoke_bench_case(
         "--clients", str(case["clients"]),
         "--duration", str(case["duration_seconds"]),
         "--io-threads", str(loadgen_io_threads),
+        "--ramp-clients-per-second", str(case.get("ramp_clients_per_second", 200)),
+        "--ramp-timeout", str(case.get("ramp_timeout_seconds", 60)),
     ]
     if case.get("messages", 0) > 0:
         args.extend(["--messages", str(case["messages"])])
@@ -786,7 +789,11 @@ def invoke_bench_case(
 
     sampler = threading.Thread(target=sample_loadgen, name=f"{case_name}-resource-sampler", daemon=True)
     sampler.start()
-    timeout_seconds = int(case["duration_seconds"]) + 10
+    timeout_seconds = (
+        int(case.get("ramp_timeout_seconds", 60))
+        + int(case["duration_seconds"])
+        + 15
+    )
     timed_out = False
     try:
         stdout, stderr = proc.communicate(timeout=timeout_seconds)
@@ -795,6 +802,8 @@ def invoke_bench_case(
         proc.kill()
         stdout, stderr = proc.communicate(timeout=5)
     finally:
+        if on_load_end is not None:
+            on_load_end()
         sampler_stop.set()
         sampler.join(timeout=2)
     sample_elapsed_seconds = max(0.0, time.monotonic() - sample_started_at)
@@ -821,10 +830,9 @@ def invoke_bench_case(
     if timed_out:
         result["collector_forced_timeout"] = True
         json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    if proc.returncode != 0 and not result.get("forced_timeout"):
-        raise RuntimeError(f"Bench case failed: {case_name} (exit {proc.returncode})")
     if not result:
         raise RuntimeError(f"Bench case did not emit JSON result: {case_name}")
+    result["bench_exit_code"] = int(proc.returncode or 0)
     first_sample = resource_samples[0]
     last_sample = resource_samples[-1]
     loadgen_resources = service_resource_delta(
@@ -1708,9 +1716,41 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     p99 = numeric_series("latency_p99_ms")
     totals = [int(run.get("total_messages", 0)) for run in runs]
     connected = [int(run.get("connected_clients", 0)) for run in runs]
+    target = [int(run.get("target_clients", 0)) for run in runs]
+    started = [int(run.get("started_clients", 0)) for run in runs]
+    tcp_connected = [int(run.get("tcp_connected_clients", 0)) for run in runs]
+    authenticated = [int(run.get("authenticated_clients", 0)) for run in runs]
+    active = [int(run.get("active_clients", 0)) for run in runs]
+    peak_active = [int(run.get("peak_active_clients", 0)) for run in runs]
+    cancelled = [int(run.get("cancelled_clients", 0)) for run in runs]
+    cancelled_before_connect = [int(run.get("cancelled_before_connect", 0)) for run in runs]
+    ramp_up = numeric_series("ramp_up_seconds")
+    ramp_timeout = numeric_series("ramp_timeout_seconds")
+    steady_target = numeric_series("steady_state_target_seconds")
+    steady_elapsed = numeric_series("steady_state_elapsed_seconds")
+    configured_rate_ceiling = numeric_series("configured_request_rate_ceiling_ops_per_sec")
+    achieved_send_rate = numeric_series("achieved_send_rate_ops_per_sec")
+    achieved_response_rate = numeric_series("achieved_response_rate_ops_per_sec")
+    send_attempts = [int(run.get("business_send_attempts", 0)) for run in runs]
+    send_successes = [int(run.get("business_send_successes", 0)) for run in runs]
     rejected = [int(run.get("rejected_clients", 0)) for run in runs]
     failed = [int(run.get("failed_clients", 0)) for run in runs]
     forced_timeouts = [bool(run.get("forced_timeout") or run.get("collector_forced_timeout")) for run in runs]
+    bench_exit_codes = [int(run.get("bench_exit_code", 0)) for run in runs]
+
+    def integer_distribution(values: list[int]) -> dict[str, int]:
+        return {
+            "min": min(values),
+            "median": int(statistics.median(values)),
+            "max": max(values),
+        }
+
+    def numeric_distribution(values: list[float]) -> dict[str, float]:
+        return {
+            "min": min(values),
+            "median": statistics.median(values),
+            "max": max(values),
+        }
 
     return {
         "case_name": case_name,
@@ -1740,11 +1780,34 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "median": int(statistics.median(totals)),
             "max": max(totals),
         },
-        "connected_clients": {
-            "min": min(connected),
-            "median": int(statistics.median(connected)),
-            "max": max(connected),
-        },
+        "target_clients": integer_distribution(target),
+        "started_clients": integer_distribution(started),
+        "tcp_connected_clients": integer_distribution(tcp_connected),
+        "authenticated_clients": integer_distribution(authenticated),
+        "active_clients": integer_distribution(active),
+        "peak_active_clients": integer_distribution(peak_active),
+        "cancelled_clients": integer_distribution(cancelled),
+        "cancelled_before_connect": integer_distribution(cancelled_before_connect),
+        "connected_clients": integer_distribution(connected),
+        "ramp_up_seconds": numeric_distribution(ramp_up),
+        "ramp_timeout_seconds": numeric_distribution(ramp_timeout),
+        "ramp_completed": all(run.get("ramp_completed") is True for run in runs),
+        "measurement_started": all(run.get("measurement_started") is True for run in runs),
+        "steady_state_target_seconds": numeric_distribution(steady_target),
+        "steady_state_elapsed_seconds": numeric_distribution(steady_elapsed),
+        "steady_state_completed": all(run.get("steady_state_completed") is True for run in runs),
+        "termination_reasons": sorted({str(run.get("termination_reason", "")) for run in runs}),
+        "load_models": sorted({str(run.get("load_model", "")) for run in runs}),
+        "configured_request_rate_is_bounded": all(
+            run.get("configured_request_rate_is_bounded") is True for run in runs
+        ),
+        "configured_request_rate_ceiling_ops_per_sec": numeric_distribution(
+            configured_rate_ceiling
+        ),
+        "business_send_attempts": integer_distribution(send_attempts),
+        "business_send_successes": integer_distribution(send_successes),
+        "achieved_send_rate_ops_per_sec": numeric_distribution(achieved_send_rate),
+        "achieved_response_rate_ops_per_sec": numeric_distribution(achieved_response_rate),
         "rejected_clients": {
             "min": min(rejected),
             "median": int(statistics.median(rejected)),
@@ -1756,6 +1819,7 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "max": max(failed),
         },
         "forced_timeout": any(forced_timeouts),
+        "bench_exit_code": max(bench_exit_codes),
     }
 
 
@@ -2020,6 +2084,29 @@ def build_resource_window(
     }
 
 
+def build_case_resource_evidence(
+    *,
+    service_before: list[dict[str, Any]],
+    service_at_load_end: list[dict[str, Any]],
+    loadgen: dict[str, Any],
+    load_window_elapsed_seconds: float,
+    quiescence: dict[str, Any],
+    service_after_quiescence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "before": service_before,
+        "after": service_at_load_end,
+        "loadgen": loadgen,
+        "elapsed_seconds": round(load_window_elapsed_seconds, 6),
+        "measurement_boundary": "loadgen_process_exit",
+        "quiescence": quiescence,
+        "post_quiescence": {
+            "after": service_after_quiescence,
+            "wait_seconds": float(quiescence.get("wait_seconds", 0.0)),
+        },
+    }
+
+
 def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
     snapshots = summary.get("process_snapshots", {})
     cases = summary.get("cases", [])
@@ -2193,6 +2280,251 @@ def evaluate_resource_isolation_evidence(summary: dict[str, Any]) -> dict[str, A
     }
 
 
+def build_saturation_analysis(
+    summary: dict[str, Any],
+    *,
+    cpu_threshold_percent: float = 85.0,
+    loadgen_headroom_threshold_percent: float = 85.0,
+) -> dict[str, Any]:
+    service_constraint = summary.get("service_resource_constraint")
+    loadgen_constraint = summary.get("loadgen_resource_constraint")
+    service_constraint = service_constraint if isinstance(service_constraint, dict) else {}
+    loadgen_constraint = loadgen_constraint if isinstance(loadgen_constraint, dict) else {}
+    service_cpu_count = int(service_constraint.get("cpu_count", 0))
+    loadgen_cpu_count = int(loadgen_constraint.get("cpu_count", 0))
+    repetitions = int(summary.get("repetitions", 0))
+    manifest = summary.get("case_manifest")
+    manifest = manifest if isinstance(manifest, list) else []
+    aggregates = summary.get("case_aggregates")
+    aggregates = aggregates if isinstance(aggregates, list) else []
+    resource_aggregates = summary.get("resource_analysis", {}).get("case_aggregates")
+    resource_aggregates = resource_aggregates if isinstance(resource_aggregates, list) else []
+    resource_runs = summary.get("resource_analysis", {}).get("per_run")
+    resource_runs = resource_runs if isinstance(resource_runs, list) else []
+    resource_by_case = {
+        str(item.get("case_name", "")): item
+        for item in resource_aggregates
+        if isinstance(item, dict)
+    }
+    loadgen_cpu_by_case: dict[str, list[float]] = {}
+    for run in resource_runs:
+        if not isinstance(run, dict):
+            continue
+        value = run.get("loadgen", {}).get("cpu_percent_from_cpu_seconds")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            loadgen_cpu_by_case.setdefault(
+                case_base_name(str(run.get("case_name", ""))), []
+            ).append(float(value))
+    isolation = evaluate_resource_isolation_evidence(summary)
+    process_snapshots = summary.get("process_snapshots")
+    process_snapshots = process_snapshots if isinstance(process_snapshots, dict) else {}
+    load_end_boundaries: dict[str, list[bool]] = {}
+    for run_name, snapshot in process_snapshots.items():
+        if not isinstance(snapshot, dict) or run_name == "idle":
+            continue
+        load_end_boundaries.setdefault(case_base_name(str(run_name)), []).append(
+            snapshot.get("measurement_boundary") == "loadgen_process_exit"
+        )
+    failures: list[str] = []
+    if service_cpu_count <= 0 or service_constraint.get("applied") is not True:
+        failures.append("service CPU affinity/quota is not explicit and verified")
+    if loadgen_cpu_count <= 0 or loadgen_constraint.get("applied") is not True:
+        failures.append("load-generator CPU affinity is not explicit and verified")
+    if isolation.get("passed") is not True or isolation.get("required") is not True:
+        failures.append("service/load-generator resource isolation evidence is incomplete")
+    if repetitions <= 0:
+        failures.append("repetition count must be positive")
+    curve_complete = len(manifest) >= 3
+    if len(aggregates) != len(manifest):
+        failures.append("case manifest and aggregate counts differ")
+
+    points: list[dict[str, Any]] = []
+    for aggregate in aggregates:
+        if not isinstance(aggregate, dict):
+            continue
+        case_name = str(aggregate.get("case_name", ""))
+        resource = resource_by_case.get(case_name, {})
+        gateway_cpu = (
+            resource.get("services", {})
+            .get("v2_gateway_demo", {})
+            .get("cpu_percent_from_cpu_seconds", {})
+            .get("median")
+        )
+        loadgen_values = loadgen_cpu_by_case.get(case_name, [])
+        loadgen_cpu = statistics.median(loadgen_values) if loadgen_values else None
+        target = int(aggregate.get("target_clients", {}).get("median", 0))
+        errors = (
+            int(aggregate.get("failed_clients", {}).get("max", 0))
+            + int(aggregate.get("rejected_clients", {}).get("max", 0))
+            + int(aggregate.get("cancelled_clients", {}).get("max", 0))
+        )
+        load_models = aggregate.get("load_models", [])
+        boundary_evidence = load_end_boundaries.get(case_name, [])
+        load_end_boundary_valid = (
+            len(boundary_evidence) == repetitions and all(boundary_evidence)
+        )
+        ramp_up = float(aggregate.get("ramp_up_seconds", {}).get("max", 0.0))
+        steady_elapsed = float(
+            aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
+        )
+        ramp_to_steady_ratio = ramp_up / steady_elapsed if steady_elapsed > 0.0 else 1.0
+        point_valid = (
+            aggregate.get("runs") == repetitions
+            and aggregate.get("measurement_started") is True
+            and aggregate.get("steady_state_completed") is True
+            and aggregate.get("configured_request_rate_is_bounded") is True
+            and int(aggregate.get("bench_exit_code", 1)) == 0
+            and target > 0
+            and int(aggregate.get("started_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("tcp_connected_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("authenticated_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("peak_active_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("cancelled_clients", {}).get("max", 1)) == 0
+            and load_models == ["closed_loop_one_in_flight_per_client"]
+            and isinstance(gateway_cpu, (int, float))
+            and not isinstance(gateway_cpu, bool)
+            and isinstance(loadgen_cpu, (int, float))
+            and not isinstance(loadgen_cpu, bool)
+            and ramp_to_steady_ratio <= 0.1
+            and load_end_boundary_valid
+        )
+        configured_ceiling = float(
+            aggregate.get("configured_request_rate_ceiling_ops_per_sec", {}).get("median", 0.0)
+        )
+        achieved_send = float(
+            aggregate.get("achieved_send_rate_ops_per_sec", {}).get("median", 0.0)
+        )
+        achieved_response = float(
+            aggregate.get("achieved_response_rate_ops_per_sec", {}).get("median", 0.0)
+        )
+        p99 = float(aggregate.get("latency_p99_ms", {}).get("median", 0.0))
+        gateway_cpu_percent = float(gateway_cpu) if isinstance(gateway_cpu, (int, float)) else 0.0
+        quota_utilization = (
+            gateway_cpu_percent / (service_cpu_count * 100.0) * 100.0
+            if service_cpu_count > 0
+            else 0.0
+        )
+        points.append({
+            "case_id": case_name,
+            "case_identity": aggregate.get("case_identity", {}),
+            "evidence_valid": point_valid,
+            "load_model": "closed_loop_one_in_flight_per_client",
+            "configured_request_rate_ceiling_ops_per_sec": round(configured_ceiling, 3),
+            "achieved_send_rate_ops_per_sec": round(achieved_send, 3),
+            "achieved_response_rate_ops_per_sec": round(achieved_response, 3),
+            "achieved_response_to_ceiling_ratio": round(
+                achieved_response / configured_ceiling, 6
+            ) if configured_ceiling > 0 else None,
+            "throughput_msg_per_sec": float(
+                aggregate.get("throughput_msg_per_sec", {}).get("median", 0.0)
+            ),
+            "latency_p99_ms": p99,
+            "client_error_count": errors,
+            "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
+            "gateway_cpu_percent": round(gateway_cpu_percent, 3),
+            "gateway_cpu_quota_percent": round(quota_utilization, 3),
+            "loadgen_cpu_percent": round(float(loadgen_cpu), 3)
+            if isinstance(loadgen_cpu, (int, float)) else None,
+            "loadgen_cpu_quota_percent": round(
+                float(loadgen_cpu) / (loadgen_cpu_count * 100.0) * 100.0, 3
+            ) if isinstance(loadgen_cpu, (int, float)) and loadgen_cpu_count > 0 else None,
+            "ramp_up_seconds": round(ramp_up, 3),
+            "steady_state_elapsed_seconds": round(steady_elapsed, 3),
+            "ramp_to_steady_ratio": round(ramp_to_steady_ratio, 6),
+            "resource_window_accepted": ramp_to_steady_ratio <= 0.1,
+            "load_end_boundary_valid": load_end_boundary_valid,
+            "slo_met": p99 <= 50.0 and errors == 0,
+        })
+
+    points.sort(key=lambda item: float(item["configured_request_rate_ceiling_ops_per_sec"]))
+    ceilings = [float(point["configured_request_rate_ceiling_ops_per_sec"]) for point in points]
+    if any(current <= previous for previous, current in zip(ceilings, ceilings[1:], strict=False)):
+        failures.append("configured request-rate ceilings are not strictly increasing")
+    if any(point.get("evidence_valid") is not True for point in points):
+        failures.append("one or more saturation points have incomplete lifecycle or resource evidence")
+
+    gateway_cpu_threshold_point = next(
+        (point for point in points if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
+        None,
+    )
+    cpu_point = next(
+        (
+            point for point in points
+            if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
+            and point["loadgen_cpu_quota_percent"] is not None
+            and point["loadgen_cpu_quota_percent"] < loadgen_headroom_threshold_percent
+        ),
+        None,
+    )
+    slo_point = next((point for point in points if point["latency_p99_ms"] > 50.0), None)
+    error_point = next((point for point in points if point["client_error_count"] > 0), None)
+    throughput_point = None
+    for previous, current in zip(points, points[1:], strict=False):
+        previous_rate = float(previous["achieved_response_rate_ops_per_sec"])
+        current_rate = float(current["achieved_response_rate_ops_per_sec"])
+        ceiling_growth = (
+            float(current["configured_request_rate_ceiling_ops_per_sec"])
+            / max(float(previous["configured_request_rate_ceiling_ops_per_sec"]), 0.000001)
+            - 1.0
+        )
+        response_growth = current_rate / max(previous_rate, 0.000001) - 1.0
+        if ceiling_growth >= 0.2 and response_growth < 0.1:
+            throughput_point = current
+            break
+
+    evidence_valid = not failures
+    saturation_found = evidence_valid and curve_complete and cpu_point is not None
+    if evidence_valid and not curve_complete:
+        inconclusive_reason = (
+            "fewer than three cases were selected; evidence is a comparison point, not a saturation curve"
+        )
+    elif evidence_valid and gateway_cpu_threshold_point is not None and cpu_point is None:
+        inconclusive_reason = (
+            "Gateway reached its CPU threshold only while the load generator lacked required headroom"
+        )
+    elif failures:
+        inconclusive_reason = "; ".join(failures)
+    else:
+        inconclusive_reason = (
+            f"Gateway CPU did not reach {cpu_threshold_percent:.1f}% of its explicit quota"
+        )
+    return {
+        "analysis_version": 1,
+        "collection_pass": evidence_valid,
+        "overall_pass": saturation_found,
+        "evidence_valid": evidence_valid,
+        "saturation_found": saturation_found,
+        "analysis_mode": "curve" if curve_complete else "comparison_point",
+        "curve_complete": curve_complete,
+        "conclusion": "knee_found" if saturation_found else "inconclusive",
+        "inconclusive_reason": "" if saturation_found else inconclusive_reason,
+        "load_model": "closed_loop_one_in_flight_per_client",
+        "load_model_note": (
+            "Configured rate is a timer ceiling; one in-flight request per client means this is not open-loop offered load."
+        ),
+        "cpu_measurement_window": "case start through loadgen process exit (ramp plus steady state; quiescence excluded)",
+        "cpu_measurement_window_policy": (
+            "mixed-window evidence requires ramp_up_seconds / steady_state_elapsed_seconds <= 0.10"
+        ),
+        "cpu_threshold_percent_of_quota": cpu_threshold_percent,
+        "loadgen_headroom_threshold_percent_of_quota": loadgen_headroom_threshold_percent,
+        "service_cpu_count": service_cpu_count,
+        "loadgen_cpu_count": loadgen_cpu_count,
+        "points": points,
+        "cpu_saturation_case": cpu_point["case_identity"] if cpu_point else None,
+        "gateway_cpu_threshold_case": (
+            gateway_cpu_threshold_point["case_identity"]
+            if gateway_cpu_threshold_point else None
+        ),
+        "throughput_knee_case": throughput_point["case_identity"] if throughput_point else None,
+        "slo_knee_case": slo_point["case_identity"] if slo_point else None,
+        "error_knee_case": error_point["case_identity"] if error_point else None,
+        "fixed_case_candidate": cpu_point["case_identity"] if cpu_point else None,
+        "comparison_axes": ["service_cpu_count", "io_cores"],
+        "failures": failures,
+    }
+
+
 def minimum_battle_messages(case_name: str) -> int:
     if case_name.startswith("battle-500"):
         return 20_000
@@ -2298,6 +2630,34 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"{fmt_number(aggregate.get('failed_clients', {}).get('max'))} | "
             f"{fmt_number(aggregate.get('forced_timeout'))} |"
         )
+
+    saturation = summary.get("saturation_analysis")
+    if isinstance(saturation, dict):
+        lines.extend([
+            "",
+            "## Saturation Analysis",
+            "",
+            f"- Collection pass: **{fmt_number(saturation.get('collection_pass'))}**",
+            f"- Conclusion: `{saturation.get('conclusion', 'inconclusive')}`",
+            f"- Load model: `{saturation.get('load_model')}`",
+            f"- CPU threshold: {fmt_number(saturation.get('cpu_threshold_percent_of_quota'))}% of quota",
+            f"- Loadgen headroom threshold: {fmt_number(saturation.get('loadgen_headroom_threshold_percent_of_quota'))}% of quota",
+            f"- Inconclusive reason: {saturation.get('inconclusive_reason') or 'n/a'}",
+            "",
+            "| Case | Ceiling ops/s | Send ops/s | Response ops/s | Gateway CPU quota % | Loadgen CPU quota % | P99 ms | Errors |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for point in saturation.get("points", []):
+            lines.append(
+                f"| `{point.get('case_id')}` | "
+                f"{fmt_number(point.get('configured_request_rate_ceiling_ops_per_sec'))} | "
+                f"{fmt_number(point.get('achieved_send_rate_ops_per_sec'))} | "
+                f"{fmt_number(point.get('achieved_response_rate_ops_per_sec'))} | "
+                f"{fmt_number(point.get('gateway_cpu_quota_percent'))} | "
+                f"{fmt_number(point.get('loadgen_cpu_quota_percent'))} | "
+                f"{fmt_number(point.get('latency_p99_ms'))} | "
+                f"{fmt_number(point.get('client_error_count'))} |"
+            )
 
     otel_comparison = summary.get("otel_comparison")
     if isinstance(otel_comparison, dict):
@@ -2446,10 +2806,76 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
         rejected = aggregate["rejected_clients"]["max"]
         failed = aggregate["failed_clients"]["max"]
         forced_timeout = bool(aggregate.get("forced_timeout"))
+        bench_exit_code = int(aggregate.get("bench_exit_code", 1))
         total_messages = aggregate["total_messages"]["median"]
+        target_min = int(aggregate.get("target_clients", {}).get("min", 0))
+        target_max = int(aggregate.get("target_clients", {}).get("max", 0))
+        started_min = int(aggregate.get("started_clients", {}).get("min", 0))
+        tcp_connected_min = int(aggregate.get("tcp_connected_clients", {}).get("min", 0))
+        authenticated_min = int(aggregate.get("authenticated_clients", {}).get("min", 0))
+        peak_active_min = int(aggregate.get("peak_active_clients", {}).get("min", 0))
+        cancelled = int(aggregate.get("cancelled_clients", {}).get("max", 1))
+        cancelled_before_connect = int(
+            aggregate.get("cancelled_before_connect", {}).get("max", 1)
+        )
+        ramp_completed = aggregate.get("ramp_completed") is True
+        measurement_started = aggregate.get("measurement_started") is True
+        steady_completed = aggregate.get("steady_state_completed") is True
+        steady_target = float(
+            aggregate.get("steady_state_target_seconds", {}).get("max", 0.0)
+        )
+        steady_elapsed = float(
+            aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
+        )
+        termination_reasons = set(aggregate.get("termination_reasons", []))
+        lifecycle_valid = (
+            target_min > 0
+            and target_min == target_max
+            and started_min == target_min
+            and tcp_connected_min == target_min
+            and authenticated_min == target_min
+            and peak_active_min == target_min
+            and cancelled == 0
+            and cancelled_before_connect == 0
+            and ramp_completed
+            and measurement_started
+            and bench_exit_code == 0
+        )
+        duration_window_valid = (
+            steady_completed
+            and steady_elapsed >= max(0.0, steady_target - 0.25)
+        )
+        natural_battle_window_valid = (
+            case_name.startswith("battle")
+            and steady_completed
+            and steady_elapsed > 0.0
+            and bool(termination_reasons)
+            and termination_reasons <= {"natural_completion", "clients_completed"}
+        )
+        steady_window_valid = duration_window_valid or natural_battle_window_valid
+
+        evidence_observed = {
+            "target_clients": target_min,
+            "started_clients_min": started_min,
+            "tcp_connected_clients_min": tcp_connected_min,
+            "authenticated_clients_min": authenticated_min,
+            "peak_active_clients_min": peak_active_min,
+            "cancelled_clients": cancelled,
+            "cancelled_before_connect": cancelled_before_connect,
+            "ramp_completed": ramp_completed,
+            "measurement_started": measurement_started,
+            "steady_state_target_seconds": steady_target,
+            "steady_state_elapsed_seconds_min": steady_elapsed,
+            "steady_state_completed": steady_completed,
+            "termination_reasons": sorted(termination_reasons),
+            "bench_exit_code": bench_exit_code,
+        }
 
         if case_name.startswith("echo"):
-            passed = rejected == 0 and failed == 0 and not forced_timeout and total_messages > 0 and p99 <= 50.0
+            passed = (
+                lifecycle_valid and steady_window_valid and rejected == 0 and failed == 0
+                and not forced_timeout and total_messages > 0 and p99 <= 50.0
+            )
             if p99 >= 45.0:
                 gates["warnings"].append({
                     "case": case_name,
@@ -2459,8 +2885,12 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": "echo: rejected=0, failed=0, p99<=50ms",
+                "criteria": (
+                    "echo: all target clients started/TCP-connected/authenticated/active before "
+                    "measurement, cancelled=0, steady duration complete, rejected=0, failed=0, p99<=50ms"
+                ),
                 "observed": {
+                    **evidence_observed,
                     "p99_ms": p99,
                     "throughput_msg_per_sec": throughput,
                     "rejected_clients": rejected,
@@ -2474,6 +2904,7 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             p99_limit = battle_p99_limit_ms(case_name)
             min_observed_messages = aggregate["total_messages"]["min"]
             passed = (
+                lifecycle_valid and steady_window_valid and
                 rejected == 0 and failed == 0 and not forced_timeout and
                 min_observed_messages >= min_messages and p99 <= p99_limit
             )
@@ -2486,8 +2917,14 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": f"battle: rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, p99<={p99_limit:.0f}ms",
+                "criteria": (
+                    "battle: all target clients started/TCP-connected/authenticated/active before "
+                    "measurement, cancelled=0, bounded steady window complete, "
+                    f"rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, "
+                    f"p99<={p99_limit:.0f}ms"
+                ),
                 "observed": {
+                    **evidence_observed,
                     "p99_ms": p99,
                     "p99_limit_ms": p99_limit,
                     "throughput_msg_per_sec": throughput,
@@ -2505,37 +2942,91 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
+    capacity_ramp = {"ramp_clients_per_second": 2000, "ramp_timeout_seconds": 90}
+    baseline_ramp = {"ramp_clients_per_second": 1000, "ramp_timeout_seconds": 45}
+    smoke_ramp = {"ramp_clients_per_second": 200, "ramp_timeout_seconds": 15}
+    if run_preset == "saturation":
+        saturation_ramp = {"ramp_clients_per_second": 2000, "ramp_timeout_seconds": 60}
+        return [
+            {"name": "echo-sat-c500-i100-60s", "scenario": "echo", "clients": 500, "duration_seconds": 60, "interval_ms": 100, **saturation_ramp},
+            {"name": "echo-sat-c1000-i100-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 100, **saturation_ramp},
+            {"name": "echo-sat-c1000-i50-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 50, **saturation_ramp},
+            {"name": "echo-sat-c1000-i20-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 20, **saturation_ramp},
+            {"name": "echo-sat-c1000-i10-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
+            {"name": "echo-sat-c2000-i10-60s", "scenario": "echo", "clients": 2000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
+        ]
     if run_preset == "capacity":
         return [
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **capacity_ramp},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2, **capacity_ramp},
         ]
     if run_preset == "business-capacity":
         return [
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **capacity_ramp},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2, **capacity_ramp},
         ]
     if run_preset == "baseline":
         return [
-            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50, **baseline_ramp},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **baseline_ramp},
+            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2, **baseline_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **baseline_ramp},
         ]
     return [
-        {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50},
-        {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle"},
+        {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50, **smoke_ramp},
+        {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle", **smoke_ramp},
     ]
+
+
+def build_case_manifest(
+    cases: list[dict[str, Any]],
+    *,
+    service_cpu_set: str,
+    service_cpu_count: int,
+    io_cores: int,
+) -> list[dict[str, Any]]:
+    manifest: list[dict[str, Any]] = []
+    for case in cases:
+        interval_ms = int(case.get("interval_ms", 0))
+        clients = int(case["clients"])
+        configured_ceiling = (
+            round(clients * 1000.0 / interval_ms, 3) if interval_ms > 0 else None
+        )
+        case_id = str(case["name"])
+        manifest.append({
+            "case_id": case_id,
+            "case_name": case_id,
+            "scenario": str(case["scenario"]),
+            "clients": clients,
+            "interval_ms": interval_ms,
+            "duration_seconds": int(case["duration_seconds"]),
+            "ramp_clients_per_second": int(case["ramp_clients_per_second"]),
+            "ramp_timeout_seconds": int(case["ramp_timeout_seconds"]),
+            "load_model": "closed_loop_one_in_flight_per_client",
+            "configured_request_rate_ceiling_ops_per_sec": configured_ceiling,
+            "service_cpu_set": service_cpu_set,
+            "service_cpu_count": service_cpu_count,
+            "io_cores": io_cores,
+            "comparison_identity": (
+                f"{case_id}|service_cpu_count={service_cpu_count}|io_cores={io_cores}"
+            ),
+            "comparison_axes": ["service_cpu_count", "io_cores"],
+        })
+    return manifest
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect v2 performance baseline data.")
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
-    parser.add_argument("--run-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="smoke")
+    parser.add_argument(
+        "--run-preset",
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation"],
+        default="smoke",
+    )
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--gateway-port", type=int, default=9201)
     parser.add_argument("--login-port", type=int, default=9202)
@@ -2623,6 +3114,18 @@ def main() -> int:
         help="Run only this named preset case; repeat to select multiple cases.",
     )
     parser.add_argument("--output-root", default="")
+    parser.add_argument(
+        "--saturation-cpu-threshold-percent",
+        type=float,
+        default=85.0,
+        help="Gateway CPU quota utilization threshold used to identify saturation.",
+    )
+    parser.add_argument(
+        "--saturation-loadgen-headroom-percent",
+        type=float,
+        default=85.0,
+        help="Maximum load-generator CPU quota utilization allowed for Gateway saturation attribution.",
+    )
     args = parser.parse_args()
 
     try:
@@ -2647,6 +3150,16 @@ def main() -> int:
         parser.error(str(exc))
     if args.loadgen_io_threads <= 0:
         parser.error("--loadgen-io-threads must be positive")
+    if args.run_preset == "saturation" and (
+        not args.cpu_set or not resolved_loadgen_cpu_set
+    ):
+        parser.error(
+            "--run-preset saturation requires isolated --cpu-set and --loadgen-cpu-set capacity"
+        )
+    if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
+        parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
+    if not 0.0 < args.saturation_loadgen_headroom_percent <= 100.0:
+        parser.error("--saturation-loadgen-headroom-percent must be in (0, 100]")
     if args.business_operation_scenario and (
         args.business_operation_clients <= 0
         or args.business_operation_iterations <= 0
@@ -2699,6 +3212,15 @@ def main() -> int:
         run_cases = [case for case in run_cases if case["name"] in selected_cases]
         if not run_cases:
             parser.error("--case did not match any case in the selected --run-preset")
+    case_manifest = build_case_manifest(
+        run_cases,
+        service_cpu_set=str(service_resource_constraint.get("requested", "")),
+        service_cpu_count=int(service_resource_constraint.get("cpu_count", 0)),
+        io_cores=args.io_cores,
+    )
+    case_identity_by_name = {
+        str(entry["case_name"]): entry for entry in case_manifest
+    }
 
     battle_max_frames = estimate_battle_max_frames(run_cases)
     managed: list[ManagedProcess] = []
@@ -2811,6 +3333,8 @@ def main() -> int:
             "build_dir": str(build_dir),
             "output_dir": str(output_root),
             "summary_version": 2,
+            "case_manifest_version": 1,
+            "case_manifest": case_manifest,
             "resource_constraint": service_resource_constraint,
             "service_resource_constraint": service_resource_constraint,
             "loadgen_resource_constraint": loadgen_resource_constraint,
@@ -2837,6 +3361,7 @@ def main() -> int:
             "business_operation_perf": None,
             "leaderboard_persistence_comparison": None,
             "otel_comparison": None,
+            "saturation_analysis": None,
             "final_backend_metrics": {},
         }
         summary["process_snapshots"]["idle"] = snapshot_processes(managed)
@@ -2847,6 +3372,12 @@ def main() -> int:
                 run_key = f"{case['name']}.run{repetition + 1}"
                 service_before = snapshot_processes(managed)
                 resource_started_at = time.monotonic()
+                load_end: dict[str, Any] = {}
+
+                def capture_load_end() -> None:
+                    load_end["service_after"] = snapshot_processes(managed)
+                    load_end["monotonic"] = time.monotonic()
+
                 run_result = invoke_bench_case(
                     executables["pressure"],
                     args.gateway_port,
@@ -2854,16 +3385,34 @@ def main() -> int:
                     result_dir,
                     loadgen_cpu_set=resolved_loadgen_cpu_set,
                     loadgen_io_threads=args.loadgen_io_threads,
+                    on_load_end=capture_load_end,
+                )
+                service_at_load_end = load_end.get("service_after")
+                load_finished_at = load_end.get("monotonic")
+                if not isinstance(service_at_load_end, list) or not isinstance(
+                    load_finished_at, (int, float)
+                ):
+                    raise RuntimeError(f"missing load-end resource boundary: {run_key}")
+                load_window_elapsed_seconds = max(
+                    0.0, float(load_finished_at) - resource_started_at
                 )
                 quiescence = wait_for_service_quiescence(
                     managed,
                     f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
                 )
-                service_after = snapshot_processes(managed)
-                resource_elapsed_seconds = max(0.0, time.monotonic() - resource_started_at)
+                service_after_quiescence = snapshot_processes(managed)
+                total_resource_elapsed_seconds = max(
+                    0.0, time.monotonic() - resource_started_at
+                )
                 run_result["case_name"] = run_key
                 run_result["base_case_name"] = case["name"]
-                run_result["resource_elapsed_seconds"] = round(resource_elapsed_seconds, 6)
+                run_result["case_identity"] = case_identity_by_name[str(case["name"])]
+                run_result["resource_elapsed_seconds"] = round(
+                    load_window_elapsed_seconds, 6
+                )
+                run_result["resource_total_elapsed_seconds"] = round(
+                    total_resource_elapsed_seconds, 6
+                )
                 case_runs.append(run_result)
 
                 loadgen_affinity = run_result["loadgen_resources"]["startup_affinity"]
@@ -2884,15 +3433,17 @@ def main() -> int:
                 diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
                 diagnostics_path = result_dir / f"{run_key}.gateway.diagnostics.json"
                 diagnostics_path.write_text(json.dumps(diagnostics, indent=2, ensure_ascii=False), encoding="utf-8")
-                summary["process_snapshots"][run_key] = {
-                    "before": service_before,
-                    "after": service_after,
-                    "loadgen": run_result["loadgen_resources"],
-                    "elapsed_seconds": round(resource_elapsed_seconds, 6),
-                    "quiescence": quiescence,
-                }
+                summary["process_snapshots"][run_key] = build_case_resource_evidence(
+                    service_before=service_before,
+                    service_at_load_end=service_at_load_end,
+                    loadgen=run_result["loadgen_resources"],
+                    load_window_elapsed_seconds=load_window_elapsed_seconds,
+                    quiescence=quiescence,
+                    service_after_quiescence=service_after_quiescence,
+                )
 
             aggregate = aggregate_case_runs(case["name"], case_runs)
+            aggregate["case_identity"] = case_identity_by_name[str(case["name"])]
             summary["cases"].extend(case_runs)
             summary["case_aggregates"].append(aggregate)
 
@@ -3282,6 +3833,12 @@ def main() -> int:
         summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
         if not resource_isolation_check["passed"]:
             summary["release_gates"]["overall_pass"] = False
+        if args.run_preset == "saturation":
+            summary["saturation_analysis"] = build_saturation_analysis(
+                summary,
+                cpu_threshold_percent=args.saturation_cpu_threshold_percent,
+                loadgen_headroom_threshold_percent=args.saturation_loadgen_headroom_percent,
+            )
         final_diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
         summary["final_backend_metrics"] = final_diagnostics.get("backend_metrics", {})
         (result_dir / "final.gateway.diagnostics.json").write_text(
@@ -3311,6 +3868,7 @@ def main() -> int:
             "business_flow_clients": max(1, args.business_flow_clients),
             "supports_long_soak_followup": True,
             "supports_capacity_followup": args.run_preset in {"capacity", "business-capacity"},
+            "supports_saturation_comparison": args.run_preset == "saturation",
         }
 
         summary_path = output_root / "summary.json"
@@ -3319,6 +3877,12 @@ def main() -> int:
         report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
         log_step(f"Markdown report written: {report_path}")
+        if args.run_preset == "saturation":
+            analysis = summary.get("saturation_analysis")
+            if isinstance(analysis, dict) and analysis.get("collection_pass") is True:
+                return 0
+            log_step("Saturation evidence collection is invalid")
+            return 2
         if (
             (args.run_preset == "smoke" and not args.business_operation_scenario)
             or summary["release_gates"].get("overall_pass")

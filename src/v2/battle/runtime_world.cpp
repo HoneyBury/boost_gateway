@@ -286,7 +286,10 @@ std::unique_ptr<v2::ecs::World> create_battle_world(const std::string& battle_id
     executor->add_system(std::make_unique<CombatSystem>(),
         v2::ecs::SystemMetadata{.name = "CombatSystem", .dependencies = {"MovementSystem", "BattleInputSystem"}});
     executor->add_system(std::make_unique<v2::aoi::AoiSystem>(),
-        v2::ecs::SystemMetadata{.name = "AoiSystem", .dependencies = {"MovementSystem"}});
+        v2::ecs::SystemMetadata{
+            .name = "AoiSystem",
+            .dependencies = {"MovementSystem", "CombatSystem", "ProjectileSystem"},
+        });
     executor->add_system(std::make_unique<ProjectileSystem>(),
         v2::ecs::SystemMetadata{.name = "ProjectileSystem", .dependencies = {"CombatSystem"}});
 

@@ -58,6 +58,10 @@ DemoServer::DemoServer(std::uint16_t port,
       io_engine_(std::move(io_engine)),
       adapter_(actor_system_, this),
       runtime_(actor_system_, adapter_) {
+    runtime_.set_battle_route_completion_dispatcher(
+        [this](std::function<void()> task) {
+            return enqueue_runtime_task(std::move(task));
+        });
     set_write_scheduler([this](SessionId session_id, SessionWriteTask task) {
         std::shared_ptr<v2::io::IoSession> session;
         {
@@ -290,6 +294,7 @@ void DemoServer::stop() {
             snapshot.active_sessions = 0;
         }
     }
+    runtime_.shutdown_battle_route_workers();
     stop_gateway_worker();
     io_engine_->stop();
     acceptor_.reset();
@@ -443,6 +448,9 @@ std::string DemoServer::diagnostics_json() const {
     doc["battle_route"] = {
         {"completed_tasks", completed_battle_routes},
         {"queued_tasks", snapshot.battle_route.queued_tasks},
+        {"rejected_tasks", snapshot.battle_route.rejected_tasks},
+        {"dropped_completions", snapshot.battle_route.dropped_completions},
+        {"queue_capacity", snapshot.battle_route.queue_capacity},
         {"average_queue_wait_us", completed_battle_routes == 0
                                         ? 0
                                         : snapshot.battle_route.total_queue_wait_us /
@@ -606,6 +614,18 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
     add_gauge("gateway_active_sessions", "Active sessions", diag.total_active_sessions);
     add_counter("gateway_accepted_sessions_total", "Total accepted sessions", diag.total_accepted_sessions);
     add_counter("gateway_outbound_dispatches_total", "Total outbound dispatches", diag.total_outbound_dispatches);
+    add_gauge("gateway_battle_route_queued_tasks",
+              "Battle backend route tasks waiting for a worker",
+              diag.battle_route.queued_tasks);
+    add_gauge("gateway_battle_route_queue_capacity",
+              "Maximum number of queued battle backend route tasks",
+              diag.battle_route.queue_capacity);
+    add_counter("gateway_battle_route_rejected_tasks_total",
+                "Battle backend route tasks rejected because the queue was full",
+                diag.battle_route.rejected_tasks);
+    add_counter("gateway_battle_route_dropped_completions_total",
+                "Battle backend route completions rejected by the owner dispatcher",
+                diag.battle_route.dropped_completions);
 
     for (const auto& [svc, metrics] : diag.backend_metrics) {
         std::string prefix = "gateway_backend_" + svc + "_";
@@ -781,6 +801,21 @@ void DemoServer::enqueue_session_closed(SessionId session_id) {
     gateway_queue_cv_.notify_one();
 }
 
+bool DemoServer::enqueue_runtime_task(std::function<void()> task) {
+    if (!task || stop_requested_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        if (gateway_worker_stopping_) {
+            return false;
+        }
+        gateway_queue_.push_back(GatewayQueueItem{.runtime_task = std::move(task)});
+    }
+    gateway_queue_cv_.notify_one();
+    return true;
+}
+
 void DemoServer::start_gateway_worker() {
     {
         std::scoped_lock lock(gateway_queue_mutex_);
@@ -806,6 +841,10 @@ void DemoServer::start_gateway_worker() {
                 }
 
                 std::scoped_lock handle_lock(gateway_handle_mutex_);
+                if (item.runtime_task) {
+                    item.runtime_task();
+                    continue;
+                }
                 if (!item.message.has_value()) {
                     runtime_.on_session_closed(item.session_id);
                     continue;

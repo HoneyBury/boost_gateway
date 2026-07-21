@@ -140,6 +140,94 @@ def metric(aggregate: dict[str, Any], name: str, stat: str) -> float | int | Non
     return observed if isinstance(observed, (int, float)) and not isinstance(observed, bool) else None
 
 
+def distribution_int(aggregate: dict[str, Any], name: str, stat: str, default: int = -1) -> int:
+    observed = metric(aggregate, name, stat)
+    return int(observed) if observed is not None else default
+
+
+def normalized_case_identity(entry: object) -> dict[str, Any]:
+    """Return comparison identity with the two experimental axes removed."""
+    if not isinstance(entry, dict):
+        return {}
+    ignored = {
+        "service_cpu_set",
+        "service_cpu_count",
+        "io_cores",
+        "comparison_identity",
+    }
+    return {key: value for key, value in entry.items() if key not in ignored}
+
+
+def case_manifest_map(summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    manifest = summary.get("case_manifest")
+    if not isinstance(manifest, list):
+        return {}
+    mapped: dict[str, dict[str, Any]] = {}
+    for entry in manifest:
+        if not isinstance(entry, dict):
+            return {}
+        name = entry.get("case_name") or entry.get("case_id")
+        if not isinstance(name, str) or not name or name in mapped:
+            return {}
+        mapped[name] = entry
+    return mapped
+
+
+def validate_case_lifecycle(
+    checks: list[dict[str, Any]],
+    label: str,
+    summary: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Require the post-fix manifest and real connection lifecycle for every aggregate."""
+    manifest = case_manifest_map(summary)
+    aggregates = case_map(summary)
+    manifest_valid = (
+        summary.get("case_manifest_version") == 1
+        and bool(manifest)
+        and set(manifest) == set(aggregates)
+        and all(
+            aggregate.get("case_identity") == manifest[name]
+            for name, aggregate in aggregates.items()
+        )
+    )
+    add_check(
+        checks,
+        f"{label}:case-manifest",
+        manifest_valid,
+        f"version={summary.get('case_manifest_version')} manifest={sorted(manifest)} aggregates={sorted(aggregates)}",
+    )
+
+    invalid: list[str] = []
+    for name, aggregate in aggregates.items():
+        target_min = distribution_int(aggregate, "target_clients", "min")
+        target_max = distribution_int(aggregate, "target_clients", "max")
+        valid = (
+            target_min > 0
+            and target_min == target_max
+            and distribution_int(aggregate, "started_clients", "min") == target_min
+            and distribution_int(aggregate, "tcp_connected_clients", "min") == target_min
+            and distribution_int(aggregate, "authenticated_clients", "min") == target_min
+            and distribution_int(aggregate, "peak_active_clients", "min") == target_min
+            and distribution_int(aggregate, "cancelled_clients", "max") == 0
+            and distribution_int(aggregate, "cancelled_before_connect", "max") == 0
+            and aggregate.get("ramp_completed") is True
+            and aggregate.get("measurement_started") is True
+            and aggregate.get("steady_state_completed") is True
+            and aggregate.get("bench_exit_code") == 0
+            and aggregate.get("forced_timeout") is False
+        )
+        if not valid:
+            invalid.append(name)
+    lifecycle_valid = bool(aggregates) and not invalid
+    add_check(
+        checks,
+        f"{label}:real-client-lifecycle",
+        lifecycle_valid,
+        f"aggregates={len(aggregates)} invalid={invalid}",
+    )
+    return manifest
+
+
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
 
@@ -420,6 +508,12 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
 
     capacity_cases = case_map(capacity)
     business_cases = case_map(business)
+    capacity_manifest = validate_case_lifecycle(
+        checks, f"cpu-{spec.cpu_count}:capacity", capacity,
+    )
+    business_manifest = validate_case_lifecycle(
+        checks, f"cpu-{spec.cpu_count}:business", business,
+    )
     capacity_cases_valid = set(capacity_cases) == REQUIRED_CAPACITY_CASES and all(
         item.get("runs") == repetitions for item in capacity_cases.values()
     )
@@ -517,6 +611,14 @@ def validate_source(spec: SourceSpec) -> tuple[dict[str, Any], list[dict[str, An
         "gateway_io_cores": long_soak.get("io_cores"),
         "capacity_cases": sorted(capacity_cases),
         "business_capacity_cases": sorted(business_cases),
+        "capacity_case_identity": [
+            normalized_case_identity(capacity_manifest[name])
+            for name in sorted(capacity_manifest)
+        ],
+        "business_capacity_case_identity": [
+            normalized_case_identity(business_manifest[name])
+            for name in sorted(business_manifest)
+        ],
     }
     source = {
         "cpu_count": spec.cpu_count,
@@ -668,6 +770,23 @@ def aggregate_sources(specs: list[SourceSpec]) -> dict[str, Any]:
         for source in sources
     }
     add_check(checks, "matrix:same-workload", len(identities) == 1, f"identities={len(identities)}")
+    manifests = {
+        json.dumps(
+            {
+                "capacity": source["workload_identity"].get("capacity_case_identity"),
+                "business": source["workload_identity"].get("business_capacity_case_identity"),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        for source in sources
+    }
+    add_check(
+        checks,
+        "matrix:same-case-manifest",
+        len(manifests) == 1,
+        f"normalized_manifests={len(manifests)}",
+    )
 
     evidence_complete = all(check["passed"] for check in checks)
     all_workload_gates_passed = (

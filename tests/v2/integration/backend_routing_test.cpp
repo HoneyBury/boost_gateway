@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -42,6 +43,44 @@ namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 constexpr const char* kGatewayHost = "127.0.0.1";
+
+class ScopedEnvironmentOverride {
+public:
+    ScopedEnvironmentOverride(const char* name, const char* value)
+        : name_(name) {
+        if (const char* previous = std::getenv(name)) {
+            previous_value_ = previous;
+        }
+        set(value);
+    }
+
+    ~ScopedEnvironmentOverride() {
+        if (previous_value_.has_value()) {
+            set(previous_value_->c_str());
+        } else {
+#if defined(_WIN32)
+            _putenv_s(name_.c_str(), "");
+#else
+            unsetenv(name_.c_str());
+#endif
+        }
+    }
+
+    ScopedEnvironmentOverride(const ScopedEnvironmentOverride&) = delete;
+    ScopedEnvironmentOverride& operator=(const ScopedEnvironmentOverride&) = delete;
+
+private:
+    void set(const char* value) {
+#if defined(_WIN32)
+        _putenv_s(name_.c_str(), value);
+#else
+        setenv(name_.c_str(), value, 1);
+#endif
+    }
+
+    std::string name_;
+    std::optional<std::string> previous_value_;
+};
 
 class DisableRedisAutoConnectForTest {
 public:
@@ -942,6 +981,35 @@ struct BattleBackendProcess {
     };
     std::unordered_map<std::string, BattleEntry> battles_;
     std::mutex mutex_;
+    std::mutex input_gate_mutex_;
+    std::condition_variable input_gate_cv_;
+    bool block_battle_input_ = false;
+    bool battle_input_entered_ = false;
+    bool release_battle_input_ = false;
+
+    void block_battle_inputs() {
+        std::scoped_lock lock(input_gate_mutex_);
+        block_battle_input_ = true;
+        battle_input_entered_ = false;
+        release_battle_input_ = false;
+    }
+
+    bool wait_for_blocked_battle_input() {
+        std::unique_lock lock(input_gate_mutex_);
+        return input_gate_cv_.wait_for(
+            lock,
+            std::chrono::seconds(5),
+            [this]() { return battle_input_entered_; });
+    }
+
+    void release_battle_inputs() {
+        {
+            std::scoped_lock lock(input_gate_mutex_);
+            release_battle_input_ = true;
+            block_battle_input_ = false;
+        }
+        input_gate_cv_.notify_all();
+    }
 
     bool start() {
         v2::service::BackendServer::HandlerMap handlers;
@@ -996,6 +1064,17 @@ struct BattleBackendProcess {
         };
 
         handlers["battle_input"] = [this](const v2::service::BackendEnvelope& request) {
+            {
+                std::unique_lock lock(input_gate_mutex_);
+                if (block_battle_input_) {
+                    battle_input_entered_ = true;
+                    input_gate_cv_.notify_all();
+                    (void)input_gate_cv_.wait_for(
+                        lock,
+                        std::chrono::seconds(5),
+                        [this]() { return release_battle_input_; });
+                }
+            }
             auto doc = nlohmann::json::parse(request.payload, nullptr, false);
             if (doc.is_discarded()) {
                 v2::service::BackendEnvelope resp;
@@ -1135,7 +1214,10 @@ struct BattleBackendProcess {
         return port > 0;
     }
 
-    void stop() { if (server) server->stop(); }
+    void stop() {
+        release_battle_inputs();
+        if (server) server->stop();
+    }
 };
 
 // ─── S3 Integration Tests ────────────────────────────────────────
@@ -1358,6 +1440,9 @@ TEST(V2BackendRoutingTest, BattleStartCascadeViaBridge) {
 
 TEST(V2BackendRoutingTest, BattleInputFrameAdvanceViaBridge) {
     app::logging::init("project_tests");
+    ScopedEnvironmentOverride route_workers("V2_BATTLE_ROUTE_WORKERS", "1");
+    ScopedEnvironmentOverride route_queue_capacity(
+        "V2_BATTLE_ROUTE_QUEUE_CAPACITY", "1");
 
     LoginBackendProcess login_backend;
     RoomBackendProcess room_backend;
@@ -1420,6 +1505,49 @@ TEST(V2BackendRoutingTest, BattleInputFrameAdvanceViaBridge) {
 
     auto frame_b = bob.expect_message(net::protocol::kBattleStatePush);
     EXPECT_EQ(frame_b.message_id, net::protocol::kBattleStatePush);
+
+    const auto route_diag = server->diagnostics().battle_route;
+    EXPECT_GE(route_diag.completed_tasks, 1U);
+    EXPECT_EQ(route_diag.queued_tasks, 0U);
+    EXPECT_EQ(route_diag.rejected_tasks, 0U);
+    EXPECT_EQ(route_diag.queue_capacity, 1U);
+
+    battle_backend.block_battle_inputs();
+    alice.send(net::protocol::kBattleInputRequest, 105, "frame=2:move:11,20");
+    const bool first_route_blocked = battle_backend.wait_for_blocked_battle_input();
+
+    alice.send(net::protocol::kBattleInputRequest, 106, "frame=3:move:12,20");
+    bool queue_filled = false;
+    const auto queue_deadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < queue_deadline) {
+        if (server->diagnostics().battle_route.queued_tasks == 1U) {
+            queue_filled = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+
+    if (!first_route_blocked || !queue_filled) {
+        battle_backend.release_battle_inputs();
+    }
+    ASSERT_TRUE(first_route_blocked);
+    ASSERT_TRUE(queue_filled);
+
+    alice.send(net::protocol::kBattleInputRequest, 107, "frame=4:move:13,20");
+    const auto overload = alice.read();
+    battle_backend.release_battle_inputs();
+
+    EXPECT_EQ(overload.message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(overload.request_id, 107U);
+    EXPECT_EQ(overload.error_code,
+              static_cast<std::int32_t>(
+                  net::protocol::ErrorCode::kBattleRouteOverloaded));
+    EXPECT_EQ(overload.body, "battle_route_overloaded");
+
+    const auto overloaded_diag = server->diagnostics().battle_route;
+    EXPECT_EQ(overloaded_diag.queue_capacity, 1U);
+    EXPECT_EQ(overloaded_diag.rejected_tasks, 1U);
 
     alice.close();
     bob.close();

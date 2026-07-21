@@ -13,6 +13,66 @@ namespace v2::service {
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
+namespace {
+
+bool handshake_with_timeout(asio::ssl::stream<tcp::socket&>& stream,
+                            std::chrono::milliseconds timeout,
+                            const std::atomic<bool>& running) {
+    boost::system::error_code ec;
+    stream.next_layer().non_blocking(true, ec);
+    if (ec) {
+        return false;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (running.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        stream.handshake(asio::ssl::stream_base::server, ec);
+        if (!ec) {
+            stream.next_layer().non_blocking(false, ec);
+            return true;
+        }
+        if (ec != asio::error::would_block && ec != asio::error::try_again) {
+            stream.next_layer().non_blocking(false, ec);
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    stream.next_layer().non_blocking(false, ec);
+    return false;
+}
+
+bool shutdown_with_timeout(asio::ssl::stream<tcp::socket&>& stream,
+                           std::chrono::milliseconds timeout,
+                           const std::atomic<bool>& running) {
+    boost::system::error_code ec;
+    stream.next_layer().non_blocking(true, ec);
+    if (ec) {
+        return false;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + timeout;
+    while (running.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < deadline) {
+        stream.shutdown(ec);
+        if (!ec) {
+            stream.next_layer().non_blocking(false, ec);
+            return true;
+        }
+        if (ec != asio::error::would_block && ec != asio::error::try_again) {
+            stream.next_layer().non_blocking(false, ec);
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+
+    stream.next_layer().non_blocking(false, ec);
+    return false;
+}
+
+}  // namespace
+
 BackendServer::BackendServer(std::uint16_t port, HandlerMap handlers)
     : BackendServer([port] {
           BackendServerOptions options;
@@ -52,25 +112,13 @@ void BackendServer::start() {
 }
 
 void BackendServer::stop() {
-    running_ = false;
+    std::scoped_lock stop_lock(stop_mutex_);
+    running_.store(false, std::memory_order_release);
     if (acceptor_) {
         boost::system::error_code ec;
         acceptor_->close(ec);
     }
-    std::vector<std::shared_ptr<tcp::socket>> sessions;
-    {
-        std::scoped_lock lock(session_mutex_);
-        sessions = session_sockets_;
-    }
-    for (auto& session : sessions) {
-        if (!session) {
-            continue;
-        }
-        boost::system::error_code ec;
-        session->close(ec);
-    }
     io_context_.stop();
-    ssl_context_.reset();
     if (thread_.joinable()) {
         thread_.join();
     }
@@ -85,6 +133,20 @@ void BackendServer::stop() {
             session_thread.join();
         }
     }
+
+    std::vector<std::shared_ptr<tcp::socket>> sessions;
+    {
+        std::scoped_lock lock(session_mutex_);
+        sessions.swap(session_sockets_);
+    }
+    for (auto& session : sessions) {
+        if (!session) {
+            continue;
+        }
+        boost::system::error_code ec;
+        session->close(ec);
+    }
+    ssl_context_.reset();
 }
 
 std::uint16_t BackendServer::local_port() const {
@@ -212,10 +274,19 @@ void BackendServer::handle_plain_session(std::shared_ptr<tcp::socket> socket) {
         session_sockets_.push_back(socket);
     }
     while (running_ && socket->is_open()) {
-        auto request = read_frame(*socket, options_.session_idle_timeout);
+        auto request = read_frame(
+            *socket,
+            options_.session_idle_timeout,
+            [this]() { return !running_.load(std::memory_order_acquire); });
         if (!request) break;
 
-        write_frame(*socket, handle_request(*request));
+        if (!write_frame(
+                *socket,
+                handle_request(*request),
+                options_.session_idle_timeout,
+                [this]() { return !running_.load(std::memory_order_acquire); })) {
+            break;
+        }
     }
     {
         std::scoped_lock lock(session_mutex_);
@@ -233,14 +304,24 @@ void BackendServer::handle_tls_session(std::shared_ptr<tcp::socket> socket) {
 
     try {
         asio::ssl::stream<tcp::socket&> stream(*socket, *ssl_context_);
-        stream.handshake(asio::ssl::stream_base::server);
-        while (running_ && socket->is_open()) {
-            auto request = read_frame(stream, options_.session_idle_timeout);
-            if (!request) break;
-            write_frame(stream, handle_request(*request));
+        if (!handshake_with_timeout(stream, options_.session_idle_timeout, running_)) {
+            throw std::runtime_error("backend TLS handshake cancelled or timed out");
         }
-        boost::system::error_code ec;
-        stream.shutdown(ec);
+        while (running_ && socket->is_open()) {
+            auto request = read_frame(
+                stream,
+                options_.session_idle_timeout,
+                [this]() { return !running_.load(std::memory_order_acquire); });
+            if (!request) break;
+            if (!write_frame(
+                    stream,
+                    handle_request(*request),
+                    options_.session_idle_timeout,
+                    [this]() { return !running_.load(std::memory_order_acquire); })) {
+                break;
+            }
+        }
+        (void)shutdown_with_timeout(stream, options_.session_idle_timeout, running_);
     } catch (const std::exception&) {
         boost::system::error_code ec;
         socket->close(ec);

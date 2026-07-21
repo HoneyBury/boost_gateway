@@ -36,6 +36,7 @@ enum class ErrorCode : std::int32_t {
     kLoginBackendUnavailable = 2008,
     kRoomBackendUnavailable = 2009,
     kBattleBackendUnavailable = 3010,
+    kBattleRouteOverloaded = 3011,
     kRateLimited = 9001,
     kSessionNotFound = 9002,
 };
@@ -151,6 +152,8 @@ constexpr std::uint16_t kLeaderboardRankResponse = 7006;
             return "room_backend_unavailable";
         case ErrorCode::kBattleBackendUnavailable:
             return "battle_backend_unavailable";
+        case ErrorCode::kBattleRouteOverloaded:
+            return "battle_route_overloaded";
         case ErrorCode::kRateLimited:
             return "rate_limited";
         case ErrorCode::kSessionNotFound:

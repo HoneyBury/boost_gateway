@@ -96,12 +96,14 @@ private:
     struct GatewayQueueItem {
         SessionId session_id = 0;
         std::optional<v2::io::IoSession::PacketMessage> message;
+        std::function<void()> runtime_task;
     };
 
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
     void enqueue_packet(SessionId session_id, v2::io::IoSession::PacketMessage message);
     void enqueue_session_closed(SessionId session_id);
+    bool enqueue_runtime_task(std::function<void()> task);
     void start_gateway_worker();
     void stop_gateway_worker();
     void load_gateway_config();

@@ -27,6 +27,7 @@
     "scripts/lib/subprocess_utils.py": {"category": "tool"},
 
     "scripts/aggregate_cpu_capacity_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/aggregate_cpu_capacity_evidence.py"},
+    "scripts/aggregate_saturation_axis_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/aggregate_saturation_axis_evidence.py"},
     "scripts/analyze_test_results.py": {"category": "tool", "canonical": "scripts/tools/analyze_test_results.py"},
     "scripts/bootstrap_conan.py": {"category": "tool", "canonical": "scripts/tools/bootstrap_conan.py"},
     "scripts/build_docker.py": {"category": "tool", "canonical": "scripts/tools/build_docker.py"},

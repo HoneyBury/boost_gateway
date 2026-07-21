@@ -18,7 +18,7 @@
   - `v3.5.0` 同一候选的真实 2h、R4、R5、R6、R2/R3 冻结链通过
   - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
   - `v3.5.2` 同 SHA Release/R0、clean CMake consumer、tag publish/attestations 与双 runner 线上资产验收通过
-  - `v3.5.3` 已在同一冻结 SHA 完成 Release/R0、2h/8h、受限 CPU 容量与业务专项、Redis/Raft 恢复、告警生命周期、TLS/OTel 对照、R2/R3、tag publish 和线上资产独立验签
+  - `v3.5.3` 已在同一冻结 SHA 完成 Release/R0、2h/8h、Redis/Raft 恢复、告警生命周期、R2/R3、tag publish 和线上资产独立验签；历史容量与 TLS/OTel 数据按各自证据边界使用，不视为当前候选的冻结结论
 
 ## 发布事实与边界
 
@@ -44,7 +44,7 @@
 - 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
 - v3.5.x 维护计划：`docs/v3.5.x-maintenance-plan.md`
-- v3.5.2 冻结待办：`docs/v3.5.2-freeze-todo.md`
+- v3.5.2 历史冻结清单（已关闭）：`docs/v3.5.2-freeze-todo.md`
 - 完整版本变更：`CHANGELOG.md`
 
 当前 CI/CD 平台选择：

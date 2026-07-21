@@ -155,6 +155,21 @@ def main() -> int:
         and "runtime/validation/leaderboard-redis-image.json" in long_soak_workflow,
         "leaderboard comparison consumes the prewarmed Redis image offline and archives its image identity",
     )
+    add(
+        checks,
+        "long-soak-capacity:independent-saturation-evidence",
+        "run_saturation:" in long_soak_workflow
+        and 'if [ "${{ inputs.run_saturation }}" = "true" ]; then' in long_soak_workflow
+        and "--run-saturation" in long_soak_workflow
+        and "--saturation-case" in long_soak_workflow
+        and "--saturation-cpu-threshold-percent" in long_soak_workflow
+        and "--saturation-loadgen-headroom-percent" in long_soak_workflow
+        and "runtime/validation/saturation-baseline-summary.json" in long_soak_workflow
+        and "runtime/perf/fixed-runner-saturation/**" in long_soak_workflow
+        and "if: always() && inputs.run_capacity && inputs.run_business_capacity"
+        in long_soak_workflow,
+        "long-soak capacity runs and archives saturation independently without widening the R4 condition",
+    )
     pid_marker = 'pid_marker="runtime/validation/long-soak-capacity.pid"'
     background_launch = 'python "${args[@]}" &'
     pid_capture = "long_soak_pid=$!"

@@ -48,6 +48,9 @@ public:
     struct BattleRouteDiagnostics {
         std::uint64_t completed_tasks = 0;
         std::uint64_t queued_tasks = 0;
+        std::uint64_t rejected_tasks = 0;
+        std::uint64_t dropped_completions = 0;
+        std::uint64_t queue_capacity = 0;
         std::uint64_t total_queue_wait_us = 0;
         std::uint64_t max_queue_wait_us = 0;
         std::uint64_t total_task_execution_us = 0;
@@ -98,6 +101,10 @@ public:
     void set_backend_metrics_for_diagnostics(std::shared_ptr<BackendMetrics> m);
     void set_service_registry_for_diagnostics(std::shared_ptr<v2::service::ServiceRegistry> r);
     [[nodiscard]] BattleRouteDiagnostics battle_route_diagnostics() const noexcept;
+    using BattleRouteCompletionDispatcher =
+        std::function<bool(std::function<void()>)>;
+    void set_battle_route_completion_dispatcher(BattleRouteCompletionDispatcher dispatcher);
+    void shutdown_battle_route_workers();
 
     // ── Authorizer integration ─────────────────────────────────────────
     // Store the role for a session after successful authentication.
@@ -149,6 +156,15 @@ private:
     void archive_battle(const v2::battle::BattleSettlementPreparedMsg& settlement);
     void submit_battle_finished_push_to_leaderboard(const nlohmann::json& push,
                                                      const std::string& room_id);
+    void process_bridge_battle_finished_push(const nlohmann::json& push,
+                                             const std::string& room_id,
+                                             const std::string& fallback_battle_id);
+    void complete_bridge_battle_input(
+        SessionId session_id,
+        std::uint32_t request_id,
+        const std::string& room_id,
+        const std::string& battle_id,
+        GatewayServiceBridge::BackendRoutingResult result);
     void submit_battle_settlement_to_leaderboard(
         const std::string& battle_id,
         const std::string& room_id,
@@ -185,7 +201,7 @@ private:
     [[nodiscard]] bool should_emit_battle_frame_push(const std::string& room_id,
                                                      std::uint64_t frame_number);
     [[nodiscard]] bool battle_route_offload_enabled();
-    void enqueue_battle_route_task(std::function<void()> task);
+    [[nodiscard]] bool enqueue_battle_route_task(std::function<void()> task);
     void start_battle_route_workers();
     void stop_battle_route_workers();
 
@@ -209,15 +225,19 @@ private:
     std::uint64_t next_battle_id_ = 1;
     std::uint32_t battle_frame_push_every_ = 0;
     std::uint32_t battle_route_worker_count_ = 0;
+    std::uint32_t battle_route_queue_capacity_ = 0;
     std::unordered_map<std::string, std::uint64_t> last_emitted_battle_frame_;
     std::mutex battle_frame_push_mutex_;
     std::mutex battle_route_mutex_;
     std::condition_variable battle_route_cv_;
     std::deque<std::function<void()>> battle_route_tasks_;
     std::vector<std::thread> battle_route_workers_;
+    BattleRouteCompletionDispatcher battle_route_completion_dispatcher_;
     std::atomic<bool> battle_route_stopping_{false};
     std::atomic<std::uint64_t> battle_route_completed_tasks_{0};
     std::atomic<std::uint64_t> battle_route_queued_tasks_{0};
+    std::atomic<std::uint64_t> battle_route_rejected_tasks_{0};
+    std::atomic<std::uint64_t> battle_route_dropped_completions_{0};
     std::atomic<std::uint64_t> battle_route_total_queue_wait_us_{0};
     std::atomic<std::uint64_t> battle_route_max_queue_wait_us_{0};
     std::atomic<std::uint64_t> battle_route_total_task_execution_us_{0};
@@ -226,6 +246,7 @@ private:
     std::atomic<std::uint64_t> battle_route_max_backend_route_us_{0};
     std::atomic<std::uint64_t> battle_route_total_response_dispatch_us_{0};
     std::atomic<std::uint64_t> battle_route_max_response_dispatch_us_{0};
+    std::unordered_set<std::string> completed_bridge_battle_ids_;
     BattleArchiveSink* archive_sink_ = nullptr;
     std::unique_ptr<GatewayServiceBridge> bridge_;
     SchemaValidator schema_validator_;
