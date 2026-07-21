@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,32 @@ def workflow_name(text: str) -> str:
     return ""
 
 
+def workflow_dispatch_inputs(text: str) -> list[str]:
+    """Return top-level workflow_dispatch input names without a YAML dependency."""
+    in_dispatch = False
+    in_inputs = False
+    names: list[str] = []
+    for line in text.splitlines():
+        if line == "  workflow_dispatch:":
+            in_dispatch = True
+            continue
+        if not in_dispatch:
+            continue
+        if line and not line.startswith("    "):
+            break
+        if line == "    inputs:":
+            in_inputs = True
+            continue
+        if not in_inputs:
+            continue
+        match = re.fullmatch(r"      ([A-Za-z_][A-Za-z0-9_-]*):", line)
+        if match:
+            names.append(match.group(1))
+        elif line and not line.startswith("      "):
+            break
+    return names
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -97,6 +124,13 @@ def main() -> int:
         text = read(path)
         add(checks, f"name:{stem}", workflow_name(text) == EXPECTED_NAMES.get(stem), f"{path.name} name={workflow_name(text)!r}")
         add(checks, f"trigger:{stem}:dispatch", "workflow_dispatch:" in text, f"{path.name} supports workflow_dispatch")
+        dispatch_inputs = workflow_dispatch_inputs(text)
+        add(
+            checks,
+            f"trigger:{stem}:dispatch-input-limit",
+            len(dispatch_inputs) <= 25,
+            f"{path.name} declares {len(dispatch_inputs)}/25 workflow_dispatch inputs",
+        )
         has_tag_push = "push:" in text and "tags:" in text and "v*" in text
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
         add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
@@ -131,8 +165,111 @@ def main() -> int:
                 )
 
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    release_asset_verification = read(WORKFLOWS_ROOT / "release-asset-verification.yml")
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
+    long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
+    add(
+        checks,
+        "long-soak-capacity:leaderboard-redis-comparison-input-forwarding",
+        "leaderboard_redis_comparison:" in long_soak_workflow
+        and "if [ \"${{ inputs.leaderboard_redis_comparison }}\" = \"true\" ]" in long_soak_workflow
+        and "--leaderboard-redis-comparison" in long_soak_workflow
+        and "--leaderboard-redis-host" in long_soak_workflow
+        and "--leaderboard-redis-port" in long_soak_workflow
+        and "--require-leaderboard-redis-comparison" in long_soak_workflow
+        and "if: always() && inputs.run_capacity && inputs.run_business_capacity" in long_soak_workflow,
+        "long-soak capacity explicitly provisions and forwards the Redis persistence comparison to collection and R4",
+    )
+    add(
+        checks,
+        "long-soak-capacity:leaderboard-redis-image-provenance",
+        "docker run -d --pull never" in long_soak_workflow
+        and "docker image inspect redis:7-alpine" in long_soak_workflow
+        and "runtime/validation/leaderboard-redis-image.json" in long_soak_workflow,
+        "leaderboard comparison consumes the prewarmed Redis image offline and archives its image identity",
+    )
+    add(
+        checks,
+        "long-soak-capacity:independent-saturation-evidence",
+        "saturation_plan:" in long_soak_workflow
+        and 'saturation_plan="${{ inputs.saturation_plan }}"' in long_soak_workflow
+        and 'if [ -n "$saturation_plan" ]; then' in long_soak_workflow
+        and 'if [ "$saturation_plan" != "default" ]; then' in long_soak_workflow
+        and "--run-saturation" in long_soak_workflow
+        and "--saturation-case" in long_soak_workflow
+        and "run_saturation:" not in long_soak_workflow
+        and "saturation_cases:" not in long_soak_workflow
+        and "saturation_cpu_threshold_percent:" not in long_soak_workflow
+        and "saturation_loadgen_headroom_percent:" not in long_soak_workflow
+        and "--saturation-cpu-threshold-percent" not in long_soak_workflow
+        and "--saturation-loadgen-headroom-percent" not in long_soak_workflow
+        and "runtime/validation/saturation-baseline-summary.json" in long_soak_workflow
+        and "runtime/perf/fixed-runner-saturation/**" in long_soak_workflow
+        and "if: always() && inputs.run_capacity && inputs.run_business_capacity"
+        in long_soak_workflow,
+        "long-soak capacity runs and archives saturation independently without widening the R4 condition",
+    )
+    pid_marker = 'pid_marker="runtime/validation/long-soak-capacity.pid"'
+    background_launch = 'python "${args[@]}" &'
+    pid_capture = "long_soak_pid=$!"
+    atomic_pid_publish = 'mv -f "$pid_marker_tmp" "$pid_marker"'
+    process_wait = 'wait "$long_soak_pid" || long_soak_status=$?'
+    pid_cleanup = 'rm -f "$pid_marker"'
+    add(
+        checks,
+        "long-soak-capacity:cancellation-pid-bridge",
+        long_soak_workflow.count(pid_marker) == 2
+        and background_launch in long_soak_workflow
+        and pid_capture in long_soak_workflow
+        and 'mktemp "${pid_marker}.tmp.XXXXXX"' in long_soak_workflow
+        and atomic_pid_publish in long_soak_workflow
+        and process_wait in long_soak_workflow
+        and 'exit "$long_soak_status"' in long_soak_workflow
+        and long_soak_workflow.index(background_launch)
+        < long_soak_workflow.index(pid_capture)
+        < long_soak_workflow.index(atomic_pid_publish)
+        < long_soak_workflow.index(process_wait)
+        < long_soak_workflow.rindex(pid_cleanup),
+        "long-soak capacity publishes its background orchestrator PID atomically and preserves wait status",
+    )
+    render_step = "- name: Render long-soak capacity summary"
+    render_pid_check = 'if [ -f "$pid_marker" ]; then'
+    render_pid_validation = '[[ "$long_soak_pid" =~ ^[1-9][0-9]*$ ]]'
+    render_process_wait = 'while kill -0 "$long_soak_pid" 2>/dev/null; do'
+    render_timeout = "wait_deadline=$((SECONDS + 20))"
+    render_summaries = "summaries=()"
+    add(
+        checks,
+        "long-soak-capacity:render-waits-for-cancelled-process",
+        render_step in long_soak_workflow
+        and render_pid_check in long_soak_workflow
+        and render_pid_validation in long_soak_workflow
+        and render_process_wait in long_soak_workflow
+        and render_timeout in long_soak_workflow
+        and "still running after 20 seconds" in long_soak_workflow
+        and long_soak_workflow.index(render_step)
+        < long_soak_workflow.index(render_pid_check)
+        < long_soak_workflow.index(render_process_wait)
+        < long_soak_workflow.index(render_summaries),
+        "always-render waits up to 20 seconds for a valid recorded PID before reading fail-closed evidence",
+    )
+    redis_cleanup_step = "- name: Cleanup long-soak Redis"
+    render_summary_step = "- name: Render long-soak capacity summary"
+    upload_evidence_step = "- name: Upload long-soak capacity evidence"
+    add(
+        checks,
+        "long-soak-capacity:always-cleans-redis",
+        redis_cleanup_step in long_soak_workflow
+        and "if: always() && inputs.leaderboard_redis_comparison"
+        in long_soak_workflow
+        and 'docker rm -f "boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"'
+        in long_soak_workflow
+        and long_soak_workflow.index(redis_cleanup_step)
+        < long_soak_workflow.index(render_summary_step)
+        < long_soak_workflow.index(upload_evidence_step),
+        "an independent always step removes the deterministic Redis container before evidence rendering and upload",
+    )
     add(
         checks,
         "specialized-e2e:pinned-kind-bootstrap",
@@ -199,13 +336,58 @@ def main() -> int:
     )
     add(
         checks,
+        "release:clean-cmake-consumer-maintenance",
+        "prepare_cmake_consumer_image:" in release_workflow
+        and "github.event_name == 'workflow_dispatch' && inputs.prepare_cmake_consumer_image"
+        in release_workflow
+        and "docker build --pull=false" in release_workflow
+        and "env/docker/release-cmake-consumer.Dockerfile" in release_workflow,
+        "manual release dispatch can restore the pinned compiler image without enabling tag-time preparation",
+    )
+    add(
+        checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
+        and "scripts/tools/harden_release_sbom.py enrich" in release_workflow
+        and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
+        < release_workflow.index("Attest release archive SBOM")
         and release_workflow.count("uses: actions/attest@v4") == 2
         and "sbom-path:" in release_workflow
         and "attestations: write" in release_workflow
         and "id-token: write" in release_workflow,
         "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
+    )
+    add(
+        checks,
+        "release:published-sbom-semantics",
+        "scripts/tools/harden_release_sbom.py verify" in release_asset_verification
+        and "published-release-sbom-semantics-summary.json" in release_asset_verification
+        and '"sbom_semantics": sbom_semantics' in release_asset_verification,
+        "published asset verification rechecks SBOM file digests and Conan dependency semantics",
+    )
+    binding_command = "scripts/tools/harden_release_sbom.py verify-attestation"
+    binding_summary = "published-release-sbom-attestation-binding-summary.json"
+    add(
+        checks,
+        "release:published-sbom-attestation-binding",
+        binding_command in release_asset_verification
+        and binding_summary in release_asset_verification
+        and "published-release-sbom-verification.json" in release_asset_verification
+        and "Render published asset summary" in release_asset_verification
+        and release_asset_verification.index("published-release-sbom-verification.json")
+        < release_asset_verification.index(binding_command)
+        < release_asset_verification.index("Render published asset summary")
+        and 'sbom_attestation_binding.get("overall_pass") is True'
+        in release_asset_verification
+        and 'sbom_attestation_binding.get("predicate_matches_published_sbom") is True'
+        in release_asset_verification
+        and '"predicate_matches_published_sbom": predicate_matches_published_sbom'
+        in release_asset_verification
+        and '"sbom_attestation_binding": sbom_attestation_binding'
+        in release_asset_verification
+        and "path: runtime/validation/published-release-*.json"
+        in release_asset_verification,
+        "published asset verification binds the standalone SBOM to its verified SPDX predicate",
     )
     add(
         checks,

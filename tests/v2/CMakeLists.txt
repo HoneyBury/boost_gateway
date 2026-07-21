@@ -20,6 +20,7 @@ add_executable(project_v2_unit_tests
     unit/fault_injector_test.cpp
     unit/feature_flags_test.cpp
     unit/gateway_command_parser_test.cpp
+    unit/gateway_pressure_evidence_test.cpp
     unit/gateway_bridge_test.cpp
     unit/gateway_response_parser_test.cpp
     unit/io_engine_test.cpp

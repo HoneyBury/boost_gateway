@@ -1,9 +1,11 @@
 // v3.0.0 Phase 16: OpenTelemetry exporter + Event store tests
 
-#include <gtest/gtest.h>
-#include "v3/tracing/otel_exporter.h"
 #include "v3/persistence/event_store.h"
+#include "v3/tracing/otel_exporter.h"
+#include <condition_variable>
 #include <fstream>
+#include <gtest/gtest.h>
+#include <stdexcept>
 #include <thread>
 
 using namespace v3::tracing;
@@ -26,6 +28,11 @@ TEST(OtelExporterTest, ExportSingleSpan) {
     EXPECT_NE(json.find("test_operation"), std::string::npos);
     EXPECT_NE(json.find("spanId"), std::string::npos);
     EXPECT_EQ(exporter.buffer_size(), 0U);  // flushed
+    const auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 1U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
 }
 
 TEST(OtelExporterTest, ExportMultipleSpans) {
@@ -41,6 +48,11 @@ TEST(OtelExporterTest, ExportMultipleSpans) {
     auto records = exporter.drain();
     EXPECT_EQ(records.size(), 5U);
     EXPECT_EQ(exporter.buffer_size(), 0U);
+    const auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 5U);
+    EXPECT_EQ(metrics.exported_spans, 5U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
 }
 
 TEST(OtelExporterTest, CustomExportFunction) {
@@ -60,6 +72,12 @@ TEST(OtelExporterTest, CustomExportFunction) {
 
     EXPECT_EQ(export_count, 1);
     EXPECT_EQ(exporter.buffer_size(), 0U);
+    const auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 1U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.failed_batches, 0U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
 }
 
 TEST(OtelExporterTest, FlushRequeuesWhenExportFails) {
@@ -74,6 +92,139 @@ TEST(OtelExporterTest, FlushRequeuesWhenExportFails) {
 
     EXPECT_FALSE(exporter.flush());
     EXPECT_EQ(exporter.buffer_size(), 1U);
+    auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 0U);
+    EXPECT_EQ(metrics.successful_batches, 0U);
+    EXPECT_EQ(metrics.failed_batches, 1U);
+    EXPECT_EQ(metrics.buffered_spans, 1U);
+
+    exporter.set_export_fn([](const std::string&) { return true; });
+    EXPECT_TRUE(exporter.flush());
+    metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 1U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.failed_batches, 1U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
+}
+
+TEST(OtelExporterTest, ThrowingExportRequeuesBatchAndCountsFailure) {
+    OtlpExporter exporter({
+        .service_name = "throw-test",
+        .max_batch_size = 2,
+    });
+    exporter.set_export_fn(
+        [](const std::string&) -> bool { throw std::runtime_error("collector unavailable"); });
+
+    for (int i = 0; i < 2; ++i) {
+        auto span = v2::tracing::Span::root("throw_" + std::to_string(i));
+        span.finish();
+        exporter.export_span(span);
+    }
+
+    const auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 2U);
+    EXPECT_EQ(metrics.exported_spans, 0U);
+    EXPECT_EQ(metrics.failed_batches, 1U);
+    EXPECT_EQ(metrics.buffered_spans, 2U);
+    EXPECT_EQ(metrics.enqueued_spans, metrics.exported_spans + metrics.buffered_spans);
+    EXPECT_EQ(exporter.buffer_size(), 2U);
+}
+
+TEST(OtelExporterTest, MetricsRemainExactUnderConcurrentEnqueue) {
+    OtlpExporter exporter({"concurrent-test"});
+    constexpr int kThreads = 4;
+    constexpr int kSpansPerThread = 50;
+    std::vector<std::thread> threads;
+    for (int thread_index = 0; thread_index < kThreads; ++thread_index) {
+        threads.emplace_back([&exporter, thread_index]() {
+            for (int i = 0; i < kSpansPerThread; ++i) {
+                auto span = v2::tracing::Span::root("thread_" + std::to_string(thread_index) + "_" +
+                                                    std::to_string(i));
+                span.finish();
+                exporter.export_span(span);
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    const auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, kThreads * kSpansPerThread);
+    EXPECT_EQ(metrics.exported_spans, 0U);
+    EXPECT_EQ(metrics.successful_batches, 0U);
+    EXPECT_EQ(metrics.failed_batches, 0U);
+    EXPECT_EQ(metrics.buffered_spans, kThreads * kSpansPerThread);
+    EXPECT_EQ(metrics.enqueued_spans, metrics.exported_spans + metrics.buffered_spans);
+}
+
+TEST(OtelExporterTest, MetricsIncludeConcurrentInFlightBatches) {
+    OtlpExporter exporter({
+        .service_name = "in-flight-test",
+        .max_batch_size = 1,
+    });
+    std::mutex gate_mutex;
+    std::condition_variable gate_cv;
+    int entered = 0;
+    bool release = false;
+    exporter.set_export_fn([&](const std::string&) {
+        std::unique_lock lock(gate_mutex);
+        ++entered;
+        gate_cv.notify_all();
+        gate_cv.wait(lock, [&]() { return release; });
+        return true;
+    });
+
+    std::vector<std::thread> threads;
+    for (int i = 0; i < 4; ++i) {
+        threads.emplace_back([&exporter, i]() {
+            auto span = v2::tracing::Span::root("in_flight_" + std::to_string(i));
+            span.finish();
+            exporter.export_span(span);
+        });
+    }
+    bool all_entered = false;
+    {
+        std::unique_lock lock(gate_mutex);
+        all_entered =
+            gate_cv.wait_for(lock, std::chrono::seconds(2), [&]() { return entered == 4; });
+    }
+    if (!all_entered) {
+        {
+            std::lock_guard lock(gate_mutex);
+            release = true;
+        }
+        gate_cv.notify_all();
+        for (auto& thread : threads) {
+            thread.join();
+        }
+        FAIL() << "export callbacks did not all enter before timeout";
+    }
+
+    auto metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 4U);
+    EXPECT_EQ(metrics.exported_spans, 0U);
+    EXPECT_EQ(metrics.buffered_spans, 4U);
+    EXPECT_EQ(metrics.enqueued_spans, metrics.exported_spans + metrics.buffered_spans);
+
+    {
+        std::lock_guard lock(gate_mutex);
+        release = true;
+    }
+    gate_cv.notify_all();
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    metrics = exporter.metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 4U);
+    EXPECT_EQ(metrics.exported_spans, 4U);
+    EXPECT_EQ(metrics.successful_batches, 4U);
+    EXPECT_EQ(metrics.failed_batches, 0U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
+    EXPECT_EQ(metrics.enqueued_spans, metrics.exported_spans + metrics.buffered_spans);
 }
 
 TEST(OtelExporterTest, SpanRecordFields) {

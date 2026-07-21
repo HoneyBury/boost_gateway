@@ -58,6 +58,10 @@ DemoServer::DemoServer(std::uint16_t port,
       io_engine_(std::move(io_engine)),
       adapter_(actor_system_, this),
       runtime_(actor_system_, adapter_) {
+    runtime_.set_battle_route_completion_dispatcher(
+        [this](std::function<void()> task) {
+            return enqueue_runtime_task(std::move(task));
+        });
     set_write_scheduler([this](SessionId session_id, SessionWriteTask task) {
         std::shared_ptr<v2::io::IoSession> session;
         {
@@ -273,8 +277,6 @@ void DemoServer::stop() {
         }
         for (auto& [session_id, session] : sessions_) {
             (void)session_id;
-            session->set_packet_handler({});
-            session->set_close_handler({});
             sessions_to_close.push_back(session);
         }
         sessions_.clear();
@@ -290,6 +292,7 @@ void DemoServer::stop() {
             snapshot.active_sessions = 0;
         }
     }
+    runtime_.shutdown_battle_route_workers();
     stop_gateway_worker();
     io_engine_->stop();
     acceptor_.reset();
@@ -410,6 +413,9 @@ DemoServerDiagnostics DemoServer::diagnostics() const {
         result.total_outbound_dispatches += snapshot.outbound_dispatches;
     }
     result.battle_route = runtime_.battle_route_diagnostics();
+    if (const auto* bridge = runtime_.service_bridge()) {
+        result.otel_exporter_metrics = bridge->otel_exporter_metrics();
+    }
 
     if (backend_metrics_) {
         auto all = backend_metrics_->all_snapshots();
@@ -440,6 +446,9 @@ std::string DemoServer::diagnostics_json() const {
     doc["battle_route"] = {
         {"completed_tasks", completed_battle_routes},
         {"queued_tasks", snapshot.battle_route.queued_tasks},
+        {"rejected_tasks", snapshot.battle_route.rejected_tasks},
+        {"dropped_completions", snapshot.battle_route.dropped_completions},
+        {"queue_capacity", snapshot.battle_route.queue_capacity},
         {"average_queue_wait_us", completed_battle_routes == 0
                                         ? 0
                                         : snapshot.battle_route.total_queue_wait_us /
@@ -460,6 +469,16 @@ std::string DemoServer::diagnostics_json() const {
                                               : snapshot.battle_route.total_response_dispatch_us /
                                                     completed_battle_routes},
         {"max_response_dispatch_us", snapshot.battle_route.max_response_dispatch_us},
+    };
+    const auto otel_metrics =
+        snapshot.otel_exporter_metrics.value_or(v3::tracing::OtlpExporter::Metrics{});
+    doc["otel_exporter_metrics"] = {
+        {"configured", snapshot.otel_exporter_metrics.has_value()},
+        {"enqueued_spans", otel_metrics.enqueued_spans},
+        {"exported_spans", otel_metrics.exported_spans},
+        {"successful_batches", otel_metrics.successful_batches},
+        {"failed_batches", otel_metrics.failed_batches},
+        {"buffered_spans", otel_metrics.buffered_spans},
     };
 
     nlohmann::json io_cores = nlohmann::json::array();
@@ -593,6 +612,18 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
     add_gauge("gateway_active_sessions", "Active sessions", diag.total_active_sessions);
     add_counter("gateway_accepted_sessions_total", "Total accepted sessions", diag.total_accepted_sessions);
     add_counter("gateway_outbound_dispatches_total", "Total outbound dispatches", diag.total_outbound_dispatches);
+    add_gauge("gateway_battle_route_queued_tasks",
+              "Battle backend route tasks waiting for a worker",
+              diag.battle_route.queued_tasks);
+    add_gauge("gateway_battle_route_queue_capacity",
+              "Maximum number of queued battle backend route tasks",
+              diag.battle_route.queue_capacity);
+    add_counter("gateway_battle_route_rejected_tasks_total",
+                "Battle backend route tasks rejected because the queue was full",
+                diag.battle_route.rejected_tasks);
+    add_counter("gateway_battle_route_dropped_completions_total",
+                "Battle backend route completions rejected by the owner dispatcher",
+                diag.battle_route.dropped_completions);
 
     for (const auto& [svc, metrics] : diag.backend_metrics) {
         std::string prefix = "gateway_backend_" + svc + "_";
@@ -654,7 +685,7 @@ void DemoServer::do_accept() {
 
         // Check connection limit before accepting.
         if (options_.max_connections.has_value() &&
-            io_engine_->total_session_count() >= *options_.max_connections) {
+            io_engine_->total_session_count() > *options_.max_connections) {
             const auto core_id = session->owning_core_id();
             session->start();
             session->send(net::protocol::kErrorResponse,
@@ -669,15 +700,20 @@ void DemoServer::do_accept() {
             return;
         }
 
-        const auto session_id = next_session_id_++;
+        const auto session_id = next_session_id_.fetch_add(1, std::memory_order_relaxed);
         auto session_ref = std::shared_ptr<v2::io::IoSession>(std::move(session));
+        const std::weak_ptr<v2::io::IoSession> weak_session = session_ref;
         const auto session_core = session_ref->owning_core_id();
         session_ref->set_packet_handler(
-            [this, session_id, session_ref](v2::io::IoSession::PacketMessage message) {
+            [this, session_id, weak_session](v2::io::IoSession::PacketMessage message) {
                 if (stop_requested_.load(std::memory_order_acquire)) {
                     return;
                 }
                 if (message.message_id == net::protocol::kHeartbeatRequest) {
+                    const auto session_ref = weak_session.lock();
+                    if (!session_ref) {
+                        return;
+                    }
                     session_ref->send(net::protocol::kHeartbeatResponse,
                                       message.request_id,
                                       static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -687,6 +723,10 @@ void DemoServer::do_accept() {
                     return;
                 }
                 if (message.message_id == net::protocol::kEchoRequest) {
+                    const auto session_ref = weak_session.lock();
+                    if (!session_ref) {
+                        return;
+                    }
                     session_ref->send(net::protocol::kEchoResponse,
                                       message.request_id,
                                       static_cast<std::int32_t>(net::protocol::ErrorCode::kOk),
@@ -697,6 +737,53 @@ void DemoServer::do_accept() {
                 }
                 enqueue_packet(session_id, std::move(message));
             });
+        bool registered = false;
+        std::string registration_error;
+        {
+            std::scoped_lock lock(sessions_mutex_);
+            if (stop_requested_.load(std::memory_order_acquire)) {
+                registration_error = "server stopping";
+            } else {
+                try {
+                    auto [session_it, session_inserted] =
+                        sessions_.emplace(session_id, session_ref);
+                    if (!session_inserted) {
+                        registration_error = "duplicate session id";
+                    } else {
+                        try {
+                            const auto [core_it, core_inserted] =
+                                session_core_by_id_.emplace(session_id, session_core);
+                            (void)core_it;
+                            if (core_inserted) {
+                                registered = true;
+                            } else {
+                                sessions_.erase(session_it);
+                                registration_error = "duplicate session core mapping";
+                            }
+                        } catch (...) {
+                            sessions_.erase(session_it);
+                            throw;
+                        }
+                    }
+                } catch (const std::exception& ex) {
+                    registration_error = ex.what();
+                } catch (...) {
+                    registration_error = "unknown registration exception";
+                }
+            }
+        }
+        if (!registered) {
+            LOG_ERROR("v2 demo server rejected session registration: session_id={} core_id={} reason={}",
+                      session_id,
+                      session_core,
+                      registration_error);
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        }
+
         session_ref->set_close_handler([this, session_id]() {
             if (stop_requested_.load(std::memory_order_acquire)) {
                 return;
@@ -720,16 +807,6 @@ void DemoServer::do_accept() {
                 }
             }
         });
-
-        {
-            std::scoped_lock lock(sessions_mutex_);
-            sessions_.emplace(session_id, session_ref);
-            session_core_by_id_.emplace(session_id, session_core);
-        }
-        {
-            std::scoped_lock lock(sessions_mutex_);
-            sessions_.at(session_id)->start();
-        }
         {
             std::scoped_lock lock(io_core_snapshot_mutex_);
             auto& snapshot = io_core_snapshots_by_id_[session_core];
@@ -738,6 +815,58 @@ void DemoServer::do_accept() {
             ++snapshot.accepted_sessions;
         }
 
+        try {
+            session_ref->start();
+        } catch (const std::exception& ex) {
+            {
+                std::scoped_lock lock(sessions_mutex_);
+                sessions_.erase(session_id);
+                session_core_by_id_.erase(session_id);
+            }
+            {
+                std::scoped_lock lock(io_core_snapshot_mutex_);
+                auto& snapshot = io_core_snapshots_by_id_[session_core];
+                if (snapshot.active_sessions > 0) {
+                    --snapshot.active_sessions;
+                }
+                if (snapshot.accepted_sessions > 0) {
+                    --snapshot.accepted_sessions;
+                }
+            }
+            LOG_ERROR("v2 demo server failed to start session: session_id={} core_id={} reason={}",
+                      session_id,
+                      session_core,
+                      ex.what());
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        } catch (...) {
+            {
+                std::scoped_lock lock(sessions_mutex_);
+                sessions_.erase(session_id);
+                session_core_by_id_.erase(session_id);
+            }
+            {
+                std::scoped_lock lock(io_core_snapshot_mutex_);
+                auto& snapshot = io_core_snapshots_by_id_[session_core];
+                if (snapshot.active_sessions > 0) {
+                    --snapshot.active_sessions;
+                }
+                if (snapshot.accepted_sessions > 0) {
+                    --snapshot.accepted_sessions;
+                }
+            }
+            LOG_ERROR("v2 demo server failed to start session: session_id={} core_id={} reason=unknown exception",
+                      session_id,
+                      session_core);
+            session_ref->set_packet_handler({});
+            session_ref->set_close_handler({});
+            session_ref->close();
+            do_accept();
+            return;
+        }
         do_accept();
     });
 }
@@ -768,6 +897,21 @@ void DemoServer::enqueue_session_closed(SessionId session_id) {
     gateway_queue_cv_.notify_one();
 }
 
+bool DemoServer::enqueue_runtime_task(std::function<void()> task) {
+    if (!task || stop_requested_.load(std::memory_order_acquire)) {
+        return false;
+    }
+    {
+        std::scoped_lock lock(gateway_queue_mutex_);
+        if (gateway_worker_stopping_) {
+            return false;
+        }
+        gateway_queue_.push_back(GatewayQueueItem{.runtime_task = std::move(task)});
+    }
+    gateway_queue_cv_.notify_one();
+    return true;
+}
+
 void DemoServer::start_gateway_worker() {
     {
         std::scoped_lock lock(gateway_queue_mutex_);
@@ -793,6 +937,10 @@ void DemoServer::start_gateway_worker() {
                 }
 
                 std::scoped_lock handle_lock(gateway_handle_mutex_);
+                if (item.runtime_task) {
+                    item.runtime_task();
+                    continue;
+                }
                 if (!item.message.has_value()) {
                     runtime_.on_session_closed(item.session_id);
                     continue;

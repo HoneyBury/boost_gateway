@@ -108,6 +108,7 @@ public:
         std::shared_ptr<v3::tracing::OtlpExporter> exporter);
     [[nodiscard]] std::shared_ptr<v3::tracing::OtlpExporter>
     get_otel_exporter() const;
+    [[nodiscard]] std::optional<v3::tracing::OtlpExporter::Metrics> otel_exporter_metrics() const;
 
     // v3.1.0: Security policy for TLS/mTLS inter-service communication.
     void set_security_policy(v3::cluster::SecurityPolicy policy);

@@ -709,6 +709,14 @@ GatewayServiceBridge::get_otel_exporter() const {
     return otel_exporter_;
 }
 
+std::optional<v3::tracing::OtlpExporter::Metrics>
+GatewayServiceBridge::otel_exporter_metrics() const {
+    if (!otel_exporter_) {
+        return std::nullopt;
+    }
+    return otel_exporter_->metrics();
+}
+
 void GatewayServiceBridge::set_security_policy(
     v3::cluster::SecurityPolicy policy) {
     security_policy_ = std::move(policy);

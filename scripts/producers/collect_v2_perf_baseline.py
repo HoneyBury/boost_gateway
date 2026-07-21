@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
+import http.server
 import json
+import math
 import os
 import platform
 import re
@@ -12,14 +15,22 @@ import shutil
 import statistics
 import signal
 import socket
+import struct
 import subprocess
 import sys
+import threading
 import time
+import zlib
 from contextlib import suppress
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.request import urlopen
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - unavailable on Windows
+    resource = None  # type: ignore[assignment]
 
 
 def log_step(message: str) -> None:
@@ -28,6 +39,202 @@ def log_step(message: str) -> None:
 
 def is_windows() -> bool:
     return os.name == "nt"
+
+
+def parse_cpu_set(value: str) -> set[int]:
+    """Parse a Linux CPU list such as ``0-3,6`` into CPU identifiers."""
+    cpus: set[int] = set()
+    for raw_part in value.split(","):
+        part = raw_part.strip()
+        if not part:
+            raise ValueError("CPU set contains an empty segment")
+        if "-" in part:
+            bounds = part.split("-")
+            if len(bounds) != 2 or not all(bound.isdigit() for bound in bounds):
+                raise ValueError(f"invalid CPU range: {part}")
+            first, last = (int(bound) for bound in bounds)
+            if first > last:
+                raise ValueError(f"CPU range is reversed: {part}")
+            cpus.update(range(first, last + 1))
+        elif part.isdigit():
+            cpus.add(int(part))
+        else:
+            raise ValueError(f"invalid CPU identifier: {part}")
+    if not cpus:
+        raise ValueError("CPU set must select at least one CPU")
+    return cpus
+
+
+def format_cpu_set(cpus: set[int]) -> str:
+    """Render CPU identifiers in the canonical Linux list form."""
+    ordered = sorted(cpus)
+    ranges: list[str] = []
+    start = previous = ordered[0]
+    for cpu in ordered[1:]:
+        if cpu == previous + 1:
+            previous = cpu
+            continue
+        ranges.append(str(start) if start == previous else f"{start}-{previous}")
+        start = previous = cpu
+    ranges.append(str(start) if start == previous else f"{start}-{previous}")
+    return ",".join(ranges)
+
+
+def apply_cpu_affinity(cpu_set: str) -> dict[str, Any]:
+    """Apply and verify affinity before children are spawned so they inherit it."""
+    constraint: dict[str, Any] = {
+        "type": "linux_cpu_affinity",
+        "requested": cpu_set,
+        "applied": False,
+        "allowed_cpu_set_before": "",
+        "effective_cpu_set": "",
+        "cpu_count": 0,
+    }
+    if not cpu_set:
+        constraint["type"] = "none"
+        return constraint
+    if platform.system() != "Linux" or not hasattr(os, "sched_setaffinity") or not hasattr(os, "sched_getaffinity"):
+        raise RuntimeError("--cpu-set requires Linux sched affinity support")
+
+    requested = parse_cpu_set(cpu_set)
+    available = set(os.sched_getaffinity(0))
+    unavailable = requested - available
+    if unavailable:
+        raise ValueError(
+            f"requested CPUs are outside the collector's allowed set: {format_cpu_set(unavailable)} "
+            f"(allowed: {format_cpu_set(available)})"
+        )
+    os.sched_setaffinity(0, requested)
+    effective = set(os.sched_getaffinity(0))
+    if effective != requested:
+        raise RuntimeError(
+            f"CPU affinity verification failed: requested {format_cpu_set(requested)}, "
+            f"effective {format_cpu_set(effective)}"
+        )
+    constraint.update({
+        "requested": format_cpu_set(requested),
+        "applied": True,
+        "allowed_cpu_set_before": format_cpu_set(available),
+        "effective_cpu_set": format_cpu_set(effective),
+        "cpu_count": len(effective),
+    })
+    return constraint
+
+
+def prepare_process_cpu_affinity(cpu_set: str, option_name: str) -> dict[str, Any]:
+    """Validate a child-process affinity without constraining the collector."""
+    constraint: dict[str, Any] = {
+        "type": "linux_cpu_affinity",
+        "requested": cpu_set,
+        "applied": False,
+        "allowed_cpu_set_before": "",
+        "effective_cpu_set": "",
+        "cpu_count": 0,
+        "processes": [],
+    }
+    if not cpu_set:
+        constraint["type"] = "none"
+        return constraint
+    if platform.system() != "Linux" or not hasattr(os, "sched_getaffinity"):
+        raise RuntimeError(f"{option_name} requires Linux sched affinity support")
+    if shutil.which("taskset") is None:
+        raise RuntimeError(f"{option_name} requires the Linux taskset command")
+
+    requested = parse_cpu_set(cpu_set)
+    available = set(os.sched_getaffinity(0))
+    unavailable = requested - available
+    if unavailable:
+        raise ValueError(
+            f"requested CPUs for {option_name} are outside the collector's allowed set: "
+            f"{format_cpu_set(unavailable)} (allowed: {format_cpu_set(available)})"
+        )
+    canonical = format_cpu_set(requested)
+    constraint.update({
+        "requested": canonical,
+        "allowed_cpu_set_before": format_cpu_set(available),
+        "cpu_count": len(requested),
+    })
+    return constraint
+
+
+def resolve_loadgen_cpu_set(service_cpu_set: str, loadgen_cpu_set: str) -> str:
+    """Resolve a load-generator set that is disjoint from constrained services."""
+    if not service_cpu_set:
+        if loadgen_cpu_set:
+            raise ValueError("--loadgen-cpu-set requires --cpu-set so services can be isolated explicitly")
+        return ""
+    service = parse_cpu_set(service_cpu_set)
+    if loadgen_cpu_set:
+        loadgen = parse_cpu_set(loadgen_cpu_set)
+    else:
+        if platform.system() != "Linux" or not hasattr(os, "sched_getaffinity"):
+            raise RuntimeError("automatic loadgen CPU isolation requires Linux sched affinity support")
+        loadgen = set(os.sched_getaffinity(0)) - service
+        if not loadgen:
+            raise ValueError(
+                "--cpu-set consumes every allowed CPU; provide a runner with at least one disjoint loadgen CPU"
+            )
+    overlap = service & loadgen
+    if overlap:
+        raise ValueError(
+            "--cpu-set and --loadgen-cpu-set must be disjoint; overlapping CPUs: "
+            f"{format_cpu_set(overlap)}"
+        )
+    return format_cpu_set(loadgen)
+
+
+def affinity_command(executable: Path, args: list[str], cpu_set: str) -> list[str]:
+    command = [str(executable), *args]
+    if not cpu_set:
+        return command
+    taskset = shutil.which("taskset")
+    if taskset is None:
+        raise RuntimeError("CPU-affined child process requires the Linux taskset command")
+    return [taskset, "--cpu-list", format_cpu_set(parse_cpu_set(cpu_set)), *command]
+
+
+def verify_process_cpu_affinity(
+    pid: int,
+    cpu_set: str,
+    timeout_seconds: float = 2.0,
+) -> dict[str, Any]:
+    requested = parse_cpu_set(cpu_set)
+    deadline = time.monotonic() + timeout_seconds
+    last_effective: set[int] = set()
+    while time.monotonic() < deadline:
+        try:
+            last_effective = set(os.sched_getaffinity(pid))
+        except (OSError, ProcessLookupError, PermissionError):
+            last_effective = set()
+        if last_effective == requested:
+            canonical = format_cpu_set(requested)
+            return {
+                "pid": pid,
+                "requested_cpu_set": canonical,
+                "effective_cpu_set": canonical,
+                "verified": True,
+            }
+        time.sleep(0.01)
+    raise RuntimeError(
+        f"child process {pid} CPU affinity verification failed: requested "
+        f"{format_cpu_set(requested)}, effective "
+        f"{format_cpu_set(last_effective) if last_effective else 'unavailable'}"
+    )
+
+
+def record_process_affinity(
+    constraint: dict[str, Any],
+    process: ManagedProcess,
+    *,
+    workload: str,
+) -> None:
+    if not constraint.get("requested"):
+        return
+    processes = constraint.setdefault("processes", [])
+    processes.append({"workload": workload, "service_name": process.name, **process.startup_affinity})
+    constraint["applied"] = all(item.get("verified") is True for item in processes)
+    if constraint["applied"]:
+        constraint["effective_cpu_set"] = constraint["requested"]
 
 
 def exe_name(base: str) -> str:
@@ -225,7 +432,7 @@ def process_snapshot(pid: int) -> dict[str, Any]:
             return 0.0
         return round(float(parts[0]) / 1024.0, 2)
 
-    return {
+    snapshot = {
         "pid": pid,
         "process_name": info.get("Name", ""),
         "working_set_mb": parse_kb(info.get("VmRSS")),
@@ -235,10 +442,32 @@ def process_snapshot(pid: int) -> dict[str, Any]:
         "threads": int(info.get("Threads", "0")),
         "cpu_seconds": process_cpu_seconds(pid),
     }
+    if hasattr(os, "sched_getaffinity"):
+        with suppress(OSError, ProcessLookupError, PermissionError):
+            affinity = set(os.sched_getaffinity(pid))
+            snapshot["cpu_affinity"] = format_cpu_set(affinity)
+            snapshot["cpu_affinity_count"] = len(affinity)
+    return snapshot
+
+
+def completed_children_cpu_seconds() -> float | None:
+    if resource is None:
+        return None
+    usage = resource.getrusage(resource.RUSAGE_CHILDREN)
+    return float(usage.ru_utime) + float(usage.ru_stime)
 
 
 class ManagedProcess:
-    def __init__(self, name: str, executable: Path, args: list[str], log_dir: Path, env: dict[str, str] | None = None) -> None:
+    def __init__(
+        self,
+        name: str,
+        executable: Path,
+        args: list[str],
+        log_dir: Path,
+        env: dict[str, str] | None = None,
+        *,
+        cpu_set: str = "",
+    ) -> None:
         self.name = name
         self.stdout_path = log_dir / f"{name}.stdout.log"
         self.stderr_path = log_dir / f"{name}.stderr.log"
@@ -248,13 +477,31 @@ class ManagedProcess:
         if env:
             merged_env.update(env)
         self.proc = subprocess.Popen(
-            [str(executable), *args],
+            affinity_command(executable, args, cpu_set),
             cwd=executable.parent,
             stdout=self.stdout_handle,
             stderr=self.stderr_handle,
             stdin=subprocess.DEVNULL,
             env=merged_env,
         )
+        self.startup_affinity = (
+            verify_process_cpu_affinity(self.proc.pid, cpu_set)
+            if cpu_set
+            else {
+                "pid": self.proc.pid,
+                "requested_cpu_set": "",
+                "effective_cpu_set": process_snapshot(self.proc.pid).get("cpu_affinity", ""),
+                "verified": True,
+            }
+        )
+
+    def log_text(self) -> str:
+        self.stdout_handle.flush()
+        self.stderr_handle.flush()
+        return "\n".join((
+            self.stdout_path.read_text(encoding="utf-8", errors="replace"),
+            self.stderr_path.read_text(encoding="utf-8", errors="replace"),
+        ))
 
     @property
     def pid(self) -> int:
@@ -275,6 +522,150 @@ class ManagedProcess:
         self.stderr_handle.close()
 
 
+def wait_process_log(process: ManagedProcess, marker: str, timeout_seconds: float = 10.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if marker in process.log_text():
+            return True
+        if process.proc.poll() is not None:
+            break
+        time.sleep(0.1)
+    return marker in process.log_text()
+
+
+def redis_command(host: str, port: int, *parts: str, timeout_seconds: float = 3.0) -> str | int | None:
+    """Execute the small RESP subset needed to prove benchmark persistence."""
+    encoded_parts = [part.encode("utf-8") for part in parts]
+    request = [f"*{len(encoded_parts)}\r\n".encode("ascii")]
+    for part in encoded_parts:
+        request.extend((f"${len(part)}\r\n".encode("ascii"), part, b"\r\n"))
+    with socket.create_connection((host, port), timeout=timeout_seconds) as connection:
+        connection.settimeout(timeout_seconds)
+        connection.sendall(b"".join(request))
+        prefix = recv_exact(connection, 1)
+        line = bytearray()
+        while not line.endswith(b"\r\n"):
+            line.extend(recv_exact(connection, 1))
+        value = bytes(line[:-2]).decode("utf-8", errors="strict")
+        if prefix == b"+":
+            return value
+        if prefix == b":":
+            return int(value)
+        if prefix == b"$":
+            length = int(value)
+            if length < 0:
+                return None
+            return recv_exact(connection, length + 2)[:-2].decode("utf-8", errors="strict")
+        if prefix == b"-":
+            raise RuntimeError(f"Redis command failed: {value}")
+        raise RuntimeError(f"unsupported Redis response prefix: {prefix!r}")
+
+
+class LoopbackOtelCollector:
+    """Small OTLP/HTTP JSON sink used only for fixed-runner comparison proof."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counters = {
+            "requests": 0,
+            "spans": 0,
+            "invalid_payloads": 0,
+            "http_status_errors": 0,
+            "span_status_errors": 0,
+        }
+        collector = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                content_length = int(self.headers.get("Content-Length", "0"))
+                body = self.rfile.read(content_length)
+                valid = False
+                spans: list[object] = []
+                try:
+                    payload = json.loads(body)
+                    raw_spans = payload.get("spans") if isinstance(payload, dict) else None
+                    if self.path == "/v1/traces" and isinstance(raw_spans, list):
+                        spans = raw_spans
+                        valid = all(isinstance(span, dict) for span in spans)
+                except (UnicodeDecodeError, json.JSONDecodeError):
+                    pass
+                with collector._lock:
+                    collector._counters["requests"] += 1
+                    if valid:
+                        collector._counters["spans"] += len(spans)
+                        collector._counters["span_status_errors"] += sum(
+                            1 for span in spans if span.get("status") != "ok"
+                        )
+                    else:
+                        collector._counters["invalid_payloads"] += 1
+                        collector._counters["http_status_errors"] += 1
+                self.send_response(200 if valid else 400)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+
+            def log_message(self, _format: str, *_args: object) -> None:
+                return
+
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    @property
+    def endpoint(self) -> str:
+        return f"http://127.0.0.1:{self._server.server_port}/v1/traces"
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=2)
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return dict(self._counters)
+
+
+def counter_delta(after: dict[str, int], before: dict[str, int]) -> dict[str, int]:
+    return {key: int(after.get(key, 0)) - int(before.get(key, 0)) for key in after}
+
+
+def total_backend_requests(diagnostics: dict[str, Any]) -> int:
+    metrics = diagnostics.get("backend_metrics")
+    if not isinstance(metrics, dict):
+        return 0
+    return sum(
+        int(snapshot.get("total_requests", 0))
+        for snapshot in metrics.values()
+        if isinstance(snapshot, dict)
+    )
+
+
+def wait_for_otel_mode_quiescence(
+    diagnostics_url: str,
+    *,
+    mode: str,
+    initial_backend_requests: int,
+    timeout_seconds: float = 5.0,
+) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+    previous: tuple[int, int] | None = None
+    stable_samples = 0
+    latest: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        latest = fetch_json(diagnostics_url)
+        routed = total_backend_requests(latest) - initial_backend_requests
+        enqueued = int(otel_exporter_metrics(latest).get("enqueued_spans", 0))
+        current = (routed, enqueued)
+        counters_agree = mode == "off" or routed == enqueued
+        stable_samples = stable_samples + 1 if current == previous and counters_agree else 0
+        if stable_samples >= 1:
+            return latest
+        previous = current
+        time.sleep(0.1)
+    return latest
+
+
 def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
     snapshots = []
     for item in managed:
@@ -284,13 +675,63 @@ def snapshot_processes(managed: list[ManagedProcess]) -> list[dict[str, Any]]:
     return snapshots
 
 
-def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any], run_dir: Path) -> dict[str, Any]:
+def wait_for_service_quiescence(
+    managed: list[ManagedProcess],
+    diagnostics_url: str,
+    *,
+    timeout_seconds: float = 5.0,
+    interval_seconds: float = 0.1,
+) -> dict[str, Any]:
+    """Wait until backend routing and managed-process CPU counters stop changing."""
+    deadline = time.monotonic() + timeout_seconds
+    previous: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    latest: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    samples = 0
+    while time.monotonic() < deadline:
+        diagnostics = fetch_json(diagnostics_url)
+        cpu_state = tuple(sorted(
+            (
+                process.name,
+                round(float(process_snapshot(process.pid).get("cpu_seconds", 0.0)), 6),
+            )
+            for process in managed
+        ))
+        latest = (total_backend_requests(diagnostics), cpu_state)
+        samples += 1
+        if latest == previous:
+            return {
+                "quiesced": True,
+                "samples": samples,
+                "backend_routed_requests": latest[0],
+                "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
+            }
+        previous = latest
+        time.sleep(interval_seconds)
+    raise RuntimeError(
+        "managed service topology did not quiesce after load generation: "
+        f"last_state={latest}"
+    )
+
+
+def invoke_bench_case(
+    pressure_exe: Path,
+    gateway_port: int,
+    case: dict[str, Any],
+    run_dir: Path,
+    *,
+    loadgen_cpu_set: str = "",
+    loadgen_io_threads: int = 4,
+    on_load_end: Callable[[], None] | None = None,
+) -> dict[str, Any]:
     args = [
         "--host", "127.0.0.1",
         "--port", str(gateway_port),
         "--scenario", case["scenario"],
         "--clients", str(case["clients"]),
         "--duration", str(case["duration_seconds"]),
+        "--io-threads", str(loadgen_io_threads),
+        "--ramp-clients-per-second", str(case.get("ramp_clients_per_second", 200)),
+        "--ramp-timeout", str(case.get("ramp_timeout_seconds", 60)),
     ]
     if case.get("messages", 0) > 0:
         args.extend(["--messages", str(case["messages"])])
@@ -315,15 +756,44 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     args.extend(["--output", str(json_path)])
 
     log_step(f"Running bench case: {case_name}")
+    children_cpu_before = completed_children_cpu_seconds()
     proc = subprocess.Popen(
-        [str(pressure_exe), *args],
+        affinity_command(pressure_exe, args, loadgen_cpu_set),
         cwd=pressure_exe.parent,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
         stdin=subprocess.DEVNULL,
     )
-    timeout_seconds = int(case["duration_seconds"]) + 10
+    startup_affinity = (
+        verify_process_cpu_affinity(proc.pid, loadgen_cpu_set)
+        if loadgen_cpu_set
+        else {
+            "pid": proc.pid,
+            "requested_cpu_set": "",
+            "effective_cpu_set": process_snapshot(proc.pid).get("cpu_affinity", ""),
+            "verified": True,
+        }
+    )
+    sample_started_at = time.monotonic()
+    resource_samples: list[dict[str, Any]] = [process_snapshot(proc.pid)]
+    sampler_stop = threading.Event()
+
+    def sample_loadgen() -> None:
+        while not sampler_stop.wait(0.25):
+            if proc.poll() is not None:
+                return
+            snapshot = process_snapshot(proc.pid)
+            if snapshot.get("process_name"):
+                resource_samples.append(snapshot)
+
+    sampler = threading.Thread(target=sample_loadgen, name=f"{case_name}-resource-sampler", daemon=True)
+    sampler.start()
+    timeout_seconds = (
+        int(case.get("ramp_timeout_seconds", 60))
+        + int(case["duration_seconds"])
+        + 15
+    )
     timed_out = False
     try:
         stdout, stderr = proc.communicate(timeout=timeout_seconds)
@@ -331,6 +801,13 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
         timed_out = True
         proc.kill()
         stdout, stderr = proc.communicate(timeout=5)
+    finally:
+        if on_load_end is not None:
+            on_load_end()
+        sampler_stop.set()
+        sampler.join(timeout=2)
+    sample_elapsed_seconds = max(0.0, time.monotonic() - sample_started_at)
+    children_cpu_after = completed_children_cpu_seconds()
     stdout_path.write_text(stdout or "", encoding="utf-8")
     stderr_path.write_text(stderr or "", encoding="utf-8")
     if proc.returncode != 0 and not json_path.exists():
@@ -353,11 +830,774 @@ def invoke_bench_case(pressure_exe: Path, gateway_port: int, case: dict[str, Any
     if timed_out:
         result["collector_forced_timeout"] = True
         json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
-    if proc.returncode != 0 and not result.get("forced_timeout"):
-        raise RuntimeError(f"Bench case failed: {case_name} (exit {proc.returncode})")
     if not result:
         raise RuntimeError(f"Bench case did not emit JSON result: {case_name}")
+    result["bench_exit_code"] = int(proc.returncode or 0)
+    first_sample = resource_samples[0]
+    last_sample = resource_samples[-1]
+    loadgen_resources = service_resource_delta(
+        first_sample,
+        last_sample,
+        sample_elapsed_seconds,
+    )
+    if children_cpu_before is not None and children_cpu_after is not None:
+        children_cpu_delta = max(0.0, children_cpu_after - children_cpu_before)
+        loadgen_resources.update({
+            "cpu_seconds_before": round(children_cpu_before, 6),
+            "cpu_seconds_after": round(children_cpu_after, 6),
+            "cpu_seconds_delta": round(children_cpu_delta, 6),
+            "cpu_percent_from_cpu_seconds": round(
+                children_cpu_delta / sample_elapsed_seconds * 100.0, 3
+            ) if sample_elapsed_seconds > 0 else None,
+        })
+    loadgen_resources.update({
+        "startup_affinity": startup_affinity,
+        "before": first_sample,
+        "after": last_sample,
+        "sample_count": len(resource_samples),
+        "sample_elapsed_seconds": round(sample_elapsed_seconds, 6),
+        "working_set_mb_peak": max(
+            float(sample.get("working_set_mb", 0.0)) for sample in resource_samples
+        ),
+    })
+    result["loadgen_resources"] = loadgen_resources
+    json_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
     return result
+
+
+BUSINESS_OPERATION_SEQUENCES = {
+    "matchmaking": (
+        ("match_join", 6001, 6002),
+        ("match_status", 6006, 6007),
+        ("match_leave", 6004, 6005),
+    ),
+    "leaderboard": (
+        ("leaderboard_submit", 7001, 7002),
+        ("leaderboard_top", 7003, 7004),
+        ("leaderboard_rank", 7005, 7006),
+    ),
+}
+
+
+def encode_business_packet(
+    message_id: int,
+    request_id: int,
+    body: str,
+    *,
+    version: int = 1,
+    flags: int = 0,
+) -> bytes:
+    encoded_body = body.encode("utf-8")
+    payload_length = 16 + len(encoded_body)
+    return struct.pack("!IBHIIiB", payload_length, version, message_id, request_id, 0, 0, flags) + encoded_body
+
+
+def recv_exact(sock: socket.socket, size: int, deadline: float | None = None) -> bytes:
+    chunks: list[bytes] = []
+    received = 0
+    while received < size:
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("gateway response deadline exceeded")
+            sock.settimeout(remaining)
+        chunk = sock.recv(size - received)
+        if not chunk:
+            raise ConnectionError("gateway closed the connection")
+        chunks.append(chunk)
+        received += len(chunk)
+    return b"".join(chunks)
+
+
+def recv_business_packet(sock: socket.socket, deadline: float | None = None) -> dict[str, Any]:
+    payload_length = struct.unpack("!I", recv_exact(sock, 4, deadline))[0]
+    if payload_length < 16 or payload_length > 1024 * 1024:
+        raise ValueError(f"invalid gateway frame length: {payload_length}")
+    payload = recv_exact(sock, payload_length, deadline)
+    version, message_id, request_id, sequence_number, error_code, flags = struct.unpack(
+        "!BHIIiB", payload[:16]
+    )
+    return {
+        "version": version,
+        "message_id": message_id,
+        "request_id": request_id,
+        "sequence_number": sequence_number,
+        "error_code": error_code,
+        "flags": flags,
+        "body_bytes": payload[16:],
+        "body": payload[16:].decode("utf-8", errors="replace") if flags == 0 else "",
+    }
+
+
+class BusinessOperationClient:
+    PUSH_MESSAGE_IDS = {1003, 1004, 3009, 4005, 4006, 6003}
+
+    def __init__(self, host: str, port: int, timeout_seconds: float) -> None:
+        self.sock = socket.create_connection((host, port), timeout=timeout_seconds)
+        self.sock.settimeout(timeout_seconds)
+        self.timeout_seconds = timeout_seconds
+        self.next_request_id = 1
+
+    def close(self) -> None:
+        with suppress(OSError):
+            self.sock.close()
+
+    def request(
+        self,
+        message_id: int,
+        expected_message_id: int,
+        body: str,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        request_timeout = timeout_seconds or self.timeout_seconds
+        deadline = time.monotonic() + request_timeout
+        self.sock.settimeout(request_timeout)
+        request_id = self.next_request_id
+        self.next_request_id += 1
+        self.sock.sendall(encode_business_packet(message_id, request_id, body))
+        while True:
+            response = recv_business_packet(self.sock, deadline)
+            if response["version"] != 1:
+                raise ValueError(f"unsupported protocol version: {response['version']}")
+            if response["flags"] & ~0x01:
+                raise ValueError(
+                    f"unsupported response flags: 0x{response['flags']:02x}"
+                )
+            if response["flags"] & 0x01:
+                compressed = response["body_bytes"]
+                if len(compressed) < 4:
+                    raise ValueError("invalid compressed response: missing original length")
+                expected_length = int.from_bytes(compressed[:4], "little")
+                try:
+                    decoded = zlib.decompress(compressed[4:])
+                except zlib.error as exc:
+                    raise ValueError(f"invalid compressed response: {exc}") from exc
+                if len(decoded) != expected_length:
+                    raise ValueError(
+                        f"invalid compressed response length: expected {expected_length}, got {len(decoded)}"
+                    )
+                response["body"] = decoded.decode("utf-8", errors="strict")
+            if response["message_id"] in self.PUSH_MESSAGE_IDS:
+                continue
+            if response["request_id"] != request_id:
+                raise ValueError(
+                    f"unexpected request id {response['request_id']}, expected {request_id}"
+                )
+            response["ok"] = (
+                response["message_id"] == expected_message_id
+                and response["error_code"] == 0
+            )
+            return response
+
+
+def business_operation_body(
+    scenario: str,
+    operation: str,
+    user_id: str,
+    client_index: int,
+    iteration: int,
+) -> str:
+    if scenario == "matchmaking":
+        mmr = 1000 + (client_index % 20)
+        return f"{user_id}|{mmr if operation == 'match_join' else 0}|1v1"
+    if operation == "leaderboard_submit":
+        score = 1_000_000_000 + client_index * 100_000 + iteration
+        return f"{user_id}|perf-{client_index}|{score}"
+    if operation == "leaderboard_top":
+        return "20"
+    return user_id
+
+
+def run_business_operation_worker(
+    host: str,
+    port: int,
+    scenario: str,
+    client_index: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+) -> dict[str, Any]:
+    if scenario != "leaderboard":
+        raise ValueError("generic business operation worker only supports leaderboard")
+    user_id = f"perf_{scenario}_{run_id}_{client_index}"
+    records: list[dict[str, Any]] = []
+    client: BusinessOperationClient | None = None
+    try:
+        client = BusinessOperationClient(host, port, timeout_seconds)
+        login = client.request(2001, 2002, f"{user_id}|token:{user_id}|{user_id}")
+        if not login["ok"]:
+            return {"client_index": client_index, "setup_error": f"login failed: {login['body'][:200]}", "records": []}
+
+        for iteration in range(iterations):
+            for operation, request_id, response_id in BUSINESS_OPERATION_SEQUENCES[scenario]:
+                body = business_operation_body(scenario, operation, user_id, client_index, iteration)
+                started = time.perf_counter()
+                try:
+                    response = client.request(request_id, response_id, body)
+                    latency_ms = (time.perf_counter() - started) * 1000.0
+                    records.append({
+                        "operation": operation,
+                        "ok": response["ok"],
+                        "latency_ms": latency_ms,
+                        "error": "" if response["ok"] else f"error={response['error_code']} body={response['body'][:200]}",
+                    })
+                except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+                    records.append({
+                        "operation": operation,
+                        "ok": False,
+                        "latency_ms": (time.perf_counter() - started) * 1000.0,
+                        "error": str(exc)[:200],
+                    })
+        return {"client_index": client_index, "setup_error": "", "records": records}
+    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        return {"client_index": client_index, "setup_error": str(exc)[:200], "records": records}
+    finally:
+        if client is not None:
+            client.close()
+
+
+def setup_matchmaking_client(
+    host: str,
+    port: int,
+    client_index: int,
+    timeout_seconds: float,
+    run_id: str,
+    iteration: int,
+) -> dict[str, Any]:
+    user_id = f"perf_matchmaking_{run_id}_{iteration}_{client_index}"
+    client: BusinessOperationClient | None = None
+    try:
+        client = BusinessOperationClient(host, port, timeout_seconds)
+        login = client.request(2001, 2002, f"{user_id}|token:{user_id}|{user_id}")
+        if not login["ok"]:
+            raise ValueError(f"login failed: {login['body'][:200]}")
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": client,
+            "error": "",
+            "retryable": False,
+        }
+    except (ConnectionError, OSError, TimeoutError) as exc:
+        if client is not None:
+            client.close()
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": None,
+            "error": str(exc)[:200],
+            "retryable": True,
+        }
+    except ValueError as exc:
+        if client is not None:
+            client.close()
+        return {
+            "client_index": client_index,
+            "user_id": user_id,
+            "client": None,
+            "error": str(exc)[:200],
+            "retryable": False,
+        }
+
+
+def setup_matchmaking_cohort(
+    host: str,
+    port: int,
+    clients: int,
+    timeout_seconds: float,
+    run_id: str,
+    iteration: int,
+) -> tuple[list[dict[str, Any]], int]:
+    for attempt in range(2):
+        with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
+            entries = list(executor.map(
+                lambda index: setup_matchmaking_client(
+                    host,
+                    port,
+                    index,
+                    timeout_seconds,
+                    f"{run_id}_setup{attempt + 1}",
+                    iteration,
+                ),
+                range(clients),
+            ))
+        failures = [entry for entry in entries if entry["error"]]
+        if not failures or attempt == 1 or any(not entry["retryable"] for entry in failures):
+            return entries, attempt
+
+        # Matchmaking requires an even, complete cohort. Rebuild every connection
+        # before measuring operations so a transient setup timeout cannot leave an
+        # unmatched player in the queue or hide a failed measured request.
+        for entry in entries:
+            if entry["client"] is not None:
+                entry["client"].close()
+
+    raise AssertionError("unreachable")
+
+
+def execute_match_request(
+    entry: dict[str, Any],
+    operation: str,
+    request_id: int,
+    response_id: int,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    try:
+        body = business_operation_body("matchmaking", operation, entry["user_id"], entry["client_index"], 0)
+        response = entry["client"].request(request_id, response_id, body, timeout_seconds)
+        return {
+            "operation": operation,
+            "ok": response["ok"],
+            "latency_ms": (time.perf_counter() - started) * 1000.0,
+            "error": "" if response["ok"] else f"error={response['error_code']} body={response['body'][:200]}",
+        }
+    except (ConnectionError, OSError, TimeoutError, ValueError) as exc:
+        return {
+            "operation": operation,
+            "ok": False,
+            "latency_ms": (time.perf_counter() - started) * 1000.0,
+            "error": str(exc)[:200],
+        }
+
+
+def poll_until_matched(
+    entry: dict[str, Any],
+    match_started: float,
+    match_deadline: float,
+) -> dict[str, Any]:
+    polls = 0
+    while time.monotonic() < match_deadline:
+        remaining = match_deadline - time.monotonic()
+        try:
+            body = business_operation_body("matchmaking", "match_status", entry["user_id"], entry["client_index"], 0)
+            response = entry["client"].request(6006, 6007, body, remaining)
+            polls += 1
+            if not response["ok"]:
+                raise ValueError(f"error={response['error_code']} body={response['body'][:200]}")
+            status = json.loads(response["body"])
+            if not isinstance(status, dict):
+                raise ValueError("match status response is not a JSON object")
+            if status.get("matched") is True:
+                return {
+                    "operation": "match_status",
+                    "ok": True,
+                    "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+                    "poll_attempts": polls,
+                    "error": "",
+                }
+        except (ConnectionError, OSError, TimeoutError, ValueError, json.JSONDecodeError) as exc:
+            return {
+                "operation": "match_status",
+                "ok": False,
+                "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+                "poll_attempts": polls,
+                "error": str(exc)[:200],
+            }
+        time.sleep(min(0.05, max(0.0, match_deadline - time.monotonic())))
+    return {
+        "operation": "match_status",
+        "ok": False,
+        "latency_ms": (time.perf_counter() - match_started) * 1000.0,
+        "poll_attempts": polls,
+        "error": "matchmaking deadline exceeded before matched=true",
+    }
+
+
+def run_matchmaking_scenario(
+    host: str,
+    port: int,
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    records: list[dict[str, Any]] = []
+    setup_failures: list[dict[str, Any]] = []
+    setup_retry_count = 0
+    for iteration in range(iterations):
+        entries, setup_retries = setup_matchmaking_cohort(
+            host, port, clients, timeout_seconds, run_id, iteration
+        )
+        setup_retry_count += setup_retries
+        setup_failures.extend(
+            {"iteration": iteration, "client_index": entry["client_index"], "error": entry["error"]}
+            for entry in entries
+            if entry["error"]
+        )
+        active = [entry for entry in entries if entry["client"] is not None]
+        try:
+            match_started = time.perf_counter()
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active))) as executor:
+                join_records = list(executor.map(
+                    lambda entry: execute_match_request(entry, "match_join", 6001, 6002, timeout_seconds),
+                    active,
+                ))
+            records.extend(join_records)
+
+            match_deadline = time.monotonic() + timeout_seconds
+            joined = [entry for entry, record in zip(active, join_records, strict=True) if record["ok"]]
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(joined))) as executor:
+                status_records = list(executor.map(
+                    lambda entry: poll_until_matched(entry, match_started, match_deadline),
+                    joined,
+                ))
+            records.extend(status_records)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, len(active))) as executor:
+                records.extend(executor.map(
+                    lambda entry: execute_match_request(entry, "match_leave", 6004, 6005, timeout_seconds),
+                    active,
+                ))
+        finally:
+            for entry in active:
+                entry["client"].close()
+
+    duration_seconds = round(time.perf_counter() - started, 6)
+    operations = summarize_business_operations(
+        ["match_join", "match_status", "match_leave"], records, duration_seconds
+    )
+    expected_per_operation = clients * iterations
+    matched_latencies = [
+        float(record["latency_ms"])
+        for record in records
+        if record["operation"] == "match_status" and record["ok"]
+    ]
+    passed = not setup_failures and all(
+        operation["attempted"] == expected_per_operation and operation["failed"] == 0
+        for operation in operations
+    )
+    return {
+        "scenario": "matchmaking",
+        "passed": passed,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "duration_seconds": duration_seconds,
+        "expected_per_operation": expected_per_operation,
+        "setup_failures": setup_failures,
+        "setup_retry_count": setup_retry_count,
+        "status_poll_attempts": sum(int(record.get("poll_attempts", 0)) for record in records),
+        "time_to_match_samples_ms": matched_latencies,
+        "time_to_match_p50_ms": latency_percentile(matched_latencies, 0.50),
+        "time_to_match_p99_ms": latency_percentile(matched_latencies, 0.99),
+        "operations": operations,
+    }
+
+
+def latency_percentile(values: list[float], percentile: float) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    index = max(0, math.ceil(percentile * len(ordered)) - 1)
+    return round(ordered[index], 3)
+
+
+def summarize_business_operations(
+    operation_names: list[str],
+    records: list[dict[str, Any]],
+    duration_seconds: float,
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
+    for operation in operation_names:
+        operation_records = [record for record in records if record["operation"] == operation]
+        latencies = [float(record["latency_ms"]) for record in operation_records]
+        succeeded = sum(1 for record in operation_records if record["ok"])
+        errors: dict[str, int] = {}
+        for record in operation_records:
+            if not record["ok"]:
+                error = str(record.get("error") or "unknown")
+                errors[error] = errors.get(error, 0) + 1
+        summaries.append({
+            "operation": operation,
+            "attempted": len(operation_records),
+            "succeeded": succeeded,
+            "failed": len(operation_records) - succeeded,
+            "throughput_ops_per_sec": round(len(operation_records) / max(duration_seconds, 0.000001), 3),
+            "latency_p50_ms": latency_percentile(latencies, 0.50),
+            "latency_p99_ms": latency_percentile(latencies, 0.99),
+            "errors": errors,
+        })
+    return summaries
+
+
+def run_leaderboard_scenario(
+    host: str,
+    port: int,
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    run_id: str,
+    persistence_mode: str,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    with concurrent.futures.ThreadPoolExecutor(max_workers=clients) as executor:
+        futures = [
+            executor.submit(
+                run_business_operation_worker,
+                host,
+                port,
+                "leaderboard",
+                client_index,
+                iterations,
+                timeout_seconds,
+                run_id,
+            )
+            for client_index in range(clients)
+        ]
+        workers = [future.result() for future in futures]
+    duration_seconds = round(time.perf_counter() - started, 6)
+    records = [record for worker in workers for record in worker["records"]]
+    operation_names = [item[0] for item in BUSINESS_OPERATION_SEQUENCES["leaderboard"]]
+    operations = summarize_business_operations(operation_names, records, duration_seconds)
+    setup_failures = [
+        {"client_index": worker["client_index"], "error": worker["setup_error"]}
+        for worker in workers
+        if worker["setup_error"]
+    ]
+    expected_per_operation = clients * iterations
+    passed = not setup_failures and all(
+        operation["attempted"] == expected_per_operation and operation["failed"] == 0
+        for operation in operations
+    )
+    return {
+        "scenario": "leaderboard",
+        "passed": passed,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "duration_seconds": duration_seconds,
+        "expected_per_operation": expected_per_operation,
+        "setup_failures": setup_failures,
+        "persistence_mode": persistence_mode,
+        "redis_comparison": False,
+        "operations": operations,
+    }
+
+
+def metric_distribution(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "median": None, "max": None}
+    return {
+        "min": round(min(values), 3),
+        "median": round(statistics.median(values), 3),
+        "max": round(max(values), 3),
+    }
+
+
+def aggregate_business_operation_runs(
+    scenarios: list[str],
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    aggregates: list[dict[str, Any]] = []
+    for scenario_name in scenarios:
+        scenario_runs = [
+            scenario
+            for run in runs
+            for scenario in run["scenarios"]
+            if scenario["scenario"] == scenario_name
+        ]
+        operation_names = [item[0] for item in BUSINESS_OPERATION_SEQUENCES[scenario_name]]
+        operation_aggregates: list[dict[str, Any]] = []
+        for operation_name in operation_names:
+            operation_runs = [
+                operation
+                for scenario in scenario_runs
+                for operation in scenario["operations"]
+                if operation["operation"] == operation_name
+            ]
+            operation_aggregates.append({
+                "operation": operation_name,
+                "attempted": sum(int(operation["attempted"]) for operation in operation_runs),
+                "succeeded": sum(int(operation["succeeded"]) for operation in operation_runs),
+                "failed": sum(int(operation["failed"]) for operation in operation_runs),
+                "throughput_ops_per_sec": metric_distribution([
+                    float(operation["throughput_ops_per_sec"]) for operation in operation_runs
+                ]),
+                "latency_p50_ms": metric_distribution([
+                    float(operation["latency_p50_ms"])
+                    for operation in operation_runs
+                    if operation["latency_p50_ms"] is not None
+                ]),
+                "latency_p99_ms": metric_distribution([
+                    float(operation["latency_p99_ms"])
+                    for operation in operation_runs
+                    if operation["latency_p99_ms"] is not None
+                ]),
+            })
+        aggregate: dict[str, Any] = {
+            "scenario": scenario_name,
+            "runs": len(scenario_runs),
+            "passed_runs": sum(1 for scenario in scenario_runs if scenario["passed"]),
+            "passed": len(scenario_runs) == len(runs) and all(scenario["passed"] for scenario in scenario_runs),
+            "operations": operation_aggregates,
+        }
+        if scenario_name == "matchmaking":
+            time_to_match_samples = [
+                float(value)
+                for scenario in scenario_runs
+                for value in scenario.get("time_to_match_samples_ms", [])
+            ]
+            aggregate.update({
+                "setup_retry_count": sum(
+                    int(scenario.get("setup_retry_count", 0)) for scenario in scenario_runs
+                ),
+                "time_to_match_samples": len(time_to_match_samples),
+                "time_to_match_p50_ms": latency_percentile(time_to_match_samples, 0.50),
+                "time_to_match_p99_ms": latency_percentile(time_to_match_samples, 0.99),
+            })
+        if scenario_name == "leaderboard":
+            persistence_modes = sorted({str(scenario["persistence_mode"]) for scenario in scenario_runs})
+            aggregate.update({
+                "persistence_mode": persistence_modes[0] if len(persistence_modes) == 1 else "mixed",
+                "redis_comparison": False,
+            })
+        aggregates.append(aggregate)
+    return aggregates
+
+
+def run_business_operation_perf(
+    host: str,
+    port: int,
+    scenarios: list[str],
+    clients: int,
+    iterations: int,
+    timeout_seconds: float,
+    repetitions: int = 1,
+    leaderboard_persistence_mode: str = "in_memory_only",
+) -> dict[str, Any]:
+    selected_scenarios = list(dict.fromkeys(scenarios))
+    if clients <= 0 or iterations <= 0 or repetitions <= 0 or timeout_seconds <= 0:
+        raise ValueError("business operation clients, iterations, repetitions, and timeout must be positive")
+    if "matchmaking" in selected_scenarios and clients % 2 != 0:
+        raise ValueError("1v1 matchmaking requires an even client count")
+    runs: list[dict[str, Any]] = []
+    for repetition in range(repetitions):
+        scenario_summaries: list[dict[str, Any]] = []
+        for scenario in selected_scenarios:
+            run_id = f"{time.monotonic_ns()}_{repetition + 1}"
+            if scenario == "matchmaking":
+                scenario_summaries.append(run_matchmaking_scenario(
+                    host, port, clients, iterations, timeout_seconds, run_id
+                ))
+            else:
+                scenario_summaries.append(run_leaderboard_scenario(
+                    host,
+                    port,
+                    clients,
+                    iterations,
+                    timeout_seconds,
+                    run_id,
+                    leaderboard_persistence_mode,
+                ))
+        runs.append({
+            "run": repetition + 1,
+            "passed": all(scenario["passed"] for scenario in scenario_summaries),
+            "scenarios": scenario_summaries,
+        })
+    scenario_aggregates = aggregate_business_operation_runs(selected_scenarios, runs)
+    overall_pass = len(runs) == repetitions and all(run["passed"] for run in runs)
+    return {
+        "summary_version": 2,
+        "overall_pass": overall_pass,
+        "passed": overall_pass,
+        "gateway_host": host,
+        "gateway_port": port,
+        "clients": clients,
+        "iterations_per_client": iterations,
+        "requested_runs": repetitions,
+        "completed_runs": len(runs),
+        "runs": runs,
+        "scenario_aggregates": scenario_aggregates,
+        "leaderboard_persistence": {
+            "mode": leaderboard_persistence_mode,
+            "source": "explicit collector backend configuration",
+            "redis_comparison": False,
+        } if "leaderboard" in selected_scenarios else None,
+    }
+
+
+def leaderboard_aggregate(summary: dict[str, Any]) -> dict[str, Any]:
+    return next(
+        (item for item in summary.get("scenario_aggregates", []) if item.get("scenario") == "leaderboard"),
+        {},
+    )
+
+
+def build_leaderboard_persistence_comparison(
+    in_memory_summary: dict[str, Any],
+    redis_summary: dict[str, Any],
+    *,
+    repetitions: int,
+    redis_host: str,
+    redis_port: int,
+    redis_key: str,
+    in_memory_log_verified: bool,
+    redis_log_verified: bool,
+    ping_before: bool,
+    ping_after: bool,
+    redis_zcard: int,
+    expected_min_zcard: int,
+) -> dict[str, Any]:
+    in_memory = leaderboard_aggregate(in_memory_summary)
+    redis = leaderboard_aggregate(redis_summary)
+    deltas: list[dict[str, Any]] = []
+    redis_operations = {item["operation"]: item for item in redis.get("operations", [])}
+    for operation in in_memory.get("operations", []):
+        peer = redis_operations.get(operation.get("operation"))
+        if not peer:
+            continue
+        metrics: dict[str, Any] = {}
+        for metric in ("throughput_ops_per_sec", "latency_p50_ms", "latency_p99_ms"):
+            baseline = operation.get(metric, {}).get("median")
+            observed = peer.get(metric, {}).get("median")
+            if baseline is None or observed is None:
+                continue
+            metrics[metric] = {
+                "in_memory_median": baseline,
+                "redis_median": observed,
+                "redis_minus_in_memory": round(float(observed) - float(baseline), 3),
+                "delta_percent": round((float(observed) - float(baseline)) / float(baseline) * 100.0, 3)
+                if float(baseline) != 0.0 else None,
+            }
+        deltas.append({"operation": operation.get("operation"), "metrics": metrics})
+
+    modes_passed = all(
+        aggregate.get("passed") is True
+        and int(aggregate.get("runs", 0)) == repetitions
+        and int(aggregate.get("passed_runs", 0)) == repetitions
+        and all(int(operation.get("failed", -1)) == 0 for operation in aggregate.get("operations", []))
+        for aggregate in (in_memory, redis)
+    )
+    redis_proof = {
+        "host": redis_host,
+        "port": redis_port,
+        "key": redis_key,
+        "ping_before": ping_before,
+        "ping_after": ping_after,
+        "zcard": redis_zcard,
+        "expected_min_zcard": expected_min_zcard,
+        "verified": ping_before and ping_after and redis_zcard >= expected_min_zcard,
+    }
+    verified = modes_passed and in_memory_log_verified and redis_log_verified and redis_proof["verified"]
+    return {
+        "requested": True,
+        "verified": verified,
+        "passed": verified,
+        "repetitions_per_mode": repetitions,
+        "execution_order": ["in_memory_only", "redis_primary_with_memory_shadow"],
+        "modes": {
+            "in_memory_only": {
+                "log_verified": in_memory_log_verified,
+                "summary": in_memory_summary,
+            },
+            "redis_primary_with_memory_shadow": {
+                "log_verified": redis_log_verified,
+                "summary": redis_summary,
+            },
+        },
+        "redis_proof": redis_proof,
+        "deltas": deltas,
+    }
 
 
 def estimate_battle_max_frames(cases: list[dict[str, Any]]) -> int:
@@ -475,10 +1715,56 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     p90 = numeric_series("latency_p90_ms")
     p99 = numeric_series("latency_p99_ms")
     totals = [int(run.get("total_messages", 0)) for run in runs]
+    responses = [int(run.get("response_messages", 0)) for run in runs]
+    pushes = [int(run.get("push_messages", 0)) for run in runs]
     connected = [int(run.get("connected_clients", 0)) for run in runs]
+    target = [int(run.get("target_clients", 0)) for run in runs]
+    started = [int(run.get("started_clients", 0)) for run in runs]
+    tcp_connected = [int(run.get("tcp_connected_clients", 0)) for run in runs]
+    authenticated = [int(run.get("authenticated_clients", 0)) for run in runs]
+    active = [int(run.get("active_clients", 0)) for run in runs]
+    peak_active = [int(run.get("peak_active_clients", 0)) for run in runs]
+    cancelled = [int(run.get("cancelled_clients", 0)) for run in runs]
+    cancelled_before_connect = [int(run.get("cancelled_before_connect", 0)) for run in runs]
+    ramp_up = numeric_series("ramp_up_seconds")
+    ramp_timeout = numeric_series("ramp_timeout_seconds")
+    steady_target = numeric_series("steady_state_target_seconds")
+    steady_elapsed = numeric_series("steady_state_elapsed_seconds")
+    configured_rate_ceiling = numeric_series("configured_request_rate_ceiling_ops_per_sec")
+    achieved_send_rate = numeric_series("achieved_send_rate_ops_per_sec")
+    achieved_response_rate = numeric_series("achieved_response_rate_ops_per_sec")
+    send_attempts = [int(run.get("business_send_attempts", 0)) for run in runs]
+    send_successes = [int(run.get("business_send_successes", 0)) for run in runs]
     rejected = [int(run.get("rejected_clients", 0)) for run in runs]
     failed = [int(run.get("failed_clients", 0)) for run in runs]
     forced_timeouts = [bool(run.get("forced_timeout") or run.get("collector_forced_timeout")) for run in runs]
+    bench_exit_codes = [int(run.get("bench_exit_code", 0)) for run in runs]
+    if case_name.startswith("echo"):
+        message_count_consistent = all(
+            int(run.get("total_messages", 0))
+            == int(run.get("response_messages", 0))
+            for run in runs
+        )
+    else:
+        message_count_consistent = all(
+            int(run.get("total_messages", 0))
+            == int(run.get("response_messages", 0)) + int(run.get("push_messages", 0))
+            for run in runs
+        )
+
+    def integer_distribution(values: list[int]) -> dict[str, int]:
+        return {
+            "min": min(values),
+            "median": int(statistics.median(values)),
+            "max": max(values),
+        }
+
+    def numeric_distribution(values: list[float]) -> dict[str, float]:
+        return {
+            "min": min(values),
+            "median": statistics.median(values),
+            "max": max(values),
+        }
 
     return {
         "case_name": case_name,
@@ -508,11 +1794,37 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "median": int(statistics.median(totals)),
             "max": max(totals),
         },
-        "connected_clients": {
-            "min": min(connected),
-            "median": int(statistics.median(connected)),
-            "max": max(connected),
-        },
+        "response_messages": integer_distribution(responses),
+        "push_messages": integer_distribution(pushes),
+        "message_count_consistent": message_count_consistent,
+        "target_clients": integer_distribution(target),
+        "started_clients": integer_distribution(started),
+        "tcp_connected_clients": integer_distribution(tcp_connected),
+        "authenticated_clients": integer_distribution(authenticated),
+        "active_clients": integer_distribution(active),
+        "peak_active_clients": integer_distribution(peak_active),
+        "cancelled_clients": integer_distribution(cancelled),
+        "cancelled_before_connect": integer_distribution(cancelled_before_connect),
+        "connected_clients": integer_distribution(connected),
+        "ramp_up_seconds": numeric_distribution(ramp_up),
+        "ramp_timeout_seconds": numeric_distribution(ramp_timeout),
+        "ramp_completed": all(run.get("ramp_completed") is True for run in runs),
+        "measurement_started": all(run.get("measurement_started") is True for run in runs),
+        "steady_state_target_seconds": numeric_distribution(steady_target),
+        "steady_state_elapsed_seconds": numeric_distribution(steady_elapsed),
+        "steady_state_completed": all(run.get("steady_state_completed") is True for run in runs),
+        "termination_reasons": sorted({str(run.get("termination_reason", "")) for run in runs}),
+        "load_models": sorted({str(run.get("load_model", "")) for run in runs}),
+        "configured_request_rate_is_bounded": all(
+            run.get("configured_request_rate_is_bounded") is True for run in runs
+        ),
+        "configured_request_rate_ceiling_ops_per_sec": numeric_distribution(
+            configured_rate_ceiling
+        ),
+        "business_send_attempts": integer_distribution(send_attempts),
+        "business_send_successes": integer_distribution(send_successes),
+        "achieved_send_rate_ops_per_sec": numeric_distribution(achieved_send_rate),
+        "achieved_response_rate_ops_per_sec": numeric_distribution(achieved_response_rate),
         "rejected_clients": {
             "min": min(rejected),
             "median": int(statistics.median(rejected)),
@@ -524,6 +1836,179 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "max": max(failed),
         },
         "forced_timeout": any(forced_timeouts),
+        "bench_exit_code": max(bench_exit_codes),
+    }
+
+
+def otel_exporter_metrics(diagnostics: dict[str, Any]) -> dict[str, Any]:
+    raw = diagnostics.get("otel_exporter_metrics")
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        "configured": raw.get("configured") is True,
+        "enqueued_spans": int(raw.get("enqueued_spans", 0)),
+        "exported_spans": int(raw.get("exported_spans", 0)),
+        "successful_batches": int(raw.get("successful_batches", 0)),
+        "failed_batches": int(raw.get("failed_batches", 0)),
+        "buffered_spans": int(raw.get("buffered_spans", 0)),
+    }
+
+
+def distribution(values: list[float]) -> dict[str, float | None]:
+    if not values:
+        return {"min": None, "median": None, "max": None}
+    return {
+        "min": round(min(values), 3),
+        "median": round(statistics.median(values), 3),
+        "max": round(max(values), 3),
+    }
+
+
+def aggregate_otel_mode(
+    mode: str,
+    runs: list[dict[str, Any]],
+    mode_backend_routed_requests: int,
+    battle_backend_pid: int,
+) -> dict[str, Any]:
+    performance = aggregate_case_runs("battle-100-30s", runs)
+    return {
+        "mode": mode,
+        "runs": len(runs),
+        "performance": performance,
+        "gateway_cpu_seconds": distribution([
+            float(run["gateway_resources"]["cpu_seconds_delta"])
+            for run in runs
+            if run["gateway_resources"].get("cpu_seconds_delta") is not None
+        ]),
+        "gateway_rss_mb": distribution([
+            float(run["gateway_resources"]["rss_mb_after"])
+            for run in runs
+        ]),
+        "backend_routed_requests": mode_backend_routed_requests,
+        "per_run_backend_routed_requests": sum(
+            int(run["backend_routed_requests"]) for run in runs
+        ),
+        "gateway_cpu_affinities": sorted({
+            str(run["gateway_resources"].get("cpu_affinity", "")) for run in runs
+        }),
+        "gateway_pid": runs[0]["gateway_resources"].get("pid") if runs else None,
+        "battle_backend_pid": battle_backend_pid,
+        "runs_detail": runs,
+    }
+
+
+def median_delta(off_value: float | None, on_value: float | None) -> dict[str, float | None]:
+    if off_value is None or on_value is None:
+        return {"off": off_value, "on": on_value, "on_minus_off": None, "delta_percent": None}
+    difference = float(on_value) - float(off_value)
+    return {
+        "off": off_value,
+        "on": on_value,
+        "on_minus_off": round(difference, 3),
+        "delta_percent": round(difference / float(off_value) * 100.0, 3)
+        if float(off_value) != 0.0 else None,
+    }
+
+
+def build_otel_comparison(
+    off: dict[str, Any],
+    on: dict[str, Any],
+    *,
+    repetitions: int,
+    off_log_verified: bool,
+    on_log_verified: bool,
+    collector_off: dict[str, int],
+    collector_on: dict[str, int],
+    off_exporter: dict[str, Any],
+    on_exporter: dict[str, Any],
+) -> dict[str, Any]:
+    off_absolute_gate = evaluate_release_gates([off["performance"]])
+    on_absolute_gate = evaluate_release_gates([on["performance"]])
+    empty_collector = {
+        "requests": 0,
+        "spans": 0,
+        "invalid_payloads": 0,
+        "http_status_errors": 0,
+        "span_status_errors": 0,
+    }
+    counter_fields = (
+        "enqueued_spans", "exported_spans", "successful_batches", "failed_batches", "buffered_spans"
+    )
+    off_proof = (
+        off_log_verified
+        and collector_off == empty_collector
+        and off_exporter.get("configured") is False
+        and all(int(off_exporter.get(field, 0)) == 0 for field in counter_fields)
+    )
+    routed = int(on.get("backend_routed_requests", 0))
+    enqueued = int(on_exporter.get("enqueued_spans", -1))
+    exported = int(on_exporter.get("exported_spans", -1))
+    buffered = int(on_exporter.get("buffered_spans", -1))
+    on_proof = (
+        on_log_verified
+        and on_exporter.get("configured") is True
+        and routed > 0
+        and enqueued == routed
+        and exported == int(collector_on.get("spans", -1))
+        and int(on_exporter.get("successful_batches", -1)) == int(collector_on.get("requests", -1))
+        and int(on_exporter.get("failed_batches", -1)) == 0
+        and buffered == enqueued - exported
+        and int(collector_on.get("requests", 0)) > 0
+        and int(collector_on.get("spans", 0)) > 0
+        and int(collector_on.get("invalid_payloads", -1)) == 0
+        and int(collector_on.get("http_status_errors", -1)) == 0
+        and int(collector_on.get("span_status_errors", -1)) == 0
+    )
+    complete = int(off.get("runs", 0)) == repetitions and int(on.get("runs", 0)) == repetitions and repetitions >= 3
+    absolute_gate_passed = off_absolute_gate.get("overall_pass") is True and on_absolute_gate.get("overall_pass") is True
+    affinity_verified = (
+        off.get("gateway_cpu_affinities") == on.get("gateway_cpu_affinities")
+        and bool(off.get("gateway_cpu_affinities"))
+        and all(bool(value) for value in off.get("gateway_cpu_affinities", []))
+    )
+    fresh_gateway_per_mode = (
+        off.get("gateway_pid") is not None
+        and on.get("gateway_pid") is not None
+        and off.get("gateway_pid") != on.get("gateway_pid")
+    )
+    fresh_battle_backend_per_mode = (
+        off.get("battle_backend_pid") is not None
+        and on.get("battle_backend_pid") is not None
+        and off.get("battle_backend_pid") != on.get("battle_backend_pid")
+    )
+    verified = (
+        complete
+        and fresh_gateway_per_mode
+        and fresh_battle_backend_per_mode
+        and affinity_verified
+        and off_proof
+        and on_proof
+        and absolute_gate_passed
+    )
+    return {
+        "requested": True,
+        "verified": verified,
+        "passed": verified,
+        "repetitions_per_mode": repetitions,
+        "case": "battle-100-30s",
+        "performance_regression_policy": "observed_not_thresholded",
+        "execution_model": "fresh_gateway_and_battle_backend_per_mode_three_or_more_runs_per_process",
+        "fresh_gateway_per_mode": fresh_gateway_per_mode,
+        "fresh_battle_backend_per_mode": fresh_battle_backend_per_mode,
+        "absolute_gate_passed": absolute_gate_passed,
+        "affinity_verified": affinity_verified,
+        "modes": {"off": off, "on": on},
+        "proof": {
+            "off": {"verified": off_proof, "log_verified": off_log_verified, "collector": collector_off, "exporter": off_exporter},
+            "on": {"verified": on_proof, "log_verified": on_log_verified, "collector": collector_on, "exporter": on_exporter},
+        },
+        "absolute_gates": {"off": off_absolute_gate, "on": on_absolute_gate},
+        "deltas": {
+            "throughput_msg_per_sec": median_delta(off["performance"]["throughput_msg_per_sec"]["median"], on["performance"]["throughput_msg_per_sec"]["median"]),
+            "latency_p99_ms": median_delta(off["performance"]["latency_p99_ms"]["median"], on["performance"]["latency_p99_ms"]["median"]),
+            "gateway_cpu_seconds": median_delta(off["gateway_cpu_seconds"]["median"], on["gateway_cpu_seconds"]["median"]),
+            "gateway_rss_mb": median_delta(off["gateway_rss_mb"]["median"], on["gateway_rss_mb"]["median"]),
+        },
     }
 
 
@@ -557,8 +2042,8 @@ def aggregate_numeric(values: list[float]) -> dict[str, float] | None:
 
 
 def service_resource_delta(
-    idle: dict[str, Any] | None,
-    loaded: dict[str, Any] | None,
+    before: dict[str, Any] | None,
+    after: dict[str, Any] | None,
     elapsed_seconds: float,
 ) -> dict[str, Any]:
     fields = [
@@ -572,12 +2057,12 @@ def service_resource_delta(
     ]
     result: dict[str, Any] = {}
     for field in fields:
-        loaded_value = numeric_snapshot_value(loaded, field)
-        idle_value = numeric_snapshot_value(idle, field)
-        result[field] = loaded_value
+        after_value = numeric_snapshot_value(after, field)
+        before_value = numeric_snapshot_value(before, field)
+        result[field] = after_value
         result[f"{field}_delta"] = (
-            round(loaded_value - idle_value, 3)
-            if loaded_value is not None and idle_value is not None
+            round(after_value - before_value, 3)
+            if after_value is not None and before_value is not None
             else None
         )
     cpu_delta = result.get("cpu_seconds_delta")
@@ -589,9 +2074,58 @@ def service_resource_delta(
     return result
 
 
+def build_resource_window(
+    service_before: list[dict[str, Any]],
+    service_after: list[dict[str, Any]],
+    loadgen_before: dict[str, Any],
+    loadgen_after: dict[str, Any],
+    elapsed_seconds: float,
+    quiescence: dict[str, Any],
+) -> dict[str, Any]:
+    before_map = snapshot_service_map(service_before)
+    after_map = snapshot_service_map(service_after)
+    return {
+        "elapsed_seconds": round(elapsed_seconds, 6),
+        "quiescence": quiescence,
+        "services": {
+            name: service_resource_delta(before_map.get(name), after, elapsed_seconds)
+            for name, after in after_map.items()
+        },
+        "loadgen": service_resource_delta(loadgen_before, loadgen_after, elapsed_seconds),
+        "raw": {
+            "service_before": service_before,
+            "service_after": service_after,
+            "loadgen_before": loadgen_before,
+            "loadgen_after": loadgen_after,
+        },
+    }
+
+
+def build_case_resource_evidence(
+    *,
+    service_before: list[dict[str, Any]],
+    service_at_load_end: list[dict[str, Any]],
+    loadgen: dict[str, Any],
+    load_window_elapsed_seconds: float,
+    quiescence: dict[str, Any],
+    service_after_quiescence: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "before": service_before,
+        "after": service_at_load_end,
+        "loadgen": loadgen,
+        "elapsed_seconds": round(load_window_elapsed_seconds, 6),
+        "measurement_boundary": "loadgen_process_exit",
+        "quiescence": quiescence,
+        "post_quiescence": {
+            "after": service_after_quiescence,
+            "wait_seconds": float(quiescence.get("wait_seconds", 0.0)),
+        },
+    }
+
+
 def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
     snapshots = summary.get("process_snapshots", {})
-    idle_map = snapshot_service_map(snapshots.get("idle", []))
     cases = summary.get("cases", [])
 
     per_run: list[dict[str, Any]] = []
@@ -603,11 +2137,15 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
             continue
         base_name = case_base_name(case_name)
         connected = max(0, int(run.get("connected_clients", 0)))
-        elapsed = float(run.get("elapsed_seconds", 0.0))
-        loaded_map = snapshot_service_map(snapshots.get(snapshot_key, []))
+        run_snapshots = snapshots.get(snapshot_key)
+        if not isinstance(run_snapshots, dict):
+            continue
+        elapsed = float(run_snapshots.get("elapsed_seconds", 0.0))
+        before_map = snapshot_service_map(run_snapshots.get("before", []))
+        after_map = snapshot_service_map(run_snapshots.get("after", []))
         services: dict[str, Any] = {}
-        for service_name, loaded in loaded_map.items():
-            delta = service_resource_delta(idle_map.get(service_name), loaded, elapsed)
+        for service_name, after in after_map.items():
+            delta = service_resource_delta(before_map.get(service_name), after, elapsed)
             if connected > 0:
                 rss_delta = delta.get("working_set_mb_delta")
                 handles_delta = delta.get("handles_delta")
@@ -648,6 +2186,7 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
             "connected_clients": connected,
             "elapsed_seconds": elapsed,
             "services": services,
+            "loadgen": run_snapshots.get("loadgen", {}),
         })
 
     case_aggregates: list[dict[str, Any]] = []
@@ -667,6 +2206,346 @@ def analyze_resources(summary: dict[str, Any]) -> dict[str, Any]:
         "idle": snapshots.get("idle", []),
         "per_run": per_run,
         "case_aggregates": case_aggregates,
+    }
+
+
+def evaluate_resource_isolation_evidence(summary: dict[str, Any]) -> dict[str, Any]:
+    service = summary.get("service_resource_constraint")
+    loadgen = summary.get("loadgen_resource_constraint")
+    service = service if isinstance(service, dict) else {}
+    loadgen = loadgen if isinstance(loadgen, dict) else {}
+    required = service.get("type") == "linux_cpu_affinity"
+    if not required:
+        return {
+            "case": "service-loadgen-resource-isolation",
+            "passed": True,
+            "required": False,
+            "criteria": "required only for Linux CPU-constrained evidence",
+            "observed": {"service_constraint_type": service.get("type", "none")},
+        }
+
+    service_set = parse_cpu_set(str(service.get("effective_cpu_set", "")))
+    loadgen_set = parse_cpu_set(str(loadgen.get("effective_cpu_set", "")))
+    service_limit = len(service_set) * 100.0 + 5.0
+    loadgen_limit = len(loadgen_set) * 100.0 + 5.0
+    failures: list[str] = []
+    if (
+        service.get("applied") is not True
+        or loadgen.get("applied") is not True
+        or not service_set.isdisjoint(loadgen_set)
+    ):
+        failures.append("service/loadgen affinity is missing, unverified, or overlapping")
+
+    cases = summary.get("cases")
+    per_run = summary.get("resource_analysis", {}).get("per_run")
+    snapshots = summary.get("process_snapshots")
+    cases = cases if isinstance(cases, list) else []
+    per_run = per_run if isinstance(per_run, list) else []
+    snapshots = snapshots if isinstance(snapshots, dict) else {}
+    if len(per_run) != len(cases) or not cases:
+        failures.append(f"resource run count mismatch: {len(per_run)}/{len(cases)}")
+    for run in per_run:
+        case_name = str(run.get("case_name", ""))
+        raw = snapshots.get(case_name)
+        services = run.get("services")
+        loadgen_metrics = run.get("loadgen")
+        if (
+            not isinstance(raw, dict)
+            or not isinstance(raw.get("quiescence"), dict)
+            or raw["quiescence"].get("quiesced") is not True
+            or not isinstance(services, dict)
+            or not services
+            or not isinstance(loadgen_metrics, dict)
+        ):
+            failures.append(f"{case_name}: missing quiescence or resource evidence")
+            continue
+        service_cpu = [
+            metrics.get("cpu_percent_from_cpu_seconds")
+            for metrics in services.values()
+            if isinstance(metrics, dict)
+        ]
+        loadgen_cpu = loadgen_metrics.get("cpu_percent_from_cpu_seconds")
+        if (
+            len(service_cpu) != len(services)
+            or any(
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or value < 0
+                for value in service_cpu
+            )
+            or sum(float(value) for value in service_cpu if isinstance(value, (int, float)))
+            > service_limit
+            or not isinstance(loadgen_cpu, (int, float))
+            or isinstance(loadgen_cpu, bool)
+            or not 0 <= loadgen_cpu <= loadgen_limit
+        ):
+            failures.append(f"{case_name}: CPU delta exceeds its physical affinity limit")
+
+    return {
+        "case": "service-loadgen-resource-isolation",
+        "passed": not failures,
+        "required": True,
+        "criteria": (
+            "disjoint verified affinity, per-run quiescence, adjacent snapshots, and physical CPU totals"
+        ),
+        "observed": {
+            "service_cpu_set": format_cpu_set(service_set),
+            "loadgen_cpu_set": format_cpu_set(loadgen_set),
+            "resource_runs": len(per_run),
+            "failures": failures,
+        },
+    }
+
+
+def build_saturation_analysis(
+    summary: dict[str, Any],
+    *,
+    cpu_threshold_percent: float = 85.0,
+    loadgen_headroom_threshold_percent: float = 85.0,
+) -> dict[str, Any]:
+    service_constraint = summary.get("service_resource_constraint")
+    loadgen_constraint = summary.get("loadgen_resource_constraint")
+    service_constraint = service_constraint if isinstance(service_constraint, dict) else {}
+    loadgen_constraint = loadgen_constraint if isinstance(loadgen_constraint, dict) else {}
+    service_cpu_count = int(service_constraint.get("cpu_count", 0))
+    loadgen_cpu_count = int(loadgen_constraint.get("cpu_count", 0))
+    repetitions = int(summary.get("repetitions", 0))
+    manifest = summary.get("case_manifest")
+    manifest = manifest if isinstance(manifest, list) else []
+    aggregates = summary.get("case_aggregates")
+    aggregates = aggregates if isinstance(aggregates, list) else []
+    resource_aggregates = summary.get("resource_analysis", {}).get("case_aggregates")
+    resource_aggregates = resource_aggregates if isinstance(resource_aggregates, list) else []
+    resource_runs = summary.get("resource_analysis", {}).get("per_run")
+    resource_runs = resource_runs if isinstance(resource_runs, list) else []
+    resource_by_case = {
+        str(item.get("case_name", "")): item
+        for item in resource_aggregates
+        if isinstance(item, dict)
+    }
+    loadgen_cpu_by_case: dict[str, list[float]] = {}
+    for run in resource_runs:
+        if not isinstance(run, dict):
+            continue
+        value = run.get("loadgen", {}).get("cpu_percent_from_cpu_seconds")
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            loadgen_cpu_by_case.setdefault(
+                case_base_name(str(run.get("case_name", ""))), []
+            ).append(float(value))
+    isolation = evaluate_resource_isolation_evidence(summary)
+    process_snapshots = summary.get("process_snapshots")
+    process_snapshots = process_snapshots if isinstance(process_snapshots, dict) else {}
+    load_end_boundaries: dict[str, list[bool]] = {}
+    for run_name, snapshot in process_snapshots.items():
+        if not isinstance(snapshot, dict) or run_name == "idle":
+            continue
+        load_end_boundaries.setdefault(case_base_name(str(run_name)), []).append(
+            snapshot.get("measurement_boundary") == "loadgen_process_exit"
+        )
+    failures: list[str] = []
+    if service_cpu_count <= 0 or service_constraint.get("applied") is not True:
+        failures.append("service CPU affinity/quota is not explicit and verified")
+    if loadgen_cpu_count <= 0 or loadgen_constraint.get("applied") is not True:
+        failures.append("load-generator CPU affinity is not explicit and verified")
+    if isolation.get("passed") is not True or isolation.get("required") is not True:
+        failures.append("service/load-generator resource isolation evidence is incomplete")
+    if repetitions <= 0:
+        failures.append("repetition count must be positive")
+    curve_complete = len(manifest) >= 3
+    if len(aggregates) != len(manifest):
+        failures.append("case manifest and aggregate counts differ")
+
+    points: list[dict[str, Any]] = []
+    for aggregate in aggregates:
+        if not isinstance(aggregate, dict):
+            continue
+        case_name = str(aggregate.get("case_name", ""))
+        resource = resource_by_case.get(case_name, {})
+        gateway_cpu = (
+            resource.get("services", {})
+            .get("v2_gateway_demo", {})
+            .get("cpu_percent_from_cpu_seconds", {})
+            .get("median")
+        )
+        loadgen_values = loadgen_cpu_by_case.get(case_name, [])
+        loadgen_cpu = statistics.median(loadgen_values) if loadgen_values else None
+        target = int(aggregate.get("target_clients", {}).get("median", 0))
+        errors = (
+            int(aggregate.get("failed_clients", {}).get("max", 0))
+            + int(aggregate.get("rejected_clients", {}).get("max", 0))
+            + int(aggregate.get("cancelled_clients", {}).get("max", 0))
+        )
+        message_count_consistent = aggregate.get("message_count_consistent") is True
+        load_models = aggregate.get("load_models", [])
+        boundary_evidence = load_end_boundaries.get(case_name, [])
+        load_end_boundary_valid = (
+            len(boundary_evidence) == repetitions and all(boundary_evidence)
+        )
+        ramp_up = float(aggregate.get("ramp_up_seconds", {}).get("max", 0.0))
+        steady_elapsed = float(
+            aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
+        )
+        ramp_to_steady_ratio = ramp_up / steady_elapsed if steady_elapsed > 0.0 else 1.0
+        point_valid = (
+            aggregate.get("runs") == repetitions
+            and aggregate.get("measurement_started") is True
+            and aggregate.get("steady_state_completed") is True
+            and aggregate.get("configured_request_rate_is_bounded") is True
+            and int(aggregate.get("bench_exit_code", 1)) == 0
+            and target > 0
+            and int(aggregate.get("started_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("tcp_connected_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("authenticated_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("peak_active_clients", {}).get("min", 0)) == target
+            and int(aggregate.get("cancelled_clients", {}).get("max", 1)) == 0
+            and message_count_consistent
+            and load_models == ["closed_loop_one_in_flight_per_client"]
+            and isinstance(gateway_cpu, (int, float))
+            and not isinstance(gateway_cpu, bool)
+            and isinstance(loadgen_cpu, (int, float))
+            and not isinstance(loadgen_cpu, bool)
+            and ramp_to_steady_ratio <= 0.1
+            and load_end_boundary_valid
+        )
+        configured_ceiling = float(
+            aggregate.get("configured_request_rate_ceiling_ops_per_sec", {}).get("median", 0.0)
+        )
+        achieved_send = float(
+            aggregate.get("achieved_send_rate_ops_per_sec", {}).get("median", 0.0)
+        )
+        achieved_response = float(
+            aggregate.get("achieved_response_rate_ops_per_sec", {}).get("median", 0.0)
+        )
+        p99 = float(aggregate.get("latency_p99_ms", {}).get("median", 0.0))
+        gateway_cpu_percent = float(gateway_cpu) if isinstance(gateway_cpu, (int, float)) else 0.0
+        quota_utilization = (
+            gateway_cpu_percent / (service_cpu_count * 100.0) * 100.0
+            if service_cpu_count > 0
+            else 0.0
+        )
+        points.append({
+            "case_id": case_name,
+            "case_identity": aggregate.get("case_identity", {}),
+            "evidence_valid": point_valid,
+            "load_model": "closed_loop_one_in_flight_per_client",
+            "configured_request_rate_ceiling_ops_per_sec": round(configured_ceiling, 3),
+            "achieved_send_rate_ops_per_sec": round(achieved_send, 3),
+            "achieved_response_rate_ops_per_sec": round(achieved_response, 3),
+            "achieved_response_to_ceiling_ratio": round(
+                achieved_response / configured_ceiling, 6
+            ) if configured_ceiling > 0 else None,
+            "throughput_msg_per_sec": float(
+                aggregate.get("throughput_msg_per_sec", {}).get("median", 0.0)
+            ),
+            "latency_p99_ms": p99,
+            "client_error_count": errors,
+            "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
+            "message_count_consistent": message_count_consistent,
+            "gateway_cpu_percent": round(gateway_cpu_percent, 3),
+            "gateway_cpu_quota_percent": round(quota_utilization, 3),
+            "loadgen_cpu_percent": round(float(loadgen_cpu), 3)
+            if isinstance(loadgen_cpu, (int, float)) else None,
+            "loadgen_cpu_quota_percent": round(
+                float(loadgen_cpu) / (loadgen_cpu_count * 100.0) * 100.0, 3
+            ) if isinstance(loadgen_cpu, (int, float)) and loadgen_cpu_count > 0 else None,
+            "ramp_up_seconds": round(ramp_up, 3),
+            "steady_state_elapsed_seconds": round(steady_elapsed, 3),
+            "ramp_to_steady_ratio": round(ramp_to_steady_ratio, 6),
+            "resource_window_accepted": ramp_to_steady_ratio <= 0.1,
+            "load_end_boundary_valid": load_end_boundary_valid,
+            "slo_met": p99 <= 50.0 and errors == 0,
+        })
+
+    points.sort(key=lambda item: float(item["configured_request_rate_ceiling_ops_per_sec"]))
+    ceilings = [float(point["configured_request_rate_ceiling_ops_per_sec"]) for point in points]
+    if any(current <= previous for previous, current in zip(ceilings, ceilings[1:], strict=False)):
+        failures.append("configured request-rate ceilings are not strictly increasing")
+    if any(point.get("message_count_consistent") is not True for point in points):
+        failures.append(
+            "one or more saturation points have inconsistent total/response/push message counts"
+        )
+    if any(point.get("evidence_valid") is not True for point in points):
+        failures.append("one or more saturation points have incomplete lifecycle or resource evidence")
+
+    gateway_cpu_threshold_point = next(
+        (point for point in points if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
+        None,
+    )
+    cpu_point = next(
+        (
+            point for point in points
+            if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
+            and point["loadgen_cpu_quota_percent"] is not None
+            and point["loadgen_cpu_quota_percent"] < loadgen_headroom_threshold_percent
+        ),
+        None,
+    )
+    slo_point = next((point for point in points if point["latency_p99_ms"] > 50.0), None)
+    error_point = next((point for point in points if point["client_error_count"] > 0), None)
+    throughput_point = None
+    for previous, current in zip(points, points[1:], strict=False):
+        previous_rate = float(previous["achieved_response_rate_ops_per_sec"])
+        current_rate = float(current["achieved_response_rate_ops_per_sec"])
+        ceiling_growth = (
+            float(current["configured_request_rate_ceiling_ops_per_sec"])
+            / max(float(previous["configured_request_rate_ceiling_ops_per_sec"]), 0.000001)
+            - 1.0
+        )
+        response_growth = current_rate / max(previous_rate, 0.000001) - 1.0
+        if ceiling_growth >= 0.2 and response_growth < 0.1:
+            throughput_point = current
+            break
+
+    evidence_valid = not failures
+    saturation_found = evidence_valid and curve_complete and cpu_point is not None
+    if evidence_valid and not curve_complete:
+        inconclusive_reason = (
+            "fewer than three cases were selected; evidence is a comparison point, not a saturation curve"
+        )
+    elif evidence_valid and gateway_cpu_threshold_point is not None and cpu_point is None:
+        inconclusive_reason = (
+            "Gateway reached its CPU threshold only while the load generator lacked required headroom"
+        )
+    elif failures:
+        inconclusive_reason = "; ".join(failures)
+    else:
+        inconclusive_reason = (
+            f"Gateway CPU did not reach {cpu_threshold_percent:.1f}% of its explicit quota"
+        )
+    return {
+        "analysis_version": 1,
+        "collection_pass": evidence_valid,
+        "overall_pass": saturation_found,
+        "evidence_valid": evidence_valid,
+        "saturation_found": saturation_found,
+        "analysis_mode": "curve" if curve_complete else "comparison_point",
+        "curve_complete": curve_complete,
+        "conclusion": "knee_found" if saturation_found else "inconclusive",
+        "inconclusive_reason": "" if saturation_found else inconclusive_reason,
+        "load_model": "closed_loop_one_in_flight_per_client",
+        "load_model_note": (
+            "Configured rate is a timer ceiling; one in-flight request per client means this is not open-loop offered load."
+        ),
+        "cpu_measurement_window": "case start through loadgen process exit (ramp plus steady state; quiescence excluded)",
+        "cpu_measurement_window_policy": (
+            "mixed-window evidence requires ramp_up_seconds / steady_state_elapsed_seconds <= 0.10"
+        ),
+        "cpu_threshold_percent_of_quota": cpu_threshold_percent,
+        "loadgen_headroom_threshold_percent_of_quota": loadgen_headroom_threshold_percent,
+        "service_cpu_count": service_cpu_count,
+        "loadgen_cpu_count": loadgen_cpu_count,
+        "points": points,
+        "cpu_saturation_case": cpu_point["case_identity"] if cpu_point else None,
+        "gateway_cpu_threshold_case": (
+            gateway_cpu_threshold_point["case_identity"]
+            if gateway_cpu_threshold_point else None
+        ),
+        "throughput_knee_case": throughput_point["case_identity"] if throughput_point else None,
+        "slo_knee_case": slo_point["case_identity"] if slo_point else None,
+        "error_knee_case": error_point["case_identity"] if error_point else None,
+        "fixed_case_candidate": cpu_point["case_identity"] if cpu_point else None,
+        "comparison_axes": ["service_cpu_count", "io_cores"],
+        "failures": failures,
     }
 
 
@@ -712,6 +2591,7 @@ def aggregate_metric(resource_case: dict[str, Any], service: str, metric: str, s
 
 
 def render_markdown_report(summary: dict[str, Any]) -> str:
+    resource_constraint = summary.get("resource_constraint", {})
     lines = [
         "# v2 Performance Baseline Report",
         "",
@@ -722,6 +2602,7 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
         f"- Preset: `{summary.get('preset', 'unknown')}`",
         f"- Repetitions: `{summary.get('repetitions', 'unknown')}`",
         f"- Backend pool size: `{summary.get('topology', {}).get('backend_connection_pool_size', 'unknown')}`",
+        f"- CPU affinity: `{resource_constraint.get('effective_cpu_set') or 'unconstrained'}`",
         f"- Output dir: `{summary.get('output_dir', 'unknown')}`",
         "",
         "## Release Gates",
@@ -773,6 +2654,95 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"{fmt_number(aggregate.get('failed_clients', {}).get('max'))} | "
             f"{fmt_number(aggregate.get('forced_timeout'))} |"
         )
+
+    saturation = summary.get("saturation_analysis")
+    if isinstance(saturation, dict):
+        lines.extend([
+            "",
+            "## Saturation Analysis",
+            "",
+            f"- Collection pass: **{fmt_number(saturation.get('collection_pass'))}**",
+            f"- Conclusion: `{saturation.get('conclusion', 'inconclusive')}`",
+            f"- Load model: `{saturation.get('load_model')}`",
+            f"- CPU threshold: {fmt_number(saturation.get('cpu_threshold_percent_of_quota'))}% of quota",
+            f"- Loadgen headroom threshold: {fmt_number(saturation.get('loadgen_headroom_threshold_percent_of_quota'))}% of quota",
+            f"- Inconclusive reason: {saturation.get('inconclusive_reason') or 'n/a'}",
+            "",
+            "| Case | Ceiling ops/s | Send ops/s | Response ops/s | Gateway CPU quota % | Loadgen CPU quota % | P99 ms | Errors |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for point in saturation.get("points", []):
+            lines.append(
+                f"| `{point.get('case_id')}` | "
+                f"{fmt_number(point.get('configured_request_rate_ceiling_ops_per_sec'))} | "
+                f"{fmt_number(point.get('achieved_send_rate_ops_per_sec'))} | "
+                f"{fmt_number(point.get('achieved_response_rate_ops_per_sec'))} | "
+                f"{fmt_number(point.get('gateway_cpu_quota_percent'))} | "
+                f"{fmt_number(point.get('loadgen_cpu_quota_percent'))} | "
+                f"{fmt_number(point.get('latency_p99_ms'))} | "
+                f"{fmt_number(point.get('client_error_count'))} |"
+            )
+
+    otel_comparison = summary.get("otel_comparison")
+    if isinstance(otel_comparison, dict):
+        deltas = otel_comparison.get("deltas", {})
+        on_proof = otel_comparison.get("proof", {}).get("on", {})
+        lines.extend([
+            "",
+            "## OTel Off/On Comparison",
+            "",
+            f"- Verified: **{fmt_number(otel_comparison.get('verified'))}**",
+            f"- Runs per mode: {fmt_number(otel_comparison.get('repetitions_per_mode'))}",
+            f"- Regression policy: `{otel_comparison.get('performance_regression_policy')}`",
+            f"- Collector spans: {fmt_number(on_proof.get('collector', {}).get('spans'))}",
+            f"- Exporter failed batches: {fmt_number(on_proof.get('exporter', {}).get('failed_batches'))}",
+            "",
+            "| Metric | Off median | On median | On - off | Delta % |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ])
+        for metric in (
+            "throughput_msg_per_sec",
+            "latency_p99_ms",
+            "gateway_cpu_seconds",
+            "gateway_rss_mb",
+        ):
+            delta = deltas.get(metric, {})
+            lines.append(
+                f"| `{metric}` | {fmt_number(delta.get('off'), 3)} | "
+                f"{fmt_number(delta.get('on'), 3)} | "
+                f"{fmt_number(delta.get('on_minus_off'), 3)} | "
+                f"{fmt_number(delta.get('delta_percent'), 3)} |"
+            )
+
+    business_operation_perf = summary.get("business_operation_perf")
+    if isinstance(business_operation_perf, dict):
+        lines.extend([
+            "",
+            "## Business Operation Performance",
+            "",
+            f"- Runs: {business_operation_perf.get('completed_runs', 0)}/{business_operation_perf.get('requested_runs', 0)}",
+            "",
+            "| Scenario | Operation | Attempted | Succeeded | Failed | Throughput ops/s | P50 ms | P99 ms |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ])
+        for scenario in business_operation_perf.get("scenario_aggregates", []):
+            for operation in scenario.get("operations", []):
+                lines.append(
+                    f"| `{scenario.get('scenario')}` | `{operation.get('operation')}` | "
+                    f"{fmt_number(operation.get('attempted'))} | "
+                    f"{fmt_number(operation.get('succeeded'))} | "
+                    f"{fmt_number(operation.get('failed'))} | "
+                    f"{fmt_number(operation.get('throughput_ops_per_sec', {}).get('median'), 3)} | "
+                    f"{fmt_number(operation.get('latency_p50_ms', {}).get('median'), 3)} | "
+                    f"{fmt_number(operation.get('latency_p99_ms', {}).get('median'), 3)} |"
+                )
+            if scenario.get("scenario") == "matchmaking":
+                lines.append(
+                    f"| `matchmaking` | `time_to_match` | {fmt_number(scenario.get('time_to_match_samples'))} | "
+                    f"{fmt_number(scenario.get('time_to_match_samples'))} | 0 | n/a | "
+                    f"{fmt_number(scenario.get('time_to_match_p50_ms'), 3)} | "
+                    f"{fmt_number(scenario.get('time_to_match_p99_ms'), 3)} |"
+                )
 
     business_flow = summary.get("business_flow")
     if isinstance(business_flow, dict):
@@ -860,11 +2830,81 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
         rejected = aggregate["rejected_clients"]["max"]
         failed = aggregate["failed_clients"]["max"]
         forced_timeout = bool(aggregate.get("forced_timeout"))
+        bench_exit_code = int(aggregate.get("bench_exit_code", 1))
         total_messages = aggregate["total_messages"]["median"]
+        response_messages = aggregate.get("response_messages", {}).get("median", 0)
+        push_messages = aggregate.get("push_messages", {}).get("median", 0)
+        message_count_consistent = aggregate.get("message_count_consistent") is True
+        target_min = int(aggregate.get("target_clients", {}).get("min", 0))
+        target_max = int(aggregate.get("target_clients", {}).get("max", 0))
+        started_min = int(aggregate.get("started_clients", {}).get("min", 0))
+        tcp_connected_min = int(aggregate.get("tcp_connected_clients", {}).get("min", 0))
+        authenticated_min = int(aggregate.get("authenticated_clients", {}).get("min", 0))
+        peak_active_min = int(aggregate.get("peak_active_clients", {}).get("min", 0))
+        cancelled = int(aggregate.get("cancelled_clients", {}).get("max", 1))
+        cancelled_before_connect = int(
+            aggregate.get("cancelled_before_connect", {}).get("max", 1)
+        )
+        ramp_completed = aggregate.get("ramp_completed") is True
+        measurement_started = aggregate.get("measurement_started") is True
+        steady_completed = aggregate.get("steady_state_completed") is True
+        steady_target = float(
+            aggregate.get("steady_state_target_seconds", {}).get("max", 0.0)
+        )
+        steady_elapsed = float(
+            aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
+        )
+        termination_reasons = set(aggregate.get("termination_reasons", []))
+        lifecycle_valid = (
+            target_min > 0
+            and target_min == target_max
+            and started_min == target_min
+            and tcp_connected_min == target_min
+            and authenticated_min == target_min
+            and peak_active_min == target_min
+            and cancelled == 0
+            and cancelled_before_connect == 0
+            and ramp_completed
+            and measurement_started
+            and bench_exit_code == 0
+        )
+        duration_window_valid = (
+            steady_completed
+            and steady_elapsed >= max(0.0, steady_target - 0.25)
+        )
+        natural_battle_window_valid = (
+            case_name.startswith("battle")
+            and steady_completed
+            and steady_elapsed > 0.0
+            and bool(termination_reasons)
+            and termination_reasons <= {"natural_completion", "clients_completed"}
+        )
+        steady_window_valid = duration_window_valid or natural_battle_window_valid
+
+        evidence_observed = {
+            "target_clients": target_min,
+            "started_clients_min": started_min,
+            "tcp_connected_clients_min": tcp_connected_min,
+            "authenticated_clients_min": authenticated_min,
+            "peak_active_clients_min": peak_active_min,
+            "cancelled_clients": cancelled,
+            "cancelled_before_connect": cancelled_before_connect,
+            "ramp_completed": ramp_completed,
+            "measurement_started": measurement_started,
+            "steady_state_target_seconds": steady_target,
+            "steady_state_elapsed_seconds_min": steady_elapsed,
+            "steady_state_completed": steady_completed,
+            "termination_reasons": sorted(termination_reasons),
+            "bench_exit_code": bench_exit_code,
+        }
 
         if case_name.startswith("echo"):
-            passed = rejected == 0 and failed == 0 and not forced_timeout and total_messages > 0 and p99 <= 50.0
-            if p99 >= 45.0:
+            passed = (
+                lifecycle_valid and steady_window_valid and rejected == 0 and failed == 0
+                and not forced_timeout and total_messages > 0 and p99 <= 50.0
+                and message_count_consistent and total_messages == response_messages
+            )
+            if 45.0 <= p99 <= 50.0:
                 gates["warnings"].append({
                     "case": case_name,
                     "warning": "echo p99 is within 10% of the 50ms gate",
@@ -873,14 +2913,22 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": "echo: rejected=0, failed=0, p99<=50ms",
+                "criteria": (
+                    "echo: all target clients started/TCP-connected/authenticated/active before "
+                    "measurement, cancelled=0, steady duration complete, total=response, "
+                    "rejected=0, failed=0, p99<=50ms"
+                ),
                 "observed": {
+                    **evidence_observed,
                     "p99_ms": p99,
                     "throughput_msg_per_sec": throughput,
                     "rejected_clients": rejected,
                     "failed_clients": failed,
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
+                    "response_messages": response_messages,
+                    "push_messages": push_messages,
+                    "message_count_consistent": message_count_consistent,
                 },
             })
         elif case_name.startswith("battle"):
@@ -888,10 +2936,12 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             p99_limit = battle_p99_limit_ms(case_name)
             min_observed_messages = aggregate["total_messages"]["min"]
             passed = (
+                lifecycle_valid and steady_window_valid and
                 rejected == 0 and failed == 0 and not forced_timeout and
-                min_observed_messages >= min_messages and p99 <= p99_limit
+                min_observed_messages >= min_messages and p99 <= p99_limit and
+                message_count_consistent
             )
-            if p99 >= p99_limit * 0.9:
+            if p99_limit * 0.9 <= p99 <= p99_limit:
                 gates["warnings"].append({
                     "case": case_name,
                     "warning": f"battle p99 is within 10% of the {p99_limit:.0f}ms gate",
@@ -900,8 +2950,15 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             gates["checks"].append({
                 "case": case_name,
                 "passed": passed,
-                "criteria": f"battle: rejected=0, failed=0, forced_timeout=false, min_total_messages>={min_messages}, p99<={p99_limit:.0f}ms",
+                "criteria": (
+                    "battle: all target clients started/TCP-connected/authenticated/active before "
+                    "measurement, cancelled=0, bounded steady window complete, "
+                    f"total=response+push, rejected=0, failed=0, forced_timeout=false, "
+                    f"min_total_messages>={min_messages}, "
+                    f"p99<={p99_limit:.0f}ms"
+                ),
                 "observed": {
+                    **evidence_observed,
                     "p99_ms": p99,
                     "p99_limit_ms": p99_limit,
                     "throughput_msg_per_sec": throughput,
@@ -909,6 +2966,9 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "failed_clients": failed,
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
+                    "response_messages": response_messages,
+                    "push_messages": push_messages,
+                    "message_count_consistent": message_count_consistent,
                     "min_total_messages": min_observed_messages,
                     "required_min_total_messages": min_messages,
                 },
@@ -919,37 +2979,91 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
+    capacity_ramp = {"ramp_clients_per_second": 2000, "ramp_timeout_seconds": 90}
+    baseline_ramp = {"ramp_clients_per_second": 1000, "ramp_timeout_seconds": 45}
+    smoke_ramp = {"ramp_clients_per_second": 200, "ramp_timeout_seconds": 15}
+    if run_preset == "saturation":
+        saturation_ramp = {"ramp_clients_per_second": 2000, "ramp_timeout_seconds": 60}
+        return [
+            {"name": "echo-sat-c500-i100-60s", "scenario": "echo", "clients": 500, "duration_seconds": 60, "interval_ms": 100, **saturation_ramp},
+            {"name": "echo-sat-c1000-i100-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 100, **saturation_ramp},
+            {"name": "echo-sat-c1000-i50-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 50, **saturation_ramp},
+            {"name": "echo-sat-c1000-i20-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 20, **saturation_ramp},
+            {"name": "echo-sat-c1000-i10-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
+            {"name": "echo-sat-c2000-i10-60s", "scenario": "echo", "clients": 2000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
+        ]
     if run_preset == "capacity":
         return [
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "echo-5000-30s", "scenario": "echo", "clients": 5000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "echo-10000-30s", "scenario": "echo", "clients": 10000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **capacity_ramp},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2, **capacity_ramp},
         ]
     if run_preset == "business-capacity":
         return [
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
-            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **capacity_ramp},
+            {"name": "battle-500-30s", "scenario": "battle", "clients": 500, "duration_seconds": 30, "interval_ms": 200, "room": "perf_battle_500", "room_group_size": 2, **capacity_ramp},
         ]
     if run_preset == "baseline":
         return [
-            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50},
-            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2},
-            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2},
+            {"name": "echo-100-30s", "scenario": "echo", "clients": 100, "duration_seconds": 30, "interval_ms": 50, **baseline_ramp},
+            {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **baseline_ramp},
+            {"name": "battle-20-30s", "scenario": "battle", "clients": 20, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_20", "room_group_size": 2, **baseline_ramp},
+            {"name": "battle-100-30s", "scenario": "battle", "clients": 100, "duration_seconds": 30, "interval_ms": 100, "room": "perf_battle_100", "room_group_size": 2, **baseline_ramp},
         ]
     return [
-        {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50},
-        {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle"},
+        {"name": "echo-20-10s", "scenario": "echo", "clients": 20, "duration_seconds": 10, "interval_ms": 50, **smoke_ramp},
+        {"name": "battle-2-10s", "scenario": "battle", "clients": 2, "duration_seconds": 10, "interval_ms": 100, "room": "perf_smoke_battle", **smoke_ramp},
     ]
+
+
+def build_case_manifest(
+    cases: list[dict[str, Any]],
+    *,
+    service_cpu_set: str,
+    service_cpu_count: int,
+    io_cores: int,
+) -> list[dict[str, Any]]:
+    manifest: list[dict[str, Any]] = []
+    for case in cases:
+        interval_ms = int(case.get("interval_ms", 0))
+        clients = int(case["clients"])
+        configured_ceiling = (
+            round(clients * 1000.0 / interval_ms, 3) if interval_ms > 0 else None
+        )
+        case_id = str(case["name"])
+        manifest.append({
+            "case_id": case_id,
+            "case_name": case_id,
+            "scenario": str(case["scenario"]),
+            "clients": clients,
+            "interval_ms": interval_ms,
+            "duration_seconds": int(case["duration_seconds"]),
+            "ramp_clients_per_second": int(case["ramp_clients_per_second"]),
+            "ramp_timeout_seconds": int(case["ramp_timeout_seconds"]),
+            "load_model": "closed_loop_one_in_flight_per_client",
+            "configured_request_rate_ceiling_ops_per_sec": configured_ceiling,
+            "service_cpu_set": service_cpu_set,
+            "service_cpu_count": service_cpu_count,
+            "io_cores": io_cores,
+            "comparison_identity": (
+                f"{case_id}|service_cpu_count={service_cpu_count}|io_cores={io_cores}"
+            ),
+            "comparison_axes": ["service_cpu_count", "io_cores"],
+        })
+    return manifest
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect v2 performance baseline data.")
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
-    parser.add_argument("--run-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="smoke")
+    parser.add_argument(
+        "--run-preset",
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation"],
+        default="smoke",
+    )
     parser.add_argument("--repetitions", type=int, default=1)
     parser.add_argument("--gateway-port", type=int, default=9201)
     parser.add_argument("--login-port", type=int, default=9202)
@@ -959,6 +3073,25 @@ def main() -> int:
     parser.add_argument("--leaderboard-port", type=int, default=9305)
     parser.add_argument("--http-port", type=int, default=9080)
     parser.add_argument("--io-cores", type=int, default=4)
+    parser.add_argument(
+        "--cpu-set",
+        default="",
+        help="Linux CPU affinity list for managed service processes (for example 0 or 0-1,4).",
+    )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help=(
+            "Linux CPU affinity list for the collector, pressure client, and in-process business clients; "
+            "defaults to CPUs outside --cpu-set."
+        ),
+    )
+    parser.add_argument(
+        "--loadgen-io-threads",
+        type=int,
+        default=4,
+        help="Explicit I/O thread count for the pressure client.",
+    )
     parser.add_argument(
         "--include-business-flow",
         action="store_true",
@@ -989,13 +3122,102 @@ def main() -> int:
         help="Override V2_BATTLE_ROUTE_WORKERS for battle input backend route offload experiments.",
     )
     parser.add_argument(
+        "--business-operation-scenario",
+        action="append",
+        choices=sorted(BUSINESS_OPERATION_SEQUENCES),
+        default=[],
+        help="Run an opt-in concurrent business operation scenario; repeat for matchmaking and leaderboard.",
+    )
+    parser.add_argument("--business-operation-clients", type=int, default=16)
+    parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--business-operation-timeout-seconds", type=float, default=5.0)
+    parser.add_argument(
+        "--leaderboard-redis-comparison",
+        action="store_true",
+        help="Run three-or-more leaderboard repetitions in explicit in-memory and Redis-backed modes.",
+    )
+    parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
+    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
+    parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument(
+        "--otel-comparison",
+        action="store_true",
+        help="Run fresh-Gateway OTel off/on battle-100 comparisons with a loopback collector.",
+    )
+    parser.add_argument(
         "--case",
         action="append",
         default=[],
         help="Run only this named preset case; repeat to select multiple cases.",
     )
     parser.add_argument("--output-root", default="")
+    parser.add_argument(
+        "--saturation-cpu-threshold-percent",
+        type=float,
+        default=85.0,
+        help="Gateway CPU quota utilization threshold used to identify saturation.",
+    )
+    parser.add_argument(
+        "--saturation-loadgen-headroom-percent",
+        type=float,
+        default=85.0,
+        help="Maximum load-generator CPU quota utilization allowed for Gateway saturation attribution.",
+    )
     args = parser.parse_args()
+
+    try:
+        resolved_loadgen_cpu_set = resolve_loadgen_cpu_set(args.cpu_set, args.loadgen_cpu_set)
+        service_resource_constraint = prepare_process_cpu_affinity(args.cpu_set, "--cpu-set")
+        loadgen_resource_constraint = prepare_process_cpu_affinity(
+            resolved_loadgen_cpu_set,
+            "--loadgen-cpu-set",
+        )
+        if resolved_loadgen_cpu_set:
+            collector_affinity = apply_cpu_affinity(resolved_loadgen_cpu_set)
+            loadgen_resource_constraint["processes"].append({
+                "workload": "python_collector_and_business_clients",
+                "pid": os.getpid(),
+                "requested_cpu_set": collector_affinity["requested"],
+                "effective_cpu_set": collector_affinity["effective_cpu_set"],
+                "verified": collector_affinity["applied"] is True,
+            })
+            loadgen_resource_constraint["applied"] = collector_affinity["applied"] is True
+            loadgen_resource_constraint["effective_cpu_set"] = collector_affinity["effective_cpu_set"]
+    except (RuntimeError, ValueError, OSError) as exc:
+        parser.error(str(exc))
+    if args.loadgen_io_threads <= 0:
+        parser.error("--loadgen-io-threads must be positive")
+    if args.run_preset == "saturation" and (
+        not args.cpu_set or not resolved_loadgen_cpu_set
+    ):
+        parser.error(
+            "--run-preset saturation requires isolated --cpu-set and --loadgen-cpu-set capacity"
+        )
+    if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
+        parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
+    if not 0.0 < args.saturation_loadgen_headroom_percent <= 100.0:
+        parser.error("--saturation-loadgen-headroom-percent must be in (0, 100]")
+    if args.business_operation_scenario and (
+        args.business_operation_clients <= 0
+        or args.business_operation_iterations <= 0
+        or args.business_operation_timeout_seconds <= 0
+        or args.repetitions <= 0
+    ):
+        parser.error("business operation clients, iterations, and timeout must be positive")
+    if "matchmaking" in args.business_operation_scenario and args.business_operation_clients % 2 != 0:
+        parser.error("--business-operation-clients must be even for the 1v1 matchmaking profile")
+    if args.leaderboard_redis_comparison:
+        if "leaderboard" not in args.business_operation_scenario:
+            parser.error("--leaderboard-redis-comparison requires --business-operation-scenario leaderboard")
+        if args.repetitions < 3:
+            parser.error("--leaderboard-redis-comparison requires --repetitions >= 3")
+        if not 1 <= args.leaderboard_redis_port <= 65535:
+            parser.error("--leaderboard-redis-port must be between 1 and 65535")
+    if args.otel_comparison:
+        if args.repetitions < 3:
+            parser.error("--otel-comparison requires --repetitions >= 3")
+        if not any(case["name"] == "battle-100-30s" for case in build_run_cases(args.run_preset)):
+            parser.error("--otel-comparison requires a preset containing battle-100-30s")
 
     root = Path(__file__).resolve().parents[2]
     build_dir = Path(args.build_dir).resolve()
@@ -1027,20 +3249,39 @@ def main() -> int:
         run_cases = [case for case in run_cases if case["name"] in selected_cases]
         if not run_cases:
             parser.error("--case did not match any case in the selected --run-preset")
+    case_manifest = build_case_manifest(
+        run_cases,
+        service_cpu_set=str(service_resource_constraint.get("requested", "")),
+        service_cpu_count=int(service_resource_constraint.get("cpu_count", 0)),
+        io_cores=args.io_cores,
+    )
+    case_identity_by_name = {
+        str(entry["case_name"]): entry for entry in case_manifest
+    }
 
     battle_max_frames = estimate_battle_max_frames(run_cases)
     managed: list[ManagedProcess] = []
     try:
         log_step("Starting v2 backend topology")
-        managed.append(ManagedProcess("v2_login_backend", executables["login"], [str(args.login_port)], log_dir))
+        managed.append(ManagedProcess(
+            "v2_login_backend", executables["login"], [str(args.login_port)], log_dir,
+            cpu_set=args.cpu_set,
+        ))
         wait_tcp_port("127.0.0.1", args.login_port)
 
         battle_env = {"V2_BATTLE_MAX_FRAMES": str(battle_max_frames)}
 
-        managed.append(ManagedProcess("v2_room_backend", executables["room"], [str(args.room_port)], log_dir, battle_env))
+        managed.append(ManagedProcess(
+            "v2_room_backend", executables["room"], [str(args.room_port)], log_dir, battle_env,
+            cpu_set=args.cpu_set,
+        ))
         wait_tcp_port("127.0.0.1", args.room_port)
 
-        managed.append(ManagedProcess("v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir))
+        battle_process = ManagedProcess(
+            "v2_battle_backend", executables["battle"], [str(args.battle_port)], log_dir,
+            cpu_set=args.cpu_set,
+        )
+        managed.append(battle_process)
         wait_tcp_port("127.0.0.1", args.battle_port)
 
         managed.append(ManagedProcess(
@@ -1049,17 +3290,33 @@ def main() -> int:
             [str(args.matchmaking_port)],
             log_dir,
             {"SERVICE_PORT": str(args.matchmaking_port), "MATCH_PORT": str(args.matchmaking_port)},
+            cpu_set=args.cpu_set,
         ))
         wait_tcp_port("127.0.0.1", args.matchmaking_port)
 
-        managed.append(ManagedProcess(
+        leaderboard_process = ManagedProcess(
             "v2_leaderboard_backend",
             executables["leaderboard"],
             [str(args.leaderboard_port)],
             log_dir,
-            {"SERVICE_PORT": str(args.leaderboard_port), "LEADERBOARD_PORT": str(args.leaderboard_port)},
-        ))
+            {
+                "SERVICE_PORT": str(args.leaderboard_port),
+                "LEADERBOARD_PORT": str(args.leaderboard_port),
+                "LEADERBOARD_CONFIG_PATH": str(root / "config/environments/local/leaderboard.json"),
+                "REDIS_HOST": "",
+                "BOOST_DISABLE_REDIS_AUTO_CONNECT": "1",
+                "BOOST_LOG_LEVEL": "info",
+            },
+            cpu_set=args.cpu_set,
+        )
+        managed.append(leaderboard_process)
         wait_tcp_port("127.0.0.1", args.leaderboard_port)
+        in_memory_log_verified = wait_process_log(
+            leaderboard_process,
+            "Redis auto-connect disabled",
+        )
+        if not in_memory_log_verified:
+            raise RuntimeError("in-memory leaderboard startup did not prove Redis auto-connect was disabled")
 
         gateway_args = [
             "--port", str(args.gateway_port),
@@ -1078,6 +3335,7 @@ def main() -> int:
             "V2_RATE_LIMIT_USER": "100000",
             "V2_RATE_LIMIT_LOGIN": "50000",
             "V2_BATTLE_MAX_FRAMES": str(battle_max_frames),
+            "OTEL_EXPORT_ENDPOINT": "",
         }
         if args.backend_pool_size > 0:
             gateway_env["V2_BACKEND_CONNECTION_POOL_SIZE"] = str(args.backend_pool_size)
@@ -1085,11 +3343,23 @@ def main() -> int:
             gateway_env["V2_BATTLE_FRAME_PUSH_EVERY"] = str(args.battle_frame_push_every)
         if args.battle_route_workers > 0:
             gateway_env["V2_BATTLE_ROUTE_WORKERS"] = str(args.battle_route_workers)
-        managed.append(ManagedProcess("v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env))
+        gateway_process = ManagedProcess(
+            "v2_gateway_demo", executables["gateway"], gateway_args, log_dir, gateway_env,
+            cpu_set=args.cpu_set,
+        )
+        managed.append(gateway_process)
         wait_tcp_port("127.0.0.1", args.gateway_port)
         wait_tcp_port("127.0.0.1", args.http_port)
 
         time.sleep(2.0)
+
+        if args.cpu_set:
+            for process in managed:
+                record_process_affinity(
+                    service_resource_constraint,
+                    process,
+                    workload="initial_topology",
+                )
 
         summary: dict[str, Any] = {
             "collected_at": datetime.now().isoformat(timespec="seconds"),
@@ -1100,6 +3370,11 @@ def main() -> int:
             "build_dir": str(build_dir),
             "output_dir": str(output_root),
             "summary_version": 2,
+            "case_manifest_version": 1,
+            "case_manifest": case_manifest,
+            "resource_constraint": service_resource_constraint,
+            "service_resource_constraint": service_resource_constraint,
+            "loadgen_resource_constraint": loadgen_resource_constraint,
             "topology": {
                 "gateway_port": args.gateway_port,
                 "login_port": args.login_port,
@@ -1109,6 +3384,7 @@ def main() -> int:
                 "leaderboard_port": args.leaderboard_port,
                 "http_port": args.http_port,
                 "io_cores": args.io_cores,
+                "loadgen_io_threads": args.loadgen_io_threads,
                 "battle_max_frames": battle_max_frames,
                 "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "8")),
                 "battle_frame_push_every": args.battle_frame_push_every or int(os.environ.get("V2_BATTLE_FRAME_PUSH_EVERY", "1")),
@@ -1119,6 +3395,10 @@ def main() -> int:
             "release_gates": {},
             "process_snapshots": {},
             "business_flow": None,
+            "business_operation_perf": None,
+            "leaderboard_persistence_comparison": None,
+            "otel_comparison": None,
+            "saturation_analysis": None,
             "final_backend_metrics": {},
         }
         summary["process_snapshots"]["idle"] = snapshot_processes(managed)
@@ -1126,27 +3406,476 @@ def main() -> int:
         for case in run_cases:
             case_runs: list[dict[str, Any]] = []
             for repetition in range(args.repetitions):
+                run_key = f"{case['name']}.run{repetition + 1}"
+                service_before = snapshot_processes(managed)
+                resource_started_at = time.monotonic()
+                load_end: dict[str, Any] = {}
+
+                def capture_load_end() -> None:
+                    load_end["service_after"] = snapshot_processes(managed)
+                    load_end["monotonic"] = time.monotonic()
+
                 run_result = invoke_bench_case(
                     executables["pressure"],
                     args.gateway_port,
-                    {**case, "name": f"{case['name']}.run{repetition + 1}"},
+                    {**case, "name": run_key},
                     result_dir,
+                    loadgen_cpu_set=resolved_loadgen_cpu_set,
+                    loadgen_io_threads=args.loadgen_io_threads,
+                    on_load_end=capture_load_end,
                 )
-                run_result["case_name"] = f"{case['name']}.run{repetition + 1}"
+                service_at_load_end = load_end.get("service_after")
+                load_finished_at = load_end.get("monotonic")
+                if not isinstance(service_at_load_end, list) or not isinstance(
+                    load_finished_at, (int, float)
+                ):
+                    raise RuntimeError(f"missing load-end resource boundary: {run_key}")
+                load_window_elapsed_seconds = max(
+                    0.0, float(load_finished_at) - resource_started_at
+                )
+                quiescence = wait_for_service_quiescence(
+                    managed,
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                )
+                service_after_quiescence = snapshot_processes(managed)
+                total_resource_elapsed_seconds = max(
+                    0.0, time.monotonic() - resource_started_at
+                )
+                run_result["case_name"] = run_key
                 run_result["base_case_name"] = case["name"]
+                run_result["case_identity"] = case_identity_by_name[str(case["name"])]
+                run_result["resource_elapsed_seconds"] = round(
+                    load_window_elapsed_seconds, 6
+                )
+                run_result["resource_total_elapsed_seconds"] = round(
+                    total_resource_elapsed_seconds, 6
+                )
                 case_runs.append(run_result)
 
+                loadgen_affinity = run_result["loadgen_resources"]["startup_affinity"]
+                loadgen_resource_constraint["processes"].append({
+                    "case_name": run_key,
+                    **loadgen_affinity,
+                })
+                if resolved_loadgen_cpu_set:
+                    loadgen_resource_constraint["applied"] = all(
+                        evidence["verified"]
+                        for evidence in loadgen_resource_constraint["processes"]
+                    )
+                    if loadgen_resource_constraint["applied"]:
+                        loadgen_resource_constraint["effective_cpu_set"] = (
+                            loadgen_resource_constraint["requested"]
+                        )
+
                 diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
-                diagnostics_path = result_dir / f"{case['name']}.run{repetition + 1}.gateway.diagnostics.json"
+                diagnostics_path = result_dir / f"{run_key}.gateway.diagnostics.json"
                 diagnostics_path.write_text(json.dumps(diagnostics, indent=2, ensure_ascii=False), encoding="utf-8")
-                summary["process_snapshots"][f"{case['name']}.run{repetition + 1}"] = snapshot_processes(managed)
+                summary["process_snapshots"][run_key] = build_case_resource_evidence(
+                    service_before=service_before,
+                    service_at_load_end=service_at_load_end,
+                    loadgen=run_result["loadgen_resources"],
+                    load_window_elapsed_seconds=load_window_elapsed_seconds,
+                    quiescence=quiescence,
+                    service_after_quiescence=service_after_quiescence,
+                )
 
             aggregate = aggregate_case_runs(case["name"], case_runs)
+            aggregate["case_identity"] = case_identity_by_name[str(case["name"])]
             summary["cases"].extend(case_runs)
             summary["case_aggregates"].append(aggregate)
 
         summary["release_gates"] = evaluate_release_gates(summary["case_aggregates"])
+        if args.otel_comparison:
+            log_step("Running fresh-Gateway OTel off/on performance comparison")
+            comparison_case = next(case for case in run_cases if case["name"] == "battle-100-30s")
+            gateway_process.stop()
+            managed.remove(gateway_process)
+            otel_collector = LoopbackOtelCollector()
+            otel_collector.start()
+
+            def run_otel_mode(mode: str, endpoint: str) -> tuple[dict[str, Any], bool, dict[str, int], dict[str, Any]]:
+                nonlocal battle_process
+                battle_process.stop()
+                managed.remove(battle_process)
+                battle_process = ManagedProcess(
+                    f"v2_battle_backend.otel-{mode}",
+                    executables["battle"],
+                    [str(args.battle_port)],
+                    log_dir,
+                    cpu_set=args.cpu_set,
+                )
+                managed.append(battle_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    battle_process,
+                    workload=f"otel_{mode}",
+                )
+                wait_tcp_port("127.0.0.1", args.battle_port)
+                mode_env = {**gateway_env, "OTEL_EXPORT_ENDPOINT": endpoint}
+                process = ManagedProcess(
+                    f"v2_gateway_demo.otel-{mode}",
+                    executables["gateway"],
+                    gateway_args,
+                    log_dir,
+                    mode_env,
+                    cpu_set=args.cpu_set,
+                )
+                managed.append(process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    process,
+                    workload=f"otel_{mode}",
+                )
+                try:
+                    wait_tcp_port("127.0.0.1", args.gateway_port)
+                    wait_tcp_port("127.0.0.1", args.http_port)
+                    time.sleep(2.0)
+                    mode_initial_diagnostics = fetch_json(
+                        f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                    )
+                    collector_before_mode = otel_collector.snapshot()
+                    mode_runs: list[dict[str, Any]] = []
+                    for repetition in range(args.repetitions):
+                        diagnostics_before = fetch_json(
+                            f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                        )
+                        process_before = process_snapshot(process.pid)
+                        collector_before = otel_collector.snapshot()
+                        run = invoke_bench_case(
+                            executables["pressure"],
+                            args.gateway_port,
+                            {
+                                **comparison_case,
+                                "name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            },
+                            result_dir,
+                            loadgen_cpu_set=resolved_loadgen_cpu_set,
+                            loadgen_io_threads=args.loadgen_io_threads,
+                        )
+                        otel_loadgen_affinity = run["loadgen_resources"]["startup_affinity"]
+                        loadgen_resource_constraint["processes"].append({
+                            "workload": f"otel_{mode}",
+                            "case_name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            **otel_loadgen_affinity,
+                        })
+                        loadgen_resource_constraint["applied"] = all(
+                            evidence.get("verified") is True
+                            for evidence in loadgen_resource_constraint["processes"]
+                        )
+                        diagnostics_after = fetch_json(
+                            f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                        )
+                        process_after = process_snapshot(process.pid)
+                        collector_after = otel_collector.snapshot()
+                        cpu_before = process_before.get("cpu_seconds")
+                        cpu_after = process_after.get("cpu_seconds")
+                        run.update({
+                            "case_name": f"otel-{mode}.battle-100-30s.run{repetition + 1}",
+                            "base_case_name": "battle-100-30s",
+                            "otel_mode": mode,
+                            "gateway_resources": {
+                                "cpu_seconds_before": cpu_before,
+                                "cpu_seconds_after": cpu_after,
+                                "cpu_seconds_delta": round(float(cpu_after) - float(cpu_before), 3)
+                                if cpu_before is not None and cpu_after is not None else None,
+                                "rss_mb_after": process_after.get("working_set_mb", 0.0),
+                                "cpu_affinity": process_after.get("cpu_affinity", ""),
+                                "pid": process.pid,
+                            },
+                            "backend_routed_requests": (
+                                total_backend_requests(diagnostics_after)
+                                - total_backend_requests(diagnostics_before)
+                            ),
+                            "collector_delta": counter_delta(collector_after, collector_before),
+                            "exporter_metrics_after": otel_exporter_metrics(diagnostics_after),
+                        })
+                        mode_runs.append(run)
+                    final_diagnostics = wait_for_otel_mode_quiescence(
+                        f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                        mode=mode,
+                        initial_backend_requests=total_backend_requests(mode_initial_diagnostics),
+                    )
+                    log_text = process.log_text()
+                    marker_present = "OTLP export enabled" in log_text
+                    log_verified = marker_present if mode == "on" else not marker_present
+                    collector_delta_mode = counter_delta(
+                        otel_collector.snapshot(), collector_before_mode
+                    )
+                    mode_backend_routed_requests = (
+                        total_backend_requests(final_diagnostics)
+                        - total_backend_requests(mode_initial_diagnostics)
+                    )
+                    return (
+                        aggregate_otel_mode(
+                            mode,
+                            mode_runs,
+                            mode_backend_routed_requests,
+                            battle_process.pid,
+                        ),
+                        log_verified,
+                        collector_delta_mode,
+                        otel_exporter_metrics(final_diagnostics),
+                    )
+                finally:
+                    process.stop()
+                    managed.remove(process)
+
+            try:
+                off_mode, off_log, off_collector, off_exporter = run_otel_mode("off", "")
+                on_mode, on_log, on_collector, on_exporter = run_otel_mode(
+                    "on", otel_collector.endpoint
+                )
+                summary["otel_comparison"] = build_otel_comparison(
+                    off_mode,
+                    on_mode,
+                    repetitions=args.repetitions,
+                    off_log_verified=off_log,
+                    on_log_verified=on_log,
+                    collector_off=off_collector,
+                    collector_on=on_collector,
+                    off_exporter=off_exporter,
+                    on_exporter=on_exporter,
+                )
+            finally:
+                otel_collector.stop()
+
+            summary["release_gates"].setdefault("checks", []).append({
+                "case": "otel-off-on-comparison",
+                "passed": summary["otel_comparison"]["verified"] is True,
+                "criteria": (
+                    "fresh Gateway and Battle Backend per OTel mode, battle-100 at least three runs per process; absolute gate, "
+                    "runtime exporter counters, backend route and loopback collector proof agree"
+                ),
+                "observed": {
+                    "repetitions_per_mode": args.repetitions,
+                    "performance_regression_policy": "observed_not_thresholded",
+                    "proof": summary["otel_comparison"]["proof"],
+                },
+            })
+            if summary["otel_comparison"]["verified"] is not True:
+                summary["release_gates"]["overall_pass"] = False
+
+            gateway_process = ManagedProcess(
+                "v2_gateway_demo.post-otel",
+                executables["gateway"],
+                gateway_args,
+                log_dir,
+                gateway_env,
+                cpu_set=args.cpu_set,
+            )
+            managed.append(gateway_process)
+            record_process_affinity(
+                service_resource_constraint,
+                gateway_process,
+                workload="post_otel",
+            )
+            wait_tcp_port("127.0.0.1", args.gateway_port)
+            wait_tcp_port("127.0.0.1", args.http_port)
+            time.sleep(2.0)
+        if args.business_operation_scenario:
+            selected_scenarios = list(dict.fromkeys(args.business_operation_scenario))
+            log_step(f"Running concurrent business operation performance: {', '.join(selected_scenarios)}")
+            business_service_before = snapshot_processes(managed)
+            business_loadgen_before = process_snapshot(os.getpid())
+            business_resource_started_at = time.monotonic()
+            summary["business_operation_perf"] = run_business_operation_perf(
+                "127.0.0.1",
+                args.gateway_port,
+                selected_scenarios,
+                args.business_operation_clients,
+                args.business_operation_iterations,
+                args.business_operation_timeout_seconds,
+                args.repetitions,
+                "in_memory_only",
+            )
+            business_quiescence = wait_for_service_quiescence(
+                managed,
+                f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+            )
+            summary["business_operation_perf"]["resource_evidence"] = build_resource_window(
+                business_service_before,
+                snapshot_processes(managed),
+                business_loadgen_before,
+                process_snapshot(os.getpid()),
+                max(0.0, time.monotonic() - business_resource_started_at),
+                business_quiescence,
+            )
+            if args.leaderboard_redis_comparison:
+                redis_key = args.leaderboard_redis_key.strip() or (
+                    f"lb:perf:{summary['git_commit'][:12]}:{os.getpid()}:{time.monotonic_ns()}"
+                )
+                ping_before = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "PING",
+                ) == "PONG"
+                if not ping_before:
+                    raise RuntimeError("Redis comparison endpoint did not respond to PING")
+                redis_command(args.leaderboard_redis_host, args.leaderboard_redis_port, "DEL", redis_key)
+                redis_command(args.leaderboard_redis_host, args.leaderboard_redis_port, "DEL", f"{redis_key}:names")
+
+                log_step("Restarting leaderboard topology for Redis persistence comparison")
+                gateway_process.stop()
+                managed.remove(gateway_process)
+                leaderboard_process.stop()
+                managed.remove(leaderboard_process)
+
+                leaderboard_process = ManagedProcess(
+                    "v2_leaderboard_backend.redis",
+                    executables["leaderboard"],
+                    [str(args.leaderboard_port)],
+                    log_dir,
+                    {
+                        "SERVICE_PORT": str(args.leaderboard_port),
+                        "LEADERBOARD_PORT": str(args.leaderboard_port),
+                        "LEADERBOARD_CONFIG_PATH": str(
+                            root / "config/environments/local/leaderboard.json"
+                        ),
+                        "REDIS_HOST": args.leaderboard_redis_host,
+                        "REDIS_PORT": str(args.leaderboard_redis_port),
+                        "REDIS_LEADERBOARD_KEY": redis_key,
+                        "BOOST_DISABLE_REDIS_AUTO_CONNECT": "0",
+                        "BOOST_LOG_LEVEL": "info",
+                    },
+                    cpu_set=args.cpu_set,
+                )
+                managed.append(leaderboard_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    leaderboard_process,
+                    workload="leaderboard_redis",
+                )
+                wait_tcp_port("127.0.0.1", args.leaderboard_port)
+                redis_log_marker = (
+                    "Redis leaderboard and event store enabled "
+                    f"({args.leaderboard_redis_host}:{args.leaderboard_redis_port})"
+                )
+                redis_log_verified = wait_process_log(leaderboard_process, redis_log_marker)
+                if not redis_log_verified:
+                    raise RuntimeError("Redis leaderboard startup did not emit the required enabled marker")
+
+                gateway_process = ManagedProcess(
+                    "v2_gateway_demo.redis",
+                    executables["gateway"],
+                    gateway_args,
+                    log_dir,
+                    gateway_env,
+                    cpu_set=args.cpu_set,
+                )
+                managed.append(gateway_process)
+                record_process_affinity(
+                    service_resource_constraint,
+                    gateway_process,
+                    workload="leaderboard_redis",
+                )
+                wait_tcp_port("127.0.0.1", args.gateway_port)
+                wait_tcp_port("127.0.0.1", args.http_port)
+                time.sleep(2.0)
+                redis_service_before = snapshot_processes(managed)
+                redis_loadgen_before = process_snapshot(os.getpid())
+                redis_resource_started_at = time.monotonic()
+                redis_perf = run_business_operation_perf(
+                    "127.0.0.1",
+                    args.gateway_port,
+                    ["leaderboard"],
+                    args.business_operation_clients,
+                    args.business_operation_iterations,
+                    args.business_operation_timeout_seconds,
+                    args.repetitions,
+                    "redis_primary_with_memory_shadow",
+                )
+                redis_quiescence = wait_for_service_quiescence(
+                    managed,
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json",
+                )
+                redis_perf["resource_evidence"] = build_resource_window(
+                    redis_service_before,
+                    snapshot_processes(managed),
+                    redis_loadgen_before,
+                    process_snapshot(os.getpid()),
+                    max(0.0, time.monotonic() - redis_resource_started_at),
+                    redis_quiescence,
+                )
+                ping_after = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "PING",
+                ) == "PONG"
+                redis_zcard_raw = redis_command(
+                    args.leaderboard_redis_host,
+                    args.leaderboard_redis_port,
+                    "ZCARD",
+                    redis_key,
+                )
+                redis_zcard = redis_zcard_raw if isinstance(redis_zcard_raw, int) else -1
+                comparison = build_leaderboard_persistence_comparison(
+                    summary["business_operation_perf"],
+                    redis_perf,
+                    repetitions=args.repetitions,
+                    redis_host=args.leaderboard_redis_host,
+                    redis_port=args.leaderboard_redis_port,
+                    redis_key=redis_key,
+                    in_memory_log_verified=in_memory_log_verified,
+                    redis_log_verified=redis_log_verified,
+                    ping_before=ping_before,
+                    ping_after=ping_after,
+                    redis_zcard=redis_zcard,
+                    expected_min_zcard=args.business_operation_clients * args.repetitions,
+                )
+                summary["leaderboard_persistence_comparison"] = comparison
+                summary["business_operation_perf"]["leaderboard_persistence"]["redis_comparison"] = True
+                summary["business_operation_perf"]["leaderboard_persistence"]["comparison_verified"] = comparison["verified"]
+                summary["business_operation_perf"]["passed"] = (
+                    summary["business_operation_perf"]["passed"] and comparison["verified"]
+                )
+                summary["business_operation_perf"]["overall_pass"] = summary["business_operation_perf"]["passed"]
+            business_operation_path = result_dir / "business-operation-perf.json"
+            business_operation_path.write_text(
+                json.dumps(summary["business_operation_perf"], indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            completed_business_runs = int(summary["business_operation_perf"]["completed_runs"])
+            aggregate_run_counts = [
+                int(item["runs"])
+                for item in summary["business_operation_perf"]["scenario_aggregates"]
+            ]
+            business_operation_passed = (
+                bool(summary["business_operation_perf"]["passed"])
+                and completed_business_runs == args.repetitions
+                and all(count == args.repetitions for count in aggregate_run_counts)
+                and (
+                    not args.leaderboard_redis_comparison
+                    or summary["leaderboard_persistence_comparison"]["verified"] is True
+                )
+            )
+            summary["release_gates"].setdefault("checks", []).append({
+                "case": "concurrent-business-operations",
+                "passed": business_operation_passed,
+                "criteria": "all requested runs and matchmaking/leaderboard operations complete without failure",
+                "observed": {
+                    "scenarios": selected_scenarios,
+                    "clients": args.business_operation_clients,
+                    "iterations_per_client": args.business_operation_iterations,
+                    "requested_runs": args.repetitions,
+                    "completed_runs": completed_business_runs,
+                    "aggregate_run_counts": aggregate_run_counts,
+                    "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
+                },
+            })
+            if not business_operation_passed:
+                summary["release_gates"]["overall_pass"] = False
+            summary["process_snapshots"]["business-operation-perf"] = snapshot_processes(managed)
         summary["resource_analysis"] = analyze_resources(summary)
+        resource_isolation_check = evaluate_resource_isolation_evidence(summary)
+        summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
+        if not resource_isolation_check["passed"]:
+            summary["release_gates"]["overall_pass"] = False
+        if args.run_preset == "saturation":
+            summary["saturation_analysis"] = build_saturation_analysis(
+                summary,
+                cpu_threshold_percent=args.saturation_cpu_threshold_percent,
+                loadgen_headroom_threshold_percent=args.saturation_loadgen_headroom_percent,
+            )
         final_diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
         summary["final_backend_metrics"] = final_diagnostics.get("backend_metrics", {})
         (result_dir / "final.gateway.diagnostics.json").write_text(
@@ -1176,6 +3905,7 @@ def main() -> int:
             "business_flow_clients": max(1, args.business_flow_clients),
             "supports_long_soak_followup": True,
             "supports_capacity_followup": args.run_preset in {"capacity", "business-capacity"},
+            "supports_saturation_comparison": args.run_preset == "saturation",
         }
 
         summary_path = output_root / "summary.json"
@@ -1184,7 +3914,16 @@ def main() -> int:
         report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
         log_step(f"Markdown report written: {report_path}")
-        if args.run_preset == "smoke" or summary["release_gates"].get("overall_pass"):
+        if args.run_preset == "saturation":
+            analysis = summary.get("saturation_analysis")
+            if isinstance(analysis, dict) and analysis.get("collection_pass") is True:
+                return 0
+            log_step("Saturation evidence collection is invalid")
+            return 2
+        if (
+            (args.run_preset == "smoke" and not args.business_operation_scenario)
+            or summary["release_gates"].get("overall_pass")
+        ):
             return 0
         log_step("Release performance gates failed")
         return 2

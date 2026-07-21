@@ -9,12 +9,17 @@ import os
 import platform
 import signal
 import socket
-import subprocess
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.lib.cancellable_process import (
+    CancellationState,
+    arm_parent_death_signal,
+    atomic_write_json,
+    installed_signal_handlers,
+    run_cancellable_process,
+)
 from scripts.lib.evidence_provenance import build_evidence_provenance
 
 
@@ -42,50 +47,24 @@ def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
-def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> dict[str, object]:
+def run_step(
+    name: str,
+    category: str,
+    cmd: list[str],
+    timeout_seconds: int,
+    cancellation: CancellationState | None = None,
+) -> dict[str, object]:
     print(f"==> {name}", flush=True)
-    started = time.monotonic()
-    proc: subprocess.Popen[str] | None = None
-    try:
-        proc = subprocess.Popen(
-            cmd,
-            cwd=ROOT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            start_new_session=True,
-        )
-        stdout, stderr = proc.communicate(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired as exc:
-        if proc is not None:
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except (ProcessLookupError, PermissionError):
-                pass
-            time.sleep(0.5)
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-            try:
-                stdout, stderr = proc.communicate(timeout=2)
-            except subprocess.TimeoutExpired:
-                stdout = exc.stdout
-                stderr = exc.stderr
-        else:
-            stdout = exc.stdout
-            stderr = exc.stderr
-        return {
-            "name": name,
-            "category": category,
-            "command": cmd,
-            "status": "timeout",
-            "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(stdout),
-            "stderr_tail": tail(stderr),
-        }
+    result = run_cancellable_process(
+        cmd,
+        ROOT,
+        timeout_seconds,
+        cancellation or CancellationState(),
+        cancellation_grace_seconds=10.0,
+        timeout_grace_seconds=0.5,
+    )
+    stdout = str(result.get("stdout", ""))
+    stderr = str(result.get("stderr", ""))
 
     if stdout:
         print(stdout, end="")
@@ -95,9 +74,10 @@ def run_step(name: str, category: str, cmd: list[str], timeout_seconds: int) -> 
         "name": name,
         "category": category,
         "command": cmd,
-        "status": "passed" if proc is not None and proc.returncode == 0 else "failed",
-        "returncode": proc.returncode if proc is not None else None,
-        "duration_seconds": round(time.monotonic() - started, 3),
+        "status": result["status"],
+        "returncode": result.get("returncode"),
+        "signal": result.get("signal", ""),
+        "duration_seconds": result["duration_seconds"],
         "stdout_tail": tail(stdout),
         "stderr_tail": tail(stderr),
     }
@@ -112,12 +92,85 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-8h-soak", action="store_true")
     parser.add_argument("--run-capacity", action="store_true")
     parser.add_argument("--run-business-capacity", action="store_true")
+    parser.add_argument("--run-saturation", action="store_true")
     parser.add_argument("--perf-repetitions", type=int, default=3)
+    parser.add_argument(
+        "--capacity-case",
+        action="append",
+        default=[],
+        help="Optional capacity preset case selection for focused diagnostics.",
+    )
+    parser.add_argument(
+        "--saturation-case",
+        action="append",
+        default=[],
+        help="Optional saturation manifest case selection for fixed 1/2/4 CPU or io_cores comparisons.",
+    )
+    parser.add_argument("--saturation-cpu-threshold-percent", type=float, default=85.0)
+    parser.add_argument("--saturation-loadgen-headroom-percent", type=float, default=85.0)
     parser.add_argument("--business-flow-clients", type=int, default=3)
     parser.add_argument("--backend-pool-size", type=int, default=8)
     parser.add_argument("--battle-route-workers", type=int, default=8)
+    parser.add_argument("--io-cores", type=int, default=4)
+    parser.add_argument(
+        "--cpu-set",
+        default="",
+        help="Linux CPU affinity list for managed service processes in capacity collectors.",
+    )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help="Disjoint Linux CPU affinity list for capacity load generation.",
+    )
+    parser.add_argument("--loadgen-io-threads", type=int, default=4)
+    parser.add_argument("--run-business-operation-perf", action="store_true")
+    parser.add_argument("--business-operation-clients", type=int, default=16)
+    parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--leaderboard-redis-comparison", action="store_true")
+    parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
+    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
+    parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument("--run-otel-comparison", action="store_true")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/long-soak-capacity-summary.json"))
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.run_business_operation_perf and not (args.run_capacity or args.run_business_capacity):
+        parser.error("--run-business-operation-perf requires --run-capacity or --run-business-capacity")
+    if args.leaderboard_redis_comparison and not (
+        args.run_business_operation_perf and args.run_business_capacity
+    ):
+        parser.error(
+            "--leaderboard-redis-comparison requires --run-business-operation-perf "
+            "and --run-business-capacity"
+        )
+    if args.leaderboard_redis_comparison and args.perf_repetitions < 3:
+        parser.error("--leaderboard-redis-comparison requires --perf-repetitions >= 3")
+    if args.run_otel_comparison and not args.run_business_capacity:
+        parser.error("--run-otel-comparison requires --run-business-capacity")
+    if args.run_otel_comparison and args.perf_repetitions < 3:
+        parser.error("--run-otel-comparison requires --perf-repetitions >= 3")
+    if args.loadgen_io_threads <= 0:
+        parser.error("--loadgen-io-threads must be positive")
+    if args.io_cores <= 0:
+        parser.error("--io-cores must be positive")
+    if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
+        parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
+    if not 0.0 < args.saturation_loadgen_headroom_percent <= 100.0:
+        parser.error("--saturation-loadgen-headroom-percent must be in (0, 100]")
+    if (
+        args.cpu_set
+        and (args.run_capacity or args.run_business_capacity or args.run_saturation)
+        and not args.loadgen_cpu_set
+    ):
+        parser.error(
+            "capacity evidence with --cpu-set requires an explicit, reusable --loadgen-cpu-set"
+        )
+    if args.loadgen_cpu_set and not args.cpu_set:
+        parser.error("--loadgen-cpu-set requires --cpu-set")
+    if args.run_saturation and (not args.cpu_set or not args.loadgen_cpu_set):
+        parser.error(
+            "--run-saturation requires explicit disjoint --cpu-set and --loadgen-cpu-set"
+        )
+    return args
 
 
 def environment_snapshot() -> dict[str, object]:
@@ -142,14 +195,52 @@ def attach_provenance(summary_path: Path, provenance: dict[str, object]) -> None
     if not isinstance(summary, dict):
         return
     summary["provenance"] = provenance
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    atomic_write_json(summary_path, summary)
+
+
+def validate_child_summary(summary_path: Path) -> str:
+    try:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return f"child summary is unavailable or invalid: {summary_path}: {exc}"
+    if not isinstance(summary, dict):
+        return f"child summary must be a JSON object: {summary_path}"
+    if summary.get("overall_pass") is not True:
+        return f"child summary did not pass: {summary_path}"
+    return ""
 
 
 def main() -> int:
     args = parse_args()
+    parent_pid_at_start = os.getppid()
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
-    if not any((args.run_2h_soak, args.run_8h_soak, args.run_capacity, args.run_business_capacity)):
+    atomic_write_json(
+        summary_path,
+        {
+            "summary_version": 2,
+            "generated_at": datetime.now(UTC)
+            .isoformat(timespec="seconds")
+            .replace("+00:00", "Z"),
+            "overall_pass": False,
+            "passed": False,
+            "interrupted": False,
+            "interruption_signal": "",
+            "current_step": "initializing",
+            "completed_steps": [],
+            "failed_category": "orchestrator",
+            "failed_step": "initializing",
+            "steps": [],
+        },
+    )
+
+    if not any((
+        args.run_2h_soak,
+        args.run_8h_soak,
+        args.run_capacity,
+        args.run_business_capacity,
+        args.run_saturation,
+    )):
         print("no long-soak/capacity action selected", file=sys.stderr)
         return 2
 
@@ -167,89 +258,55 @@ def main() -> int:
         build_configuration=args.configuration,
     )
     steps: list[dict[str, object]] = []
-    if args.run_2h_soak:
-        preset = LONG_SOAK_PRESETS["2h"]
-        cmd = [
-            sys.executable,
-            str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
-            *common,
-            "--soak-profile",
-            preset["soak_profile"],
-            "--baseline-profile",
-            "release",
-            "--summary-path",
-            str(ROOT / preset["summary_path"]),
-            "--step-timeout-seconds",
-            str(preset["step_timeout_seconds"]),
-        ]
-        steps.append(run_step("2h long-soak evidence", "long_soak", cmd, preset["step_timeout_seconds"] + 300))
-        attach_provenance(ROOT / preset["summary_path"], provenance)
+    completed_steps: list[str] = []
+    cancellation = CancellationState()
+    current_step = ""
+    interrupted = False
+    interruption_signal = ""
+    unexpected_error = ""
+    parent_death_signal_armed = False
 
-    if args.run_8h_soak:
-        preset = LONG_SOAK_PRESETS["8h"]
-        cmd = [
-            sys.executable,
-            str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
-            *common,
-            "--soak-profile",
-            preset["soak_profile"],
-            "--baseline-profile",
-            "release",
-            "--summary-path",
-            str(ROOT / preset["summary_path"]),
-            "--step-timeout-seconds",
-            str(preset["step_timeout_seconds"]),
-        ]
-        steps.append(run_step("8h long-soak evidence", "long_soak", cmd, preset["step_timeout_seconds"] + 300))
-        attach_provenance(ROOT / preset["summary_path"], provenance)
+    def execute_step(
+        name: str,
+        category: str,
+        command: list[str],
+        timeout_seconds: int,
+        artifact_path: Path | None = None,
+    ) -> dict[str, object]:
+        nonlocal current_step, interrupted, interruption_signal
+        current_step = name
+        if artifact_path is not None:
+            artifact_path.unlink(missing_ok=True)
+        result = run_step(name, category, command, timeout_seconds, cancellation)
+        steps.append(result)
+        if artifact_path is not None:
+            attach_provenance(artifact_path, provenance)
+            if result.get("status") == "passed":
+                validation_error = validate_child_summary(artifact_path)
+                if validation_error:
+                    result["status"] = "failed"
+                    result["artifact_validation_error"] = validation_error
+                    result["stderr_tail"] = tail(
+                        "\n".join(
+                            part
+                            for part in (
+                                str(result.get("stderr_tail", "")),
+                                validation_error,
+                            )
+                            if part
+                        )
+                    )
+        if result.get("status") == "cancelled":
+            interrupted = True
+            interruption_signal = str(result.get("signal", ""))
+            if not cancellation.cancelled:
+                cancellation.request(int(getattr(signal, interruption_signal, signal.SIGTERM)))
+        else:
+            completed_steps.append(name)
+            current_step = ""
+        return result
 
-    if args.run_capacity:
-        cmd = [
-            sys.executable,
-            str(ROOT / "scripts" / "collect_release_baseline.py"),
-            *common,
-            "--perf-preset",
-            "capacity",
-            "--perf-repetitions",
-            str(args.perf_repetitions),
-            "--backend-pool-size",
-            str(args.backend_pool_size),
-            "--battle-route-workers",
-            str(args.battle_route_workers),
-            "--summary-path",
-            str(ROOT / "runtime/validation/capacity-baseline-summary.json"),
-            "--perf-output-root",
-            str(ROOT / "runtime/perf/fixed-runner-capacity"),
-            "--skip-r4",
-        ]
-        steps.append(run_step("capacity baseline evidence", "capacity", cmd, 10800))
-
-    if args.run_business_capacity:
-        cmd = [
-            sys.executable,
-            str(ROOT / "scripts" / "collect_release_baseline.py"),
-            *common,
-            "--perf-preset",
-            "business-capacity",
-            "--perf-repetitions",
-            str(args.perf_repetitions),
-            "--backend-pool-size",
-            str(args.backend_pool_size),
-            "--battle-route-workers",
-            str(args.battle_route_workers),
-            "--summary-path",
-            str(ROOT / "runtime/validation/business-capacity-baseline-summary.json"),
-            "--perf-output-root",
-            str(ROOT / "runtime/perf/fixed-runner-business-capacity"),
-            "--include-business-flow",
-            "--business-flow-clients",
-            str(args.business_flow_clients),
-            "--skip-r4",
-        ]
-        steps.append(run_step("business-capacity baseline evidence", "business_capacity", cmd, 10800))
-
-    failed = next((step for step in steps if step.get("status") != "passed"), None)
-    summary = {
+    summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "provenance": provenance,
@@ -259,15 +316,38 @@ def main() -> int:
         "run_8h_soak": args.run_8h_soak,
         "run_capacity": args.run_capacity,
         "run_business_capacity": args.run_business_capacity,
+        "run_saturation": args.run_saturation,
         "perf_repetitions": args.perf_repetitions,
+        "capacity_cases": args.capacity_case,
+        "saturation_cases": args.saturation_case,
+        "saturation_cpu_threshold_percent": args.saturation_cpu_threshold_percent,
+        "saturation_loadgen_headroom_percent": args.saturation_loadgen_headroom_percent,
         "business_flow_clients": args.business_flow_clients,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
+        "io_cores": args.io_cores,
+        "cpu_set": args.cpu_set,
+        "loadgen_cpu_set": args.loadgen_cpu_set,
+        "loadgen_io_threads": args.loadgen_io_threads,
+        "run_business_operation_perf": args.run_business_operation_perf,
+        "business_operation_clients": args.business_operation_clients,
+        "business_operation_iterations": args.business_operation_iterations,
+        "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
+        "leaderboard_redis_host": args.leaderboard_redis_host if args.leaderboard_redis_comparison else "",
+        "leaderboard_redis_port": args.leaderboard_redis_port if args.leaderboard_redis_comparison else 0,
+        "run_otel_comparison": args.run_otel_comparison,
         "environment": environment_snapshot(),
-        "overall_pass": failed is None,
-        "passed": failed is None,
-        "failed_category": "" if failed is None else str(failed.get("category")),
-        "failed_step": "" if failed is None else str(failed.get("name")),
+        "parent_pid_at_start": parent_pid_at_start,
+        "parent_death_signal_armed": False,
+        "parent_death_signal_policy": "linux-prctl-fail-closed",
+        "overall_pass": False,
+        "passed": False,
+        "interrupted": False,
+        "interruption_signal": "",
+        "current_step": "",
+        "completed_steps": [],
+        "failed_category": "",
+        "failed_step": "",
         "artifacts": {
             "summary_path": str(summary_path),
             "long_soak_2h_summary_path": str(ROOT / LONG_SOAK_PRESETS["2h"]["summary_path"]) if args.run_2h_soak else "",
@@ -276,12 +356,215 @@ def main() -> int:
             "business_capacity_summary_path": str(ROOT / "runtime/validation/business-capacity-baseline-summary.json") if args.run_business_capacity else "",
             "capacity_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-capacity/summary.json") if args.run_capacity else "",
             "business_capacity_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-business-capacity/summary.json") if args.run_business_capacity else "",
+            "saturation_summary_path": str(ROOT / "runtime/validation/saturation-baseline-summary.json") if args.run_saturation else "",
+            "saturation_perf_summary_path": str(ROOT / "runtime/perf/fixed-runner-saturation/summary.json") if args.run_saturation else "",
         },
         "steps": steps,
     }
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    print(f"summary: {summary_path}")
+
+    with installed_signal_handlers(cancellation):
+        try:
+            parent_death_signal_armed = arm_parent_death_signal(
+                expected_parent_pid=parent_pid_at_start
+            )
+            summary["parent_death_signal_armed"] = parent_death_signal_armed
+            environment = summary["environment"]
+            if isinstance(environment, dict):
+                environment["parent_pid_at_start"] = parent_pid_at_start
+                environment["parent_death_signal_armed"] = parent_death_signal_armed
+            atomic_write_json(summary_path, summary)
+
+            if args.run_2h_soak and not cancellation.cancelled:
+                preset = LONG_SOAK_PRESETS["2h"]
+                cmd = [
+                    sys.executable,
+                    str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
+                    *common,
+                    "--soak-profile", preset["soak_profile"],
+                    "--baseline-profile", "release",
+                    "--summary-path", str(ROOT / preset["summary_path"]),
+                    "--step-timeout-seconds", str(preset["step_timeout_seconds"]),
+                ]
+                execute_step(
+                    "2h long-soak evidence", "long_soak", cmd,
+                    int(preset["step_timeout_seconds"]) + 300,
+                    ROOT / str(preset["summary_path"]),
+                )
+
+            if args.run_8h_soak and not cancellation.cancelled:
+                preset = LONG_SOAK_PRESETS["8h"]
+                cmd = [
+                    sys.executable,
+                    str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
+                    *common,
+                    "--soak-profile", preset["soak_profile"],
+                    "--baseline-profile", "release",
+                    "--summary-path", str(ROOT / preset["summary_path"]),
+                    "--step-timeout-seconds", str(preset["step_timeout_seconds"]),
+                ]
+                execute_step(
+                    "8h long-soak evidence", "long_soak", cmd,
+                    int(preset["step_timeout_seconds"]) + 300,
+                    ROOT / str(preset["summary_path"]),
+                )
+
+            if args.run_capacity and not cancellation.cancelled:
+                cmd = [
+                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    *common,
+                    "--perf-preset", "capacity",
+                    "--perf-repetitions", str(args.perf_repetitions),
+                    "--backend-pool-size", str(args.backend_pool_size),
+                    "--battle-route-workers", str(args.battle_route_workers),
+                    "--io-cores", str(args.io_cores),
+                    "--summary-path", str(ROOT / "runtime/validation/capacity-baseline-summary.json"),
+                    "--perf-output-root", str(ROOT / "runtime/perf/fixed-runner-capacity"),
+                    "--skip-r4",
+                ]
+                if args.cpu_set:
+                    cmd.extend(["--cpu-set", args.cpu_set])
+                if args.loadgen_cpu_set:
+                    cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+                cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
+                for case_name in args.capacity_case:
+                    cmd.extend(["--perf-case", case_name])
+                if args.run_business_operation_perf and not args.run_business_capacity:
+                    cmd.extend([
+                        "--business-operation-scenario", "matchmaking",
+                        "--business-operation-scenario", "leaderboard",
+                        "--business-operation-clients", str(args.business_operation_clients),
+                        "--business-operation-iterations", str(args.business_operation_iterations),
+                    ])
+                execute_step(
+                    "capacity baseline evidence",
+                    "capacity",
+                    cmd,
+                    10800,
+                    ROOT / "runtime/validation/capacity-baseline-summary.json",
+                )
+
+            if args.run_saturation and not cancellation.cancelled:
+                cmd = [
+                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    *common,
+                    "--perf-preset", "saturation",
+                    "--perf-repetitions", str(args.perf_repetitions),
+                    "--perf-timeout-seconds", "10800",
+                    "--backend-pool-size", str(args.backend_pool_size),
+                    "--battle-route-workers", str(args.battle_route_workers),
+                    "--io-cores", str(args.io_cores),
+                    "--cpu-set", args.cpu_set,
+                    "--loadgen-cpu-set", args.loadgen_cpu_set,
+                    "--loadgen-io-threads", str(args.loadgen_io_threads),
+                    "--saturation-cpu-threshold-percent",
+                    str(args.saturation_cpu_threshold_percent),
+                    "--saturation-loadgen-headroom-percent",
+                    str(args.saturation_loadgen_headroom_percent),
+                    "--summary-path", str(ROOT / "runtime/validation/saturation-baseline-summary.json"),
+                    "--perf-output-root", str(ROOT / "runtime/perf/fixed-runner-saturation"),
+                    "--skip-r4",
+                ]
+                for case_name in args.saturation_case:
+                    cmd.extend(["--perf-case", case_name])
+                execute_step(
+                    "saturation curve evidence",
+                    "saturation",
+                    cmd,
+                    10800,
+                    ROOT / "runtime/validation/saturation-baseline-summary.json",
+                )
+
+            if args.run_business_capacity and not cancellation.cancelled:
+                cmd = [
+                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    *common,
+                    "--perf-preset", "business-capacity",
+                    "--perf-repetitions", str(args.perf_repetitions),
+                    "--backend-pool-size", str(args.backend_pool_size),
+                    "--battle-route-workers", str(args.battle_route_workers),
+                    "--io-cores", str(args.io_cores),
+                    "--summary-path", str(ROOT / "runtime/validation/business-capacity-baseline-summary.json"),
+                    "--perf-output-root", str(ROOT / "runtime/perf/fixed-runner-business-capacity"),
+                    "--include-business-flow",
+                    "--business-flow-clients", str(args.business_flow_clients),
+                    "--skip-r4",
+                ]
+                if args.cpu_set:
+                    cmd.extend(["--cpu-set", args.cpu_set])
+                if args.loadgen_cpu_set:
+                    cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+                cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
+                if args.run_business_operation_perf:
+                    cmd.extend([
+                        "--business-operation-scenario", "matchmaking",
+                        "--business-operation-scenario", "leaderboard",
+                        "--business-operation-clients", str(args.business_operation_clients),
+                        "--business-operation-iterations", str(args.business_operation_iterations),
+                    ])
+                if args.leaderboard_redis_comparison:
+                    cmd.extend([
+                        "--leaderboard-redis-comparison",
+                        "--leaderboard-redis-host", args.leaderboard_redis_host,
+                        "--leaderboard-redis-port", str(args.leaderboard_redis_port),
+                    ])
+                    if args.leaderboard_redis_key:
+                        cmd.extend(["--leaderboard-redis-key", args.leaderboard_redis_key])
+                if args.run_otel_comparison:
+                    cmd.append("--otel-comparison")
+                execute_step(
+                    "business-capacity baseline evidence",
+                    "business_capacity",
+                    cmd,
+                    10800,
+                    ROOT / "runtime/validation/business-capacity-baseline-summary.json",
+                )
+        except Exception as exc:
+            unexpected_error = f"{type(exc).__name__}: {exc}"
+            raise
+        finally:
+            def finalize_summary() -> None:
+                nonlocal interrupted, interruption_signal, current_step
+                if cancellation.cancelled and not interrupted:
+                    interrupted = True
+                    interruption_signal = cancellation.signal_name
+                    if not current_step:
+                        current_step = "between_steps"
+                failed = next(
+                    (step for step in steps if step.get("status") != "passed"), None
+                )
+                passed = not interrupted and not unexpected_error and failed is None
+                summary.update({
+                    "generated_at": datetime.now(UTC)
+                    .isoformat(timespec="seconds")
+                    .replace("+00:00", "Z"),
+                    "interrupted": interrupted,
+                    "interruption_signal": interruption_signal,
+                    "current_step": current_step,
+                    "completed_steps": completed_steps,
+                    "overall_pass": passed,
+                    "passed": passed,
+                    "failed_category": (
+                        "interrupted" if interrupted else "orchestrator"
+                        if unexpected_error else "" if failed is None
+                        else str(failed.get("category"))
+                    ),
+                    "failed_step": (
+                        current_step if interrupted else unexpected_error
+                        if unexpected_error else "" if failed is None
+                        else str(failed.get("name"))
+                    ),
+                    "steps": steps,
+                })
+                atomic_write_json(summary_path, summary)
+
+            finalize_summary()
+            if cancellation.cancelled and summary.get("interrupted") is not True:
+                finalize_summary()
+            print(f"summary: {summary_path}")
+
+    if interrupted:
+        signal_number = cancellation.signal_number or getattr(signal, interruption_signal, 1)
+        return 128 + int(signal_number)
     return 0 if summary["overall_pass"] else 1
 
 

@@ -58,6 +58,7 @@ struct DemoServerDiagnostics {
     std::uint64_t total_outbound_dispatches = 0;
     std::vector<DemoServerIoCoreSnapshot> io_cores;
     Runtime::BattleRouteDiagnostics battle_route;
+    std::optional<v3::tracing::OtlpExporter::Metrics> otel_exporter_metrics;
     std::unordered_map<std::string, BackendMetricsSnapshot> backend_metrics;
     std::vector<v2::service::ServiceInstance> backend_instances;
 };
@@ -95,12 +96,14 @@ private:
     struct GatewayQueueItem {
         SessionId session_id = 0;
         std::optional<v2::io::IoSession::PacketMessage> message;
+        std::function<void()> runtime_task;
     };
 
     void do_accept();
     void dispatch_write(SessionId session_id, SessionWriteTask task);
     void enqueue_packet(SessionId session_id, v2::io::IoSession::PacketMessage message);
     void enqueue_session_closed(SessionId session_id);
+    bool enqueue_runtime_task(std::function<void()> task);
     void start_gateway_worker();
     void stop_gateway_worker();
     void load_gateway_config();
@@ -127,7 +130,7 @@ private:
     std::unordered_map<std::uint32_t, DemoServerIoCoreSnapshot> io_core_snapshots_by_id_;
     mutable std::mutex scheduler_mutex_;
     SessionWriteScheduler write_scheduler_;
-    SessionId next_session_id_ = 1;
+    std::atomic<SessionId> next_session_id_{1};
 
     // Config hot-reload
     std::unique_ptr<v2::config::ConfigWatcher> config_watcher_;

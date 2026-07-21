@@ -2,6 +2,10 @@
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/transport/transport.h"
 
+#include <boost/asio.hpp>
+#include <atomic>
+#include <future>
+#include <memory>
 #include <thread>
 
 using namespace boost_gateway::sdk::transport;
@@ -27,6 +31,73 @@ TEST(TransportTest, ReceiveEmptyWhenDisconnected) {
     auto t = make_tcp_transport();
     auto result = t->receive(50ms);
     EXPECT_TRUE(result.empty());
+}
+
+TEST(TransportTest, ConnectedTransportMayBeDestroyedWithoutExplicitDisconnect) {
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::acceptor acceptor(
+        io, {boost::asio::ip::tcp::v4(), 0});
+    std::thread server([&] {
+        boost::asio::ip::tcp::socket socket(io);
+        acceptor.accept(socket);
+        std::this_thread::sleep_for(100ms);
+    });
+    {
+        auto transport = make_tcp_transport();
+        ASSERT_TRUE(transport->connect("127.0.0.1", acceptor.local_endpoint().port(), 1s));
+    }
+    server.join();
+}
+
+TEST(TransportTest, AsyncReceiveCallbackMayDestroyTransport) {
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::acceptor acceptor(
+        io, {boost::asio::ip::tcp::v4(), 0});
+    std::promise<void> send_data;
+    auto send_future = send_data.get_future();
+    std::thread server([&] {
+        boost::asio::ip::tcp::socket socket(io);
+        acceptor.accept(socket);
+        send_future.wait();
+        boost::asio::write(socket, boost::asio::buffer("hello", 5));
+        std::this_thread::sleep_for(100ms);
+    });
+
+    auto transport = make_tcp_transport();
+    std::promise<void> destroyed;
+    auto destroyed_future = destroyed.get_future();
+    transport->set_async_receive_callback([&](const std::string& data) {
+        EXPECT_EQ(data, "hello");
+        transport.reset();
+        destroyed.set_value();
+    });
+    std::promise<bool> connected;
+    auto connected_future = connected.get_future();
+    transport->async_connect("127.0.0.1", acceptor.local_endpoint().port(),
+                             [&](bool ok) { connected.set_value(ok); });
+    ASSERT_TRUE(connected_future.get());
+    send_data.set_value();
+    EXPECT_EQ(destroyed_future.wait_for(2s), std::future_status::ready);
+    EXPECT_EQ(transport, nullptr);
+    server.join();
+}
+
+TEST(TransportTest, DestructionCancelsInflightAsyncConnectWithoutCallback) {
+    boost::asio::io_context io;
+    boost::asio::ip::tcp::acceptor unused_port(io,
+                                                {boost::asio::ip::tcp::v4(), 0});
+    const auto port = unused_port.local_endpoint().port();
+    unused_port.close();
+    std::atomic<bool> callback_called{false};
+    const auto started = std::chrono::steady_clock::now();
+    {
+        auto transport = make_tcp_transport();
+        transport->async_connect("127.0.0.1", port,
+                                 [&](bool) { callback_called = true; });
+        std::this_thread::sleep_for(50ms);
+    }
+    EXPECT_FALSE(callback_called);
+    EXPECT_LT(std::chrono::steady_clock::now() - started, 1s);
 }
 
 // ── ConnectionPool tests ───────────────────────────────────────────────

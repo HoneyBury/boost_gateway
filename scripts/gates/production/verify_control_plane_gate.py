@@ -10,6 +10,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import UTC, datetime
 from pathlib import Path
@@ -86,9 +87,23 @@ def require_command(name: str) -> None:
         raise FileNotFoundError(f"missing required command: {name}")
 
 
-def go_cache_paths(root: Path) -> tuple[Path, Path]:
-    cache_root = root / "runtime" / "go-cache"
-    return cache_root / "build", cache_root / "mod"
+def default_go_state_root() -> Path:
+    configured = os.environ.get("BOOST_GATEWAY_GO_STATE_ROOT", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+
+    runner_temp = os.environ.get("RUNNER_TEMP", "").strip()
+    if runner_temp:
+        run_id = os.environ.get("GITHUB_RUN_ID", "local").strip() or "local"
+        run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1").strip() or "1"
+        return Path(runner_temp) / f"boost-gateway-go-{run_id}-{run_attempt}"
+
+    uid = str(os.getuid()) if hasattr(os, "getuid") else os.environ.get("USERNAME", "user")
+    return Path(tempfile.gettempdir()) / f"boost-gateway-go-{uid}"
+
+
+def go_cache_paths(state_root: Path) -> tuple[Path, Path]:
+    return state_root / "cache" / "build", state_root / "cache" / "mod"
 
 
 def detect_local_proxy() -> str:
@@ -104,14 +119,14 @@ def detect_local_proxy() -> str:
     return ""
 
 
-def go_environment(root: Path) -> dict[str, str]:
+def go_environment(state_root: Path) -> dict[str, str]:
     env = os.environ.copy()
-    build_cache, mod_cache = go_cache_paths(root)
-    go_home = root / "runtime" / "go-home"
+    build_cache, mod_cache = go_cache_paths(state_root)
+    go_home = state_root / "home"
     env["GOCACHE"] = str(build_cache)
     env["GOMODCACHE"] = str(mod_cache)
     env["GOTELEMETRY"] = "off"
-    env["GOTELEMETRYDIR"] = str(root / "runtime" / "go-telemetry")
+    env["GOTELEMETRYDIR"] = str(state_root / "telemetry")
     env["APPDATA"] = str(go_home / "AppData" / "Roaming")
     env["LOCALAPPDATA"] = str(go_home / "AppData" / "Local")
     env["USERPROFILE"] = str(go_home)
@@ -189,6 +204,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--go-test-timeout-seconds", type=int, default=180)
     parser.add_argument("--envtest-timeout-seconds", type=int, default=240)
     parser.add_argument("--kind-timeout-seconds", type=int, default=900)
+    parser.add_argument(
+        "--go-state-root",
+        type=Path,
+        default=None,
+        help="Go cache/home/telemetry root (default: BOOST_GATEWAY_GO_STATE_ROOT, RUNNER_TEMP, or system temp)",
+    )
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/control-plane-gate-summary.json"))
     return parser.parse_args()
 
@@ -198,6 +219,8 @@ def main() -> int:
     root = REPO_ROOT
     operator_dir = args.operator_dir if args.operator_dir.is_absolute() else root / args.operator_dir
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
+    go_state_root = (args.go_state_root or default_go_state_root()).resolve()
+    go_env = go_environment(go_state_root)
     summary: dict[str, object] = {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
@@ -205,9 +228,10 @@ def main() -> int:
         "include_go_tests": args.include_go_tests,
         "include_envtest": args.include_envtest,
         "include_kind": args.include_kind,
+        "go_state_root": str(go_state_root),
         "go_cache": {
-            "build": str(go_cache_paths(root)[0]),
-            "module": str(go_cache_paths(root)[1]),
+            "build": str(go_cache_paths(go_state_root)[0]),
+            "module": str(go_cache_paths(go_state_root)[1]),
         },
         "overall_pass": False,
         "passed": False,
@@ -246,7 +270,7 @@ def main() -> int:
                 ["go", "test", "./..."],
                 operator_dir,
                 args.go_test_timeout_seconds,
-                env=go_environment(root),
+                env=go_env,
             ))
         if args.include_envtest:
             summary["steps"].append(run_step(
@@ -255,6 +279,7 @@ def main() -> int:
                 ["make", "test-envtest"],
                 operator_dir,
                 args.envtest_timeout_seconds,
+                env=go_env,
             ))
         if args.include_kind:
             summary["steps"].append(run_step(
@@ -263,6 +288,7 @@ def main() -> int:
                 [sys.executable, str(root / "scripts" / "operator_kind_smoke.py")],
                 root,
                 args.kind_timeout_seconds,
+                env=go_env,
             ))
     except (FileNotFoundError, RuntimeError) as exc:
         failed = next((step for step in summary["steps"] if step.get("status") != "passed"), None)

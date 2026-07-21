@@ -1,4 +1,5 @@
 /build/
+/ninja-build/
 /build_*/
 /build_temp/
 /out/

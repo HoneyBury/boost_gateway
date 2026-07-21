@@ -107,6 +107,248 @@ def business_flow_passed(summary: dict[str, Any]) -> bool:
     return business_flow.get("passed") is True
 
 
+def integer_or(value: object, fallback: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def validate_leaderboard_redis_comparison(
+    path: Path,
+    required: bool,
+    min_repetitions: int,
+) -> dict[str, Any]:
+    summary = load_json(path)
+    comparison = summary.get("leaderboard_persistence_comparison") if summary else None
+    if not isinstance(comparison, dict):
+        return {
+            "name": "leaderboard-redis-persistence-comparison",
+            "category": "business_capacity",
+            "path": str(path),
+            "required": required,
+            "status": "missing" if required else "optional-missing",
+            "passed": not required,
+            "details": ["leaderboard_persistence_comparison is missing"],
+        }
+
+    details: list[str] = []
+    repetitions = integer_or(comparison.get("repetitions_per_mode"))
+    modes = comparison.get("modes")
+    mode_checks: list[bool] = []
+    for mode in ("in_memory_only", "redis_primary_with_memory_shadow"):
+        mode_entry = modes.get(mode) if isinstance(modes, dict) else None
+        mode_summary = mode_entry.get("summary") if isinstance(mode_entry, dict) else None
+        aggregate = leaderboard_aggregate_for_gate(mode_summary)
+        operations = aggregate.get("operations", [])
+        operation_names = {
+            operation.get("operation")
+            for operation in operations
+            if isinstance(operation, dict)
+        }
+        mode_ok = (
+            isinstance(mode_entry, dict)
+            and mode_entry.get("log_verified") is True
+            and aggregate.get("passed") is True
+            and integer_or(aggregate.get("runs")) >= min_repetitions
+            and integer_or(aggregate.get("passed_runs")) == integer_or(aggregate.get("runs"))
+            and operation_names
+            == {"leaderboard_submit", "leaderboard_top", "leaderboard_rank"}
+            and all(integer_or(operation.get("failed"), -1) == 0 for operation in operations)
+        )
+        mode_checks.append(mode_ok)
+        details.append(f"{mode}: runs={aggregate.get('runs', 0)} log_verified={bool(mode_entry and mode_entry.get('log_verified'))}")
+
+    proof = comparison.get("redis_proof")
+    proof_ok = (
+        isinstance(proof, dict)
+        and proof.get("verified") is True
+        and proof.get("ping_before") is True
+        and proof.get("ping_after") is True
+        and bool(proof.get("key"))
+        and integer_or(proof.get("zcard"), -1)
+        >= integer_or(proof.get("expected_min_zcard"), -1)
+        > 0
+    )
+    passed = (
+        comparison.get("requested") is True
+        and comparison.get("verified") is True
+        and repetitions >= min_repetitions
+        and all(mode_checks)
+        and proof_ok
+    )
+    details.extend((
+        f"repetitions_per_mode={repetitions}",
+        f"redis_proof_verified={proof_ok}",
+    ))
+    return {
+        "name": "leaderboard-redis-persistence-comparison",
+        "category": "business_capacity",
+        "path": str(path),
+        "required": required,
+        "status": "passed" if passed else "failed-summary",
+        "passed": passed,
+        "details": details,
+    }
+
+
+def leaderboard_aggregate_for_gate(summary: object) -> dict[str, Any]:
+    if not isinstance(summary, dict):
+        return {}
+    aggregates = summary.get("scenario_aggregates")
+    if not isinstance(aggregates, list):
+        return {}
+    return next(
+        (item for item in aggregates if isinstance(item, dict) and item.get("scenario") == "leaderboard"),
+        {},
+    )
+
+
+def validate_otel_comparison(
+    path: Path,
+    required: bool,
+    min_repetitions: int,
+) -> dict[str, Any]:
+    summary = load_json(path)
+    comparison = summary.get("otel_comparison") if summary else None
+    if not isinstance(comparison, dict):
+        return {
+            "name": "otel-off-on-performance-comparison",
+            "category": "business_capacity",
+            "path": str(path),
+            "required": required,
+            "status": "missing" if required else "optional-missing",
+            "passed": not required,
+            "details": ["otel_comparison is missing"],
+        }
+
+    repetitions = integer_or(comparison.get("repetitions_per_mode"))
+    modes = comparison.get("modes")
+    proof = comparison.get("proof")
+    mode_checks: list[bool] = []
+    mode_summaries: dict[str, dict[str, Any]] = {}
+    details: list[str] = []
+    for mode in ("off", "on"):
+        mode_summary = modes.get(mode) if isinstance(modes, dict) else None
+        if isinstance(mode_summary, dict):
+            mode_summaries[mode] = mode_summary
+        performance = mode_summary.get("performance") if isinstance(mode_summary, dict) else None
+        mode_ok = (
+            isinstance(mode_summary, dict)
+            and integer_or(mode_summary.get("runs")) >= min_repetitions
+            and isinstance(performance, dict)
+            and integer_or(performance.get("runs")) == integer_or(mode_summary.get("runs"))
+            and integer_or(performance.get("rejected_clients", {}).get("max"), -1) == 0
+            and integer_or(performance.get("failed_clients", {}).get("max"), -1) == 0
+            and performance.get("forced_timeout") is False
+        )
+        mode_checks.append(mode_ok)
+        details.append(f"{mode}: runs={mode_summary.get('runs', 0) if isinstance(mode_summary, dict) else 0}")
+
+    off_proof = proof.get("off") if isinstance(proof, dict) else None
+    on_proof = proof.get("on") if isinstance(proof, dict) else None
+    off_collector = off_proof.get("collector") if isinstance(off_proof, dict) else None
+    off_exporter = off_proof.get("exporter") if isinstance(off_proof, dict) else None
+    on_collector = on_proof.get("collector") if isinstance(on_proof, dict) else None
+    on_exporter = on_proof.get("exporter") if isinstance(on_proof, dict) else None
+    off_collector_zero = (
+        isinstance(off_collector, dict)
+        and all(integer_or(off_collector.get(field), -1) == 0 for field in (
+            "requests", "spans", "invalid_payloads", "http_status_errors", "span_status_errors"
+        ))
+    )
+    off_exporter_zero = (
+        isinstance(off_exporter, dict)
+        and off_exporter.get("configured") is False
+        and all(integer_or(off_exporter.get(field), -1) == 0 for field in (
+            "enqueued_spans", "exported_spans", "successful_batches", "failed_batches", "buffered_spans"
+        ))
+    )
+    routed = integer_or(mode_summaries.get("on", {}).get("backend_routed_requests"), -1)
+    enqueued = integer_or(on_exporter.get("enqueued_spans"), -1) if isinstance(on_exporter, dict) else -1
+    exported = integer_or(on_exporter.get("exported_spans"), -1) if isinstance(on_exporter, dict) else -1
+    buffered = integer_or(on_exporter.get("buffered_spans"), -1) if isinstance(on_exporter, dict) else -1
+    proof_ok = (
+        isinstance(off_proof, dict)
+        and off_proof.get("log_verified") is True
+        and off_collector_zero
+        and off_exporter_zero
+        and isinstance(on_proof, dict)
+        and on_proof.get("log_verified") is True
+        and isinstance(on_collector, dict)
+        and integer_or(on_collector.get("requests")) > 0
+        and integer_or(on_collector.get("spans")) > 0
+        and integer_or(on_collector.get("invalid_payloads"), -1) == 0
+        and integer_or(on_collector.get("http_status_errors"), -1) == 0
+        and integer_or(on_collector.get("span_status_errors"), -1) == 0
+        and isinstance(on_exporter, dict)
+        and on_exporter.get("configured") is True
+        and routed > 0
+        and enqueued == routed
+        and exported == integer_or(on_collector.get("spans"))
+        and integer_or(on_exporter.get("successful_batches")) == integer_or(on_collector.get("requests"))
+        and integer_or(on_exporter.get("failed_batches"), -1) == 0
+        and buffered == enqueued - exported
+    )
+    deltas = comparison.get("deltas")
+    delta_metrics = {
+        "throughput_msg_per_sec", "latency_p99_ms", "gateway_cpu_seconds", "gateway_rss_mb"
+    }
+    deltas_ok = (
+        isinstance(deltas, dict)
+        and set(deltas) == delta_metrics
+        and all(
+            isinstance(deltas.get(metric), dict)
+            and all(field in deltas[metric] for field in ("off", "on", "on_minus_off", "delta_percent"))
+            for metric in delta_metrics
+        )
+    )
+    process_isolation_ok = (
+        integer_or(mode_summaries.get("off", {}).get("gateway_pid"), -1) > 0
+        and integer_or(mode_summaries.get("on", {}).get("gateway_pid"), -1) > 0
+        and integer_or(mode_summaries["off"].get("gateway_pid"))
+        != integer_or(mode_summaries["on"].get("gateway_pid"))
+        and integer_or(mode_summaries.get("off", {}).get("battle_backend_pid"), -1) > 0
+        and integer_or(mode_summaries.get("on", {}).get("battle_backend_pid"), -1) > 0
+        and integer_or(mode_summaries["off"].get("battle_backend_pid"))
+        != integer_or(mode_summaries["on"].get("battle_backend_pid"))
+    )
+    passed = (
+        comparison.get("requested") is True
+        and comparison.get("verified") is True
+        and comparison.get("absolute_gate_passed") is True
+        and comparison.get("affinity_verified") is True
+        and comparison.get("fresh_gateway_per_mode") is True
+        and comparison.get("fresh_battle_backend_per_mode") is True
+        and comparison.get("execution_model")
+        == "fresh_gateway_and_battle_backend_per_mode_three_or_more_runs_per_process"
+        and comparison.get("performance_regression_policy") == "observed_not_thresholded"
+        and repetitions >= min_repetitions
+        and all(mode_checks)
+        and proof_ok
+        and deltas_ok
+        and process_isolation_ok
+    )
+    details.extend((
+        f"repetitions_per_mode={repetitions}",
+        f"affinity_verified={comparison.get('affinity_verified') is True}",
+        f"backend_isolation_verified={comparison.get('fresh_battle_backend_per_mode') is True}",
+        f"process_pids_verified={process_isolation_ok}",
+        f"proof_verified={proof_ok}",
+        f"deltas_complete={deltas_ok}",
+        "performance delta is recorded without a percentage threshold; absolute battle gate remains required",
+    ))
+    return {
+        "name": "otel-off-on-performance-comparison",
+        "category": "business_capacity",
+        "path": str(path),
+        "required": required,
+        "status": "passed" if passed else "failed-summary",
+        "passed": passed,
+        "details": details,
+    }
+
+
 def validate_release_summary(
     path: Path,
     required: bool,
@@ -227,6 +469,8 @@ def main() -> int:
     parser.add_argument("--collect-smoke", action="store_true", help="Collect fresh smoke evidence before validating existing capacity artifacts.")
     parser.add_argument("--step-timeout-seconds", type=int, default=900)
     parser.add_argument("--min-capacity-repetitions", type=int, default=3)
+    parser.add_argument("--require-leaderboard-redis-comparison", action="store_true")
+    parser.add_argument("--require-otel-comparison", action="store_true")
     parser.add_argument(
         "--release-summary",
         type=Path,
@@ -325,6 +569,18 @@ def main() -> int:
             expected_candidate_revision=candidate_revision,
         ),
     ]
+    if args.require_leaderboard_redis_comparison:
+        checks.append(validate_leaderboard_redis_comparison(
+            business_capacity_summary_path,
+            required=True,
+            min_repetitions=args.min_capacity_repetitions,
+        ))
+    if args.require_otel_comparison:
+        checks.append(validate_otel_comparison(
+            business_capacity_summary_path,
+            required=True,
+            min_repetitions=args.min_capacity_repetitions,
+        ))
 
     failed_step = next((step for step in steps if step.get("status") != "passed"), None)
     failed_check = next((check for check in checks if check.get("passed") is not True), None)
@@ -350,6 +606,8 @@ def main() -> int:
             "required_capacity_preset": "capacity",
             "required_business_capacity_preset": "business-capacity",
             "min_capacity_repetitions": args.min_capacity_repetitions,
+            "leaderboard_redis_comparison_required": args.require_leaderboard_redis_comparison,
+            "otel_comparison_required": args.require_otel_comparison,
         },
         "steps": steps,
         "checks": checks,

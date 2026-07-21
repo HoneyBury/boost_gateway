@@ -114,8 +114,9 @@ clang-format -i <changed-files>
 | 门禁 | 命令 | 触发方式 |
 |---|---|---|
 | 本地构建+测试 | `cmake --preset default && ctest --preset default --timeout 300` | 本地 |
-| GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref develop -f runner='"ubuntu-latest"'` | 手动 |
-| RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | v* tag |
+| GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref main -f runner='"ubuntu-latest"'` | 手动 |
+| 本地 RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | 本地/手动 |
+| Release 构建与发布门禁 | `.github/workflows/release.yml` | `v*` tag 自动或手动 |
 
 ## 常见任务
 
@@ -138,10 +139,17 @@ clang-format -i <changed-files>
 
 ```bash
 # 快速 smoke（30s）
-python3 scripts/collect_v2_perf_baseline.py --preset smoke
+python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整 baseline（需要固定性能机器）
-python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3
+python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
+  --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
+
+# Matchmaking/Leaderboard 并发专项
+python3 scripts/collect_release_baseline.py --perf-preset business-capacity \
+  --business-operation-scenario matchmaking \
+  --business-operation-scenario leaderboard \
+  --business-operation-clients 16 --business-operation-iterations 10
 ```
 
 ## 文档入口
@@ -202,9 +210,9 @@ python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repeti
 
 | 层级 | 位置 | 执行时间 | 触发方式 |
 |------|------|---------|---------|
-| **单元测试** | `tests/v2/unit/` | 秒级 | 每次本地构建 / PR CI |
-| **集成测试** | `tests/v2/integration/` | 分钟级 | PR CI / nightly |
-| **E2E 多进程** | `tests/v2/integration/` (multi_process) | 分钟级 | PR CI / nightly |
+| **单元测试** | `tests/v2/unit/` | 秒级 | 本地 / 手动主 CI |
+| **集成测试** | `tests/v2/integration/` | 分钟级 | 本地 / 手动主 CI |
+| **E2E 多进程** | `tests/v2/integration/` (multi_process) | 分钟级 | 手动主 CI / 专项 workflow |
 | **性能 Smoke** | `tests/perf/` (可选构建) | 30s | `perf-regression.yml` 手动 `perf_preset=smoke` |
 | **模糊测试** | `tests/fuzz/` (可选构建) | 自定义 | 手动 |
 | **安全测试** | `tests/security/` (可选构建) | 分钟级 | 手动 |
@@ -270,10 +278,10 @@ python3 scripts/run_tests.py --list                    # 列出可用层级
 
 | CI 场景 | 触发方式 | 执行的测试层 |
 |---------|---------|-------------|
-| 主 CI（`v*` tag push / `workflow_dispatch`） | 自动 / 手动 | unit + integration + e2e |
+| 主 CI（`ci.yml`） | 手动 `workflow_dispatch` | unit + integration + e2e |
 | 性能门禁 | `workflow_dispatch` | `perf-regression.yml`，`perf_preset=smoke|baseline|capacity` |
-| Release 构建 | v* tag push / 手动 | unit + integration + e2e + perf baseline |
-| Nightly 稳定性 | 手动 | e2e（长稳 profile） |
+| Release 构建 | `v*` tag push / 手动 | unit + integration + e2e + 所选性能 profile |
+| Bounded stability | 手动 | `nightly-stability.yml`，smoke/short/medium soak |
 | 固定 Runner 容量 | 手动 | e2e + perf capacity |
 | 本地开发 | `python3 scripts/run_tests.py` | unit + integration（默认） |
 
@@ -297,14 +305,15 @@ python3 scripts/run_tests.py --list                    # 列出可用层级
 | `business-capacity` | 业务闭环容量 | ~60min | 固定 runner / 手动 |
 
 ```bash
-# PR smoke
+# 手动 smoke（仓库当前没有 PR 自动性能 workflow）
 python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整基线
-python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3
+python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
+  --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
 ```
 
-性能门禁见 `config/perf/v2_arch_baseline_gates.json`，CI 自动判定退化。
+CPU 隔离仅支持 Linux：`--cpu-set` 只约束 Gateway 和后端服务，`--loadgen-cpu-set` 约束采集器、pressure 和进程内业务客户端；两者必须显式不重叠，指定 CPU 必须属于 runner 的当前 allowed set。性能门禁见 `config/perf/v2_arch_baseline_gates.json`。
 
 ## 协议开发指南
 

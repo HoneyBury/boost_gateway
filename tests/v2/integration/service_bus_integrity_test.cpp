@@ -16,6 +16,7 @@
 #include "v2/room/room_backend_service.h"
 #include "v2/service/backend_connection.h"
 #include "v2/service/backend_envelope.h"
+#include "v2/service/backend_frame_codec.h"
 #include "v2/service/backend_server.h"
 #include "v2/service/circuit_breaker.h"
 #include "v2/service/service_registry.h"
@@ -28,6 +29,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -205,6 +207,93 @@ TEST(ServiceBusIntegrity, LoginBackendRoundTrip) {
     EXPECT_EQ(doc.value("user_id", ""), "alice");
 
     server.stop();
+}
+
+TEST(ServiceBusIntegrity, BackendServerStopJoinsIdleSessionBeforeSocketCleanup) {
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["echo"] = [](const v2::service::BackendEnvelope& request) {
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload = request.payload;
+        return response;
+    };
+
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_enabled = false,
+            .session_idle_timeout = std::chrono::minutes(2),
+        },
+        std::move(handlers));
+    server.start();
+
+    v2::service::BackendConnection connection(
+        v2::service::BackendConnectionOptions{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+        });
+    ASSERT_TRUE(connection.connect());
+    auto request = payload_envelope("idle-after-response");
+    request.message_type = "echo";
+    ASSERT_TRUE(connection.send_request(request).has_value());
+
+    const auto started_at = std::chrono::steady_clock::now();
+    server.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+    EXPECT_LT(elapsed, std::chrono::seconds(1));
+    connection.close();
+}
+
+TEST(ServiceBusIntegrity, BackendServerStopCancelsWriteToNonReadingPeer) {
+    std::mutex handler_mutex;
+    std::condition_variable handler_cv;
+    bool handler_entered = false;
+
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["large_response"] = [&](const v2::service::BackendEnvelope&) {
+        {
+            std::scoped_lock lock(handler_mutex);
+            handler_entered = true;
+        }
+        handler_cv.notify_one();
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload.assign(16U * 1024U * 1024U, 'x');
+        return response;
+    };
+
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_enabled = false,
+            .session_idle_timeout = std::chrono::minutes(2),
+        },
+        std::move(handlers));
+    server.start();
+
+    asio::io_context client_io;
+    tcp::socket client(client_io);
+    client.connect(tcp::endpoint(
+        asio::ip::make_address("127.0.0.1"), server.local_port()));
+    v2::service::BackendEnvelope request = payload_envelope("request-large-response");
+    request.message_type = "large_response";
+    ASSERT_TRUE(v2::service::write_frame(client, request));
+
+    {
+        std::unique_lock lock(handler_mutex);
+        ASSERT_TRUE(handler_cv.wait_for(
+            lock,
+            std::chrono::seconds(5),
+            [&]() { return handler_entered; }));
+    }
+
+    const auto started_at = std::chrono::steady_clock::now();
+    server.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+    EXPECT_LT(elapsed, std::chrono::seconds(1));
+
+    boost::system::error_code ec;
+    client.close(ec);
 }
 
 TEST(ServiceBusIntegrity, LoginBackendErrorPropagation) {
@@ -1442,6 +1531,13 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleBackend) {
     ASSERT_TRUE(decoded.has_value());
     EXPECT_EQ(decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleInputResponse);
     EXPECT_EQ(decoded->payload.value("battle_id", ""), "battle_1");
+
+    auto duplicate_req = payload_envelope(encoded);
+    duplicate_req.message_type = "battle_input";
+    auto duplicate_resp = conn.send_request(duplicate_req);
+    ASSERT_TRUE(duplicate_resp.has_value());
+    EXPECT_EQ(duplicate_resp->kind, v2::service::MessageKind::kError);
+    EXPECT_NE(duplicate_resp->payload.find("duplicate_frame"), std::string::npos);
 
     service.stop();
 }

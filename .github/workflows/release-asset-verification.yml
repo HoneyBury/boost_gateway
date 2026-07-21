@@ -91,6 +91,17 @@ jobs:
             --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64"
 
+      - name: Verify published SBOM semantics
+        shell: bash
+        run: |
+          python3 scripts/tools/harden_release_sbom.py verify \
+            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64" \
+            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            --policy config/release/sbom-policy.json \
+            --summary-path runtime/validation/published-release-sbom-semantics-summary.json
+
       - name: Verify runtime consumer offline
         shell: bash
         run: |
@@ -153,6 +164,14 @@ jobs:
                   raise SystemExit(f"{name} attestation digest mismatch: {actual}")
           PY
 
+      - name: Verify published SBOM matches attested predicate
+        shell: bash
+        run: |
+          python3 scripts/tools/harden_release_sbom.py verify-attestation \
+            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
+            --attestation-verification runtime/validation/published-release-sbom-verification.json \
+            --summary-path runtime/validation/published-release-sbom-attestation-binding-summary.json
+
       - name: Render published asset summary
         shell: bash
         env:
@@ -173,17 +192,37 @@ jobs:
           consumer = json.loads(
               (validation / "published-release-package-consumer-summary.json").read_text(encoding="utf-8")
           )
+          sbom_semantics = json.loads(
+              (validation / "published-release-sbom-semantics-summary.json").read_text(encoding="utf-8")
+          )
+          sbom_attestation_binding = json.loads(
+              (validation / "published-release-sbom-attestation-binding-summary.json").read_text(
+                  encoding="utf-8"
+              )
+          )
+          predicate_matches_published_sbom = (
+              sbom_attestation_binding.get("predicate_matches_published_sbom") is True
+          )
+          passed = (
+              consumer.get("overall_pass") is True
+              and sbom_semantics.get("overall_pass") is True
+              and sbom_attestation_binding.get("overall_pass") is True
+              and predicate_matches_published_sbom
+          )
           summary = {
               "summary_version": 2,
               "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
-              "overall_pass": True,
-              "passed": True,
+              "overall_pass": passed,
+              "passed": passed,
               "tag": os.environ["RELEASE_TAG"],
               "expected_commit": os.environ["EXPECTED_COMMIT"],
               "runner": os.environ["VERIFICATION_RUNNER"],
               "archive_sha256": os.environ["ARCHIVE_SHA256"],
               "sbom_sha256": os.environ["SBOM_SHA256"],
               "runtime_consumer": consumer,
+              "sbom_semantics": sbom_semantics,
+              "predicate_matches_published_sbom": predicate_matches_published_sbom,
+              "sbom_attestation_binding": sbom_attestation_binding,
               "provenance_attestation_verified": True,
               "sbom_attestation_verified": True,
           }

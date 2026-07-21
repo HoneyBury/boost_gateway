@@ -45,6 +45,7 @@ REQUIRED_ALERTS = {
     "BoostGatewayBackendErrors",
     "BoostGatewayBackendTimeouts",
     "BoostGatewayLeaderboardBackendErrors",
+    "BoostGatewayRedisUnavailable",
     "BoostGatewayHighRouteLatency",
     "BoostGatewayBusinessFlowFailure",
     "BoostGatewayRedisExporterDown",

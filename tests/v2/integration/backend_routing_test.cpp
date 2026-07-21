@@ -21,6 +21,7 @@
 #include <nlohmann/json.hpp>
 
 #include <atomic>
+#include <condition_variable>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -42,6 +43,44 @@ namespace http = beast::http;
 using tcp = asio::ip::tcp;
 
 constexpr const char* kGatewayHost = "127.0.0.1";
+
+class ScopedEnvironmentOverride {
+public:
+    ScopedEnvironmentOverride(const char* name, const char* value)
+        : name_(name) {
+        if (const char* previous = std::getenv(name)) {
+            previous_value_ = previous;
+        }
+        set(value);
+    }
+
+    ~ScopedEnvironmentOverride() {
+        if (previous_value_.has_value()) {
+            set(previous_value_->c_str());
+        } else {
+#if defined(_WIN32)
+            _putenv_s(name_.c_str(), "");
+#else
+            unsetenv(name_.c_str());
+#endif
+        }
+    }
+
+    ScopedEnvironmentOverride(const ScopedEnvironmentOverride&) = delete;
+    ScopedEnvironmentOverride& operator=(const ScopedEnvironmentOverride&) = delete;
+
+private:
+    void set(const char* value) {
+#if defined(_WIN32)
+        _putenv_s(name_.c_str(), value);
+#else
+        setenv(name_.c_str(), value, 1);
+#endif
+    }
+
+    std::string name_;
+    std::optional<std::string> previous_value_;
+};
 
 class DisableRedisAutoConnectForTest {
 public:
@@ -942,6 +981,35 @@ struct BattleBackendProcess {
     };
     std::unordered_map<std::string, BattleEntry> battles_;
     std::mutex mutex_;
+    std::mutex input_gate_mutex_;
+    std::condition_variable input_gate_cv_;
+    bool block_battle_input_ = false;
+    bool battle_input_entered_ = false;
+    bool release_battle_input_ = false;
+
+    void block_battle_inputs() {
+        std::scoped_lock lock(input_gate_mutex_);
+        block_battle_input_ = true;
+        battle_input_entered_ = false;
+        release_battle_input_ = false;
+    }
+
+    bool wait_for_blocked_battle_input() {
+        std::unique_lock lock(input_gate_mutex_);
+        return input_gate_cv_.wait_for(
+            lock,
+            std::chrono::seconds(5),
+            [this]() { return battle_input_entered_; });
+    }
+
+    void release_battle_inputs() {
+        {
+            std::scoped_lock lock(input_gate_mutex_);
+            release_battle_input_ = true;
+            block_battle_input_ = false;
+        }
+        input_gate_cv_.notify_all();
+    }
 
     bool start() {
         v2::service::BackendServer::HandlerMap handlers;
@@ -996,6 +1064,17 @@ struct BattleBackendProcess {
         };
 
         handlers["battle_input"] = [this](const v2::service::BackendEnvelope& request) {
+            {
+                std::unique_lock lock(input_gate_mutex_);
+                if (block_battle_input_) {
+                    battle_input_entered_ = true;
+                    input_gate_cv_.notify_all();
+                    (void)input_gate_cv_.wait_for(
+                        lock,
+                        std::chrono::seconds(5),
+                        [this]() { return release_battle_input_; });
+                }
+            }
             auto doc = nlohmann::json::parse(request.payload, nullptr, false);
             if (doc.is_discarded()) {
                 v2::service::BackendEnvelope resp;
@@ -1135,7 +1214,10 @@ struct BattleBackendProcess {
         return port > 0;
     }
 
-    void stop() { if (server) server->stop(); }
+    void stop() {
+        release_battle_inputs();
+        if (server) server->stop();
+    }
 };
 
 // ─── S3 Integration Tests ────────────────────────────────────────
@@ -1358,6 +1440,9 @@ TEST(V2BackendRoutingTest, BattleStartCascadeViaBridge) {
 
 TEST(V2BackendRoutingTest, BattleInputFrameAdvanceViaBridge) {
     app::logging::init("project_tests");
+    ScopedEnvironmentOverride route_workers("V2_BATTLE_ROUTE_WORKERS", "1");
+    ScopedEnvironmentOverride route_queue_capacity(
+        "V2_BATTLE_ROUTE_QUEUE_CAPACITY", "1");
 
     LoginBackendProcess login_backend;
     RoomBackendProcess room_backend;
@@ -1420,6 +1505,49 @@ TEST(V2BackendRoutingTest, BattleInputFrameAdvanceViaBridge) {
 
     auto frame_b = bob.expect_message(net::protocol::kBattleStatePush);
     EXPECT_EQ(frame_b.message_id, net::protocol::kBattleStatePush);
+
+    const auto route_diag = server->diagnostics().battle_route;
+    EXPECT_GE(route_diag.completed_tasks, 1U);
+    EXPECT_EQ(route_diag.queued_tasks, 0U);
+    EXPECT_EQ(route_diag.rejected_tasks, 0U);
+    EXPECT_EQ(route_diag.queue_capacity, 1U);
+
+    battle_backend.block_battle_inputs();
+    alice.send(net::protocol::kBattleInputRequest, 105, "frame=2:move:11,20");
+    const bool first_route_blocked = battle_backend.wait_for_blocked_battle_input();
+
+    alice.send(net::protocol::kBattleInputRequest, 106, "frame=3:move:12,20");
+    bool queue_filled = false;
+    const auto queue_deadline = std::chrono::steady_clock::now() +
+        std::chrono::seconds(5);
+    while (std::chrono::steady_clock::now() < queue_deadline) {
+        if (server->diagnostics().battle_route.queued_tasks == 1U) {
+            queue_filled = true;
+            break;
+        }
+        std::this_thread::yield();
+    }
+
+    if (!first_route_blocked || !queue_filled) {
+        battle_backend.release_battle_inputs();
+    }
+    ASSERT_TRUE(first_route_blocked);
+    ASSERT_TRUE(queue_filled);
+
+    alice.send(net::protocol::kBattleInputRequest, 107, "frame=4:move:13,20");
+    const auto overload = alice.read();
+    battle_backend.release_battle_inputs();
+
+    EXPECT_EQ(overload.message_id, net::protocol::kErrorResponse);
+    EXPECT_EQ(overload.request_id, 107U);
+    EXPECT_EQ(overload.error_code,
+              static_cast<std::int32_t>(
+                  net::protocol::ErrorCode::kBattleRouteOverloaded));
+    EXPECT_EQ(overload.body, "battle_route_overloaded");
+
+    const auto overloaded_diag = server->diagnostics().battle_route;
+    EXPECT_EQ(overloaded_diag.queue_capacity, 1U);
+    EXPECT_EQ(overloaded_diag.rejected_tasks, 1U);
 
     alice.close();
     bob.close();
@@ -2764,7 +2892,7 @@ TEST(V2BackendRoutingTest, MatchmakingRestoresCommittedMatchAfterRestart) {
     std::filesystem::remove_all(storage_root, ec);
 }
 
-TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
+TEST(V2BackendRoutingTest, LeaderboardReelectsAndLogicalRestartCatchesUpOverBackendRpc) {
     app::logging::init("project_tests");
     DisableRedisAutoConnectForTest redis_guard;
 
@@ -2799,26 +2927,30 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     node3.start();
 
     std::uint16_t leader_port = 0;
-    std::uint16_t follower_port = 0;
+    v2::leaderboard::LeaderboardService* stopped_leader = nullptr;
     for (int i = 0; i < 80; ++i) {
-        if (node1.is_raft_leader()) {
-            leader_port = kPort1;
-            follower_port = kPort2;
-            break;
-        }
-        if (node2.is_raft_leader()) {
-            leader_port = kPort2;
-            follower_port = kPort1;
-            break;
-        }
-        if (node3.is_raft_leader()) {
-            leader_port = kPort3;
-            follower_port = kPort1;
+        const bool node1_leads = node1.is_raft_leader();
+        const bool node2_leads = node2.is_raft_leader();
+        const bool node3_leads = node3.is_raft_leader();
+        const int leader_count = static_cast<int>(node1_leads) + static_cast<int>(node2_leads) +
+                                 static_cast<int>(node3_leads);
+        if (leader_count == 1) {
+            if (node1_leads) {
+                leader_port = kPort1;
+                stopped_leader = &node1;
+            } else if (node2_leads) {
+                leader_port = kPort2;
+                stopped_leader = &node2;
+            } else {
+                leader_port = kPort3;
+                stopped_leader = &node3;
+            }
             break;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     ASSERT_NE(leader_port, 0);
+    ASSERT_NE(stopped_leader, nullptr);
 
     v2::service::BackendConnection leader_conn({
         .host = "127.0.0.1",
@@ -2830,35 +2962,79 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     submit_request.target_service = v2::service::ServiceId::kGateway;
     submit_request.kind = v2::service::MessageKind::kRequest;
     submit_request.message_type = "leaderboard_submit";
-    submit_request.payload =
-        R"({"user_id":"eve","display_name":"Eve","score":1337})";
+    submit_request.payload = R"({"user_id":"eve","display_name":"Eve","score":1337})";
     auto submit_response = leader_conn.send_request(submit_request);
     ASSERT_TRUE(submit_response.has_value());
+    ASSERT_EQ(submit_response->kind, v2::service::MessageKind::kResponse);
     leader_conn.close();
 
-    if (leader_port == kPort1) node1.stop();
-    if (leader_port == kPort2) node2.stop();
-    if (leader_port == kPort3) node3.stop();
+    stopped_leader->stop();
 
-    v2::service::BackendConnection follower_conn({
+    v2::service::BackendConnection stopped_conn({
         .host = "127.0.0.1",
-        .port = follower_port,
+        .port = leader_port,
     });
-    ASSERT_TRUE(follower_conn.connect());
+    EXPECT_FALSE(stopped_conn.connect());
+
+    v2::leaderboard::LeaderboardService* new_leader = nullptr;
+    std::uint16_t new_leader_port = 0;
+    for (int i = 0; i < 80; ++i) {
+        const bool node1_leads = leader_port != kPort1 && node1.is_raft_leader();
+        const bool node2_leads = leader_port != kPort2 && node2.is_raft_leader();
+        const bool node3_leads = leader_port != kPort3 && node3.is_raft_leader();
+        const int survivor_leaders = static_cast<int>(node1_leads) + static_cast<int>(node2_leads) +
+                                     static_cast<int>(node3_leads);
+        if (survivor_leaders == 1) {
+            if (node1_leads) {
+                new_leader = &node1;
+                new_leader_port = kPort1;
+            } else if (node2_leads) {
+                new_leader = &node2;
+                new_leader_port = kPort2;
+            } else {
+                new_leader = &node3;
+                new_leader_port = kPort3;
+            }
+            break;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    ASSERT_NE(new_leader, nullptr);
+    ASSERT_NE(new_leader_port, leader_port);
+
+    v2::service::BackendConnection new_leader_conn({
+        .host = "127.0.0.1",
+        .port = new_leader_port,
+    });
+    ASSERT_TRUE(new_leader_conn.connect());
+
+    submit_request.payload = R"({"user_id":"frank","display_name":"Frank","score":2048})";
+    auto failover_submit_response = new_leader_conn.send_request(submit_request);
+    ASSERT_TRUE(failover_submit_response.has_value());
+    EXPECT_EQ(failover_submit_response->kind, v2::service::MessageKind::kResponse);
+    new_leader_conn.close();
+
+    stopped_leader->start();
+
+    v2::service::BackendConnection recovered_conn({
+        .host = "127.0.0.1",
+        .port = leader_port,
+    });
+    ASSERT_TRUE(recovered_conn.connect());
 
     v2::service::BackendEnvelope rank_request;
     rank_request.target_service = v2::service::ServiceId::kGateway;
     rank_request.kind = v2::service::MessageKind::kRequest;
     rank_request.message_type = "leaderboard_rank";
-    rank_request.payload = R"({"user_id":"eve"})";
+    rank_request.payload = R"({"user_id":"frank"})";
 
     std::optional<v2::service::BackendEnvelope> rank_response;
-    for (int i = 0; i < 30; ++i) {
-        rank_response = follower_conn.send_request(rank_request);
+    for (int i = 0; i < 80; ++i) {
+        rank_response = recovered_conn.send_request(rank_request);
         if (rank_response.has_value() &&
             rank_response->kind == v2::service::MessageKind::kResponse) {
             auto doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
-            if (!doc.is_discarded() && doc.value("score", 0) == 1337) {
+            if (!doc.is_discarded() && doc.value("score", 0) == 2048) {
                 break;
             }
         }
@@ -2869,12 +3045,18 @@ TEST(V2BackendRoutingTest, LeaderboardFollowerCatchesUpAfterLeaderRestart) {
     EXPECT_EQ(rank_response->kind, v2::service::MessageKind::kResponse);
     auto rank_doc = nlohmann::json::parse(rank_response->payload, nullptr, false);
     ASSERT_FALSE(rank_doc.is_discarded());
-    EXPECT_EQ(rank_doc.value("score", 0), 1337);
+    EXPECT_EQ(rank_doc.value("user_id", std::string{}), "frank");
+    EXPECT_EQ(rank_doc.value("score", 0), 2048);
 
-    follower_conn.close();
-    if (leader_port != kPort1) node1.stop();
-    if (leader_port != kPort2) node2.stop();
-    if (leader_port != kPort3) node3.stop();
+    const int final_leader_count = static_cast<int>(node1.is_raft_leader()) +
+                                   static_cast<int>(node2.is_raft_leader()) +
+                                   static_cast<int>(node3.is_raft_leader());
+    EXPECT_EQ(final_leader_count, 1);
+
+    recovered_conn.close();
+    node1.stop();
+    node2.stop();
+    node3.stop();
 }
 
 // ─── v3.0.0 B5: OpenTelemetry export integration tests ───────────────
@@ -3003,6 +3185,12 @@ TEST(V2BackendRoutingTest, OtelExporterPostsSpanToCollectorEndpoint) {
         EXPECT_NE(collector.last_body.find("\"operationName\":\"route.login_request\""),
                   std::string::npos);
     }
+    const auto metrics = exporter->metrics();
+    EXPECT_EQ(metrics.enqueued_spans, 1U);
+    EXPECT_EQ(metrics.exported_spans, 1U);
+    EXPECT_EQ(metrics.successful_batches, 1U);
+    EXPECT_EQ(metrics.failed_batches, 0U);
+    EXPECT_EQ(metrics.buffered_spans, 0U);
 
     bridge.shutdown();
     collector.stop();

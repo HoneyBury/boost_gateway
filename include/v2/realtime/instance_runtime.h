@@ -95,6 +95,10 @@ public:
     // Submit an input to an instance. Returns the input result.
     InputResult submit_input(const InputEnvelope& input);
 
+    // Apply an input synchronously under the instance lock. Service handlers
+    // use this when the authoritative accept/reject result is part of the RPC.
+    InputResult process_input_immediate(const InputEnvelope& input);
+
     // Request the instance to finish.
     void finish_instance(const std::string& instance_id,
                          FinishReason reason = FinishReason::kUserRequested);

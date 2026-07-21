@@ -13,10 +13,13 @@
 #include <nlohmann/json.hpp>
 
 #include <chrono>
+#include <cstdlib>
+#include <future>
 #include <memory>
 #include <string>
 #include <stdexcept>
 #include <thread>
+#include <poll.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <vector>
@@ -29,6 +32,32 @@ namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 using tcp = asio::ip::tcp;
+
+class ScopedEnvironmentOverride {
+public:
+    ScopedEnvironmentOverride(const char* name, const char* value)
+        : name_(name) {
+        if (const char* previous = std::getenv(name); previous != nullptr) {
+            previous_value_ = previous;
+        }
+        setenv(name, value, 1);
+    }
+
+    ~ScopedEnvironmentOverride() {
+        if (previous_value_.has_value()) {
+            setenv(name_.c_str(), previous_value_->c_str(), 1);
+        } else {
+            unsetenv(name_.c_str());
+        }
+    }
+
+    ScopedEnvironmentOverride(const ScopedEnvironmentOverride&) = delete;
+    ScopedEnvironmentOverride& operator=(const ScopedEnvironmentOverride&) = delete;
+
+private:
+    std::string name_;
+    std::optional<std::string> previous_value_;
+};
 
 struct V2DemoRuntime {
     std::unique_ptr<v2::gateway::DemoServer> server;
@@ -83,13 +112,27 @@ public:
     }
 
     void wait_readable() {
-        fd_set read_fds;
-        FD_ZERO(&read_fds);
-        FD_SET(socket_.native_handle(), &read_fds);
-        timeval timeout{.tv_sec = 5, .tv_usec = 0};
-        const int rc = select(socket_.native_handle() + 1, &read_fds, nullptr, nullptr, &timeout);
-        if (rc <= 0) {
+        pollfd descriptor{
+            .fd = socket_.native_handle(),
+            .events = POLLIN,
+            .revents = 0,
+        };
+        const int rc = poll(&descriptor, 1, 5'000);
+        if (rc == 0) {
             throw std::runtime_error("timed out waiting for packet");
+        }
+        if (rc < 0) {
+            throw std::runtime_error("failed waiting for packet");
+        }
+        if ((descriptor.revents & POLLNVAL) != 0) {
+            throw std::runtime_error("invalid socket while waiting for packet");
+        }
+        if ((descriptor.revents & POLLIN) == 0 &&
+            (descriptor.revents & (POLLERR | POLLHUP)) != 0) {
+            throw std::runtime_error("socket closed while waiting for packet");
+        }
+        if ((descriptor.revents & POLLIN) == 0) {
+            throw std::runtime_error("socket not readable while waiting for packet");
         }
     }
 
@@ -336,6 +379,88 @@ TEST(V2DemoServerSmokeTest, DemoServerUsesMultiCoreAcceptorWhenNotPinned) {
     }
 }
 
+TEST(V2DemoServerSmokeTest, MultiCoreAcceptorAuthenticatesEveryConcurrentSession) {
+    app::logging::init("project_tests");
+
+    constexpr std::size_t kClientsPerRound = 2'000;
+    constexpr std::size_t kRounds = 2;
+    ScopedEnvironmentOverride message_type_limit("V2_RATE_LIMIT_MESSAGE_TYPE", "10000");
+    ScopedEnvironmentOverride login_limit("V2_RATE_LIMIT_LOGIN", "10000");
+
+    V2DemoRuntime runtime;
+    runtime.server = std::make_unique<v2::gateway::DemoServer>(
+        0,
+        net::SessionOptions{
+            .heartbeat_check_interval = std::chrono::seconds(30),
+            .heartbeat_timeout = std::chrono::minutes(2),
+        },
+        v2::gateway::DemoServerOptions{.max_connections = kClientsPerRound},
+        std::make_unique<v2::io::AsioIoEngine>(4));
+    SKIP_IF_V2_RUNTIME_UNAVAILABLE(runtime);
+    const auto server_port = runtime.server->local_port();
+
+    for (std::size_t round = 0; round < kRounds; ++round) {
+        std::vector<std::unique_ptr<TestClient>> clients;
+        clients.reserve(kClientsPerRound);
+
+        for (std::size_t index = 0; index < kClientsPerRound; ++index) {
+            clients.push_back(std::make_unique<TestClient>());
+        }
+
+        constexpr std::size_t kConnectWorkers = 8;
+        std::vector<std::future<void>> connects;
+        connects.reserve(kConnectWorkers);
+        for (std::size_t worker = 0; worker < kConnectWorkers; ++worker) {
+            connects.push_back(std::async(std::launch::async, [&, worker]() {
+                for (std::size_t index = worker; index < clients.size();
+                     index += kConnectWorkers) {
+                    clients[index]->connect(server_port);
+                }
+            }));
+        }
+        for (auto& connect : connects) {
+            connect.get();
+        }
+
+        for (std::size_t index = 0; index < clients.size(); ++index) {
+            const auto user = "multi_" + std::to_string(round) + "_" +
+                              std::to_string(index);
+            clients[index]->send(net::protocol::kLoginRequest,
+                                 static_cast<std::uint32_t>(index + 1),
+                                 user + "|token:" + user + "|MultiUser");
+        }
+
+        for (std::size_t index = 0; index < clients.size(); ++index) {
+            const auto response = clients[index]->read();
+            ASSERT_EQ(response.message_id, net::protocol::kLoginResponse)
+                << "round=" << round << " client=" << index
+                << " error_code=" << response.error_code << " body=" << response.body;
+            ASSERT_EQ(response.error_code,
+                      static_cast<std::int32_t>(net::protocol::ErrorCode::kOk))
+                << "round=" << round << " client=" << index;
+        }
+
+        const auto diagnostics = runtime.server->diagnostics();
+        EXPECT_EQ(diagnostics.total_active_sessions, kClientsPerRound);
+        EXPECT_EQ(diagnostics.total_accepted_sessions,
+                  (round + 1) * kClientsPerRound);
+
+        for (auto& client : clients) {
+            client->close();
+        }
+
+        const auto cleanup_deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (runtime.server->diagnostics().total_active_sessions != 0 &&
+               std::chrono::steady_clock::now() < cleanup_deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        EXPECT_EQ(runtime.server->diagnostics().total_active_sessions, 0U);
+    }
+
+    runtime.stop();
+}
+
 TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot) {
     app::logging::init("project_tests");
 
@@ -377,6 +502,36 @@ TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot
     } catch (const std::exception& ex) {
         GTEST_SKIP() << "socket bind unavailable in this environment: " << ex.what();
     }
+}
+
+TEST(V2DemoServerSmokeTest, DiagnosticsExposeOtelExporterMetrics) {
+    app::logging::init("project_tests");
+
+    v2::gateway::DemoServer server(0, {},
+                                   v2::gateway::DemoServerOptions{
+                                       .login_backend_config =
+                                           v2::gateway::GatewayServiceBridge::BackendConfig{
+                                               .host = "127.0.0.1",
+                                               .port = 19999,
+                                           },
+                                   });
+    auto exporter = std::make_shared<v3::tracing::OtlpExporter>(
+        v3::tracing::OtlpExporter::Config{.service_name = "diagnostics-test"});
+    ASSERT_NE(server.service_bridge(), nullptr);
+    server.service_bridge()->set_otel_exporter(exporter);
+
+    auto span = v2::tracing::Span::root("diagnostics_span");
+    span.finish();
+    exporter->export_span(span);
+
+    const auto diagnostics = nlohmann::json::parse(server.diagnostics_json());
+    const auto& metrics = diagnostics["otel_exporter_metrics"];
+    EXPECT_EQ(metrics["configured"], true);
+    EXPECT_EQ(metrics["enqueued_spans"], 1);
+    EXPECT_EQ(metrics["exported_spans"], 0);
+    EXPECT_EQ(metrics["successful_batches"], 0);
+    EXPECT_EQ(metrics["failed_batches"], 0);
+    EXPECT_EQ(metrics["buffered_spans"], 1);
 }
 
 TEST(V2DemoServerSmokeTest, DiagnosticsHttpEndpointReturnsStructuredSnapshot) {

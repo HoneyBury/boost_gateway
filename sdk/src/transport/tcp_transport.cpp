@@ -4,6 +4,11 @@
 #include <boost/asio.hpp>
 
 #include <atomic>
+#include <condition_variable>
+#include <deque>
+#include <functional>
+#include <memory>
+#include <mutex>
 #include <thread>
 
 #ifdef __APPLE__
@@ -17,20 +22,160 @@ namespace transport {
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
-class TcpTransport final : public ITransport {
+class TransportExecutor {
 public:
-    TcpTransport() : socket_(io_context_) {}
+    TransportExecutor() : state_(std::make_shared<State>()), worker_([state = state_] {
+        for (;;) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lock(state->mutex);
+                state->cv.wait(lock, [&] { return state->stopping || !state->tasks.empty(); });
+                if (state->stopping) return;
+                task = std::move(state->tasks.front());
+                state->tasks.pop_front();
+            }
+            task();
+        }
+    }) {}
+
+    ~TransportExecutor() { shutdown(); }
+
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(state_->mutex);
+            if (state_->stopping) return;
+            state_->tasks.push_back(std::move(task));
+        }
+        state_->cv.notify_one();
+    }
+
+    void shutdown() {
+        {
+            std::lock_guard<std::mutex> lock(state_->mutex);
+            state_->stopping = true;
+            state_->tasks.clear();
+        }
+        state_->cv.notify_all();
+        if (!worker_.joinable()) return;
+        if (worker_.get_id() == std::this_thread::get_id()) worker_.detach();
+        else worker_.join();
+    }
+
+private:
+    struct State {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::deque<std::function<void()>> tasks;
+        bool stopping = false;
+    };
+    std::shared_ptr<State> state_;
+    std::thread worker_;
+};
+
+class TcpTransport final : public ITransport {
+    struct State {
+        State() : socket(io_context) {}
+        asio::io_context io_context;
+        tcp::socket socket;
+        std::mutex socket_mutex;
+        std::mutex callback_mutex;
+        std::function<void(const std::string&)> async_receive_callback;
+        std::atomic<bool> connected{false};
+        std::atomic<bool> shutting_down{false};
+        std::atomic<bool> callbacks_enabled{true};
+    };
+
+public:
+    TcpTransport() : state_(std::make_shared<State>()) {}
+
+    ~TcpTransport() override {
+        state_->callbacks_enabled = false;
+        state_->shutting_down = true;
+        close_connection(state_);
+        executor_.shutdown();
+        join_read_thread();
+    }
 
     bool connect(const std::string& host, std::uint16_t port,
                  std::chrono::milliseconds timeout) override {
+        disconnect();
+        return connect_state(state_, host, port, timeout);
+    }
+
+    void disconnect() override {
+        close_connection(state_);
+        join_read_thread();
+    }
+
+    bool is_connected() const override { return state_->connected; }
+
+    bool send(const std::vector<char>& data) override {
+        return send_state(state_, data);
+    }
+
+    std::vector<char> receive(std::chrono::milliseconds timeout) override {
+        return receive_state(state_, timeout);
+    }
+
+    void set_receive_callback(ReceiveCallback /*cb*/) override {}
+
+    void async_connect(const std::string& host, std::uint16_t port,
+                       std::function<void(bool)> callback) override {
+        auto state = state_;
+        executor_.post([this, state, host, port, callback = std::move(callback)]() {
+            close_connection(state);
+            join_read_thread();
+            bool ok = connect_state(state, host, port, std::chrono::seconds(5));
+            if (ok) start_async_read(state);
+            if (state->callbacks_enabled && callback) callback(ok);
+        });
+    }
+
+    void async_send(const std::string& data,
+                    std::function<void(bool)> callback) override {
+        auto state = state_;
+        executor_.post([state, data, callback = std::move(callback)]() {
+            std::vector<char> buf(data.begin(), data.end());
+            bool ok = send_state(state, buf);
+            if (state->callbacks_enabled && callback) callback(ok);
+        });
+    }
+
+    void set_async_receive_callback(
+        std::function<void(const std::string&)> callback) override {
+        std::lock_guard<std::mutex> lock(state_->callback_mutex);
+        state_->async_receive_callback = std::move(callback);
+    }
+
+private:
+    static void close_connection(const std::shared_ptr<State>& state) {
+        state->connected = false;
+        std::lock_guard<std::mutex> lock(state->socket_mutex);
         boost::system::error_code ec;
+        state->socket.close(ec);
+        state->io_context.stop();
+    }
+
+    static bool connect_state(const std::shared_ptr<State>& state,
+                              const std::string& host, std::uint16_t port,
+                              std::chrono::milliseconds timeout) {
+        if (state->shutting_down) return false;
+        const auto endpoint = tcp::endpoint(asio::ip::make_address(host), port);
         auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (std::chrono::steady_clock::now() < deadline) {
-            socket_.connect(
-                tcp::endpoint(asio::ip::make_address(host), port), ec);
+        while (!state->shutting_down && std::chrono::steady_clock::now() < deadline) {
+            boost::system::error_code ec;
+            {
+                std::lock_guard<std::mutex> lock(state->socket_mutex);
+                state->io_context.restart();
+                state->socket = tcp::socket(state->io_context);
+                state->socket.connect(endpoint, ec);
+                if (ec) {
+                    boost::system::error_code close_ec;
+                    state->socket.close(close_ec);
+                }
+            }
             if (!ec) {
-                connected_ = true;
-                io_thread_ = std::thread([this] { io_context_.run(); });
+                state->connected = true;
                 return true;
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
@@ -38,115 +183,79 @@ public:
         return false;
     }
 
-    void disconnect() override {
-        connected_ = false;
+    static bool send_state(const std::shared_ptr<State>& state,
+                           const std::vector<char>& data) {
+        std::lock_guard<std::mutex> lock(state->socket_mutex);
+        if (!state->connected || !state->socket.is_open()) return false;
         boost::system::error_code ec;
-        socket_.close(ec);
-        io_context_.stop();
-        if (io_thread_.joinable()) io_thread_.join();
-    }
-
-    bool is_connected() const override { return connected_; }
-
-    bool send(const std::vector<char>& data) override {
-        boost::system::error_code ec;
-        asio::write(socket_, asio::buffer(data.data(), data.size()), ec);
+        asio::write(state->socket, asio::buffer(data.data(), data.size()), ec);
+        if (ec) state->connected = false;
         return !ec;
     }
 
-    std::vector<char> receive(std::chrono::milliseconds timeout) override {
-        if (!connected_.load() || !socket_.is_open()) {
-            return {};
-        }
+    static std::vector<char> receive_state(const std::shared_ptr<State>& state,
+                                           std::chrono::milliseconds timeout) {
+        std::lock_guard<std::mutex> lock(state->socket_mutex);
+        if (!state->connected || !state->socket.is_open()) return {};
 
-        // Wait for data with select() for portable timeout.
-        int fd = socket_.native_handle();
+        int fd = state->socket.native_handle();
         fd_set read_fds;
         FD_ZERO(&read_fds);
         FD_SET(fd, &read_fds);
         auto secs = std::chrono::duration_cast<std::chrono::seconds>(timeout);
-        auto usecs = std::chrono::duration_cast<std::chrono::microseconds>(
-            timeout - secs);
+        auto usecs = std::chrono::duration_cast<std::chrono::microseconds>(timeout - secs);
         struct timeval tv {};
         tv.tv_sec = static_cast<long>(secs.count());
         tv.tv_usec = static_cast<long>(usecs.count());
-        if (::select(fd + 1, &read_fds, nullptr, nullptr, &tv) <= 0) {
-            return {};
-        }
+        if (::select(fd + 1, &read_fds, nullptr, nullptr, &tv) <= 0) return {};
 
-        // Read available bytes.
         boost::system::error_code ec;
-        std::size_t available = 0;
-        {
-            boost::system::error_code ec2;
-            available = socket_.available(ec2);
+        auto available = state->socket.available(ec);
+        if (ec) {
+            state->connected = false;
+            return {};
         }
         if (available == 0) available = 4096;
         std::vector<char> buf(available);
-        auto n = socket_.read_some(asio::buffer(buf.data(), buf.size()), ec);
-        if (ec) return {};
+        auto n = state->socket.read_some(asio::buffer(buf.data(), buf.size()), ec);
+        if (ec) {
+            state->connected = false;
+            return {};
+        }
         buf.resize(n);
         return buf;
     }
 
-    void set_receive_callback(ReceiveCallback /*cb*/) override {
-        // Async callback not supported in sync transport mode.
-        // Future: use async_read + callback dispatch.
-    }
-
-    // ── Async operations ──────────────────────────────────────────
-
-    void async_connect(const std::string& host, std::uint16_t port,
-                       std::function<void(bool)> callback) override {
-        std::thread([this, host, port, callback]() {
-            bool ok = connect(host, port, std::chrono::seconds(5));
-            if (callback) callback(ok);
-            if (ok) start_async_read();
-        }).detach();
-    }
-
-    void async_send(const std::string& data,
-                    std::function<void(bool)> callback) override {
-        std::thread([this, data, callback]() {
-            std::vector<char> buf(data.begin(), data.end());
-            bool ok = send(buf);
-            if (callback) callback(ok);
-        }).detach();
-    }
-
-    void set_async_receive_callback(
-        std::function<void(const std::string&)> callback) override {
-        async_receive_callback_ = std::move(callback);
-    }
-
-private:
-    // Async support
-    std::function<void(const std::string&)> async_receive_callback_;
-    std::vector<char> async_read_buffer_;
-    bool async_read_in_progress_ = false;
-
-    void start_async_read() {
-        async_read_buffer_.resize(4096);
-        async_read_in_progress_ = true;
-        std::thread([this]() {
-            while (is_connected()) {
-                auto data = receive(std::chrono::milliseconds(100));
-                if (data.empty()) {
-                    if (!is_connected()) break;
-                    continue;
+    void start_async_read(const std::shared_ptr<State>& state) {
+        join_read_thread();
+        async_read_thread_ = std::thread([state] {
+            while (!state->shutting_down && state->connected) {
+                auto data = receive_state(state, std::chrono::milliseconds(100));
+                if (data.empty()) continue;
+                std::function<void(const std::string&)> callback;
+                {
+                    std::lock_guard<std::mutex> lock(state->callback_mutex);
+                    callback = state->async_receive_callback;
                 }
-                if (async_receive_callback_) {
-                    async_receive_callback_(std::string(data.begin(), data.end()));
+                if (state->callbacks_enabled && callback) {
+                    callback(std::string(data.begin(), data.end()));
                 }
             }
-            async_read_in_progress_ = false;
-        }).detach();
+        });
     }
 
-    boost::asio::io_context io_context_;
-    tcp::socket socket_{io_context_};
-    std::atomic<bool> connected_{false};
-    std::thread io_thread_;
+    void join_read_thread() {
+        if (!async_read_thread_.joinable()) return;
+        if (async_read_thread_.get_id() == std::this_thread::get_id()) {
+            async_read_thread_.detach();
+        } else {
+            async_read_thread_.join();
+        }
+    }
+
+    std::shared_ptr<State> state_;
+    TransportExecutor executor_;
+    std::thread async_read_thread_;
 };
 
 // Factory function for ConnectionPool

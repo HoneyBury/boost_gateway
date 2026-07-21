@@ -48,10 +48,57 @@ on:
         description: "Repetitions per capacity case"
         required: true
         default: "3"
+      capacity_cases:
+        description: "Optional comma-separated capacity cases for focused diagnostics"
+        required: false
+        default: ""
+      saturation_plan:
+        description: "Empty disables saturation; default runs the full curve; otherwise comma-separated case names"
+        required: false
+        default: ""
       business_flow_clients:
         description: "Sequential SDK full-flow passes for business-capacity evidence"
         required: true
         default: "3"
+      cpu_set:
+        description: "Optional Linux CPU affinity list for managed services, for example 0 or 0-1"
+        required: false
+        default: ""
+      loadgen_cpu_set:
+        description: "Disjoint Linux CPU affinity list required whenever cpu_set is used for capacity"
+        required: false
+        default: ""
+      loadgen_io_threads:
+        description: "Explicit I/O thread count for the capacity load generator"
+        required: true
+        default: "4"
+      io_cores:
+        description: "Gateway I/O core count for capacity runs"
+        required: true
+        default: "4"
+      run_business_operation_perf:
+        description: "Run opt-in concurrent matchmaking and leaderboard operation profiles"
+        required: true
+        default: false
+        type: boolean
+      leaderboard_redis_comparison:
+        description: "Compare in-memory-only and Redis-primary leaderboard persistence"
+        required: true
+        default: false
+        type: boolean
+      otel_comparison:
+        description: "Compare fresh-Gateway OTel exporter off/on performance with a loopback collector"
+        required: true
+        default: false
+        type: boolean
+      business_operation_clients:
+        description: "Concurrent clients per matchmaking/leaderboard profile"
+        required: true
+        default: "16"
+      business_operation_iterations:
+        description: "Operation cycles per client in each business profile"
+        required: true
+        default: "10"
       min_capacity_repetitions:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
@@ -77,6 +124,16 @@ jobs:
       cancel-in-progress: false
 
     steps:
+      - name: Normalize stale Go cache permissions
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$GITHUB_WORKSPACE/runtime/go-cache"
+          if [ -d "$cache" ]; then
+            docker run --rm --pull=never --network=none \
+              -v "$cache:/cache" ubuntu:24.04 chmod -R a+rwX /cache
+          fi
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -164,6 +221,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          redis_name=""
+          cleanup_redis() {
+            if [ -n "$redis_name" ]; then
+              docker rm -f "$redis_name" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_redis EXIT
           args=(
             scripts/run_long_soak_capacity.py
             --build-dir "${{ inputs.build_dir || 'build/release' }}"
@@ -171,6 +235,7 @@ jobs:
             --skip-build
             --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
+            --io-cores "${{ inputs.io_cores || '4' }}"
             --summary-path runtime/validation/long-soak-capacity-summary.json
           )
           if [ "${{ inputs.run_2h_soak }}" = "true" ]; then
@@ -185,26 +250,134 @@ jobs:
           if [ "${{ inputs.run_business_capacity }}" = "true" ]; then
             args+=(--run-business-capacity)
           fi
-          python "${args[@]}"
+          if [ -n "${{ inputs.cpu_set }}" ]; then
+            args+=(--cpu-set "${{ inputs.cpu_set }}")
+          fi
+          if [ -n "${{ inputs.loadgen_cpu_set }}" ]; then
+            args+=(--loadgen-cpu-set "${{ inputs.loadgen_cpu_set }}")
+          fi
+          args+=(--loadgen-io-threads "${{ inputs.loadgen_io_threads || '4' }}")
+          if [ -n "${{ inputs.capacity_cases }}" ]; then
+            IFS=',' read -r -a capacity_cases <<< "${{ inputs.capacity_cases }}"
+            for case_name in "${capacity_cases[@]}"; do
+              args+=(--capacity-case "$case_name")
+            done
+          fi
+          saturation_plan="${{ inputs.saturation_plan }}"
+          if [ -n "$saturation_plan" ]; then
+            args+=(--run-saturation)
+            if [ "$saturation_plan" != "default" ]; then
+              IFS=',' read -r -a saturation_cases <<< "$saturation_plan"
+              for case_name in "${saturation_cases[@]}"; do
+                if [ -z "$case_name" ]; then
+                  echo "saturation_plan contains an empty case name" >&2
+                  exit 2
+                fi
+                args+=(--saturation-case "$case_name")
+              done
+            fi
+          fi
+          if [ "${{ inputs.run_business_operation_perf }}" = "true" ]; then
+            args+=(
+              --run-business-operation-perf
+              --business-operation-clients "${{ inputs.business_operation_clients || '16' }}"
+              --business-operation-iterations "${{ inputs.business_operation_iterations || '10' }}"
+            )
+          fi
+          if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then
+            redis_name="boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            docker run -d --pull never --name "$redis_name" \
+              -p 127.0.0.1::6379 \
+              redis:7-alpine \
+              redis-server --protected-mode no --save "" --appendonly no
+            docker image inspect redis:7-alpine > runtime/validation/leaderboard-redis-image.json
+            for attempt in $(seq 1 30); do
+              if [ "$(docker exec "$redis_name" redis-cli ping 2>/dev/null || true)" = "PONG" ]; then
+                break
+              fi
+              if [ "$attempt" -eq 30 ]; then
+                echo "temporary Redis did not become ready" >&2
+                exit 1
+              fi
+              sleep 1
+            done
+            redis_port="$(docker port "$redis_name" 6379/tcp | sed -n 's/.*://p' | tail -1)"
+            test -n "$redis_port"
+            args+=(
+              --leaderboard-redis-comparison
+              --leaderboard-redis-host 127.0.0.1
+              --leaderboard-redis-port "$redis_port"
+            )
+          fi
+          if [ "${{ inputs.otel_comparison }}" = "true" ]; then
+            args+=(--run-otel-comparison)
+          fi
+          pid_marker="runtime/validation/long-soak-capacity.pid"
+          rm -f "$pid_marker"
+          python "${args[@]}" &
+          long_soak_pid=$!
+          pid_marker_tmp="$(mktemp "${pid_marker}.tmp.XXXXXX")"
+          printf '%s\n' "$long_soak_pid" > "$pid_marker_tmp"
+          mv -f "$pid_marker_tmp" "$pid_marker"
+
+          long_soak_status=0
+          wait "$long_soak_pid" || long_soak_status=$?
+          rm -f "$pid_marker"
+          exit "$long_soak_status"
 
       - name: R4 fixed-runner release/capacity gate
-        if: inputs.run_capacity && inputs.run_business_capacity
+        if: always() && inputs.run_capacity && inputs.run_business_capacity
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_fixed_runner_release_capacity.py \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
-            --configuration "${{ inputs.configuration || 'Release' }}" \
-            --release-summary runtime/validation/capacity-baseline-summary.json \
-            --capacity-summary runtime/perf/fixed-runner-capacity/summary.json \
-            --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json \
-            --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}" \
+          args=(
+            scripts/verify_fixed_runner_release_capacity.py
+            --build-dir "${{ inputs.build_dir || 'build/release' }}"
+            --configuration "${{ inputs.configuration || 'Release' }}"
+            --release-summary runtime/validation/capacity-baseline-summary.json
+            --capacity-summary runtime/perf/fixed-runner-capacity/summary.json
+            --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json
+            --min-capacity-repetitions "${{ inputs.min_capacity_repetitions || '3' }}"
             --summary-path runtime/validation/fixed-runner-release-capacity-summary.json
+          )
+          if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then
+            args+=(--require-leaderboard-redis-comparison)
+          fi
+          if [ "${{ inputs.otel_comparison }}" = "true" ]; then
+            args+=(--require-otel-comparison)
+          fi
+          python "${args[@]}"
+
+      - name: Cleanup long-soak Redis
+        if: always() && inputs.leaderboard_redis_comparison
+        shell: bash
+        run: |
+          docker rm -f "boost-capacity-redis-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >/dev/null 2>&1 || true
 
       - name: Render long-soak capacity summary
         if: always()
         shell: bash
         run: |
+          set -euo pipefail
+          pid_marker="runtime/validation/long-soak-capacity.pid"
+          if [ -f "$pid_marker" ]; then
+            long_soak_pid=""
+            if ! IFS= read -r long_soak_pid < "$pid_marker"; then
+              echo "::warning::long-soak PID marker disappeared before it could be read: $pid_marker"
+            elif [[ "$long_soak_pid" =~ ^[1-9][0-9]*$ ]]; then
+              wait_deadline=$((SECONDS + 20))
+              while kill -0 "$long_soak_pid" 2>/dev/null; do
+                if (( SECONDS >= wait_deadline )); then
+                  echo "::warning::long-soak process $long_soak_pid is still running after 20 seconds; rendering fail-closed evidence"
+                  break
+                fi
+                sleep 1
+              done
+            else
+              echo "::warning::ignoring invalid long-soak PID marker: $pid_marker"
+            fi
+          fi
+
           summaries=()
           for path in \
             runtime/validation/long-soak-capacity-preflight-summary.json \
@@ -214,6 +387,7 @@ jobs:
             runtime/validation/p5-long-soak-summary.json \
             runtime/validation/capacity-baseline-summary.json \
             runtime/validation/business-capacity-baseline-summary.json \
+            runtime/validation/saturation-baseline-summary.json \
             runtime/validation/fixed-runner-release-capacity-summary.json; do
             if [ -f "$path" ]; then
               summaries+=("$path")
@@ -236,9 +410,12 @@ jobs:
             runtime/validation/p5-*-summary.json
             runtime/validation/capacity-baseline-summary.json
             runtime/validation/business-capacity-baseline-summary.json
+            runtime/validation/saturation-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
+            runtime/validation/leaderboard-redis-image.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
+            runtime/perf/fixed-runner-saturation/**
             runtime/perf/v2-stability-soak/**
           retention-days: 90
           if-no-files-found: warn

@@ -254,6 +254,7 @@ private:
     std::string instance_type_ = "battle";
     std::unique_ptr<v2::data::CachedBattleDataStore> archive_store_;
     std::unique_ptr<v2::persistence::ReplayStorage> replay_storage_;
+    std::mutex battle_input_mutex_;
 
     // Track per-instance frame numbers.  This is needed because
     // InstanceContext does not expose the current frame; the handler
@@ -499,6 +500,7 @@ private:
 
     v2::service::BackendEnvelope handle_battle_input(
         const v2::service::BackendEnvelope& request) {
+        std::scoped_lock input_lock(battle_input_mutex_);
         auto decoded = v2::service::decode_handler_payload(request);
         if (!decoded.has_value() || !decoded->payload.is_object() ||
             !decoded->payload.contains("user_id") ||
@@ -511,6 +513,8 @@ private:
         std::string user_id = doc["user_id"].get<std::string>();
         std::string battle_id = doc["battle_id"].get<std::string>();
         std::string input_data = doc["input_data"].get<std::string>();
+        const auto score = doc.value("score", std::int64_t{0});
+        const auto submitted_frame = doc.value("submitted_frame", std::uint32_t{0});
         const auto pickup_item_id = parse_pickup_input(input_data);
 
         // Find instance first to check existence
@@ -524,8 +528,10 @@ private:
         input.instance_id = battle_id;
         input.user_id = user_id;
         input.payload = input_data;
+        input.score = score;
+        input.submitted_frame = submitted_frame;
 
-        auto input_result = runtime_.submit_input(input);
+        auto input_result = runtime_.process_input_immediate(input);
         if (!input_result.accepted) {
             return make_error(-3002, input_result.reject_reason);
         }

@@ -55,6 +55,20 @@ TEST(V2GatewayCommandParserTest, ParsesBattleStartAndInputBodies) {
     EXPECT_EQ(input->input_data, "move:left");
     EXPECT_TRUE(v2::gateway::validate_battle_input_command_body(*input));
     EXPECT_FALSE(v2::gateway::parse_battle_input_command_body("").has_value());
+
+    const auto scored = v2::gateway::parse_battle_input_command_body(
+        "score=42,frame=7:attack:bob");
+    ASSERT_TRUE(scored.has_value());
+    EXPECT_EQ(scored->score, 42);
+    EXPECT_EQ(scored->submitted_frame, 7U);
+    EXPECT_EQ(scored->input_data, "attack:bob");
+
+    const auto framed = v2::gateway::parse_battle_input_command_body(
+        "frame=8:move:right");
+    ASSERT_TRUE(framed.has_value());
+    EXPECT_EQ(framed->score, 0);
+    EXPECT_EQ(framed->submitted_frame, 8U);
+    EXPECT_EQ(framed->input_data, "move:right");
 }
 
 TEST(V2GatewayCommandParserTest, AcceptsBattleStartWithoutRoomIdAsCurrentRoom) {

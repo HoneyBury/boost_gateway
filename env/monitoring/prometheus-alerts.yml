@@ -60,6 +60,16 @@ groups:
           summary: "Leaderboard backend errors or timeouts detected"
           description: "Leaderboard failures may indicate Redis degradation or leaderboard backend issues. Verify redis-cli ping and leaderboard logs."
 
+      - alert: BoostGatewayRedisUnavailable
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is unavailable to redis_exporter"
+          description: "redis_exporter cannot reach Redis. Verify the Redis container, persistence volume, and dependent leaderboard operations."
+
       - alert: BoostGatewayHighRouteLatency
         expr: max({__name__=~"gateway_backend_.*_p99_latency_us"}) > 200000
         for: 5m

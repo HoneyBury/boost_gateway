@@ -7,6 +7,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <algorithm>
+#include <deque>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <mutex>
 #include <string>
@@ -54,17 +57,73 @@ std::string json_escape(const std::string& value) {
 
 }  // namespace
 
+class AsyncExecutor {
+public:
+    AsyncExecutor() : state_(std::make_shared<State>()), worker_([state = state_] {
+        for (;;) {
+            std::function<void()> task;
+            {
+                std::unique_lock<std::mutex> lock(state->mutex);
+                state->cv.wait(lock, [&] { return state->stopping || !state->tasks.empty(); });
+                if (state->stopping) return;
+                task = std::move(state->tasks.front());
+                state->tasks.pop_front();
+            }
+            task();
+        }
+    }) {}
+
+    ~AsyncExecutor() { shutdown(); }
+
+    void post(std::function<void()> task) {
+        {
+            std::lock_guard<std::mutex> lock(state_->mutex);
+            if (state_->stopping) return;
+            state_->tasks.push_back(std::move(task));
+        }
+        state_->cv.notify_one();
+    }
+
+    void shutdown() {
+        {
+            std::lock_guard<std::mutex> lock(state_->mutex);
+            state_->stopping = true;
+            state_->tasks.clear();
+        }
+        state_->cv.notify_all();
+        if (!worker_.joinable()) return;
+        if (worker_.get_id() == std::this_thread::get_id()) {
+            worker_.detach();
+        } else {
+            worker_.join();
+        }
+    }
+
+private:
+    struct State {
+        std::mutex mutex;
+        std::condition_variable cv;
+        std::deque<std::function<void()>> tasks;
+        bool stopping = false;
+    };
+
+    std::shared_ptr<State> state_;
+    std::thread worker_;
+};
+
 class TcpConnection {
 public:
     TcpConnection() : socket_(io_context_) {}
     ~TcpConnection() { disconnect(); }
     bool connect(const std::string& host, std::uint16_t port, std::chrono::milliseconds timeout) {
         disconnect();
+        cancelled_ = false;
+        read_buffer_.clear();
         io_context_.restart();
         socket_ = tcp::socket(io_context_);
         boost::system::error_code ec;
         auto dl = std::chrono::steady_clock::now() + timeout;
-        while (std::chrono::steady_clock::now() < dl) {
+        while (!cancelled_ && std::chrono::steady_clock::now() < dl) {
             socket_.connect(tcp::endpoint(asio::ip::make_address(host), port), ec);
             if (!ec) {
                 connected_ = true;
@@ -76,13 +135,15 @@ public:
         return false;
     }
     void disconnect() { connected_ = false; boost::system::error_code ec; socket_.close(ec); io_context_.stop(); }
+    void cancel() { cancelled_ = true; }
     bool is_connected() const { return connected_; }
+    bool is_cancelled() const { return cancelled_; }
     bool send(std::uint16_t mid, std::uint32_t rid, const std::string& body) {
         auto e = protocol::encode(mid, rid, 0, body); boost::system::error_code ec; asio::write(socket_, asio::buffer(e), ec); return !ec;
     }
     protocol::DecodedPacket read(std::chrono::milliseconds timeout) {
         auto deadline = std::chrono::steady_clock::now() + timeout;
-        while (std::chrono::steady_clock::now() < deadline) {
+        while (connected_ && !cancelled_ && std::chrono::steady_clock::now() < deadline) {
             if (auto packet = try_decode_buffered()) return *packet;
 
             boost::system::error_code ec;
@@ -131,14 +192,20 @@ private:
         return protocol::decode_payload(payload);
     }
 
-    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false}; std::vector<char> read_buffer_;
+    boost::asio::io_context io_context_; tcp::socket socket_{io_context_}; std::atomic<bool> connected_{false};
+    std::atomic<bool> cancelled_{false}; std::vector<char> read_buffer_;
 };
 
-class SdkClient::Impl {
+class SdkClient::Impl : public std::enable_shared_from_this<SdkClient::Impl> {
     TcpConnection conn_; std::atomic<std::uint32_t> next_{1}; PushCallback push_callback_; DisconnectCallback disconnect_callback_;
     std::function<void(const std::string&)> async_push_callback_; std::function<void()> async_disconnect_callback_;
     std::mutex callback_mutex_; std::mutex io_mutex_; std::mutex heartbeat_mutex_; std::condition_variable heartbeat_cv_;
     std::thread heartbeat_thread_; std::atomic<bool> heartbeat_running_{false};
+    AsyncExecutor async_executor_;
+    AsyncExecutor callback_executor_;
+    std::shared_ptr<std::atomic<bool>> async_callbacks_enabled_ =
+        std::make_shared<std::atomic<bool>>(true);
+    std::atomic<bool> shutdown_started_{false};
 
     bool is_push(std::uint16_t id) { return id == msg::kSessionKickedPush || id == msg::kSessionResumedPush || id == msg::kRoomStatePush || id == msg::kBattleStatePush || id == msg::kBattleInputPush; }
     static std::string match_body(const std::string& user_id, std::int64_t mmr, const std::string& mode) {
@@ -160,19 +227,48 @@ class SdkClient::Impl {
     }
     void dispatch_push(const protocol::DecodedPacket& p) {
         PushCallback callback;
+        std::function<void(const std::string&)> async_callback;
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
             callback = push_callback_;
+            async_callback = async_push_callback_;
         }
-        if (callback) callback(PushMessage{.message_id = p.message_id, .body = p.body});
+        auto self = shared_from_this();
+        auto callbacks_enabled = async_callbacks_enabled_;
+        callback_executor_.post([
+            self = std::move(self),
+            callbacks_enabled = std::move(callbacks_enabled),
+            callback = std::move(callback),
+            async_callback = std::move(async_callback),
+            message = PushMessage{.message_id = p.message_id, .body = p.body}
+        ]() mutable {
+            (void)self;
+            if (!*callbacks_enabled) return;
+            if (callback) callback(message);
+            if (*callbacks_enabled && async_callback) async_callback(message.body);
+        });
     }
     void notify_disconnect() {
         DisconnectCallback callback;
+        std::function<void()> async_callback;
         {
             std::lock_guard<std::mutex> lock(callback_mutex_);
             callback = disconnect_callback_;
+            async_callback = async_disconnect_callback_;
         }
-        if (callback) callback();
+        auto self = shared_from_this();
+        auto callbacks_enabled = async_callbacks_enabled_;
+        callback_executor_.post([
+            self = std::move(self),
+            callbacks_enabled = std::move(callbacks_enabled),
+            callback = std::move(callback),
+            async_callback = std::move(async_callback)
+        ]() mutable {
+            (void)self;
+            if (!*callbacks_enabled) return;
+            if (callback) callback();
+            if (*callbacks_enabled && async_callback) async_callback();
+        });
     }
 
     protocol::DecodedPacket expect(std::uint16_t req, const std::string& body, std::chrono::milliseconds to, std::uint16_t exp) {
@@ -182,8 +278,16 @@ class SdkClient::Impl {
         if (!conn_.send(req, rid, body)) return {.error_code = static_cast<std::int32_t>(SdkError::kSendFailed), .body = to_string(SdkError::kSendFailed)};
         auto dl = std::chrono::steady_clock::now() + to;
         while (std::chrono::steady_clock::now() < dl) {
-            auto p = conn_.read(std::chrono::milliseconds(100)); if (p.message_id == 0) continue;
+            auto p = conn_.read(std::chrono::milliseconds(100));
+            if (p.message_id == 0) {
+                if (conn_.is_cancelled() || !conn_.is_connected()) {
+                    return {.error_code = static_cast<std::int32_t>(SdkError::kNotConnected),
+                            .body = to_string(SdkError::kNotConnected)};
+                }
+                continue;
+            }
             if (is_push(p.message_id)) { dispatch_push(p); continue; }
+            if (p.request_id != rid) continue;
             if (p.message_id == msg::kErrorResponse) return {.message_id = p.message_id, .request_id = p.request_id, .error_code = p.error_code, .body = p.body};
             if (p.message_id != exp) return {.message_id = p.message_id, .request_id = p.request_id, .error_code = static_cast<std::int32_t>(SdkError::kInvalidResponse), .body = p.body};
             return p;
@@ -192,9 +296,32 @@ class SdkClient::Impl {
     }
 
 public:
-    bool connect(const std::string& h, std::uint16_t p, std::chrono::milliseconds t) { return conn_.connect(h, p, t); }
-    ~Impl() { stop_heartbeat(); conn_.disconnect(); }
-    void disconnect() { stop_heartbeat(); conn_.disconnect(); }
+    Impl() = default;
+    bool connect(const std::string& h, std::uint16_t p, std::chrono::milliseconds t) {
+        std::lock_guard<std::mutex> io_lock(io_mutex_);
+        return conn_.connect(h, p, t);
+    }
+    ~Impl() { shutdown_owner(); }
+    void shutdown_owner() {
+        if (shutdown_started_.exchange(true)) return;
+        *async_callbacks_enabled_ = false;
+        heartbeat_running_ = false;
+        heartbeat_cv_.notify_all();
+        conn_.cancel();
+        callback_executor_.shutdown();
+        async_executor_.shutdown();
+        if (heartbeat_thread_.joinable()) {
+            if (heartbeat_thread_.get_id() == std::this_thread::get_id()) heartbeat_thread_.detach();
+            else heartbeat_thread_.join();
+        }
+        std::lock_guard<std::mutex> io_lock(io_mutex_);
+        conn_.disconnect();
+    }
+    void disconnect() {
+        stop_heartbeat();
+        std::lock_guard<std::mutex> io_lock(io_mutex_);
+        conn_.disconnect();
+    }
     bool is_connected() const { return conn_.is_connected(); }
 
     LoginResult login(const std::string& u, const std::string& tok, std::chrono::milliseconds to) {
@@ -210,19 +337,19 @@ public:
     }
     RoomResult create_room(const std::string& rid, std::chrono::milliseconds to) {
         auto r = expect(msg::kRoomCreateRequest, rid, to, msg::kRoomCreateResponse);
-        RoomResult rr; rr.ok = (r.message_id == msg::kRoomCreateResponse); rr.room_id = rid; rr.error_code = 0; rr.error_message = r.body; return rr;
+        RoomResult rr; rr.ok = (r.message_id == msg::kRoomCreateResponse); rr.room_id = rid; rr.error_code = r.error_code; rr.error_message = r.body; return rr;
     }
     RoomResult join_room(const std::string& rid, std::chrono::milliseconds to) {
         auto r = expect(msg::kRoomJoinRequest, rid, to, msg::kRoomJoinResponse);
-        RoomResult rr; rr.ok = (r.message_id == msg::kRoomJoinResponse); rr.room_id = rid; rr.error_code = 0; rr.error_message = r.body; return rr;
+        RoomResult rr; rr.ok = (r.message_id == msg::kRoomJoinResponse); rr.room_id = rid; rr.error_code = r.error_code; rr.error_message = r.body; return rr;
     }
     RoomResult leave_room(const std::string& rid, std::chrono::milliseconds to) {
         auto r = expect(msg::kRoomLeaveRequest, rid, to, msg::kRoomLeaveResponse);
-        RoomResult rr; rr.ok = (r.message_id == msg::kRoomLeaveResponse); rr.room_id = rid; rr.error_code = 0; rr.error_message = r.body; return rr;
+        RoomResult rr; rr.ok = (r.message_id == msg::kRoomLeaveResponse); rr.room_id = rid; rr.error_code = r.error_code; rr.error_message = r.body; return rr;
     }
     RoomResult set_ready(bool v, std::chrono::milliseconds to) {
         auto r = expect(msg::kRoomReadyRequest, v?"true":"false", to, msg::kRoomReadyResponse);
-        RoomResult rr; rr.ok = (r.message_id == msg::kRoomReadyResponse); rr.room_id = ""; rr.error_code = 0; rr.error_message = r.body; return rr;
+        RoomResult rr; rr.ok = (r.message_id == msg::kRoomReadyResponse); rr.room_id = ""; rr.error_code = r.error_code; rr.error_message = r.body; return rr;
     }
     RoomQueryResult room_list(std::size_t page, std::size_t page_size, const std::string& status, std::chrono::milliseconds to) {
         auto r = expect(msg::kRoomListRequest, room_list_body(page, page_size, status), to, msg::kRoomListResponse);
@@ -300,6 +427,12 @@ public:
         std::lock_guard<std::mutex> lock(callback_mutex_);
         async_disconnect_callback_ = std::move(callback);
     }
+    void post_async(std::function<void()> task) {
+        async_executor_.post(std::move(task));
+    }
+    std::shared_ptr<std::atomic<bool>> async_callbacks_enabled() const {
+        return async_callbacks_enabled_;
+    }
     bool heartbeat_once(std::chrono::milliseconds timeout) {
         auto response = expect(msg::kHeartbeatRequest, "", timeout, msg::kHeartbeatResponse);
         return response.message_id == msg::kHeartbeatResponse && response.error_code == 0;
@@ -327,94 +460,169 @@ public:
     void stop_heartbeat() {
         heartbeat_running_ = false;
         heartbeat_cv_.notify_all();
-        if (heartbeat_thread_.joinable()) heartbeat_thread_.join();
+        if (!heartbeat_thread_.joinable()) return;
+        if (heartbeat_thread_.get_id() == std::this_thread::get_id()) {
+            heartbeat_thread_.detach();
+        } else {
+            heartbeat_thread_.join();
+        }
     }
 };
 
-SdkClient::SdkClient() : impl_(std::make_unique<Impl>()) {}
-SdkClient::~SdkClient() = default;
-bool SdkClient::connect(const std::string& h, std::uint16_t p, std::chrono::milliseconds t) { return impl_->connect(h,p,t); }
-void SdkClient::disconnect() { impl_->disconnect(); }
-bool SdkClient::is_connected() const { return impl_->is_connected(); }
-LoginResult SdkClient::login(const std::string& u, const std::string& t, std::chrono::milliseconds to) { return impl_->login(u,t,to); }
-RegisterResult SdkClient::register_account(const std::string& u, const std::string& c, const std::string& d, std::chrono::milliseconds t) { return impl_->register_account(u,c,d,t); }
-RoomResult SdkClient::create_room(const std::string& r, std::chrono::milliseconds t) { return impl_->create_room(r,t); }
-RoomResult SdkClient::join_room(const std::string& r, std::chrono::milliseconds t) { return impl_->join_room(r,t); }
-RoomResult SdkClient::leave_room(const std::string& r, std::chrono::milliseconds t) { return impl_->leave_room(r,t); }
-RoomResult SdkClient::set_ready(bool r, std::chrono::milliseconds t) { return impl_->set_ready(r,t); }
-RoomQueryResult SdkClient::room_list(std::size_t p, std::size_t ps, const std::string& s, std::chrono::milliseconds t) { return impl_->room_list(p,ps,s,t); }
-RoomQueryResult SdkClient::room_detail(const std::string& r, std::chrono::milliseconds t) { return impl_->room_detail(r,t); }
-RoomQueryResult SdkClient::room_kick(const std::string& u, std::chrono::milliseconds t) { return impl_->room_kick(u,t); }
-RoomQueryResult SdkClient::room_transfer_owner(const std::string& u, std::chrono::milliseconds t) { return impl_->room_transfer_owner(u,t); }
-BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::milliseconds t) { return impl_->start_battle(r,t); }
-BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) { return impl_->send_battle_input(d,t); }
-BattleStateResult SdkClient::battle_state(const std::string& b, std::chrono::milliseconds t) { return impl_->battle_state(b,t); }
-ReplayLoadResult SdkClient::replay_load(const std::string& b, std::chrono::milliseconds t) { return impl_->replay_load(b,t); }
-MatchResult SdkClient::match_join(const std::string& u, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_join(u,mmr,mode,t); }
-MatchResult SdkClient::match_leave(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_leave(u,mode,t); }
-MatchResult SdkClient::match_status(const std::string& u, const std::string& mode, std::chrono::milliseconds t) { return impl_->match_status(u,mode,t); }
-LeaderboardSubmitResult SdkClient::leaderboard_submit(const std::string& u, const std::string& d, std::int64_t s, std::chrono::milliseconds t) { return impl_->leaderboard_submit(u,d,s,t); }
-LeaderboardQueryResult SdkClient::leaderboard_top(std::size_t k, std::chrono::milliseconds t) { return impl_->leaderboard_top(k,t); }
-LeaderboardQueryResult SdkClient::leaderboard_rank(const std::string& u, std::chrono::milliseconds t) { return impl_->leaderboard_rank(u,t); }
-EchoResult SdkClient::echo(const std::string& b, std::chrono::milliseconds t) { return impl_->echo(b,t); }
-void SdkClient::on_push(PushCallback callback) { impl_->on_push(std::move(callback)); }
-void SdkClient::on_disconnect(DisconnectCallback callback) { impl_->on_disconnect(std::move(callback)); }
-void SdkClient::start_heartbeat(std::chrono::seconds interval) { impl_->start_heartbeat(interval); }
-void SdkClient::stop_heartbeat() { impl_->stop_heartbeat(); }
+SdkClient::SdkClient() : impl_(std::make_shared<Impl>()) {}
+SdkClient::~SdkClient() {
+    auto impl = std::move(impl_);
+    if (impl) impl->shutdown_owner();
+}
+bool SdkClient::connect(const std::string& h, std::uint16_t p, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->connect(h,p,t);
+}
+void SdkClient::disconnect() { auto impl = impl_; impl->disconnect(); }
+bool SdkClient::is_connected() const { auto impl = impl_; return impl->is_connected(); }
+LoginResult SdkClient::login(const std::string& u, const std::string& t, std::chrono::milliseconds to) {
+    auto impl = impl_; return impl->login(u,t,to);
+}
+RegisterResult SdkClient::register_account(const std::string& u, const std::string& c, const std::string& d, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->register_account(u,c,d,t);
+}
+RoomResult SdkClient::create_room(const std::string& r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->create_room(r,t);
+}
+RoomResult SdkClient::join_room(const std::string& r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->join_room(r,t);
+}
+RoomResult SdkClient::leave_room(const std::string& r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->leave_room(r,t);
+}
+RoomResult SdkClient::set_ready(bool r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->set_ready(r,t);
+}
+RoomQueryResult SdkClient::room_list(std::size_t p, std::size_t ps, const std::string& s, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->room_list(p,ps,s,t);
+}
+RoomQueryResult SdkClient::room_detail(const std::string& r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->room_detail(r,t);
+}
+RoomQueryResult SdkClient::room_kick(const std::string& u, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->room_kick(u,t);
+}
+RoomQueryResult SdkClient::room_transfer_owner(const std::string& u, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->room_transfer_owner(u,t);
+}
+BattleStartResult SdkClient::start_battle(const std::string& r, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->start_battle(r,t);
+}
+BattleInputResult SdkClient::send_battle_input(const std::string& d, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->send_battle_input(d,t);
+}
+BattleStateResult SdkClient::battle_state(const std::string& b, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->battle_state(b,t);
+}
+ReplayLoadResult SdkClient::replay_load(const std::string& b, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->replay_load(b,t);
+}
+MatchResult SdkClient::match_join(const std::string& u, std::int64_t mmr, const std::string& mode, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->match_join(u,mmr,mode,t);
+}
+MatchResult SdkClient::match_leave(const std::string& u, const std::string& mode, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->match_leave(u,mode,t);
+}
+MatchResult SdkClient::match_status(const std::string& u, const std::string& mode, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->match_status(u,mode,t);
+}
+LeaderboardSubmitResult SdkClient::leaderboard_submit(const std::string& u, const std::string& d, std::int64_t s, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->leaderboard_submit(u,d,s,t);
+}
+LeaderboardQueryResult SdkClient::leaderboard_top(std::size_t k, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->leaderboard_top(k,t);
+}
+LeaderboardQueryResult SdkClient::leaderboard_rank(const std::string& u, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->leaderboard_rank(u,t);
+}
+EchoResult SdkClient::echo(const std::string& b, std::chrono::milliseconds t) {
+    auto impl = impl_; return impl->echo(b,t);
+}
+void SdkClient::on_push(PushCallback callback) {
+    auto impl = impl_; impl->on_push(std::move(callback));
+}
+void SdkClient::on_disconnect(DisconnectCallback callback) {
+    auto impl = impl_; impl->on_disconnect(std::move(callback));
+}
+void SdkClient::start_heartbeat(std::chrono::seconds interval) {
+    auto impl = impl_; impl->start_heartbeat(interval);
+}
+void SdkClient::stop_heartbeat() { auto impl = impl_; impl->stop_heartbeat(); }
 
 // ── Async API ──────────────────────────────────────────────────────────
 
 void SdkClient::async_connect(const std::string& host, std::uint16_t port,
                               std::function<void(bool)> callback,
                               std::chrono::milliseconds timeout) {
-    std::thread([this, host, port, callback, timeout]() {
-        bool ok = impl_->connect(host, port, timeout);
-        if (callback) callback(ok);
-    }).detach();
+    auto impl = impl_;
+    auto callbacks_enabled = impl->async_callbacks_enabled();
+    impl->post_async([impl = std::move(impl), callbacks_enabled, host, port,
+                       callback = std::move(callback), timeout]() {
+        bool ok = impl->connect(host, port, timeout);
+        if (*callbacks_enabled && callback) callback(ok);
+    });
 }
 
 void SdkClient::async_login(const std::string& user_id, const std::string& token,
                             std::function<void(LoginResult)> callback,
                             std::chrono::milliseconds timeout) {
-    std::thread([this, user_id, token, callback, timeout]() {
-        auto result = impl_->login(user_id, token, timeout);
-        if (callback) callback(result);
-    }).detach();
+    auto impl = impl_;
+    auto callbacks_enabled = impl->async_callbacks_enabled();
+    impl->post_async([impl = std::move(impl), callbacks_enabled, user_id, token,
+                       callback = std::move(callback), timeout]() {
+        auto result = impl->login(user_id, token, timeout);
+        if (*callbacks_enabled && callback) callback(result);
+    });
 }
 
 void SdkClient::async_create_room(const std::string& room_id,
                                   std::function<void(RoomResult)> callback,
                                   std::chrono::milliseconds timeout) {
-    std::thread([this, room_id, callback, timeout]() {
-        auto result = impl_->create_room(room_id, timeout);
-        if (callback) callback(result);
-    }).detach();
+    auto impl = impl_;
+    auto callbacks_enabled = impl->async_callbacks_enabled();
+    impl->post_async([impl = std::move(impl), callbacks_enabled, room_id,
+                       callback = std::move(callback), timeout]() {
+        auto result = impl->create_room(room_id, timeout);
+        if (*callbacks_enabled && callback) callback(result);
+    });
 }
 
 void SdkClient::async_join_room(const std::string& room_id,
                                 std::function<void(RoomResult)> callback,
                                 std::chrono::milliseconds timeout) {
-    std::thread([this, room_id, callback, timeout]() {
-        auto result = impl_->join_room(room_id, timeout);
-        if (callback) callback(result);
-    }).detach();
+    auto impl = impl_;
+    auto callbacks_enabled = impl->async_callbacks_enabled();
+    impl->post_async([impl = std::move(impl), callbacks_enabled, room_id,
+                       callback = std::move(callback), timeout]() {
+        auto result = impl->join_room(room_id, timeout);
+        if (*callbacks_enabled && callback) callback(result);
+    });
 }
 
 void SdkClient::async_send_battle_input(const std::string& input_data,
                                         std::function<void(BattleInputResult)> callback,
                                         std::chrono::milliseconds timeout) {
-    std::thread([this, input_data, callback, timeout]() {
-        auto result = impl_->send_battle_input(input_data, timeout);
-        if (callback) callback(result);
-    }).detach();
+    auto impl = impl_;
+    auto callbacks_enabled = impl->async_callbacks_enabled();
+    impl->post_async([impl = std::move(impl), callbacks_enabled, input_data,
+                       callback = std::move(callback), timeout]() {
+        auto result = impl->send_battle_input(input_data, timeout);
+        if (*callbacks_enabled && callback) callback(result);
+    });
 }
 
 void SdkClient::on_async_push(std::function<void(const std::string&)> callback) {
-    impl_->on_async_push(std::move(callback));
+    auto impl = impl_;
+    impl->on_async_push(std::move(callback));
 }
 
 void SdkClient::on_async_disconnect(std::function<void()> callback) {
-    impl_->on_async_disconnect(std::move(callback));
+    auto impl = impl_;
+    impl->on_async_disconnect(std::move(callback));
 }
 
 }} // namespaces

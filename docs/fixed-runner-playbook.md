@@ -108,6 +108,7 @@ R5 Docker Compose recovery drill 依赖 runner 的 Docker daemon 已缓存 `env/
 
 ```bash
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml pull
+docker pull ubuntu:24.04
 python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f /path/to/boost_gateway/env/docker/docker-compose.yml build
 python3 scripts/verify_preprod_recovery_drill.py \
@@ -116,7 +117,7 @@ python3 scripts/verify_preprod_recovery_drill.py \
   --docker-pull-policy never
 ```
 
-项目的 6 个镜像只复制 `runtime/docker-rootfs` 中经过 ELF/动态库检查的 Conan Release 产物，Dockerfile 不执行 CMake、Conan 或包下载。镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先 staging、Compose build 或导入已校验 bundle。
+项目的 6 个镜像只复制 `runtime/docker-rootfs` 中经过 ELF/动态库检查的 Conan Release 产物，Dockerfile 不执行 CMake、Conan 或包下载。镜像缓存由 Docker daemon 管理，不属于 `${GITHUB_WORKSPACE}` 或 Conan home。R5 会从 `docker compose config --format json` 动态获取当前 6 个构建镜像和 5 个 registry 镜像，并在 `r5-docker-image-preflight-summary.json` 记录 image ID、RepoDigest 和缺失清单。每个 build-backed 镜像还必须通过内嵌 manifest 校验：候选 SHA、干净 worktree、Conan lockfile 摘要和容器内实际入口二进制 SHA 必须一致。`docker_pull_policy=never` 是 fixed-runner R5 默认值，完全禁止远端访问；workflow 在 Compose build 前会先要求 `ubuntu:24.04` 基础镜像已缓存，缺失时快速失败而不是隐式联网。`missing` 和 `always` 仅用于明确标注为诊断的联网检查。缺少本项目构建镜像时不会尝试从 registry 猜测拉取，而是要求先 staging、Compose build 或导入已校验 bundle。
 
 若新 runner 访问 `registry-1.docker.io:443` 失败，应通过受信任 mirror 完成首次预热；预热完成后可使用 `never` 离线执行。R5 不能用 `bounded-local` 结果替代预发恢复演练。
 
@@ -187,10 +188,9 @@ gh api --method POST \
 
 ```bash
 git fetch origin --prune
-git checkout develop
-git pull --ff-only
+git checkout --detach <candidate-sha>
 test -z "$(git status --porcelain)"
-git rev-parse HEAD
+test "$(git rev-parse HEAD)" = "$(git rev-parse <candidate-sha>)"
 ```
 
 2. 预留磁盘并创建 persistent cache root：
@@ -248,11 +248,14 @@ python3 scripts/verify_preprod_recovery_drill.py --mode docker-compose \
 5. 使用唯一 label dispatch workflow，并保持 R5 离线：
 
 ```bash
-gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref develop \
+gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref <candidate-sha> \
   -f 'runner=["self-hosted","Linux","X64","preprod-r5-myserver"]' \
   -f configure_preset=release -f build_dir=build/release -f configuration=Release \
   -f build_parallelism=2 \
   -f recovery_mode=docker-compose -f recovery_timeout_seconds=300 \
+  -f include_redis_recovery=true \
+  -f verify_redis_alert_transition=true \
+  -f redis_alert_firing_timeout_seconds=240 \
   -f docker_pull_policy=never -f docker_pull_attempts=1 \
   -f tls_runs=2 -f tls_timeout_seconds=240 \
   -f conan_profile=conan/profiles/linux-gcc-x64 \
@@ -263,7 +266,7 @@ gh workflow run preprod-evidence.yml --repo HoneyBury/boost_gateway --ref develo
 
 ```bash
 gh run list --repo HoneyBury/boost_gateway --workflow preprod-evidence.yml \
-  --branch develop --limit 1
+  --commit <candidate-sha> --limit 1
 gh run watch <RUN_ID> --repo HoneyBury/boost_gateway --exit-status
 gh run download <RUN_ID> --repo HoneyBury/boost_gateway \
   --name "preprod-evidence-<RUN_ID>" --dir runtime/github-preprod-evidence
@@ -378,6 +381,9 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ga
 | `perf_preset` | `baseline` | `capacity` |
 | `perf_repetitions` | `3` | `3` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
+| `prepare_cmake_consumer_image` | 仅 runner 镜像缺失时为 `true` | 通常为 `false` |
+
+`prepare_cmake_consumer_image=true` 只用于手动候选运行恢复固定 digest Dockerfile 对应的 compiler image。构建完成后的 consumer 仍强制 `--network=none --pull=never`；正式 tag 触发没有该输入，必须消费候选阶段已经准入的本地镜像，不能在发布时隐式联网预热。
 
 通过标准：
 
@@ -541,7 +547,7 @@ python scripts/check_fixed_runner_environment.py --profile cloud-production --bu
 ```bash
 python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
 python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak
-python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3
+python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3 --run-business-operation-perf --leaderboard-redis-comparison --leaderboard-redis-host 127.0.0.1 --leaderboard-redis-port 6379
 python scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release
 python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
 ```
@@ -550,6 +556,7 @@ python scripts/run_cloud_production_closure.py --build-dir build/release --confi
 
 - `runtime/validation/long-soak-2h-summary.json` 中 `summary_version=2`、`overall_pass=true`、`soak_profile=long`，并包含 `provenance`、`environment` 与 `artifacts`。
 - `runtime/validation/fixed-runner-release-capacity-summary.json` 中 `summary_version=2`、`overall_pass=true`；容量失败不会反向否定已经通过的 2h summary，但两者仍必须绑定同一候选 SHA。
+- workflow 输入 `leaderboard_redis_comparison=true` 时会使用 run 独占的临时 Redis 容器；R4 必须同时启用 `--require-leaderboard-redis-comparison`，并验证内存-only 与 Redis-primary-with-memory-shadow 各至少三轮、启动日志、前后 PING、隔离 key ZCARD 和零操作失败。
 - `runtime/validation/cloud-production-closure-summary.json` 中 `summary_version=2`、`overall_pass=true`，并包含 `environment` 与 `artifacts`。
 - 长稳 summary 至少归档 `long-soak-2h-summary.json`；8h soak 可在同一云主机扩展执行并归档 `long-soak-8h-summary.json`。容量 summary 应同时归档 `capacity-baseline-summary.json`、`business-capacity-baseline-summary.json`、`runtime/perf/fixed-runner-capacity/summary.json` 和 `runtime/perf/fixed-runner-business-capacity/summary.json`。
 - long/overnight 期间任何失败执行及其两次确认都必须保留 `runtime/perf/v2-stability-soak/failures/pass-*-*/`，其中包含该轮 `summary.json`、原始 benchmark JSON、stdout/stderr 和 `host-resources.json`。聚合器会立即执行两次同配置确认：同指标在三次中至少两次失败视为可复现退化；只有确认均恢复且原始失败率不超过 0.1% 的孤立尖峰可记为 `confirmation_recovered`。不得删除失败目录、确认结果或只上传最后一次成功覆盖后的顶层 summary。
@@ -616,7 +623,7 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 R0、真实 2h soak、当前 capacity/R4 与 R5/R6 在独立 workflow 中产生 summary，不能直接在各自的干净 workspace 运行最终 manifest。开始这一轮前先冻结候选提交，并确保四个 workflow 都从该完整 SHA dispatch。使用 `production-readiness.yml` 传入四类已完成 run ID，将 artifact 汇聚到同一 workspace，再分别运行 bounded/fixed 两份 R2 和最终 R3 readiness report。R2 直接验证 `long-soak-2h-summary.json` 的 `soak_profile=long`、成功状态、时效和 provenance，并独立验证 capacity run 的 R4 summary；capacity-only batch 不能替代 2h soak，capacity 失败也不会使已通过的 2h summary 失效：
 
 ```bash
-gh workflow run production-readiness.yml --ref develop \
+gh workflow run production-readiness.yml --ref <candidate-sha> \
   -f runner='"ubuntu-latest"' \
   -f production_candidate_run_id=<production-candidate-run-id> \
   -f long_soak_run_id=<2h-long-soak-run-id> \

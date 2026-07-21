@@ -75,14 +75,17 @@ WORKFLOW_REQUIREMENTS = {
             "build/conan-long-soak-capacity-cmake",
             "runtime/validation/long-soak-capacity-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/saturation-baseline-summary.json",
             "runtime/perf/fixed-runner-capacity/**",
             "runtime/perf/fixed-runner-business-capacity/**",
+            "runtime/perf/fixed-runner-saturation/**",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
             "runtime/validation/long-soak-capacity-summary.json",
             "runtime/validation/long-soak-2h-summary.json",
             "runtime/validation/fixed-runner-release-capacity-summary.json",
+            "runtime/validation/saturation-baseline-summary.json",
         ),
     },
     "production_gates": {
@@ -410,6 +413,51 @@ def main() -> int:
         "default: false" in specialized_e2e_workflow and "test \"$(git rev-parse HEAD)\" = \"$GITHUB_SHA\"" in specialized_e2e_workflow and "mkdir -p runtime/validation" in specialized_e2e_workflow,
         ".github/workflows/specialized-e2e.yml defaults to a checked-out workflow commit",
     )
+    for workflow_name in (
+        "production-candidate-evidence",
+        "preprod-evidence",
+        "production-gates",
+        "long-soak-capacity",
+        "production-readiness",
+        "release",
+        "release-asset-verification",
+        "specialized-e2e",
+        "nightly-stability",
+        "perf-regression",
+    ):
+        workflow_path = f".github/workflows/{workflow_name}.yml"
+        workflow_content = read(workflow_path)
+        add(
+            checks,
+            f"workflow:{workflow_name}:repair-fixed-workspace",
+            all(
+                token in workflow_content
+                for token in (
+                    "Normalize stale Go cache permissions",
+                    'cache="$GITHUB_WORKSPACE/runtime/go-cache"',
+                    "ubuntu:24.04 chmod -R a+rwX /cache",
+                    "uses: actions/checkout@v4",
+                )
+            ),
+            f"{workflow_path} repairs immutable Go cache output before a strict checkout clean",
+        )
+
+    control_plane_gate = read("scripts/gates/production/verify_control_plane_gate.py")
+    add(
+        checks,
+        "workflow:control-plane:external-go-state",
+        all(
+            token in control_plane_gate
+            for token in (
+                '"--go-state-root"',
+                'os.environ.get("BOOST_GATEWAY_GO_STATE_ROOT"',
+                'os.environ.get("RUNNER_TEMP"',
+                'state_root / "cache" / "build"',
+            )
+        )
+        and 'root / "runtime" / "go-cache"' not in control_plane_gate,
+        "control-plane Go caches and home default outside the persistent checkout",
+    )
 
     for workflow_name, workflow_path in (
         ("production-gates", ".github/workflows/production-gates.yml"),
@@ -429,7 +477,12 @@ def main() -> int:
         "timeout-minutes: 1440" in long_soak_workflow,
         ".github/workflows/long-soak-capacity.yml allows the advertised soak/capacity combination to finish",
     )
-    boolean_inputs = ("run_2h_soak", "run_8h_soak", "run_capacity", "run_business_capacity")
+    boolean_inputs = (
+        "run_2h_soak",
+        "run_8h_soak",
+        "run_capacity",
+        "run_business_capacity",
+    )
     add(
         checks,
         "workflow:long-soak-capacity:preserves-explicit-boolean-inputs",
@@ -439,6 +492,19 @@ def main() -> int:
             for name in boolean_inputs
         ),
         ".github/workflows/long-soak-capacity.yml does not turn a dispatched false input into its default",
+    )
+    add(
+        checks,
+        "workflow:long-soak-capacity:saturation-plan-input",
+        "      saturation_plan:\n" in long_soak_workflow
+        and 'saturation_plan="${{ inputs.saturation_plan }}"' in long_soak_workflow
+        and 'if [ -n "$saturation_plan" ]; then' in long_soak_workflow
+        and 'if [ "$saturation_plan" != "default" ]; then' in long_soak_workflow
+        and "run_saturation:" not in long_soak_workflow
+        and "saturation_cases:" not in long_soak_workflow
+        and "saturation_cpu_threshold_percent:" not in long_soak_workflow
+        and "saturation_loadgen_headroom_percent:" not in long_soak_workflow,
+        ".github/workflows/long-soak-capacity.yml uses one saturation plan input and script threshold defaults",
     )
     stability_soak = read("scripts/gates/release/verify_stability_soak.py")
     add(

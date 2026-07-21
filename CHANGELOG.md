@@ -1,5 +1,42 @@
 # 更新日志
 
+## Unreleased
+
+### 证据与发布工程
+
+- 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
+- Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。
+- 线上资产复验将独立发布的 SPDX SBOM 与已验证 attestation 中的 SPDX 2.3 predicate 做结构等值校验，不再只验证 archive subject digest。
+- 长稳与生产 resilience 编排器捕获 SIGINT/SIGTERM，Linux runner 通过 parent-death signal 与 workflow PID bridge 转发 step 取消，分层回收子进程组并原子写出中断步骤、完成步骤和部分失败证据；取消片段不能误计为通过，临时 Redis 也由独立 `always()` 步骤清理。
+- 候选 `375910f3` 的旧 1/2/4 CPU 产物因 pressure client lifecycle 不完整而降级为诊断事实；新的聚合器会拒绝缺少 manifest、真实 TCP/auth/active lifecycle 或单变量身份的来源。
+- Runtime 候选 `37897e8` 通过主线 CI run `29822268701`；AOI run `29822268782` 完成 6 点、每点三轮的 closed-loop 饱和曲线，18/18 轮有效并选出 `echo-sat-c2000-i10-60s` 比较点。该点使用 2,000 个客户端，200K 表示配置请求率上限，不是客户端数。
+- 同一候选的 service CPU 1/2/4 runs `29823733478` / `29823736393` / `29823739153` 聚合为 `partial_cpu_scaling`；`io_cores=1/2/4` runs `29823742465` / `29823745289` / `29823733478` 聚合为 `no_material_io_core_gain`。两条轴证据均完整通过，但不自动修改 runtime 或部署默认值。
+- OTel run `29823748288` 完成 fresh Gateway/Battle Backend 的 off/on 各三轮对照和 routed/exporter/collector 计数对账；吞吐变化 `+0.103%`、P99 与 Gateway CPU 无变化、RSS `+46.695%`，相对变化保持 `observed_not_thresholded`。
+
+## v3.5.3 — 高风险部署证据闭环（2026-07-20）
+
+> **范围**：不扩大默认协议或业务能力，补齐长期稳定性、受限 CPU 容量、真实依赖恢复、告警生命周期和专项性能证据。
+
+### 稳定性与恢复
+
+- 2h/8h soak 持续采集 Gateway 与宿主 CPU、RSS、fd 和负载，保留失败轮与确认复测，并校验资源采样覆盖率和最大间隔。
+- Redis 演练覆盖运行中停服、持续业务流量、恢复和告警 `inactive -> pending -> firing -> resolved`；Raft 演练覆盖 leader 故障、重新选主和落后 follower 追赶。
+- TLS 预发演练记录多轮 off/on 开销与恢复时间，生产证据清单统一绑定候选 SHA、checkout、runner 和 Conan lockfile。
+
+### 性能与治理
+
+- 容量采集支持 1/2/4 CPU affinity 矩阵，并为 matchmaking、leaderboard 和 Redis on/off 输出至少三轮的吞吐、P99、CPU、RSS 与失败率。
+- 新增 OTel off/on 固定 runner 对照：每种模式隔离 Gateway/Battle Backend，使用本机回环 OTLP collector 核对 exporter、collector 与后端路由计数，输出 P99、吞吐、Gateway CPU/RSS 的观测差异。
+- OTel exporter 提供线程安全的入队、导出批次、失败重试与缓冲计数，并通过 Gateway diagnostics 暴露可审计状态。
+- 生产 readiness 明确绑定 workflow checkout SHA；导入旧候选证据会以 provenance 失败阻断最终决策。
+- 手动 Release 增加显式 compiler image 维护开关，用于 runner 缓存丢失后的候选预热；tag 发布仍只执行离线消费验证。
+
+### 发布边界
+
+- `v3.5.3` 的不可变 tag 只在新冻结 SHA 的 Release、R0、1/2/4 核矩阵、R4、R5/R6、Raft、2h/8h 与最终 R2/R3 全部完成后创建。
+- 1 核结果允许作为明确记录的容量边界，但不得把阈值失败改写为通过；OTel 相对开销只报告实测值，不在采集后补设任意百分比阈值。
+- 最终 tag 固定在 `b9c348b4`；tag Release run `29708970775`、连续 8h run `29711044558` 和线上资产独立验证 run `29740136895` 均通过。发布后复核将旧 CPU affinity 数据限定为整套测试拓扑的受限资源边界；service/load generator 隔离后的扩展曲线进入后续采集，不回写或改动已发布 tag。
+
 ## v3.5.2 — 发行包与真实控制面（候选）
 
 > **范围**：不改变默认协议和业务能力，补齐发行包的 clean-environment 验证、SBOM/attestation、Operator kind 和备用 Linux runner 证据。

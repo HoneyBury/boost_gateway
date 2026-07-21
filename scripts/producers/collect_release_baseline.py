@@ -85,13 +85,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--baseline-timeout-seconds", type=int, default=60)
-    parser.add_argument("--perf-preset", choices=["smoke", "baseline", "capacity", "business-capacity"], default="baseline")
+    parser.add_argument(
+        "--perf-preset",
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation"],
+        default="baseline",
+    )
     parser.add_argument("--include-business-flow", action="store_true")
     parser.add_argument("--business-flow-clients", type=int, default=1)
     parser.add_argument("--perf-repetitions", type=int, default=3)
+    parser.add_argument("--perf-case", action="append", default=[])
     parser.add_argument("--perf-timeout-seconds", type=int, default=600)
     parser.add_argument("--backend-pool-size", type=int, default=0)
     parser.add_argument("--battle-route-workers", type=int, default=0)
+    parser.add_argument("--io-cores", type=int, default=4)
+    parser.add_argument(
+        "--cpu-set",
+        default="",
+        help="Linux CPU affinity list for managed service processes.",
+    )
+    parser.add_argument(
+        "--loadgen-cpu-set",
+        default="",
+        help="Linux CPU affinity list for load generation; defaults to CPUs outside --cpu-set.",
+    )
+    parser.add_argument("--loadgen-io-threads", type=int, default=4)
+    parser.add_argument("--saturation-cpu-threshold-percent", type=float, default=85.0)
+    parser.add_argument("--saturation-loadgen-headroom-percent", type=float, default=85.0)
+    parser.add_argument(
+        "--business-operation-scenario",
+        action="append",
+        choices=["matchmaking", "leaderboard"],
+        default=[],
+    )
+    parser.add_argument("--business-operation-clients", type=int, default=16)
+    parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--business-operation-timeout-seconds", type=float, default=5.0)
+    parser.add_argument("--leaderboard-redis-comparison", action="store_true")
+    parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
+    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
+    parser.add_argument("--leaderboard-redis-key", default="")
+    parser.add_argument("--otel-comparison", action="store_true")
     parser.add_argument("--skip-r4", action="store_true")
     parser.add_argument("--skip-perf", action="store_true")
     parser.add_argument("--perf-output-root", type=Path, default=None)
@@ -101,11 +134,15 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if args.perf_preset in {"capacity", "business-capacity"}:
+    if args.loadgen_io_threads <= 0:
+        raise SystemExit("--loadgen-io-threads must be positive")
+    if args.perf_preset in {"capacity", "business-capacity", "saturation"}:
         if args.backend_pool_size <= 0:
             args.backend_pool_size = 8
         if args.battle_route_workers <= 0:
             args.battle_route_workers = 8
+    if args.perf_preset == "saturation":
+        args.perf_timeout_seconds = max(args.perf_timeout_seconds, 10800)
     root = Path(__file__).resolve().parents[2]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     perf_output = args.perf_output_root if args.perf_output_root is not None else root / "runtime" / "perf" / "release-baseline"
@@ -125,6 +162,12 @@ def main() -> int:
         "perf_repetitions": args.perf_repetitions,
         "backend_pool_size": args.backend_pool_size,
         "battle_route_workers": args.battle_route_workers,
+        "saturation_cpu_threshold_percent": args.saturation_cpu_threshold_percent,
+        "saturation_loadgen_headroom_percent": args.saturation_loadgen_headroom_percent,
+        "cpu_set": args.cpu_set,
+        "business_operation_scenarios": args.business_operation_scenario,
+        "business_operation_clients": args.business_operation_clients,
+        "business_operation_iterations": args.business_operation_iterations,
         "environment": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -167,6 +210,8 @@ def main() -> int:
             "v2_login_backend",
             "v2_room_backend",
             "v2_battle_backend",
+            "v2_match_backend",
+            "v2_leaderboard_backend",
             "v2_gateway_demo",
             "v2_gateway_pressure",
             "v2_arch_benchmark",
@@ -230,9 +275,45 @@ def main() -> int:
             str(args.backend_pool_size),
             "--battle-route-workers",
             str(args.battle_route_workers),
+            "--io-cores",
+            str(args.io_cores),
+            "--saturation-cpu-threshold-percent",
+            str(args.saturation_cpu_threshold_percent),
+            "--saturation-loadgen-headroom-percent",
+            str(args.saturation_loadgen_headroom_percent),
         ]
+        for case_name in args.perf_case:
+            perf_cmd.extend(["--case", case_name])
         if args.include_business_flow:
             perf_cmd.extend(["--include-business-flow", "--business-flow-clients", str(args.business_flow_clients)])
+        if args.cpu_set:
+            perf_cmd.extend(["--cpu-set", args.cpu_set])
+        if args.loadgen_cpu_set:
+            perf_cmd.extend(["--loadgen-cpu-set", args.loadgen_cpu_set])
+        perf_cmd.extend(["--loadgen-io-threads", str(args.loadgen_io_threads)])
+        for scenario in args.business_operation_scenario:
+            perf_cmd.extend(["--business-operation-scenario", scenario])
+        if args.business_operation_scenario:
+            perf_cmd.extend([
+                "--business-operation-clients",
+                str(args.business_operation_clients),
+                "--business-operation-iterations",
+                str(args.business_operation_iterations),
+                "--business-operation-timeout-seconds",
+                str(args.business_operation_timeout_seconds),
+            ])
+        if args.leaderboard_redis_comparison:
+            perf_cmd.extend([
+                "--leaderboard-redis-comparison",
+                "--leaderboard-redis-host",
+                args.leaderboard_redis_host,
+                "--leaderboard-redis-port",
+                str(args.leaderboard_redis_port),
+            ])
+            if args.leaderboard_redis_key:
+                perf_cmd.extend(["--leaderboard-redis-key", args.leaderboard_redis_key])
+        if args.otel_comparison:
+            perf_cmd.append("--otel-comparison")
         steps.append(run_step(
             "release multi-process performance baseline",
             perf_cmd,

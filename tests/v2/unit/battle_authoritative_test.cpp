@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "v2/battle/battle_instance_plugin.h"
 #include "v2/battle/runtime_world.h"
 
 TEST(V2BattleAuthoritativeTest, ProcessInputRejectsWhenBattleNotRunning) {
@@ -35,6 +36,42 @@ TEST(V2BattleAuthoritativeTest, ProcessInputAcceptsNewerFrame) {
     auto r2 = v2::battle::battle_world_process_input(
         *world, "alice", "move:3,4", 20, 2);
     EXPECT_TRUE(r2.accepted);
+}
+
+TEST(V2BattleAuthoritativeTest, InstancePluginPreservesScoreAndSubmittedFrame) {
+    v2::realtime::InstanceContext context;
+    context.instance_id = "auth_plugin_01";
+    context.room_id = "room_plugin_01";
+    context.players.push_back(v2::realtime::PlayerContext{.user_id = "alice"});
+
+    v2::battle::BattleInstancePlugin plugin;
+    plugin.on_instance_created(context);
+    ASSERT_NE(context.plugin_state, nullptr);
+
+    v2::realtime::InputEnvelope input;
+    input.instance_id = context.instance_id;
+    input.user_id = "alice";
+    input.payload = "move:1,2";
+    input.score = 42;
+    input.submitted_frame = 7;
+    const auto accepted = plugin.on_input(context, input);
+    EXPECT_TRUE(accepted.accepted);
+
+    const auto& state = v2::battle::BattleInstancePlugin::get_state(context);
+    const auto snapshot = v2::battle::battle_world_snapshot(*state.world);
+    ASSERT_EQ(snapshot.participants.size(), 1U);
+    EXPECT_EQ(snapshot.participants.front().score, 42);
+    EXPECT_EQ(snapshot.participants.front().last_submitted_frame, 7U);
+
+    input.score = 100;
+    const auto duplicate = plugin.on_input(context, input);
+    EXPECT_FALSE(duplicate.accepted);
+    EXPECT_EQ(duplicate.reject_reason, "duplicate_frame");
+    const auto duplicate_snapshot = v2::battle::battle_world_snapshot(*state.world);
+    EXPECT_EQ(duplicate_snapshot.participants.front().score, 42);
+
+    delete &v2::battle::BattleInstancePlugin::get_state(context);
+    context.plugin_state = nullptr;
 }
 
 TEST(V2BattleAuthoritativeTest, FrameLimitTriggersBattleFinish) {

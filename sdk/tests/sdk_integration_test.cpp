@@ -354,7 +354,9 @@ TEST_F(GatewayFixture, SdkDisconnectCallbackFiresAfterHeartbeatFailure) {
     ASSERT_TRUE(client.login("disconnect_user", "token:disconnect_user", 5s).ok);
 
     std::atomic<int> disconnects{0};
+    std::atomic<int> async_disconnects{0};
     client.on_disconnect([&] { disconnects.fetch_add(1); });
+    client.on_async_disconnect([&] { async_disconnects.fetch_add(1); });
     client.start_heartbeat(1s);
 
     server_->stop();
@@ -369,6 +371,7 @@ TEST_F(GatewayFixture, SdkDisconnectCallbackFiresAfterHeartbeatFailure) {
     }
     client.stop_heartbeat();
     EXPECT_GT(disconnects.load(), 0);
+    EXPECT_GT(async_disconnects.load(), 0);
 }
 
 // ─── Battle flow ───────────────────────────────────────────────────────
@@ -502,15 +505,14 @@ TEST(SdkAsyncTest, AsyncPushCallbackRegistration) {
 TEST(SdkAsyncTest, MultipleAsyncOperations) {
     SdkClient client;
     std::atomic<int> completed{0};
-    constexpr int kOpCount = 5;
 
     auto cb = [&completed](auto&&...) { completed++; };
 
-    client.async_connect("127.0.0.1", 9201, cb);
     client.async_login("u1", "t1", cb);
     client.async_create_room("r1", cb);
     client.async_join_room("r1", cb);
     client.async_send_battle_input("input", cb);
+    client.async_connect("127.0.0.1", 9201, cb);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(500));
     // At minimum, all callbacks should have been invoked

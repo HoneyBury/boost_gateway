@@ -24,6 +24,7 @@ DEFAULT_SUMMARIES = [
     "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
     "runtime/validation/r3-production-readiness-report-summary.json",
     "runtime/validation/fixed-runner-release-capacity-summary.json",
+    "runtime/validation/saturation-baseline-summary.json",
     "runtime/validation/grpc-fixed-runner-preflight-summary.json",
     "runtime/validation/grpc-sdk-package-consumer-summary.json",
     "runtime/validation/grpc-fixed-runner-decision-summary.json",
@@ -44,6 +45,7 @@ PROVENANCE_REQUIRED_SUMMARIES = {
     "runtime/validation/long-soak-2h-summary.json",
     "runtime/validation/r0-production-candidate-evidence-summary.json",
     "runtime/validation/fixed-runner-release-capacity-summary.json",
+    "runtime/validation/saturation-baseline-summary.json",
     "runtime/validation/preprod-recovery-drill-summary.json",
     "runtime/validation/tls-preprod-multi-run-summary.json",
 }

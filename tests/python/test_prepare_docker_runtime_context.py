@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -48,3 +50,20 @@ def test_validate_runtime_dependencies_rejects_third_party_shared_library() -> N
 def test_validate_runtime_dependencies_rejects_missing_library() -> None:
     with pytest.raises(RuntimeError, match="unresolved"):
         MODULE.validate_runtime_dependencies(Path("service"), "libfoo.so => not found")
+
+
+def test_worktree_cleanliness_is_part_of_docker_evidence_contract() -> None:
+    with patch.object(
+        MODULE.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr=""),
+    ):
+        assert MODULE.worktree_is_clean() is True
+    with patch.object(
+        MODULE.subprocess,
+        "run",
+        return_value=subprocess.CompletedProcess(
+            args=[], returncode=0, stdout=" M tracked-file\n", stderr=""
+        ),
+    ):
+        assert MODULE.worktree_is_clean() is False
