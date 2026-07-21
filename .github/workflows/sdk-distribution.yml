@@ -1,0 +1,111 @@
+name: SDK / Wheel & NuGet Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner JSON array"
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+
+permissions:
+  contents: read
+
+jobs:
+  linux-x64-packages:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 90
+    env:
+      BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
+      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Verify pinned package toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+          python -c 'import setuptools, wheel'
+          dotnet --version
+          syft version
+
+      - name: Ensure offline Conan
+        shell: bash
+        run: |
+          python scripts/tools/ensure_conan_venv.py \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
+            --conan-version 2.8.1 \
+            --offline \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+          python scripts/tools/resolve_runner_cache.py \
+            --build-type Release \
+            --profile conan/profiles/linux-gcc-x64 \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/sdk-runner-cache-summary.json
+          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python scripts/tools/verify_conan_offline_install.py \
+            --profile conan/profiles/linux-gcc-x64 \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --output-folder build/conan-sdk-distribution \
+            --build-type Release \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/sdk-conan-offline-summary.json
+
+      - name: Build native SDK and full-flow targets
+        shell: bash
+        run: |
+          cmake -S . -B build/sdk-distribution -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-sdk-distribution/build/Release/generators/conan_toolchain.cmake
+          cmake --build build/sdk-distribution --parallel
+          ctest --test-dir build/sdk-distribution -R 'CApiV41Test|CodecV4Test|ClientV4Test|Transport' --output-on-failure
+
+      - name: Build and verify wheel and NuGet
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/build_sdk_packages.py \
+            --native-library build/sdk-distribution/sdk/libboost_gateway_sdk.so \
+            --rid linux-x64 \
+            --wheel-platform-tag manylinux_2_35_x86_64 \
+            --output-dir runtime/sdk-packages \
+            --require-nuget
+          wheel=$(find runtime/sdk-packages -maxdepth 1 -name '*.whl' -print -quit)
+          nuget=$(find runtime/sdk-packages -maxdepth 1 -name '*.nupkg' -print -quit)
+          python scripts/tools/verify_sdk_distribution_packages.py \
+            --wheel "$wheel" --nuget "$nuget" --rid linux-x64 --require-nuget \
+            --summary-path runtime/validation/sdk-package-summary.json
+          python -m venv runtime/sdk-package-flow-venv
+          runtime/sdk-package-flow-venv/bin/pip install --no-index --no-deps "$wheel"
+          python scripts/gates/sdk/verify_sdk_full_flow_client.py \
+            --build-dir build/sdk-distribution --skip-build \
+            --python-package-client runtime/sdk-package-flow-venv/bin/python \
+            --summary-path runtime/validation/sdk-package-full-flow-summary.json
+
+      - name: Generate package SBOMs and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          for package in runtime/sdk-packages/*.whl runtime/sdk-packages/*.nupkg; do
+            syft packages "$package" -o "spdx-json=${package}.spdx.json"
+          done
+          (cd runtime/sdk-packages && sha256sum * > SHA256SUMS-all.txt)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdk-distribution-linux-x64-${{ github.sha }}
+          path: |
+            runtime/sdk-packages/*
+            runtime/validation/sdk-*-summary.json
+          retention-days: 30

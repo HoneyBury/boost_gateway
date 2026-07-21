@@ -14,7 +14,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SDK_VERSION = "4.1.0"
+SDK_VERSION = "4.2.0"
 
 REQUIRED_C_API_SYMBOLS = {
     "gsdk_version",
@@ -71,12 +71,12 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     csharp_project = read_text("sdk/csharp/SdkClient.csproj")
     compatibility = read_text("sdk/docs/compatibility.md")
 
-    add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.1.0")
+    add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.2.0")
     add_check(
         checks,
         "sdk-version:minor",
-        "set(BOOST_GATEWAY_SDK_VERSION_MINOR 1)" in cmake,
-        "CMake SDK minor version is 1",
+        "set(BOOST_GATEWAY_SDK_VERSION_MINOR 2)" in cmake,
+        "CMake SDK minor version is 2",
     )
     add_check(
         checks,
@@ -84,8 +84,8 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
         "BOOST_GATEWAY_SDK_VERSION" in version_header,
         "generated version header exposes SDK version macros",
     )
-    add_check(checks, "sdk-version:c-api-doc", "SDK v4.1.0" in c_api, "C API header version is current")
-    add_check(checks, "sdk-version:docs", "v4.1.0" in docs, "SDK docs mention current version")
+    add_check(checks, "sdk-version:c-api-doc", "SDK v4.2.0" in c_api, "C API header version is current")
+    add_check(checks, "sdk-version:docs", "v4.2.0" in docs, "SDK docs mention current version")
     add_check(
         checks,
         "sdk-version:python-package",
@@ -107,8 +107,8 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-version:gateway-v35-compatibility",
-        "`v3.5.x`" in compatibility and "`v4.1.0`" in compatibility,
-        "compatibility matrix records Gateway v3.5.x with SDK v4.1.0",
+        "`v3.5.x`" in compatibility and "`v4.2.0`" in compatibility,
+        "compatibility matrix records Gateway v3.5.x with SDK v4.2.0",
     )
 
 

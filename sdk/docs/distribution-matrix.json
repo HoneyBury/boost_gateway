@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "gateway_compatibility": "v3.5.x-v3.6.x",
+  "sdk_version": "4.2.0",
+  "native_abi_major": 4,
+  "packages": [
+    {
+      "rid": "linux-x64",
+      "python": ">=3.8",
+      "dotnet": "8.0",
+      "wheel_platform": "manylinux_2_35_x86_64",
+      "status": "candidate_fixed_runner_required"
+    },
+    {
+      "rid": "osx-arm64",
+      "python": ">=3.8",
+      "dotnet": "8.0",
+      "wheel_platform": "macosx_26_0_arm64",
+      "status": "candidate_local_wheel_verified"
+    }
+  ],
+  "public_registries": {
+    "pypi": "not_enabled",
+    "nuget_org": "not_enabled"
+  }
+}

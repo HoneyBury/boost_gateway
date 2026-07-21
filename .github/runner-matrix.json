@@ -100,6 +100,13 @@
       "labels": { "os": "macos", "arch": "arm64", "mode": "platform-candidate" },
       "capabilities": { "native_arm64": true, "capacity_claimed": false },
       "vars_hint": "MACOS_ARM64_RUNNER"
+    },
+    "sdk-distribution": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "package-candidate" },
+      "capabilities": { "dotnet": true, "syft": true, "glibc_2_35": true },
+      "vars_hint": "SDK_DISTRIBUTION_RUNNER"
     }
   },
   "deprecated_platforms": {

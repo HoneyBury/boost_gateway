@@ -374,7 +374,7 @@ def add_backend_metric_check(checks: list[dict[str, Any]], diagnostics_url: str)
         )
 
 
-def add_sdk_flow_output_check(checks: list[dict[str, Any]]) -> None:
+def add_sdk_flow_output_check(checks: list[dict[str, Any]], python_package_client: bool = False) -> None:
     client_check = next(
         (check for check in checks if check.get("name") == "run-sdk-full-flow-client"),
         None,
@@ -392,6 +392,14 @@ def add_sdk_flow_output_check(checks: list[dict[str, Any]]) -> None:
         "Manual leaderboard submit path OK.",
         "Leaderboard rank query path OK.",
         "Both left room.",
+        "=== ALL TESTS PASSED ===",
+    ] if not python_package_client else [
+        "Both connected.",
+        "Echo:",
+        "Match join/status/leave OK.",
+        "Both ready.",
+        "Auto settlement leaderboard and manual submit paths OK.",
+        "Both left.",
         "=== ALL TESTS PASSED ===",
     ]
     missing = [fragment for fragment in expected_fragments if fragment not in output]
@@ -439,6 +447,11 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--http-port", type=int, default=0)
     parser.add_argument("--skip-build", action="store_true")
+    parser.add_argument(
+        "--python-package-client",
+        type=Path,
+        help="Use this Python interpreter with the installed wheel full-flow example",
+    )
     parser.add_argument("--backend-tls", action="store_true", help="Run gateway->backend traffic through the opt-in backend TLS profile")
     parser.add_argument("--tls-cert-dir", type=Path, default=REPO_ROOT / "certs")
     parser.add_argument("--gateway-tls-verify-mode", choices=["none", "server", "mutual"], default="none")
@@ -476,7 +489,7 @@ def main() -> int:
         battle_backend,
         match_backend,
         leaderboard_backend,
-        client,
+        *([] if args.python_package_client else [client]),
     ]
     missing_binaries = [path for path in required_binaries if not path.exists()]
 
@@ -641,9 +654,17 @@ def main() -> int:
             }
         )
         if ready and http_ready:
+            client_command = [str(client), args.host, str(gateway_port)]
+            if args.python_package_client:
+                client_command = [
+                    str(args.python_package_client),
+                    str(REPO_ROOT / "sdk/examples/python_full_flow.py"),
+                    args.host,
+                    str(gateway_port),
+                ]
             run_command(
                 "run-sdk-full-flow-client",
-                [str(client), args.host, str(gateway_port)],
+                client_command,
                 checks,
             )
             time.sleep(8)
@@ -651,7 +672,7 @@ def main() -> int:
                 checks,
                 f"http://{args.host}:{http_port}/metrics/diagnostics/json",
             )
-            add_sdk_flow_output_check(checks)
+            add_sdk_flow_output_check(checks, python_package_client=bool(args.python_package_client))
             if args.backend_tls:
                 add_backend_tls_metric_check(
                     checks,

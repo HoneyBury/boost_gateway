@@ -27,6 +27,7 @@ EXPECTED_NAMES = {
     "production-readiness": "Production / Readiness Decision",
     "release": "Release / Package & Publish",
     "release-asset-verification": "Release / Published Asset Verification",
+    "sdk-distribution": "SDK / Wheel & NuGet Candidate",
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}

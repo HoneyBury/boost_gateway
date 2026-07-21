@@ -1,4 +1,4 @@
-// SDK v4.1.0: Client tests
+// SDK v4.2.0: Client tests
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/client.h"
 #include "boost_gateway/sdk/protocol/codec.h"

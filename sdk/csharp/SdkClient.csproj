@@ -3,18 +3,29 @@
     <TargetFramework>net8.0</TargetFramework>
     <RootNamespace>BoostGateway.Sdk</RootNamespace>
     <AssemblyName>BoostGateway.Sdk</AssemblyName>
-    <Version>4.1.0</Version>
+    <Version>4.2.0</Version>
     <Description>Boost Gateway Game Server SDK - C# Bindings</Description>
     <Authors>BoostGateway Team</Authors>
     <PackageTags>game-server;gateway;boost</PackageTags>
     <PackageProjectUrl>https://github.com/HoneyBury/boost_gateway</PackageProjectUrl>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageId>BoostGateway.Sdk</PackageId>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/HoneyBury/boost_gateway</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <IncludeSymbols>false</IncludeSymbols>
+    <AllowedOutputExtensionsInPackageBuildOutputFolder>$(AllowedOutputExtensionsInPackageBuildOutputFolder);.dylib;.so</AllowedOutputExtensionsInPackageBuildOutputFolder>
   </PropertyGroup>
 
   <ItemGroup>
-    <Content Include="..\bin\$(Configuration)\*.dll" PackagePath="runtimes\any\native">
+    <Content Include="$(NativeLibrary)" Condition="'$(NativeLibrary)' != ''" PackagePath="runtimes\$(RuntimeIdentifier)\native\">
       <Pack>true</Pack>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="$(NativeManifest)" Condition="'$(NativeManifest)' != ''" PackagePath="runtimes\$(RuntimeIdentifier)\native\_native_manifest.json">
+      <Pack>true</Pack>
+    </Content>
+    <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
+    <None Include="..\docs\README.md" Pack="true" PackagePath="docs\" />
   </ItemGroup>
 </Project>

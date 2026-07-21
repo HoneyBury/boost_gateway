@@ -17,7 +17,7 @@ from typing import Any
 from scripts.lib.subprocess_utils import run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SDK_VERSION = "4.1.0"
+SDK_VERSION = "4.2.0"
 
 
 def read_cache_path(build_dir: Path, key: str) -> str:
@@ -76,7 +76,7 @@ target_link_libraries(sdk_consumer_smoke PRIVATE boost_gateway::sdk{" boost_gate
 
 int main() {{
     static_assert(BOOST_GATEWAY_SDK_VERSION_MAJOR == 4);
-    static_assert(BOOST_GATEWAY_SDK_VERSION_MINOR == 1);
+    static_assert(BOOST_GATEWAY_SDK_VERSION_MINOR == 2);
     boost_gateway::sdk::SdkClient client;
     if (client.is_connected()) {{
         return 2;

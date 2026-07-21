@@ -22,6 +22,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | 构建 → 测试 → 门禁 → baseline；仅 tag push 进入发布 |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
+| `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 | `macos-arm64.yml` | Platform / macOS ARM64 Candidate | 手动 | 原生 ARM64 Conan build、CTest、install、SDK consumer 与候选资产 |
 
@@ -30,6 +31,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **主线回归兜底**: GitHub-hosted `ubuntu-latest`
 - **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
 - **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；不声明容量或生产长稳
+- **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
@@ -51,6 +53,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 - Release 包: `boost-gateway-{version}-linux-x64.tar.gz`
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
+- SDK 候选包: `boost_gateway_sdk-4.2.0-*.whl`、`BoostGateway.Sdk.4.2.0.nupkg`
 - 验证 summary: `runtime/validation/*-summary.json`
 - 性能基线: `runtime/perf/release-baseline/summary.json`
 

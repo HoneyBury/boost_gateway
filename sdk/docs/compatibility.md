@@ -8,8 +8,8 @@
 
 | Gateway 版本 | SDK native 版本 | C++ package | C ABI | Python wrapper | C# wrapper | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `v3.3.2` | `v4.1.0` | `find_package(boost_gateway_sdk 4.1.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 校验 native 主版本 `4.x` | 校验 native 主版本 `4.x` | stable |
-| `v3.5.x` | `v4.1.0` | `find_package(boost_gateway_sdk 4.1.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 包元数据和 native 主版本均为 `4.1.0` / `4.x` | 包元数据和 native 主版本均为 `4.1.0` / `4.x` | stable |
+| `v3.3.2` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 校验 native 主版本 `4.x` | 校验 native 主版本 `4.x` | stable |
+| `v3.5.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | stable |
 
 ## 客户端兼容矩阵
 

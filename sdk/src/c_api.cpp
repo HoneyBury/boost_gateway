@@ -1,4 +1,4 @@
-// SDK v4.1.0: C API wrapper around SdkClient for cross-language binding.
+// SDK v4.2.0: C API wrapper around SdkClient for cross-language binding.
 #include "boost_gateway/sdk/c_api.h"
 #include "boost_gateway/sdk/client.h"
 #include "boost_gateway/sdk/version.h"
