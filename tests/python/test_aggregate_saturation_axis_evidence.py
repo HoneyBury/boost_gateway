@@ -1,4 +1,6 @@
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -250,6 +252,28 @@ def write_selection_source(root: Path) -> SelectionSourceSpec:
 
 
 class AggregateSaturationAxisEvidenceTest(unittest.TestCase):
+    def test_top_level_shim_works_from_repo_and_arbitrary_cwd(self) -> None:
+        repo_root = Path(__file__).resolve().parents[2]
+        shim = repo_root / "scripts/aggregate_saturation_axis_evidence.py"
+        with tempfile.TemporaryDirectory() as temp:
+            invocations = (
+                ([sys.executable, "scripts/aggregate_saturation_axis_evidence.py", "--help"], repo_root),
+                ([sys.executable, str(shim), "--help"], Path(temp)),
+            )
+            for command, cwd in invocations:
+                completed = subprocess.run(
+                    command,
+                    cwd=cwd,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False,
+                )
+                self.assertEqual(completed.returncode, 0, completed.stderr)
+                self.assertIn("--selection-source", completed.stdout)
+
     def test_service_cpu_axis_reports_scaling_without_changing_defaults(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

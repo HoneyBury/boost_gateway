@@ -1,5 +1,6 @@
 #include "../../../examples/v2_gateway_pressure/load_evidence.h"
 #include "../../../examples/v2_gateway_pressure/final_message_counts.h"
+#include "../../../examples/v2_gateway_pressure/stall_watchdog_policy.h"
 
 #include <gtest/gtest.h>
 
@@ -58,6 +59,44 @@ TEST(GatewayPressureEvidenceTest, FinalMessageCountsUseOnePostIoSnapshot) {
     EXPECT_EQ(battle.push_messages, 250U);
     EXPECT_EQ(battle.total_messages,
               battle.response_messages + battle.push_messages);
+}
+
+TEST(GatewayPressureEvidenceTest, StallWatchdogDefersToRampAndDurationLifecycles) {
+    using Action = v2::gateway_pressure::StallWatchdogAction;
+    using State = v2::gateway_pressure::StallWatchdogState;
+
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action(State{}), Action::kRearm);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .measurement_started = true,
+                  .duration_timer_expected = true,
+              }),
+              Action::kRearm);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .measurement_started = true,
+                  .duration_timer_expected = true,
+                  .duration_deadline_armed = true,
+                  .duration_deadline_elapsed = true,
+              }),
+              Action::kStopMonitoring);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .measurement_started = true,
+                  .duration_timer_expected = true,
+                  .duration_deadline_armed = true,
+              }),
+              Action::kStopForStall);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .measurement_started = true,
+                  .progress_changed = true,
+              }),
+              Action::kRearm);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .measurement_started = true,
+              }),
+              Action::kStopForStall);
+    EXPECT_EQ(v2::gateway_pressure::stall_watchdog_action({
+                  .lifecycle_finished = true,
+              }),
+              Action::kStopMonitoring);
 }
 
 }  // namespace

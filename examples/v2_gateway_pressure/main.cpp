@@ -9,6 +9,7 @@
 #include "v2/benchmark/latency_histogram.h"
 #include "v2/benchmark/throughput_tracker.h"
 #include "final_message_counts.h"
+#include "stall_watchdog_policy.h"
 #include "v2/gateway/battle_wire_parser.h"
 
 #include <boost/asio.hpp>
@@ -1155,6 +1156,8 @@ nlohmann::json to_json(const BenchResult& r) {
         {"latency_max_ms", r.latency_max_ms},
         {"latency_buckets_ms", v2::benchmark::kLatencyBucketBoundariesMs},
         {"latency_bucket_counts", r.latency_bucket_counts},
+        {"forced_timeout", false},
+        {"timeout_reason", ""},
     };
 }
 
@@ -1320,23 +1323,40 @@ int main(int argc, char* argv[]) {
     };
 
     asio::steady_timer stall_timer(io);
+    using WatchdogClock = std::chrono::steady_clock;
+    const bool duration_timer_expected =
+        config.messages_per_client == 0 && config.duration.count() > 0;
+    std::atomic<WatchdogClock::duration::rep> steady_deadline_ticks{0};
     std::uint64_t last_progress_value = 0;
     std::function<void()> arm_stall_watchdog;
     arm_stall_watchdog = [&]() {
         stall_timer.expires_after(std::chrono::seconds(3));
         stall_timer.async_wait([&](const error_code& ec) {
-            if (ec || controller->time_expired() || controller->global_completion()) {
+            if (ec) {
                 return;
             }
             const auto current = progress_tick->load(std::memory_order_relaxed);
-            if (current == last_progress_value) {
+            const auto deadline_ticks = steady_deadline_ticks.load(std::memory_order_acquire);
+            const auto now_ticks = WatchdogClock::now().time_since_epoch().count();
+            const auto action = v2::gateway_pressure::stall_watchdog_action({
+                .measurement_started = controller->measurement_started(),
+                .lifecycle_finished = controller->time_expired() ||
+                                      controller->global_completion(),
+                .duration_timer_expected = duration_timer_expected,
+                .duration_deadline_armed = deadline_ticks != 0,
+                .duration_deadline_elapsed = deadline_ticks != 0 && now_ticks >= deadline_ticks,
+                .progress_changed = current != last_progress_value,
+            });
+            last_progress_value = current;
+            if (action == v2::gateway_pressure::StallWatchdogAction::kStopForStall) {
                 LOG_WARN("v2_gateway_pressure stalled without progress for 3s; forcing completion");
                 controller->mark_global_completion();
                 request_stop("stall_watchdog", true);
                 return;
             }
-            last_progress_value = current;
-            arm_stall_watchdog();
+            if (action == v2::gateway_pressure::StallWatchdogAction::kRearm) {
+                arm_stall_watchdog();
+            }
         });
     };
     arm_stall_watchdog();
@@ -1366,6 +1386,8 @@ int main(int argc, char* argv[]) {
             return;
         }
         const auto steady_deadline = std::chrono::steady_clock::now() + config.duration;
+        steady_deadline_ticks.store(
+            steady_deadline.time_since_epoch().count(), std::memory_order_release);
         while (!run_finished.load(std::memory_order_relaxed) &&
                std::chrono::steady_clock::now() < steady_deadline) {
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
