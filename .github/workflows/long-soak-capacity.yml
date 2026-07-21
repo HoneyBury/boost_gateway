@@ -44,11 +44,6 @@ on:
         required: true
         default: true
         type: boolean
-      run_saturation:
-        description: "Run the isolated closed-loop saturation curve (independent of R4)"
-        required: true
-        default: false
-        type: boolean
       perf_repetitions:
         description: "Repetitions per capacity case"
         required: true
@@ -57,18 +52,10 @@ on:
         description: "Optional comma-separated capacity cases for focused diagnostics"
         required: false
         default: ""
-      saturation_cases:
-        description: "Optional comma-separated saturation manifest cases for fixed CPU/io_cores comparisons"
+      saturation_plan:
+        description: "Empty disables saturation; default runs the full curve; otherwise comma-separated case names"
         required: false
         default: ""
-      saturation_cpu_threshold_percent:
-        description: "Gateway CPU quota percentage used to identify saturation"
-        required: true
-        default: "85"
-      saturation_loadgen_headroom_percent:
-        description: "Maximum load-generator CPU quota percentage allowed for Gateway attribution"
-        required: true
-        default: "85"
       business_flow_clients:
         description: "Sequential SDK full-flow passes for business-capacity evidence"
         required: true
@@ -249,8 +236,6 @@ jobs:
             --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
             --io-cores "${{ inputs.io_cores || '4' }}"
-            --saturation-cpu-threshold-percent "${{ inputs.saturation_cpu_threshold_percent || '85' }}"
-            --saturation-loadgen-headroom-percent "${{ inputs.saturation_loadgen_headroom_percent || '85' }}"
             --summary-path runtime/validation/long-soak-capacity-summary.json
           )
           if [ "${{ inputs.run_2h_soak }}" = "true" ]; then
@@ -265,9 +250,6 @@ jobs:
           if [ "${{ inputs.run_business_capacity }}" = "true" ]; then
             args+=(--run-business-capacity)
           fi
-          if [ "${{ inputs.run_saturation }}" = "true" ]; then
-            args+=(--run-saturation)
-          fi
           if [ -n "${{ inputs.cpu_set }}" ]; then
             args+=(--cpu-set "${{ inputs.cpu_set }}")
           fi
@@ -281,11 +263,19 @@ jobs:
               args+=(--capacity-case "$case_name")
             done
           fi
-          if [ -n "${{ inputs.saturation_cases }}" ]; then
-            IFS=',' read -r -a saturation_cases <<< "${{ inputs.saturation_cases }}"
-            for case_name in "${saturation_cases[@]}"; do
-              args+=(--saturation-case "$case_name")
-            done
+          saturation_plan="${{ inputs.saturation_plan }}"
+          if [ -n "$saturation_plan" ]; then
+            args+=(--run-saturation)
+            if [ "$saturation_plan" != "default" ]; then
+              IFS=',' read -r -a saturation_cases <<< "$saturation_plan"
+              for case_name in "${saturation_cases[@]}"; do
+                if [ -z "$case_name" ]; then
+                  echo "saturation_plan contains an empty case name" >&2
+                  exit 2
+                fi
+                args+=(--saturation-case "$case_name")
+              done
+            fi
           fi
           if [ "${{ inputs.run_business_operation_perf }}" = "true" ]; then
             args+=(

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -56,6 +57,32 @@ def workflow_name(text: str) -> str:
     return ""
 
 
+def workflow_dispatch_inputs(text: str) -> list[str]:
+    """Return top-level workflow_dispatch input names without a YAML dependency."""
+    in_dispatch = False
+    in_inputs = False
+    names: list[str] = []
+    for line in text.splitlines():
+        if line == "  workflow_dispatch:":
+            in_dispatch = True
+            continue
+        if not in_dispatch:
+            continue
+        if line and not line.startswith("    "):
+            break
+        if line == "    inputs:":
+            in_inputs = True
+            continue
+        if not in_inputs:
+            continue
+        match = re.fullmatch(r"      ([A-Za-z_][A-Za-z0-9_-]*):", line)
+        if match:
+            names.append(match.group(1))
+        elif line and not line.startswith("      "):
+            break
+    return names
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -97,6 +124,13 @@ def main() -> int:
         text = read(path)
         add(checks, f"name:{stem}", workflow_name(text) == EXPECTED_NAMES.get(stem), f"{path.name} name={workflow_name(text)!r}")
         add(checks, f"trigger:{stem}:dispatch", "workflow_dispatch:" in text, f"{path.name} supports workflow_dispatch")
+        dispatch_inputs = workflow_dispatch_inputs(text)
+        add(
+            checks,
+            f"trigger:{stem}:dispatch-input-limit",
+            len(dispatch_inputs) <= 25,
+            f"{path.name} declares {len(dispatch_inputs)}/25 workflow_dispatch inputs",
+        )
         has_tag_push = "push:" in text and "tags:" in text and "v*" in text
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
         add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
@@ -158,12 +192,18 @@ def main() -> int:
     add(
         checks,
         "long-soak-capacity:independent-saturation-evidence",
-        "run_saturation:" in long_soak_workflow
-        and 'if [ "${{ inputs.run_saturation }}" = "true" ]; then' in long_soak_workflow
+        "saturation_plan:" in long_soak_workflow
+        and 'saturation_plan="${{ inputs.saturation_plan }}"' in long_soak_workflow
+        and 'if [ -n "$saturation_plan" ]; then' in long_soak_workflow
+        and 'if [ "$saturation_plan" != "default" ]; then' in long_soak_workflow
         and "--run-saturation" in long_soak_workflow
         and "--saturation-case" in long_soak_workflow
-        and "--saturation-cpu-threshold-percent" in long_soak_workflow
-        and "--saturation-loadgen-headroom-percent" in long_soak_workflow
+        and "run_saturation:" not in long_soak_workflow
+        and "saturation_cases:" not in long_soak_workflow
+        and "saturation_cpu_threshold_percent:" not in long_soak_workflow
+        and "saturation_loadgen_headroom_percent:" not in long_soak_workflow
+        and "--saturation-cpu-threshold-percent" not in long_soak_workflow
+        and "--saturation-loadgen-headroom-percent" not in long_soak_workflow
         and "runtime/validation/saturation-baseline-summary.json" in long_soak_workflow
         and "runtime/perf/fixed-runner-saturation/**" in long_soak_workflow
         and "if: always() && inputs.run_capacity && inputs.run_business_capacity"

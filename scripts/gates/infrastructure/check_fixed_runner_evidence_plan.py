@@ -482,7 +482,6 @@ def main() -> int:
         "run_8h_soak",
         "run_capacity",
         "run_business_capacity",
-        "run_saturation",
     )
     add(
         checks,
@@ -493,6 +492,19 @@ def main() -> int:
             for name in boolean_inputs
         ),
         ".github/workflows/long-soak-capacity.yml does not turn a dispatched false input into its default",
+    )
+    add(
+        checks,
+        "workflow:long-soak-capacity:saturation-plan-input",
+        "      saturation_plan:\n" in long_soak_workflow
+        and 'saturation_plan="${{ inputs.saturation_plan }}"' in long_soak_workflow
+        and 'if [ -n "$saturation_plan" ]; then' in long_soak_workflow
+        and 'if [ "$saturation_plan" != "default" ]; then' in long_soak_workflow
+        and "run_saturation:" not in long_soak_workflow
+        and "saturation_cases:" not in long_soak_workflow
+        and "saturation_cpu_threshold_percent:" not in long_soak_workflow
+        and "saturation_loadgen_headroom_percent:" not in long_soak_workflow,
+        ".github/workflows/long-soak-capacity.yml uses one saturation plan input and script threshold defaults",
     )
     stability_soak = read("scripts/gates/release/verify_stability_soak.py")
     add(
