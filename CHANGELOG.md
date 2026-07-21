@@ -4,6 +4,7 @@
 
 ### 证据与发布工程
 
+- 接受 v3.6 身份、SDK 分发、Raft schema、macOS ARM64 和独立 debug symbols 五项 ADR，并增加机器可读决策 manifest 与 fail-closed 治理门禁；本次只固定实现边界和顺序，不声明这些能力或发布资产已交付。
 - 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
 - Release SBOM 在 Syft 生成后补全发行包全部普通文件 SHA-256，并从 Conan lockfile 加入运行时依赖、版本、recipe revision、PURL 和根包 `DEPENDS_ON`；发布前和线上资产验证使用同一语义门禁。
 - 线上资产复验将独立发布的 SPDX SBOM 与已验证 attestation 中的 SPDX 2.3 predicate 做结构等值校验，不再只验证 archive subject digest。

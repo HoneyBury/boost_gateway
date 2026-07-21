@@ -16,7 +16,7 @@
 | P1 | 单核 `io_cores` 单变量实验 | 同一 fixed-case 的 `io_cores=1/2/4` 三轮对照 | loadgen 隔离且其它参数固定；只有聚合决策支持且人工评审通过后才调整默认或部署配置 |
 | P1 | 长任务中断取证 | 原子 checkpoint、取消 summary、完整子进程组清理 | SIGINT/SIGTERM 可记录当前步骤、连续时长、完成轮数和资源样本；中断段不得累计成 2h/8h 通过 |
 | P1 | SBOM 语义质量 | 非占位文件 hash、依赖组件/version 清单和发布前/发布后门禁 | 禁止全零 checksum；运行时资产与 Conan 依赖可追溯；签名验证与内容质量分别阻断 |
-| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 每项明确兼容策略、迁移窗口、发布资产和验证矩阵；未通过 ADR 不进入默认生产链路 |
+| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 五项 ADR 已接受并进入机器可校验 manifest；实现、平台证据和发布资产仍未开始，未满足各 ADR 退出条件前不进入默认生产链路 |
 
 ## 执行顺序
 
@@ -26,7 +26,7 @@
 4. 根据聚合结果描述 1/2/4 service CPU 的实测扩展边界；不得用旧的整栈共核矩阵推断 Gateway 独占 CPU 扩展率，也不得为通过而放宽 P99 门槛或自动修改默认值。
 5. 增加长稳取消与 checkpoint 契约。checkpoint 只保留诊断事实，最终 long/overnight 仍要求单一 run ID 连续运行不少于 7200/28800 秒。
 6. 修正 SBOM 生成源并增加语义门禁，避免“文件已签名”被误解为“组件清单完整”。
-7. 完成以上证据工程后，再为 JWKS/多 `kid`、跨语言 SDK 正式分发、内部 Raft schema 迁移和 macOS ARM64 建立下一 minor ADR。
+7. 五项下一 minor ADR 已接受并登记到 `docs/decisions/v3.6-decision-manifest.json`；后续实现必须按 manifest 的依赖顺序推进，并由 `scripts/check_next_minor_decisions.py` 保持默认阻断和事实口径。
 
 ## 当前事实
 
@@ -59,8 +59,8 @@
 - 不因一次轴实验自动调整 Gateway 线程默认值、backend pool 或 battle worker 数量；本轮聚合决策明确要求保留当前默认值并进入人工评审。
 - gRPC 继续保持 `experimental_only` / `defer_default_transport`。`grpc-experimental.yml` 已有 `BOOST_BUILD_GRPC=ON` 的 fixed-runner run，但实验交付完整不等于默认传输具备升级收益。
 - 不把多个中断 soak 片段拼接成连续长稳结论。
-- Python/C# wheel/NuGet、JWKS/多 `kid`、Raft raw JSON 迁移、macOS ARM64 和独立 debug symbols 先进入下一 minor ADR。
+- Python/C# wheel/NuGet、JWKS/多 `kid`、Raft raw JSON 迁移、macOS ARM64 和独立 debug symbols 的 ADR 已接受，但对应实现、平台证据和发布资产均未交付；在 manifest 退出条件完成前继续保持默认阻断。
 
 ## 阶段退出条件
 
-P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成：service/loadgen affinity 可审计、逐轮 CPU 资源差值可复算、隔离后的 1/2/4 service CPU 矩阵和单核 `io_cores` 三轮实验已聚合、长稳取消可生成部分失败证据且无遗留子进程、SBOM 语义门禁已实现。当前阶段转入 P2：先用 ADR 固定下一 minor 的身份、SDK 分发、Raft schema、平台与符号包边界，再开始默认链路实现。上述证据的事实锚点始终是 `37897e8`，不能用后续文档提交或 `v3.5.3` tag 代替。
+P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成：service/loadgen affinity 可审计、逐轮 CPU 资源差值可复算、隔离后的 1/2/4 service CPU 矩阵和单核 `io_cores` 三轮实验已聚合、长稳取消可生成部分失败证据且无遗留子进程、SBOM 语义门禁已实现。P2 的身份、SDK 分发、Raft schema、平台与符号包 ADR 现已接受并进入机器可校验 manifest；这只完成决策阶段，不代表五项实现或发布资产已经交付。下一步从 manifest 声明的首个实现依赖开始，任何默认链路变化仍必须等待对应退出条件。上述 P0/P1 证据的事实锚点始终是 `37897e8`，不能用后续决策或文档提交、`v3.5.3` tag 代替。

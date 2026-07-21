@@ -187,6 +187,8 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 后续长期开发以 `docs/project-blueprint.md` 为规划依据。本文档继续作为”已经实现/当前默认链路”的事实源；`docs/fixed-runner-playbook.md`、`docs/release-governance.md` 和各 runtime summary 继续作为生产候选证据事实源。
 当前 1-3 个月的实际主线执行顺序，见 `docs/mainline-execution-plan.md`。
 
+P2 的五项下一 minor ADR 已接受，机器可校验状态见 `docs/decisions/v3.6-decision-manifest.json`，并由 `scripts/check_next_minor_decisions.py` 阻止文档、决策中的默认激活状态和实现顺序漂移。这里的“已接受”只固定兼容策略、迁移窗口、资产范围和验证矩阵；JWKS/多 `kid`、正式跨语言 SDK 分发、Raft schema 迁移、macOS ARM64 正式平台支持和独立 debug symbols 均尚未完成实现或发布，不能据此改写当前默认生产链路。
+
 当前默认有界收束已经完成；长稳 2h/8h 已有固定 runner 连续证据，发布后候选 `37897e8` 的真实 lifecycle 饱和曲线、两条单变量轴和 OTel 对照也已归档。生产容量上限仍需结合部署 SLO 单独声明，不能把实验的 200K 配置请求率上限写成客户端数或生产承诺。真实 gRPC transport profile 继续作为后续专项持续沉淀。业务验证型后续工作必须继续遵守“框架与业务隔离”：demo 只放在 `demo/games/` 或后续 demo 目录，不能把坦克大战等具体业务规则写入公共框架主链。
 
 下一阶段执行优先级概括为：
@@ -196,7 +198,8 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 3. `codex/v36-capacity-evidence` 运行时候选提交 `37897e8` 已完成真实客户端 lifecycle、稳态计时、结构化失败、饱和曲线、1/2/4 service CPU 与 `io_cores` 单变量聚合，以及 battle offload/SDK 生命周期修复。主线 CI run `29822268701` 成功；AOI 完整曲线 run `29822268782` 的 18/18 轮有效并选出 `echo-sat-c2000-i10-60s`。service CPU runs `29823733478` / `29823736393` / `29823739153` 聚合结论为 `partial_cpu_scaling`；`io_cores` runs `29823742465` / `29823745289` / `29823733478` 聚合结论为 `no_material_io_core_gain`。两份聚合均完整通过且不自动调整默认值。证据采集时该提交位于候选分支；最终文档提交仅包含文档变更，不改变证据与 `37897e8` 的绑定，也不把候选状态回写为 `v3.5.3` 发布事实。
 4. 已闭环的实验项：generated proto/gRPC 已由 fixed-runner run `29465329265` 完成严格离线构建、测试、安装包 consumer 与 N6 决策证据；默认生产传输结论继续保持 `defer_default_transport`，本轮不再扩展或升格 gRPC。
 5. 当前证据工程：长稳/生产 resilience 编排器已增加取消信号、Linux parent-death/PID bridge、分层进程组回收和原子部分失败 summary。AOI 取消探针 run `29795945950` 的顶层、P5 与 stability 三层均记录 `interrupted=true` / `SIGTERM`，保留 38.766 秒、9 轮和 3 个资源样本，且 job cleanup 无 orphan process；线上资产复验已增加 standalone SBOM 与已验证 SPDX predicate 的结构绑定。checkpoint 只用于审计，不允许把多个中断段累计成 2h/8h 通过。OTel run `29823748288` 的 off/on 各三轮、绝对性能门禁、affinity 及 exporter/collector/backend 计数全部通过；观测到吞吐 `+0.103%`、P99/CPU 无变化和 RSS `+46.695%`，百分比仍不作为事后阈值。
-6. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile、跨语言/版本化 SDK 分发契约，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态、macOS ARM64 和固定/高性能 runner 趋势化容量报告。
+6. 下一 minor 实现：严格按 `docs/decisions/v3.6-decision-manifest.json` 的依赖和退出条件推进；在对应实现、兼容测试、平台消费验证和发布资产门禁完成前，五项能力继续保持默认阻断。
+7. 长期：generated proto/gRPC 从当前 unary SDK 多服务 E2E 扩展到 streaming transport profile，以及 Developer Guide、贡献路径、通用实时服务 plugin 生态和固定/高性能 runner 趋势化容量报告。
 
 当前命名与默认维护面状态：
 

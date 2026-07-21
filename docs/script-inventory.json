@@ -60,6 +60,7 @@
     "scripts/run_cloud_production_closure.py": {"category": "producer", "canonical": "scripts/producers/run_cloud_production_closure.py"},
 
     "scripts/check_mainline_readiness.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/check_mainline_readiness.py"},
+    "scripts/check_next_minor_decisions.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_next_minor_decisions.py"},
     "scripts/check_production_evidence_manifest.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/check_production_evidence_manifest.py"},
     "scripts/render_production_readiness_report.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/render_production_readiness_report.py"},
     "scripts/run_long_soak_capacity.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/run_long_soak_capacity.py"},
