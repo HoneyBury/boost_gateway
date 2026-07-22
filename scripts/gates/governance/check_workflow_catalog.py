@@ -201,6 +201,7 @@ def main() -> int:
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
     jwks_workflow = read(WORKFLOWS_ROOT / "jwks-rotation.yml")
     macos_workflow = read(WORKFLOWS_ROOT / "macos-arm64.yml")
+    sdk_distribution_workflow = read(WORKFLOWS_ROOT / "sdk-distribution.yml")
     add(
         checks,
         "ci:next-minor-decision-gate",
@@ -335,15 +336,41 @@ def main() -> int:
         "jwks-rotation:native-production-platform-routing",
         "platform:" in jwks_workflow
         and "linux-x64" in jwks_workflow
+        and "linux-arm64" in jwks_workflow
         and "macos-arm64" in jwks_workflow
         and "conan/profiles/linux-gcc-x64" in jwks_workflow
+        and "conan/profiles/linux-gcc-arm64" in jwks_workflow
         and "conan/profiles/macos-apple-clang-arm64" in jwks_workflow
         and "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock" in jwks_workflow
+        and "conan/locks/linux-gcc-arm64-release-nogrpc-nosqlite.lock" in jwks_workflow
         and "conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock" in jwks_workflow
         and "Setup native macOS Conan toolchain" in jwks_workflow
+        and "Setup native Linux ARM64 Conan toolchain" in jwks_workflow
         and 'cache_root="$RUNNER_TOOL_CACHE/boost-gateway"' in jwks_workflow
         and "-DCMAKE_OSX_ARCHITECTURES=arm64" in jwks_workflow,
-        "JWKS routes strict-offline builds and native host checks independently for Linux x64 and macOS ARM64",
+        "JWKS routes strict-offline builds and native host checks independently for all production platforms",
+    )
+    add(
+        checks,
+        "sdk-distribution:three-platform-native-assets",
+        all(
+            token in sdk_distribution_workflow
+            for token in (
+                "linux-x64",
+                "linux-arm64",
+                "macos-arm64",
+                "manylinux_2_35_x86_64",
+                "manylinux_2_39_aarch64",
+                "macosx_26_0_arm64",
+                "--rid \"$SDK_RID\"",
+                "sdk-package-py3.12",
+                "setuptools.__version__ == \"83.0.0\"",
+                "wheel.__version__ == \"0.47.0\"",
+                "auditwheel --version",
+                "sdk-distribution-${{ inputs.platform }}-${{ github.sha }}",
+            )
+        ),
+        "SDK workflow emits platform-labelled wheel/NuGet evidence for Linux x64, Linux ARM64 and macOS ARM64",
     )
     add(
         checks,
@@ -382,6 +409,16 @@ def main() -> int:
         "debug-symbols:checksums-only-published-assets",
         "sha256sum *.tar.gz *.spdx.json > SHA256SUMS-debug-symbols.txt" in debug_symbols_workflow,
         "Linux symbol checksums exclude the materialized packaging work directories",
+    )
+    add(
+        checks,
+        "debug-symbols:native-linux-architecture-routing",
+        "linux-x64" in debug_symbols_workflow
+        and "linux-arm64" in debug_symbols_workflow
+        and "conan/profiles/linux-gcc-arm64" in debug_symbols_workflow
+        and "--expected-platform" in debug_symbols_workflow
+        and "linux-debug-symbols-${{ inputs.platform }}-${{ github.sha }}" in debug_symbols_workflow,
+        "Linux debug-symbol workflow binds profile, archive and artifact identity to the native architecture",
     )
     add(
         checks,

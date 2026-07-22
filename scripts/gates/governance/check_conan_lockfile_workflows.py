@@ -51,6 +51,8 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
     "preprod_evidence": ".github/workflows/preprod-evidence.yml",
     "macos_arm64": ".github/workflows/macos-arm64.yml",
+    "sdk_distribution": ".github/workflows/sdk-distribution.yml",
+    "debug_symbols": ".github/workflows/debug-symbols.yml",
 }
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
@@ -78,7 +80,11 @@ def bootstrap_uses_resolved_home(content: str) -> bool:
         line.strip()
         for line in content.splitlines()
         if "scripts/bootstrap_conan.py" in line
-        and (re.search(r"\bpython(?:3(?:\.\d+)?)?\s+", line) is not None or "args=(" in line)
+        and (
+            re.search(r"\bpython(?:3(?:\.\d+)?)?\s+", line) is not None
+            or "EVIDENCE_PYTHON" in line
+            or "args=(" in line
+        )
     ]
     return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
 
@@ -479,9 +485,57 @@ def main() -> int:
         and LOCKFILE in jwks
         and MACOS_PROFILE in jwks
         and MACOS_LOCKFILE in jwks
+        and LINUX_ARM64_PROFILE in jwks
+        and LINUX_ARM64_LOCKFILE in jwks
+        and "inputs.platform == 'linux-arm64'" in jwks
         and "inputs.platform == 'macos-arm64'" in jwks
         and "scripts/tools/verify_conan_offline_install.py" in jwks,
-        "JWKS evidence selects the admitted native profile and lockfile for Linux x64 or macOS ARM64",
+        "JWKS evidence selects the admitted native profile and lockfile for Linux x64, Linux ARM64, or macOS ARM64",
+    )
+
+    sdk_distribution = read(FIXED_RUNNER_CONAN_WORKFLOWS["sdk_distribution"])
+    add(
+        checks,
+        "workflow:sdk-distribution:three-platform-offline-routing",
+        all(
+            token in sdk_distribution
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                MACOS_PROFILE,
+                MACOS_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "macos-arm64",
+                "--offline",
+                "--no-remote",
+                "scripts/tools/verify_conan_offline_install.py",
+            )
+        ),
+        "SDK distribution routes all production platforms through their strict-offline Conan namespace",
+    )
+
+    debug_symbols = read(FIXED_RUNNER_CONAN_WORKFLOWS["debug_symbols"])
+    add(
+        checks,
+        "workflow:debug-symbols:linux-architecture-offline-routing",
+        all(
+            token in debug_symbols
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "--expected-platform",
+                "--offline",
+                "--no-remote",
+            )
+        ),
+        "debug-symbol evidence routes x64 and ARM64 through separate strict-offline Conan namespaces",
     )
 
     failed = [check for check in checks if not check["passed"]]

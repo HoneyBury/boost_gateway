@@ -12,6 +12,13 @@
       "status": "candidate_fixed_runner_required"
     },
     {
+      "rid": "linux-arm64",
+      "python": ">=3.8",
+      "dotnet": "8.0",
+      "wheel_platform": "manylinux_2_39_aarch64",
+      "status": "candidate_fixed_runner_required"
+    },
+    {
       "rid": "osx-arm64",
       "python": ">=3.8",
       "dotnet": "8.0",

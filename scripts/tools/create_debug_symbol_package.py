@@ -63,6 +63,18 @@ def archive_tree(root: Path, archive: Path) -> None:
         output.add(root, arcname=root.name, recursive=True)
 
 
+def native_linux_platform(system: str | None = None, machine: str | None = None) -> str:
+    system = system or platform.system()
+    machine = (machine or platform.machine()).lower()
+    if system != "Linux":
+        raise RuntimeError("debug symbol packaging requires native Linux")
+    if machine in {"x86_64", "amd64"}:
+        return "linux-x64"
+    if machine in {"aarch64", "arm64"}:
+        return "linux-arm64"
+    raise RuntimeError(f"unsupported native Linux architecture: {machine}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--install-root", type=Path, required=True)
@@ -72,8 +84,7 @@ def main() -> int:
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()
 
-    if platform.system() != "Linux" or platform.machine() not in {"x86_64", "AMD64"}:
-        raise RuntimeError("debug symbol packaging currently requires native Linux x86_64")
+    platform_label = native_linux_platform()
     for tool in ("objcopy", "strip", "readelf", "nm", "addr2line"):
         if shutil.which(tool) is None:
             raise RuntimeError(f"required ELF tool not found: {tool}")
@@ -81,8 +92,8 @@ def main() -> int:
     install_root = args.install_root.resolve()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    runtime_root = output / f"boost-gateway-{args.version}-linux-x64"
-    symbols_root = output / f"boost-gateway-{args.version}-linux-x64-debug-symbols"
+    runtime_root = output / f"boost-gateway-{args.version}-{platform_label}"
+    symbols_root = output / f"boost-gateway-{args.version}-{platform_label}-debug-symbols"
     if runtime_root.exists():
         shutil.rmtree(runtime_root)
     if symbols_root.exists():
@@ -125,7 +136,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "candidate_revision": args.candidate_revision,
         "version": args.version,
-        "platform": "linux-x64",
+        "platform": platform_label,
         "files": records,
     }
     manifest_path = symbols_root / "debug-symbol-manifest.json"

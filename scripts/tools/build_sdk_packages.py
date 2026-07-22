@@ -17,6 +17,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 SDK_VERSION = "4.2.0"
+EXPECTED_NATIVE_PLATFORMS = {
+    "linux-x64": {("Linux", "x86_64"), ("Linux", "amd64")},
+    "linux-arm64": {("Linux", "aarch64"), ("Linux", "arm64")},
+    "osx-arm64": {("Darwin", "arm64"), ("Darwin", "aarch64")},
+}
 
 
 def sha256(path: Path) -> str:
@@ -42,6 +47,13 @@ def native_manifest(native: Path, rid: str) -> dict[str, object]:
     }
 
 
+def validate_native_platform(rid: str, system: str, machine: str) -> None:
+    expected = EXPECTED_NATIVE_PLATFORMS.get(rid)
+    current = (system, machine.lower())
+    if expected is not None and current not in expected:
+        raise RuntimeError(f"RID {rid} cannot be packaged on native platform {current}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--native-library", type=Path, required=True)
@@ -61,13 +73,10 @@ def main() -> int:
         parser.error(f"native library does not exist: {native}")
     if args.skip_nuget and args.require_nuget:
         parser.error("--skip-nuget and --require-nuget are mutually exclusive")
-    current_platform = (platform.system(), platform.machine().lower())
-    expected_platforms = {
-        "linux-x64": {("Linux", "x86_64"), ("Linux", "amd64")},
-        "osx-arm64": {("Darwin", "arm64"), ("Darwin", "aarch64")},
-    }
-    if args.rid in expected_platforms and current_platform not in expected_platforms[args.rid]:
-        parser.error(f"RID {args.rid} cannot be packaged on native platform {current_platform}")
+    try:
+        validate_native_platform(args.rid, platform.system(), platform.machine())
+    except RuntimeError as exc:
+        parser.error(str(exc))
 
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)

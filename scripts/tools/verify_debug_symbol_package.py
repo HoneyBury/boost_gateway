@@ -77,6 +77,7 @@ def main() -> int:
     parser.add_argument("--runtime-archive", type=Path, required=True)
     parser.add_argument("--symbols-archive", type=Path, required=True)
     parser.add_argument("--candidate-revision", required=True)
+    parser.add_argument("--expected-platform", choices=("linux-x64", "linux-arm64"))
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()
     for tool in ("readelf", "addr2line"):
@@ -91,6 +92,13 @@ def main() -> int:
         manifest_path = symbols_root / "debug-symbol-manifest.json"
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         add(checks, "manifest:revision", manifest.get("candidate_revision") == args.candidate_revision, str(manifest.get("candidate_revision")))
+        if args.expected_platform:
+            add(
+                checks,
+                "manifest:platform",
+                manifest.get("platform") == args.expected_platform,
+                str(manifest.get("platform")),
+            )
         records = manifest.get("files", [])
         add(checks, "manifest:records", isinstance(records, list) and bool(records), f"records={len(records) if isinstance(records, list) else 0}")
         mapped_runtime_paths = {

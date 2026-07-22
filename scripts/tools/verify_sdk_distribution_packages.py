@@ -81,8 +81,24 @@ def main() -> int:
             add(checks, "wheel:auditwheel-available", auditwheel is not None, str(auditwheel or "missing"))
             if auditwheel:
                 audit = subprocess.run([auditwheel, "show", str(wheel)], text=True, capture_output=True)
-                policy_versions = [int(value) for value in re.findall(r"manylinux_2_(\d+)_x86_64", audit.stdout)]
-                compatible = audit.returncode == 0 and bool(policy_versions) and min(policy_versions) <= 35
+                architecture = {"linux-x64": "x86_64", "linux-arm64": "aarch64"}.get(args.rid)
+                maximum_minor = {"linux-x64": 35, "linux-arm64": 39}.get(args.rid)
+                policy_versions = (
+                    [
+                        int(value)
+                        for value in re.findall(
+                            rf"manylinux_2_(\d+)_{re.escape(architecture)}", audit.stdout
+                        )
+                    ]
+                    if architecture
+                    else []
+                )
+                compatible = (
+                    audit.returncode == 0
+                    and maximum_minor is not None
+                    and bool(policy_versions)
+                    and min(policy_versions) <= maximum_minor
+                )
                 add(checks, "wheel:manylinux-policy", compatible, audit.stdout + audit.stderr)
 
         with tempfile.TemporaryDirectory(prefix="boost-sdk-wheel-consumer-") as temp_text:
