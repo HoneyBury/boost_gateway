@@ -98,6 +98,7 @@ jobs:
           test -z "$(git status --porcelain)"
 
       - name: Setup Ninja
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup Go
@@ -109,6 +110,7 @@ jobs:
         run: cmake --version
 
       - name: Setup Python
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
