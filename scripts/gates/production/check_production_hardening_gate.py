@@ -86,7 +86,7 @@ def validate_h5(checks: list[dict[str, Any]]) -> None:
     add(checks, "h5:csharp-example", exists("sdk/examples/csharp_full_flow/Program.cs"), "C# full-flow SDK example exists")
     add(checks, "h5:csharp-heartbeat-disconnect", contains("sdk/examples/csharp_full_flow/Program.cs", "StartHeartbeat") and contains("sdk/examples/csharp_full_flow/Program.cs", "Disconnect"), "C# example covers heartbeat and disconnect")
     add(checks, "h5:python-business-flow", contains("sdk/examples/python_full_flow.py", "start_battle") and contains("sdk/examples/python_full_flow.py", "disconnect"), "Python example covers battle flow and disconnect")
-    add(checks, "h5:compatibility-matrix", exists("sdk/docs/compatibility.md") and contains("sdk/docs/compatibility.md", "v3.3.2") and contains("sdk/docs/compatibility.md", "v4.1.0"), "SDK compatibility matrix exists")
+    add(checks, "h5:compatibility-matrix", exists("sdk/docs/compatibility.md") and contains("sdk/docs/compatibility.md", "v3.3.2") and contains("sdk/docs/compatibility.md", "v4.2.0"), "SDK compatibility matrix exists")
     sdk_docs = read_text("sdk/docs/README.md")
     add(checks, "h5:heartbeat-doc", "start_heartbeat" in sdk_docs and "on_disconnect" in sdk_docs, "SDK docs cover heartbeat/disconnect")
     add(checks, "h5:version-diagnostics", "BOOST_GATEWAY_SDK_LIBRARY" in sdk_docs and "gsdk_version()" in sdk_docs, "SDK docs cover native version/load diagnostics")
