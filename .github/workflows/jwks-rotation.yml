@@ -1,0 +1,119 @@
+name: Security / JWKS Rotation Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner JSON array"
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+
+permissions:
+  contents: read
+
+jobs:
+  https-rotation:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 60
+    env:
+      BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
+      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cpp-conan
+        with:
+          conan-version: "2.8.1"
+          python-version: "3.12"
+          conan-venv-offline: "true"
+          bootstrap-args: "--no-remote"
+          cache-build-type: Release
+          cache-profile: conan/profiles/linux-gcc-x64
+          cache-lockfile: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+
+      - name: Verify fixed-runner identity toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          test "$(uname -m)" = x86_64
+          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+          openssl version
+          python --version
+
+      - name: Verify strict offline Conan graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/tools/verify_conan_offline_install.py \
+            --profile conan/profiles/linux-gcc-x64 \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --output-folder build/conan-jwks-rotation \
+            --build-type Release \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/jwks-conan-offline-summary.json
+
+      - name: Configure identity candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/jwks-rotation -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_TESTING=ON \
+            -DBOOST_BUILD_GRPC=OFF \
+            -DBOOST_BUILD_SQLITE=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-jwks-rotation/build/Release/generators/conan_toolchain.cmake
+
+      - name: Build identity tests and HTTPS probe
+        shell: bash
+        run: |
+          cmake --build build/jwks-rotation --parallel \
+            --target jwks_rotation_probe project_v2_unit_tests project_v2_integration_tests
+
+      - name: Run focused identity and service tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          ctest --test-dir build/jwks-rotation \
+            -R 'JwtValidatorTest|ServiceBusIntegrity' \
+            --output-on-failure --timeout 60 \
+            | tee runtime/validation/jwks-focused-ctest.log
+
+      - name: Enforce production identity security contracts
+        shell: bash
+        run: python scripts/check_security_release_gate.py
+
+      - name: Run real HTTPS JWKS rotation and outage drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/verify_jwks_rotation.py \
+            --probe build/jwks-rotation/tools/jwks_rotation_probe/jwks_rotation_probe \
+            --candidate-revision "$GITHUB_SHA" \
+            --configuration Release \
+            --conan-lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --summary-path runtime/validation/jwks-rotation-summary.json
+
+      - name: Validate JWKS evidence summary contract
+        if: always()
+        shell: bash
+        run: |
+          python scripts/check_validation_summary_contract.py \
+            --summary runtime/validation/jwks-rotation-summary.json \
+            --summary-path runtime/validation/jwks-summary-contract-summary.json
+
+      - name: Upload JWKS rotation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jwks-rotation-${{ github.sha }}
+          path: |
+            runtime/validation/jwks-conan-offline-summary.json
+            runtime/validation/jwks-focused-ctest.log
+            runtime/validation/jwks-rotation-summary.json
+            runtime/validation/jwks-summary-contract-summary.json
+          if-no-files-found: warn
+          retention-days: 30

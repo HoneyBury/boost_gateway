@@ -711,6 +711,35 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 - 启用 release/capacity baseline 时，`p6-release-baseline-summary.json` 和 `runtime/perf/release-baseline/summary.json` 必须同步归档。
 - 启用 runtime observability 时，`p2-observability-runtime-summary.json` 和 `gateway-observability-runtime-summary.json` 必须同步归档。
 
+## Identity JWKS rotation evidence
+
+`jwks-rotation.yml` 必须从与其它 v3.6 候选 workflow 相同的 exact SHA 手动触发。
+Linux runner 需要 glibc 2.35、OpenSSL CLI、localhost 随机端口绑定能力，以及当前
+lockfile 对应的严格离线 Conan namespace。AOI runner 应显式传入：
+
+```text
+runner=["self-hosted","node-aoi-omen-gaming-laptop-16-am0xxx"]
+```
+
+workflow 会在临时目录生成两组 RSA/RS256 signing key 和一组短期 CA/server
+certificate，通过 `SSL_CERT_FILE` 只向当前 probe 建立信任，并启动真实
+`https://localhost:<random-port>/.well-known/jwks.json`。临时目录不会上传；artifact
+只包含去敏 summary、focused CTest 日志和 strict-offline Conan summary。
+
+通过标准：
+
+- `runtime/validation/jwks-rotation-summary.json` 为 `overall_pass=true`，provenance
+  与 checkout SHA、runner、workflow run 和 lockfile SHA-256 完全一致。
+- HTTPS server 至少记录三次 `200`、两次受控 `503` 和一次被拒绝的 `302`；C++
+  probe 必须实际经过 certificate chain、hostname verification、HTTPS allowlist
+  和 no-redirect fetcher。
+- `old-only -> old+new -> new-only` 三阶段分别接受正确 token，旧 `kid` 删除后
+  fail closed；issuer、audience、HTTP URI 和非 allowlist host 继续被拒绝。
+- outage 内 stale grace 允许已加载的新 key，超过 TTL+grace 返回
+  `jwks_stale_expired`；无初始 snapshot 的 production Login Backend 启动失败。
+- 独立静态 multi-`kid` key ring 回滚仍可验签，summary/artifact 不得包含 token、
+  PEM、private key 或 JWK modulus/exponent。
+
 ## Raft Phase B release evidence
 
 Raft Phase B 必须从同一 exact SHA 触发 `release.yml`。runner 必须预置来自完整提交 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 的 `v3.5.3` leaderboard backend，并通过 `legacy_raft_sha256` 或 `LEGACY_RAFT_SHA256` 固定其平台摘要。该 workflow 在签名之前依次生成严格离线 Conan、`raft-ha`、data recovery、真实三进程 mixed-binary、clean package consumer 和 SBOM semantic summary，并由 `scripts/verify_raft_release_evidence.py` 拒绝跨 SHA、跨 workflow run、跨 runner、lockfile digest 漂移或旧制品摘要不符。

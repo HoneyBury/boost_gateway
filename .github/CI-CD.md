@@ -14,6 +14,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `conan-validate.yml` | Dependencies / Conan Graph Validation | 手动 | Conan 依赖图验证 |
 | `debug-symbols.yml` | Release / Linux Debug Symbols Candidate | 手动 | RelWithDebInfo runtime/symbol pair、build-id/debuglink、受控崩溃符号化候选证据 |
 | `grpc-experimental.yml` | Experimental / gRPC | 手动 | gRPC 可选依赖图、构建、SDK consumer 与决策边界 |
+| `jwks-rotation.yml` | Security / JWKS Rotation Drill | 手动 | 真实 HTTPS、多 `kid` 轮换、stale grace、outage 与静态 key-ring 回滚证据 |
 | `long-soak-capacity.yml` | Stability / Fixed-Runner Soak & Capacity | 手动 | 2h/8h 长稳 + 容量测试 |
 | `nightly-stability.yml` | Stability / Bounded Soak | 手动 | 有界 smoke/short/medium stability soak |
 | `perf-regression.yml` | Performance / Baseline & Regression | 手动 | smoke / baseline / capacity 性能门禁 |
@@ -34,6 +35,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；不声明容量或生产长稳
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **Linux 调试符号候选**: Linux x64 + GNU binutils、支持 build-id 的 linker、Syft
+- **JWKS 轮换证据**: Ubuntu 22.04/glibc 2.35 x64 + OpenSSL、localhost bind、临时 CA trust 和严格离线 Conan 图
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
@@ -57,6 +59,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
 - SDK 候选包: `boost_gateway_sdk-4.2.0-*.whl`、`BoostGateway.Sdk.4.2.0.nupkg`
 - Linux symbols: `boost-gateway-{version}-linux-x64-debug-symbols.tar.gz`
+- JWKS 轮换证据: `jwks-rotation-{candidate-sha}`
 - 验证 summary: `runtime/validation/*-summary.json`
 - 性能基线: `runtime/perf/release-baseline/summary.json`
 

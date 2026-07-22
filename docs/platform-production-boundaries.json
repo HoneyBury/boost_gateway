@@ -35,6 +35,7 @@
     "conan-validate": {"linux-x64": "implemented", "linux-arm64": "foundation", "macos-arm64": "implemented-by-macos-arm64"},
     "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-dsym"},
     "grpc-experimental": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
+    "jwks-rotation": {"linux-x64": "implemented", "linux-arm64": "planned-native-security-evidence", "macos-arm64": "planned-native-security-evidence"},
     "long-soak-capacity": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "planned-platform-baseline"},
     "macos-arm64": {"linux-x64": "not-applicable", "linux-arm64": "not-applicable", "macos-arm64": "production-candidate"},
     "nightly-stability": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},

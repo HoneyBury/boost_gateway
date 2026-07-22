@@ -52,6 +52,13 @@
       "capabilities": { "loopback_bind": true },
       "vars_hint": "GRPC_EXPERIMENTAL_RUNNER"
     },
+    "jwks-rotation": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "identity-security-evidence" },
+      "capabilities": { "loopback_bind": true, "openssl": true, "trusted_ephemeral_ca": true },
+      "vars_hint": "JWKS_ROTATION_RUNNER"
+    },
     "production-gates": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",

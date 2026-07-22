@@ -11,6 +11,7 @@ Canonical groups migrated so far:
 - SDK gates: `scripts/gates/sdk/`
 - Production/recovery/evidence gates: `scripts/gates/production/`
 - Transport/TLS gates: `scripts/gates/transport/`
+- Identity/security gates: `scripts/gates/security/`
 - Governance/docs/config gates: `scripts/gates/governance/`
 - Release/RC/perf gates: `scripts/gates/release/`
 - Tools: `scripts/tools/`
@@ -41,6 +42,7 @@ Use these stable public entrypoints first:
 - `run_long_soak_capacity.py` for fixed-runner N1 long-soak/capacity evidence.
 - `verify_sdk_enterprise_delivery.py` for N5 SDK delivery.
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
+- `verify_jwks_rotation.py` for the real HTTPS multi-`kid` rotation, stale-grace, outage, and rollback drill.
 - `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
 
 R5 offline-cache execution order:

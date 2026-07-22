@@ -18,6 +18,7 @@ EXPECTED_NAMES = {
     "conan-validate": "Dependencies / Conan Graph Validation",
     "debug-symbols": "Release / Linux Debug Symbols Candidate",
     "grpc-experimental": "Experimental / gRPC",
+    "jwks-rotation": "Security / JWKS Rotation Drill",
     "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
     "macos-arm64": "Platform / macOS ARM64 Production Candidate",
     "nightly-stability": "Stability / Bounded Soak",
@@ -34,6 +35,7 @@ EXPECTED_NAMES = {
 TAG_WORKFLOWS = {"release"}
 STRICT_OFFLINE_CONAN_WORKFLOWS = {
     "grpc-experimental",
+    "jwks-rotation",
     "long-soak-capacity",
     "nightly-stability",
     "perf-regression",
@@ -197,6 +199,7 @@ def main() -> int:
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
+    jwks_workflow = read(WORKFLOWS_ROOT / "jwks-rotation.yml")
     add(
         checks,
         "ci:next-minor-decision-gate",
@@ -312,6 +315,19 @@ def main() -> int:
         and "if: inputs.include_operator_kind" in specialized_workflow
         and '--github-path "$GITHUB_PATH"' in specialized_workflow,
         "Operator kind E2E installs checksum-pinned kind and kubectl before fixed-runner preflight",
+    )
+    add(
+        checks,
+        "jwks-rotation:real-https-fixed-runner-evidence",
+        "scripts/verify_jwks_rotation.py" in jwks_workflow
+        and "jwks_rotation_probe" in jwks_workflow
+        and "runtime/validation/jwks-rotation-summary.json" in jwks_workflow
+        and "runtime/validation/jwks-conan-offline-summary.json" in jwks_workflow
+        and 'bootstrap-args: "--no-remote"' in jwks_workflow
+        and 'conan-venv-offline: "true"' in jwks_workflow
+        and "- name: Validate JWKS evidence summary contract\n        if: always()"
+        in jwks_workflow,
+        "JWKS workflow builds the real HTTPS probe and archives same-SHA strict-offline evidence",
     )
     add(
         checks,

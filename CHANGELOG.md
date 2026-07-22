@@ -7,7 +7,7 @@
 - 完成 v3.6 Raft Phase A-C 候选：strict disk/command codec、legacy/protobuf 双读、确定性 fixtures、显式 peer capability 和 gated protobuf writer 已落地；apply 只有成功后才推进持久化 index，失败会 fail closed 并在重启后重试。默认配置仍使用 legacy writer。
 - 加固 Raft Phase B 回滚与发布证据：capability 探测失败会撤销旧缓存，三节点 protocol-profile E2E 覆盖逐节点升级/回滚、leader 重选和 committed log catch-up；新增严格 `raft_state_tool` v1-to-v0 转换、每方向最多八对的内容寻址迁移历史及中断续写，并用真实 `v3.5.3`/候选 backend 完成本地十三阶段双周期三进程门禁。Release 在签名前额外校验旧制品预期 SHA-256、三节点读回、提交索引、双周期 schema 轨迹、六次 downgrade 和第二周期独立 history sidecar，再与 strict-offline Conan、Raft 专项、data recovery、clean package consumer 与 protobuf/abseil SBOM 做同 run 绑定。exact SHA 的 Linux fixed-runner run 仍待完成。
 - 接受 v3.6 身份、SDK 分发、Raft schema、macOS ARM64 和独立 debug symbols 五项 ADR，并增加机器可读决策 manifest 与 fail-closed 治理门禁；本次只固定实现边界和顺序，不声明这些能力或发布资产已交付。
-- 身份验证新增 static multi-kid/JWKS resolver、immutable snapshot、TTL/stale grace、单 worker refresh 和严格 RS256/JWK/config 边界。
+- 身份验证新增 static multi-kid/JWKS resolver、immutable snapshot、TTL/stale grace、单 worker refresh 和严格 RS256/JWK/config 边界；新增真实 localhost HTTPS、临时受信 CA、双 `kid` 轮换、受控 outage、过期 fail-closed 与静态 key-ring 回滚 fixed-runner workflow，私钥、token 和 JWK modulus 不进入 summary 或 artifact。
 - 新增 macOS ARM64 Conan profile/lockfile/preset、native install/package verifier 与候选 workflow；本机 ARM64 结果仍是 local candidate fact。
 - SDK 升级到 4.2.0，新增 platform wheel/NuGet 构建器、包内 native manifest、clean consumer、安装后真实 Gateway full-flow 与逐包 SBOM/checksum 候选 workflow。
 - 新增 Linux `RelWithDebInfo` runtime/debug-symbol pair、build-id/debuglink/hash 映射、独立 archive verifier、受控崩溃探针和离线符号化 runbook。

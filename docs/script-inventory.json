@@ -20,6 +20,7 @@
     "scripts/verify_prometheus_alert_states.py",
     "scripts/verify_tls_preprod_multi_run.py",
     "scripts/verify_macos_arm64_package.py",
+    "scripts/verify_jwks_rotation.py",
     "scripts/manage_todos.py"
   ],
   "scripts": {
@@ -112,6 +113,7 @@
     "scripts/verify_release_candidate.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/verify_release_candidate.py"},
     "scripts/verify_raft_release_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_raft_release_evidence.py"},
     "scripts/verify_raft_mixed_binary.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_raft_mixed_binary.py"},
+    "scripts/verify_jwks_rotation.py": {"category": "public_entrypoint", "canonical": "scripts/gates/security/verify_jwks_rotation.py"},
     "scripts/verify_macos_arm64_package.py": {"category": "public_entrypoint", "canonical": "scripts/tools/verify_macos_arm64_package.py"},
     "scripts/verify_stability_soak.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_stability_soak.py"},
 
