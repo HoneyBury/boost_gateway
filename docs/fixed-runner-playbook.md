@@ -12,6 +12,52 @@ GitHub-hosted `ubuntu-latest` 仍可作为主线有界回归兜底，但不是 f
 
 GitHub 仓库 Actions runner inventory 的单一事实源见 `docs/runner-inventory.md`。截至 2026-07-15，`aoi-omen-gaming-laptop-16-am0xxx` 在线并已通过机器唯一 label 完成 R5/R6；`MyDesktop-Win` 与 `myserver` 离线。是否形成生产证据仍以 workflow artifact 为准。
 
+## 2026-07-22 v3.6 pre-freeze Linux x64 capability evidence
+
+AOI runner `aoi-omen-gaming-laptop-16-am0xxx` is an online Ubuntu 22.04 x86_64
+host with glibc 2.35, GCC 13.4, CMake 3.28, Ninja, Docker, Compose and the admitted
+Python 3.12 / Conan 2.8.1 environment. The strict-offline Release graph used
+`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, whose SHA-256 is
+`8edf407134fef2cd8b58b1f24b8012c578812fa4373130d989c27b9dde96f88c`.
+
+The following runs are pre-freeze capability evidence and remain bound to their
+own revisions:
+
+- Preproduction run [`29900090220`](https://github.com/HoneyBury/boost_gateway/actions/runs/29900090220)
+  at `b319be4b8294450eb83f9a95c8680ea747fa2d88` passed strict-offline Conan,
+  `linux/amd64` image admission with `pull=never`, real R5 gateway recovery and
+  two R6 TLS iterations. Artifact `preprod-evidence-29900090220` has ID
+  `8521767799`; gateway restart RTO was 0.462 seconds and every archived summary
+  reports `overall_pass=true` with matching runner, run and revision provenance.
+- Release run [`29902388234`](https://github.com/HoneyBury/boost_gateway/actions/runs/29902388234)
+  at `76715ba53326e825052f5f496465e5862960a64d` passed the full build/CTest,
+  Raft specialized/data-recovery/real mixed-binary gates, bounded release gates,
+  clean package and CMake consumers, SPDX checks and Raft evidence binding. The
+  Linux package artifact `boost-gateway-linux-x64` has ID `8522600423`; Raft and
+  performance evidence artifacts have IDs `8522556773` and `8522586045`.
+- R0 run [`29902403738`](https://github.com/HoneyBury/boost_gateway/actions/runs/29902403738)
+  at the same `76715ba53326e825052f5f496465e5862960a64d` passed Redis live, runtime HTTP,
+  two kind lifecycles, P5/P6, release baseline and SDK enterprise gates. Artifact
+  `production-candidate-evidence-29902403738` has ID `8522927830` and records
+  `overall_pass=true`, the exact checkout revision and the lockfile digest above.
+- Because `jwks-rotation.yml` is not registered on the default branch, its Linux
+  path was reproduced locally at `76715ba53326e825052f5f496465e5862960a64d`
+  instead of being presented as a workflow artifact. Strict-offline Conan passed,
+  focused CTest passed 53/53, the security release gate passed, and the real HTTPS
+  rotation drill passed 10/10 outer plus 16/16 probe checks. It observed HTTP
+  status counts `200:3`, `503:2`, `302:1`; the summary contract passed 5/5 and
+  confirmed that no token, PEM, private key or JWK material was persisted.
+
+These results do not form one final candidate set: the R5/R6 run and the later
+Release/R0/JWKS checks have different exact SHAs, repository changes continued
+after both revisions, and the project version on `main` remains `3.5.3`. The
+default branch also does not yet register `jwks-rotation.yml`,
+`sdk-distribution.yml` or `debug-symbols.yml`, so the local JWKS result, SDK checks
+inside R0 and Release consumers do not substitute for their dedicated immutable
+artifacts. No native Linux ARM64 runner is registered. Final v3.6 claims therefore
+remain blocked on workflow registration, a frozen revision, exact-SHA refresh and
+the separate Linux ARM64 evidence chain.
+
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
 ### 新机器的 Conan 缓存初始化（必须执行）
