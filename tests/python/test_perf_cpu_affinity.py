@@ -156,6 +156,34 @@ class PerfCpuAffinityTest(unittest.TestCase):
         self.assertEqual(result["samples"], 3)
         self.assertEqual(result["active_sessions"], 0)
 
+    @patch(
+        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        side_effect=[
+            *({"cpu_seconds": 10.0} for _ in range(6)),
+            *({"cpu_seconds": 10.01} for _ in range(6)),
+        ],
+    )
+    @patch(
+        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        return_value={"backend_metrics": {}, "total_active_sessions": 0},
+    )
+    def test_service_quiescence_scales_quantized_budget_by_process_count(
+        self,
+        _fetch_json,
+        _process_snapshot,
+    ) -> None:
+        managed = [SimpleNamespace(name=f"service-{index}", pid=index) for index in range(6)]
+        result = wait_for_service_quiescence(
+            managed,
+            "http://127.0.0.1/diagnostics",
+            timeout_seconds=0.1,
+            interval_seconds=0.0,
+        )
+        self.assertEqual(result["managed_process_count"], 6)
+        self.assertAlmostEqual(result["aggregate_cpu_delta_seconds"], 0.06)
+        self.assertAlmostEqual(result["aggregate_cpu_budget_seconds"], 0.06)
+        self.assertEqual(result["aggregate_idle_cpu_budget_percent"], 30.0)
+
     def test_service_resource_delta_uses_adjacent_snapshots(self) -> None:
         first = {"cpu_seconds": 10.0, "working_set_mb": 100.0, "handles": 5, "threads": 2}
         second = {"cpu_seconds": 40.0, "working_set_mb": 110.0, "handles": 6, "threads": 3}

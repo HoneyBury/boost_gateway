@@ -716,11 +716,15 @@ def wait_for_service_quiescence(
             current_cpu = dict(cpu_state)
             if current_cpu.keys() == previous_cpu.keys():
                 elapsed = max(sampled_at - previous[3], interval_seconds, 0.001)
+                process_count = max(1, len(current_cpu))
                 latest_cpu_delta = sum(
                     max(0.0, current_cpu[name] - previous_cpu[name])
                     for name in current_cpu
                 )
-                latest_cpu_budget = max(0.01, elapsed * idle_cpu_fraction)
+                latest_cpu_budget = max(
+                    0.01 * process_count,
+                    elapsed * idle_cpu_fraction * process_count,
+                )
                 if latest_cpu_delta <= latest_cpu_budget:
                     return {
                         "quiesced": True,
@@ -731,6 +735,10 @@ def wait_for_service_quiescence(
                         "aggregate_cpu_budget_seconds": round(latest_cpu_budget, 6),
                         "aggregate_cpu_percent": round(latest_cpu_delta / elapsed * 100.0, 3),
                         "idle_cpu_budget_percent": round(idle_cpu_fraction * 100.0, 3),
+                        "aggregate_idle_cpu_budget_percent": round(
+                            idle_cpu_fraction * process_count * 100.0, 3
+                        ),
+                        "managed_process_count": process_count,
                         "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
                     }
         previous = (latest[0], latest[1], cpu_state, sampled_at)
