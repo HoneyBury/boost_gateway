@@ -478,6 +478,13 @@ TEST(V2DemoServerSmokeTest, DemoServerTracksPinnedAcceptorCoreAndSessionSnapshot
         const auto login = client.exchange(net::protocol::kLoginRequest, 31, "core_user|token:core_user|CoreUser");
         EXPECT_EQ(login.message_id, net::protocol::kLoginResponse);
 
+        const auto dispatch_deadline =
+            std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        while (server.io_core_snapshot()[1].outbound_dispatches == 0 &&
+               std::chrono::steady_clock::now() < dispatch_deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+
         EXPECT_EQ(server.acceptor_core_id(), 1U);
         EXPECT_EQ(server.session_io_core(1), 1U);
         const auto snapshots = server.io_core_snapshot();

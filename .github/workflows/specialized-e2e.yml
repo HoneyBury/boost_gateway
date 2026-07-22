@@ -110,7 +110,7 @@ jobs:
         run: cmake --version
 
       - name: Setup Python
-        if: runner.os != 'Linux' || runner.arch != 'ARM64'
+        if: runner.os == 'Linux' && runner.arch != 'ARM64'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
