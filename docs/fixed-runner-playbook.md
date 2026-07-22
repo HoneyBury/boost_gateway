@@ -89,15 +89,30 @@ Linux ARM64 workflow 使用 runner 自带的原生 CMake/Ninja/Python。提交
 二进制的 setup action；x64 和 GitHub-hosted runner 保持原行为。首次联网预热 run
 `29905671975` 成功后，同 SHA strict-offline run `29906228268` 以 ARM64 Release
 lockfile 完成 `--no-remote --build=never`、Conan-provider configure 和 unit-test
-target build。当前 namespace 为：
+target build。Release namespace 为：
 
 ```text
 /opt/boost-gateway/conan/ubuntu-24.04-gcc13.3.0-arm64-release/conan-2.8.1-graph-aa67f82068f3051dd848
 ```
 
-该结果只完成 Release G2。Debug 与 gRPC 各自需要独立 namespace 预热和严格离线
-复验；11-image `linux/arm64` preflight、R5/R6 和平台容量也必须形成独立 artifact。
-完成这些 gate 前不得添加 `preprod-r5` label。
+Debug 在线 seed run `29907427580` 后，strict-offline run `29907949804` 在
+`c2504f6e9b28c068f886412d70e1d5167ddfd1cf` 通过 Debug install/configure/unit-test
+target，artifact ID `8524649296`。gRPC graph 以 ARM64 gRPC/no-sqlite lockfile 独立
+预热后，strict-offline run `29908827298` 在同 SHA 通过项目 targets、focused tests、
+installed SDK consumer 与 PoC boundary，artifact ID `8525038829`。对应 namespaces：
+
+```text
+/opt/boost-gateway/conan/ubuntu-24.04-gcc13.3.0-arm64-debug/conan-2.8.1-graph-fbd8f0c9e0d2928cd474
+/opt/boost-gateway/conan/ubuntu-24.04-gcc13.3.0-arm64-release/conan-2.8.1-graph-de9cd1cd6781b37783a6
+```
+
+run `29909904605` 在 `9485993b92f0d8e06fe675eae89c47280a7f46d2` 使用 Release
+ARM64 lockfile、`linux/arm64`、`pull=never` 完成 11-image offline preflight、包含
+Redis 恢复的 R5 和两轮 R6。preflight 为 11/11 ARM64、0 missing、0 wrong-platform、
+0 stale-build；R5 23/23 步骤与 recovery record 33/33 通过；R6 overhead ratios 为
+1.044、1.028。artifact `preprod-evidence-29909904605` 的 ID 为 `8525559864`。
+该 runner 已完成 G0-G5，并获得 `preprod-r5-honeybury-m4-linux-arm64` 与
+`preprod-r5`。平台级 baseline/soak/capacity 和最终 frozen-SHA artifact 仍是独立任务。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
@@ -263,8 +278,8 @@ Mac runner 的两种运行边界如下：
    image bundle，并记录 daemon、VM architecture、Compose SHA、image ID 和 RepoDigest。
 3. Mac-hosted Linux container 结果属于所选 Linux OCI 平台的宿主兼容性证据，不能
    替代 macOS 原生 R5，也不能替代 Linux runner 的内核、cgroup、容量和性能事实。
-4. Linux ARM64 profile、lockfile 和 Release Conan cache 已完成 G2；仍需 Debug/gRPC、
-   11-image preflight 和完整 R5 workflow artifact 后才能升格。
+4. Linux ARM64 profile、lockfile、Release/Debug/gRPC Conan cache、11-image preflight
+   与完整 R5/R6 workflow artifact 已完成 G0-G5；最终发布仍要求 frozen SHA 上刷新。
 
 当前 Mac 的 OrbStack VM 用于原生 Linux ARM64 验证，但本地 image cache 本身不构成
 Linux R5 准入。macOS R5 是否通过只看原生 workflow summary。初始化阶段已从 Docker
