@@ -17,6 +17,7 @@ from unittest import mock
 from scripts.gates.release import verify_stability_soak
 from scripts.gates.release.verify_stability_soak import (
     archive_failed_arch_run,
+    host_resource_snapshot,
     process_tree_resource_snapshot,
     record_failure_episode,
     ResourceSampler,
@@ -182,6 +183,85 @@ def resource_sample(
 
 
 class ResourceEvidenceTest(unittest.TestCase):
+    @staticmethod
+    def darwin_command_result(command: list[str], **_kwargs):
+        result = mock.Mock(returncode=0, stdout="")
+        if command[0] == "top":
+            result.stdout = "CPU usage: 4.25% user, 5.75% sys, 90.00% idle\n"
+        elif command[0] == "vm_stat":
+            result.stdout = (
+                "Mach Virtual Memory Statistics: (page size of 16384 bytes)\n"
+                "Pages free: 100.\nPages inactive: 200.\nPages speculative: 50.\n"
+            )
+        elif command[0] == "sysctl":
+            result.stdout = "1073741824\n"
+        elif command[:3] == ["ps", "-axo", "pid=,ppid=,rss=,comm="]:
+            result.stdout = "100 1 1024 verifier\n101 100 2048 child\n102 1 4096 unrelated\n"
+        elif command[0] == "lsof":
+            result.stdout = f"p{command[3]}\nf0\nf1\n"
+        elif command[:2] == ["ps", "-M"]:
+            result.stdout = "header\nthread-one\nthread-two\n"
+        return result
+
+    def test_darwin_host_snapshot_uses_native_resource_commands(self) -> None:
+        with (
+            mock.patch.object(verify_stability_soak.platform, "system", return_value="Darwin"),
+            mock.patch.object(
+                verify_stability_soak.subprocess,
+                "run",
+                side_effect=self.darwin_command_result,
+            ),
+        ):
+            snapshot = host_resource_snapshot()
+
+        self.assertEqual(10.0, snapshot["cpu_percent"])
+        self.assertEqual(1048576, snapshot["memory_kib"]["MemTotal"])
+        self.assertEqual(5600, snapshot["memory_kib"]["MemAvailable"])
+
+    def test_darwin_process_tree_includes_descendants(self) -> None:
+        with (
+            mock.patch.object(verify_stability_soak.platform, "system", return_value="Darwin"),
+            mock.patch.object(
+                verify_stability_soak.subprocess,
+                "run",
+                side_effect=self.darwin_command_result,
+            ),
+        ):
+            snapshot = process_tree_resource_snapshot(100)
+
+        self.assertEqual(2, snapshot["process_count"])
+        self.assertEqual(3072, snapshot["rss_kib"])
+        self.assertEqual(4, snapshot["fd_count"])
+        self.assertEqual(4, snapshot["thread_count"])
+
+    def test_summarizes_darwin_direct_cpu_samples(self) -> None:
+        samples = [
+            {
+                "elapsed_seconds": elapsed,
+                "host": {
+                    "cpu_percent": cpu,
+                    "memory_kib": {"MemAvailable": memory},
+                },
+                "process_tree": {
+                    "rss_kib": rss,
+                    "fd_count": 4,
+                    "thread_count": 1,
+                    "process_count": 1,
+                },
+            }
+            for elapsed, cpu, memory, rss in (
+                (0, 10.0, 1000, 100),
+                (30, 20.0, 900, 120),
+                (60, 15.0, 950, 110),
+            )
+        ]
+
+        summary = summarize_resource_samples(samples, 30, 60)
+
+        self.assertTrue(summary["passed"])
+        self.assertEqual(20.0, summary["host"]["cpu_percent"]["maximum"])
+        self.assertEqual(-50.0, summary["host"]["memory_available_kib"]["delta"])
+
     def test_summarizes_coverage_peaks_and_trends(self) -> None:
         summary = summarize_resource_samples(
             [

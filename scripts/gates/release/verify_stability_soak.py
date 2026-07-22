@@ -7,8 +7,10 @@ import argparse
 import json
 import os
 import platform
+import re
 import shutil
 import signal
+import subprocess
 import sys
 import threading
 import time
@@ -260,6 +262,64 @@ def host_resource_snapshot() -> dict[str, object]:
     except (AttributeError, OSError):
         pass
 
+    if platform.system() == "Darwin":
+        try:
+            completed = subprocess.run(
+                ["top", "-l", "1", "-n", "0", "-stats", "pid"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            match = re.search(
+                r"CPU usage:\s*([0-9.]+)% user,\s*([0-9.]+)% sys",
+                completed.stdout,
+            )
+            if completed.returncode == 0 and match:
+                snapshot["cpu_percent"] = round(
+                    float(match.group(1)) + float(match.group(2)), 3
+                )
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+
+        try:
+            completed = subprocess.run(
+                ["vm_stat"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            page_match = re.search(r"page size of (\d+) bytes", completed.stdout)
+            pages = {
+                key: int(value)
+                for key, value in re.findall(
+                    r"^Pages ([^:]+):\s+(\d+)\.",
+                    completed.stdout,
+                    flags=re.MULTILINE,
+                )
+            }
+            total = subprocess.run(
+                ["sysctl", "-n", "hw.memsize"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if completed.returncode == 0 and total.returncode == 0 and page_match:
+                page_size = int(page_match.group(1))
+                available_pages = sum(
+                    pages.get(name, 0)
+                    for name in ("free", "inactive", "speculative")
+                )
+                snapshot["memory_kib"] = {
+                    "MemTotal": int(total.stdout.strip()) // 1024,
+                    "MemAvailable": available_pages * page_size // 1024,
+                }
+        except (OSError, subprocess.SubprocessError, ValueError):
+            pass
+        return snapshot
+
     try:
         snapshot["proc_loadavg"] = Path("/proc/loadavg").read_text(encoding="utf-8").strip()
     except OSError:
@@ -313,6 +373,9 @@ def host_resource_snapshot() -> dict[str, object]:
 
 def process_tree_resource_snapshot(root_pid: int) -> dict[str, object]:
     """Aggregate RSS/fd/thread counts for the soak verifier and its descendants."""
+    if platform.system() == "Darwin":
+        return darwin_process_tree_resource_snapshot(root_pid)
+
     processes: dict[int, dict[str, object]] = {}
     for status_path in Path("/proc").glob("[0-9]*/status"):
         try:
@@ -361,6 +424,85 @@ def process_tree_resource_snapshot(root_pid: int) -> dict[str, object]:
     }
 
 
+def darwin_process_tree_resource_snapshot(root_pid: int) -> dict[str, object]:
+    processes: dict[int, dict[str, object]] = {}
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,rss=,comm="],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if completed.returncode == 0:
+            for line in completed.stdout.splitlines():
+                fields = line.strip().split(maxsplit=3)
+                if len(fields) < 3:
+                    continue
+                pid, ppid, rss = (int(value) for value in fields[:3])
+                processes[pid] = {
+                    "pid": pid,
+                    "ppid": ppid,
+                    "name": fields[3] if len(fields) == 4 else "unknown",
+                    "rss_kib": rss,
+                }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+
+    selected = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, process in processes.items():
+            if pid not in selected and int(process["ppid"]) in selected:
+                selected.add(pid)
+                changed = True
+
+    samples: list[dict[str, object]] = []
+    for pid in sorted(selected):
+        process = processes.get(pid)
+        if process is None:
+            continue
+        fd_count = 0
+        threads = 0
+        try:
+            descriptors = subprocess.run(
+                ["lsof", "-a", "-p", str(pid), "-Fn"],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if descriptors.returncode == 0:
+                fd_count = sum(
+                    1 for line in descriptors.stdout.splitlines() if line.startswith("f")
+                )
+        except (OSError, subprocess.SubprocessError):
+            pass
+        try:
+            thread_list = subprocess.run(
+                ["ps", "-M", "-p", str(pid)],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            if thread_list.returncode == 0:
+                threads = max(1, len(thread_list.stdout.splitlines()) - 1)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        samples.append({**process, "fd_count": fd_count, "threads": threads})
+
+    return {
+        "root_pid": root_pid,
+        "process_count": len(samples),
+        "rss_kib": sum(int(item["rss_kib"]) for item in samples),
+        "fd_count": sum(int(item["fd_count"]) for item in samples),
+        "thread_count": sum(int(item["threads"]) for item in samples),
+        "processes": samples,
+    }
+
+
 def summarize_resource_samples(
     samples: list[dict[str, object]],
     interval_seconds: float,
@@ -380,6 +522,12 @@ def summarize_resource_samples(
             continue
         if total_delta > 0:
             host_cpu_percent.append(round(100.0 * (total_delta - idle_delta) / total_delta, 3))
+    if not host_cpu_percent:
+        host_cpu_percent = [
+            float(sample["host"]["cpu_percent"])
+            for sample in samples
+            if isinstance(sample.get("host", {}).get("cpu_percent"), (int, float))
+        ]
 
     def values(section: str, key: str) -> list[float]:
         result: list[float] = []
