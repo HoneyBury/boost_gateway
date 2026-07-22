@@ -6,7 +6,7 @@ Open: **1** | Completed: **0** | Total: **1**
 
 | Done | ID | Priority | Category | Task | GitHub Issue |
 |---|---|---|---|---|---|
-| [ ] | `TODO-0001` | `P0` | release-environment | Provision v3.6 activation and evidence environments | Not linked |
+| [ ] | `TODO-0001` | `P0` | release-environment | Provision v3.6 activation and evidence environments | [#8](https://github.com/HoneyBury/boost_gateway/issues/8) |
 
 ## TODO-0001: Provision v3.6 activation and evidence environments
 

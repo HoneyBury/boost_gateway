@@ -22,8 +22,8 @@
       "created_at": "2026-07-22T00:00:00Z",
       "completed_at": null,
       "github": {
-        "issue_number": null,
-        "issue_url": null
+        "issue_number": 8,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/8"
       }
     }
   ]
