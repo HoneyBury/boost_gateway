@@ -184,10 +184,15 @@ jobs:
 
       - uses: actions/upload-artifact@v4
         if: always()
+        env:
+          ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"
+          ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"
         with:
           name: linux-debug-symbols-${{ inputs.platform }}-${{ github.sha }}
           path: |
-            runtime/debug-symbol-assets/*
+            runtime/debug-symbol-assets/*.tar.gz
+            runtime/debug-symbol-assets/*.spdx.json
+            runtime/debug-symbol-assets/SHA256SUMS-debug-symbols.txt
             runtime/validation/debug-symbol-*-summary.json
             runtime/validation/debug-symbol-runner-cache-summary.json
           if-no-files-found: warn

@@ -424,6 +424,22 @@ def main() -> int:
     )
     add(
         checks,
+        "debug-symbols:uploads-only-published-assets",
+        "runtime/debug-symbol-assets/*.tar.gz" in debug_symbols_workflow
+        and "runtime/debug-symbol-assets/*.spdx.json" in debug_symbols_workflow
+        and "runtime/debug-symbol-assets/SHA256SUMS-debug-symbols.txt" in debug_symbols_workflow
+        and "runtime/debug-symbol-assets/*\n" not in debug_symbols_workflow,
+        "Linux symbol artifacts exclude unchecksummed materialized packaging work directories",
+    )
+    add(
+        checks,
+        "debug-symbols:tolerates-slow-fixed-runner-upload",
+        'ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"' in debug_symbols_workflow
+        and 'ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"' in debug_symbols_workflow,
+        "large pre-compressed symbol assets use bounded upload concurrency and a 20-minute chunk timeout",
+    )
+    add(
+        checks,
         "specialized-e2e:raft-phase-b-evidence",
         "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
         and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow

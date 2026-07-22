@@ -294,6 +294,7 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     c_api_test = read_text("sdk/tests/unit/c_api_test.cpp")
     package_builder = read_text("scripts/tools/build_sdk_packages.py")
     package_verifier = read_text("scripts/tools/verify_sdk_distribution_packages.py")
+    package_workflow = read_text(".github/workflows/sdk-distribution.yml")
     add_check(
         checks,
         "sdk-tests:c-api-test-registered",
@@ -329,6 +330,14 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         "sdk-tools:nuget-consumer-system-namespace",
         "using System; using BoostGateway.Sdk;" in package_verifier,
         "clean NuGet consumer imports System without relying on implicit usings",
+    )
+    add_check(
+        checks,
+        "sdk-workflow:dedicated-package-python",
+        'package_python="$(command -v python)"' in package_workflow
+        and 'BOOST_GATEWAY_PACKAGE_PYTHON=%s' in package_workflow
+        and package_workflow.count('"$BOOST_GATEWAY_PACKAGE_PYTHON"') >= 4,
+        "wheel/NuGet tools keep using the admitted setup-python interpreter after Conan PATH setup",
     )
     add_check(
         checks,

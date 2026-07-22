@@ -104,8 +104,11 @@ jobs:
         run: |
           set -euo pipefail
           test -x "$PACKAGE_PYTHON"
-          "$PACKAGE_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
-          "$PACKAGE_PYTHON" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
+          package_python="$(command -v python)"
+          test "$package_python" = "$PACKAGE_PYTHON"
+          "$package_python" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          "$package_python" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
+          printf 'BOOST_GATEWAY_PACKAGE_PYTHON=%s\n' "$package_python" >> "$GITHUB_ENV"
           dotnet --version
           syft version
           if [[ "${{ inputs.platform }}" == linux-* ]]; then
@@ -180,7 +183,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          "$PACKAGE_PYTHON" scripts/tools/build_sdk_packages.py \
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/build_sdk_packages.py \
             --native-library "$SDK_NATIVE_LIBRARY" \
             --rid "$SDK_RID" \
             --wheel-platform-tag "$SDK_WHEEL_TAG" \
@@ -195,10 +198,10 @@ jobs:
           if [[ "${{ inputs.platform }}" == linux-* ]]; then
             verify_args+=(--require-auditwheel)
           fi
-          "$PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py "${verify_args[@]}"
-          "$PACKAGE_PYTHON" -m venv runtime/sdk-package-flow-venv
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py "${verify_args[@]}"
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" -m venv runtime/sdk-package-flow-venv
           runtime/sdk-package-flow-venv/bin/pip install --no-index --no-deps "$wheel"
-          "$PACKAGE_PYTHON" scripts/gates/sdk/verify_sdk_full_flow_client.py \
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/gates/sdk/verify_sdk_full_flow_client.py \
             --build-dir build/sdk-distribution --skip-build \
             --python-package-client runtime/sdk-package-flow-venv/bin/python \
             --summary-path runtime/validation/sdk-package-full-flow-summary.json
