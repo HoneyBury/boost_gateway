@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
             --conan-version 2.8.1 \
             --offline \
@@ -131,7 +131,7 @@ jobs:
         if: inputs.include_operator_kind
         shell: bash
         run: |
-          python scripts/tools/bootstrap_kind_tools.py \
+          python3 scripts/tools/bootstrap_kind_tools.py \
             --install-dir "/opt/boost-gateway/tools/kubernetes-v0.32.0-v1.36.1" \
             --github-path "$GITHUB_PATH"
 
@@ -140,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type "${{ inputs.configuration }}" \
             --profile "${{ inputs.conan_profile }}" \
             --lockfile "${{ inputs.conan_lockfile }}" \
@@ -152,8 +152,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          python scripts/tools/verify_conan_offline_install.py \
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/tools/verify_conan_offline_install.py \
             --profile "${{ inputs.conan_profile }}" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --output-folder build/conan-specialized \
@@ -183,13 +183,13 @@ jobs:
           if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
             args+=(--require-kind)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Raft data recovery evidence
         if: inputs.specialized_profile != 'redis-live'
         shell: bash
         run: |
-          python scripts/verify_data_recovery_gate.py \
+          python3 scripts/verify_data_recovery_gate.py \
             --build-dir "${{ inputs.build_dir }}" \
             --configuration "${{ inputs.configuration }}" \
             --skip-build \
@@ -227,7 +227,7 @@ jobs:
           if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
             args+=(--include-operator-kind)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Render specialized E2E summary
         if: always()
@@ -245,7 +245,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload specialized E2E summary

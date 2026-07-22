@@ -174,6 +174,8 @@ def run_case(
             "FAKE_DOCKER_BUILD_MANIFEST": json.dumps(build_manifest),
             "FAKE_DOCKER_BINARY_SHA256": binary_sha256,
             "FAKE_DOCKER_ARCHITECTURE": image_architecture,
+            "BOOST_GATEWAY_CANDIDATE_REVISION": candidate_revision,
+            "BOOST_GATEWAY_CONAN_LOCKFILE": str(lockfile.relative_to(ROOT)),
         }
     )
     command = [

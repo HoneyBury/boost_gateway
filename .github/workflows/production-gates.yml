@@ -181,13 +181,13 @@ jobs:
           if [ "${{ inputs.include_operator_kind }}" = "true" ]; then
             args+=(--require-kind)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Conan lockfile install preflight
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           test "${{ inputs.conan_build_type || 'Release' }}" = Release
           args=(conan install . --output-folder=build/conan-production-gates --build=never --no-remote -s build_type=Release --profile:host "$PRODUCTION_CONAN_PROFILE" --profile:build "$PRODUCTION_CONAN_PROFILE" --lockfile "$PRODUCTION_RELEASE_LOCKFILE" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
           "${args[@]}"
@@ -211,7 +211,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type "$PRODUCTION_BUILD_TYPE" \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_CONAN_LOCKFILE" \
@@ -223,7 +223,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           conan install . \
             --output-folder=build/conan-production-main \
             --build=never \
@@ -281,7 +281,7 @@ jobs:
           if [ "${{ inputs.include_capacity_baseline }}" = "true" ]; then
             args+=(--include-capacity-baseline)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: P6 production evidence gate
         if: inputs.gate == 'p6-evidence'
@@ -313,14 +313,14 @@ jobs:
           if [ "${{ inputs.include_capacity_baseline }}" = "true" ]; then
             args+=(--include-capacity-baseline)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Observability runtime evidence
         if: inputs.gate == 'p6-evidence' && inputs.include_observability_runtime
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_observability_gate.py \
+          python3 scripts/verify_observability_gate.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration "$PRODUCTION_BUILD_TYPE" \
             --skip-build \
@@ -355,7 +355,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload production gate evidence

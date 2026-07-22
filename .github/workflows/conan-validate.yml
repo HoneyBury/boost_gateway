@@ -94,7 +94,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            python scripts/tools/ensure_conan_venv.py
+            python3 scripts/tools/ensure_conan_venv.py
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12
             --conan-version 2.8.1
             --github-env "$GITHUB_ENV"
@@ -109,7 +109,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type "${{ inputs.build_type }}" \
             --profile "${{ inputs.conan_profile }}" \
             --lockfile "${{ inputs.conan_lockfile }}" \

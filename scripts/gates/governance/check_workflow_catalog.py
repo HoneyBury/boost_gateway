@@ -281,7 +281,7 @@ def main() -> int:
         "long-soak capacity runs and archives saturation independently without widening the R4 condition",
     )
     pid_marker = 'pid_marker="runtime/validation/long-soak-capacity.pid"'
-    background_launch = 'python "${args[@]}" &'
+    background_launch = 'python3 "${args[@]}" &'
     pid_capture = "long_soak_pid=$!"
     atomic_pid_publish = 'mv -f "$pid_marker_tmp" "$pid_marker"'
     process_wait = 'wait "$long_soak_pid" || long_soak_status=$?'

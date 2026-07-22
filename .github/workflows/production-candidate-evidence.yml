@@ -121,7 +121,7 @@ jobs:
         if: inputs.include_kind
         shell: bash
         run: |
-          python scripts/tools/bootstrap_kind_tools.py \
+          python3 scripts/tools/bootstrap_kind_tools.py \
             --install-dir "/opt/boost-gateway/tools/kubernetes-v0.32.0-v1.36.1" \
             --github-path "$GITHUB_PATH"
 
@@ -129,7 +129,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -140,7 +140,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
@@ -160,13 +160,13 @@ jobs:
           )
           if [ "${{ inputs.include_redis_live }}" = "true" ]; then args+=(--require-redis); fi
           if [ "${{ inputs.include_kind }}" = "true" ]; then args+=(--require-kind); fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Conan lockfile install preflight
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           test "${{ inputs.conan_build_type || 'Release' }}" = Release
           args=(conan install . --output-folder=build/conan-production-candidate --build=never --no-remote -s build_type=Release --profile:host "$PRODUCTION_CONAN_PROFILE" --profile:build "$PRODUCTION_CONAN_PROFILE" --lockfile "$PRODUCTION_RELEASE_LOCKFILE" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
           "${args[@]}"
@@ -190,7 +190,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type "$PRODUCTION_BUILD_TYPE" \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_CONAN_LOCKFILE" \
@@ -202,7 +202,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           conan install . \
             --output-folder=build/conan-production-candidate-main \
             --build=never \
@@ -250,7 +250,7 @@ jobs:
           if [ "${{ inputs.include_runtime_http }}" = "true" ]; then args+=(--include-runtime-http); fi
           if [ "${{ inputs.include_release_baseline }}" = "true" ]; then args+=(--include-release-baseline); fi
           if [ "${{ inputs.include_capacity_baseline }}" = "true" ]; then args+=(--include-capacity-baseline); fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Render candidate summary
         if: always()
@@ -261,7 +261,7 @@ jobs:
             if [ -f "$path" ]; then summaries+=("$path"); fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload production candidate evidence

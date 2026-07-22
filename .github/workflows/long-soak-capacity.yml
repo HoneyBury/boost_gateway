@@ -157,7 +157,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -168,7 +168,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
@@ -180,7 +180,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_fixed_runner_environment.py \
+          python3 scripts/check_fixed_runner_environment.py \
             --profile long-soak-capacity \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
@@ -189,7 +189,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           args=(conan install . --output-folder=build/conan-long-soak-capacity --build=never --no-remote -s build_type=Release --profile:host "$PRODUCTION_CONAN_PROFILE" --profile:build "$PRODUCTION_CONAN_PROFILE" --lockfile "$PRODUCTION_RELEASE_LOCKFILE" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
           "${args[@]}"
 
@@ -317,7 +317,7 @@ jobs:
           fi
           pid_marker="runtime/validation/long-soak-capacity.pid"
           rm -f "$pid_marker"
-          python "${args[@]}" &
+          python3 "${args[@]}" &
           long_soak_pid=$!
           pid_marker_tmp="$(mktemp "${pid_marker}.tmp.XXXXXX")"
           printf '%s\n' "$long_soak_pid" > "$pid_marker_tmp"
@@ -349,7 +349,7 @@ jobs:
           if [ "${{ inputs.otel_comparison }}" = "true" ]; then
             args+=(--require-otel-comparison)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Cleanup long-soak Redis
         if: always() && inputs.leaderboard_redis_comparison
@@ -397,7 +397,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload long-soak capacity evidence

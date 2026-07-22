@@ -59,7 +59,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
             --conan-version 2.8.1 \
             --offline \
@@ -70,7 +70,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile conan/profiles/linux-gcc-x64 \
             --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
@@ -141,7 +141,7 @@ jobs:
       - name: Stability soak
         shell: bash
         run: |
-          python scripts/verify_stability_soak.py \
+          python3 scripts/verify_stability_soak.py \
             --build-dir build/release \
             --configuration Release \
             --baseline-profile release \
@@ -156,7 +156,7 @@ jobs:
         shell: bash
         run: |
           if [ -f runtime/validation/nightly-stability-soak-summary.json ]; then
-            python scripts/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload stability summary

@@ -120,7 +120,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -132,7 +132,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
@@ -156,7 +156,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_fixed_runner_environment.py \
+          python3 scripts/check_fixed_runner_environment.py \
             --profile production-evidence \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path "${{ github.workspace }}/runtime/validation/preprod-evidence-preflight-summary.json"
@@ -165,7 +165,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           conan install . \
             --output-folder=build/conan-preprod-evidence \
             --build=never \
@@ -206,7 +206,7 @@ jobs:
           if [ "${{ inputs.docker_pull_policy || 'never' }}" = "never" ]; then
             docker image inspect ubuntu:24.04 >/dev/null
           fi
-          python scripts/tools/prepare_docker_runtime_context.py \
+          python3 scripts/tools/prepare_docker_runtime_context.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE"
@@ -244,7 +244,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_tls_preprod_multi_run.py \
+          python3 scripts/verify_tls_preprod_multi_run.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --skip-build \
@@ -261,7 +261,7 @@ jobs:
             if [ -f "$path" ]; then summaries+=("$path"); fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload pre-production evidence

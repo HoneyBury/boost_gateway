@@ -197,7 +197,7 @@ def bootstrap_uses_resolved_home(content: str) -> bool:
     calls = [
         line.strip()
         for line in content.splitlines()
-        if "scripts/bootstrap_conan.py" in line and ("python " in line or "args=(" in line)
+        if "scripts/bootstrap_conan.py" in line and ("python3 " in line or "args=(" in line)
     ]
     return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
 

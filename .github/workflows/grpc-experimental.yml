@@ -79,7 +79,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            python scripts/tools/ensure_conan_venv.py
+            python3 scripts/tools/ensure_conan_venv.py
             --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12
             --conan-version 2.8.1
             --offline
@@ -94,7 +94,7 @@ jobs:
           set -euo pipefail
           lockfile="${{ inputs.conan_lockfile }}"
           test -f "$lockfile"
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type "${{ inputs.build_type }}" \
             --profile "${{ inputs.conan_profile }}" \
             --lockfile "$lockfile" \
@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/validation
-          python scripts/check_fixed_runner_environment.py \
+          python3 scripts/check_fixed_runner_environment.py \
             --profile observability \
             --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
             --summary-path runtime/validation/grpc-fixed-runner-preflight-summary.json
@@ -116,7 +116,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 
       - name: Conan install
         shell: bash
@@ -175,7 +175,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/verify_sdk_package_consumer.py \
+          python3 scripts/verify_sdk_package_consumer.py \
             --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
             --configuration "${{ inputs.build_type }}" \
             --with-grpc \
@@ -185,7 +185,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_v3_grpc_poc_decision.py \
+          python3 scripts/check_v3_grpc_poc_decision.py \
             --build-dir "build/grpc-experimental-${{ inputs.build_type }}" \
             --summary-path runtime/validation/grpc-fixed-runner-decision-summary.json
 
@@ -204,7 +204,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload gRPC validation artifacts

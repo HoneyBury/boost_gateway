@@ -155,7 +155,7 @@ jobs:
           V2_RATE_LIMIT_LOGIN: "50000"
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
-          python scripts/collect_v2_perf_baseline.py \
+          python3 scripts/collect_v2_perf_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \

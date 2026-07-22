@@ -115,7 +115,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/ensure_conan_venv.py \
+          python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -127,7 +127,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/resolve_runner_cache.py \
+          python3 scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
@@ -149,7 +149,7 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 
       - name: Conan lockfile preflight
         shell: bash
@@ -157,7 +157,7 @@ jobs:
           set -euo pipefail
           export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
           conan --version
-          python scripts/tools/verify_conan_offline_install.py \
+          python3 scripts/tools/verify_conan_offline_install.py \
             --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --output-folder build/conan-preflight \
@@ -223,7 +223,7 @@ jobs:
 
       - name: Raft Phase B specialized evidence
         run: |
-          python scripts/verify_specialized_e2e.py \
+          python3 scripts/verify_specialized_e2e.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --profile raft-ha \
@@ -232,7 +232,7 @@ jobs:
 
       - name: Raft Phase B data recovery evidence
         run: |
-          python scripts/verify_data_recovery_gate.py \
+          python3 scripts/verify_data_recovery_gate.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --skip-build \
@@ -259,7 +259,7 @@ jobs:
             esac
           fi
           : "${legacy_sha:?configure a platform-specific legacy Raft SHA-256}"
-          python scripts/verify_raft_mixed_binary.py \
+          python3 scripts/verify_raft_mixed_binary.py \
             --legacy-binary "$legacy_binary" \
             --legacy-revision "$LEGACY_RAFT_REVISION" \
             --expected-legacy-sha256 "$legacy_sha" \
@@ -316,7 +316,7 @@ jobs:
 
       - name: Collect release baseline
         run: |
-          python scripts/collect_release_baseline.py \
+          python3 scripts/collect_release_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
             --perf-repetitions ${{ inputs.perf_repetitions || '3' }} \
@@ -354,7 +354,7 @@ jobs:
       - name: Verify release archive layout
         shell: bash
         run: |
-          python scripts/tools/verify_release_archive.py \
+          python3 scripts/tools/verify_release_archive.py \
             --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
 
@@ -362,7 +362,7 @@ jobs:
         if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
-          python scripts/tools/verify_release_package_consumer.py \
+          python3 scripts/tools/verify_release_package_consumer.py \
             --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --image ubuntu:24.04 \
@@ -396,7 +396,7 @@ jobs:
         if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
-          python scripts/tools/verify_release_cmake_consumer.py \
+          python3 scripts/tools/verify_release_cmake_consumer.py \
             --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --image boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13 \
@@ -427,7 +427,7 @@ jobs:
       - name: Verify Raft Phase B release evidence binding
         shell: bash
         run: |
-          python scripts/verify_raft_release_evidence.py \
+          python3 scripts/verify_raft_release_evidence.py \
             --specialized-summary runtime/validation/raft-release-specialized-summary.json \
             --data-recovery-summary runtime/validation/raft-release-data-recovery-summary.json \
             --conan-offline-summary runtime/validation/raft-conan-offline-summary.json \

@@ -145,7 +145,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/check_production_evidence_manifest.py \
+          python3 scripts/check_production_evidence_manifest.py \
             --expected-candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION" \
             --summary-path runtime/validation/r2-production-evidence-manifest-summary.json
 
@@ -163,7 +163,7 @@ jobs:
           if [ "${{ inputs.require_fixed_runner }}" = "true" ]; then
             args+=(--require-fixed-runner)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: R3 production readiness report
         if: always()
@@ -182,7 +182,7 @@ jobs:
           if [ "${{ inputs.require_fixed_runner }}" = "true" ]; then
             args+=(--require-fixed-runner)
           fi
-          python "${args[@]}"
+          python3 "${args[@]}"
 
       - name: Evaluate readiness decision
         if: always()
@@ -191,7 +191,7 @@ jobs:
           REQUIRE_FIXED_RUNNER: ${{ inputs.require_fixed_runner }}
         run: |
           set -euo pipefail
-          python - <<'PY'
+          python3 - <<'PY'
           import json
           import os
           from pathlib import Path

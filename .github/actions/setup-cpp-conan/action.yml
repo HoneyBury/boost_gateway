@@ -65,7 +65,7 @@ runs:
       run: |
         set -euo pipefail
         args=(
-          python scripts/tools/ensure_conan_venv.py
+          python3 scripts/tools/ensure_conan_venv.py
           --venv "${{ inputs.conan-venv }}"
           --conan-version "${{ inputs.conan-version }}"
           --github-env "$GITHUB_ENV"
@@ -80,7 +80,7 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python scripts/tools/resolve_runner_cache.py \
+        python3 scripts/tools/resolve_runner_cache.py \
           --build-type "${{ inputs.cache-build-type }}" \
           --profile "${{ inputs.cache-profile }}" \
           --lockfile "${{ inputs.cache-lockfile }}" \
@@ -93,4 +93,4 @@ runs:
       shell: bash
       run: |
         set -euo pipefail
-        python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" ${{ inputs.bootstrap-args }}
+        python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" ${{ inputs.bootstrap-args }}
