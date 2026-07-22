@@ -110,7 +110,7 @@ jobs:
           syft version
           if [[ "${{ inputs.platform }}" == linux-* ]]; then
             getconf GNU_LIBC_VERSION
-            test "$(auditwheel --version | awk '{print $2}')" = 6.7.0
+            auditwheel --version | grep -Eq '^auditwheel 6\.7\.0([[:space:]]|$)'
           else
             xcrun clang --version
             xcrun --show-sdk-version

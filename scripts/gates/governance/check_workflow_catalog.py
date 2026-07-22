@@ -366,7 +366,7 @@ def main() -> int:
                 "sdk-package-py3.12",
                 "setuptools.__version__ == \"83.0.0\"",
                 "wheel.__version__ == \"0.47.0\"",
-                "auditwheel --version",
+                "auditwheel --version | grep -Eq '^auditwheel 6\\.7\\.0([[:space:]]|$)'",
                 "sdk-distribution-${{ inputs.platform }}-${{ github.sha }}",
             )
         ),
