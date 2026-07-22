@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 
 ALLOWED_ENVIRONMENT_TYPES = {
     "docker-compose",
+    "native-process",
     "kubernetes",
     "systemd",
     "staging",

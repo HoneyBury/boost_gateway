@@ -26,7 +26,7 @@
 | typed envelope helper | 已覆盖 `login/room/battle/match/leaderboard` | 默认主线的一部分 | `include/v2/service/envelope_adapter.h`, `src/v2/service/envelope_adapter.cpp`, `proto/README.md` |
 | `legacy raw JSON` | 兼容窗口仍在，带 deprecation notice | compatibility-only，不得扩展 | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp` |
 | generated proto | 已有 schema 和生成入口 | migration layer，不是默认 transport | `proto/v3/*.proto`, `scripts/generate_proto_cpp.py`, `proto/README.md` |
-| generated protobuf / gRPC stub | 可生成，但仍属实验能力 | experimental_only | `proto/README.md`, `scripts/check_v3_grpc_poc_decision.py`, `src/v2/grpc/` |
+| generated protobuf / gRPC stub | Raft protobuf runtime 已进入默认内部依赖；外部 generated gRPC 仍属实验能力 | raft_internal_default / grpc_experimental_only | `proto/README.md`, `proto/v3/raft.proto`, `scripts/check_v3_grpc_poc_decision.py`, `src/v2/grpc/` |
 
 ## 服务级迁移状态
 
@@ -51,19 +51,19 @@
 | login | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | `register_account`, `login_request`, `guest_login`, `token_validate`, `session_bind`, `session_close`, `token_refresh` | 全部 7 个 handler 已具备 schema-backed typed contract；legacy raw JSON 仅保留兼容窗口语义 |
 | room | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | `room_create`, `room_join`, `room_ready`, `room_leave`, `room_start_battle`, `room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished` | N/A — 所有 11 个 handler 均已接入 typed envelope |
 | battle | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | `battle_create`, `battle_input`, `battle_state`, `battle_finish`, `replay_load` | 无新增 raw JSON-only 主业务路径；保留 snapshot/replay payload JSON 结构作为实现细节 |
-| matchmaking | `match_join`, `match_leave`, `match_status` | `match_join`, `match_leave`, `match_status` | `raft_request_vote`, `raft_append_entries` 为内部 Raft raw JSON RPC，不属于新的业务 handler 扩展面 |
-| leaderboard | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | `raft_request_vote`, `raft_append_entries` 为内部 Raft raw JSON RPC，不属于新的业务 handler 扩展面 |
+| matchmaking | `match_join`, `match_leave`, `match_status` | `match_join`, `match_leave`, `match_status` | 内部 Raft RPC 已双读 legacy JSON/protobuf v1；核心 writer 仍保持 legacy JSON |
+| leaderboard | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | `leaderboard_submit`, `leaderboard_top`, `leaderboard_rank` | 内部 Raft RPC 已双读 legacy JSON/protobuf v1；核心 writer 仍保持 legacy JSON |
 
 当前治理要求：
 - 新增业务 handler 必须至少接入 `decode_handler_payload()`
 - 新增 typed request handler 必须同时接入 `wrap_typed_response_if_needed()`
 - 不得新增新的 raw JSON-only 业务消息类型；仅允许在上表列出的兼容窗口内继续保留既有路径
-- 后续 raw JSON 退场的主剩余面已收敛到内部 Raft raw JSON RPC
+- 后续 raw JSON 退场的主剩余面已收敛到内部 Raft legacy JSON writer；reader 已支持 protobuf v1
 
 退场推进顺序：
 
 1. ✅ room governance / control-plane 风格消息已全部接入 typed envelope，共 6 个 handler（`room_list`, `room_detail`, `room_kick`, `room_transfer_owner`, `room_state_push`, `room_battle_finished`）。
-2. 内部 Raft raw JSON RPC 继续作为内部 RPC 边界保留，迁移前必须有等价集群/恢复测试。
+2. 内部 Raft legacy JSON writer 在 v3.6 兼容窗口继续保留；切换 protobuf writer 前必须有等价集群、恢复和滚动回退测试。
 3. 默认 full-flow 新增检查点必须优先走 schema-first/typed envelope，不得以 legacy raw JSON 作为新功能入口。
 4. 当五个服务域的剩余兼容窗口都有 typed/generated 替代和 full-flow 证据后，再评估默认禁用 legacy raw JSON 输入。
 

@@ -104,11 +104,14 @@ backend 已统一走 `app::config::load_backend_service_config()`。环境变量
 - `service.port`
 - `service.config_version`
 - `auth.mode`：本地/Docker 使用 `dev`；生产必须为 `external-jwt`。
-- `auth.jwt_public_key_pem`、`auth.jwt_issuer`、`auth.jwt_audience`：生产 JWT 验签边界，分别由 `V2_LOGIN_JWT_PUBLIC_KEY`、`V2_LOGIN_JWT_ISSUER`、`V2_LOGIN_JWT_AUDIENCE` 覆盖。
+- `auth.jwt_public_key_pem`、`auth.jwt_key_ring`、`auth.jwks_uri`：互斥的三种
+  RS256 public key source。
+- `auth.jwt_issuer`、`auth.jwt_audience`：生产 JWT claim 边界。
 
 生产 Login Backend 只验证外部身份提供方签发的、带 `exp` 的 RS256 JWT。它不接受 `jwt_secret` 或私钥，不负责注册账户、guest 登录或 refresh token 签发；这些操作必须由外部身份提供方完成。该约束避免把进程内存中的演示账户状态误用作生产凭证库。
 
-生产启动前必须从 Secret Manager 注入公钥、issuer 与 audience，例如：
+生产启动前必须从 Secret Manager 注入单公钥、静态多 `kid` key ring 或显式
+JWKS URI 三种来源之一，并同时配置 issuer 与 audience。单公钥示例：
 
 ```bash
 export V2_LOGIN_AUTH_MODE=external-jwt
@@ -118,18 +121,32 @@ export V2_LOGIN_JWT_AUDIENCE=boost-game-client
 v2_login_backend --config config/environments/production/login.json
 ```
 
-密钥轮换时先部署包含新公钥的配置，再由身份提供方切换签发 key；当前静态公钥配置不支持在线 JWKS 获取或多 `kid` 并存，因此该类能力属于后续身份提供方集成，不得假设已经完成。
-- `auth.mode`
-- `auth.jwt_issuer`
-- `auth.jwt_audience`
+静态轮换时先部署同时包含旧、新 `kid` 的 `jwt_key_ring`，再由身份提供方切换
+签发 key。JWKS 模式使用 `jwks_uri` 和精确的 `jwks_allowed_hosts`，生产只允许
+HTTPS；resolver 会执行有界后台刷新、TTL/stale grace 和过期 fail-closed。迁移、
+outage 与静态 key-ring 回滚步骤见
+`docs/deployment/identity-key-rotation-runbook.md`。默认生产配置不会自动切换到
+JWKS，只有对应候选的真实轮换门禁通过后才能显式启用。
 
-Secret 通过环境变量注入：
+生产验签配置通过环境变量注入：
 
-- `V2_LOGIN_JWT_SECRET`
 - `V2_LOGIN_JWT_PUBLIC_KEY`
-- `V2_LOGIN_JWT_PRIVATE_KEY`
+- `V2_LOGIN_JWT_KEY_RING`
+- `V2_LOGIN_JWKS_URI`
+- `V2_LOGIN_JWKS_ALLOWED_HOSTS`
+- `V2_LOGIN_JWKS_CONNECT_TIMEOUT_MS`
+- `V2_LOGIN_JWKS_READ_TIMEOUT_MS`
+- `V2_LOGIN_JWKS_TTL_MS`
+- `V2_LOGIN_JWKS_STALE_GRACE_MS`
+- `V2_LOGIN_JWKS_MINIMUM_REFRESH_INTERVAL_MS`
+- `V2_LOGIN_JWKS_MAX_RESPONSE_BYTES`
+- `V2_LOGIN_JWKS_MAX_KEYS`
+- `V2_LOGIN_JWT_ISSUER`
+- `V2_LOGIN_JWT_AUDIENCE`
 
-生产模式下 `auth.mode=production|prod|jwt`，必须配置 JWT secret 或 public key，否则启动失败。
+生产模式下 `auth.mode=external-jwt` 必须且只能配置一种 public key source，并
+同时配置非空 issuer/audience。`V2_LOGIN_JWT_SECRET` 和
+`V2_LOGIN_JWT_PRIVATE_KEY` 只属于开发/测试路径，在生产会导致启动失败。
 
 ### Room
 
@@ -169,6 +186,14 @@ Secret 通过环境变量注入：
 
 `RAFT_*` 环境变量仍兼容，但只作为部署层 overlay。
 
+配置了非空 `raft.storage_dir` 时，`raft.node_id` 必须是非空、最长 256 bytes 且不含 `/`、`\\`、NUL、`.` 或 `..` 的安全路径段，Raft 持久化状态位于 `raft.storage_dir/<node_id>.raft.json`。v3.6 Phase A 写入严格 v1 JSON，包含 schema version、node identity 和 SHA-256 完整性校验；节点启动时会校验字段类型、term/index/log 不变量、checksum 与配置中的 `raft.node_id`。peer ID 作为 opaque 标识允许普通路径字符，但同样要求非空、最长 256 bytes 且不含 NUL。`leader_id` 是易失状态，不写入磁盘。legacy v0 文件首次成功读取后会在同目录保留 `<node_id>.raft.json.v0.bak` 和 `<node_id>.raft.json.migration-v0-v1.json`，再以 durable atomic replace 写入 v1；主文件和两个 sidecar 必须作为同一恢复单元保留。
+
+损坏、截断、未知未来版本、identity 不匹配或迁移 sidecar 冲突都属于启动阻断项；matchmaking 在状态恢复和首次持久化成功前不会监听端口。不要通过删除或清空 `.raft.json` 恢复服务，这会把节点变成全新 Raft 身份状态并可能破坏一致性。应先停止节点，保留主文件及全部 sidecar，采集日志与文件 checksum，再使用已验证备份或 `raft_state_tool downgrade` 处理受支持的 v1-to-v0 回滚；工具失败或不符合 `docs/deployment/raft-schema-migration-runbook.md` 的场景必须保持节点离线。
+
+默认 codec 上限为单个 state 64 MiB、100000 条 log entry、单条 command 1 MiB、node/peer ID 256 bytes。单条非法 RPC/command 会在修改 term/log 前被拒绝，不会污染节点健康状态；本地 state 累积越过总容量或实际 durable write 失败属于 fail-closed 容量/存储故障，节点会锁存为 unhealthy，即使目录随后恢复也不会自动重新加入一致性读写。应在到达上限前规划后续 snapshot/compaction；当前 Phase A 不包含在线压缩或自动清除 state。
+
+Phase B 默认构建会以 `with_raft_protobuf=True` 引入内部 protobuf runtime，但这不会启用 gRPC。Raft reader 可识别严格 legacy JSON 和带 `BGRT` framing/protocol version 的 protobuf v1，节点通过独立 `raft_capabilities` 消息显式记录 peer 能力；超时、无响应或错误响应都不会被推断为支持。当前 RequestVote/AppendEntries writer 仍固定发送 legacy JSON，部署配置没有 protobuf writer 开关；在 Phase C 混合集群门禁完成前不得通过非受支持补丁切换 writer。
+
 ### Leaderboard
 
 文件：`config/environments/<env>/leaderboard.json`
@@ -182,6 +207,8 @@ Secret 通过环境变量注入：
 - `raft.*`
 
 `REDIS_PASSWORD` 属于 secret，不建议写入普通 JSON 文件。未配置 `redis.host` 时使用内存 leaderboard。
+
+Leaderboard 使用与 matchmaking 相同的 `raft.storage_dir/<node_id>.raft.json` v1 状态格式、迁移 sidecar 和 fail-closed 恢复规则；Raft 状态未通过校验或首次持久化失败时，服务不会监听端口。Redis 数据恢复不能替代 Raft state 恢复。
 
 ## 修改流程
 

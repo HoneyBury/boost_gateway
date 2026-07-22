@@ -32,10 +32,22 @@ python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
 source .venv/conan-2.8.1/bin/activate
 export CONAN_HOME="$PWD/.conan2-local"
 python scripts/generate_conan_lock.py --profile conan/profiles/linux-gcc-x64 --build-type Debug --without-sqlite --allow-public
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-debug --build=missing -s build_type=Debug
 cmake -S . -B build/linux-ninja-debug-conan -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=ON -DCMAKE_BUILD_TYPE=Debug -DCMAKE_TOOLCHAIN_FILE=build/conan-debug/build/Debug/generators/conan_toolchain.cmake
 cmake --build build/linux-ninja-debug-conan --parallel --target project_v2_unit_tests
 ```
+
+macOS ARM64 uses `conan/profiles/macos-apple-clang-arm64` and
+`conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock`. The profile
+uses Conan's latest supported Apple Clang compatibility model while the platform
+summary records the actual Xcode/Clang version. It always sets
+`CMAKE_OSX_ARCHITECTURES=arm64`; Rosetta/x86_64 artifacts fail the package gate.
+
+Linux ARM64 uses `conan/profiles/linux-gcc-arm64` with Release, Debug and gRPC
+lockfiles under `conan/locks/linux-gcc-arm64-*`. These lockfiles intentionally use the
+same recipe revisions as Linux x64; only the native package IDs differ. Binary availability
+must be admitted on a native Linux ARM64 runner with `--no-remote --build=never` before an
+evidence workflow is dispatched.
 
 Linux fixed-runner example:
 
@@ -51,7 +63,7 @@ python scripts/tools/resolve_runner_cache.py --build-type Release \
 set -a; . "$cache_env"; set +a
 python3.12 scripts/tools/ensure_conan_venv.py --venv "$conan_venv" --conan-version 2.8.1 --offline
 python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
+conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" --output-folder=build/conan-release-offline --build=never --no-remote -s build_type=Release
 cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan -DENABLE_TESTING=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=build/conan-release-offline/build/Release/generators/conan_toolchain.cmake
 cmake --build build/release --parallel
 python scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
@@ -64,8 +76,8 @@ and exports `CONAN_HOME`; it also assigns sccache a matching namespace. The
 Conan key includes `conanfile.py`, profile, lockfile, repository remote files,
 remote overrides, Conan/GCC versions, OS release, architecture and build type.
 Warm each namespace using the fixed-runner example, then use `--no-remote` for
-evidence work. Docker images are a separate cache and may cross Ubuntu 22.04
-and 24.04 x64 runners when imported as `linux/amd64` images.
+evidence work. Docker images are a separate cache. `linux/amd64` and
+`linux/arm64` image sets use separate bundles and must match the target architecture exactly.
 
 The graph key changes whenever any hashed input changes, including a
 build-generation-only edit in `conanfile.py`. A new key intentionally selects

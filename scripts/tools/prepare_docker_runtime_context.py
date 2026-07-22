@@ -28,6 +28,10 @@ ALLOWED_RUNTIME_LIBRARIES = {
     "libm.so.6",
     "libstdc++.so.6",
 }
+ALLOWED_RUNTIME_LOADERS = {
+    "/lib/ld-linux-aarch64.so.1",
+    "/lib64/ld-linux-x86-64.so.2",
+}
 
 
 def sha256(path: Path) -> str:
@@ -55,7 +59,8 @@ def validate_runtime_dependencies(binary: Path, ldd_output: str) -> list[str]:
     libraries: list[str] = []
     for raw_line in ldd_output.splitlines():
         line = raw_line.strip()
-        if not line or line.startswith("linux-vdso.so") or line.startswith("/lib64/ld-linux"):
+        loader = line.split(maxsplit=1)[0] if line else ""
+        if not line or line.startswith("linux-vdso.so") or loader in ALLOWED_RUNTIME_LOADERS:
             continue
         name = line.split(" => ", 1)[0].split()[0]
         libraries.append(name)

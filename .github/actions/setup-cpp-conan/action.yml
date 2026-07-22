@@ -39,12 +39,15 @@ runs:
   using: composite
   steps:
     - name: Setup Ninja
+      if: runner.os != 'Linux' || runner.arch != 'ARM64'
       uses: seanmiddleditch/gha-setup-ninja@v5
 
     - name: Setup CMake
+      if: runner.os != 'Linux' || runner.arch != 'ARM64'
       uses: jwlawson/actions-setup-cmake@v2
 
     - name: Setup Python
+      if: runner.os != 'Linux' || runner.arch != 'ARM64'
       uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}

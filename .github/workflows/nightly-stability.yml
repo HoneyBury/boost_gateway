@@ -42,12 +42,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Ninja
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup CMake
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup Python
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -87,6 +90,7 @@ jobs:
             --profile:build conan/profiles/linux-gcc-x64 \
             --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
             -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-nightly \
             --build=never \

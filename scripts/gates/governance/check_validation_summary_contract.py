@@ -31,6 +31,7 @@ DEFAULT_SUMMARIES = [
     "runtime/validation/n5-sdk-enterprise-delivery-summary.json",
     "runtime/validation/preprod-recovery-drill-summary.json",
     "runtime/validation/tls-preprod-multi-run-summary.json",
+    "runtime/validation/jwks-rotation-summary.json",
 ]
 REQUIRED_KEYS = {
     "summary_version",
@@ -48,6 +49,7 @@ PROVENANCE_REQUIRED_SUMMARIES = {
     "runtime/validation/saturation-baseline-summary.json",
     "runtime/validation/preprod-recovery-drill-summary.json",
     "runtime/validation/tls-preprod-multi-run-summary.json",
+    "runtime/validation/jwks-rotation-summary.json",
 }
 
 

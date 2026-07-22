@@ -18,6 +18,8 @@
 #include <string>
 #include <vector>
 
+#include "v2/auth/jwks_key_resolver.h"
+
 namespace v2::auth {
 
 namespace detail {
@@ -282,9 +284,11 @@ public:
         std::string secret;
         std::string public_key_pem;
         std::string private_key_pem;
+        std::shared_ptr<JwtKeyResolver> key_resolver;
         std::string issuer = "boost-gateway";
         std::string audience;
         bool require_expiration = false;
+        std::string signing_kid;
     };
 
     struct Result {
@@ -312,11 +316,19 @@ public:
         const auto sig_bytes = detail::base64url_decode(sig_b64);
 
         auto header_doc = nlohmann::json::parse(header_json, nullptr, false);
-        if (header_doc.is_discarded()) return {false, "invalid_header_json", {}};
+        if (header_doc.is_discarded() || !header_doc.is_object() ||
+            !header_doc.contains("alg") || !header_doc["alg"].is_string() ||
+            (header_doc.contains("kid") && !header_doc["kid"].is_string()) ||
+            (header_doc.contains("typ") && !header_doc["typ"].is_string())) {
+            return {false, "invalid_header_json", {}};
+        }
 
-        const auto alg = header_doc.value("alg", "");
+        const auto alg = header_doc["alg"].get<std::string>();
+        const auto kid = header_doc.contains("kid")
+                             ? header_doc["kid"].get<std::string>()
+                             : std::string{};
         if (alg == "HS256") {
-            if (config_.secret.empty()) {
+            if (config_.secret.empty() || config_.key_resolver) {
                 return {false, "missing_hs256_secret", {}};
             }
             const auto expected = detail::hmac_sha256(config_.secret, signing_input);
@@ -326,10 +338,18 @@ public:
                 return {false, "invalid_signature", {}};
             }
         } else if (alg == "RS256") {
-            if (config_.public_key_pem.empty()) {
+            std::string public_key = config_.public_key_pem;
+            if (config_.key_resolver) {
+                const auto resolution = config_.key_resolver->resolve(kid);
+                if (!resolution.valid()) {
+                    return {false, resolution.error, {}};
+                }
+                public_key = resolution.public_key_pem;
+            }
+            if (public_key.empty()) {
                 return {false, "missing_rs256_public_key", {}};
             }
-            if (!detail::verify_rs256(config_.public_key_pem, signing_input, sig_bytes)) {
+            if (!detail::verify_rs256(public_key, signing_input, sig_bytes)) {
                 return {false, "invalid_signature", {}};
             }
         } else {
@@ -337,7 +357,15 @@ public:
         }
 
         auto payload_doc = nlohmann::json::parse(payload_json, nullptr, false);
-        if (payload_doc.is_discarded()) return {false, "invalid_payload_json", {}};
+        if (payload_doc.is_discarded() || !payload_doc.is_object() ||
+            !payload_doc.contains("sub") || !payload_doc["sub"].is_string() ||
+            (payload_doc.contains("iss") && !payload_doc["iss"].is_string()) ||
+            (payload_doc.contains("role") && !payload_doc["role"].is_string()) ||
+            (payload_doc.contains("name") && !payload_doc["name"].is_string()) ||
+            (payload_doc.contains("iat") && !payload_doc["iat"].is_number_unsigned()) ||
+            (payload_doc.contains("exp") && !payload_doc["exp"].is_number_unsigned())) {
+            return {false, "invalid_payload_json", {}};
+        }
 
         JwtPayload payload;
         payload.sub = payload_doc.value("sub", "");
@@ -348,6 +376,8 @@ public:
         payload.exp = payload_doc.value("exp", 0ULL);
         if (payload_doc.contains("aud") && payload_doc["aud"].is_string()) {
             payload.aud = payload_doc["aud"].get<std::string>();
+        } else if (payload_doc.contains("aud") && !payload_doc["aud"].is_array()) {
+            return {false, "invalid_payload_json", {}};
         }
         payload.extra = payload_doc;
 
@@ -366,7 +396,7 @@ public:
             if (payload.exp == 0) {
                 return {false, "missing_expiration", {}};
             }
-            if (now > static_cast<std::int64_t>(payload.exp)) {
+            if (now >= static_cast<std::int64_t>(payload.exp)) {
                 return {false, "token_expired", {}};
             }
         }
@@ -387,6 +417,7 @@ public:
             {"alg", use_rs256 ? "RS256" : "HS256"},
             {"typ", "JWT"},
         };
+        if (!config_.signing_kid.empty()) header["kid"] = config_.signing_kid;
         nlohmann::json body;
         body["sub"] = payload.sub;
         body["iss"] = config_.issuer;

@@ -235,9 +235,10 @@ class HardenReleaseSbomTest(unittest.TestCase):
             redirect_stdout(io.StringIO()),
         ):
             self.assertEqual(main(), 0)
-        self.assertTrue(
-            json.loads(enrich_summary.read_text(encoding="utf-8"))["overall_pass"]
-        )
+        enriched_result = json.loads(enrich_summary.read_text(encoding="utf-8"))
+        self.assertTrue(enriched_result["overall_pass"])
+        self.assertTrue(enriched_result["provenance"]["revision_matches_checkout"])
+        self.assertEqual(enriched_result["artifacts"]["summary_path"], str(enrich_summary))
 
         archive = self.directory / "release.tar.gz"
         with tarfile.open(archive, "w:gz") as bundle:

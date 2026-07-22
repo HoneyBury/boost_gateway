@@ -25,7 +25,7 @@
 |---|---|---|---|---|
 | 1 | [Raft schema 与滚动迁移](v3.6-raft-wire-schema.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | protobuf runtime 与 gRPC 解耦、混合版本集群门禁 |
 | 2 | [外部身份 JWKS / 多 kid](v3.6-identity-jwks.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | 外部 IdP、后台有界刷新与安全配置门禁 |
-| 3 | [macOS ARM64 支持](v3.6-macos-arm64.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | Conan ARM64 图、独立 smoke runner |
+| 3 | [macOS ARM64 支持](v3.6-macos-arm64.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | Conan ARM64 图、原生 R5 与独立生产证据 |
 | 4 | [Python wheel / NuGet 分发](v3.6-sdk-distribution.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | 平台/RID 矩阵、clean install 与 full-flow |
 | 5 | [独立调试符号资产](v3.6-debug-symbols.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | Release 资产、SBOM/attestation 与栈回溯验证 |
 

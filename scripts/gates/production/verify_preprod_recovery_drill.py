@@ -21,7 +21,6 @@ from typing import Any
 
 from scripts.lib.evidence_provenance import build_evidence_provenance
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 BUILD_IMAGE_BINARIES = {
     "gateway": ("v2_gateway_demo", "/app/bin/v2_gateway_demo"),
@@ -36,7 +35,9 @@ BUILD_IMAGE_BINARIES = {
 def tail(value: str | bytes | None, max_chars: int = 6000) -> str:
     if value is None:
         return ""
-    text = value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+    text = (
+        value.decode("utf-8", errors="replace") if isinstance(value, bytes) else value
+    )
     return text if len(text) <= max_chars else text[-max_chars:]
 
 
@@ -49,7 +50,9 @@ def emit_text(text: str, *, stderr: bool = False) -> None:
         stream.buffer.write(text.encode(encoding, errors="replace"))
 
 
-def run_step(name: str, category: str, command: list[str], timeout_seconds: int) -> dict[str, Any]:
+def run_step(
+    name: str, category: str, command: list[str], timeout_seconds: int
+) -> dict[str, Any]:
     print(f"==> {name}", flush=True)
     started = time.monotonic()
     try:
@@ -194,7 +197,9 @@ def wait_for_prometheus_alert_firing(
                 raise ValueError("Prometheus alerts response data must be an object")
             alerts = data.get("alerts", [])
             if not isinstance(alerts, list):
-                raise ValueError("Prometheus alerts response data.alerts must be a list")
+                raise ValueError(
+                    "Prometheus alerts response data.alerts must be a list"
+                )
             matching = [
                 alert
                 for alert in alerts
@@ -202,7 +207,9 @@ def wait_for_prometheus_alert_firing(
                 and isinstance(alert.get("labels"), dict)
                 and alert["labels"].get("alertname") == alert_name
             ]
-            last_state = str(matching[0].get("state", "inactive")) if matching else "inactive"
+            last_state = (
+                str(matching[0].get("state", "inactive")) if matching else "inactive"
+            )
             if last_state == "firing":
                 return {
                     "name": "R5 wait for Redis dependency alert firing",
@@ -213,7 +220,12 @@ def wait_for_prometheus_alert_firing(
                     "stdout_tail": json.dumps(matching[0], sort_keys=True),
                     "stderr_tail": "",
                 }
-        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            OSError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             last_error = str(exc)
         time.sleep(min(2.0, max(0.0, deadline - time.monotonic())))
     return {
@@ -266,15 +278,21 @@ def run_expected_failure_step(
         str(step.get("stdout_tail", "")) + "\n" + str(step.get("stderr_tail", ""))
     ).casefold()
     missing_tokens = [
-        token for token in required_output_tokens if token.casefold() not in combined_output
+        token
+        for token in required_output_tokens
+        if token.casefold() not in combined_output
     ]
     step["observed_status"] = observed_status
     step["required_output_tokens"] = list(required_output_tokens)
     step["missing_output_tokens"] = missing_tokens
-    step["expected_failure_observed"] = observed_status == "failed" and not missing_tokens
+    step["expected_failure_observed"] = (
+        observed_status == "failed" and not missing_tokens
+    )
     if observed_status == "failed" and not missing_tokens:
         step["status"] = "passed"
-        step["stderr_tail"] = "expected failure observed\n" + str(step.get("stderr_tail", ""))
+        step["stderr_tail"] = "expected failure observed\n" + str(
+            step.get("stderr_tail", "")
+        )
     else:
         step["status"] = "failed"
         step["stderr_tail"] = (
@@ -346,7 +364,12 @@ def wait_for_ready(url: str, timeout_seconds: float) -> dict[str, Any]:
             doc = fetch_json(url)
             if doc.get("ready") is True or doc.get("status") in {"pass", "ok"}:
                 return doc
-        except (OSError, urllib.error.URLError, json.JSONDecodeError, ValueError) as exc:
+        except (
+            OSError,
+            urllib.error.URLError,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             last_error = str(exc)
         time.sleep(1.0)
     raise TimeoutError(f"timed out waiting for {url}: {last_error}")
@@ -371,7 +394,9 @@ def docker_compose_command() -> list[str]:
     return ["docker", "compose"]
 
 
-def docker_compose_pull_command(compose_command: list[str], compose_file: Path) -> list[str]:
+def docker_compose_pull_command(
+    compose_command: list[str], compose_file: Path
+) -> list[str]:
     if compose_command == ["docker", "compose"]:
         return [*compose_command, "--parallel", "1", "-f", str(compose_file), "pull"]
     return [*compose_command, "-f", str(compose_file), "pull"]
@@ -400,7 +425,11 @@ def resolve_compose_image_requirements(
                 "name": "R5 resolve Docker Compose image requirements",
                 "category": "docker_image_preflight",
                 "command": command,
-                "status": "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "failed",
+                "status": (
+                    "timeout"
+                    if isinstance(exc, subprocess.TimeoutExpired)
+                    else "failed"
+                ),
                 "duration_seconds": round(time.monotonic() - started, 3),
                 "stdout_tail": "",
                 "stderr_tail": str(exc),
@@ -425,7 +454,9 @@ def resolve_compose_image_requirements(
                 if not image and build_backed:
                     image = f"{project_name}-{service_name}"
                 if not image:
-                    raise ValueError(f"service {service_name} has neither image nor build")
+                    raise ValueError(
+                        f"service {service_name} has neither image nor build"
+                    )
                 requirements.append(
                     {
                         "service": str(service_name),
@@ -502,7 +533,9 @@ def inspect_required_images(requirements: list[dict[str, Any]]) -> list[dict[str
                     parsed = json.loads(completed.stdout)
                     metadata = parsed[0] if isinstance(parsed, list) and parsed else {}
                     if not isinstance(metadata, dict):
-                        raise ValueError("docker image inspect did not return an object")
+                        raise ValueError(
+                            "docker image inspect did not return an object"
+                        )
                     item.update(
                         {
                             "present": True,
@@ -546,7 +579,9 @@ def repository_revision() -> str:
 
 
 def resolve_sdk_shared_library(build_dir: Path, configuration: str) -> Path:
-    library_name = "boost_gateway_sdk.dll" if os.name == "nt" else "libboost_gateway_sdk.so"
+    library_name = (
+        "boost_gateway_sdk.dll" if os.name == "nt" else "libboost_gateway_sdk.so"
+    )
     candidates = [
         build_dir / "sdk" / library_name,
         build_dir / "sdk" / configuration / library_name,
@@ -564,9 +599,13 @@ def resolve_sdk_shared_library(build_dir: Path, configuration: str) -> Path:
 def run_sdk_leaderboard_probe(host: str, port: int, sdk_library: Path) -> int:
     os.environ["BOOST_GATEWAY_SDK_LIBRARY"] = str(sdk_library.resolve())
     module_path = REPO_ROOT / "sdk/python/__init__.py"
-    spec = importlib.util.spec_from_file_location("boost_gateway_sdk_probe", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "boost_gateway_sdk_probe", module_path
+    )
     if spec is None or spec.loader is None:
-        print("leaderboard SDK probe could not load the Python wrapper", file=sys.stderr)
+        print(
+            "leaderboard SDK probe could not load the Python wrapper", file=sys.stderr
+        )
         return 2
     module = importlib.util.module_from_spec(spec)
     try:
@@ -612,7 +651,9 @@ def inspect_build_image_manifests(
         if lockfile_path.is_relative_to(REPO_ROOT)
         else str(lockfile_path)
     )
-    expected_lockfile_sha256 = sha256_file(lockfile_path) if lockfile_path.is_file() else ""
+    expected_lockfile_sha256 = (
+        sha256_file(lockfile_path) if lockfile_path.is_file() else ""
+    )
 
     inspected: list[dict[str, Any]] = []
     for raw_item in inventory:
@@ -651,7 +692,12 @@ def inspect_build_image_manifests(
                 if not isinstance(parsed, dict):
                     raise ValueError("build manifest must be a JSON object")
                 manifest = parsed
-        except (OSError, subprocess.TimeoutExpired, json.JSONDecodeError, ValueError) as exc:
+        except (
+            OSError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+            ValueError,
+        ) as exc:
             error = str(exc)
 
         checks = {
@@ -667,7 +713,9 @@ def inspect_build_image_manifests(
         expected_binary = BUILD_IMAGE_BINARIES.get(service)
         binaries = manifest.get("binaries")
         binary_entries = binaries if isinstance(binaries, list) else []
-        binary_names = [entry.get("name") for entry in binary_entries if isinstance(entry, dict)]
+        binary_names = [
+            entry.get("name") for entry in binary_entries if isinstance(entry, dict)
+        ]
         checks["binary_manifest_unique"] = len(binary_names) == len(set(binary_names))
         checks["expected_binary"] = expected_binary is not None
         actual_binary_sha256 = ""
@@ -714,7 +762,9 @@ def inspect_build_image_manifests(
             else:
                 checks["binary_sha256"] = False
         if not error and not all(checks.values()):
-            failed_checks = ", ".join(name for name, passed in checks.items() if not passed)
+            failed_checks = ", ".join(
+                name for name, passed in checks.items() if not passed
+            )
             error = f"build manifest does not match candidate: {failed_checks}"
         item.update(
             {
@@ -734,8 +784,21 @@ def image_inventory_step(
     inventory: list[dict[str, Any]],
     *,
     fail_on_missing: bool,
+    target_platform: str = "linux/amd64",
 ) -> dict[str, Any]:
-    missing = sorted({str(item["image"]) for item in inventory if item.get("present") is not True})
+    expected_os, expected_architecture = target_platform.split("/", 1)
+    missing = sorted(
+        {str(item["image"]) for item in inventory if item.get("present") is not True}
+    )
+    wrong_platform = sorted(
+        {
+            str(item["image"])
+            for item in inventory
+            if item.get("present") is True
+            and (item.get("os"), item.get("architecture"))
+            != (expected_os, expected_architecture)
+        }
+    )
     stale_build_images = sorted(
         {
             str(item["image"])
@@ -745,7 +808,9 @@ def image_inventory_step(
             and item.get("build_manifest_valid") is False
         }
     )
-    passed = not fail_on_missing or (not missing and not stale_build_images)
+    passed = not fail_on_missing or (
+        not missing and not wrong_platform and not stale_build_images
+    )
     return {
         "name": name,
         "category": "docker_image_preflight",
@@ -757,21 +822,40 @@ def image_inventory_step(
                 "required": len(inventory),
                 "present": sum(1 for item in inventory if item.get("present") is True),
                 "missing_images": missing,
+                "wrong_platform_images": wrong_platform,
                 "stale_build_images": stale_build_images,
             },
             sort_keys=True,
         ),
-        "stderr_tail": "" if passed else "; ".join(
-            message
-            for message in (
-                "required Docker images are missing: " + ", ".join(missing) if missing else "",
-                "build images do not match the candidate: " + ", ".join(stale_build_images)
-                if stale_build_images
-                else "",
+        "stderr_tail": (
+            ""
+            if passed
+            else "; ".join(
+                message
+                for message in (
+                    (
+                        "required Docker images are missing: " + ", ".join(missing)
+                        if missing
+                        else ""
+                    ),
+                    (
+                        f"Docker images do not match {target_platform}: "
+                        + ", ".join(wrong_platform)
+                        if wrong_platform
+                        else ""
+                    ),
+                    (
+                        "build images do not match the candidate: "
+                        + ", ".join(stale_build_images)
+                        if stale_build_images
+                        else ""
+                    ),
+                )
+                if message
             )
-            if message
         ),
         "missing_images": missing,
+        "wrong_platform_images": wrong_platform,
         "stale_build_images": stale_build_images,
     }
 
@@ -784,14 +868,18 @@ def run_docker_image_preflight(
     pull_attempts: int,
     timeout_seconds: int,
     candidate_revision: str = "",
+    target_platform: str = "linux/amd64",
 ) -> dict[str, Any]:
     steps: list[dict[str, Any]] = []
-    requirement_step, requirements = resolve_compose_image_requirements(compose_command, compose_file)
+    requirement_step, requirements = resolve_compose_image_requirements(
+        compose_command, compose_file
+    )
     steps.append(requirement_step)
     if requirement_step["status"] != "passed":
         return {
             "passed": False,
             "pull_policy": pull_policy,
+            "target_platform": target_platform,
             "requirements": requirements,
             "inventory": [],
             "missing_images": [],
@@ -804,6 +892,7 @@ def run_docker_image_preflight(
             "R5 inspect Docker images before pull policy",
             initial_inventory,
             fail_on_missing=False,
+            target_platform=target_platform,
         )
     )
     missing_pullable = sorted(
@@ -830,7 +919,7 @@ def run_docker_image_preflight(
                 run_step_with_retry(
                     f"R5 pull missing Docker image {image}",
                     "docker_image_pull",
-                    ["docker", "pull", image],
+                    ["docker", "pull", "--platform", target_platform, image],
                     timeout_seconds,
                     pull_attempts,
                 )
@@ -843,18 +932,25 @@ def run_docker_image_preflight(
                 "command": [],
                 "status": "passed",
                 "duration_seconds": 0.0,
-                "stdout_tail": "all required registry images are cached" if pull_policy == "missing" else "network access disabled by policy",
+                "stdout_tail": (
+                    "all required registry images are cached"
+                    if pull_policy == "missing"
+                    else "network access disabled by policy"
+                ),
                 "stderr_tail": "",
             }
         )
 
     final_inventory = inspect_required_images(requirements)
     if candidate_revision:
-        final_inventory = inspect_build_image_manifests(final_inventory, candidate_revision)
+        final_inventory = inspect_build_image_manifests(
+            final_inventory, candidate_revision
+        )
     final_step = image_inventory_step(
         "R5 verify required Docker images after pull policy",
         final_inventory,
         fail_on_missing=True,
+        target_platform=target_platform,
     )
     missing_build_images = sorted(
         {
@@ -869,7 +965,9 @@ def run_docker_image_preflight(
             "docker compose -f env/docker/docker-compose.yml build: "
             + ", ".join(missing_build_images)
         )
-    prior_failure = next((step for step in steps if step.get("status") != "passed"), None)
+    prior_failure = next(
+        (step for step in steps if step.get("status") != "passed"), None
+    )
     if prior_failure is not None and final_step["status"] == "passed":
         final_step["status"] = "failed"
         final_step["stderr_tail"] = (
@@ -880,9 +978,11 @@ def run_docker_image_preflight(
     return {
         "passed": failed is None,
         "pull_policy": pull_policy,
+        "target_platform": target_platform,
         "requirements": requirements,
         "inventory": final_inventory,
         "missing_images": final_step["missing_images"],
+        "wrong_platform_images": final_step["wrong_platform_images"],
         "missing_build_images": missing_build_images,
         "stale_build_images": final_step["stale_build_images"],
         "candidate_revision": candidate_revision,
@@ -950,7 +1050,9 @@ def wait_for_prometheus_targets_up(
         else:
             last_error = tail(completed.stderr or completed.stdout)
         time.sleep(2.0)
-    raise TimeoutError(f"timed out waiting for Prometheus targets to become healthy: {last_error}")
+    raise TimeoutError(
+        f"timed out waiting for Prometheus targets to become healthy: {last_error}"
+    )
 
 
 def wait_for_compose_redis(
@@ -988,11 +1090,17 @@ def wait_for_compose_redis(
     raise TimeoutError(f"timed out waiting for Redis recovery: {last_error}")
 
 
-def compose_build_images_present(compose_command: list[str], compose_file: Path) -> bool:
-    step, requirements = resolve_compose_image_requirements(compose_command, compose_file)
+def compose_build_images_present(
+    compose_command: list[str], compose_file: Path
+) -> bool:
+    step, requirements = resolve_compose_image_requirements(
+        compose_command, compose_file
+    )
     if step.get("status") != "passed":
         return False
-    build_requirements = [item for item in requirements if item.get("source") == "build"]
+    build_requirements = [
+        item for item in requirements if item.get("source") == "build"
+    ]
     inventory = inspect_required_images(build_requirements)
     return bool(inventory) and all(item.get("present") is True for item in inventory)
 
@@ -1010,7 +1118,9 @@ def write_image_preflight_summary(
     )
     summary = {
         "summary_version": 2,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "generated_at": datetime.now(UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "provenance": build_evidence_provenance(
             REPO_ROOT,
             build_configuration=configuration,
@@ -1023,11 +1133,14 @@ def write_image_preflight_summary(
             "image_preflight_only": True,
             "real_docker_compose_drill": False,
             "docker_pull_policy": result.get("pull_policy", ""),
+            "docker_target_platform": result.get("target_platform", ""),
         },
+        "target_platform": result.get("target_platform", ""),
         "required_images": result.get("requirements", []),
         "image_inventory": result.get("inventory", []),
         "missing_images": result.get("missing_images", []),
         "missing_build_images": result.get("missing_build_images", []),
+        "wrong_platform_images": result.get("wrong_platform_images", []),
         "stale_build_images": result.get("stale_build_images", []),
         "candidate_revision": result.get("candidate_revision", ""),
         "steps": result.get("steps", []),
@@ -1041,7 +1154,9 @@ def write_command_summary(path: Path, name: str, step: dict[str, Any]) -> None:
     passed = step.get("status") == "passed"
     summary = {
         "summary_version": 2,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "generated_at": datetime.now(UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "overall_pass": passed,
         "passed": passed,
         "failed_category": "" if passed else str(step.get("category", "")),
@@ -1067,17 +1182,29 @@ def write_drill_record(
     failure_started_at: datetime | None,
     failure_ended_at: datetime | None,
     measured_rto_seconds: float | None,
+    mode: str = "docker-compose",
 ) -> None:
     now = datetime.now(UTC)
     failure_started = failure_started_at or now
     failure_ended = failure_ended_at or now
-    recovery_actions = [
-        "start compose stack from existing images",
-        "run SDK full-flow before restart",
-        "restart gateway container",
-        "wait for gateway /ready",
-        "run SDK full-flow after restart",
-    ]
+    native_process = mode == "native-process"
+    recovery_actions = (
+        [
+            "start native backend and gateway processes",
+            "run SDK full-flow before restart",
+            "terminate and restart the native gateway process",
+            "wait for gateway TCP and HTTP health",
+            "run SDK full-flow after restart",
+        ]
+        if native_process
+        else [
+            "start compose stack from existing images",
+            "run SDK full-flow before restart",
+            "restart gateway container",
+            "wait for gateway /ready",
+            "run SDK full-flow after restart",
+        ]
+    )
     if include_redis_recovery:
         recovery_actions.extend(
             [
@@ -1087,20 +1214,29 @@ def write_drill_record(
                 "run SDK full-flow after Redis recovery",
             ]
         )
-    recovery_actions.append("collect Docker production snapshot")
+    if not native_process:
+        recovery_actions.append("collect Docker production snapshot")
     record = {
         "summary_version": 1,
         "template": False,
         "drill_id": (
-            "r5-compose-gateway-redis-recovery"
-            if include_redis_recovery
-            else "r5-compose-gateway-restart"
+            "r5-native-gateway-restart"
+            if native_process
+            else (
+                "r5-compose-gateway-redis-recovery"
+                if include_redis_recovery
+                else "r5-compose-gateway-restart"
+            )
         ),
         "executed_at": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
         "operator": "codex-local-runner",
         "environment": {
-            "type": "docker-compose",
-            "name": "local-orbstack-preprod",
+            "type": "native-process" if native_process else "docker-compose",
+            "name": (
+                f"native-{platform.system().lower()}-{platform.machine()}"
+                if native_process
+                else "local-docker-preprod"
+            ),
             "git_commit": subprocess.run(
                 ["git", "rev-parse", "HEAD"],
                 cwd=REPO_ROOT,
@@ -1109,22 +1245,36 @@ def write_drill_record(
                 stderr=subprocess.DEVNULL,
                 check=False,
             ).stdout.strip(),
-            "image_tag_before": "boost-gateway-v332-gateway:latest",
-            "image_tag_after": "boost-gateway-v332-gateway:latest",
+            "image_tag_before": (
+                "not-applicable:native-process"
+                if native_process
+                else "boost-gateway-v332-gateway:latest"
+            ),
+            "image_tag_after": (
+                "not-applicable:native-process"
+                if native_process
+                else "boost-gateway-v332-gateway:latest"
+            ),
+            "native_system": platform.system(),
+            "native_machine": platform.machine(),
         },
-        "scenario": (
-            "redis_recovery"
-            if include_redis_recovery
-            else "gateway_restart"
-        ),
+        "scenario": ("redis_recovery" if include_redis_recovery else "gateway_restart"),
         "failure_injection": {
             "method": (
-                "docker compose restart gateway; docker compose stop/start redis"
-                if include_redis_recovery
-                else "docker compose -f env/docker/docker-compose.yml restart gateway"
+                "terminate and restart native gateway process"
+                if native_process
+                else (
+                    "docker compose restart gateway; docker compose stop/start redis"
+                    if include_redis_recovery
+                    else "docker compose -f env/docker/docker-compose.yml restart gateway"
+                )
             ),
-            "started_at": failure_started.isoformat(timespec="seconds").replace("+00:00", "Z"),
-            "ended_at": failure_ended.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "started_at": failure_started.isoformat(timespec="seconds").replace(
+                "+00:00", "Z"
+            ),
+            "ended_at": failure_ended.isoformat(timespec="seconds").replace(
+                "+00:00", "Z"
+            ),
         },
         "recovery": {
             "actions": recovery_actions,
@@ -1134,12 +1284,27 @@ def write_drill_record(
         },
         "observability": {
             "alerts_observed": (
-                ["BoostGatewayRedisUnavailable: inactive -> pending -> firing -> resolved"]
+                [
+                    "BoostGatewayRedisUnavailable: inactive -> pending -> firing -> resolved"
+                ]
                 if verify_redis_alert_transition
                 else ["local drill did not evaluate external alert firing"]
             ),
-            "metrics_checked": ["gateway /ready", "gateway diagnostics", "Prometheus targets", "Grafana health"],
-            "log_sources": ["docker compose -f env/docker/docker-compose.yml logs gateway"],
+            "metrics_checked": (
+                ["gateway TCP readiness", "gateway HTTP health", "gateway diagnostics"]
+                if native_process
+                else [
+                    "gateway /ready",
+                    "gateway diagnostics",
+                    "Prometheus targets",
+                    "Grafana health",
+                ]
+            ),
+            "log_sources": (
+                ["runtime/validation/process-logs/*.log"]
+                if native_process
+                else ["docker compose -f env/docker/docker-compose.yml logs gateway"]
+            ),
         },
         "verification": {
             "production_recovery_summary": str(production_recovery_summary),
@@ -1147,12 +1312,18 @@ def write_drill_record(
             "redis_alert_runtime_summary": (
                 str(redis_alert_summary) if verify_redis_alert_transition else ""
             ),
-            "docker_snapshot_summary": str(docker_snapshot_summary),
+            "docker_snapshot_summary": (
+                "" if native_process else str(docker_snapshot_summary)
+            ),
             "k8s_full_flow_summary": "",
             "monitoring_summary": str(monitoring_summary),
             "passed": passed,
         },
-        "notes": "R5 Docker Compose recovery drill. Use the same schema with staging/prod records for cloud pre-production approval.",
+        "notes": (
+            "R5 native process recovery drill for a production-native platform boundary."
+            if native_process
+            else "R5 Docker Compose recovery drill for a Linux production boundary."
+        ),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(record, indent=2, sort_keys=True), encoding="utf-8")
@@ -1162,7 +1333,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=REPO_ROOT / "build/release")
     parser.add_argument("--configuration", default="Release")
-    parser.add_argument("--mode", choices=["auto", "docker-compose", "bounded-local"], default="auto")
+    parser.add_argument(
+        "--mode",
+        choices=["auto", "docker-compose", "native-process", "bounded-local"],
+        default="auto",
+    )
     parser.add_argument("--leave-running", action="store_true")
     parser.add_argument(
         "--include-redis-recovery",
@@ -1183,6 +1358,12 @@ def main() -> int:
     parser.add_argument("--step-timeout-seconds", type=int, default=300)
     parser.add_argument("--docker-pull-attempts", type=int, default=3)
     parser.add_argument(
+        "--docker-target-platform",
+        choices=["linux/amd64", "linux/arm64"],
+        default="linux/amd64",
+        help="OCI platform required for every image in a Docker Compose R5 drill.",
+    )
+    parser.add_argument(
         "--docker-pull-policy",
         choices=["always", "missing", "never"],
         default="missing",
@@ -1200,14 +1381,23 @@ def main() -> int:
     )
     parser.add_argument(
         "--candidate-revision",
-        default=os.environ.get("BOOST_GATEWAY_CANDIDATE_REVISION") or repository_revision(),
+        default=os.environ.get("BOOST_GATEWAY_CANDIDATE_REVISION")
+        or repository_revision(),
         help="Require build-backed Docker image manifests to match this candidate revision.",
     )
-    parser.add_argument("--sdk-leaderboard-probe", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--sdk-leaderboard-probe", action="store_true", help=argparse.SUPPRESS
+    )
     parser.add_argument("--sdk-library", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--gateway-host", default="127.0.0.1", help=argparse.SUPPRESS)
-    parser.add_argument("--gateway-port", type=int, default=9201, help=argparse.SUPPRESS)
-    parser.add_argument("--summary-path", type=Path, default=REPO_ROOT / "runtime/validation/preprod-recovery-drill-summary.json")
+    parser.add_argument(
+        "--gateway-port", type=int, default=9201, help=argparse.SUPPRESS
+    )
+    parser.add_argument(
+        "--summary-path",
+        type=Path,
+        default=REPO_ROOT / "runtime/validation/preprod-recovery-drill-summary.json",
+    )
     args = parser.parse_args()
 
     if args.sdk_leaderboard_probe:
@@ -1219,8 +1409,14 @@ def main() -> int:
             args.sdk_library,
         )
 
-    summary_path = args.summary_path if args.summary_path.is_absolute() else REPO_ROOT / args.summary_path
-    build_dir = args.build_dir if args.build_dir.is_absolute() else REPO_ROOT / args.build_dir
+    summary_path = (
+        args.summary_path
+        if args.summary_path.is_absolute()
+        else REPO_ROOT / args.summary_path
+    )
+    build_dir = (
+        args.build_dir if args.build_dir.is_absolute() else REPO_ROOT / args.build_dir
+    )
     validation_dir = summary_path.parent
     compose_file = REPO_ROOT / "env/docker/docker-compose.yml"
     image_preflight_summary = (
@@ -1231,7 +1427,9 @@ def main() -> int:
     steps: list[dict[str, Any]] = []
     checks: list[dict[str, Any]] = []
     mode = args.mode
-    compose_command = docker_compose_command() if mode != "bounded-local" else []
+    compose_command = (
+        docker_compose_command() if mode in {"auto", "docker-compose"} else []
+    )
     if mode == "auto":
         mode = (
             "docker-compose"
@@ -1242,17 +1440,30 @@ def main() -> int:
             compose_command = []
 
     if args.include_redis_recovery and mode != "docker-compose":
-        parser.error("--include-redis-recovery requires --mode docker-compose or cached Compose images")
+        parser.error(
+            "--include-redis-recovery requires --mode docker-compose or cached Compose images"
+        )
     if mode == "docker-compose" and not args.candidate_revision:
-        parser.error("docker-compose mode requires --candidate-revision or a resolvable Git HEAD")
+        parser.error(
+            "docker-compose mode requires --candidate-revision or a resolvable Git HEAD"
+        )
+    if mode == "docker-compose":
+        os.environ["DOCKER_DEFAULT_PLATFORM"] = args.docker_target_platform
     if args.verify_redis_alert_transition and not args.include_redis_recovery:
-        parser.error("--verify-redis-alert-transition requires --include-redis-recovery")
-    if args.verify_redis_alert_transition and args.redis_alert_firing_timeout_seconds <= 0:
+        parser.error(
+            "--verify-redis-alert-transition requires --include-redis-recovery"
+        )
+    if (
+        args.verify_redis_alert_transition
+        and args.redis_alert_firing_timeout_seconds <= 0
+    ):
         parser.error("--redis-alert-firing-timeout-seconds must be positive")
 
     if args.image_preflight_only:
         if mode != "docker-compose":
-            parser.error("--image-preflight-only requires Docker Compose images or --mode docker-compose")
+            parser.error(
+                "--image-preflight-only requires Docker Compose images or --mode docker-compose"
+            )
         image_preflight = run_docker_image_preflight(
             compose_command,
             compose_file,
@@ -1260,6 +1471,7 @@ def main() -> int:
             pull_attempts=args.docker_pull_attempts,
             timeout_seconds=args.step_timeout_seconds,
             candidate_revision=args.candidate_revision,
+            target_platform=args.docker_target_platform,
         )
         write_image_preflight_summary(
             image_preflight_summary,
@@ -1274,12 +1486,19 @@ def main() -> int:
         return 0 if image_preflight.get("passed") is True else 1
 
     recovery_summary = validation_dir / "r5-production-recovery-summary.json"
-    monitoring_summary = REPO_ROOT / "runtime/validation/monitoring-operability-summary.json"
+    monitoring_summary = (
+        REPO_ROOT / "runtime/validation/monitoring-operability-summary.json"
+    )
     steps.append(
         run_step(
             "R5 N3 production recovery static gate",
             "recovery_gate",
-            [sys.executable, str(REPO_ROOT / "scripts/check_production_recovery_gate.py"), "--summary-path", str(recovery_summary)],
+            [
+                sys.executable,
+                str(REPO_ROOT / "scripts/check_production_recovery_gate.py"),
+                "--summary-path",
+                str(recovery_summary),
+            ],
             120,
         )
     )
@@ -1300,9 +1519,13 @@ def main() -> int:
     sdk_summary = validation_dir / "r5-post-recovery-sdk-full-flow-summary.json"
     redis_sdk_summary = validation_dir / "r5-redis-recovery-sdk-full-flow-summary.json"
     redis_alert_summary = validation_dir / "r5-redis-alert-runtime-summary.json"
-    docker_snapshot_summary = REPO_ROOT / "runtime/perf/docker-production-snapshot/summary.json"
+    docker_snapshot_summary = (
+        REPO_ROOT / "runtime/perf/docker-production-snapshot/summary.json"
+    )
     record_path = validation_dir / "r5-preprod-recovery-drill-record.json"
-    record_check_summary = validation_dir / "r5-recovery-drill-record-check-summary.json"
+    record_check_summary = (
+        validation_dir / "r5-recovery-drill-record-check-summary.json"
+    )
     cleanup_needed = False
     redis_fault_active = False
     alert_verifier: subprocess.Popen[str] | None = None
@@ -1314,6 +1537,7 @@ def main() -> int:
     image_preflight: dict[str, Any] = {
         "passed": mode != "docker-compose",
         "pull_policy": args.docker_pull_policy,
+        "target_platform": args.docker_target_platform,
         "requirements": [],
         "inventory": [],
         "missing_images": [],
@@ -1332,6 +1556,7 @@ def main() -> int:
                 pull_attempts=args.docker_pull_attempts,
                 timeout_seconds=args.step_timeout_seconds,
                 candidate_revision=args.candidate_revision,
+                target_platform=args.docker_target_platform,
             )
             steps.extend(image_preflight["steps"])
             write_image_preflight_summary(
@@ -1344,7 +1569,14 @@ def main() -> int:
                     run_step(
                         "R5 docker compose up from existing images",
                         "docker_compose",
-                        [*compose_command, "-f", str(compose_file), "up", "-d", "--no-build"],
+                        [
+                            *compose_command,
+                            "-f",
+                            str(compose_file),
+                            "up",
+                            "-d",
+                            "--no-build",
+                        ],
                         args.step_timeout_seconds,
                     )
                 )
@@ -1359,19 +1591,27 @@ def main() -> int:
                             "category": "docker_compose",
                             "command": ["GET", "http://127.0.0.1:9080/ready"],
                             "status": "passed",
-                            "duration_seconds": round(time.monotonic() - ready_started, 3),
-                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[-6000:],
+                            "duration_seconds": round(
+                                time.monotonic() - ready_started, 3
+                            ),
+                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[
+                                -6000:
+                            ],
                             "stderr_tail": "",
                         }
                     )
-                except Exception as exc:  # noqa: BLE001 - captured in validation summary
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001 - captured in validation summary
                     steps.append(
                         {
                             "name": "R5 gateway ready before restart",
                             "category": "docker_compose",
                             "command": ["GET", "http://127.0.0.1:9080/ready"],
                             "status": "failed",
-                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "duration_seconds": round(
+                                time.monotonic() - ready_started, 3
+                            ),
                             "stdout_tail": "",
                             "stderr_tail": str(exc),
                         }
@@ -1395,7 +1635,13 @@ def main() -> int:
                     run_step(
                         "R5 docker compose restart gateway",
                         "recovery_drill",
-                        [*compose_command, "-f", str(compose_file), "restart", "gateway"],
+                        [
+                            *compose_command,
+                            "-f",
+                            str(compose_file),
+                            "restart",
+                            "gateway",
+                        ],
                         args.step_timeout_seconds,
                     )
                 )
@@ -1412,8 +1658,12 @@ def main() -> int:
                             "category": "recovery_drill",
                             "command": ["GET", "http://127.0.0.1:9080/ready"],
                             "status": "passed",
-                            "duration_seconds": round(time.monotonic() - ready_started, 3),
-                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[-6000:],
+                            "duration_seconds": round(
+                                time.monotonic() - ready_started, 3
+                            ),
+                            "stdout_tail": json.dumps(ready_doc, sort_keys=True)[
+                                -6000:
+                            ],
                             "stderr_tail": "",
                         }
                     )
@@ -1424,7 +1674,9 @@ def main() -> int:
                             "category": "recovery_drill",
                             "command": ["GET", "http://127.0.0.1:9080/ready"],
                             "status": "failed",
-                            "duration_seconds": round(time.monotonic() - ready_started, 3),
+                            "duration_seconds": round(
+                                time.monotonic() - ready_started, 3
+                            ),
                             "stdout_tail": "",
                             "stderr_tail": str(exc),
                         }
@@ -1438,7 +1690,9 @@ def main() -> int:
                     args.step_timeout_seconds,
                 )
                 steps.append(post_step)
-                write_command_summary(sdk_summary, "R5 SDK full-flow after gateway restart", post_step)
+                write_command_summary(
+                    sdk_summary, "R5 SDK full-flow after gateway restart", post_step
+                )
 
             if steps[-1]["status"] == "passed" and args.include_redis_recovery:
                 marker_key = f"boost_gateway:r5:recovery:{int(time.time())}"
@@ -1578,20 +1832,28 @@ def main() -> int:
                                 "category": "redis_recovery",
                                 "command": [*redis_cli, "PING"],
                                 "status": "passed",
-                                "duration_seconds": round(time.monotonic() - recovery_started, 3),
+                                "duration_seconds": round(
+                                    time.monotonic() - recovery_started, 3
+                                ),
                                 "stdout_tail": json.dumps(redis_doc, sort_keys=True),
                                 "stderr_tail": "",
-                                "rto_seconds": round(time.monotonic() - recovery_started, 3),
+                                "rto_seconds": round(
+                                    time.monotonic() - recovery_started, 3
+                                ),
                             }
                         )
-                    except Exception as exc:  # noqa: BLE001 - captured in validation summary
+                    except (
+                        Exception
+                    ) as exc:  # noqa: BLE001 - captured in validation summary
                         steps.append(
                             {
                                 "name": "R5 Redis responds after recovery",
                                 "category": "redis_recovery",
                                 "command": [*redis_cli, "PING"],
                                 "status": "failed",
-                                "duration_seconds": round(time.monotonic() - recovery_started, 3),
+                                "duration_seconds": round(
+                                    time.monotonic() - recovery_started, 3
+                                ),
                                 "stdout_tail": "",
                                 "stderr_tail": str(exc),
                             }
@@ -1663,21 +1925,35 @@ def main() -> int:
                         {
                             "name": "R5 Prometheus targets healthy before snapshot",
                             "category": "docker_snapshot",
-                            "command": ["GET", "http://127.0.0.1:9090/api/v1/targets?state=active"],
+                            "command": [
+                                "GET",
+                                "http://127.0.0.1:9090/api/v1/targets?state=active",
+                            ],
                             "status": "passed",
-                            "duration_seconds": round(time.monotonic() - prometheus_started, 3),
-                            "stdout_tail": json.dumps(prometheus_doc, ensure_ascii=False, sort_keys=True)[-6000:],
+                            "duration_seconds": round(
+                                time.monotonic() - prometheus_started, 3
+                            ),
+                            "stdout_tail": json.dumps(
+                                prometheus_doc, ensure_ascii=False, sort_keys=True
+                            )[-6000:],
                             "stderr_tail": "",
                         }
                     )
-                except Exception as exc:  # noqa: BLE001 - captured in validation summary
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001 - captured in validation summary
                     steps.append(
                         {
                             "name": "R5 Prometheus targets healthy before snapshot",
                             "category": "docker_snapshot",
-                            "command": ["GET", "http://127.0.0.1:9090/api/v1/targets?state=active"],
+                            "command": [
+                                "GET",
+                                "http://127.0.0.1:9090/api/v1/targets?state=active",
+                            ],
                             "status": "failed",
-                            "duration_seconds": round(time.monotonic() - prometheus_started, 3),
+                            "duration_seconds": round(
+                                time.monotonic() - prometheus_started, 3
+                            ),
                             "stdout_tail": "",
                             "stderr_tail": str(exc),
                         }
@@ -1690,7 +1966,10 @@ def main() -> int:
                         "docker_snapshot",
                         [
                             sys.executable,
-                            str(REPO_ROOT / "scripts/collect_docker_production_perf_snapshot.py"),
+                            str(
+                                REPO_ROOT
+                                / "scripts/collect_docker_production_perf_snapshot.py"
+                            ),
                             "--output-dir",
                             str(REPO_ROOT / "runtime/perf/docker-production-snapshot"),
                         ],
@@ -1698,8 +1977,13 @@ def main() -> int:
                     )
                 )
         else:
+            native_process = mode == "native-process"
             sdk_step = run_step(
-                "R5 bounded-local SDK full-flow",
+                (
+                    "R5 native gateway restart and SDK full-flow"
+                    if native_process
+                    else "R5 bounded-local SDK full-flow"
+                ),
                 "sdk_full_flow",
                 [
                     sys.executable,
@@ -1709,10 +1993,19 @@ def main() -> int:
                     "--skip-build",
                     "--summary-path",
                     str(sdk_summary),
+                    *(["--restart-gateway"] if native_process else []),
                 ],
                 args.step_timeout_seconds,
             )
             steps.append(sdk_step)
+            if native_process and sdk_summary.is_file():
+                try:
+                    sdk_document = json.loads(sdk_summary.read_text(encoding="utf-8"))
+                    measured_rto_seconds = sdk_document.get(
+                        "gateway_restart_rto_seconds"
+                    )
+                except (OSError, json.JSONDecodeError):
+                    measured_rto_seconds = None
 
         drill_passed = all(step.get("status") == "passed" for step in steps)
         write_drill_record(
@@ -1728,6 +2021,7 @@ def main() -> int:
             failure_started_at=failure_started_at,
             failure_ended_at=failure_ended_at,
             measured_rto_seconds=measured_rto_seconds,
+            mode=mode,
         )
         steps.append(
             run_step(
@@ -1775,19 +2069,25 @@ def main() -> int:
                             "category": "cleanup",
                             "command": ["redis-cli", "PING"],
                             "status": "passed",
-                            "duration_seconds": round(time.monotonic() - cleanup_started, 3),
+                            "duration_seconds": round(
+                                time.monotonic() - cleanup_started, 3
+                            ),
                             "stdout_tail": json.dumps(redis_doc, sort_keys=True),
                             "stderr_tail": "",
                         }
                     )
-                except Exception as exc:  # noqa: BLE001 - cleanup failure belongs in summary
+                except (
+                    Exception
+                ) as exc:  # noqa: BLE001 - cleanup failure belongs in summary
                     steps.append(
                         {
                             "name": "R5 verify Redis ready after interrupted fault drill",
                             "category": "cleanup",
                             "command": ["redis-cli", "PING"],
                             "status": "failed",
-                            "duration_seconds": round(time.monotonic() - cleanup_started, 3),
+                            "duration_seconds": round(
+                                time.monotonic() - cleanup_started, 3
+                            ),
                             "stdout_tail": "",
                             "stderr_tail": str(exc),
                         }
@@ -1806,27 +2106,48 @@ def main() -> int:
 
     checks.append(
         {
-            "name": "r5-real-docker-compose-drill",
+            "name": "r5-real-platform-recovery-drill",
             "category": "preprod_recovery",
-            "passed": mode == "docker-compose" and all(step.get("status") == "passed" for step in steps),
+            "passed": mode in {"docker-compose", "native-process"}
+            and all(step.get("status") == "passed" for step in steps),
             "mode": mode,
-            "detail": "Docker Compose gateway restart drill executed" if mode == "docker-compose" else "bounded local mode used",
+            "detail": (
+                "Docker Compose gateway restart drill executed"
+                if mode == "docker-compose"
+                else (
+                    "native gateway process restart drill executed"
+                    if mode == "native-process"
+                    else "bounded local mode used"
+                )
+            ),
         }
     )
     failed = next((step for step in steps if step.get("status") != "passed"), None)
-    failed_check = next((check for check in checks if check.get("passed") is not True), None)
+    failed_check = next(
+        (check for check in checks if check.get("passed") is not True), None
+    )
     passed = failed is None and failed_check is None
     summary = {
         "summary_version": 2,
-        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "generated_at": datetime.now(UTC)
+        .isoformat(timespec="seconds")
+        .replace("+00:00", "Z"),
         "provenance": build_evidence_provenance(
             REPO_ROOT,
             build_configuration=args.configuration,
         ),
         "overall_pass": passed,
         "passed": passed,
-        "failed_category": str(failed.get("category", "")) if failed else ("preprod_recovery" if failed_check else ""),
-        "failed_step": str(failed.get("name", "")) if failed else (str(failed_check.get("name", "")) if failed_check else ""),
+        "failed_category": (
+            str(failed.get("category", ""))
+            if failed
+            else ("preprod_recovery" if failed_check else "")
+        ),
+        "failed_step": (
+            str(failed.get("name", ""))
+            if failed
+            else (str(failed_check.get("name", "")) if failed_check else "")
+        ),
         "environment": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -1835,6 +2156,7 @@ def main() -> int:
         "scope": {
             "mode": mode,
             "real_docker_compose_drill": mode == "docker-compose",
+            "real_native_process_drill": mode == "native-process",
             "scenario": (
                 "redis_recovery" if args.include_redis_recovery else "gateway_restart"
             ),
@@ -1842,6 +2164,9 @@ def main() -> int:
             "verify_redis_alert_transition": args.verify_redis_alert_transition,
             "redis_alert_firing_timeout_seconds": args.redis_alert_firing_timeout_seconds,
             "docker_pull_policy": args.docker_pull_policy,
+            "docker_target_platform": (
+                args.docker_target_platform if mode == "docker-compose" else ""
+            ),
         },
         "docker_image_preflight": image_preflight,
         "checks": checks,
@@ -1863,7 +2188,9 @@ def main() -> int:
         },
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+    summary_path.write_text(
+        json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8"
+    )
     print(f"preprod recovery drill: {'PASS' if passed else 'FAIL'}")
     print(f"summary: {summary_path}")
     return 0 if passed else 1

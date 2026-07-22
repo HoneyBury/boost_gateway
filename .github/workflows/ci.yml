@@ -28,6 +28,11 @@ jobs:
           clean: false
           fetch-depth: 0
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Restore sccache cache
         id: restore-sccache
         uses: actions/cache/restore@v4
@@ -70,6 +75,7 @@ jobs:
           python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
+            --recreate-if-python-mismatch \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
           "$BOOST_GATEWAY_CONAN_VENV/bin/conan" --version
@@ -85,6 +91,7 @@ jobs:
             --profile:build conan/profiles/linux-gcc-x64 \
             --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
             -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False" \
             --output-folder=build/conan-ci \
             --build=missing \
@@ -150,6 +157,10 @@ jobs:
       - name: Next minor decision gate
         shell: bash
         run: python3 scripts/check_next_minor_decisions.py
+
+      - name: Project TODO board gate
+        shell: bash
+        run: python3 scripts/manage_todos.py check
 
       - name: Evidence provenance contract gate
         shell: bash

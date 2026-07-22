@@ -2,7 +2,7 @@
 
 面向 BoostGateway 游戏服务器的 C++ 客户端 SDK。封装了 TCP 连接管理、协议编解码、请求/响应关联和服务端推送处理。
 
-> **当前版本: v4.1.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装 + 实验 gRPC CMake target** | [路线与当前状态](roadmap.md)
+> **当前版本: v4.2.0** | **分发状态: C++ 静态库 + C ABI 动态库 + Python/C# 轻量封装 + 实验 gRPC CMake target** | [路线与当前状态](roadmap.md)
 
 版本兼容与语言封装边界见 [SDK 与 Gateway 兼容矩阵](compatibility.md)。
 
@@ -299,5 +299,5 @@ bob.disconnect();
 
 | SDK 版本 | Gateway 版本 |
 |---------|-------------|
-| v4.1.0 | v3.3.x, v3.5.x |
+| v4.2.0 | v3.3.x, v3.5.x |
 | v2.4.0 | v2.0.0+ |

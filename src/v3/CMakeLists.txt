@@ -10,7 +10,12 @@ target_link_libraries(project_v3
         project_app
     PRIVATE
         $<IF:$<TARGET_EXISTS:hiredis::hiredis>,hiredis::hiredis,hiredis>
+        OpenSSL::Crypto
 )
+if(BOOST_BUILD_RAFT_PROTOBUF)
+    target_link_libraries(project_v3 PUBLIC project_raft_proto)
+    target_compile_definitions(project_v3 PUBLIC BOOST_BUILD_RAFT_PROTOBUF)
+endif()
 apply_project_warnings(project_v3)
 
 add_custom_target(generate_v3_proto_cpp

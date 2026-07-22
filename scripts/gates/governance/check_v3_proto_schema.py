@@ -29,6 +29,16 @@ PROTO_FILES = {
         "LeaderboardRankRequest",
         "LeaderboardEntry",
     ],
+    "raft.proto": [
+        "LogEntry",
+        "RequestVote",
+        "RequestVoteReply",
+        "AppendEntries",
+        "AppendEntriesReply",
+        "CapabilityRequest",
+        "CapabilityReply",
+        "WireEnvelope",
+    ],
 }
 
 TRANSPORT_CONTRACT = {
@@ -107,7 +117,11 @@ def main() -> int:
         content = path.read_text(encoding="utf-8")
         if 'syntax = "proto3";' not in content:
             errors.append(f"{path}: missing proto3 syntax")
-        if "package boost.gateway.v3;" not in content:
+        expected_package = (
+            "package boost.gateway.v3.raft;" if filename == "raft.proto"
+            else "package boost.gateway.v3;"
+        )
+        if expected_package not in content:
             errors.append(f"{path}: missing boost.gateway.v3 package")
 
         for message in messages:

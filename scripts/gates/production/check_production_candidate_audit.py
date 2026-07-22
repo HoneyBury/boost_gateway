@@ -54,7 +54,7 @@ REQUIRED_TEXT = {
     ],
     "sdk/docs/compatibility.md": [
         "v3.3.2",
-        "v4.1.0",
+        "v4.2.0",
         "BOOST_GATEWAY_SDK_LIBRARY",
         "disconnect callback",
     ],

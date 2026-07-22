@@ -1,4 +1,4 @@
-// SDK v4.1.0: Protocol codec tests (standalone, no server deps)
+// SDK v4.2.0: Protocol codec tests (standalone, no server deps)
 #include <gtest/gtest.h>
 #include "boost_gateway/sdk/protocol/codec.h"
 #include "boost_gateway/sdk/protocol/message.h"

@@ -1,0 +1,186 @@
+name: Security / JWKS Rotation Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: "Native production platform"
+        required: true
+        default: "linux-x64"
+        type: choice
+        options:
+          - linux-x64
+          - macos-arm64
+      runner:
+        description: "Runner JSON array matching the selected platform"
+        required: true
+        default: '["self-hosted","Linux","X64"]'
+      build_parallelism:
+        description: "Maximum concurrent C++ build jobs"
+        required: true
+        default: "2"
+
+permissions:
+  contents: read
+
+jobs:
+  https-rotation:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 60
+    env:
+      CONAN_PROFILE: ${{ inputs.platform == 'macos-arm64' && 'conan/profiles/macos-apple-clang-arm64' || 'conan/profiles/linux-gcc-x64' }}
+      BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.platform == 'macos-arm64' && 'conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock' || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
+      EVIDENCE_PYTHON: ${{ inputs.platform == 'macos-arm64' && 'python3.12' || 'python' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup-cpp-conan
+        if: inputs.platform == 'linux-x64'
+        with:
+          conan-version: "2.8.1"
+          python-version: "3.12"
+          conan-venv-offline: "true"
+          bootstrap-args: "--no-remote"
+          cache-build-type: Release
+          cache-profile: ${{ env.CONAN_PROFILE }}
+          cache-lockfile: ${{ env.BOOST_GATEWAY_CONAN_LOCKFILE }}
+
+      - name: Setup native macOS Conan toolchain
+        if: inputs.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v python3.12
+          python3.12 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          test -n "${RUNNER_TOOL_CACHE:-}"
+          cache_root="$RUNNER_TOOL_CACHE/boost-gateway"
+          conan_venv="$cache_root/tools/conan-2.8.1-py3.12"
+          python3.12 scripts/tools/ensure_conan_venv.py \
+            --venv "$conan_venv" \
+            --conan-version 2.8.1 \
+            --offline \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+          export PATH="$conan_venv/bin:$PATH"
+          python3.12 scripts/tools/resolve_runner_cache.py \
+            --build-type Release \
+            --profile "$CONAN_PROFILE" \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --cache-root "$cache_root" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/runner-cache-identity.json
+
+      - name: Bootstrap native macOS Conan home
+        if: inputs.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+
+      - name: Verify fixed-runner identity toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.platform }}" in
+            linux-x64)
+              test "$(uname -s)" = Linux
+              test "$(uname -m)" = x86_64
+              getconf GNU_LIBC_VERSION | grep -E '^glibc [0-9]+\.[0-9]+$'
+              ;;
+            macos-arm64)
+              test "$(uname -s)" = Darwin
+              test "$(uname -m)" = arm64
+              xcrun clang --version
+              ;;
+            *)
+              echo "unsupported platform: ${{ inputs.platform }}" >&2
+              exit 2
+              ;;
+          esac
+          openssl version
+          "$EVIDENCE_PYTHON" --version
+
+      - name: Verify strict offline Conan graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" scripts/tools/verify_conan_offline_install.py \
+            --profile "$CONAN_PROFILE" \
+            --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --output-folder build/conan-jwks-rotation \
+            --build-type Release \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/jwks-conan-offline-summary.json
+
+      - name: Configure identity candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake_args=(
+            -S . -B build/jwks-rotation -G Ninja
+            -DBOOST_DEPENDENCY_PROVIDER=conan
+            -DCMAKE_BUILD_TYPE=Release
+            -DENABLE_TESTING=ON
+            -DBOOST_BUILD_GRPC=OFF
+            -DBOOST_BUILD_SQLITE=OFF
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-jwks-rotation/build/Release/generators/conan_toolchain.cmake
+          )
+          if [ "${{ inputs.platform }}" = "macos-arm64" ]; then
+            cmake_args+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
+          fi
+          cmake "${cmake_args[@]}"
+
+      - name: Build identity tests and HTTPS probe
+        shell: bash
+        run: |
+          cmake --build build/jwks-rotation --parallel "${{ inputs.build_parallelism }}" \
+            --target jwks_rotation_probe project_v2_unit_tests project_v2_integration_tests
+
+      - name: Run focused identity and service tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/validation
+          ctest --test-dir build/jwks-rotation \
+            -R 'JwtValidatorTest|ServiceBusIntegrity' \
+            --output-on-failure --timeout 60 \
+            | tee runtime/validation/jwks-focused-ctest.log
+
+      - name: Enforce production identity security contracts
+        shell: bash
+        run: |
+          "$EVIDENCE_PYTHON" scripts/check_security_release_gate.py
+
+      - name: Run real HTTPS JWKS rotation and outage drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" scripts/verify_jwks_rotation.py \
+            --probe build/jwks-rotation/tools/jwks_rotation_probe/jwks_rotation_probe \
+            --candidate-revision "$GITHUB_SHA" \
+            --configuration Release \
+            --conan-lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --summary-path runtime/validation/jwks-rotation-summary.json
+
+      - name: Validate JWKS evidence summary contract
+        if: always()
+        shell: bash
+        run: |
+          "$EVIDENCE_PYTHON" scripts/check_validation_summary_contract.py \
+            --summary runtime/validation/jwks-rotation-summary.json \
+            --summary-path runtime/validation/jwks-summary-contract-summary.json
+
+      - name: Upload JWKS rotation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jwks-rotation-${{ inputs.platform }}-${{ github.sha }}
+          path: |
+            runtime/validation/runner-cache-identity.json
+            runtime/validation/jwks-conan-offline-summary.json
+            runtime/validation/jwks-focused-ctest.log
+            runtime/validation/jwks-rotation-summary.json
+            runtime/validation/jwks-summary-contract-summary.json
+          if-no-files-found: warn
+          retention-days: 30

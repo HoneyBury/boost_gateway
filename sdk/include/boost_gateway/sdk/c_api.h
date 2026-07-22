@@ -1,5 +1,5 @@
 #pragma once
-// SDK v4.1.0: Stable C API for cross-language binding.
+// SDK v4.2.0: Stable C API for cross-language binding.
 // All functions use opaque handle and plain C types.
 // ABI-stable across compiler versions.
 

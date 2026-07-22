@@ -52,6 +52,24 @@ int main(int argc, char* argv[]) {
         options.jwt_secret = config.jwt.secret;
         options.jwt_public_key_pem = config.jwt.public_key_pem;
         options.jwt_private_key_pem = config.jwt.private_key_pem;
+        options.jwt_key_ring = config.jwt.key_ring;
+        if (!config.jwt.jwks_uri.empty()) {
+            options.jwks_http = v2::auth::JwksHttpOptions{
+                .uri = config.jwt.jwks_uri,
+                .allowed_hosts = config.jwt.jwks_allowed_hosts,
+                .allow_loopback_http = config.jwt.jwks_allow_loopback_http,
+                .connect_timeout = config.jwt.jwks_connect_timeout,
+                .read_timeout = config.jwt.jwks_read_timeout,
+                .max_response_bytes = config.jwt.jwks_max_response_bytes,
+            };
+        }
+        options.jwks_ttl = std::chrono::duration_cast<std::chrono::seconds>(config.jwt.jwks_ttl);
+        options.jwks_stale_grace =
+            std::chrono::duration_cast<std::chrono::seconds>(config.jwt.jwks_stale_grace);
+        options.jwks_minimum_refresh_interval =
+            std::chrono::duration_cast<std::chrono::seconds>(
+                config.jwt.jwks_minimum_refresh_interval);
+        options.jwks_max_keys = config.jwt.jwks_max_keys;
         options.jwt_issuer = config.jwt.issuer.empty() ? "boost-gateway" : config.jwt.issuer;
         options.jwt_audience = config.jwt.audience;
         options.tls_config = config.tls_config;

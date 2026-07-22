@@ -1,4 +1,4 @@
-// SDK v4.1.0: C ABI boundary tests.
+// SDK v4.2.0: C ABI boundary tests.
 #include <gtest/gtest.h>
 
 #include "boost_gateway/sdk/c_api.h"

@@ -67,6 +67,14 @@ on:
         description: "Attempts for each R5 registry pull"
         required: true
         default: "3"
+      docker_target_platform:
+        description: "Linux OCI platform for the R5 image set"
+        required: true
+        default: "linux/amd64"
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
       tls_runs:
         description: "Number of R6 TLS readiness passes"
         required: true
@@ -110,12 +118,15 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Ninja
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup CMake
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: jwlawson/actions-setup-cmake@v2
 
       - name: Setup Python
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -179,6 +190,7 @@ jobs:
             --profile:build "${{ inputs.conan_profile }}" \
             --lockfile "${{ inputs.conan_lockfile }}" \
             -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False"
 
       - name: Configure
@@ -213,7 +225,7 @@ jobs:
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
             --lockfile "${{ inputs.conan_lockfile }}"
-          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose \
+          DOCKER_DEFAULT_PLATFORM="${{ inputs.docker_target_platform || 'linux/amd64' }}" docker compose \
             -f env/docker/docker-compose.yml \
             build --pull=false
 
@@ -228,6 +240,7 @@ jobs:
             --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
             --docker-pull-policy "${{ inputs.docker_pull_policy || 'never' }}" \
             --docker-pull-attempts "${{ inputs.docker_pull_attempts || '3' }}" \
+            --docker-target-platform "${{ inputs.docker_target_platform || 'linux/amd64' }}" \
             --candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION" \
             --image-preflight-summary-path runtime/validation/r5-docker-image-preflight-summary.json \
             --summary-path runtime/validation/preprod-recovery-drill-summary.json)

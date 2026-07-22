@@ -10,23 +10,28 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
-
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 SCRIPT_PATH = REPO_ROOT / "scripts/gates/production/verify_preprod_recovery_drill.py"
-SPEC = importlib.util.spec_from_file_location("verify_preprod_recovery_drill", SCRIPT_PATH)
+SPEC = importlib.util.spec_from_file_location(
+    "verify_preprod_recovery_drill", SCRIPT_PATH
+)
 assert SPEC and SPEC.loader
 DRILL = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(DRILL)
 
 
 def test_expected_failure_is_required() -> None:
-    with patch.object(DRILL, "run_step", return_value={"status": "failed", "stderr_tail": "down"}):
+    with patch.object(
+        DRILL, "run_step", return_value={"status": "failed", "stderr_tail": "down"}
+    ):
         step = DRILL.run_expected_failure_step("name", "category", ["command"], 1)
     assert step["status"] == "passed"
     assert step["expected_failure_observed"] is True
 
-    with patch.object(DRILL, "run_step", return_value={"status": "passed", "stderr_tail": ""}):
+    with patch.object(
+        DRILL, "run_step", return_value={"status": "passed", "stderr_tail": ""}
+    ):
         step = DRILL.run_expected_failure_step("name", "category", ["command"], 1)
     assert step["status"] == "failed"
     assert step["expected_failure_observed"] is False
@@ -36,9 +41,15 @@ def test_stdout_contract_rejects_wrong_value() -> None:
     with patch.object(
         DRILL,
         "run_step",
-        return_value={"status": "passed", "stdout_tail": "unexpected\n", "stderr_tail": ""},
+        return_value={
+            "status": "passed",
+            "stdout_tail": "unexpected\n",
+            "stderr_tail": "",
+        },
     ):
-        step = DRILL.run_step_expect_stdout("name", "category", ["command"], 1, "expected")
+        step = DRILL.run_step_expect_stdout(
+            "name", "category", ["command"], 1, "expected"
+        )
     assert step["status"] == "failed"
     assert step["observed_stdout"] == "unexpected"
 
@@ -57,7 +68,11 @@ def test_expected_failure_requires_dependency_evidence() -> None:
     with patch.object(
         DRILL,
         "run_step",
-        return_value={"status": "failed", "stdout_tail": "", "stderr_tail": "binary missing"},
+        return_value={
+            "status": "failed",
+            "stdout_tail": "",
+            "stderr_tail": "binary missing",
+        },
     ):
         step = DRILL.run_expected_failure_step(
             "name", "category", ["command"], 1, ("leaderboard",)
@@ -75,13 +90,17 @@ def test_resolve_sdk_shared_library_uses_release_build_layout(tmp_path: Path) ->
 
 
 def test_preprod_workflow_exposes_opt_in_redis_recovery() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(
+        encoding="utf-8"
+    )
     assert "include_redis_recovery:" in workflow
     assert "args+=(--include-redis-recovery)" in workflow
 
 
 def test_preprod_workflow_exposes_opt_in_redis_alert_transition() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(
+        encoding="utf-8"
+    )
     assert "verify_redis_alert_transition:" in workflow
     assert "redis_alert_firing_timeout_seconds:" in workflow
     assert "args+=(--verify-redis-alert-transition" in workflow
@@ -89,7 +108,9 @@ def test_preprod_workflow_exposes_opt_in_redis_alert_transition() -> None:
 
 
 def test_preprod_workflow_rebuilds_and_validates_candidate_images() -> None:
-    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/preprod-evidence.yml").read_text(
+        encoding="utf-8"
+    )
     assert "prepare_docker_runtime_context.py" in workflow
     assert "build --pull=false" in workflow
     assert '--candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION"' in workflow
@@ -118,7 +139,10 @@ def test_build_image_manifest_must_match_candidate_and_lockfile() -> None:
         }
     ]
     sha_completed = subprocess.CompletedProcess(
-        args=[], returncode=0, stdout=("a" * 64) + "  /app/bin/v2_gateway_demo\n", stderr=""
+        args=[],
+        returncode=0,
+        stdout=("a" * 64) + "  /app/bin/v2_gateway_demo\n",
+        stderr="",
     )
     with patch.object(DRILL.subprocess, "run", side_effect=[completed, sha_completed]):
         inspected = DRILL.inspect_build_image_manifests(inventory, "candidate-sha")
@@ -200,3 +224,28 @@ def test_drill_record_reports_redis_alert_evidence(tmp_path: Path) -> None:
         timespec="seconds"
     ).replace("+00:00", "Z")
     assert record["recovery"]["rto_seconds"] == 1.25
+
+
+def test_native_drill_record_identifies_native_platform(tmp_path: Path) -> None:
+    record_path = tmp_path / "record.json"
+    DRILL.write_drill_record(
+        record_path,
+        tmp_path / "recovery.json",
+        tmp_path / "sdk.json",
+        tmp_path / "alerts.json",
+        tmp_path / "snapshot.json",
+        tmp_path / "monitoring.json",
+        True,
+        include_redis_recovery=False,
+        verify_redis_alert_transition=False,
+        failure_started_at=None,
+        failure_ended_at=None,
+        measured_rto_seconds=0.8,
+        mode="native-process",
+    )
+
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    assert record["drill_id"] == "r5-native-gateway-restart"
+    assert record["environment"]["type"] == "native-process"
+    assert record["verification"]["docker_snapshot_summary"] == ""
+    assert record["recovery"]["rto_seconds"] == 0.8

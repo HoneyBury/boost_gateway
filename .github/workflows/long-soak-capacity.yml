@@ -138,11 +138,14 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup Ninja
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: seanmiddleditch/gha-setup-ninja@v5
 
       - name: Setup CMake
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: jwlawson/actions-setup-cmake@v2
       - name: Setup Python
+        if: runner.os != 'Linux' || runner.arch != 'ARM64'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -183,7 +186,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=never --no-remote -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_sqlite=False")
+          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=never --no-remote -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
           if [ -n "${{ inputs.conan_lockfile }}" ]; then
             test -f "${{ inputs.conan_lockfile }}"
             args+=(--lockfile "${{ inputs.conan_lockfile }}")

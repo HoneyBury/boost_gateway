@@ -1,6 +1,15 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <atomic>
+#include <memory>
+#include <stdexcept>
+#include <thread>
+#include <unordered_map>
+#include <openssl/core_names.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <nlohmann/json.hpp>
 #include "v2/auth/jwt_validator.h"
 #include "v2/auth/authorizer.h"
 
@@ -54,6 +63,35 @@ qqPwyJkFr1djOXqX2oO3Ln9mxov6CjwOPiO++bgoHWZqzRBmZHd19MdT2dtXBBxM
 vm50KLSp2wx9DwuP75WeCwl1RgEzhd3fVaYsubmBp2uLhaVko1qrrQiGQ5vyLLOk
 wwIDAQAB
 -----END PUBLIC KEY-----)";
+
+std::string jwks_document(const std::string& kid, const std::string& pem) {
+    using BioPtr = std::unique_ptr<BIO, decltype(&BIO_free)>;
+    using KeyPtr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
+    using BnPtr = std::unique_ptr<BIGNUM, decltype(&BN_free)>;
+    BioPtr bio(BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size())), BIO_free);
+    KeyPtr key(PEM_read_bio_PUBKEY(bio.get(), nullptr, nullptr, nullptr), EVP_PKEY_free);
+    BIGNUM* raw_n = nullptr;
+    BIGNUM* raw_e = nullptr;
+    if (!key || EVP_PKEY_get_bn_param(key.get(), OSSL_PKEY_PARAM_RSA_N, &raw_n) != 1 ||
+        EVP_PKEY_get_bn_param(key.get(), OSSL_PKEY_PARAM_RSA_E, &raw_e) != 1) {
+        throw std::runtime_error("failed to derive test JWK");
+    }
+    BnPtr n(raw_n, BN_free);
+    BnPtr e(raw_e, BN_free);
+    std::string n_bytes(static_cast<std::size_t>(BN_num_bytes(n.get())), '\0');
+    std::string e_bytes(static_cast<std::size_t>(BN_num_bytes(e.get())), '\0');
+    BN_bn2bin(n.get(), reinterpret_cast<unsigned char*>(n_bytes.data()));
+    BN_bn2bin(e.get(), reinterpret_cast<unsigned char*>(e_bytes.data()));
+    return nlohmann::json{{"keys", nlohmann::json::array({{
+        {"kid", kid},
+        {"kty", "RSA"},
+        {"alg", "RS256"},
+        {"use", "sig"},
+        {"key_ops", nlohmann::json::array({"verify"})},
+        {"n", v2::auth::detail::base64url_encode(n_bytes)},
+        {"e", v2::auth::detail::base64url_encode(e_bytes)},
+    }})}}.dump();
+}
 
 }  // namespace
 
@@ -211,6 +249,120 @@ TEST(JwtValidatorTest, AudienceRejectedWhenMismatched) {
     auto result = validator.validate(token);
     EXPECT_FALSE(result.valid);
     EXPECT_EQ(result.error, "invalid_audience");
+}
+
+TEST(JwtValidatorTest, StaticKeyRingSelectsKidAndRejectsMissingOrUnknownKid) {
+    auto resolver = std::make_shared<v2::auth::StaticJwtKeyResolver>(
+        std::unordered_map<std::string, std::string>{{"active", kTestRs256PublicKey},
+                                                     {"next", kOtherRs256PublicKey}});
+    v2::auth::JwtValidator verifier({
+        .key_resolver = resolver,
+        .issuer = "boost-gateway",
+    });
+    v2::auth::JwtValidator signer({
+        .public_key_pem = kTestRs256PublicKey,
+        .private_key_pem = kTestRs256PrivateKey,
+        .issuer = "boost-gateway",
+        .signing_kid = "active",
+    });
+    const auto token = signer.generate(v2::auth::JwtPayload{.sub = "alice"});
+    EXPECT_TRUE(verifier.validate(token).valid);
+
+    v2::auth::JwtValidator no_kid_signer({
+        .public_key_pem = kTestRs256PublicKey,
+        .private_key_pem = kTestRs256PrivateKey,
+        .issuer = "boost-gateway",
+    });
+    EXPECT_EQ(verifier.validate(
+                  no_kid_signer.generate(v2::auth::JwtPayload{.sub = "alice"})).error,
+              "missing_kid");
+
+    v2::auth::JwtValidator unknown_signer({
+        .public_key_pem = kTestRs256PublicKey,
+        .private_key_pem = kTestRs256PrivateKey,
+        .issuer = "boost-gateway",
+        .signing_kid = "unknown",
+    });
+    EXPECT_EQ(verifier.validate(
+                  unknown_signer.generate(v2::auth::JwtPayload{.sub = "alice"})).error,
+              "unknown_kid");
+}
+
+TEST(JwtValidatorTest, JwksResolverHonorsTtlStaleGraceAndExpiration) {
+    using Clock = v2::auth::JwksKeyResolver::Clock;
+    auto now = Clock::time_point(std::chrono::seconds(1000));
+    v2::auth::JwksKeyResolver resolver({
+        .fetcher = [] { return jwks_document("active", kTestRs256PublicKey); },
+        .now = [&] { return now; },
+        .ttl = std::chrono::seconds(10),
+        .stale_grace = std::chrono::seconds(20),
+        .minimum_refresh_interval = std::chrono::seconds(0),
+    });
+    resolver.refresh_now();
+    EXPECT_TRUE(resolver.resolve("active").valid());
+    now += std::chrono::seconds(11);
+    EXPECT_TRUE(resolver.resolve("active").valid());
+    EXPECT_TRUE(resolver.metrics().snapshot_stale);
+    now += std::chrono::seconds(20);
+    EXPECT_EQ(resolver.resolve("active").error, "jwks_stale_expired");
+}
+
+TEST(JwtValidatorTest, UnknownKidTriggersRateLimitedBackgroundRefresh) {
+    std::atomic_int fetches{0};
+    v2::auth::JwksKeyResolver resolver({
+        .fetcher = [&] {
+            const auto attempt = ++fetches;
+            return jwks_document(attempt == 1 ? "old" : "new", kTestRs256PublicKey);
+        },
+        .ttl = std::chrono::hours(1),
+        .stale_grace = std::chrono::hours(1),
+        .minimum_refresh_interval = std::chrono::seconds(0),
+    });
+    resolver.refresh_now();
+    EXPECT_EQ(resolver.resolve("new").error, "unknown_kid");
+    for (int attempt = 0; attempt < 100 && fetches.load() < 2; ++attempt) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    EXPECT_GE(fetches.load(), 2);
+    EXPECT_TRUE(resolver.resolve("new").valid());
+    EXPECT_EQ(resolver.metrics().unknown_kid_rejections, 1U);
+}
+
+TEST(JwtValidatorTest, JwksRejectsDuplicateKidAndUnsafeHttpPolicy) {
+    auto duplicate = nlohmann::json::parse(jwks_document("dup", kTestRs256PublicKey));
+    duplicate["keys"].push_back(duplicate["keys"].front());
+    v2::auth::JwksKeyResolver resolver({
+        .fetcher = [document = duplicate.dump()] { return document; },
+    });
+    EXPECT_THROW(resolver.refresh_now(), std::invalid_argument);
+    EXPECT_EQ(resolver.metrics().refresh_failures, 1U);
+
+    EXPECT_THROW(static_cast<void>(v2::auth::fetch_jwks_document({
+                     .uri = "http://identity.example.test/keys",
+                     .allowed_hosts = {"identity.example.test"},
+                 })),
+                 std::invalid_argument);
+    EXPECT_THROW(static_cast<void>(v2::auth::fetch_jwks_document({
+                     .uri = "https://identity.example.test/keys",
+                     .allowed_hosts = {"other.example.test"},
+                 })),
+                 std::invalid_argument);
+}
+
+TEST(JwtValidatorTest, ExpirationBoundaryAndMalformedClaimTypesFailClosed) {
+    v2::auth::JwtValidator signer({.secret = "secret", .require_expiration = true});
+    const auto now = std::chrono::duration_cast<std::chrono::seconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+    auto token = signer.generate(v2::auth::JwtPayload{
+        .sub = "alice",
+        .exp = static_cast<std::uint64_t>(now),
+    });
+    EXPECT_EQ(signer.validate(token).error, "token_expired");
+
+    v2::auth::JwtPayload malformed{.sub = "alice"};
+    malformed.extra["exp"] = "tomorrow";
+    token = signer.generate(malformed);
+    EXPECT_EQ(signer.validate(token).error, "invalid_payload_json");
 }
 
 // ── Authorizer ──────────────────────────────────────────────────────────

@@ -16,8 +16,11 @@ WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
 EXPECTED_NAMES = {
     "ci": "Mainline / Build, Test & Governance",
     "conan-validate": "Dependencies / Conan Graph Validation",
+    "debug-symbols": "Release / Linux Debug Symbols Candidate",
     "grpc-experimental": "Experimental / gRPC",
+    "jwks-rotation": "Security / JWKS Rotation Drill",
     "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
+    "macos-arm64": "Platform / macOS ARM64 Production Candidate",
     "nightly-stability": "Stability / Bounded Soak",
     "perf-regression": "Performance / Baseline & Regression",
     "preprod-evidence": "Production / Preproduction Evidence",
@@ -26,11 +29,13 @@ EXPECTED_NAMES = {
     "production-readiness": "Production / Readiness Decision",
     "release": "Release / Package & Publish",
     "release-asset-verification": "Release / Published Asset Verification",
+    "sdk-distribution": "SDK / Wheel & NuGet Candidate",
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}
 STRICT_OFFLINE_CONAN_WORKFLOWS = {
     "grpc-experimental",
+    "jwks-rotation",
     "long-soak-capacity",
     "nightly-stability",
     "perf-regression",
@@ -98,13 +103,37 @@ def main() -> int:
     actual = {path.stem for path in workflow_paths}
     expected = set(EXPECTED_NAMES)
 
-    add(checks, "workflow-count", len(actual) == 13, f"actual={len(actual)}")
+    add(checks, "workflow-count", len(actual) == len(EXPECTED_NAMES), f"actual={len(actual)}")
     add(checks, "workflow-set:expected", actual == expected, f"actual={sorted(actual)} expected={sorted(expected)}")
 
     matrix_path = ROOT / ".github" / "runner-matrix.json"
     matrix = json.loads(read(matrix_path)) if matrix_path.exists() else {}
     matrix_workflows = set(matrix.get("workflows", {}))
     add(checks, "runner-matrix:exact-workflow-set", matrix_workflows == actual, f"matrix={sorted(matrix_workflows)} actual={sorted(actual)}")
+
+    boundary_path = ROOT / "docs" / "platform-production-boundaries.json"
+    boundary = json.loads(read(boundary_path)) if boundary_path.exists() else {}
+    boundary_workflows = set(boundary.get("workflows", {}))
+    production_platforms = boundary.get("policy", {}).get("production_platforms", [])
+    add(
+        checks,
+        "platform-boundary:production-platforms",
+        production_platforms == ["linux-x64", "linux-arm64", "macos-arm64"],
+        f"production_platforms={production_platforms}",
+    )
+    add(
+        checks,
+        "platform-boundary:exact-workflow-set",
+        boundary_workflows == actual,
+        f"boundary={sorted(boundary_workflows)} actual={sorted(actual)}",
+    )
+    for stem, states in sorted(boundary.get("workflows", {}).items()):
+        add(
+            checks,
+            f"platform-boundary:{stem}:complete-platform-set",
+            isinstance(states, dict) and set(states) == set(production_platforms),
+            f"{stem} platforms={sorted(states) if isinstance(states, dict) else states}",
+        )
 
     readme_path = ROOT / ".github" / "CI-CD.md"
     readme = read(readme_path) if readme_path.exists() else ""
@@ -170,6 +199,8 @@ def main() -> int:
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
+    jwks_workflow = read(WORKFLOWS_ROOT / "jwks-rotation.yml")
+    macos_workflow = read(WORKFLOWS_ROOT / "macos-arm64.yml")
     add(
         checks,
         "ci:next-minor-decision-gate",
@@ -288,6 +319,81 @@ def main() -> int:
     )
     add(
         checks,
+        "jwks-rotation:real-https-fixed-runner-evidence",
+        "scripts/verify_jwks_rotation.py" in jwks_workflow
+        and "jwks_rotation_probe" in jwks_workflow
+        and "runtime/validation/jwks-rotation-summary.json" in jwks_workflow
+        and "runtime/validation/jwks-conan-offline-summary.json" in jwks_workflow
+        and 'bootstrap-args: "--no-remote"' in jwks_workflow
+        and 'conan-venv-offline: "true"' in jwks_workflow
+        and "- name: Validate JWKS evidence summary contract\n        if: always()"
+        in jwks_workflow,
+        "JWKS workflow builds the real HTTPS probe and archives same-SHA strict-offline evidence",
+    )
+    add(
+        checks,
+        "jwks-rotation:native-production-platform-routing",
+        "platform:" in jwks_workflow
+        and "linux-x64" in jwks_workflow
+        and "macos-arm64" in jwks_workflow
+        and "conan/profiles/linux-gcc-x64" in jwks_workflow
+        and "conan/profiles/macos-apple-clang-arm64" in jwks_workflow
+        and "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock" in jwks_workflow
+        and "conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock" in jwks_workflow
+        and "Setup native macOS Conan toolchain" in jwks_workflow
+        and 'cache_root="$RUNNER_TOOL_CACHE/boost-gateway"' in jwks_workflow
+        and "-DCMAKE_OSX_ARCHITECTURES=arm64" in jwks_workflow,
+        "JWKS routes strict-offline builds and native host checks independently for Linux x64 and macOS ARM64",
+    )
+    add(
+        checks,
+        "macos-arm64:bounded-native-platform-evidence",
+        "run_platform_baseline:" in macos_workflow
+        and "scripts/collect_v2_perf_baseline.py" in macos_workflow
+        and "scripts/verify_stability_soak.py" in macos_workflow
+        and "runtime/perf/macos-arm64" in macos_workflow
+        and "runtime/validation/macos-arm64-stability-summary.json" in macos_workflow
+        and "--baseline-profile release" in macos_workflow
+        and "--skip-build" in macos_workflow,
+        "macOS candidate can produce bounded native performance and stability evidence from its Mach-O build",
+    )
+    add(
+        checks,
+        "macos-arm64:native-dsym-pair",
+        "run_debug_symbols:" in macos_workflow
+        and "scripts/tools/create_macos_dsym_package.py" in macos_workflow
+        and "scripts/tools/verify_macos_dsym_package.py" in macos_workflow
+        and "-DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG'" in macos_workflow
+        and "runtime/macos-arm64-dsym-assets" in macos_workflow
+        and "runtime/validation/macos-dsym-verify-summary.json" in macos_workflow,
+        "macOS candidate creates and independently verifies an exact UUID-bound dSYM/runtime pair",
+    )
+    debug_symbols_workflow = read(WORKFLOWS_ROOT / "debug-symbols.yml")
+    add(
+        checks,
+        "debug-symbols:release-conan-debug-flags",
+        "-DCMAKE_BUILD_TYPE=Release" in debug_symbols_workflow
+        and "-DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG'" in debug_symbols_workflow
+        and "-DCMAKE_BUILD_TYPE=RelWithDebInfo" not in debug_symbols_workflow,
+        "Linux symbols keep the admitted Release Conan graph while compiling project DWARF with release-compatible flags",
+    )
+    add(
+        checks,
+        "debug-symbols:checksums-only-published-assets",
+        "sha256sum *.tar.gz *.spdx.json > SHA256SUMS-debug-symbols.txt" in debug_symbols_workflow,
+        "Linux symbol checksums exclude the materialized packaging work directories",
+    )
+    add(
+        checks,
+        "specialized-e2e:raft-phase-b-evidence",
+        "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
+        and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow
+        and "scripts/verify_data_recovery_gate.py" in specialized_workflow
+        and "runtime/validation/raft-data-recovery-summary.json" in specialized_workflow,
+        "specialized E2E archives strict offline Conan and Raft recovery evidence",
+    )
+    add(
+        checks,
         "candidate-evidence:pinned-kind-bootstrap",
         "scripts/tools/bootstrap_kind_tools.py" in candidate_workflow
         and "if: inputs.include_kind" in candidate_workflow
@@ -364,6 +470,21 @@ def main() -> int:
         and "attestations: write" in release_workflow
         and "id-token: write" in release_workflow,
         "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
+    )
+    raft_release_gate = "scripts/verify_raft_release_evidence.py"
+    add(
+        checks,
+        "release:raft-phase-b-same-run-evidence",
+        "scripts/tools/verify_conan_offline_install.py" in release_workflow
+        and "scripts/verify_specialized_e2e.py" in release_workflow
+        and "--profile raft-ha" in release_workflow
+        and "scripts/verify_data_recovery_gate.py" in release_workflow
+        and raft_release_gate in release_workflow
+        and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
+        < release_workflow.index(raft_release_gate)
+        < release_workflow.index("Attest release archive provenance")
+        and "runtime/validation/raft-release-evidence-summary.json" in release_workflow,
+        "release binds Raft mixed-version, recovery, offline Conan, package and SBOM evidence before attestation",
     )
     add(
         checks,

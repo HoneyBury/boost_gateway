@@ -46,6 +46,7 @@ add_library(project_v2 STATIC
     realtime/instance_runtime.cpp
     room/room_actor.cpp
     room/room_backend_service.cpp
+    auth/jwks_key_resolver.cpp
     login/login_backend_service.cpp
     battle/battle_backend_service.cpp
     battle/battle_instance_plugin.cpp

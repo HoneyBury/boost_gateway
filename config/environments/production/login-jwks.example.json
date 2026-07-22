@@ -1,0 +1,23 @@
+{
+  "service": {
+    "name": "login",
+    "host": "0.0.0.0",
+    "port": 9202,
+    "config_version": "production-login-jwks-v1"
+  },
+  "log_level": "info",
+  "auth": {
+    "mode": "external-jwt",
+    "jwks_uri": "https://identity.example.invalid/.well-known/jwks.json",
+    "jwks_allowed_hosts": "identity.example.invalid",
+    "jwks_connect_timeout_ms": 2000,
+    "jwks_read_timeout_ms": 3000,
+    "jwks_ttl_ms": 300000,
+    "jwks_stale_grace_ms": 900000,
+    "jwks_minimum_refresh_interval_ms": 30000,
+    "jwks_max_response_bytes": 1048576,
+    "jwks_max_keys": 32,
+    "jwt_issuer": "https://identity.example.invalid",
+    "jwt_audience": "boost-game-client"
+  }
+}

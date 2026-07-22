@@ -1,4 +1,4 @@
-// SDK v4.1.0: Thin C# wrapper via C API (DllImport, zero deps).
+// SDK v4.2.0: Thin C# wrapper via C API (DllImport, zero deps).
 using System;
 using System.Runtime.InteropServices;
 
@@ -33,7 +33,7 @@ namespace BoostGateway.Sdk
 
     public class SdkClient : IDisposable
     {
-        public const int ExpectedMajorVersion = 4;
+        public const string ExpectedVersion = "4.2.0";
         IntPtr _h;
         [DllImport("boost_gateway_sdk")] static extern IntPtr gsdk_version();
         [DllImport("boost_gateway_sdk")] static extern IntPtr gsdk_create();
@@ -68,8 +68,8 @@ namespace BoostGateway.Sdk
         public static void AssertCompatibleNativeVersion()
         {
             var version = Version;
-            if (!version.StartsWith(ExpectedMajorVersion + ".", StringComparison.Ordinal))
-                throw new InvalidOperationException($"BoostGateway SDK native version mismatch: expected {ExpectedMajorVersion}.x, got {version}");
+            if (!String.Equals(version, ExpectedVersion, StringComparison.Ordinal))
+                throw new InvalidOperationException($"BoostGateway SDK native version mismatch: expected {ExpectedVersion}, got {version}");
         }
         public bool Connect(string h="127.0.0.1", ushort p=9201, int ms=5000) => gsdk_connect(_h, h, p, ms) != 0;
         public void Disconnect() => gsdk_disconnect(_h);

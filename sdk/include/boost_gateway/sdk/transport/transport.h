@@ -1,5 +1,5 @@
 #pragma once
-// SDK v4.1.0: Transport abstraction layer.
+// SDK v4.2.0: Transport abstraction layer.
 // Allows pluggable transports (TCP, WebSocket, mock for testing).
 
 #include <chrono>

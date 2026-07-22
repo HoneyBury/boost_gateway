@@ -1,10 +1,9 @@
-# SDK v4.1.0: Thin Python wrapper via C API (ctypes, zero deps).
+# SDK v4.2.0: Thin Python wrapper via C API (ctypes, zero deps).
 import ctypes, os
 from pathlib import Path
 from ctypes import c_int32, c_uint16, c_uint64, c_char, c_char_p, c_int, c_void_p, CFUNCTYPE
 
-EXPECTED_MAJOR = "4"
-EXPECTED_VERSION_PREFIX = EXPECTED_MAJOR + "."
+EXPECTED_VERSION = "4.2.0"
 
 _dll = None
 _load_errors = []
@@ -16,9 +15,6 @@ _candidates.extend([
     str(_here / "boost_gateway_sdk.dll"),
     str(_here / "libboost_gateway_sdk.so"),
     str(_here / "libboost_gateway_sdk.dylib"),
-    "boost_gateway_sdk.dll",
-    "libboost_gateway_sdk.so",
-    "libboost_gateway_sdk.dylib",
 ])
 for p in _candidates:
     try:
@@ -30,7 +26,8 @@ for p in _candidates:
 if _dll is None:
     raise RuntimeError(
         "BoostGateway SDK native library not found. Set BOOST_GATEWAY_SDK_LIBRARY "
-        "to the full native library path. Tried: " + "; ".join(_load_errors)
+        "to the full native library path for source-tree use. Packaged installs do not "
+        "fall back to system libraries. Tried: " + "; ".join(_load_errors)
     )
 
 class GsdkLoginResult(ctypes.Structure):
@@ -95,8 +92,8 @@ def native_library_path():
 
 def assert_compatible_version():
     actual = version()
-    if not actual.startswith(EXPECTED_VERSION_PREFIX):
-        raise RuntimeError(f"BoostGateway SDK native version mismatch: expected {EXPECTED_VERSION_PREFIX}x, got {actual}")
+    if actual != EXPECTED_VERSION:
+        raise RuntimeError(f"BoostGateway SDK native version mismatch: expected {EXPECTED_VERSION}, got {actual}")
     return actual
 
 class SdkClient:

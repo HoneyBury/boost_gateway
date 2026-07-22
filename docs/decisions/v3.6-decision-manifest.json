@@ -56,7 +56,7 @@
       "default_activation": "blocked_until_gates_pass",
       "implementation_order": 3,
       "dependencies": [],
-      "compatibility_window": "platform remains candidate until same-revision build, install and published-asset gates pass; Linux remains the capacity fact source",
+      "compatibility_window": "platform remains candidate until same-revision build, native R5, platform baseline, install and published-asset gates pass",
       "migration_window": "land the toolchain and smoke profile first, validate an unpublished archive second, and add the immutable release asset only at candidate freeze",
       "release_assets": [
         "macOS ARM64 runtime and C++ SDK archive",
@@ -65,7 +65,7 @@
       ],
       "validation_gates": [
         "native ARM64 Conan and Release build",
-        "bounded CTest, SDK and loopback full-flow smoke",
+        "bounded CTest plus native gateway restart and SDK full-flow before/after recovery",
         "Mach-O install and published-asset consumer verification"
       ]
     },
@@ -107,10 +107,12 @@
       "release_assets": [
         "Linux x64 stripped runtime archive",
         "Linux x64 debug-symbols archive and build-id manifest",
+        "macOS ARM64 stripped runtime and UUID-bound dSYM archives",
         "asset-specific SBOM, checksums and attestations"
       ],
       "validation_gates": [
         "ELF strip, debuglink and build-id mapping",
+        "Mach-O strip, UUID mapping and dSYM source lookup",
         "known-address and controlled-crash symbolization",
         "runtime regression and independent supply-chain verification"
       ]

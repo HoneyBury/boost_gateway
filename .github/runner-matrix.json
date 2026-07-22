@@ -52,6 +52,13 @@
       "capabilities": { "loopback_bind": true },
       "vars_hint": "GRPC_EXPERIMENTAL_RUNNER"
     },
+    "jwks-rotation": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "identity-security-evidence" },
+      "capabilities": { "loopback_bind": true, "openssl": true, "trusted_ephemeral_ca": true },
+      "vars_hint": "JWKS_ROTATION_RUNNER"
+    },
     "production-gates": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
@@ -93,10 +100,31 @@
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "redis": true, "kind": true },
       "vars_hint": "SPECIALIZED_E2E_RUNNER"
+    },
+    "macos-arm64": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"macOS\",\"ARM64\"]",
+      "labels": { "os": "macos", "arch": "arm64", "mode": "production-candidate" },
+      "capabilities": { "native_arm64": true, "native_r5": true, "capacity_baseline_pending": true },
+      "vars_hint": "MACOS_ARM64_RUNNER"
+    },
+    "sdk-distribution": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "package-candidate" },
+      "capabilities": { "dotnet": true, "syft": true, "glibc_2_35": true },
+      "vars_hint": "SDK_DISTRIBUTION_RUNNER"
+    },
+    "debug-symbols": {
+      "enabled": true,
+      "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "labels": { "os": "linux", "arch": "x64", "mode": "release-candidate" },
+      "capabilities": { "binutils": true, "syft": true },
+      "vars_hint": "DEBUG_SYMBOLS_RUNNER"
     }
   },
   "deprecated_platforms": {
     "windows": "Support deferred. Restore from git history if needed.",
-    "macos": "CI smoke target. No capacity/long-soak commitments."
+    "macos-x64": "Not supported; v3.6 macOS candidate is ARM64 only."
   }
 }

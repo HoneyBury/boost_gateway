@@ -1,17 +1,17 @@
-# BoostGateway Client SDK v4.1.0 — standalone or subdirectory
+# BoostGateway Client SDK v4.2.0 — standalone or subdirectory
 option(BOOST_GATEWAY_SDK_STANDALONE "Build as standalone project" OFF)
 
 # SDK version — set explicitly so version.h.in populates correctly even in
 # subdirectory mode (where project() is skipped and @BoostGatewaySdk_VERSION_*@
 # generator variables don't exist).
-set(BOOST_GATEWAY_SDK_VERSION "4.1.0")
+set(BOOST_GATEWAY_SDK_VERSION "4.2.0")
 set(BOOST_GATEWAY_SDK_VERSION_MAJOR 4)
-set(BOOST_GATEWAY_SDK_VERSION_MINOR 1)
+set(BOOST_GATEWAY_SDK_VERSION_MINOR 2)
 set(BOOST_GATEWAY_SDK_VERSION_PATCH 0)
 
 if(BOOST_GATEWAY_SDK_STANDALONE)
     cmake_minimum_required(VERSION 3.21)
-    project(boost_gateway_sdk VERSION 4.1.0 LANGUAGES CXX)
+    project(boost_gateway_sdk VERSION 4.2.0 LANGUAGES CXX)
     set(CMAKE_CXX_STANDARD 20)
     set(CMAKE_CXX_STANDARD_REQUIRED ON)
     set(CMAKE_CXX_EXTENSIONS OFF)

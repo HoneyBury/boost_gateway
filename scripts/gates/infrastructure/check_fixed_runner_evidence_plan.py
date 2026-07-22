@@ -40,7 +40,7 @@ WORKFLOW_REQUIREMENTS = {
         "tokens": (
             LINUX_LOCKFILE,
             LINUX_PROFILE,
-            "conan install",
+            "scripts/tools/verify_conan_offline_install.py",
             "--lockfile",
             "conan-preflight",
         ),
@@ -680,7 +680,7 @@ def main() -> int:
         "Runner Gate Standard",
         "preprod-r5",
         "G2 Conan",
-        "G3 Docker",
+        "G3 Runtime",
         "G4 R5 Drill",
         "G5 GitHub Evidence",
         "Conan Virtual Environment Contract",

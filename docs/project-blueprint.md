@@ -26,7 +26,7 @@
 | 默认生产链路 | 默认仍是 SDK + TCP gateway + `BackendEnvelope` + 五后端 + Redis，可选 TLS profile | `docs/current-state.md`, `docs/release-governance.md` |
 | 服务闭环 | `gateway + login + room + battle + matchmaking + leaderboard` 已作为主线闭环 | `src/v2/`, `examples/v2_*`, `README.md` |
 | 协议演进 | v3 proto schema、CMake target、schema check 和 gRPC PoC gate 已存在；gRPC gateway 当前已覆盖 login/logout/health 以及 room/match/leaderboard/battle 的基础 RPC，并开始通过 `GrpcGatewayAdapter` 落到真实 `GatewayServiceBridge` 路由，但 generated gRPC 仍是实验能力，不进入默认生产链路 | `proto/README.md`, `proto/CMakeLists.txt`, `src/v2/CMakeLists.txt`, `src/v2/grpc/`, `scripts/check_v3_grpc_poc_decision.py` |
-| helper/legacy 状态 | typed envelope helper 已接入主线；全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；legacy raw JSON 兼容窗口仍存在但已收缩到仅内部 Raft RPC | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy/legacy-helper-inventory.md`, `proto/README.md` |
+| helper/legacy 状态 | typed envelope helper 已接入主线；全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract；内部 Raft 已严格双读 legacy JSON/protobuf v1，legacy JSON 仅作为 v3.6 writer 兼容路径保留 | `include/v2/service/envelope_adapter.h`, `proto/v3/raft.proto`, `tests/v2/unit/service_boundary_test.cpp`, `docs/legacy/legacy-helper-inventory.md` |
 | CI 平台 | 默认主 CI 是手动 Linux Conan 主线验证；`ci.yml` 仅在 `workflow_dispatch` 下运行，并支持通过 `runner` 输入切换到 GitHub-hosted `ubuntu-latest` 或 self-hosted Linux labels；`v*` tag 只触发 release | `.github/workflows/ci.yml`, `.github/runner-matrix.json`, `docs/current-state.md` |
 | 性能门禁 | `perf-regression.yml` 统一覆盖 smoke / baseline / capacity；release baseline、capacity、long soak 已有 workflow 或固定 runner 入口 | `.github/workflows/perf-regression.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml` |
 | 依赖管理 | Conan 2 `nosqlite` lockfile/profile 是默认严格路径，缺包直接失败；FetchContent 仅可由开发者显式选择；`release.yml` 已接入 Conan lockfile 预检步骤 | `conanfile.py`, `conan/README.md`, `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`, `.github/workflows/conan-validate.yml`, `.github/workflows/release.yml`, `.github/workflows/long-soak-capacity.yml`, `.github/workflows/production-gates.yml` |
@@ -41,7 +41,7 @@
 | --- | --- | --- | --- |
 | G1 | 项目命名仍带 demo 色彩 | 根 README 标题已改为 `BoostGateway`，CMake 描述已收敛为企业级框架定位 | 本地目录和远端仓库已进入迁移期，文档引用已完成统一 |
 | G2 | gRPC/proto 尚未成为默认主链 | `BOOST_BUILD_GRPC=OFF`，gRPC Gateway 已覆盖 Room/Battle/Match/Leaderboard 基础 RPC、SDK-integrated full-flow、Battle 可取消 stream、trusted principal RBAC、TLS/mTLS、OTLP collector E2E、实验 SDK 安装包契约，以及 fixed-runner `BOOST_BUILD_GRPC=ON` run `29196150703`；当前剩余结论不是“证据缺失”，而是继续保持实验边界 | 中期继续以 `defer_default_transport` 为前提观察演进，只在默认链路确有收益且不新增主线负担时再讨论升格 |
-| G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；全部 5 个服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract，包括 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息；仅内部 Raft RPC 仍保留 raw JSON 路径 | room governance / control-plane 风格消息与 login 域补齐已完成；内部 Raft RPC 继续作为内部 RPC 边界保留，待等价集群/恢复测试就绪后迁移；其余路径可推进 `legacy raw JSON` 兼容窗口收缩 |
+| G3 | helper/legacy 兼容层仍在主链 | `BackendEnvelope` 与 typed helper 是当前实际运行路径；全部 5 个服务域的 29 个业务 handler 已具备 schema-backed typed contract；内部 Raft reader 已支持 protobuf v1，核心 writer 仍保留 legacy JSON | 内部 Raft protobuf writer 必须等待混合集群/恢复/回退门禁；其余路径可推进 `legacy raw JSON` 兼容窗口收缩 |
 | G4 | 依赖治理已收敛到 Conan lockfile | `BOOST_DEPENDENCY_PROVIDER=conan` 是严格默认值；profile/lock、fixed-runner workflow 预检和 release preflight 已落地；不会隐式进入 FetchContent | 持续维护 ABI 隔离的 runner 缓存并以 `--no-remote --build=never` 验证完整性 |
 | G5 | 编译加速尚未系统化收口 | sccache 已在 5/10 工作流中启用，剩余 5 个辅助工作流无需缓存；每次 CI 运行已结构化归档构建耗时与 sccache 统计至 `runtime/perf/build-times/` | build-time 基线基础设施已完成，待 CI 实际运行积累数据后可视需要扩大 sccache 覆盖 |
 | G6 | 平台结论仍需固定 runner 沉淀 | CI 有 Ubuntu/macOS，但生产容量、long soak、TLS overhead 仍依赖固定 runner 后续刷新 | 中长期将固定 runner 结果纳入 release 准入和 readiness report |
@@ -92,7 +92,7 @@
 - ✅ 老 examples（`login`, `room`, `battle`, `pressure`, `*_demo`）已移除
 - ✅ `echo_server` 已移除（`echo_client` 保留）
 - ✅ `tests/unit`, `tests/integration`, `tests/chaos` 已移除
-- ✅ G3 typed envelope 收束：全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed request/response（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息）；仅内部 Raft RPC 保留 raw JSON 路径
+- ✅ G3 typed envelope 收束：全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed request/response；内部 Raft 已双读 JSON/protobuf，legacy JSON writer 保留到迁移门禁完成
 - ✅ G4 Conan 依赖治理：`BOOST_DEPENDENCY_PROVIDER=conan` 已成为严格唯一推荐主线，lockfile/profile/引导工具与 workflow 预检均已落地；FetchContent 只保留为显式开发模式
 - ✅ G5 sccache 构建时间基线：5/10 工作流已启用 sccache（另 5 个辅助工作流无需缓存）；每次 CI 运行结构化归档构建耗时与 sccache 统计至 `runtime/perf/build-times/`
 
@@ -233,15 +233,15 @@
 
 任务：
 
-- 维持 Ubuntu、macOS 双平台 CI matrix，并补齐失败分类和 artifact。
-- 将 Linux Ubuntu 固定 runner 作为生产候选容量事实源，优先沉淀 10K echo、battle-500、business-capacity 和 long/overnight soak。
+- 维持 Linux x64、Linux ARM64、macOS ARM64 三平台 CI matrix，并补齐失败分类和 artifact。
+- 为三个平台分别沉淀 10K echo、battle-500、business-capacity 和 long/overnight soak；阈值和结论不跨平台复用。
 - 梳理平台特定实现：plain TCP bounded read、POSIX process helper、Docker/kind/operator 依赖。
-- 对 macOS ARM64 建立构建和 smoke 验证，不提前承诺容量上限。
+- 对两个 ARM64 平台建立构建、原生 R5、性能和容量验证，完成前保持 production-candidate。
 
 验收：
 
-- `docs/performance-baseline.md` 拆分 Ubuntu fixed-runner baseline 和 macOS smoke 状态。
-- R2/R3 readiness 能以 Ubuntu fixed-runner summary 作为投产判断输入。
+- `docs/performance-baseline.md` 按三个原生平台拆分 baseline 和证据状态。
+- R2/R3 readiness 按目标平台只接受同平台、同候选 SHA 的 summary。
 
 ### M2 依赖管理迁移到 Conan
 
@@ -251,7 +251,7 @@
 
 - 已选定 Conan 作为依赖管理方案，`conanfile.py` 和 `BOOST_DEPENDENCY_PROVIDER=conan` 已落地，`release.yml` 已接入 Conan lockfile preflight。
 - 仓库内 `conan/profiles/`、`scripts/generate_conan_lock.py`、`conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` 与 fixed-runner 文档入口已完备；`conan-validate.yml`、`long-soak-capacity.yml`、`production-gates.yml` 使用 lockfile 预检。
-- 当前主线严格由 Conan 提供 `fmt/spdlog/nlohmann_json/hiredis/boost::headers/OpenSSL`；默认使用 `with_sqlite=False`，`protobuf/grpc/sqlite3` 继续停留在实验或可选层。
+- 当前主线严格由 Conan 提供 `fmt/spdlog/nlohmann_json/hiredis/boost::headers/OpenSSL/protobuf`；protobuf runtime 仅用于内部 Raft versioned codec，默认仍使用 `with_grpc=False`、`with_sqlite=False`，gRPC transport 和 sqlite3 继续停留在实验或可选层。
 - 迁移 CMake 依赖发现逻辑，减少 `third_party/` 和临时系统探测路径。
 - CI 使用 dependency cache，cache key 包含 lockfile hash。
 - 保留离线/内网构建说明，避免完全依赖公网下载。
@@ -386,14 +386,14 @@
 | --- | --- | --- |
 | 更名为 BoostGateway | README/CMake/install/docs/release 描述一致，历史兼容说明清楚 | 二进制、文档、包名各说各话 |
 | gRPC 进入默认链路 | full-flow、SDK、观测、限流、RBAC、TLS、性能对照均通过 | 只完成 proto 生成或少量 RPC |
-| 移除 legacy raw JSON | 所有服务有 generated/typed contract 覆盖（当前 29 个业务 handler 已完成 schema-backed 收口），兼容窗口结束，有迁移说明 | 仍有默认 handler 依赖 raw payload（仅内部 Raft RPC 尚未迁移） |
+| 移除 legacy raw JSON | 所有服务有 generated/typed contract 覆盖（当前 29 个业务 handler 已完成 schema-backed 收口），Raft protobuf writer/rollback 门禁完成，兼容窗口结束 | 内部 Raft reader 已完成双读，但 legacy JSON writer 仍处于 v3.6 兼容窗口 |
 | 固定 runner 结果用于生产容量声明 | summary_version=2 artifact 齐全，多轮稳定，环境可复现 | 只有本机短样本或单轮结果 |
 | 引入高性能 runner | sccache、Ninja、依赖 cache、CI 并行已完成且仍不满足反馈目标 | 基础流水线尚未优化就增加维护成本 |
 
 ## 下一步执行顺序
 
 1. 完成项目命名和描述收敛，保留兼容说明。
-2. 固化 helper/raw JSON 当前事实：全部 5 服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract（含 login 域 `register_account` / `guest_login` 与 room governance / control-plane 风格消息），仅内部 Raft RPC 保留 raw JSON 路径。
+2. 固化 helper/raw JSON 当前事实：全部 5 服务域的 29 个业务 handler 已统一接入 adapter，且 29 个已具备 schema-backed typed contract；内部 Raft 已严格双读 JSON/protobuf，legacy JSON writer 在 v3.6 兼容窗口保留。
 3. 保持 gRPC 的实验边界，不因 current PoC 完整而直接升级为默认传输；后续仍以 `defer_default_transport` 为前提。
 4. 在条件允许时于 Ubuntu fixed runner 上刷新 Conan install、release/capacity/long-soak 真实证据。
 5. 继续做 CI/build cache 量化与开发者入口治理。

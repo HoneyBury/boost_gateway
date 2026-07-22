@@ -1,5 +1,5 @@
 #pragma once
-// SDK v4.1.0: Protocol message IDs and error codes — standalone, zero deps.
+// SDK v4.2.0: Protocol message IDs and error codes — standalone, zero deps.
 
 #include <cstdint>
 

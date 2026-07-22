@@ -13,6 +13,8 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.lib.evidence_provenance import build_evidence_provenance
+
 
 V2_ARCHIVE_FILTER = (
     "BattleReplayTest.SettlementContainsReplayPayload:"
@@ -84,6 +86,14 @@ V2_DATA_LAYER_FILTER = (
 )
 
 V2_RAFT_RECOVERY_FILTER = (
+    "RaftStateCodecTest.*:"
+    "RaftWireCodecTest.*:"
+    "RaftTest.InitialPersistenceFailureMarksNodeUnhealthyAndDoesNotStart:"
+    "RaftTest.MultiNodeInitialPersistenceFailureDoesNotStart:"
+    "RaftTest.InvalidRequestVoteDoesNotPoisonPersistentNode:"
+    "RaftTest.InvalidAppendEntriesDoesNotPoisonPersistentNode:"
+    "RaftTest.OversizedLocalCommandIsRejectedWithoutPoisoningLeader:"
+    "RaftTest.RuntimePersistenceFailureLatchesUnhealthyAfterStorageRecovers:"
     "RaftTest.PersistentLogAndCommitStateRestoreAfterRestart:"
     "RaftTest.ApplyCallbackReplaysCommittedEntriesAfterRestart"
 )
@@ -227,6 +237,10 @@ def main() -> int:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(build_dir),
         "configuration": args.configuration,
+        "provenance": build_evidence_provenance(
+            root,
+            build_configuration=args.configuration,
+        ),
         "include_redis_live": args.include_redis_live,
         "include_settlement_replay": args.include_settlement_replay,
         "environment": {

@@ -12,6 +12,7 @@ include(GNUInstallDirs)
 option(ENABLE_WARNINGS "Enable compiler warnings" ON)
 option(ENABLE_TESTING "Build tests" ON)
 option(BOOST_BUILD_GRPC "Build gRPC support (requires protoc and grpc_cpp_plugin)" OFF)
+option(BOOST_BUILD_RAFT_PROTOBUF "Build the internal Raft protobuf codec" ON)
 option(BOOST_BUILD_SQLITE "Build SQLite-backed storage (requires sqlite3)" OFF)
 set(BOOST_DEPENDENCY_PROVIDER "conan" CACHE STRING "Dependency provider: conan or fetchcontent")
 set_property(CACHE BOOST_DEPENDENCY_PROVIDER PROPERTY STRINGS conan fetchcontent)
@@ -38,10 +39,11 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 include(cmake/Dependencies.cmake)
 include(cmake/CompilerWarnings.cmake)
 
+add_subdirectory(proto)
 add_subdirectory(src)
-add_subdirectory(proto)   # Proto/gRPC code generation (no-op when BOOST_BUILD_GRPC=OFF)
 add_subdirectory(sdk)
 add_subdirectory(examples)
+add_subdirectory(tools)
 add_subdirectory(demo/games)
 
 if(ENABLE_TESTING)
@@ -65,6 +67,7 @@ install(TARGETS
     sdk_full_flow_client
     example_hello_world
     echo_client
+    raft_state_tool
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
 

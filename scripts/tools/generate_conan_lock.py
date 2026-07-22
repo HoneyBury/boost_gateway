@@ -76,6 +76,8 @@ def main() -> int:
         "-o",
         f"&:with_grpc={'True' if args.with_grpc else 'False'}",
         "-o",
+        "&:with_raft_protobuf=True",
+        "-o",
         f"&:with_sqlite={'False' if args.without_sqlite else 'True'}",
         "--lockfile-out",
         str(lockfile_out),

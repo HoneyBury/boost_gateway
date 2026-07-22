@@ -1,22 +1,8 @@
 #!/usr/bin/env python3
-"""SDK v4.1.0: Python full business flow test (via C API DLL)."""
-import sys, os, time
+"""SDK v4.2.0: Python package full business flow test."""
+import sys, time
 
-# Point to DLL and SDK
-base = os.path.dirname(os.path.abspath(__file__))
-sdk_dir = os.path.join(base, "..")
-project_dir = os.path.join(base, "..", "..")
-dll_dir = os.path.join(project_dir, "build", "sdk", "Debug")
-sys.path.insert(0, os.path.join(sdk_dir, "python"))
-os.add_dll_directory(dll_dir)
-os.chdir(dll_dir)
-
-import ctypes
-dll = ctypes.CDLL(os.path.join(dll_dir, "boost_gateway_sdk.dll"))
-import importlib.util
-spec = importlib.util.spec_from_file_location("sdk", os.path.join(sdk_dir, "python", "__init__.py"))
-sdk = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(sdk)
+import boost_gateway_sdk as sdk
 SdkClient = sdk.SdkClient
 
 def check(ok, msg):
@@ -24,7 +10,7 @@ def check(ok, msg):
 
 def main():
     host, port = sys.argv[1] if len(sys.argv)>1 else "127.0.0.1", int(sys.argv[2]) if len(sys.argv)>2 else 9201
-    print(f"=== Python SDK v4.1 Full Flow Test ===\nTarget: {host}:{port}\n")
+    print(f"=== Python SDK {sdk.version()} Full Flow Test ===\nTarget: {host}:{port}\n")
 
     alice = SdkClient()
     bob = SdkClient()

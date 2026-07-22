@@ -12,7 +12,8 @@ proto/v3/
 ├── room.proto
 ├── battle.proto
 ├── match.proto
-└── leaderboard.proto
+├── leaderboard.proto
+└── raft.proto
 ```
 
 - `common.proto`: `ServiceEnvelope`、路由元数据、跨服务公共字段
@@ -21,6 +22,7 @@ proto/v3/
 - `battle.proto`: 战斗输入、状态推送、结束消息
 - `match.proto`: 匹配请求与结果
 - `leaderboard.proto`: 提交积分与排行榜查询
+- `raft.proto`: 内部 Raft RequestVote/AppendEntries、显式 protocol version 与 peer capability
 
 ## 当前状态
 
@@ -31,11 +33,14 @@ proto/v3/
    `login/room/battle/match/leaderboard`
 2. `proto/v3/*.proto`
    作为正式 schema 源，已接入生成入口和 CMake helper target
+3. `proto/v3/raft.proto`
+   由默认开启的 `project_raft_proto` 独立生成，只依赖 protobuf runtime，不启用 gRPC
 
 这意味着当前仓库已经具备：
 
 - typed envelope helper 的运行时兼容能力
 - generated protobuf / gRPC stub 的生成入口；CMake 当前以自包含的 `gateway.proto` 为 canonical schema，避免与 typed-envelope 领域 proto 的同名消息重复链接
+- Raft legacy JSON/protobuf v1 strict dual reader、确定性 golden vectors 与显式 capability exchange；核心 writer 仍保持 legacy JSON
 
 但默认运行路径仍以 helper 兼容层为主，generated stub 还没有完全替代现有桥接实现。
 

@@ -159,6 +159,21 @@ private:
                 continue;
             }
 
+            client->non_blocking(true, ec);
+            if (ec) {
+                boost::system::error_code ignore;
+                client->close(ignore);
+                upstream->close(ignore);
+                continue;
+            }
+            upstream->non_blocking(true, ec);
+            if (ec) {
+                boost::system::error_code ignore;
+                client->close(ignore);
+                upstream->close(ignore);
+                continue;
+            }
+
             register_socket(client);
             register_socket(upstream);
 
@@ -196,6 +211,12 @@ private:
 
         while (running_.load()) {
             auto len = source.read_some(boost::asio::buffer(buf), ec);
+            if (ec == boost::asio::error::would_block ||
+                ec == boost::asio::error::try_again) {
+                ec.clear();
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                continue;
+            }
             if (ec) {
                 break;
             }
@@ -219,8 +240,22 @@ private:
                 }
             }
 
-            boost::asio::write(dest, boost::asio::buffer(buf, len), ec);
-            if (ec) {
+            std::size_t written = 0;
+            while (running_.load() && written < len) {
+                const auto count = dest.write_some(
+                    boost::asio::buffer(buf.data() + written, len - written), ec);
+                if (ec == boost::asio::error::would_block ||
+                    ec == boost::asio::error::try_again) {
+                    ec.clear();
+                    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                    continue;
+                }
+                if (ec) {
+                    break;
+                }
+                written += count;
+            }
+            if (ec || written != len) {
                 break;
             }
         }

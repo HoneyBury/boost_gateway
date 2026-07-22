@@ -31,6 +31,7 @@ def main() -> int:
         proto_dir / "battle.proto",
         proto_dir / "match.proto",
         proto_dir / "leaderboard.proto",
+        proto_dir / "raft.proto",
     ]
 
     cmd = [
@@ -57,4 +58,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-

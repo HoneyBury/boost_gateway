@@ -1,0 +1,275 @@
+name: Platform / macOS ARM64 Production Candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: "Runner JSON array"
+        required: true
+        default: '["self-hosted","macOS","ARM64"]'
+      build_parallelism:
+        description: "Maximum concurrent C++ build jobs"
+        required: true
+        default: "4"
+      run_platform_baseline:
+        description: "Run native bounded performance and stability evidence"
+        required: true
+        default: true
+        type: boolean
+      perf_preset:
+        description: "Native performance evidence preset"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - baseline
+      perf_repetitions:
+        description: "Performance repetitions per case"
+        required: true
+        default: "1"
+        type: choice
+        options:
+          - "1"
+          - "3"
+      soak_profile:
+        description: "Bounded native stability profile"
+        required: true
+        default: "smoke"
+        type: choice
+        options:
+          - smoke
+          - short
+          - medium
+      run_debug_symbols:
+        description: "Build and verify the native dSYM/runtime pair"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: ${{ fromJSON(inputs.runner) }}
+    timeout-minutes: 90
+    env:
+      LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify host Python and resolve persistent runner tool paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v python3.12
+          python3.12 -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          test -n "${RUNNER_TOOL_CACHE:-}"
+          cache_root="$RUNNER_TOOL_CACHE/boost-gateway"
+          printf 'BOOST_GATEWAY_RUNNER_CACHE_ROOT=%s\n' "$cache_root" >> "$GITHUB_ENV"
+          printf 'BOOST_GATEWAY_CONAN_VENV=%s\n' \
+            "$cache_root/tools/conan-2.8.1-py3.12" >> "$GITHUB_ENV"
+
+      - name: Verify native toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = arm64
+          xcrun clang --version
+          xcrun --show-sdk-version
+          cmake --version
+          ninja --version
+
+      - name: Ensure offline Conan
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/tools/ensure_conan_venv.py \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
+            --conan-version 2.8.1 \
+            --offline \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+
+      - name: Resolve persistent runner cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
+          python3.12 scripts/tools/resolve_runner_cache.py \
+            --build-type Release \
+            --profile conan/profiles/macos-apple-clang-arm64 \
+            --lockfile "$LOCKFILE" \
+            --cache-root "$BOOST_GATEWAY_RUNNER_CACHE_ROOT" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/macos-runner-cache-summary.json
+
+      - name: Verify locked dependencies offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3.12 scripts/tools/verify_conan_offline_install.py \
+            --profile conan/profiles/macos-apple-clang-arm64 \
+            --lockfile "$LOCKFILE" \
+            --output-folder build/conan-macos-arm64 \
+            --build-type Release \
+            --conan-executable "$BOOST_GATEWAY_CONAN_VENV/bin/conan" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-conan-offline-summary.json
+
+      - name: Configure and build
+        shell: bash
+        run: |
+          cmake -S . -B build/macos-arm64-release -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-macos-arm64/build/Release/generators/conan_toolchain.cmake
+          cmake --build build/macos-arm64-release --parallel "${{ inputs.build_parallelism }}"
+
+      - name: Bounded test
+        run: ctest --test-dir build/macos-arm64-release --output-on-failure --timeout 300
+
+      - name: R5 native process recovery drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/verify_preprod_recovery_drill.py \
+            --build-dir build/macos-arm64-release \
+            --configuration Release \
+            --mode native-process \
+            --step-timeout-seconds 300 \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-arm64-r5-summary.json
+
+      - name: Native bounded performance evidence
+        if: inputs.run_platform_baseline
+        shell: bash
+        env:
+          V2_RATE_LIMIT_CONNECTION: "100000"
+          V2_RATE_LIMIT_MESSAGE_TYPE: "200000"
+          V2_RATE_LIMIT_IP: "200000"
+          V2_RATE_LIMIT_USER: "100000"
+          V2_RATE_LIMIT_LOGIN: "50000"
+        run: |
+          set -euo pipefail
+          python3.12 scripts/collect_v2_perf_baseline.py \
+            --build-dir build/macos-arm64-release \
+            --run-preset "${{ inputs.perf_preset }}" \
+            --repetitions "${{ inputs.perf_repetitions }}" \
+            --output-root runtime/perf/macos-arm64
+
+      - name: Native bounded stability evidence
+        if: inputs.run_platform_baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/verify_stability_soak.py \
+            --build-dir build/macos-arm64-release \
+            --configuration Release \
+            --skip-build \
+            --baseline-profile release \
+            --soak-profile "${{ inputs.soak_profile }}" \
+            --summary-path runtime/validation/macos-arm64-stability-summary.json
+
+      - name: Build and test release-compatible dSYM candidate
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/macos-arm64-dsym -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG' \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-macos-arm64/build/Release/generators/conan_toolchain.cmake
+          cmake --build build/macos-arm64-dsym --parallel "${{ inputs.build_parallelism }}"
+          ctest --test-dir build/macos-arm64-dsym --output-on-failure --timeout 300
+          cmake --install build/macos-arm64-dsym --prefix runtime/macos-arm64-dsym-install
+          cp README.md CHANGELOG.md LICENSE runtime/macos-arm64-dsym-install/
+
+      - name: Create and independently verify native dSYM pair
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/tools/create_macos_dsym_package.py \
+            --install-root runtime/macos-arm64-dsym-install \
+            --version 3.6.0 \
+            --candidate-revision "$GITHUB_SHA" \
+            --output-dir runtime/macos-arm64-dsym-assets \
+            --summary-path runtime/validation/macos-dsym-build-summary.json
+          python3.12 scripts/tools/verify_macos_dsym_package.py \
+            --runtime-archive runtime/macos-arm64-dsym-assets/boost-gateway-3.6.0-macos-arm64-symbol-runtime.tar.gz \
+            --symbols-archive runtime/macos-arm64-dsym-assets/boost-gateway-3.6.0-macos-arm64-dsym.tar.gz \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-dsym-verify-summary.json
+
+      - name: Generate dSYM asset SBOM and checksums
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          for asset in runtime/macos-arm64-dsym-assets/*.tar.gz; do
+            syft packages "$asset" -o "spdx-json=${asset}.spdx.json"
+          done
+          (cd runtime/macos-arm64-dsym-assets && \
+            shasum -a 256 *.tar.gz *.spdx.json > SHA256SUMS-macos-dsym.txt)
+
+      - name: Install and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          install_root="$RUNNER_TEMP/boost-gateway-v3.6.0-macos-arm64"
+          cmake --install build/macos-arm64-release --prefix "$install_root"
+          cp README.md CHANGELOG.md LICENSE "$install_root/"
+          python3.12 scripts/verify_macos_arm64_package.py \
+            --install-root "$install_root" \
+            --lockfile "$LOCKFILE" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-arm64-summary.json
+          (cd "$RUNNER_TEMP" && cmake -E tar czfv \
+            "$GITHUB_WORKSPACE/boost-gateway-v3.6.0-macos-arm64.tar.gz" \
+            --format=gnutar boost-gateway-v3.6.0-macos-arm64)
+
+      - name: Verify archive and create SBOM
+        shell: bash
+        run: |
+          python3.12 scripts/tools/verify_release_archive.py \
+            --archive boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            --expected-root boost-gateway-v3.6.0-macos-arm64
+          syft packages boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            -o spdx-json=boost-gateway-v3.6.0-macos-arm64.spdx.json
+          shasum -a 256 \
+            boost-gateway-v3.6.0-macos-arm64.tar.gz \
+            boost-gateway-v3.6.0-macos-arm64.spdx.json > SHA256SUMS-macos-arm64.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: macos-arm64-${{ github.sha }}
+          path: |
+            boost-gateway-v3.6.0-macos-arm64.tar.gz
+            boost-gateway-v3.6.0-macos-arm64.spdx.json
+            SHA256SUMS-macos-arm64.txt
+            runtime/validation/macos-runner-cache-summary.json
+            runtime/validation/macos-conan-offline-summary.json
+            runtime/validation/macos-arm64-summary.json
+            runtime/validation/macos-arm64-r5-summary.json
+            runtime/validation/macos-arm64-stability-summary.json
+            runtime/validation/r5-preprod-recovery-drill-record.json
+            runtime/validation/r5-recovery-drill-record-check-summary.json
+            runtime/validation/r5-post-recovery-sdk-full-flow-summary.json
+            runtime/validation/process-logs
+            runtime/perf/macos-arm64
+            runtime/perf/v2-stability-soak
+            runtime/macos-arm64-dsym-assets
+            runtime/validation/macos-dsym-build-summary.json
+            runtime/validation/macos-dsym-verify-summary.json
+          retention-days: 30

@@ -25,7 +25,7 @@ REQUIRED_DOC_TOKENS = (
     "服务级 handler coverage matrix",
     "typed response wrap",
     "room governance / control-plane",
-    "内部 Raft raw JSON RPC",
+    "内部 Raft legacy JSON writer",
     "不得新增新的 raw JSON-only 业务消息类型",
     "29 个业务 handler",
     "29 个 handler 已具备 `EnvelopeMessageKind` / schema-backed typed contract",
