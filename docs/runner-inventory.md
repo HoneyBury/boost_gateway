@@ -1,6 +1,6 @@
 # GitHub Actions Runner Inventory
 
-更新时间：2026-07-22（GitHub API、macOS ARM64 runner 与 persistent Conan admission）
+更新时间：2026-07-22（macOS ARM64 + Linux ARM64 runner 与 persistent Conan admission）
 
 本文档作为仓库 Actions runner 拓扑的单一事实源。`current-state.md` 与 `fixed-runner-playbook.md` 只引用这里的结论，不再各自维护 runner 在线状态描述。
 runner 命名、custom labels、Conan/Docker/R5 准入规则见
@@ -9,7 +9,7 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 ## 验证来源
 
 - 仓库：`HoneyBury/boost_gateway`
-- 验证时间：2026-07-22 02:45 UTC
+- 验证时间：2026-07-22 09:05 UTC
 - 验证命令：`gh api repos/HoneyBury/boost_gateway/actions/runners`
 
 ## 当前快照
@@ -18,20 +18,22 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 |---|---|---|---|---|---|
 | `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `node-aoi-omen-gaming-laptop-16-am0xxx` |
 | `HoneyBurydeMacBook-Pro` | macOS | `online` | `false` | `2.335.1` | `self-hosted`, `macOS`, `ARM64` |
+| `HoneyBury-M4-Linux-ARM64` | Linux | `online` | `false` | `2.336.0` | `self-hosted`, `Linux`, `ARM64`, `node-honeybury-m4-linux-arm64`, `ubuntu-2404`, `conan-gcc13-release` |
 | `MyDesktop-Win` | Windows | `offline` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
 | `myserver` | Linux | `offline` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
 
 ## 当前结论
 
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
-- macOS runner `HoneyBurydeMacBook-Pro` 已在线，并匹配 `["self-hosted","macOS","ARM64"]`。本机 persistent Conan namespace 已完成 13/13 严格离线准入；在 `macos-arm64.yml` 形成 artifact 前仍只算机器准入事实。
+- macOS runner `HoneyBurydeMacBook-Pro` 已在线，并匹配 `["self-hosted","macOS","ARM64"]`。本机 persistent Conan namespace 已完成 13/13 严格离线准入；run `29902706777` 已形成原生 R5 与 dSYM 候选 artifact。
+- Linux ARM64 runner `HoneyBury-M4-Linux-ARM64` 已在线，并匹配唯一 label `node-honeybury-m4-linux-arm64`。run `29906228268` 已完成 GCC 13 Release namespace 严格离线准入；Debug、gRPC、Docker image preflight 和 R5 尚未准入。
 - AOI 已安装并验签 kind `v0.32.0` 与 kubectl `v1.36.1`，固定 Kubernetes `v1.36.1` node digest 已进入本地 cache；run `29563770679` 的真实 Operator kind summary 为 `overall_pass=true`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
 - `myserver` 当前离线且正在重新配置；历史 G2/G3/R5 事实不能代替新环境准入。
 - Windows runner `MyDesktop-Win` 当前离线，且已经退出 Linux/macOS 双平台维护范围。
 
-GitHub API 在 2026-07-22 02:45 UTC 确认 AOI Linux 与 Mac runner 在线且
-`busy=false`；Windows 与 `myserver` 离线。
+GitHub API 在 2026-07-22 09:05 UTC 确认 AOI Linux、Mac 原生 runner 与 Mac-hosted
+Linux ARM64 runner 在线且 `busy=false`；Windows 与 `myserver` 离线。
 R5 机器专属复验必须使用目标机器的 unique custom label；不能用共享 label 代替
 当前候选的 G2/G3 cache 准入。
 
@@ -49,14 +51,35 @@ R5 机器专属复验必须使用目标机器的 unique custom label；不能用
 
 | Runner | 原生工具链 | Persistent Conan | Docker/R5 |
 |---|---|---|---|
-| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过 | 原生 Mach-O R5 已接入 `macos-arm64.yml`，等待 GitHub run/artifact 验收；OrbStack 仅用于 Linux container 边界 |
+| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过 | run `29902706777` 已完成原生 Mach-O R5、package/SBOM/checksum 与 UUID-bound dSYM 候选验收 |
 
-Mac 原生生产候选与 Linux Docker R5 是两条证据线。`macos-arm64.yml` 现在使用
-Mach-O server 进程执行 gateway restart 前后完整 SDK flow；该 run 成功后形成 macOS
-平台 R5 事实。Mac-hosted Docker 只能消费 Linux runner 生成的对应架构 image bundle，
-不能用 Mach-O 构建替代 ELF 镜像，也不能用容器结果替代 macOS 原生 R5。
-OrbStack 已以 `--pull=never --platform linux/amd64` 成功执行缓存的 Ubuntu image，
-但这是 x86_64 仿真能力事实，不是 11-image R5 cache 或容量准入。
+Mac 原生生产候选与 Linux Docker R5 是两条证据线。`macos-arm64.yml` 使用 Mach-O
+server 进程执行 gateway restart 前后完整 SDK flow；Mac-hosted Linux ARM64 runner
+则只消费 ARM64 ELF 和 `linux/arm64` image。两条证据不能互相替代。
+
+## 2026-07-22 Mac-hosted Linux ARM64 Runner 准入
+
+| Runner | 原生工具链 | Persistent Conan | 当前 Gate |
+|---|---|---|---|
+| `HoneyBury-M4-Linux-ARM64` | OrbStack Ubuntu 24.04.4 `aarch64`、GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12、Docker/Compose 29.1/2.40、Go 1.22、.NET 8、Syft 1.49 | `/opt/boost-gateway` 下 Conan 2.8.1 Release namespace `graph-aa67f82068f3051dd848`，2.2GB；`--no-remote --build=never` 通过 | G0/G1 与 Release G2；G3-G5、Debug 和 gRPC 待完成 |
+
+VM 名为 `boost-linux-arm64`，runner 由
+`actions.runner.HoneyBury-boost_gateway.HoneyBury-M4-Linux-ARM64.service` 管理，
+systemd 状态为 enabled/active。OrbStack 已启用登录启动，VM 重启后 runner 服务与
+原有 ARM64 容器均完成恢复验证。runner 具备唯一 identity label
+`node-honeybury-m4-linux-arm64`；在 G3/G4 完成前不添加 `preprod-r5`。
+
+首次 run `29905435922` 暴露 `gha-setup-ninja@v5` 下载 x86_64 Linux 二进制的问题。
+提交 `fec858d13e5366ab46668cb759b8ec6a87169926` 让 Linux ARM64 fixed-runner workflow
+使用准入的系统原生 CMake/Ninja/Python 后，联网预热 run `29905671975` 成功；同 SHA
+严格离线 run `29906228268` 使用 ARM64 profile/lockfile、`--build=never` 和关闭 remote
+完成 install、Conan-provider configure 与 unit-test target build。artifact
+`conan-validate-29906228268` 的 ID 为 `8523977573`。
+
+当前 Mac 的本地执行策略为仅保留原生 ARM64：已删除 4 个未被容器引用的 amd64
+Docker images，将 `ubuntu:24.04` 替换为 `linux/arm64`，镜像清点结果为 0 个 amd64；
+OrbStack Rosetta 转译也已关闭。远端 Linux x64 runner 及其缓存不在本机清理范围内，
+仍继续承担 linux-x64 证据。
 
 `myserver` 在 2026-07-15 对候选 `18abba26aba2c0fe3d7d59e399e84887f9279bab`
 完成 G0-G5。主线 graph `3f740f23045ffb63d9a3` 在发现旧 seed 缺失 recipe export 后

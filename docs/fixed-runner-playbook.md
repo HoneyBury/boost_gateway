@@ -1,6 +1,6 @@
 # 固定 Runner 执行手册
 
-更新时间：2026-07-22（macOS ARM64 persistent Conan admission + Docker/R5 boundary）
+更新时间：2026-07-22（macOS ARM64 + Mac-hosted Linux ARM64 persistent admission）
 
 本文档用于把 P1 的固定机器任务从“人工约定”收束为可执行入口。默认 CI/release 仍使用有界 smoke；以下任务只在固定 runner 或手动 workflow 上执行。
 
@@ -54,9 +54,50 @@ after both revisions, and the project version on `main` remains `3.5.3`. The
 default branch also does not yet register `jwks-rotation.yml`,
 `sdk-distribution.yml` or `debug-symbols.yml`, so the local JWKS result, SDK checks
 inside R0 and Release consumers do not substitute for their dedicated immutable
-artifacts. No native Linux ARM64 runner is registered. Final v3.6 claims therefore
-remain blocked on workflow registration, a frozen revision, exact-SHA refresh and
-the separate Linux ARM64 evidence chain.
+artifacts. The Linux ARM64 runner added later on the same day does not retroactively
+change these x64 results. Final v3.6 claims remain blocked on workflow registration,
+a frozen revision, exact-SHA refresh and the remaining Linux ARM64 gates.
+
+## Mac-hosted Linux ARM64 runner
+
+当前 Mac 只承载两个原生 ARM64 执行边界：`HoneyBurydeMacBook-Pro` 负责 macOS
+Mach-O，OrbStack VM `boost-linux-arm64` 内的 `HoneyBury-M4-Linux-ARM64` 负责 Linux
+ARM64 ELF/OCI。linux-x64 必须继续投递到远端 X64 runner，不在本机执行或仿真。
+
+VM 的固定配置如下：
+
+- Ubuntu 24.04.4 `aarch64`，12 vCPU、12 GiB 内存；GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12。
+- Docker 29.1、Compose 2.40、Go 1.22、.NET 8、sccache 0.7.7、Syft 1.49。
+- runner `2.336.0` 位于 `/opt/boost-gateway/actions-runner`，systemd 服务 enabled；唯一 label 为 `node-honeybury-m4-linux-arm64`。
+- Conan venv、cache 和 sccache 分别位于 `/opt/boost-gateway/tools/conan-2.8.1-py3.12`、`/opt/boost-gateway/conan`、`/opt/boost-gateway/sccache`。
+- OrbStack `app.start_at_login=true`、`rosetta=false`；Mac Docker image inventory 只允许 ARM64。
+
+日常状态和恢复命令：
+
+```bash
+orbctl start
+orbctl start boost-linux-arm64
+orbctl run -m boost-linux-arm64 uname -m
+orbctl run -m boost-linux-arm64 \
+  systemctl status actions.runner.HoneyBury-boost_gateway.HoneyBury-M4-Linux-ARM64.service
+gh api repos/HoneyBury/boost_gateway/actions/runners \
+  --jq '.runners[] | select(.name == "HoneyBury-M4-Linux-ARM64")'
+```
+
+Linux ARM64 workflow 使用 runner 自带的原生 CMake/Ninja/Python。提交
+`fec858d13e5366ab46668cb759b8ec6a87169926` 对 Linux ARM64 跳过只提供 x86_64
+二进制的 setup action；x64 和 GitHub-hosted runner 保持原行为。首次联网预热 run
+`29905671975` 成功后，同 SHA strict-offline run `29906228268` 以 ARM64 Release
+lockfile 完成 `--no-remote --build=never`、Conan-provider configure 和 unit-test
+target build。当前 namespace 为：
+
+```text
+/opt/boost-gateway/conan/ubuntu-24.04-gcc13.3.0-arm64-release/conan-2.8.1-graph-aa67f82068f3051dd848
+```
+
+该结果只完成 Release G2。Debug 与 gRPC 各自需要独立 namespace 预热和严格离线
+复验；11-image `linux/arm64` preflight、R5/R6 和平台容量也必须形成独立 artifact。
+完成这些 gate 前不得添加 `preprod-r5` label。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
@@ -218,21 +259,18 @@ Mac runner 的两种运行边界如下：
 
 1. macOS 原生 R5 由 `macos-arm64.yml` 启动 Mach-O gateway/backends，重启 gateway，
    并在前后执行完整 native SDK flow。这是 macOS 生产候选证据。
-2. 若验证 Linux container，则从同一候选 SHA 下载或导入已经验收的不可变
-   `linux/amd64` 或 `linux/arm64` Compose image bundle，并记录 daemon、
-   VM architecture、仿真状态、Compose SHA、image ID 和 RepoDigest。
+2. 当前 Mac-hosted Linux VM 只接受同一候选 SHA 的不可变 `linux/arm64` Compose
+   image bundle，并记录 daemon、VM architecture、Compose SHA、image ID 和 RepoDigest。
 3. Mac-hosted Linux container 结果属于所选 Linux OCI 平台的宿主兼容性证据，不能
    替代 macOS 原生 R5，也不能替代 Linux runner 的内核、cgroup、容量和性能事实。
-4. Linux ARM64 profile、lockfile 和 bundle schema 已落地；仍需 Linux ARM64 runner
-   预热二进制缓存并完成全量 workflow artifact 后才能升格。
+4. Linux ARM64 profile、lockfile 和 Release Conan cache 已完成 G2；仍需 Debug/gRPC、
+   11-image preflight 和完整 R5 workflow artifact 后才能升格。
 
-当前 Mac 的 OrbStack daemon 可用于后续有界 Linux portability 验证，但本地 image
-cache 不构成任一 Linux R5 准入。macOS R5 是否通过只看原生 workflow summary。
-Docker Hub registry 从本机暂不可达，GHCR/GCR 可达，后续应优先使用经 Linux
-runner 导出的离线 bundle 或受信任 mirror，而不是在证据 job 中更新浮动 tag。
-本机已经用缓存的 `ubuntu:24.04` 和 `--pull=never --platform linux/amd64` 成功
-运行容器，容器内报告 `x86_64/Linux`，说明 OrbStack 的 amd64 仿真路径可用；
-该事实只解除“能否执行”的阻断，不解除 image cache、同 SHA 或性能语义阻断。
+当前 Mac 的 OrbStack VM 用于原生 Linux ARM64 验证，但本地 image cache 本身不构成
+Linux R5 准入。macOS R5 是否通过只看原生 workflow summary。初始化阶段已从 Docker
+Hub 拉取 `linux/arm64` 的 `ubuntu:24.04`；证据 job 仍应使用 `pull=never` 和同 SHA
+bundle，不能在运行中更新浮动 tag。Mac 本地已删除所有 amd64 images 并关闭 OrbStack
+Rosetta，后续不得在该 host 上调度或仿真 linux-x64。
 
 当前 Compose 的 registry tags 不因增加 Mac runner 而升级。Mac-hosted R5 必须与
 Linux R5 使用同一份 bundle manifest、image ID 和 RepoDigest；版本升级属于独立的
