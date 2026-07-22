@@ -113,9 +113,12 @@ def verify(install_root: Path, lockfile: Path | None, candidate_revision: str) -
     hello_output = run([str(hello)])
     consumer = verify_consumer(install_root)
     return {
-        "summary_version": 1,
+        "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "overall_pass": True,
+        "passed": True,
+        "failed_category": "",
+        "failed_step": "",
         "production_platform": "macos-arm64",
         "candidate_revision": candidate_revision,
         "platform": {
