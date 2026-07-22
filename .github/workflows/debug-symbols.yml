@@ -122,7 +122,8 @@ jobs:
           for asset in runtime/debug-symbol-assets/*.tar.gz; do
             syft packages "$asset" -o "spdx-json=${asset}.spdx.json"
           done
-          (cd runtime/debug-symbol-assets && sha256sum * > SHA256SUMS-debug-symbols.txt)
+          (cd runtime/debug-symbol-assets && \
+            sha256sum *.tar.gz *.spdx.json > SHA256SUMS-debug-symbols.txt)
 
       - uses: actions/upload-artifact@v4
         with:

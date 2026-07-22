@@ -379,6 +379,12 @@ def main() -> int:
     )
     add(
         checks,
+        "debug-symbols:checksums-only-published-assets",
+        "sha256sum *.tar.gz *.spdx.json > SHA256SUMS-debug-symbols.txt" in debug_symbols_workflow,
+        "Linux symbol checksums exclude the materialized packaging work directories",
+    )
+    add(
+        checks,
         "specialized-e2e:raft-phase-b-evidence",
         "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
         and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow
