@@ -125,12 +125,13 @@ ARM64、Conan 2.8.1，namespace
 `--no-remote --build=never` 验收。workflow 只消费该 namespace；预热、复制或联网
 修复必须在 workflow 外进行，且复制后仍须重新执行严格离线验收。
 
-预冻结能力 run `29900276243` 在 exact SHA
-`d5dfef545b2be09539b8edea2be42ef16cc6723d` 再次通过上述严格离线 namespace、
-全量 CTest、原生 R5、有界 performance/stability smoke、package、SPDX SBOM 和
-checksum。artifact 名为
-`macos-arm64-d5dfef545b2be09539b8edea2be42ef16cc6723d`；该 run 证明入口可用，
-不把一次 smoke 解释为三次 baseline、2h/8h 长稳或 capacity 结论。
+合并后的预冻结能力 run `29902706777` 在 exact SHA
+`3af898e4d3a09002ea8f7a3742a214e11a7a6d98` 再次通过上述严格离线 namespace、
+两轮全量 CTest、原生 R5、有界 performance/stability smoke、常规 package、
+UUID-bound dSYM pair、SPDX SBOM 和 checksum。artifact 名为
+`macos-arm64-3af898e4d3a09002ea8f7a3742a214e11a7a6d98`；该 run 证明入口可用，
+不把一次 smoke 解释为三次 baseline、2h/8h 长稳或 capacity 结论，也不把 ad-hoc
+签名的 dSYM 候选解释为 notarized release asset。
 
 手工复验时使用 runner tool cache 的实际物理路径；不要把个人绝对路径写进
 workflow：

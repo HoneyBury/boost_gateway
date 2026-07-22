@@ -32,7 +32,7 @@
       "status": "open",
       "priority": "P0",
       "category": "platform-production",
-      "description": "macOS ARM64 build/package/native-R5 exact-SHA evidence closed in run 29898739439 at c5dccea425376816196c6ea07f26e4bb3787b813. Run 29900276243 at d5dfef545b2be09539b8edea2be42ef16cc6723d additionally passed native bounded performance/stability smoke, package, SBOM, and checksum evidence. Remaining priority order is Linux ARM64 runner/cache/R5, full platform-specific baseline/soak/capacity evidence, then release, SDK, symbols, published-asset verification, and readiness without reusing linux-x64 conclusions.",
+      "description": "macOS ARM64 build/package/native-R5 exact-SHA evidence first closed in run 29898739439. The merged pre-freeze run 29902706777 at 3af898e4d3a09002ea8f7a3742a214e11a7a6d98 passed strict-offline build, two full CTest passes, native R5, bounded performance/stability smoke, regular package/SBOM/checksum, and a 14-Mach-O UUID-bound dSYM/runtime pair with 160/160 independent checks. Remaining priority order is Linux ARM64 runner/cache/R5, full platform-specific baseline/soak/capacity evidence, then formal release, osx-arm64 SDK distribution, notarization, published-asset verification, and readiness without reusing linux-x64 conclusions.",
       "acceptance_criteria": [
         "Linux ARM64 runner is online and its GCC 13 Release Conan namespace passes --no-remote --build=never for the ARM64 lockfile.",
         "The linux/arm64 Compose image set passes offline R5 preflight and gateway recovery on the Linux ARM64 runner.",
@@ -73,7 +73,7 @@
       "status": "open",
       "priority": "P0",
       "category": "platform-evidence",
-      "description": "Run Linux and macOS evidence work in parallel from the same repository branch, then freeze one candidate SHA and refresh final artifacts without substituting evidence across linux-x64, linux-arm64, and macos-arm64. The shared pre-freeze capability revision is d5dfef545b2be09539b8edea2be42ef16cc6723d: macOS run 29900276243 passed strict-offline build, CTest, native R5, bounded performance/stability smoke, package, SBOM, and checksum; native JWKS workflow wiring is ready but requires default-branch registration before dispatch. Linux x64/ARM64 evidence, macOS full baseline, dSYM, osx-arm64 SDK, release assets, and final same-SHA refresh remain open.",
+      "description": "Run Linux and macOS evidence work in parallel from the same repository branch, then freeze one candidate SHA and refresh final artifacts without substituting evidence across linux-x64, linux-arm64, and macos-arm64. The latest shared pre-freeze capability revision is 3af898e4d3a09002ea8f7a3742a214e11a7a6d98: macOS run 29902706777 passed strict-offline build, two full CTest passes, native R5, bounded performance/stability smoke, regular package/SBOM/checksum, and a 14-Mach-O UUID-bound dSYM/runtime pair with 160/160 independent checks. Native JWKS workflow wiring is ready but requires default-branch registration before dispatch. Linux x64/ARM64 evidence, macOS full baseline, osx-arm64 SDK, notarized release assets, published-asset verification, and final frozen-SHA refresh remain open.",
       "acceptance_criteria": [
         "The integration branch is synchronized on both runner hosts and the pre-freeze revision used for capability runs is recorded.",
         "Linux x64 prepares and runs strict-offline JWKS, release, SDK distribution, debug-symbol, R0, and R5/R6 evidence as soon as each workflow is available on the default branch.",
