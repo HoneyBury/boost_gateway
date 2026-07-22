@@ -65,6 +65,68 @@ artifacts. The Linux ARM64 runner added later on the same day does not retroacti
 change these x64 results. Final v3.6 claims remain blocked on workflow registration,
 a frozen revision, exact-SHA refresh, platform baselines and formal release assets.
 
+## 2026-07-22 Linux x64 completion batch
+
+The repository was frozen for the online Linux evidence batch at
+`d687b9ed4293e6ea300ddc14d5868f59d989795c` on
+`codex/v36-aoi-runner-evidence`. All three registered workflows used the AOI
+Ubuntu x64 runner, strict-offline Conan and lockfile SHA-256
+`8edf407134fef2cd8b58b1f24b8012c578812fa4373130d989c27b9dde96f88c`:
+
+- Release run [`29912054968`](https://github.com/HoneyBury/boost_gateway/actions/runs/29912054968)
+  passed full build/CTest, all 37 Raft aggregate checks, the real `v3.5.3`
+  mixed-binary boundary, bounded release gates, clean package/CMake consumers and
+  SPDX semantics. Package, baseline and Raft artifact IDs are `8526405108`,
+  `8526390560` and `8526359998`. Publish was intentionally skipped.
+- R0 run [`29912422049`](https://github.com/HoneyBury/boost_gateway/actions/runs/29912422049)
+  passed Redis live, runtime HTTP, two kind lifecycles, P5/P6, release baseline and
+  SDK enterprise gates. Artifact `production-candidate-evidence-29912422049` has
+  ID `8526704598` and records `overall_pass=true` with matching checkout provenance.
+- R5/R6 run [`29913176854`](https://github.com/HoneyBury/boost_gateway/actions/runs/29913176854)
+  passed the 11-image `linux/amd64` offline preflight with no missing,
+  wrong-platform or stale-build image. Real Compose recovery passed, the Redis
+  alert traversed inactive, pending, firing and resolved, and both TLS runs passed
+  with overhead ratios `1.046` and `1.047`. Artifact
+  `preprod-evidence-29913176854` has ID `8527016097`.
+
+The dedicated workflows are not registered on the default branch, so their Linux
+paths were rehearsed locally and must not be described as GitHub workflow
+artifacts. The JWKS drill at `d687b9e` passed 10/10 outer checks and its summary
+contract passed 5/5; the unchanged native probe had already passed 53/53 focused
+CTest, the security gate and 16/16 probe checks at `c2504f6`. The SDK rehearsal
+produced wheel and NuGet `4.2.0` candidates, passed independent package validation
+25/25, then passed a fresh `--no-index --no-deps` wheel install and isolated
+six-service flow 15/15. The debug-symbol rehearsal produced a 14-ELF runtime/symbol
+pair with per-asset SPDX and checksums, passed independent validation 115/115, and
+the freshly compiled crash probe exited 139 after its pair passed 11/11.
+
+The SDK and full debug-symbol native trees were first built and tested at
+`c2504f6`; full build was 223/223 and debug CTest was 1120/1120. Review of
+`c2504f6..d687b9e` found no C++, CMake or native dependency change, so the final
+local packaging rerun reused those native outputs while executing the current
+Python verifiers and binding the candidate metadata to `d687b9e`. This is useful
+local boundary evidence, but it does not replace an exact-checkout dedicated
+workflow artifact.
+
+Conan workflow run [`29908057294`](https://github.com/HoneyBury/boost_gateway/actions/runs/29908057294)
+at `c2504f6` also passed the Linux x64 Release graph and archived artifact ID
+`8524764653`. A first exact-SHA Release attempt, run `29911458727`, timed out once
+inside the bounded data-recovery child. Ten focused cached-store repetitions,
+three full recovery-gate repetitions and successful retry `29912054968` did not
+reproduce it; the failed run remains archived instead of being discarded.
+
+The package rehearsals exposed two runner blockers. Commit `ccc7ca0` makes the SDK
+flow disable ambient Redis auto-connect and makes the symbol verifier tolerate raw
+debuglink CRC bytes. Commit `c0c203f`, made after the `d687b9e` evidence batch,
+restricts debug-symbol checksums to publishable tarball/SPDX files rather than the
+materialized work directories. Consequently `d687b9e` remains the evidence SHA;
+`c0c203f` is a later workflow-only correction and requires another frozen-SHA
+refresh before final release claims.
+
+The downloaded artifacts and local summaries are retained at
+`/home/aoi/actions-runner/_evidence/boost-gateway/v3.6/aoi-runner-20260722`.
+`MANIFEST.sha256` covers all 660 retained files and passes a full local verification.
+
 ## Mac-hosted Linux ARM64 runner
 
 当前 Mac 只承载两个原生 ARM64 执行边界：`HoneyBurydeMacBook-Pro` 负责 macOS

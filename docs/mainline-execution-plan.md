@@ -27,7 +27,7 @@
 5. 增加长稳取消与 checkpoint 契约。checkpoint 只保留诊断事实，最终 long/overnight 仍要求单一 run ID 连续运行不少于 7200/28800 秒。
 6. 修正 SBOM 生成源并增加语义门禁，避免“文件已签名”被误解为“组件清单完整”。
 7. 五项下一 minor ADR 与 P0-P6 仓库内实现已完成并登记到 `docs/decisions/v3.6-decision-manifest.json` 和 `docs/v3.6-implementation-status.md`；由治理门禁保持默认阻断和事实口径。
-8. 下一步按 exact SHA 生成 Linux release/SDK/debug-symbol、macOS ARM64 和真实 JWKS rotation 证据，再冻结并独立复验 GitHub Release 资产。Raft protobuf writer 只允许显式配置且全 peer capability 成立时启用；任何能力撤销都必须回落 legacy writer。
+8. Linux x64 已在 `d687b9e` 完成 Release/R0/R5-R6 exact-SHA workflow，并在本机完成 JWKS、SDK wheel/NuGet 和 debug-symbol 边界演练；后续 `c0c203f` 又修复了 debug-symbol checksum 的目录误匹配。下一步让三条专用 workflow 进入默认分支，在新的冻结 SHA 刷新 Linux 与 ARM64/macOS 所需 artifact，再独立复验 GitHub Release 资产。Raft protobuf writer 只允许显式配置且全 peer capability 成立时启用；任何能力撤销都必须回落 legacy writer。
 
 ## 当前事实
 
