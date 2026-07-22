@@ -73,6 +73,7 @@ struct BenchConfig {
     std::chrono::seconds duration{30};
     std::chrono::milliseconds send_interval{0};
     std::string room_name = "bench_room";
+    std::string user_prefix = "bench_user";
     std::string output_path;
     unsigned int io_threads = 0;
     std::size_t ramp_clients_per_second = 200;
@@ -96,6 +97,7 @@ BenchConfig parse_args(int argc, char* argv[]) {
         else if (arg == "--messages" && i + 1 < argc) cfg.messages_per_client = std::strtoull(argv[++i], nullptr, 10);
         else if (arg == "--interval" && i + 1 < argc) cfg.send_interval = std::chrono::milliseconds(std::atoi(argv[++i]));
         else if (arg == "--room" && i + 1 < argc)     cfg.room_name = argv[++i];
+        else if (arg == "--user-prefix" && i + 1 < argc) cfg.user_prefix = argv[++i];
         else if (arg == "--output" && i + 1 < argc)   cfg.output_path = argv[++i];
         else if (arg == "--io-threads" && i + 1 < argc) {
             cfg.io_threads = static_cast<unsigned int>(std::max(1, std::atoi(argv[++i])));
@@ -130,6 +132,7 @@ struct BenchResult {
     std::size_t connected_clients = 0;
     std::size_t failed_clients = 0;
     std::size_t rejected_clients = 0;
+    std::string user_prefix;
     std::uint64_t total_messages = 0;
     std::uint64_t response_messages = 0;
     std::uint64_t push_messages = 0;
@@ -308,7 +311,7 @@ public:
           resolver_(strand_), socket_(strand_), send_timer_(strand_),
           controller_(std::move(ctl)), config_(std::move(cfg)),
           client_index_(idx),
-          user_id_("bench_user_" + std::to_string(idx)),
+          user_id_(config_.user_prefix + "_" + std::to_string(idx)),
           throughput_(throughput),
           room_done_counters_(std::move(room_done)),
           room_ready_counters_(std::move(room_ready)),
@@ -1130,6 +1133,7 @@ nlohmann::json to_json(const BenchResult& r) {
         {"connected_clients", r.connected_clients},
         {"failed_clients", r.failed_clients},
         {"rejected_clients", r.rejected_clients},
+        {"user_prefix", r.user_prefix},
         {"total_messages", r.total_messages},
         {"response_messages", r.response_messages},
         {"push_messages", r.push_messages},
@@ -1275,6 +1279,7 @@ int main(int argc, char* argv[]) {
             {"connected_clients", evidence.tcp_connected_clients},
             {"failed_clients", controller->failed_clients()},
             {"rejected_clients", controller->rejected_clients()},
+            {"user_prefix", config.user_prefix},
             {"total_messages", throughput.total_count()},
             {"elapsed_seconds", evidence.steady_state_elapsed_seconds},
             {"total_elapsed_seconds", static_cast<double>(elapsed.count()) / 1'000'000.0},
@@ -1453,6 +1458,7 @@ int main(int argc, char* argv[]) {
     result.connected_clients = evidence.tcp_connected_clients;
     result.failed_clients = controller->failed_clients();
     result.rejected_clients = controller->rejected_clients();
+    result.user_prefix = config.user_prefix;
     result.elapsed_seconds = evidence.steady_state_elapsed_seconds;
     result.total_elapsed_seconds = static_cast<double>(elapsed.count()) / 1'000'000.0;
     result.ramp_up_seconds = evidence.ramp_up_seconds;

@@ -685,8 +685,8 @@ def wait_for_service_quiescence(
 ) -> dict[str, Any]:
     """Wait until routing is stable and aggregate background CPU is below budget."""
     deadline = time.monotonic() + timeout_seconds
-    previous: tuple[int, tuple[tuple[str, float], ...], float] | None = None
-    latest: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    previous: tuple[int, int, tuple[tuple[str, float], ...], float] | None = None
+    latest: tuple[int, int, tuple[tuple[str, float], ...]] | None = None
     latest_cpu_delta = 0.0
     latest_cpu_budget = 0.0
     samples = 0
@@ -699,14 +699,23 @@ def wait_for_service_quiescence(
             )
             for process in managed
         ))
-        latest = (total_backend_requests(diagnostics), cpu_state)
+        latest = (
+            total_backend_requests(diagnostics),
+            int(diagnostics.get("total_active_sessions", 0)),
+            cpu_state,
+        )
         sampled_at = time.monotonic()
         samples += 1
-        if previous is not None and latest[0] == previous[0]:
-            previous_cpu = dict(previous[1])
+        if (
+            previous is not None
+            and latest[0] == previous[0]
+            and latest[1] == 0
+            and previous[1] == 0
+        ):
+            previous_cpu = dict(previous[2])
             current_cpu = dict(cpu_state)
             if current_cpu.keys() == previous_cpu.keys():
-                elapsed = max(sampled_at - previous[2], interval_seconds, 0.001)
+                elapsed = max(sampled_at - previous[3], interval_seconds, 0.001)
                 latest_cpu_delta = sum(
                     max(0.0, current_cpu[name] - previous_cpu[name])
                     for name in current_cpu
@@ -717,13 +726,14 @@ def wait_for_service_quiescence(
                         "quiesced": True,
                         "samples": samples,
                         "backend_routed_requests": latest[0],
+                        "active_sessions": latest[1],
                         "aggregate_cpu_delta_seconds": round(latest_cpu_delta, 6),
                         "aggregate_cpu_budget_seconds": round(latest_cpu_budget, 6),
                         "aggregate_cpu_percent": round(latest_cpu_delta / elapsed * 100.0, 3),
                         "idle_cpu_budget_percent": round(idle_cpu_fraction * 100.0, 3),
                         "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
                     }
-        previous = (latest[0], cpu_state, sampled_at)
+        previous = (latest[0], latest[1], cpu_state, sampled_at)
         time.sleep(interval_seconds)
     raise RuntimeError(
         "managed service topology did not quiesce after load generation: "
@@ -813,6 +823,15 @@ def wait_for_local_connection_budget(
         time.sleep(interval_seconds)
 
 
+def bench_user_prefix(case_name: str) -> str:
+    normalized = re.sub(r"[^A-Za-z0-9_]", "_", case_name).strip("_") or "run"
+    prefix = f"bench_{normalized}"
+    if len(prefix) > 48:
+        checksum = zlib.crc32(prefix.encode("utf-8")) & 0xFFFFFFFF
+        prefix = f"{prefix[:39]}_{checksum:08x}"
+    return prefix
+
+
 def invoke_bench_case(
     pressure_exe: Path,
     gateway_port: int,
@@ -832,6 +851,7 @@ def invoke_bench_case(
         "--io-threads", str(loadgen_io_threads),
         "--ramp-clients-per-second", str(case.get("ramp_clients_per_second", 200)),
         "--ramp-timeout", str(case.get("ramp_timeout_seconds", 60)),
+        "--user-prefix", bench_user_prefix(str(case["name"])),
     ]
     if case.get("messages", 0) > 0:
         args.extend(["--messages", str(case["messages"])])

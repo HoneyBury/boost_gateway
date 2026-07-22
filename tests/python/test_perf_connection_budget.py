@@ -1,10 +1,22 @@
 import unittest
 from unittest.mock import patch
 
-from scripts.producers.collect_v2_perf_baseline import wait_for_local_connection_budget
+from scripts.producers.collect_v2_perf_baseline import (
+    bench_user_prefix,
+    wait_for_local_connection_budget,
+)
 
 
 class PerfConnectionBudgetTest(unittest.TestCase):
+    def test_bench_user_prefix_is_unique_and_bounded(self) -> None:
+        first = bench_user_prefix("battle-500-30s.run1")
+        second = bench_user_prefix("battle-500-30s.run2")
+        long_prefix = bench_user_prefix("custom-" + "case-" * 30)
+
+        self.assertNotEqual(first, second)
+        self.assertEqual(first, "bench_battle_500_30s_run1")
+        self.assertLessEqual(len(long_prefix), 48)
+
     @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Linux")
     def test_non_darwin_does_not_inspect_socket_state(self, _system) -> None:
         with patch("scripts.producers.collect_v2_perf_baseline.subprocess.run") as run:
