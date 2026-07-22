@@ -1,6 +1,7 @@
 #include "../../../examples/v2_gateway_pressure/load_evidence.h"
 #include "../../../examples/v2_gateway_pressure/final_message_counts.h"
 #include "../../../examples/v2_gateway_pressure/stall_watchdog_policy.h"
+#include "../../../examples/v2_gateway_pressure/termination_policy.h"
 
 #include <gtest/gtest.h>
 
@@ -97,6 +98,12 @@ TEST(GatewayPressureEvidenceTest, StallWatchdogDefersToRampAndDurationLifecycles
                   .lifecycle_finished = true,
               }),
               Action::kStopMonitoring);
+}
+
+TEST(GatewayPressureEvidenceTest, BattleErrorsAfterGlobalCompletionAreTeardown) {
+    EXPECT_TRUE(v2::gateway_pressure::is_expected_shutdown_error(true, true));
+    EXPECT_FALSE(v2::gateway_pressure::is_expected_shutdown_error(true, false));
+    EXPECT_FALSE(v2::gateway_pressure::is_expected_shutdown_error(false, true));
 }
 
 }  // namespace

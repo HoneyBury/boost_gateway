@@ -10,6 +10,7 @@
 #include "v2/benchmark/throughput_tracker.h"
 #include "final_message_counts.h"
 #include "stall_watchdog_policy.h"
+#include "termination_policy.h"
 #include "v2/gateway/battle_wire_parser.h"
 
 #include <boost/asio.hpp>
@@ -490,6 +491,12 @@ private:
         if (pkt.message_id == net::protocol::kErrorResponse) {
             LOG_WARN("pressure client {} received error: code={} body={}",
                      user_id_, pkt.error_code, pkt.body);
+            if (v2::gateway_pressure::is_expected_shutdown_error(
+                    config_.scenario == BenchScenario::kBattle,
+                    controller_->global_completion())) {
+                finish();
+                return;
+            }
             if (config_.scenario == BenchScenario::kBattle && handle_recoverable_battle_error(pkt)) {
                 wait_for_next_message();
                 return;
