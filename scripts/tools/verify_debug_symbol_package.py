@@ -25,7 +25,14 @@ def sha256(path: Path) -> str:
 
 
 def output(command: list[str]) -> str:
-    return subprocess.run(command, check=True, text=True, capture_output=True).stdout
+    return subprocess.run(
+        command,
+        check=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        capture_output=True,
+    ).stdout
 
 
 def is_regular_elf(path: Path) -> bool:

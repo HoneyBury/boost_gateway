@@ -260,6 +260,14 @@ def reserve_free_port(host: str) -> int:
         return int(sock.getsockname()[1])
 
 
+def isolated_leaderboard_environment(port: int) -> dict[str, str]:
+    return {
+        "SERVICE_PORT": str(port),
+        "LEADERBOARD_PORT": str(port),
+        "BOOST_DISABLE_REDIS_AUTO_CONNECT": "1",
+    }
+
+
 def fetch_json(url: str, timeout_s: float = 3.0) -> dict[str, Any]:
     request = urllib.request.Request(url, method="GET")
     with urllib.request.urlopen(request, timeout=timeout_s) as response:
@@ -691,10 +699,7 @@ def main() -> int:
                 leaderboard_backend,
                 leaderboard_port,
                 [str(leaderboard_port)],
-                {
-                    "SERVICE_PORT": str(leaderboard_port),
-                    "LEADERBOARD_PORT": str(leaderboard_port),
-                },
+                isolated_leaderboard_environment(leaderboard_port),
             ),
         ]
         for name, executable, port, extra_args, extra_env in backend_specs:
