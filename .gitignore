@@ -34,5 +34,8 @@ sdk/python/__pycache__/
 demo/games/tank_battle/logs/
 include_override/
 /.conan2-local/
+/.conan2-macos-arm64/
 /.conan2-lock-*/
 /.venv/
+/sdk/csharp/bin/
+/sdk/csharp/obj/

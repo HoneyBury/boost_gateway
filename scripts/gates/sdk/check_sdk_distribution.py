@@ -100,6 +100,12 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "sdk-python:pep621-dynamic-metadata",
+        'dynamic = ["readme", "authors", "classifiers"]' in python_project,
+        "setup.py-owned metadata is declared dynamic for current setuptools",
+    )
+    add_check(
+        checks,
         "sdk-version:csharp-project-metadata",
         f"<Version>{SDK_VERSION}</Version>" in csharp_project,
         "C# package version matches the native SDK version",
@@ -286,6 +292,8 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
 def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     tests_cmake = read_text("sdk/tests/CMakeLists.txt")
     c_api_test = read_text("sdk/tests/unit/c_api_test.cpp")
+    package_builder = read_text("scripts/tools/build_sdk_packages.py")
+    package_verifier = read_text("scripts/tools/verify_sdk_distribution_packages.py")
     add_check(
         checks,
         "sdk-tests:c-api-test-registered",
@@ -309,6 +317,18 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         "sdk-tools:consumer-smoke",
         (REPO_ROOT / "scripts/verify_sdk_package_consumer.py").exists(),
         "installed package consumer verification script exists",
+    )
+    add_check(
+        checks,
+        "sdk-tools:nuget-pack-build",
+        '"-p:GeneratePackageOnBuild=false"' in package_builder,
+        "explicit dotnet pack keeps its managed build dependency enabled",
+    )
+    add_check(
+        checks,
+        "sdk-tools:nuget-consumer-system-namespace",
+        "using System; using BoostGateway.Sdk;" in package_verifier,
+        "clean NuGet consumer imports System without relying on implicit usings",
     )
     add_check(
         checks,

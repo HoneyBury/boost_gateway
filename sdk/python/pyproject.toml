@@ -7,3 +7,4 @@ name = "boost-gateway-sdk"
 version = "4.2.0"
 description = "Boost Gateway Game Server SDK"
 requires-python = ">=3.8"
+dynamic = ["readme", "authors", "classifiers"]

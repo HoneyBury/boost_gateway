@@ -142,7 +142,7 @@ def main() -> int:
                     encoding="utf-8",
                 )
                 (project / "Program.cs").write_text(
-                    "using BoostGateway.Sdk; Console.WriteLine(SdkClient.Version); if (SdkClient.Version != SdkClient.ExpectedVersion) return 1; return 0;\n",
+                    "using System; using BoostGateway.Sdk; Console.WriteLine(SdkClient.Version); if (SdkClient.Version != SdkClient.ExpectedVersion) return 1; return 0;\n",
                     encoding="utf-8",
                 )
                 restore = subprocess.run(

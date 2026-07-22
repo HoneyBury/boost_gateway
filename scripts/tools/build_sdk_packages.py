@@ -117,6 +117,7 @@ def main() -> int:
                         f"-p:NativeLibrary={native}",
                         f"-p:NativeManifest={nuget_manifest}",
                         f"-p:RuntimeIdentifier={args.rid}",
+                        "-p:GeneratePackageOnBuild=false",
                         "-p:ContinuousIntegrationBuild=true",
                     ],
                     ROOT,
