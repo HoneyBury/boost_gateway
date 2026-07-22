@@ -35,6 +35,13 @@ own revisions:
   clean package and CMake consumers, SPDX checks and Raft evidence binding. The
   Linux package artifact `boost-gateway-linux-x64` has ID `8522600423`; Raft and
   performance evidence artifacts have IDs `8522556773` and `8522586045`.
+- Release rehearsal [`29910789169`](https://github.com/HoneyBury/boost_gateway/actions/runs/29910789169)
+  on AOI at `ccc7ca081f70d34a8168e7b37b167afc3468d6f6` revalidated strict-offline Conan,
+  full build/CTest, all Raft Phase B and release gates, bounded baseline, install,
+  clean Ubuntu/package/CMake consumers and SPDX semantics after isolating package
+  rehearsal Redis access. Package, baseline and Raft artifacts have IDs
+  `8525911502`, `8525898102` and `8525868696`. Publish was intentionally skipped;
+  this remains pre-freeze capability evidence rather than a formal release.
 - R0 run [`29902403738`](https://github.com/HoneyBury/boost_gateway/actions/runs/29902403738)
   at the same `76715ba53326e825052f5f496465e5862960a64d` passed Redis live, runtime HTTP,
   two kind lifecycles, P5/P6, release baseline and SDK enterprise gates. Artifact
@@ -56,7 +63,7 @@ default branch also does not yet register `jwks-rotation.yml`,
 inside R0 and Release consumers do not substitute for their dedicated immutable
 artifacts. The Linux ARM64 runner added later on the same day does not retroactively
 change these x64 results. Final v3.6 claims remain blocked on workflow registration,
-a frozen revision, exact-SHA refresh and the remaining Linux ARM64 gates.
+a frozen revision, exact-SHA refresh, platform baselines and formal release assets.
 
 ## Mac-hosted Linux ARM64 runner
 
