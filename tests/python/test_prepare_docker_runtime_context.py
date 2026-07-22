@@ -41,6 +41,23 @@ def test_validate_runtime_dependencies_accepts_base_ubuntu_libraries() -> None:
     ]
 
 
+def test_validate_runtime_dependencies_accepts_aarch64_loader() -> None:
+    output = """
+        linux-vdso.so.1 (0x0000ffffbca80000)
+        libstdc++.so.6 => /lib/aarch64-linux-gnu/libstdc++.so.6 (0x0000ffffbc700000)
+        libm.so.6 => /lib/aarch64-linux-gnu/libm.so.6 (0x0000ffffbc650000)
+        libgcc_s.so.1 => /lib/aarch64-linux-gnu/libgcc_s.so.1 (0x0000ffffbc620000)
+        libc.so.6 => /lib/aarch64-linux-gnu/libc.so.6 (0x0000ffffbc470000)
+        /lib/ld-linux-aarch64.so.1 (0x0000ffffbca40000)
+    """
+    assert MODULE.validate_runtime_dependencies(Path("service"), output) == [
+        "libc.so.6",
+        "libgcc_s.so.1",
+        "libm.so.6",
+        "libstdc++.so.6",
+    ]
+
+
 def test_validate_runtime_dependencies_rejects_third_party_shared_library() -> None:
     output = "libhiredis.so.1.1.0 => /usr/local/lib/libhiredis.so.1.1.0 (0x1)"
     with pytest.raises(RuntimeError, match="libhiredis"):
