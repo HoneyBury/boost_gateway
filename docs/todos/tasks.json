@@ -32,11 +32,10 @@
       "status": "open",
       "priority": "P0",
       "category": "platform-production",
-      "description": "Complete the remaining runner, cache, workflow, performance, release, and readiness evidence for the linux-arm64 and macos-arm64 production boundaries without reusing linux-x64 conclusions.",
+      "description": "macOS ARM64 build/package/native-R5 exact-SHA evidence closed in run 29898739439 at c5dccea425376816196c6ea07f26e4bb3787b813. Remaining priority order is Linux ARM64 runner/cache/R5, platform-specific soak and capacity baselines, then release, SDK, symbols, published-asset verification, and readiness without reusing linux-x64 conclusions.",
       "acceptance_criteria": [
         "Linux ARM64 runner is online and its GCC 13 Release Conan namespace passes --no-remote --build=never for the ARM64 lockfile.",
         "The linux/arm64 Compose image set passes offline R5 preflight and gateway recovery on the Linux ARM64 runner.",
-        "macos-arm64.yml produces a passing native Mach-O R5 artifact with gateway restart, before/after SDK full-flow, readiness, RTO, and recovery record.",
         "Platform-specific soak, capacity, and performance baselines pass for Linux ARM64 and macOS ARM64 on one frozen candidate SHA.",
         "Release, debug-symbol, SDK distribution, published-asset verification, and readiness workflows emit and verify separate linux-arm64 and macos-arm64 artifacts."
       ],
@@ -50,7 +49,7 @@
     {
       "id": "TODO-0003",
       "title": "Review and integrate Linux runner changes",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "runner-integration",
       "description": "After the Linux runner changes are committed and pushed, fetch the exact remote branch or commit, review and integrate it locally, validate the combined platform evidence implementation, and use the resulting facts to reprioritize the remaining production-platform work.",
@@ -62,7 +61,7 @@
         "TODO-0002 and the project priority plan are updated from the integrated runner evidence, with completed items checked only when supported by exact-SHA artifacts."
       ],
       "created_at": "2026-07-22T06:29:45Z",
-      "completed_at": null,
+      "completed_at": "2026-07-22T07:08:21Z",
       "github": {
         "issue_number": 10,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/10"
