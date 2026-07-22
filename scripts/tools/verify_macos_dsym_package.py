@@ -182,6 +182,7 @@ def main() -> int:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "passed": not failed,
         "overall_pass": not failed,
+        "candidate_revision": args.candidate_revision,
         "failed_category": "macos_dsym" if failed else "",
         "failed_step": failed[0]["name"] if failed else "",
         "total_checks": len(checks),

@@ -59,6 +59,10 @@ class MacosDsymPackageTest(unittest.TestCase):
 
             runtime = assets / "boost-gateway-test-macos-arm64-symbol-runtime.tar.gz"
             symbols = assets / "boost-gateway-test-macos-arm64-dsym.tar.gz"
+            self.assertEqual(
+                sorted([runtime.name, symbols.name]),
+                sorted(path.name for path in assets.iterdir()),
+            )
             verify_summary = root / "verify-summary.json"
             with mock.patch("sys.argv", [
                 "verify_macos_dsym_package.py",
@@ -70,6 +74,7 @@ class MacosDsymPackageTest(unittest.TestCase):
                 self.assertEqual(0, verify_macos_dsym_package.main())
             summary = json.loads(verify_summary.read_text(encoding="utf-8"))
             self.assertTrue(summary["overall_pass"])
+            self.assertEqual("a" * 40, summary["candidate_revision"])
             self.assertEqual(0, summary["failed_checks"])
 
 

@@ -178,6 +178,8 @@ def main() -> int:
     }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    shutil.rmtree(runtime_root)
+    shutil.rmtree(symbols_root)
     print(f"macOS dSYM package: PASS ({len(records)} Mach-O files)")
     return 0
 
