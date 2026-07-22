@@ -17,6 +17,7 @@ jobs:
     timeout-minutes: 90
     env:
       LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
 
     steps:
       - uses: actions/checkout@v4

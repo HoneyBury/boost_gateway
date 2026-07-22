@@ -439,6 +439,7 @@ def main() -> int:
         and MACOS_LOCKFILE in macos
         and "scripts/tools/resolve_runner_cache.py" in macos
         and "scripts/tools/verify_conan_offline_install.py" in macos
+        and f"BOOST_GATEWAY_CONAN_LOCKFILE: {MACOS_LOCKFILE}" in macos
         and "--offline" in macos
         and "--no-remote" in macos
         and "--allow-public" not in macos
