@@ -104,6 +104,8 @@ TEST(GatewayPressureEvidenceTest, BattleErrorsAfterGlobalCompletionAreTeardown) 
     EXPECT_TRUE(v2::gateway_pressure::is_expected_shutdown_error(true, true));
     EXPECT_FALSE(v2::gateway_pressure::is_expected_shutdown_error(true, false));
     EXPECT_FALSE(v2::gateway_pressure::is_expected_shutdown_error(false, true));
+    EXPECT_LT(v2::gateway_pressure::kBattleCleanupTimeout,
+              v2::gateway_pressure::kBattleStopGrace);
 }
 
 }  // namespace

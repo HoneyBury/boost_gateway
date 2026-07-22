@@ -1044,7 +1044,7 @@ private:
         send_packet(net::protocol::kBattleInputRequest, "finish:user_requested");
 
         auto self = shared_from_this();
-        send_timer_.expires_after(std::chrono::seconds(3));
+        send_timer_.expires_after(v2::gateway_pressure::kBattleCleanupTimeout);
         send_timer_.async_wait([self](const error_code& ec) {
             if (!ec) {
                 self->finish_rejected();
@@ -1281,7 +1281,11 @@ int main(int argc, char* argv[]) {
                      controller->rejected_clients(),
                      controller->cancelled_clients());
             poll_stop_done();
-            stop_grace_timer->expires_after(std::chrono::seconds(5));
+            const auto stop_grace =
+                !cancelled && config.scenario == BenchScenario::kBattle
+                    ? v2::gateway_pressure::kBattleStopGrace
+                    : std::chrono::seconds(5);
+            stop_grace_timer->expires_after(stop_grace);
             stop_grace_timer->async_wait([&](const error_code& ec) {
                 if (!ec && !run_finished.load(std::memory_order_relaxed)) {
                     io.stop();
