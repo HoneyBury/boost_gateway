@@ -359,6 +359,26 @@ def main() -> int:
     )
     add(
         checks,
+        "macos-arm64:native-dsym-pair",
+        "run_debug_symbols:" in macos_workflow
+        and "scripts/tools/create_macos_dsym_package.py" in macos_workflow
+        and "scripts/tools/verify_macos_dsym_package.py" in macos_workflow
+        and "-DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG'" in macos_workflow
+        and "runtime/macos-arm64-dsym-assets" in macos_workflow
+        and "runtime/validation/macos-dsym-verify-summary.json" in macos_workflow,
+        "macOS candidate creates and independently verifies an exact UUID-bound dSYM/runtime pair",
+    )
+    debug_symbols_workflow = read(WORKFLOWS_ROOT / "debug-symbols.yml")
+    add(
+        checks,
+        "debug-symbols:release-conan-debug-flags",
+        "-DCMAKE_BUILD_TYPE=Release" in debug_symbols_workflow
+        and "-DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG'" in debug_symbols_workflow
+        and "-DCMAKE_BUILD_TYPE=RelWithDebInfo" not in debug_symbols_workflow,
+        "Linux symbols keep the admitted Release Conan graph while compiling project DWARF with release-compatible flags",
+    )
+    add(
+        checks,
         "specialized-e2e:raft-phase-b-evidence",
         "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
         and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow

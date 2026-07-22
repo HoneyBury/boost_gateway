@@ -33,7 +33,7 @@
   "workflows": {
     "ci": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "implemented-by-macos-arm64"},
     "conan-validate": {"linux-x64": "implemented", "linux-arm64": "foundation", "macos-arm64": "implemented-by-macos-arm64"},
-    "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-dsym"},
+    "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "foundation-native-dsym-workflow"},
     "grpc-experimental": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
     "jwks-rotation": {"linux-x64": "implemented", "linux-arm64": "planned-native-security-evidence", "macos-arm64": "foundation-native-workflow"},
     "long-soak-capacity": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "planned-platform-baseline"},

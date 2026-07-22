@@ -756,6 +756,12 @@ certificate，通过 `SSL_CERT_FILE` 只向当前 probe 建立信任，并启动
 `perf_preset=baseline`、`perf_repetitions=3`；该 bounded evidence 不等于 2h/8h
 长稳、capacity 或 Linux affinity/cgroup 结论。
 
+同一 workflow 默认生成 macOS dSYM 候选。依赖继续使用 Release Conan namespace，
+项目编译显式固定 `-O2 -g -DNDEBUG`，避免把不存在的 RelWithDebInfo dependency
+configuration 误当成已预热图。`dsym-manifest.json` 对每个 Mach-O 记录 stripped
+runtime hash、dSYM DWARF hash、ARM64 UUID 和已验证的 source lookup；UUID 不一致、
+缺 compile unit、runtime 未 split、签名不可验证或 hello-world 失败都会阻断。
+
 ## Raft Phase B release evidence
 
 Raft Phase B 必须从同一 exact SHA 触发 `release.yml`。runner 必须预置来自完整提交 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 的 `v3.5.3` leaderboard backend，并通过 `legacy_raft_sha256` 或 `LEGACY_RAFT_SHA256` 固定其平台摘要。该 workflow 在签名之前依次生成严格离线 Conan、`raft-ha`、data recovery、真实三进程 mixed-binary、clean package consumer 和 SBOM semantic summary，并由 `scripts/verify_raft_release_evidence.py` 拒绝跨 SHA、跨 workflow run、跨 runner、lockfile digest 漂移或旧制品摘要不符。

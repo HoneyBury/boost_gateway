@@ -59,12 +59,13 @@ jobs:
             --candidate-revision "$GITHUB_SHA" \
             --summary-path runtime/validation/debug-symbol-conan-offline-summary.json
 
-      - name: Build and install RelWithDebInfo candidate
+      - name: Build and install release-compatible debug candidate
         shell: bash
         run: |
           cmake -S . -B build/debug-symbols -G Ninja \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG' \
             -DENABLE_TESTING=ON \
             -DCMAKE_EXE_LINKER_FLAGS='-Wl,--build-id' \
             -DCMAKE_SHARED_LINKER_FLAGS='-Wl,--build-id' \

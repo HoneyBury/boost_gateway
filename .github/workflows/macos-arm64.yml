@@ -41,6 +41,11 @@ on:
           - smoke
           - short
           - medium
+      run_debug_symbols:
+        description: "Build and verify the native dSYM/runtime pair"
+        required: true
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -172,6 +177,51 @@ jobs:
             --soak-profile "${{ inputs.soak_profile }}" \
             --summary-path runtime/validation/macos-arm64-stability-summary.json
 
+      - name: Build and test release-compatible dSYM candidate
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/macos-arm64-dsym -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_FLAGS_RELEASE='-O2 -g -DNDEBUG' \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-macos-arm64/build/Release/generators/conan_toolchain.cmake
+          cmake --build build/macos-arm64-dsym --parallel "${{ inputs.build_parallelism }}"
+          ctest --test-dir build/macos-arm64-dsym --output-on-failure --timeout 300
+          cmake --install build/macos-arm64-dsym --prefix runtime/macos-arm64-dsym-install
+          cp README.md CHANGELOG.md LICENSE runtime/macos-arm64-dsym-install/
+
+      - name: Create and independently verify native dSYM pair
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/tools/create_macos_dsym_package.py \
+            --install-root runtime/macos-arm64-dsym-install \
+            --version 3.6.0 \
+            --candidate-revision "$GITHUB_SHA" \
+            --output-dir runtime/macos-arm64-dsym-assets \
+            --summary-path runtime/validation/macos-dsym-build-summary.json
+          python3.12 scripts/tools/verify_macos_dsym_package.py \
+            --runtime-archive runtime/macos-arm64-dsym-assets/boost-gateway-3.6.0-macos-arm64-symbol-runtime.tar.gz \
+            --symbols-archive runtime/macos-arm64-dsym-assets/boost-gateway-3.6.0-macos-arm64-dsym.tar.gz \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-dsym-verify-summary.json
+
+      - name: Generate dSYM asset SBOM and checksums
+        if: inputs.run_debug_symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          for asset in runtime/macos-arm64-dsym-assets/*.tar.gz; do
+            syft packages "$asset" -o "spdx-json=${asset}.spdx.json"
+          done
+          (cd runtime/macos-arm64-dsym-assets && \
+            shasum -a 256 *.tar.gz *.spdx.json > SHA256SUMS-macos-dsym.txt)
+
       - name: Install and verify
         shell: bash
         run: |
@@ -219,4 +269,7 @@ jobs:
             runtime/validation/process-logs
             runtime/perf/macos-arm64
             runtime/perf/v2-stability-soak
+            runtime/macos-arm64-dsym-assets
+            runtime/validation/macos-dsym-build-summary.json
+            runtime/validation/macos-dsym-verify-summary.json
           retention-days: 30

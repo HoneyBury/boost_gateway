@@ -26,7 +26,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
-| `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、install、SDK consumer 与候选资产 |
+| `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、UUID-bound dSYM、SDK consumer 与候选资产 |
 
 ## Runner 要求
 
@@ -59,6 +59,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
 - SDK 候选包: `boost_gateway_sdk-4.2.0-*.whl`、`BoostGateway.Sdk.4.2.0.nupkg`
 - Linux symbols: `boost-gateway-{version}-linux-x64-debug-symbols.tar.gz`
+- macOS symbols: `boost-gateway-{version}-macos-arm64-dsym.tar.gz`
 - JWKS 轮换证据: `jwks-rotation-{platform}-{candidate-sha}`
 - 验证 summary: `runtime/validation/*-summary.json`
 - 性能基线: `runtime/perf/release-baseline/summary.json`
