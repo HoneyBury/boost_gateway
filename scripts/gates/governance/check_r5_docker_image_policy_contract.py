@@ -76,7 +76,7 @@ if args[:2] == ["image", "inspect"] and len(args) == 3:
         "RepoTags": [image],
         "Created": "2026-07-13T00:00:00Z",
         "Os": "linux",
-        "Architecture": "amd64"
+        "Architecture": os.environ.get("FAKE_DOCKER_ARCHITECTURE", "amd64")
     }]))
     raise SystemExit(0)
 
@@ -88,8 +88,8 @@ if args and args[0] == "run" and "/app/bin/v2_gateway_demo" in args:
     print(os.environ["FAKE_DOCKER_BINARY_SHA256"] + "  /app/bin/v2_gateway_demo")
     raise SystemExit(0)
 
-if args and args[0] == "pull" and len(args) == 2:
-    image = args[1]
+if args and args[0] == "pull":
+    image = args[-1]
     if os.environ.get("FAKE_DOCKER_FAIL_PULL") == image:
         print(f"simulated pull failure: {image}", file=sys.stderr)
         raise SystemExit(1)
@@ -127,6 +127,8 @@ def run_case(
     present: set[str],
     fail_pull: str = "",
     fail_compose_pull: bool = False,
+    target_platform: str = "linux/amd64",
+    image_architecture: str = "amd64",
 ) -> tuple[int, dict[str, Any], list[list[str]], str]:
     case_root = root / name
     bin_dir = case_root / "bin"
@@ -171,6 +173,7 @@ def run_case(
             "FAKE_DOCKER_FAIL_COMPOSE_PULL": "1" if fail_compose_pull else "0",
             "FAKE_DOCKER_BUILD_MANIFEST": json.dumps(build_manifest),
             "FAKE_DOCKER_BINARY_SHA256": binary_sha256,
+            "FAKE_DOCKER_ARCHITECTURE": image_architecture,
         }
     )
     command = [
@@ -181,6 +184,8 @@ def run_case(
         "--image-preflight-only",
         "--docker-pull-policy",
         policy,
+        "--docker-target-platform",
+        target_platform,
         "--docker-pull-attempts",
         "1",
         "--step-timeout-seconds",
@@ -207,7 +212,7 @@ def run_case(
 
 def has_pull(log: list[list[str]], image: str = "") -> bool:
     for command in log:
-        if command and command[0] == "pull" and (not image or command[1:] == [image]):
+        if command and command[0] == "pull" and (not image or command[-1] == image):
             return True
         if command and command[0] == "compose" and "pull" in command and not image:
             return True
@@ -239,6 +244,43 @@ def main() -> int:
                 and summary.get("overall_pass") is True
                 and not has_pull(log)
                 and all(item.get("image_id") for item in summary.get("image_inventory", [])),
+                "detail": output[-2000:],
+            }
+        )
+
+        returncode, summary, log, output = run_case(
+            temp_root,
+            "arm64-cached",
+            policy="never",
+            present=all_images,
+            target_platform="linux/arm64",
+            image_architecture="arm64",
+        )
+        checks.append(
+            {
+                "name": "arm64-uses-complete-native-cache",
+                "passed": returncode == 0
+                and summary.get("overall_pass") is True
+                and summary.get("target_platform") == "linux/arm64"
+                and not has_pull(log),
+                "detail": output[-2000:],
+            }
+        )
+
+        returncode, summary, log, output = run_case(
+            temp_root,
+            "arm64-rejects-amd64",
+            policy="never",
+            present=all_images,
+            target_platform="linux/arm64",
+            image_architecture="amd64",
+        )
+        checks.append(
+            {
+                "name": "arm64-rejects-amd64-cache",
+                "passed": returncode != 0
+                and sorted(summary.get("wrong_platform_images", [])) == sorted(all_images)
+                and not has_pull(log),
                 "detail": output[-2000:],
             }
         )

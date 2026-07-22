@@ -97,8 +97,8 @@
     "macos-arm64": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"macOS\",\"ARM64\"]",
-      "labels": { "os": "macos", "arch": "arm64", "mode": "platform-candidate" },
-      "capabilities": { "native_arm64": true, "capacity_claimed": false },
+      "labels": { "os": "macos", "arch": "arm64", "mode": "production-candidate" },
+      "capabilities": { "native_arm64": true, "native_r5": true, "capacity_baseline_pending": true },
       "vars_hint": "MACOS_ARM64_RUNNER"
     },
     "sdk-distribution": {

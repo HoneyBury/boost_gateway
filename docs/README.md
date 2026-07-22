@@ -12,6 +12,7 @@
 | [当前状态](current-state.md) | 已实现能力的权威事实源 |
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
+| [生产平台边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的 workflow、R5、Docker、Conan 与发布证据契约 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
 | [v3.6 决策清单](decisions/v3.6-decision-manifest.json) | 下一 minor 的身份、SDK、Raft schema、平台和符号包 ADR 状态与实现阻断条件 |
 | [v3.5.x 维护计划](v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 的补丁版本边界、顺序和冻结条件 |

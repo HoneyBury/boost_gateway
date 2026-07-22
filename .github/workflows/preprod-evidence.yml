@@ -67,6 +67,14 @@ on:
         description: "Attempts for each R5 registry pull"
         required: true
         default: "3"
+      docker_target_platform:
+        description: "Linux OCI platform for the R5 image set"
+        required: true
+        default: "linux/amd64"
+        type: choice
+        options:
+          - linux/amd64
+          - linux/arm64
       tls_runs:
         description: "Number of R6 TLS readiness passes"
         required: true
@@ -214,7 +222,7 @@ jobs:
             --build-dir "${{ inputs.build_dir || 'build/release' }}" \
             --configuration "${{ inputs.configuration || 'Release' }}" \
             --lockfile "${{ inputs.conan_lockfile }}"
-          DOCKER_DEFAULT_PLATFORM=linux/amd64 docker compose \
+          DOCKER_DEFAULT_PLATFORM="${{ inputs.docker_target_platform || 'linux/amd64' }}" docker compose \
             -f env/docker/docker-compose.yml \
             build --pull=false
 
@@ -229,6 +237,7 @@ jobs:
             --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
             --docker-pull-policy "${{ inputs.docker_pull_policy || 'never' }}" \
             --docker-pull-attempts "${{ inputs.docker_pull_attempts || '3' }}" \
+            --docker-target-platform "${{ inputs.docker_target_platform || 'linux/amd64' }}" \
             --candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION" \
             --image-preflight-summary-path runtime/validation/r5-docker-image-preflight-summary.json \
             --summary-path runtime/validation/preprod-recovery-drill-summary.json)

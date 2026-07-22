@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,12 @@ ROOT = Path(__file__).resolve().parents[3]
 LOCKFILE = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 GRPC_LOCKFILE = "conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock"
 PROFILE = "conan/profiles/linux-gcc-x64"
+MACOS_LOCKFILE = "conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock"
+MACOS_PROFILE = "conan/profiles/macos-apple-clang-arm64"
+LINUX_ARM64_LOCKFILE = "conan/locks/linux-gcc-arm64-release-nogrpc-nosqlite.lock"
+LINUX_ARM64_DEBUG_LOCKFILE = "conan/locks/linux-gcc-arm64-debug-nogrpc-nosqlite.lock"
+LINUX_ARM64_GRPC_LOCKFILE = "conan/locks/linux-gcc-arm64-release-grpc-nosqlite.lock"
+LINUX_ARM64_PROFILE = "conan/profiles/linux-gcc-arm64"
 CACHE_INPUTS = ("conanfile.py", "conan/profiles/**", "conan/remotes*.json", "conan/locks/*.lock")
 
 
@@ -40,6 +47,7 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "production_gates": ".github/workflows/production-gates.yml",
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
     "preprod_evidence": ".github/workflows/preprod-evidence.yml",
+    "macos_arm64": ".github/workflows/macos-arm64.yml",
 }
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
@@ -66,7 +74,8 @@ def bootstrap_uses_resolved_home(content: str) -> bool:
     calls = [
         line.strip()
         for line in content.splitlines()
-        if "scripts/bootstrap_conan.py" in line and ("python " in line or "args=(" in line)
+        if "scripts/bootstrap_conan.py" in line
+        and (re.search(r"\bpython(?:3(?:\.\d+)?)?\s+", line) is not None or "args=(" in line)
     ]
     return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
 
@@ -158,6 +167,12 @@ def main() -> int:
     add(checks, "lockfile:linux-nosqlite-exists", exists(LOCKFILE), f"{LOCKFILE} exists")
     add(checks, "lockfile:linux-grpc-nosqlite-exists", exists(GRPC_LOCKFILE), f"{GRPC_LOCKFILE} exists")
     add(checks, "profile:linux-gcc-x64-exists", exists(PROFILE), f"{PROFILE} exists")
+    add(checks, "lockfile:linux-arm64-exists", exists(LINUX_ARM64_LOCKFILE), f"{LINUX_ARM64_LOCKFILE} exists")
+    add(checks, "lockfile:linux-arm64-debug-exists", exists(LINUX_ARM64_DEBUG_LOCKFILE), f"{LINUX_ARM64_DEBUG_LOCKFILE} exists")
+    add(checks, "lockfile:linux-arm64-grpc-exists", exists(LINUX_ARM64_GRPC_LOCKFILE), f"{LINUX_ARM64_GRPC_LOCKFILE} exists")
+    add(checks, "profile:linux-gcc-arm64-exists", exists(LINUX_ARM64_PROFILE), f"{LINUX_ARM64_PROFILE} exists")
+    add(checks, "lockfile:macos-arm64-exists", exists(MACOS_LOCKFILE), f"{MACOS_LOCKFILE} exists")
+    add(checks, "profile:macos-arm64-exists", exists(MACOS_PROFILE), f"{MACOS_PROFILE} exists")
     add(checks, "conanfile:grpc-default-off", '"&:with_grpc": False' in read("conanfile.py"), "conanfile default disables gRPC")
     add(
         checks,
@@ -405,6 +420,28 @@ def main() -> int:
         and 'default: "2"' in preprod
         and "--parallel ${{ inputs.build_parallelism || '2' }}" in preprod,
         "preprod evidence caps C++ build concurrency for memory-constrained fixed runners",
+    )
+
+    macos = read(FIXED_RUNNER_CONAN_WORKFLOWS["macos_arm64"])
+    add(
+        checks,
+        "workflow:macos-arm64:persistent-tool-cache",
+        "${{ runner.tool_cache }}/boost-gateway" in macos
+        and 'CONAN_HOME: ${{ github.workspace }}' not in macos,
+        "macOS runner keeps Conan tools and packages outside the checkout workspace",
+    )
+    add(
+        checks,
+        "workflow:macos-arm64:strict-offline-cache",
+        MACOS_PROFILE in macos
+        and MACOS_LOCKFILE in macos
+        and "scripts/tools/resolve_runner_cache.py" in macos
+        and "scripts/tools/verify_conan_offline_install.py" in macos
+        and "--offline" in macos
+        and "--no-remote" in macos
+        and "--allow-public" not in macos
+        and "--build=missing" not in macos,
+        "macOS candidate only consumes its admitted persistent Conan namespace",
     )
 
     failed = [check for check in checks if not check["passed"]]

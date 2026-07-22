@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Resolve an OS-safe persistent Conan and sccache namespace for a runner.
+"""Resolve an OS/compiler-safe persistent Conan and sccache namespace for a runner.
 
 Conan packages can contain dynamically linked native binaries.  A cache made on
 Ubuntu 24.04 is therefore not a valid binary package cache for an Ubuntu 22.04
-runner, even when both runners are Linux/x86_64.  Docker images are deliberately
-handled elsewhere because their userland travels with the image.
+runner, even when both runners are Linux/x86_64. macOS/Apple Clang binaries use
+their own native namespace. Docker images are deliberately handled elsewhere
+because their userland travels with the image.
 """
 
 from __future__ import annotations
@@ -18,13 +19,21 @@ import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_ROOT = Path("/opt/boost-gateway")
 
 
-def read_os_release() -> tuple[str, str]:
+class CompilerIdentity(NamedTuple):
+    name: str
+    profile_version: str
+    executable: str
+    version: str
+
+
+def read_linux_os_release() -> tuple[str, str]:
     values: dict[str, str] = {}
     for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
         if "=" not in line or line.startswith("#"):
@@ -40,13 +49,26 @@ def read_os_release() -> tuple[str, str]:
     return distro, release
 
 
+def read_os_identity() -> tuple[str, str]:
+    system = platform.system()
+    if system == "Linux":
+        return read_linux_os_release()
+    if system == "Darwin":
+        release = platform.mac_ver()[0]
+        if not re.fullmatch(r"[0-9][0-9.]*", release):
+            raise ValueError(f"unsafe macOS release: {release!r}")
+        return "macos", release
+    raise ValueError(f"unsupported fixed-runner operating system: {system!r}")
+
+
 def command_output(command: list[str]) -> str:
     return subprocess.check_output(command, text=True, stderr=subprocess.STDOUT).strip()
 
 
-def compiler_identity(profile: str) -> tuple[str, str]:
+def compiler_identity(profile: str) -> CompilerIdentity:
     profile_path = required_file(profile)
     section = ""
+    compiler_name = ""
     compiler_version_setting = ""
     compiler_executable = ""
     for raw_line in profile_path.read_text(encoding="utf-8").splitlines():
@@ -59,27 +81,41 @@ def compiler_identity(profile: str) -> tuple[str, str]:
         key, separator, value = line.partition("=")
         if not separator:
             continue
-        if section == "settings" and key.strip() == "compiler.version":
-            compiler_version_setting = value.strip()
+        if section == "settings":
+            if key.strip() == "compiler":
+                compiler_name = value.strip().lower()
+            elif key.strip() == "compiler.version":
+                compiler_version_setting = value.strip()
         if section == "conf" and key.strip() == "tools.build:compiler_executables":
             executables = json.loads(value.strip())
             if not isinstance(executables, dict) or not executables.get("c"):
                 raise ValueError(f"invalid compiler executables in profile: {profile_path}")
             compiler_executable = str(executables["c"])
 
+    if compiler_name not in {"gcc", "apple-clang"}:
+        raise ValueError(f"unsupported fixed-runner compiler in profile: {compiler_name!r}")
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", compiler_version_setting):
         raise ValueError(f"profile does not pin a valid compiler.version: {profile_path}")
     if not compiler_executable:
-        compiler_executable = f"gcc-{compiler_version_setting.split('.')[0]}"
+        compiler_executable = (
+            f"gcc-{compiler_version_setting.split('.')[0]}" if compiler_name == "gcc" else "/usr/bin/clang"
+        )
 
-    version = command_output([compiler_executable, "-dumpfullversion", "-dumpversion"]).splitlines()[0]
+    if compiler_name == "gcc":
+        version = command_output([compiler_executable, "-dumpfullversion", "-dumpversion"]).splitlines()[0]
+    else:
+        output = command_output([compiler_executable, "--version"])
+        match = re.search(r"Apple clang version\s+([0-9]+(?:\.[0-9]+)*)", output)
+        if not match:
+            raise ValueError(f"unable to parse Apple Clang version from: {output!r}")
+        version = match.group(1)
     if not re.fullmatch(r"[0-9]+(?:\.[0-9]+)*", version):
-        raise ValueError(f"unsafe GCC version: {version!r}")
-    if version.split(".")[0] != compiler_version_setting.split(".")[0]:
+        raise ValueError(f"unsafe {compiler_name} version: {version!r}")
+    if compiler_name == "gcc" and version.split(".")[0] != compiler_version_setting.split(".")[0]:
         raise ValueError(
             f"profile pins GCC {compiler_version_setting}, but {compiler_executable} reports {version}"
         )
-    return compiler_executable, version
+    return CompilerIdentity(compiler_name, compiler_version_setting, compiler_executable, version)
 
 
 def conan_version() -> str:
@@ -97,6 +133,20 @@ def normalized_architecture() -> str:
     if not re.fullmatch(r"[a-z0-9_+-]+", arch):
         raise ValueError(f"unsafe architecture: {arch!r}")
     return arch
+
+
+def build_platform_namespace(
+    os_id: str,
+    os_release: str,
+    compiler: CompilerIdentity,
+    architecture: str,
+    build_type: str,
+) -> str:
+    compiler_token = "gcc" if compiler.name == "gcc" else compiler.name
+    namespace = f"{os_id}-{os_release}-{compiler_token}{compiler.version}-{architecture}-{build_type.lower()}"
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._+-]*", namespace):
+        raise ValueError(f"unsafe runner cache namespace: {namespace!r}")
+    return namespace
 
 
 def required_file(path: str) -> Path:
@@ -153,8 +203,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    distro, release = read_os_release()
-    compiler_executable, gcc = compiler_identity(args.profile)
+    distro, release = read_os_identity()
+    compiler = compiler_identity(args.profile)
     conan = conan_version()
     arch = normalized_architecture()
     build_type = args.build_type.lower()
@@ -162,11 +212,20 @@ def main() -> int:
         raise ValueError(f"unsafe graph variant: {args.graph_variant!r}")
     graph_digest, input_hashes = conan_graph_digest(args.profile, args.lockfile)
     remote_env_digest = remote_environment_digest()
-    platform_namespace = f"{distro}-{release}-gcc{gcc}-{arch}-{build_type}"
+    platform_namespace = build_platform_namespace(distro, release, compiler, arch, build_type)
+    key_identity = (
+        {"gcc_version": compiler.version}
+        if compiler.name == "gcc"
+        else {
+            "compiler_name": compiler.name,
+            "compiler_profile_version": compiler.profile_version,
+            "compiler_version": compiler.version,
+        }
+    )
     conan_key_material = json.dumps(
         {
             "conan_version": conan,
-            "gcc_version": gcc,
+            **key_identity,
             "platform": platform_namespace,
             "graph_digest": graph_digest,
             "graph_variant": args.graph_variant,
@@ -195,8 +254,9 @@ def main() -> int:
         "platform_namespace": platform_namespace,
         "os": {"id": distro, "release": release},
         "architecture": arch,
-        "gcc_version": gcc,
-        "compiler_executable": compiler_executable,
+        "compiler": compiler._asdict(),
+        "gcc_version": compiler.version if compiler.name == "gcc" else None,
+        "compiler_executable": compiler.executable,
         "build_type": args.build_type,
         "conan_version": conan,
         "conan_graph_key": conan_key,

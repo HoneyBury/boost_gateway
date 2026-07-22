@@ -19,7 +19,7 @@ EXPECTED_NAMES = {
     "debug-symbols": "Release / Linux Debug Symbols Candidate",
     "grpc-experimental": "Experimental / gRPC",
     "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
-    "macos-arm64": "Platform / macOS ARM64 Candidate",
+    "macos-arm64": "Platform / macOS ARM64 Production Candidate",
     "nightly-stability": "Stability / Bounded Soak",
     "perf-regression": "Performance / Baseline & Regression",
     "preprod-evidence": "Production / Preproduction Evidence",
@@ -108,6 +108,30 @@ def main() -> int:
     matrix = json.loads(read(matrix_path)) if matrix_path.exists() else {}
     matrix_workflows = set(matrix.get("workflows", {}))
     add(checks, "runner-matrix:exact-workflow-set", matrix_workflows == actual, f"matrix={sorted(matrix_workflows)} actual={sorted(actual)}")
+
+    boundary_path = ROOT / "docs" / "platform-production-boundaries.json"
+    boundary = json.loads(read(boundary_path)) if boundary_path.exists() else {}
+    boundary_workflows = set(boundary.get("workflows", {}))
+    production_platforms = boundary.get("policy", {}).get("production_platforms", [])
+    add(
+        checks,
+        "platform-boundary:production-platforms",
+        production_platforms == ["linux-x64", "linux-arm64", "macos-arm64"],
+        f"production_platforms={production_platforms}",
+    )
+    add(
+        checks,
+        "platform-boundary:exact-workflow-set",
+        boundary_workflows == actual,
+        f"boundary={sorted(boundary_workflows)} actual={sorted(actual)}",
+    )
+    for stem, states in sorted(boundary.get("workflows", {}).items()):
+        add(
+            checks,
+            f"platform-boundary:{stem}:complete-platform-set",
+            isinstance(states, dict) and set(states) == set(production_platforms),
+            f"{stem} platforms={sorted(states) if isinstance(states, dict) else states}",
+        )
 
     readme_path = ROOT / ".github" / "CI-CD.md"
     readme = read(readme_path) if readme_path.exists() else ""

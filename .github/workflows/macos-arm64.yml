@@ -1,4 +1,4 @@
-name: Platform / macOS ARM64 Candidate
+name: Platform / macOS ARM64 Production Candidate
 
 on:
   workflow_dispatch:
@@ -16,7 +16,8 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 90
     env:
-      CONAN_HOME: ${{ github.workspace }}/.conan2-macos-arm64
+      BOOST_GATEWAY_RUNNER_CACHE_ROOT: ${{ runner.tool_cache }}/boost-gateway
+      BOOST_GATEWAY_CONAN_VENV: ${{ runner.tool_cache }}/boost-gateway/tools/conan-2.8.1-py3.12
       LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
 
     steps:
@@ -36,23 +37,43 @@ jobs:
           cmake --version
           ninja --version
 
-      - name: Install pinned Conan
-        shell: bash
-        run: |
-          python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
-          echo "$GITHUB_WORKSPACE/.venv/conan-2.8.1/bin" >> "$GITHUB_PATH"
-
-      - name: Install locked dependencies
+      - name: Ensure offline Conan
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/bootstrap_conan.py --allow-public
-          conan install . \
-            --profile:host conan/profiles/macos-apple-clang-arm64 \
-            --profile:build conan/profiles/macos-apple-clang-arm64 \
+          python3 scripts/tools/ensure_conan_venv.py \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
+            --conan-version 2.8.1 \
+            --offline \
+            --github-env "$GITHUB_ENV" \
+            --github-path "$GITHUB_PATH"
+
+      - name: Resolve persistent runner cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
+          python3 scripts/tools/resolve_runner_cache.py \
+            --build-type Release \
+            --profile conan/profiles/macos-apple-clang-arm64 \
             --lockfile "$LOCKFILE" \
-            -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False" \
-            --output-folder build/conan-macos-arm64 --build=missing -s build_type=Release
+            --cache-root "$BOOST_GATEWAY_RUNNER_CACHE_ROOT" \
+            --github-env "$GITHUB_ENV" \
+            --summary-path runtime/validation/macos-runner-cache-summary.json
+
+      - name: Verify locked dependencies offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          python3 scripts/tools/verify_conan_offline_install.py \
+            --profile conan/profiles/macos-apple-clang-arm64 \
+            --lockfile "$LOCKFILE" \
+            --output-folder build/conan-macos-arm64 \
+            --build-type Release \
+            --conan-executable "$BOOST_GATEWAY_CONAN_VENV/bin/conan" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-conan-offline-summary.json
 
       - name: Configure and build
         shell: bash
@@ -67,6 +88,18 @@ jobs:
 
       - name: Bounded test
         run: ctest --test-dir build/macos-arm64-release --output-on-failure --timeout 300
+
+      - name: R5 native process recovery drill
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/verify_preprod_recovery_drill.py \
+            --build-dir build/macos-arm64-release \
+            --configuration Release \
+            --mode native-process \
+            --step-timeout-seconds 300 \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/macos-arm64-r5-summary.json
 
       - name: Install and verify
         shell: bash
@@ -97,11 +130,19 @@ jobs:
             boost-gateway-v3.6.0-macos-arm64.spdx.json > SHA256SUMS-macos-arm64.txt
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: macos-arm64-${{ github.sha }}
           path: |
             boost-gateway-v3.6.0-macos-arm64.tar.gz
             boost-gateway-v3.6.0-macos-arm64.spdx.json
             SHA256SUMS-macos-arm64.txt
+            runtime/validation/macos-runner-cache-summary.json
+            runtime/validation/macos-conan-offline-summary.json
             runtime/validation/macos-arm64-summary.json
+            runtime/validation/macos-arm64-r5-summary.json
+            runtime/validation/r5-preprod-recovery-drill-record.json
+            runtime/validation/r5-recovery-drill-record-check-summary.json
+            runtime/validation/r5-post-recovery-sdk-full-flow-summary.json
+            runtime/validation/process-logs
           retention-days: 30

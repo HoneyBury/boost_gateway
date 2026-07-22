@@ -233,15 +233,15 @@
 
 任务：
 
-- 维持 Ubuntu、macOS 双平台 CI matrix，并补齐失败分类和 artifact。
-- 将 Linux Ubuntu 固定 runner 作为生产候选容量事实源，优先沉淀 10K echo、battle-500、business-capacity 和 long/overnight soak。
+- 维持 Linux x64、Linux ARM64、macOS ARM64 三平台 CI matrix，并补齐失败分类和 artifact。
+- 为三个平台分别沉淀 10K echo、battle-500、business-capacity 和 long/overnight soak；阈值和结论不跨平台复用。
 - 梳理平台特定实现：plain TCP bounded read、POSIX process helper、Docker/kind/operator 依赖。
-- 对 macOS ARM64 建立构建和 smoke 验证，不提前承诺容量上限。
+- 对两个 ARM64 平台建立构建、原生 R5、性能和容量验证，完成前保持 production-candidate。
 
 验收：
 
-- `docs/performance-baseline.md` 拆分 Ubuntu fixed-runner baseline 和 macOS smoke 状态。
-- R2/R3 readiness 能以 Ubuntu fixed-runner summary 作为投产判断输入。
+- `docs/performance-baseline.md` 按三个原生平台拆分 baseline 和证据状态。
+- R2/R3 readiness 按目标平台只接受同平台、同候选 SHA 的 summary。
 
 ### M2 依赖管理迁移到 Conan
 

@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "production_platforms": ["linux-x64", "linux-arm64", "macos-arm64"],
+    "evidence_is_platform_specific": true,
+    "cross_platform_substitution": false,
+    "docker_targets": ["linux/amd64", "linux/arm64"],
+    "native_process_targets": ["linux-x64", "linux-arm64", "macos-arm64"]
+  },
+  "platforms": {
+    "linux-x64": {
+      "os": "linux",
+      "architecture": "x86_64",
+      "artifact_format": "ELF",
+      "container_platform": "linux/amd64",
+      "status": "implemented"
+    },
+    "linux-arm64": {
+      "os": "linux",
+      "architecture": "arm64",
+      "artifact_format": "ELF",
+      "container_platform": "linux/arm64",
+      "status": "foundation"
+    },
+    "macos-arm64": {
+      "os": "macos",
+      "architecture": "arm64",
+      "artifact_format": "Mach-O",
+      "container_platform": null,
+      "status": "production-candidate"
+    }
+  },
+  "workflows": {
+    "ci": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "implemented-by-macos-arm64"},
+    "conan-validate": {"linux-x64": "implemented", "linux-arm64": "foundation", "macos-arm64": "implemented-by-macos-arm64"},
+    "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-dsym"},
+    "grpc-experimental": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
+    "long-soak-capacity": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "planned-platform-baseline"},
+    "macos-arm64": {"linux-x64": "not-applicable", "linux-arm64": "not-applicable", "macos-arm64": "production-candidate"},
+    "nightly-stability": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
+    "perf-regression": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "planned-platform-baseline"},
+    "preprod-evidence": {"linux-x64": "implemented-linux-amd64", "linux-arm64": "foundation-linux-arm64", "macos-arm64": "implemented-by-macos-arm64-native"},
+    "production-candidate-evidence": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
+    "production-gates": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
+    "production-readiness": {"linux-x64": "implemented", "linux-arm64": "planned-platform-decision", "macos-arm64": "planned-platform-decision"},
+    "release": {"linux-x64": "implemented", "linux-arm64": "planned-asset", "macos-arm64": "planned-asset"},
+    "release-asset-verification": {"linux-x64": "implemented", "linux-arm64": "planned-asset", "macos-arm64": "planned-asset"},
+    "sdk-distribution": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-osx-arm64"},
+    "specialized-e2e": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-native-subset"}
+  }
+}

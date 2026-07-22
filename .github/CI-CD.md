@@ -25,7 +25,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
-| `macos-arm64.yml` | Platform / macOS ARM64 Candidate | 手动 | 原生 ARM64 Conan build、CTest、install、SDK consumer 与候选资产 |
+| `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、install、SDK consumer 与候选资产 |
 
 ## Runner 要求
 

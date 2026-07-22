@@ -43,6 +43,12 @@ uses Conan's latest supported Apple Clang compatibility model while the platform
 summary records the actual Xcode/Clang version. It always sets
 `CMAKE_OSX_ARCHITECTURES=arm64`; Rosetta/x86_64 artifacts fail the package gate.
 
+Linux ARM64 uses `conan/profiles/linux-gcc-arm64` with Release, Debug and gRPC
+lockfiles under `conan/locks/linux-gcc-arm64-*`. These lockfiles intentionally use the
+same recipe revisions as Linux x64; only the native package IDs differ. Binary availability
+must be admitted on a native Linux ARM64 runner with `--no-remote --build=never` before an
+evidence workflow is dispatched.
+
 Linux fixed-runner example:
 
 ```bash
@@ -70,8 +76,8 @@ and exports `CONAN_HOME`; it also assigns sccache a matching namespace. The
 Conan key includes `conanfile.py`, profile, lockfile, repository remote files,
 remote overrides, Conan/GCC versions, OS release, architecture and build type.
 Warm each namespace using the fixed-runner example, then use `--no-remote` for
-evidence work. Docker images are a separate cache and may cross Ubuntu 22.04
-and 24.04 x64 runners when imported as `linux/amd64` images.
+evidence work. Docker images are a separate cache. `linux/amd64` and
+`linux/arm64` image sets use separate bundles and must match the target architecture exactly.
 
 The graph key changes whenever any hashed input changes, including a
 build-generation-only edit in `conanfile.py`. A new key intentionally selects
