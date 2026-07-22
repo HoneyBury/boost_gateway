@@ -394,6 +394,13 @@ def main() -> int:
     )
     add(
         checks,
+        "debug-symbols:tolerates-slow-fixed-runner-upload",
+        'ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"' in debug_symbols_workflow
+        and 'ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"' in debug_symbols_workflow,
+        "large pre-compressed symbol assets use bounded upload concurrency and a 20-minute chunk timeout",
+    )
+    add(
+        checks,
         "specialized-e2e:raft-phase-b-evidence",
         "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
         and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow
