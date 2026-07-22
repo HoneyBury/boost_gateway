@@ -1581,6 +1581,10 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleCreateAndFinish) {
     EXPECT_EQ(finish_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleFinishResponse);
     EXPECT_EQ(finish_decoded->payload.value("battle_id", ""), "battle_typed_1");
 
+    auto recreate_resp = conn.send_request(create_req);
+    ASSERT_TRUE(recreate_resp.has_value());
+    EXPECT_EQ(recreate_resp->kind, v2::service::MessageKind::kResponse);
+
     service.stop();
 }
 

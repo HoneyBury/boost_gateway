@@ -343,6 +343,12 @@ public:
         asio::post(strand_, [self, cancelled]() {
             if (cancelled) {
                 self->finish_cancelled();
+            } else if (self->config_.scenario == BenchScenario::kBattle &&
+                       self->is_room_owner() && self->in_battle_ &&
+                       !self->battle_finished_) {
+                self->graceful_stop_requested_ = true;
+                (void)self->send_timer_.cancel();
+                self->request_battle_cleanup();
             } else {
                 self->finish();
             }
@@ -622,6 +628,11 @@ private:
 
         // Battle input response
         if (pkt.message_id == net::protocol::kBattleInputResponse) {
+            if (graceful_stop_requested_ && battle_finish_requested_) {
+                battle_finished_ = true;
+                finish();
+                return;
+            }
             ++completed_messages_;
             throughput_->record();
             battle_input_in_flight_ = false;
@@ -629,6 +640,11 @@ private:
             auto now = std::chrono::steady_clock::now();
             auto us = std::chrono::duration_cast<std::chrono::microseconds>(now - send_timestamp_).count();
             histogram_.record_us(static_cast<std::uint64_t>(us));
+
+            if (graceful_stop_requested_) {
+                request_battle_cleanup();
+                return;
+            }
 
             if (config_.messages_per_client > 0 &&
                 completed_messages_ >= config_.messages_per_client) {
@@ -709,6 +725,10 @@ private:
     // -------------------------------------------------------------------
 
     void schedule_next() {
+        if (graceful_stop_requested_) {
+            request_battle_cleanup();
+            return;
+        }
         if (config_.send_interval.count() > 0) {
             auto self = shared_from_this();
             send_timer_.expires_after(next_send_delay());
@@ -723,6 +743,10 @@ private:
     }
 
     void send_next_message() {
+        if (graceful_stop_requested_) {
+            request_battle_cleanup();
+            return;
+        }
         if (config_.scenario == BenchScenario::kBattle && in_battle_) {
             if (battle_finished_ || controller_->global_completion()) {
                 controller_->mark_global_completion();
@@ -1004,6 +1028,23 @@ private:
     // Termination
     // -------------------------------------------------------------------
 
+    void request_battle_cleanup() {
+        if (!graceful_stop_requested_ || battle_finished_ ||
+            battle_finish_requested_ || battle_input_in_flight_) {
+            return;
+        }
+        battle_finish_requested_ = true;
+        send_packet(net::protocol::kBattleInputRequest, "finish:user_requested");
+
+        auto self = shared_from_this();
+        send_timer_.expires_after(std::chrono::seconds(3));
+        send_timer_.async_wait([self](const error_code& ec) {
+            if (!ec) {
+                self->finish_rejected();
+            }
+        });
+    }
+
     void finish() {
         if (finished_.exchange(true, std::memory_order_relaxed)) {
             return;
@@ -1091,6 +1132,8 @@ private:
     bool battle_loop_started_ = false;
     bool battle_finished_ = false;
     bool battle_input_in_flight_ = false;
+    bool graceful_stop_requested_ = false;
+    bool battle_finish_requested_ = false;
     std::size_t battle_start_retry_attempts_ = 0;
     std::size_t battle_start_error_retries_ = 0;
     std::size_t connect_retry_attempts_ = 0;

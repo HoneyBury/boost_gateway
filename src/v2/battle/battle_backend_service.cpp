@@ -660,6 +660,8 @@ private:
                               << battle_id << ": " << e.what() << std::endl;
                 }
             }
+
+            runtime_.destroy_instance(battle_id);
         }
 
         auto resp = make_ok({
@@ -777,6 +779,7 @@ private:
 
         // Consume the settlement captured by the event callback
         auto settlement_str = sync_capture_.consume_settlement(battle_id);
+        runtime_.destroy_instance(battle_id);
 
         auto total_frames = get_instance_frame(battle_id);
         erase_instance_frame(battle_id);
