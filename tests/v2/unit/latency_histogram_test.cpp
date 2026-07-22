@@ -54,7 +54,7 @@ TEST(LatencyHistogramTest, BucketingDistributesCorrectly) {
 TEST(LatencyHistogramTest, PercentileComputation) {
     LatencyHistogram h;
     // 49 at 3ms (bucket 2, <=5ms), 30 at 8ms (bucket 3, <=10ms),
-    // 15 at 80ms (bucket 9, <=100ms), 6 at 800ms (bucket 16, <=1000ms)
+    // 15 at 80ms (bucket 9, <=100ms), 6 at 800ms (bucket 17, <=1000ms)
     for (int i = 0; i < 49; ++i) h.record_ms(3.0);
     for (int i = 0; i < 30; ++i) h.record_ms(8.0);
     for (int i = 0; i < 15; ++i) h.record_ms(80.0);
@@ -64,17 +64,27 @@ TEST(LatencyHistogramTest, PercentileComputation) {
     EXPECT_EQ(snap.total_count, 100);
     EXPECT_DOUBLE_EQ(snap.p50_ms, 10.0);    // 50th: in bucket 3 → upper bound 10ms
     EXPECT_DOUBLE_EQ(snap.p90_ms, 100.0);   // 90th: in bucket 9 -> upper bound 100ms
-    EXPECT_DOUBLE_EQ(snap.p99_ms, 1000.0);  // 99th: in bucket 16 -> upper bound 1000ms
+    EXPECT_DOUBLE_EQ(snap.p99_ms, 1000.0);  // 99th: in bucket 17 -> upper bound 1000ms
 }
 
 TEST(LatencyHistogramTest, CapacityGateBucketsHaveFineResolution) {
     LatencyHistogram h;
     h.record_ms(45.0);
+    h.record_ms(249.9);
     h.record_ms(390.0);
 
     const auto snap = h.snapshot();
     EXPECT_EQ(snap.bucket_counts[7], 1);   // 45ms -> <=50ms
-    EXPECT_EQ(snap.bucket_counts[13], 1);  // 390ms -> <=400ms
+    EXPECT_EQ(snap.bucket_counts[12], 1);  // 249.9ms -> <=250ms
+    EXPECT_EQ(snap.bucket_counts[14], 1);  // 390ms -> <=400ms
+    EXPECT_DOUBLE_EQ(snap.p99_ms, 400.0);
+}
+
+TEST(LatencyHistogramTest, ReleaseGateThresholdHasExactBucket) {
+    LatencyHistogram h;
+    h.record_ms(249.9);
+
+    EXPECT_DOUBLE_EQ(h.snapshot().p99_ms, 250.0);
 }
 
 TEST(LatencyHistogramTest, DrainResetsCounters) {
