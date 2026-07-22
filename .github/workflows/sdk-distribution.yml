@@ -32,7 +32,9 @@ jobs:
           set -euo pipefail
           test "$(uname -m)" = x86_64
           test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
-          python -c 'import setuptools, wheel'
+          package_python="$(command -v python)"
+          "$package_python" -c 'import setuptools, wheel'
+          printf 'BOOST_GATEWAY_PACKAGE_PYTHON=%s\n' "$package_python" >> "$GITHUB_ENV"
           auditwheel --version
           dotnet --version
           syft version
@@ -84,7 +86,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python scripts/tools/build_sdk_packages.py \
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/build_sdk_packages.py \
             --native-library build/sdk-distribution/sdk/libboost_gateway_sdk.so \
             --rid linux-x64 \
             --wheel-platform-tag manylinux_2_35_x86_64 \
@@ -92,12 +94,12 @@ jobs:
             --require-nuget
           wheel=$(find runtime/sdk-packages -maxdepth 1 -name '*.whl' -print -quit)
           nuget=$(find runtime/sdk-packages -maxdepth 1 -name '*.nupkg' -print -quit)
-          python scripts/tools/verify_sdk_distribution_packages.py \
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py \
             --wheel "$wheel" --nuget "$nuget" --rid linux-x64 --require-nuget --require-auditwheel \
             --summary-path runtime/validation/sdk-package-summary.json
-          python -m venv runtime/sdk-package-flow-venv
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" -m venv runtime/sdk-package-flow-venv
           runtime/sdk-package-flow-venv/bin/pip install --no-index --no-deps "$wheel"
-          python scripts/gates/sdk/verify_sdk_full_flow_client.py \
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/gates/sdk/verify_sdk_full_flow_client.py \
             --build-dir build/sdk-distribution --skip-build \
             --python-package-client runtime/sdk-package-flow-venv/bin/python \
             --summary-path runtime/validation/sdk-package-full-flow-summary.json
