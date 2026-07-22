@@ -37,7 +37,7 @@ jobs:
           dotnet --version
           syft version
 
-      - name: Ensure offline Conan
+      - name: Ensure pinned Conan virtual environment
         shell: bash
         run: |
           python scripts/tools/ensure_conan_venv.py \
@@ -46,12 +46,20 @@ jobs:
             --offline \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
+
+      - name: Resolve persistent runner caches
+        shell: bash
+        run: |
           python scripts/tools/resolve_runner_cache.py \
             --build-type Release \
             --profile conan/profiles/linux-gcc-x64 \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/sdk-runner-cache-summary.json
+
+      - name: Verify strict offline Conan graph
+        shell: bash
+        run: |
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
           python scripts/tools/verify_conan_offline_install.py \
             --profile conan/profiles/linux-gcc-x64 \

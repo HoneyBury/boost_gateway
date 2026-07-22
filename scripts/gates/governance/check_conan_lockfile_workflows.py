@@ -38,6 +38,7 @@ WORKFLOWS = {
 # GitHub-hosted runners and restores a checkout-local home through actions/cache.
 FIXED_RUNNER_CONAN_WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
+    "debug_symbols": ".github/workflows/debug-symbols.yml",
     "grpc_experimental": ".github/workflows/grpc-experimental.yml",
     "jwks_rotation": ".github/workflows/jwks-rotation.yml",
     "release": ".github/workflows/release.yml",
@@ -46,6 +47,7 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "perf_regression": ".github/workflows/perf-regression.yml",
     "production_candidate_evidence": ".github/workflows/production-candidate-evidence.yml",
     "production_gates": ".github/workflows/production-gates.yml",
+    "sdk_distribution": ".github/workflows/sdk-distribution.yml",
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
     "preprod_evidence": ".github/workflows/preprod-evidence.yml",
     "macos_arm64": ".github/workflows/macos-arm64.yml",
@@ -399,6 +401,19 @@ def main() -> int:
         "restore-keys:" not in named_workflow_step(ci, "Restore Conan cache"),
         "ci never restores a Conan cache from a less-specific version or dependency graph key",
     )
+
+    for name in ("sdk_distribution", "debug_symbols"):
+        content = read(FIXED_RUNNER_CONAN_WORKFLOWS[name])
+        resolver_step = "- name: Resolve persistent runner caches"
+        verifier_step = "- name: Verify strict offline Conan graph"
+        add(
+            checks,
+            f"workflow:{name.replace('_', '-')}:resolved-home-visible-before-bootstrap",
+            resolver_step in content
+            and verifier_step in content
+            and content.index(resolver_step) < content.index(verifier_step),
+            "the resolved CONAN_HOME crosses a GitHub step boundary before strict offline bootstrap",
+        )
 
     preprod = read(".github/workflows/preprod-evidence.yml")
     add(
