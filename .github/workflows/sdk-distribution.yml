@@ -169,7 +169,10 @@ jobs:
             cmake_args+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
           fi
           cmake "${cmake_args[@]}"
-          cmake --build build/sdk-distribution --parallel "${{ inputs.build_parallelism }}"
+          cmake --build build/sdk-distribution --parallel "${{ inputs.build_parallelism }}" --target \
+            boost_gateway_sdk_dll sdk_tests \
+            v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend \
+            v2_match_backend v2_leaderboard_backend
           ctest --test-dir build/sdk-distribution \
             -R 'CApiV41Test|CodecV4Test|ClientV4Test|Transport' --output-on-failure
 

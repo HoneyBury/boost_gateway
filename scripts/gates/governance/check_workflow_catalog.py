@@ -367,6 +367,8 @@ def main() -> int:
                 "setuptools.__version__ == \"83.0.0\"",
                 "wheel.__version__ == \"0.47.0\"",
                 "auditwheel --version | grep -Eq '^auditwheel 6\\.7\\.0([[:space:]]|$)'",
+                "boost_gateway_sdk_dll sdk_tests",
+                "v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend",
                 "sdk-distribution-${{ inputs.platform }}-${{ github.sha }}",
             )
         ),
