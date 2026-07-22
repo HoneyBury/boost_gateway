@@ -127,6 +127,31 @@ def main() -> int:
         boundary_workflows == actual,
         f"boundary={sorted(boundary_workflows)} actual={sorted(actual)}",
     )
+    for stem in (
+        "release",
+        "release-asset-verification",
+        "perf-regression",
+        "production-gates",
+        "production-candidate-evidence",
+        "long-soak-capacity",
+        "preprod-evidence",
+    ):
+        platform_runners = matrix.get("workflows", {}).get(stem, {}).get("platforms", {})
+        add(
+            checks,
+            f"runner-matrix:{stem}:production-platforms",
+            set(platform_runners) == set(production_platforms),
+            f"{stem} platform runners={sorted(platform_runners)}",
+        )
+    readiness_targets = (
+        matrix.get("workflows", {}).get("production-readiness", {}).get("target_platforms", [])
+    )
+    add(
+        checks,
+        "runner-matrix:production-readiness:target-platforms",
+        readiness_targets == production_platforms,
+        f"readiness target platforms={readiness_targets}",
+    )
     for stem, states in sorted(boundary.get("workflows", {}).items()):
         add(
             checks,
@@ -202,6 +227,11 @@ def main() -> int:
     jwks_workflow = read(WORKFLOWS_ROOT / "jwks-rotation.yml")
     macos_workflow = read(WORKFLOWS_ROOT / "macos-arm64.yml")
     sdk_distribution_workflow = read(WORKFLOWS_ROOT / "sdk-distribution.yml")
+    perf_workflow = read(WORKFLOWS_ROOT / "perf-regression.yml")
+    production_gates_workflow = read(WORKFLOWS_ROOT / "production-gates.yml")
+    production_readiness_workflow = read(WORKFLOWS_ROOT / "production-readiness.yml")
+    preprod_workflow = read(WORKFLOWS_ROOT / "preprod-evidence.yml")
+    production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
     add(
         checks,
         "ci:next-minor-decision-gate",
@@ -466,8 +496,9 @@ def main() -> int:
         checks,
         "release:checksum-only-published-archive",
         "find \"$RELEASE_ASSET_DIR\" -type f -name '*.tar.gz'" in release_workflow
-        and "test \"${#archives[@]}\" -eq 1" in release_workflow,
-        "release checksum is derived from exactly one packaged tarball",
+        and "test \"${#archives[@]}\" -eq 3" in release_workflow
+        and "for platform in linux-x64 linux-arm64 macos-arm64" in release_workflow,
+        "release checksums exactly one packaged tarball for every production platform",
     )
     add(
         checks,
@@ -569,16 +600,118 @@ def main() -> int:
         in release_asset_verification
         and '"sbom_attestation_binding": sbom_attestation_binding'
         in release_asset_verification
-        and "path: runtime/validation/published-release-*.json"
-        in release_asset_verification,
+        and "runtime/validation/published-release-*.json" in release_asset_verification,
         "published asset verification binds the standalone SBOM to its verified SPDX predicate",
     )
     add(
         checks,
         "release:sbom-published-and-checksummed",
         "*-sbom.spdx.json" in release_workflow
-        and 'for asset in "$archive" "$sbom"' in release_workflow,
-        "release publishes and checksums both the tarball and SPDX SBOM",
+        and 'for asset in "${archives[@]}" "${sboms[@]}"' in release_workflow
+        and "test \"${#sboms[@]}\" -eq 3" in release_workflow,
+        "release publishes and checksums each platform tarball and SPDX SBOM",
+    )
+    production_platform_workflows = {
+        "release": release_workflow,
+        "production-candidate-evidence": candidate_workflow,
+        "perf-regression": perf_workflow,
+        "long-soak-capacity": long_soak_workflow,
+        "production-gates": production_gates_workflow,
+        "production-readiness": production_readiness_workflow,
+        "release-asset-verification": release_asset_verification,
+    }
+    for stem, workflow in production_platform_workflows.items():
+        add(
+            checks,
+            f"production-platform:{stem}:explicit-platform-input",
+            all(token in workflow for token in ("platform:", "linux-x64", "linux-arm64", "macos-arm64")),
+            f"{stem} exposes all production platforms explicitly",
+        )
+    for stem in (
+        "release",
+        "production-candidate-evidence",
+        "perf-regression",
+        "long-soak-capacity",
+        "production-gates",
+        "release-asset-verification",
+    ):
+        add(
+            checks,
+            f"production-platform:{stem}:native-resolution",
+            "uses: ./.github/actions/resolve-production-platform"
+            in production_platform_workflows[stem],
+            f"{stem} validates the native host through the shared platform contract",
+        )
+        add(
+            checks,
+            f"production-platform:{stem}:native-runner-defaults",
+            all(
+                token in production_platform_workflows[stem]
+                for token in (
+                    "node-aoi-omen-gaming-laptop-16-am0xxx",
+                    "node-honeybury-m4-linux-arm64",
+                    "macos-arm64-candidate",
+                )
+            ),
+            f"{stem} selects a native runner when no explicit runner override is supplied",
+        )
+    add(
+        checks,
+        "production-platform:shared-contract",
+        all(
+            token in production_platform_action
+            for token in (
+                "conan/profiles/linux-gcc-x64",
+                "conan/profiles/linux-gcc-arm64",
+                "conan/profiles/macos-apple-clang-arm64",
+                "linux/amd64",
+                "linux/arm64",
+                "PRODUCTION_ARCHIVE_PLATFORM",
+                "production-platform-summary.json",
+            )
+        ),
+        "shared production platform resolution binds host, Conan graph, Docker target and artifact identity",
+    )
+    add(
+        checks,
+        "production-platform:readiness-artifact-isolation",
+        all(
+            token in production_readiness_workflow
+            for token in (
+                "production-candidate-evidence-${PRODUCTION_PLATFORM}",
+                "long-soak-capacity-${PRODUCTION_PLATFORM}",
+                'data.get("platform") != expected',
+                "readiness-platform-evidence-summary.json",
+                "production-readiness-${{ inputs.platform }}",
+            )
+        ),
+        "readiness imports and validates only the selected platform evidence set",
+    )
+    add(
+        checks,
+        "production-platform:preprod-native-linux-routing",
+        all(
+            token in preprod_workflow
+            for token in (
+                "linux-x64",
+                "linux-arm64",
+                "uses: ./.github/actions/resolve-production-platform",
+                'DOCKER_DEFAULT_PLATFORM="$PRODUCTION_DOCKER_PLATFORM"',
+                "preprod-evidence-${{ inputs.platform }}-${{ github.run_id }}",
+                "production-platform-summary.json",
+            )
+        ),
+        "preprod R5/R6 binds the native Linux runner, Conan graph, OCI platform and artifact identity",
+    )
+    add(
+        checks,
+        "production-platform:macos-native-r5-r6-readiness",
+        "uses: ./.github/actions/resolve-production-platform" in macos_workflow
+        and "runtime/validation/preprod-recovery-drill-summary.json" in macos_workflow
+        and "scripts/verify_tls_preprod_multi_run.py" in macos_workflow
+        and "runtime/validation/tls-preprod-multi-run-summary.json" in macos_workflow
+        and "production-platform-summary.json" in macos_workflow,
+        "macOS candidate publishes native R5/R6 aliases and platform identity for readiness",
     )
     add(
         checks,

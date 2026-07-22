@@ -194,6 +194,8 @@ P2 的五项下一 minor ADR 已接受，机器可校验状态见 `docs/decision
 
 2026-07-22 ARM64 package/security 批次进一步关闭了平台入口缺口。Linux ARM64 JWKS `29926003937` 通过真实 HTTPS drill 10/10 与 contract 6/6；SDK `29926636641` 在 `a355fb7500ad259ae8921db04effbe325483400f` 生成 manylinux aarch64 wheel 与 linux-arm64 NuGet，package 25/25、fresh full-flow 15/15；debug-symbol `29926847088` 在同 SHA 完成 14 ELF、独立验证 116/116 和 crash probe 12/12。macOS ARM64 JWKS `29925779628` 同样通过 10/10 与 6/6；candidate `29927622379` 在 `a355fb7` 完成 strict-offline Conan、全量 CTest、原生 R5、bounded performance/stability、package 与 dSYM 160/160；SDK `29928355843` 完成 osx-arm64 package 23/23、full-flow 15/15。上述均为预冻结 artifact，不替代 Linux ARM64 Release/R0、两平台完整容量/长稳、Mac notarization 或最终 frozen-SHA 发布资产。
 
+当前 ARM 分支已把 Release、R0、performance、long-soak/capacity、P5/P6、readiness 和 published-asset verification 接入统一三平台原生路由。tag Release 生成三份独立 archive/SBOM，readiness 和发布后复验按平台消费并拒绝跨架构 ELF/OCI/Mach-O。该实现尚待合入默认分支并产生 exact-SHA evidence，因此平台状态仍保持 production candidate。
+
 当前默认有界收束已经完成；长稳 2h/8h 已有固定 runner 连续证据，发布后候选 `37897e8` 的真实 lifecycle 饱和曲线、两条单变量轴和 OTel 对照也已归档。生产容量上限仍需结合部署 SLO 单独声明，不能把实验的 200K 配置请求率上限写成客户端数或生产承诺。真实 gRPC transport profile 继续作为后续专项持续沉淀。业务验证型后续工作必须继续遵守“框架与业务隔离”：demo 只放在 `demo/games/` 或后续 demo 目录，不能把坦克大战等具体业务规则写入公共框架主链。
 
 下一阶段执行优先级概括为：

@@ -56,6 +56,7 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
 }
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
+PRODUCTION_PLATFORM_ACTION = ".github/actions/resolve-production-platform/action.yml"
 CONAN_VENV_HELPER = "scripts/tools/ensure_conan_venv.py"
 RAFT_OFFLINE_INSTALLER = "scripts/tools/verify_conan_offline_install.py"
 PINNED_CONAN_VERSION = "2.8.1"
@@ -256,8 +257,36 @@ def main() -> int:
     )
 
     contents = {name: read(path) if exists(path) else "" for name, path in WORKFLOWS.items()}
+    production_platform_action = (
+        read(PRODUCTION_PLATFORM_ACTION) if exists(PRODUCTION_PLATFORM_ACTION) else ""
+    )
     for name, path in WORKFLOWS.items():
-        workflow_checks(checks, name, path, contents[name])
+        effective_content = contents[name]
+        if "uses: ./.github/actions/resolve-production-platform" in effective_content:
+            effective_content += "\n" + production_platform_action
+        workflow_checks(checks, name, path, effective_content)
+
+    add(
+        checks,
+        "production-platform-action:three-native-conan-contracts",
+        all(
+            token in production_platform_action
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                LINUX_ARM64_DEBUG_LOCKFILE,
+                MACOS_PROFILE,
+                MACOS_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "macos-arm64",
+                "PRODUCTION_CONAN_LOCKFILE",
+            )
+        ),
+        "the shared production platform action binds native hosts to independent Conan graphs",
+    )
 
     long_soak = contents["long_soak_capacity"]
     release = contents["release"]
@@ -450,6 +479,19 @@ def main() -> int:
         and 'default: "2"' in preprod
         and "--parallel ${{ inputs.build_parallelism || '2' }}" in preprod,
         "preprod evidence caps C++ build concurrency for memory-constrained fixed runners",
+    )
+    add(
+        checks,
+        "workflow:preprod-evidence:native-linux-platform-routing",
+        "linux-x64" in preprod
+        and "linux-arm64" in preprod
+        and "uses: ./.github/actions/resolve-production-platform" in preprod
+        and 'DOCKER_DEFAULT_PLATFORM="$PRODUCTION_DOCKER_PLATFORM"' in preprod
+        and PROFILE in production_platform_action
+        and LOCKFILE in production_platform_action
+        and LINUX_ARM64_PROFILE in production_platform_action
+        and LINUX_ARM64_LOCKFILE in production_platform_action,
+        "preprod evidence derives its native Linux Conan and OCI contracts from one platform input",
     )
 
     macos = read(FIXED_RUNNER_CONAN_WORKFLOWS["macos_arm64"])

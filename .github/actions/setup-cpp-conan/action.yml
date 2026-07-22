@@ -14,6 +14,14 @@ inputs:
     description: Require the pinned Conan virtual environment to have been pre-created without installing from the network.
     required: false
     default: "false"
+  conan-venv:
+    description: Absolute path to the isolated Conan virtual environment.
+    required: false
+    default: /opt/boost-gateway/tools/conan-2.8.1-py3.12
+  cache-root:
+    description: Persistent root used for Conan and sccache namespaces.
+    required: false
+    default: /opt/boost-gateway
   run-bootstrap:
     description: Run scripts/bootstrap_conan.py after Conan is available.
     required: false
@@ -58,7 +66,7 @@ runs:
         set -euo pipefail
         args=(
           python scripts/tools/ensure_conan_venv.py
-          --venv "/opt/boost-gateway/tools/conan-${{ inputs.conan-version }}-py${{ inputs.python-version }}"
+          --venv "${{ inputs.conan-venv }}"
           --conan-version "${{ inputs.conan-version }}"
           --github-env "$GITHUB_ENV"
           --github-path "$GITHUB_PATH"
@@ -76,6 +84,7 @@ runs:
           --build-type "${{ inputs.cache-build-type }}" \
           --profile "${{ inputs.cache-profile }}" \
           --lockfile "${{ inputs.cache-lockfile }}" \
+          --cache-root "${{ inputs.cache-root }}" \
           --github-env "$GITHUB_ENV" \
           --summary-path runtime/validation/runner-cache-identity.json
 

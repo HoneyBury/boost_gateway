@@ -61,6 +61,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: macos-arm64
+          build-type: Release
+
       - name: Verify host Python and resolve persistent runner tool paths
         shell: bash
         run: |
@@ -146,6 +152,20 @@ jobs:
             --step-timeout-seconds 300 \
             --candidate-revision "$GITHUB_SHA" \
             --summary-path runtime/validation/macos-arm64-r5-summary.json
+          cp runtime/validation/macos-arm64-r5-summary.json \
+            runtime/validation/preprod-recovery-drill-summary.json
+
+      - name: R6 native TLS multi-run evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3.12 scripts/verify_tls_preprod_multi_run.py \
+            --build-dir build/macos-arm64-release \
+            --configuration Release \
+            --skip-build \
+            --runs 2 \
+            --step-timeout-seconds 240 \
+            --summary-path runtime/validation/tls-preprod-multi-run-summary.json
 
       - name: Native bounded performance evidence
         if: inputs.run_platform_baseline
@@ -262,6 +282,10 @@ jobs:
             runtime/validation/macos-conan-offline-summary.json
             runtime/validation/macos-arm64-summary.json
             runtime/validation/macos-arm64-r5-summary.json
+            runtime/validation/preprod-recovery-drill-summary.json
+            runtime/validation/tls-preprod-multi-run-summary.json
+            runtime/validation/r6-*.json
+            runtime/validation/production-platform-summary.json
             runtime/validation/macos-arm64-stability-summary.json
             runtime/validation/r5-preprod-recovery-drill-record.json
             runtime/validation/r5-recovery-drill-record-check-summary.json

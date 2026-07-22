@@ -49,6 +49,12 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
+生产 workflow 的 `platform` 必须显式选择 `linux-x64`、`linux-arm64` 或
+`macos-arm64`。Release、R0、performance、long-soak/capacity、P5/P6、readiness 和
+published-asset verification 使用同一原生平台契约；profile、lockfile、build directory、
+Docker target 与 artifact suffix 不接受独立覆盖。tag Release 只有三平台 package job
+全部成功后才发布三份 archive、三份 SPDX 和统一 checksum manifest。
+
 `preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=never`；完整
 Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 仅用于
 明确标注的联网诊断，不能解除 R5 预发阻断。

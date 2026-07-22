@@ -3,8 +3,6 @@ name: Release / Package & Publish
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
-  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
-  BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
 
 on:
   push:
@@ -12,14 +10,19 @@ on:
       - "v*"
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native production platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
-        required: true
-        default: '["self-hosted","Linux","X64"]'
-      conan_lockfile:
-        description: "Conan lockfile path for dependency preflight"
-        type: string
-        default: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+        required: false
+        default: ""
       perf_preset:
         description: "Performance baseline preset (smoke/baseline/capacity)"
         type: string
@@ -36,7 +39,7 @@ on:
       legacy_raft_binary:
         description: "Pre-provisioned v3.5.3 leaderboard backend used by the real mixed-binary gate"
         type: string
-        default: /opt/boost-gateway/releases/v3.5.3/bin/v2_leaderboard_backend
+        default: ""
       legacy_raft_revision:
         description: "Full source revision for the pre-provisioned legacy Raft binary"
         type: string
@@ -53,10 +56,15 @@ permissions:
 
 jobs:
   package:
-    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_RUNNER || '["self-hosted","Linux","X64"]') }}
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.platform) || '["linux-x64","linux-arm64","macos-arm64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || (matrix.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || matrix.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
 
     steps:
       - name: Normalize stale Go cache permissions
+        if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -68,6 +76,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: ${{ matrix.platform }}
+          build-type: Release
 
       - name: Resolve release version
         shell: bash
@@ -115,8 +129,9 @@ jobs:
           set -euo pipefail
           python scripts/tools/resolve_runner_cache.py \
             --build-type Release \
-            --profile conan/profiles/linux-gcc-x64 \
-            --lockfile "${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}" \
+            --profile "$PRODUCTION_CONAN_PROFILE" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
+            --cache-root "$PRODUCTION_CACHE_ROOT" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/runner-cache-identity.json
 
@@ -124,7 +139,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sccache --version || sudo apt-get install -y sccache
+          command -v sccache
           echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
           mkdir -p "$SCCACHE_DIR"
           sccache --version
@@ -143,7 +158,7 @@ jobs:
           export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
           conan --version
           python scripts/tools/verify_conan_offline_install.py \
-            --profile conan/profiles/linux-gcc-x64 \
+            --profile "$PRODUCTION_CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --output-folder build/conan-preflight \
             --build-type Release \
@@ -160,7 +175,7 @@ jobs:
           set -euo pipefail
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
-          cmake --preset release \
+          cmake --preset "$PRODUCTION_CONFIGURE_PRESET" \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-preflight/build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
@@ -172,15 +187,15 @@ jobs:
         run: |
           set -euo pipefail
           grep -F "Using Conan-provided dependency graph" runtime/validation/release-configure.log
-          grep -F "BOOST_DEPENDENCY_PROVIDER:STRING=conan" build/release/CMakeCache.txt
-          grep -F "CMAKE_TOOLCHAIN_FILE:FILEPATH=" build/release/CMakeCache.txt \
+          grep -F "BOOST_DEPENDENCY_PROVIDER:STRING=conan" "$PRODUCTION_BUILD_DIR/CMakeCache.txt"
+          grep -F "CMAKE_TOOLCHAIN_FILE:FILEPATH=" "$PRODUCTION_BUILD_DIR/CMakeCache.txt" \
             | grep -F "build/conan-preflight/build/Release/generators/conan_toolchain.cmake"
 
       - name: Verify sccache wiring
         shell: bash
         run: |
           : "${SCCACHE_BIN:?missing sccache path}"
-          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
+          grep -F -n "$SCCACHE_BIN" "$PRODUCTION_BUILD_DIR/CMakeCache.txt" "$PRODUCTION_BUILD_DIR/build.ninja"
 
       - name: Record build start time
         shell: bash
@@ -189,7 +204,7 @@ jobs:
       - name: Build
         shell: bash
         run: |
-          cmake --build --preset release --parallel
+          cmake --build "$PRODUCTION_BUILD_DIR" --parallel
           mkdir -p runtime/perf/build-times
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
@@ -197,19 +212,19 @@ jobs:
         shell: bash
         run: |
           mkdir -p runtime/validation
-          ctest --preset release -N | tee runtime/validation/release-ctest-list.log
+          ctest --test-dir "$PRODUCTION_BUILD_DIR" -N | tee runtime/validation/release-ctest-list.log
 
       - name: Test
         shell: bash
         run: |
           mkdir -p runtime/validation
-          ctest --preset release --progress --output-on-failure --timeout 300 \
+          ctest --test-dir "$PRODUCTION_BUILD_DIR" --progress --output-on-failure --timeout 300 \
             | tee runtime/validation/release-ctest.log
 
       - name: Raft Phase B specialized evidence
         run: |
           python scripts/verify_specialized_e2e.py \
-            --build-dir build/release \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --profile raft-ha \
             --skip-build \
@@ -218,7 +233,7 @@ jobs:
       - name: Raft Phase B data recovery evidence
         run: |
           python scripts/verify_data_recovery_gate.py \
-            --build-dir build/release \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --skip-build \
             --summary-path runtime/validation/raft-release-data-recovery-summary.json
@@ -226,18 +241,30 @@ jobs:
       - name: Raft Phase B real mixed-binary evidence
         shell: bash
         env:
-          LEGACY_RAFT_BINARY: ${{ inputs.legacy_raft_binary || vars.LEGACY_RAFT_BINARY || '/opt/boost-gateway/releases/v3.5.3/bin/v2_leaderboard_backend' }}
+          LEGACY_RAFT_BINARY_INPUT: ${{ inputs.legacy_raft_binary }}
           LEGACY_RAFT_REVISION: ${{ inputs.legacy_raft_revision || vars.LEGACY_RAFT_REVISION || 'b9c348b4b58fdeeffa9d82ff87a67ed781a96b78' }}
-          LEGACY_RAFT_SHA256: ${{ inputs.legacy_raft_sha256 || vars.LEGACY_RAFT_SHA256 }}
+          LEGACY_RAFT_SHA256_INPUT: ${{ inputs.legacy_raft_sha256 }}
+          LEGACY_RAFT_SHA256_LINUX_X64: ${{ vars.LEGACY_RAFT_SHA256_LINUX_X64 || vars.LEGACY_RAFT_SHA256 }}
+          LEGACY_RAFT_SHA256_LINUX_ARM64: ${{ vars.LEGACY_RAFT_SHA256_LINUX_ARM64 }}
+          LEGACY_RAFT_SHA256_MACOS_ARM64: ${{ vars.LEGACY_RAFT_SHA256_MACOS_ARM64 }}
         run: |
           set -euo pipefail
-          : "${LEGACY_RAFT_SHA256:?configure legacy_raft_sha256 input or LEGACY_RAFT_SHA256 repository variable}"
+          legacy_binary="${LEGACY_RAFT_BINARY_INPUT:-$PRODUCTION_CACHE_ROOT/releases/v3.5.3/bin/v2_leaderboard_backend}"
+          legacy_sha="$LEGACY_RAFT_SHA256_INPUT"
+          if [ -z "$legacy_sha" ]; then
+            case "$PRODUCTION_PLATFORM" in
+              linux-x64) legacy_sha="$LEGACY_RAFT_SHA256_LINUX_X64" ;;
+              linux-arm64) legacy_sha="$LEGACY_RAFT_SHA256_LINUX_ARM64" ;;
+              macos-arm64) legacy_sha="$LEGACY_RAFT_SHA256_MACOS_ARM64" ;;
+            esac
+          fi
+          : "${legacy_sha:?configure a platform-specific legacy Raft SHA-256}"
           python scripts/verify_raft_mixed_binary.py \
-            --legacy-binary "$LEGACY_RAFT_BINARY" \
+            --legacy-binary "$legacy_binary" \
             --legacy-revision "$LEGACY_RAFT_REVISION" \
-            --expected-legacy-sha256 "$LEGACY_RAFT_SHA256" \
-            --candidate-binary build/release/examples/v2_leaderboard_backend/v2_leaderboard_backend \
-            --state-tool build/release/tools/raft_state_tool/raft_state_tool \
+            --expected-legacy-sha256 "$legacy_sha" \
+            --candidate-binary "$PRODUCTION_BUILD_DIR/examples/v2_leaderboard_backend/v2_leaderboard_backend" \
+            --state-tool "$PRODUCTION_BUILD_DIR/tools/raft_state_tool/raft_state_tool" \
             --configuration Release \
             --summary-path runtime/validation/raft-mixed-binary-summary.json
 
@@ -245,7 +272,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: raft-phase-b-${{ github.run_id }}
+          name: raft-phase-b-${{ matrix.platform }}-${{ github.run_id }}
           path: |
             runtime/validation/raft-conan-offline-summary.json
             runtime/validation/raft-release-specialized-summary.json
@@ -255,7 +282,7 @@ jobs:
           if-no-files-found: warn
 
       - name: R4 release contract gate
-        run: python scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
+        run: python scripts/verify_r4_contract.py --build-dir "$PRODUCTION_BUILD_DIR" --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
 
       - name: Security release gate
         run: python scripts/check_security_release_gate.py
@@ -264,7 +291,7 @@ jobs:
         run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/release-monitoring-operability-summary.json
 
       - name: Observability release gate
-        run: python scripts/verify_observability_gate.py --build-dir build/release --configuration Release --skip-build
+        run: python scripts/verify_observability_gate.py --build-dir "$PRODUCTION_BUILD_DIR" --configuration Release --skip-build
 
       - name: Control-plane operator gate
         run: python scripts/verify_control_plane_gate.py
@@ -285,12 +312,12 @@ jobs:
         run: python scripts/gates/governance/check_legacy_helper_inventory.py
 
       - name: Release candidate bounded gate
-        run: python scripts/verify_release_candidate.py --build-dir build/release --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
+        run: python scripts/verify_release_candidate.py --build-dir "$PRODUCTION_BUILD_DIR" --configuration Release --baseline-profile release --soak-profile smoke --skip-build --skip-release-baseline --timeout-seconds 120
 
       - name: Collect release baseline
         run: |
           python scripts/collect_release_baseline.py \
-            --build-dir build/release \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
             --perf-repetitions ${{ inputs.perf_repetitions || '3' }} \
             --skip-build \
@@ -301,7 +328,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: release-perf-baseline
+          name: release-perf-baseline-${{ matrix.platform }}-${{ github.run_id }}
           path: |
             runtime/perf/release-baseline/**
             runtime/validation/release-baseline-summary.json
@@ -313,37 +340,49 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${RELEASE_LABEL}-linux-x64"
-          cmake --install "build/release" --prefix "$install_dir"
+          install_dir="${GITHUB_WORKSPACE}/dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
+          cmake --install "$PRODUCTION_BUILD_DIR" --prefix "$install_dir"
           cp README.md CHANGELOG.md LICENSE "$install_dir/"
 
       - name: Archive package
         shell: bash
         run: |
           set -euo pipefail
-          archive_basename="boost-gateway-${RELEASE_LABEL}-linux-x64"
+          archive_basename="boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
           (cd dist && cmake -E tar czfv "../${archive_basename}.tar.gz" --format=gnutar "${archive_basename}")
 
       - name: Verify release archive layout
         shell: bash
         run: |
           python scripts/tools/verify_release_archive.py \
-            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64"
+            --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
 
       - name: Verify package on clean Ubuntu
+        if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
           python scripts/tools/verify_release_package_consumer.py \
-            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
+            --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --image ubuntu:24.04 \
+            --expected-platform "$PRODUCTION_PLATFORM" \
             --configuration Release \
             --candidate-revision "$GITHUB_SHA" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE"
 
+      - name: Verify native macOS package and CMake consumer
+        if: matrix.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          python3 scripts/tools/verify_macos_arm64_package.py \
+            --install-root "dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
+            --candidate-revision "$GITHUB_SHA" \
+            --summary-path runtime/validation/release-package-consumer-summary.json
+
       - name: Prepare clean compiler image
-        if: github.event_name == 'workflow_dispatch' && inputs.prepare_cmake_consumer_image
+        if: matrix.platform != 'macos-arm64' && github.event_name == 'workflow_dispatch' && inputs.prepare_cmake_consumer_image
         shell: bash
         run: |
           set -euo pipefail
@@ -354,20 +393,22 @@ jobs:
             --format '{{.Id}} {{.Architecture}}'
 
       - name: Verify CMake consumer in clean compiler container
+        if: matrix.platform != 'macos-arm64'
         shell: bash
         run: |
           python scripts/tools/verify_release_cmake_consumer.py \
-            --archive "boost-gateway-${RELEASE_LABEL}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_LABEL}-linux-x64" \
+            --archive "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --image boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13 \
-            --candidate-revision "$GITHUB_SHA"
+            --candidate-revision "$GITHUB_SHA" \
+            --target-platform "$PRODUCTION_DOCKER_PLATFORM"
 
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
-          path: dist/boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64
+          path: dist/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}
           format: spdx-json
-          output-file: boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
+          output-file: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
 
@@ -375,8 +416,8 @@ jobs:
         shell: bash
         run: |
           python3 scripts/tools/harden_release_sbom.py enrich \
-            --sbom "boost-gateway-${RELEASE_LABEL}-sbom.spdx.json" \
-            --package-root "dist/boost-gateway-${RELEASE_LABEL}-linux-x64" \
+            --sbom "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
+            --package-root "dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --policy config/release/sbom-policy.json \
             --configuration Release \
@@ -400,14 +441,14 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@v4
         with:
-          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
+          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}.tar.gz
 
       - name: Attest release archive SBOM
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@v4
         with:
-          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
-          sbom-path: boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
+          subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}.tar.gz
+          sbom-path: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
 
       - name: Render release notes
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
@@ -417,10 +458,10 @@ jobs:
       - name: Upload packaged artifact
         uses: actions/upload-artifact@v4
         with:
-          name: boost-gateway-linux-x64
+          name: boost-gateway-${{ matrix.platform }}-${{ github.sha }}
           path: |
-            boost-gateway-${{ env.RELEASE_LABEL }}-linux-x64.tar.gz
-            boost-gateway-${{ env.RELEASE_LABEL }}-sbom.spdx.json
+            boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}.tar.gz
+            boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
             RELEASE_NOTES.md
             runtime/validation/release-package-consumer-summary.json
             runtime/validation/release-cmake-consumer-summary.json
@@ -431,6 +472,7 @@ jobs:
             runtime/validation/raft-mixed-binary-summary.json
             runtime/validation/raft-mixed-binary/**
             runtime/validation/raft-release-evidence-summary.json
+            runtime/validation/production-platform-summary.json
 
       - name: Show sccache stats
         if: always()
@@ -448,12 +490,14 @@ jobs:
         run: |
           mkdir -p runtime/perf/build-times
           now=$(date +%s)
-          iso_now=$(date -Iseconds)
+          iso_now=$(python3 -c 'from datetime import UTC, datetime; print(datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"))')
           duration=$(( now - BUILD_START_EPOCH ))
           cat > runtime/perf/build-times/build-time.json << EOF
           {
             "workflow": "release",
+            "production_platform": "$PRODUCTION_PLATFORM",
             "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}",
             "timestamp": "${iso_now}",
             "build_duration_seconds": ${duration}
           }
@@ -461,7 +505,7 @@ jobs:
 
   publish:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
-    runs-on: ${{ fromJSON(inputs.runner || vars.RELEASE_RUNNER || '["self-hosted","Linux","X64"]') }}
+    runs-on: ubuntu-latest
     needs: package
 
     steps:
@@ -475,6 +519,7 @@ jobs:
       - name: Download packaged artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: boost-gateway-*-${{ github.sha }}
           path: ${{ env.RELEASE_ASSET_DIR }}
 
       - name: Generate checksums
@@ -482,18 +527,20 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -d '' archives < <(find "$RELEASE_ASSET_DIR" -type f -name '*.tar.gz' -print0)
-          test "${#archives[@]}" -eq 1
-          archive="${archives[0]}"
+          test "${#archives[@]}" -eq 3
           mapfile -d '' sboms < <(find "$RELEASE_ASSET_DIR" -type f -name '*-sbom.spdx.json' -print0)
-          test "${#sboms[@]}" -eq 1
-          sbom="${sboms[0]}"
+          test "${#sboms[@]}" -eq 3
+          for platform in linux-x64 linux-arm64 macos-arm64; do
+            find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}.tar.gz" -print -quit | grep -q .
+            find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}-sbom.spdx.json" -print -quit | grep -q .
+          done
           : > "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
-          for asset in "$archive" "$sbom"; do
+          for asset in "${archives[@]}" "${sboms[@]}"; do
             digest="$(sha256sum "$asset" | cut -d ' ' -f 1)"
             printf '%s  %s\n' "$digest" "$(basename "$asset")" >> "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
           done
           mapfile -d '' notes < <(find "$RELEASE_ASSET_DIR" -type f -name RELEASE_NOTES.md -print0)
-          test "${#notes[@]}" -eq 1
+          test "${#notes[@]}" -eq 3
           cp "${notes[0]}" "$RELEASE_ASSET_DIR/RELEASE_NOTES.md"
 
       - name: Publish GitHub release

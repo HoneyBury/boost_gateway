@@ -6,10 +6,19 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native production platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
-        required: true
-        default: '["self-hosted","Linux","X64"]'
+        required: false
+        default: ""
       perf_preset:
         description: "Performance preset. Use smoke to replace the retired per-commit performance check."
         required: true
@@ -34,10 +43,14 @@ permissions:
 
 jobs:
   performance:
-    runs-on: ${{ fromJSON(inputs.runner || vars.PERF_REGRESSION_RUNNER || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || (inputs.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || inputs.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
+    concurrency:
+      group: perf-regression-${{ inputs.platform }}-${{ inputs.runner || 'fixed-runner' }}
+      cancel-in-progress: false
 
     steps:
       - name: Normalize stale Go cache permissions
+        if: inputs.platform != 'macos-arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -50,23 +63,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: ${{ inputs.platform }}
+
       - name: Setup C++ Conan toolchain
         uses: ./.github/actions/setup-cpp-conan
         with:
           bootstrap-args: "--no-remote"
           conan-venv-offline: "true"
           cache-build-type: Release
-          cache-profile: conan/profiles/linux-gcc-x64
-          cache-lockfile: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+          conan-venv: ${{ env.BOOST_GATEWAY_CONAN_VENV }}
+          cache-root: ${{ env.PRODUCTION_CACHE_ROOT }}
+          cache-profile: ${{ env.PRODUCTION_CONAN_PROFILE }}
+          cache-lockfile: ${{ env.PRODUCTION_RELEASE_LOCKFILE }}
 
       - name: Conan install
         shell: bash
         run: |
           set -euo pipefail
           conan install . \
-            --profile:host conan/profiles/linux-gcc-x64 \
-            --profile:build conan/profiles/linux-gcc-x64 \
-            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            --profile:host "$PRODUCTION_CONAN_PROFILE" \
+            --profile:build "$PRODUCTION_CONAN_PROFILE" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
             -o "&:with_grpc=False" \
             -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False" \
@@ -79,7 +99,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sccache --version || sudo apt-get install -y sccache
+          command -v sccache
           echo "SCCACHE_BIN=$(command -v sccache)" >> "$GITHUB_ENV"
           mkdir -p "$SCCACHE_DIR"
           sccache --version
@@ -94,7 +114,7 @@ jobs:
           set -euo pipefail
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
-          cmake --preset release \
+          cmake --preset "$PRODUCTION_CONFIGURE_PRESET" \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-perf-regression/build/Release/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=Release \
@@ -111,7 +131,7 @@ jobs:
         shell: bash
         run: |
           : "${SCCACHE_BIN:?missing sccache path}"
-          grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
+          grep -F -n "$SCCACHE_BIN" "$PRODUCTION_BUILD_DIR/CMakeCache.txt" "$PRODUCTION_BUILD_DIR/build.ninja"
 
       - name: Record build start time
         shell: bash
@@ -120,7 +140,7 @@ jobs:
       - name: Build (Release)
         shell: bash
         run: |
-          cmake --build --preset release --parallel
+          cmake --build "$PRODUCTION_BUILD_DIR" --parallel
           mkdir -p runtime/perf/build-times
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
@@ -136,7 +156,7 @@ jobs:
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
           python scripts/collect_v2_perf_baseline.py \
-            --build-dir build/release \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
             --output-root "$OUTPUT_DIR" \
@@ -212,10 +232,10 @@ jobs:
             echo "## Performance Regression Summary" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Workflow**: ${{ github.workflow }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **OS**: linux" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Platform**: $PRODUCTION_PLATFORM" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Preset**: ${{ inputs.perf_preset || 'baseline' }}" >> "$GITHUB_STEP_SUMMARY"
             echo "- **Repetitions**: ${{ inputs.perf_repetitions || '1' }}" >> "$GITHUB_STEP_SUMMARY"
-            echo "- **Report**: See artifact \`perf-report\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- **Report**: See artifact \`perf-report-$PRODUCTION_PLATFORM\`" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
             if [ -f "$REPORT_DIR/report.md" ]; then
               cat "$REPORT_DIR/report.md" >> "$GITHUB_STEP_SUMMARY"
@@ -226,10 +246,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: perf-report
+          name: perf-report-${{ inputs.platform }}-${{ github.run_id }}
           path: |
             runtime/perf/**
             perf_run.log
+            runtime/validation/production-platform-summary.json
           if-no-files-found: warn
 
       - name: Show sccache stats
@@ -248,12 +269,14 @@ jobs:
         run: |
           mkdir -p runtime/perf/build-times
           now=$(date +%s)
-          iso_now=$(date -Iseconds)
+          iso_now=$(python3 -c 'from datetime import UTC, datetime; print(datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"))')
           duration=$(( now - BUILD_START_EPOCH ))
           cat > runtime/perf/build-times/build-time.json << EOF
           {
             "workflow": "perf-regression",
+            "production_platform": "$PRODUCTION_PLATFORM",
             "runner_os": "${{ runner.os }}",
+            "runner_arch": "${{ runner.arch }}",
             "timestamp": "${iso_now}",
             "build_duration_seconds": ${duration}
           }

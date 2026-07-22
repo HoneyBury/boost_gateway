@@ -1,0 +1,160 @@
+name: Resolve Production Platform
+description: Validate the native host and expose platform-specific build, Conan, Docker, and artifact settings.
+
+inputs:
+  platform:
+    description: Production platform identifier.
+    required: true
+  build-type:
+    description: Native CMake and Conan build type.
+    required: false
+    default: Release
+
+outputs:
+  platform:
+    description: Validated production platform.
+    value: ${{ steps.resolve.outputs.platform }}
+  conan-profile:
+    description: Native Conan profile.
+    value: ${{ steps.resolve.outputs.conan-profile }}
+  release-lockfile:
+    description: Native Release Conan lockfile.
+    value: ${{ steps.resolve.outputs.release-lockfile }}
+  debug-lockfile:
+    description: Native Debug Conan lockfile, empty when unsupported.
+    value: ${{ steps.resolve.outputs.debug-lockfile }}
+  archive-platform:
+    description: Platform suffix used by release assets.
+    value: ${{ steps.resolve.outputs.archive-platform }}
+  docker-platform:
+    description: Native Linux OCI platform, empty for macOS.
+    value: ${{ steps.resolve.outputs.docker-platform }}
+
+runs:
+  using: composite
+  steps:
+    - name: Validate native host and export platform contract
+      id: resolve
+      shell: bash
+      run: |
+        set -euo pipefail
+        platform='${{ inputs.platform }}'
+        build_type='${{ inputs.build-type }}'
+        system="$(uname -s)"
+        machine="$(uname -m)"
+
+        case "$platform" in
+          linux-x64)
+            test "$system" = Linux
+            test "$machine" = x86_64
+            profile=conan/profiles/linux-gcc-x64
+            release_lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+            debug_lockfile=conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock
+            cache_root=/opt/boost-gateway
+            configure_preset=release
+            build_dir=build/release
+            archive_platform=linux-x64
+            docker_platform=linux/amd64
+            ;;
+          linux-arm64)
+            test "$system" = Linux
+            case "$machine" in aarch64|arm64) ;; *) exit 1 ;; esac
+            profile=conan/profiles/linux-gcc-arm64
+            release_lockfile=conan/locks/linux-gcc-arm64-release-nogrpc-nosqlite.lock
+            debug_lockfile=conan/locks/linux-gcc-arm64-debug-nogrpc-nosqlite.lock
+            cache_root=/opt/boost-gateway
+            configure_preset=release
+            build_dir=build/release
+            archive_platform=linux-arm64
+            docker_platform=linux/arm64
+            ;;
+          macos-arm64)
+            test "$system" = Darwin
+            test "$machine" = arm64
+            test -n "${RUNNER_TOOL_CACHE:-}"
+            profile=conan/profiles/macos-apple-clang-arm64
+            release_lockfile=conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+            debug_lockfile=
+            cache_root="$RUNNER_TOOL_CACHE/boost-gateway"
+            configure_preset=macos-arm64-release
+            build_dir=build/macos-arm64-release
+            archive_platform=macos-arm64
+            docker_platform=
+            ;;
+          *)
+            echo "unsupported production platform: $platform" >&2
+            exit 2
+            ;;
+        esac
+
+        case "$build_type" in
+          Release)
+            active_lockfile="$release_lockfile"
+            ;;
+          Debug)
+            test -n "$debug_lockfile"
+            active_lockfile="$debug_lockfile"
+            configure_preset=default
+            build_dir=build/default
+            ;;
+          *)
+            echo "unsupported production build type: $build_type" >&2
+            exit 2
+            ;;
+        esac
+
+        conan_venv="$cache_root/tools/conan-2.8.1-py3.12"
+        mkdir -p runtime/validation
+        {
+          echo "PRODUCTION_PLATFORM=$platform"
+          echo "PRODUCTION_CONAN_PROFILE=$profile"
+          echo "PRODUCTION_RELEASE_LOCKFILE=$release_lockfile"
+          echo "PRODUCTION_DEBUG_LOCKFILE=$debug_lockfile"
+          echo "PRODUCTION_BUILD_TYPE=$build_type"
+          echo "PRODUCTION_CONAN_LOCKFILE=$active_lockfile"
+          echo "PRODUCTION_CACHE_ROOT=$cache_root"
+          echo "PRODUCTION_CONFIGURE_PRESET=$configure_preset"
+          echo "PRODUCTION_BUILD_DIR=$build_dir"
+          echo "PRODUCTION_ARCHIVE_PLATFORM=$archive_platform"
+          echo "PRODUCTION_DOCKER_PLATFORM=$docker_platform"
+          echo "BOOST_GATEWAY_CONAN_VENV=$conan_venv"
+          echo "BOOST_GATEWAY_CONAN_LOCKFILE=$active_lockfile"
+        } >> "$GITHUB_ENV"
+        {
+          echo "platform=$platform"
+          echo "conan-profile=$profile"
+          echo "release-lockfile=$release_lockfile"
+          echo "debug-lockfile=$debug_lockfile"
+          echo "archive-platform=$archive_platform"
+          echo "docker-platform=$docker_platform"
+        } >> "$GITHUB_OUTPUT"
+
+        python3 - "$platform" "$system" "$machine" "$profile" "$active_lockfile" <<'PY'
+        import hashlib
+        import json
+        import sys
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        platform_name, system, machine, profile, active_lockfile = sys.argv[1:]
+        root = Path.cwd()
+        files = [profile, active_lockfile]
+        identities = {}
+        for item in files:
+            path = root / item
+            if not path.is_file():
+                raise SystemExit(f"missing production platform input: {item}")
+            identities[item] = hashlib.sha256(path.read_bytes()).hexdigest()
+        summary = {
+            "summary_version": 1,
+            "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "overall_pass": True,
+            "platform": platform_name,
+            "native_system": system,
+            "native_machine": machine,
+            "inputs": identities,
+        }
+        Path("runtime/validation/production-platform-summary.json").write_text(
+            json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        PY

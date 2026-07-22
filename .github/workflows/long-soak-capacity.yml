@@ -3,27 +3,23 @@ name: Stability / Fixed-Runner Soak & Capacity
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
-  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native production platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","capacity"]'
-        required: true
-        default: '["self-hosted","Linux","X64"]'
-      configure_preset:
-        description: "CMake configure preset"
-        required: true
-        default: "release"
-      build_dir:
-        description: "CMake build directory"
-        required: true
-        default: "build/release"
-      configuration:
-        description: "Build configuration"
-        required: true
-        default: "Release"
+        required: false
+        default: ""
       run_2h_soak:
         description: "Run 2h long soak profile"
         required: true
@@ -103,28 +99,21 @@ on:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
         default: "3"
-      conan_profile:
-        description: "Repository Conan profile path for fixed-runner reproducibility notes"
-        required: true
-        default: "conan/profiles/linux-gcc-x64"
-      conan_lockfile:
-        description: "Optional Conan lockfile path relative to repo root for reproducible fixed-runner builds"
-        required: true
-        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 permissions:
   contents: read
 
 jobs:
   long-soak-capacity:
-    runs-on: ${{ fromJSON(inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || '["self-hosted","Linux","X64"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || (inputs.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || inputs.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
     timeout-minutes: 1440
     concurrency:
-      group: long-soak-capacity-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'self-hosted-linux-x64' }}
+      group: long-soak-capacity-${{ inputs.platform }}-${{ inputs.runner || vars.LONG_SOAK_CAPACITY_RUNNER || 'fixed-runner' }}
       cancel-in-progress: false
 
     steps:
       - name: Normalize stale Go cache permissions
+        if: inputs.platform != 'macos-arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -136,6 +125,20 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: ${{ inputs.platform }}
+
+      - name: Reject Linux-only controls on macOS
+        if: inputs.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${{ inputs.cpu_set }}"
+          test -z "${{ inputs.loadgen_cpu_set }}"
+          test "${{ inputs.leaderboard_redis_comparison }}" != true
 
       - name: Setup Ninja
         if: runner.os != 'Linux' || runner.arch != 'ARM64'
@@ -155,7 +158,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/tools/ensure_conan_venv.py \
-            --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
             --github-env "$GITHUB_ENV" \
@@ -166,9 +169,10 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/tools/resolve_runner_cache.py \
-            --build-type "${{ inputs.configuration || 'Release' }}" \
-            --profile "${{ inputs.conan_profile }}" \
-            --lockfile "${{ inputs.conan_lockfile }}" \
+            --build-type Release \
+            --profile "$PRODUCTION_CONAN_PROFILE" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
+            --cache-root "$PRODUCTION_CACHE_ROOT" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/runner-cache-identity.json
 
@@ -178,7 +182,7 @@ jobs:
           set -euo pipefail
           python scripts/check_fixed_runner_environment.py \
             --profile long-soak-capacity \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
 
       - name: Conan lockfile install preflight
@@ -186,11 +190,7 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=never --no-remote -s build_type=${{ inputs.configuration || 'Release' }} --profile:host "${{ inputs.conan_profile }}" --profile:build "${{ inputs.conan_profile }}" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
-          if [ -n "${{ inputs.conan_lockfile }}" ]; then
-            test -f "${{ inputs.conan_lockfile }}"
-            args+=(--lockfile "${{ inputs.conan_lockfile }}")
-          fi
+          args=(conan install . --output-folder=build/conan-long-soak-capacity --build=never --no-remote -s build_type=Release --profile:host "$PRODUCTION_CONAN_PROFILE" --profile:build "$PRODUCTION_CONAN_PROFILE" --lockfile "$PRODUCTION_RELEASE_LOCKFILE" -o "&:with_grpc=False" -o "&:with_raft_protobuf=True" -o "&:with_sqlite=False")
           "${args[@]}"
 
       - name: Configure Conan validation build
@@ -200,8 +200,8 @@ jobs:
           cmake -S . -B build/conan-long-soak-capacity-cmake -G Ninja \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
             -DENABLE_TESTING=OFF \
-            -DCMAKE_BUILD_TYPE=${{ inputs.configuration || 'Release' }} \
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/Release/generators/conan_toolchain.cmake
 
       - name: Build Conan validation target
         run: cmake --build build/conan-long-soak-capacity-cmake --parallel --target project_v2
@@ -211,14 +211,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/validation
-          cmake --preset "${{ inputs.configure_preset || 'release' }}" \
+          cmake --preset "$PRODUCTION_CONFIGURE_PRESET" \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-long-soak-capacity/build/Release/generators/conan_toolchain.cmake \
             2>&1 | tee runtime/validation/long-soak-configure.log
           grep -F "Using Conan-provided dependency graph" runtime/validation/long-soak-configure.log
 
       - name: Build validation targets
-        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }}
+        run: cmake --build "$PRODUCTION_BUILD_DIR" --config Release
 
       - name: Long soak and capacity evidence
         shell: bash
@@ -233,8 +233,8 @@ jobs:
           trap cleanup_redis EXIT
           args=(
             scripts/run_long_soak_capacity.py
-            --build-dir "${{ inputs.build_dir || 'build/release' }}"
-            --configuration "${{ inputs.configuration || 'Release' }}"
+            --build-dir "$PRODUCTION_BUILD_DIR"
+            --configuration Release
             --skip-build
             --perf-repetitions "${{ inputs.perf_repetitions || '3' }}"
             --business-flow-clients "${{ inputs.business_flow_clients || '3' }}"
@@ -335,8 +335,8 @@ jobs:
           set -euo pipefail
           args=(
             scripts/verify_fixed_runner_release_capacity.py
-            --build-dir "${{ inputs.build_dir || 'build/release' }}"
-            --configuration "${{ inputs.configuration || 'Release' }}"
+            --build-dir "$PRODUCTION_BUILD_DIR"
+            --configuration Release
             --release-summary runtime/validation/capacity-baseline-summary.json
             --capacity-summary runtime/perf/fixed-runner-capacity/summary.json
             --business-capacity-summary runtime/perf/fixed-runner-business-capacity/summary.json
@@ -404,7 +404,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: long-soak-capacity-${{ github.run_id }}
+          name: long-soak-capacity-${{ inputs.platform }}-${{ github.run_id }}
           path: |
             runtime/validation/long-soak-capacity-preflight-summary.json
             runtime/validation/long-soak-capacity-summary.json
@@ -416,6 +416,7 @@ jobs:
             runtime/validation/saturation-baseline-summary.json
             runtime/validation/fixed-runner-release-capacity-summary.json
             runtime/validation/leaderboard-redis-image.json
+            runtime/validation/production-platform-summary.json
             runtime/perf/fixed-runner-capacity/**
             runtime/perf/fixed-runner-business-capacity/**
             runtime/perf/fixed-runner-saturation/**
