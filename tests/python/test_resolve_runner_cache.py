@@ -96,6 +96,10 @@ class ResolveRunnerCacheTests(unittest.TestCase):
         ):
             self.assertEqual(CACHE_TOOL.read_os_identity(), ("macos", "26.5.2"))
 
+    def test_macos_sccache_uses_orbstack_safe_port(self) -> None:
+        self.assertEqual(CACHE_TOOL.sccache_server_port("macos"), "4227")
+        self.assertIsNone(CACHE_TOOL.sccache_server_port("ubuntu"))
+
     def test_macos_platform_namespace_uses_actual_apple_clang_version(self) -> None:
         compiler = CACHE_TOOL.CompilerIdentity(
             "apple-clang", "17", "/usr/bin/clang", "21.0.0"

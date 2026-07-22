@@ -394,6 +394,12 @@ $RUNNER_TOOL_CACHE/boost-gateway/conan/macos-<release>-apple-clang<actual>-arm64
 lockfile 和 graph 输入一起纳入身份。profile 中的 `compiler.version=17` 是 Conan
 兼容设置；本机 Apple Clang 21 仍必须单独记录，不能只用 profile 值命名缓存。
 
+Mac runner 还必须预装原生 `sccache`。OrbStack 在宿主占用 sccache 默认的
+`127.0.0.1:4226`，因此缓存解析器会在 macOS 的 `$GITHUB_ENV` 中固定导出
+`SCCACHE_SERVER_PORT=4227`；不得删除该隔离或回落默认端口。准入时执行
+`brew install sccache`，并用 `SCCACHE_SERVER_PORT=4227 sccache --show-stats` 验证
+客户端、server 与持久 `SCCACHE_DIR` 可用。
+
 当前 `HoneyBurydeMacBook-Pro` 的准入事实为 macOS 26.5.2、Apple Clang 21.0.0、
 ARM64、Conan 2.8.1，namespace
 `macos-26.5.2-apple-clang21.0.0-arm64-release/conan-2.8.1-graph-27de4eada077b868e6b4`。
@@ -426,6 +432,9 @@ python3.12 scripts/tools/resolve_runner_cache.py \
   --summary-path runtime/validation/macos-runner-cache-summary.json
 
 set -a; . /tmp/boost-gateway-macos-cache.env; set +a
+test "$SCCACHE_SERVER_PORT" = 4227
+command -v sccache
+sccache --show-stats
 python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
 python3 scripts/tools/verify_conan_offline_install.py \
   --profile conan/profiles/macos-apple-clang-arm64 \

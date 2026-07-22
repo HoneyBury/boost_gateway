@@ -51,7 +51,7 @@ R5 机器专属复验必须使用目标机器的 unique custom label；不能用
 
 | Runner | 原生工具链 | Persistent Conan | Docker/R5 |
 |---|---|---|---|
-| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过；独立 SDK package venv 固定 setuptools 83.0.0/wheel 0.47.0 | run `29927622379` 完成原生 R5/package/dSYM，run `29925779628` 完成 JWKS，run `29928355843` 完成 osx-arm64 SDK |
+| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、sccache 0.16.0、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过；独立 SDK package venv 固定 setuptools 83.0.0/wheel 0.47.0；sccache 使用 OrbStack-safe `127.0.0.1:4227` | run `29927622379` 完成原生 R5/package/dSYM，run `29925779628` 完成 JWKS，run `29928355843` 完成 osx-arm64 SDK |
 
 Mac 原生生产候选与 Linux Docker R5 是两条证据线。`macos-arm64.yml` 使用 Mach-O
 server 进程执行 gateway restart 前后完整 SDK flow；Mac-hosted Linux ARM64 runner

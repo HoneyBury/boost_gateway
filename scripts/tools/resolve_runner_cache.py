@@ -24,6 +24,7 @@ from typing import NamedTuple
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CACHE_ROOT = Path("/opt/boost-gateway")
+MACOS_SCCACHE_SERVER_PORT = "4227"
 
 
 class CompilerIdentity(NamedTuple):
@@ -133,6 +134,10 @@ def normalized_architecture() -> str:
     if not re.fullmatch(r"[a-z0-9_+-]+", arch):
         raise ValueError(f"unsafe architecture: {arch!r}")
     return arch
+
+
+def sccache_server_port(os_id: str) -> str | None:
+    return MACOS_SCCACHE_SERVER_PORT if os_id == "macos" else None
 
 
 def build_platform_namespace(
@@ -265,16 +270,20 @@ def main() -> int:
         "conan_remote_environment_sha256": remote_env_digest,
         "conan_home": str(conan_home),
         "sccache_dir": str(sccache_dir),
+        "sccache_server_port": sccache_server_port(os_id),
     }
     if args.github_env:
         args.github_env.parent.mkdir(parents=True, exist_ok=True)
         with args.github_env.open("a", encoding="utf-8") as handle:
-            for key, value in {
+            environment = {
                 "CONAN_HOME": str(conan_home),
                 "SCCACHE_DIR": str(sccache_dir),
                 "BOOST_GATEWAY_CONAN_CACHE_KEY": conan_key,
                 "BOOST_GATEWAY_RUNNER_CACHE_PLATFORM": platform_namespace,
-            }.items():
+            }
+            if port := sccache_server_port(os_id):
+                environment["SCCACHE_SERVER_PORT"] = port
+            for key, value in environment.items():
                 handle.write(f"{key}={value}\n")
     if args.summary_path:
         summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
