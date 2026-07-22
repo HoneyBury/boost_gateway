@@ -98,6 +98,30 @@ class PerfCpuAffinityTest(unittest.TestCase):
         )
         self.assertTrue(result["quiesced"])
         self.assertEqual(result["samples"], 2)
+        self.assertEqual(result["aggregate_cpu_delta_seconds"], 0.0)
+        self.assertEqual(result["idle_cpu_budget_percent"], 5.0)
+
+    @patch(
+        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        side_effect=[{"cpu_seconds": 12.5}, {"cpu_seconds": 12.51}],
+    )
+    @patch(
+        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        return_value={"backend_metrics": {"battle": {"total_requests": 10}}},
+    )
+    def test_service_quiescence_accepts_quantized_idle_cpu_tick(
+        self,
+        _fetch_json,
+        _process_snapshot,
+    ) -> None:
+        result = wait_for_service_quiescence(
+            [SimpleNamespace(name="gateway", pid=123)],
+            "http://127.0.0.1/diagnostics",
+            timeout_seconds=0.1,
+            interval_seconds=0.0,
+        )
+        self.assertTrue(result["quiesced"])
+        self.assertAlmostEqual(result["aggregate_cpu_delta_seconds"], 0.01)
 
     def test_service_resource_delta_uses_adjacent_snapshots(self) -> None:
         first = {"cpu_seconds": 10.0, "working_set_mb": 100.0, "handles": 5, "threads": 2}

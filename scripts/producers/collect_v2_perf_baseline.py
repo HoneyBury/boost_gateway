@@ -681,11 +681,14 @@ def wait_for_service_quiescence(
     *,
     timeout_seconds: float = 5.0,
     interval_seconds: float = 0.1,
+    idle_cpu_fraction: float = 0.05,
 ) -> dict[str, Any]:
-    """Wait until backend routing and managed-process CPU counters stop changing."""
+    """Wait until routing is stable and aggregate background CPU is below budget."""
     deadline = time.monotonic() + timeout_seconds
-    previous: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    previous: tuple[int, tuple[tuple[str, float], ...], float] | None = None
     latest: tuple[int, tuple[tuple[str, float], ...]] | None = None
+    latest_cpu_delta = 0.0
+    latest_cpu_budget = 0.0
     samples = 0
     while time.monotonic() < deadline:
         diagnostics = fetch_json(diagnostics_url)
@@ -697,19 +700,35 @@ def wait_for_service_quiescence(
             for process in managed
         ))
         latest = (total_backend_requests(diagnostics), cpu_state)
+        sampled_at = time.monotonic()
         samples += 1
-        if latest == previous:
-            return {
-                "quiesced": True,
-                "samples": samples,
-                "backend_routed_requests": latest[0],
-                "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
-            }
-        previous = latest
+        if previous is not None and latest[0] == previous[0]:
+            previous_cpu = dict(previous[1])
+            current_cpu = dict(cpu_state)
+            if current_cpu.keys() == previous_cpu.keys():
+                elapsed = max(sampled_at - previous[2], interval_seconds, 0.001)
+                latest_cpu_delta = sum(
+                    max(0.0, current_cpu[name] - previous_cpu[name])
+                    for name in current_cpu
+                )
+                latest_cpu_budget = max(0.01, elapsed * idle_cpu_fraction)
+                if latest_cpu_delta <= latest_cpu_budget:
+                    return {
+                        "quiesced": True,
+                        "samples": samples,
+                        "backend_routed_requests": latest[0],
+                        "aggregate_cpu_delta_seconds": round(latest_cpu_delta, 6),
+                        "aggregate_cpu_budget_seconds": round(latest_cpu_budget, 6),
+                        "aggregate_cpu_percent": round(latest_cpu_delta / elapsed * 100.0, 3),
+                        "idle_cpu_budget_percent": round(idle_cpu_fraction * 100.0, 3),
+                        "wait_seconds": round(timeout_seconds - max(0.0, deadline - time.monotonic()), 6),
+                    }
+        previous = (latest[0], cpu_state, sampled_at)
         time.sleep(interval_seconds)
     raise RuntimeError(
         "managed service topology did not quiesce after load generation: "
-        f"last_state={latest}"
+        f"last_state={latest}, aggregate_cpu_delta_seconds={latest_cpu_delta:.6f}, "
+        f"aggregate_cpu_budget_seconds={latest_cpu_budget:.6f}"
     )
 
 
