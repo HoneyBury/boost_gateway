@@ -3,27 +3,22 @@ name: Production / Preproduction Evidence
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
-  BOOST_GATEWAY_CONAN_LOCKFILE: ${{ inputs.conan_lockfile || 'conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock' }}
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native Linux production platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
-        required: true
-        default: '["self-hosted","Linux","X64","preprod-r5"]'
-      configure_preset:
-        description: "CMake configure preset"
-        required: true
-        default: "release"
-      build_dir:
-        description: "CMake build directory"
-        required: true
-        default: "build/release"
-      configuration:
-        description: "Build configuration"
-        required: true
-        default: "Release"
+        required: false
+        default: ""
       build_parallelism:
         description: "Maximum concurrent C++ build jobs; use 2 on 8GiB/no-swap runners"
         required: true
@@ -67,14 +62,6 @@ on:
         description: "Attempts for each R5 registry pull"
         required: true
         default: "3"
-      docker_target_platform:
-        description: "Linux OCI platform for the R5 image set"
-        required: true
-        default: "linux/amd64"
-        type: choice
-        options:
-          - linux/amd64
-          - linux/arm64
       tls_runs:
         description: "Number of R6 TLS readiness passes"
         required: true
@@ -83,24 +70,16 @@ on:
         description: "Timeout for each R6 TLS readiness pass"
         required: true
         default: "240"
-      conan_profile:
-        description: "Repository Conan profile path"
-        required: true
-        default: "conan/profiles/linux-gcc-x64"
-      conan_lockfile:
-        description: "Conan lockfile path relative to repo root"
-        required: true
-        default: "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
 
 permissions:
   contents: read
 
 jobs:
   preprod-evidence:
-    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64","preprod-r5"]') }}
+    runs-on: ${{ fromJSON(inputs.runner || (inputs.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]')) }}
     timeout-minutes: 180
     concurrency:
-      group: preprod-evidence-${{ inputs.runner || 'preprod-r5' }}
+      group: preprod-evidence-${{ inputs.platform }}-${{ inputs.runner || 'fixed-runner' }}
       cancel-in-progress: false
 
     steps:
@@ -116,6 +95,12 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: ${{ inputs.platform }}
+          build-type: Release
 
       - name: Setup Ninja
         if: runner.os != 'Linux' || runner.arch != 'ARM64'
@@ -135,23 +120,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          conan_venv=/opt/boost-gateway/tools/conan-2.8.1-py3.12
           python scripts/tools/ensure_conan_venv.py \
-            --venv "$conan_venv" \
+            --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
-          "$conan_venv/bin/conan" --version
+          "$BOOST_GATEWAY_CONAN_VENV/bin/conan" --version
 
       - name: Resolve persistent runner caches
         shell: bash
         run: |
           set -euo pipefail
           python scripts/tools/resolve_runner_cache.py \
-            --build-type "${{ inputs.configuration || 'Release' }}" \
-            --profile "${{ inputs.conan_profile }}" \
-            --lockfile "${{ inputs.conan_lockfile }}" \
+            --build-type Release \
+            --profile "$PRODUCTION_CONAN_PROFILE" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
+            --cache-root "$PRODUCTION_CACHE_ROOT" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/runner-cache-identity.json
 
@@ -173,7 +158,7 @@ jobs:
           set -euo pipefail
           python scripts/check_fixed_runner_environment.py \
             --profile production-evidence \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path "${{ github.workspace }}/runtime/validation/preprod-evidence-preflight-summary.json"
 
       - name: Conan lockfile install
@@ -185,10 +170,10 @@ jobs:
             --output-folder=build/conan-preprod-evidence \
             --build=never \
             --no-remote \
-            -s build_type="${{ inputs.configuration || 'Release' }}" \
-            --profile:host "${{ inputs.conan_profile }}" \
-            --profile:build "${{ inputs.conan_profile }}" \
-            --lockfile "${{ inputs.conan_lockfile }}" \
+            -s build_type=Release \
+            --profile:host "$PRODUCTION_CONAN_PROFILE" \
+            --profile:build "$PRODUCTION_CONAN_PROFILE" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
             -o "&:with_grpc=False" \
             -o "&:with_raft_protobuf=True" \
             -o "&:with_sqlite=False"
@@ -198,14 +183,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime/validation
-          cmake --preset "${{ inputs.configure_preset || 'release' }}" \
+          cmake --preset "$PRODUCTION_CONFIGURE_PRESET" \
             -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_TOOLCHAIN_FILE="build/conan-preprod-evidence/build/${{ inputs.configuration || 'Release' }}/generators/conan_toolchain.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-preprod-evidence/build/Release/generators/conan_toolchain.cmake \
             2>&1 | tee runtime/validation/preprod-evidence-configure.log
           grep -F "Using Conan-provided dependency graph" runtime/validation/preprod-evidence-configure.log
 
       - name: Build validation targets
-        run: cmake --build ${{ inputs.build_dir || 'build/release' }} --config ${{ inputs.configuration || 'Release' }} --parallel ${{ inputs.build_parallelism || '2' }}
+        run: cmake --build "$PRODUCTION_BUILD_DIR" --config Release --parallel ${{ inputs.build_parallelism || '2' }}
 
       - name: Stage and build candidate Docker images
         shell: bash
@@ -222,10 +207,10 @@ jobs:
             docker image inspect ubuntu:24.04 >/dev/null
           fi
           python scripts/tools/prepare_docker_runtime_context.py \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
-            --configuration "${{ inputs.configuration || 'Release' }}" \
-            --lockfile "${{ inputs.conan_lockfile }}"
-          DOCKER_DEFAULT_PLATFORM="${{ inputs.docker_target_platform || 'linux/amd64' }}" docker compose \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
+            --configuration Release \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE"
+          DOCKER_DEFAULT_PLATFORM="$PRODUCTION_DOCKER_PLATFORM" docker compose \
             -f env/docker/docker-compose.yml \
             build --pull=false
 
@@ -234,13 +219,13 @@ jobs:
         run: |
           set -euo pipefail
           args=(python scripts/verify_preprod_recovery_drill.py \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
-            --configuration "${{ inputs.configuration || 'Release' }}" \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
+            --configuration Release \
             --mode "${{ inputs.recovery_mode }}" \
             --step-timeout-seconds "${{ inputs.recovery_timeout_seconds }}" \
             --docker-pull-policy "${{ inputs.docker_pull_policy || 'never' }}" \
             --docker-pull-attempts "${{ inputs.docker_pull_attempts || '3' }}" \
-            --docker-target-platform "${{ inputs.docker_target_platform || 'linux/amd64' }}" \
+            --docker-target-platform "$PRODUCTION_DOCKER_PLATFORM" \
             --candidate-revision "$BOOST_GATEWAY_CANDIDATE_REVISION" \
             --image-preflight-summary-path runtime/validation/r5-docker-image-preflight-summary.json \
             --summary-path runtime/validation/preprod-recovery-drill-summary.json)
@@ -260,8 +245,8 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/verify_tls_preprod_multi_run.py \
-            --build-dir "${{ inputs.build_dir || 'build/release' }}" \
-            --configuration "${{ inputs.configuration || 'Release' }}" \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
+            --configuration Release \
             --skip-build \
             --runs "${{ inputs.tls_runs }}" \
             --step-timeout-seconds "${{ inputs.tls_timeout_seconds }}" \
@@ -283,10 +268,11 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: preprod-evidence-${{ github.run_id }}
+          name: preprod-evidence-${{ inputs.platform }}-${{ github.run_id }}
           path: |
             runtime/validation/preprod-evidence-*-summary.json
             runtime/validation/runner-cache-identity.json
+            runtime/validation/production-platform-summary.json
             runtime/validation/preprod-recovery-drill-summary.json
             runtime/validation/r5-docker-image-preflight-summary.json
             runtime/validation/r5-*-summary.json

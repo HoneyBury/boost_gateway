@@ -3,10 +3,20 @@ name: Production / Readiness Decision
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
+  PRODUCTION_PLATFORM: ${{ inputs.platform }}
 
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Production evidence platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: true
@@ -69,19 +79,25 @@ jobs:
           mkdir -p runtime/validation runtime/readiness-import/production-candidate runtime/readiness-import/long-soak runtime/readiness-import/capacity runtime/readiness-import/preprod
           gh run download "$PRODUCTION_CANDIDATE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "production-candidate-evidence-$PRODUCTION_CANDIDATE_RUN_ID" \
+            --name "production-candidate-evidence-${PRODUCTION_PLATFORM}-$PRODUCTION_CANDIDATE_RUN_ID" \
             --dir runtime/readiness-import/production-candidate
           gh run download "$LONG_SOAK_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "long-soak-capacity-$LONG_SOAK_RUN_ID" \
+            --name "long-soak-capacity-${PRODUCTION_PLATFORM}-$LONG_SOAK_RUN_ID" \
             --dir runtime/readiness-import/long-soak
           gh run download "$CAPACITY_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "long-soak-capacity-$CAPACITY_RUN_ID" \
+            --name "long-soak-capacity-${PRODUCTION_PLATFORM}-$CAPACITY_RUN_ID" \
             --dir runtime/readiness-import/capacity
+          if [ "$PRODUCTION_PLATFORM" = macos-arm64 ]; then
+            preprod_sha="$(gh run view "$PREPROD_EVIDENCE_RUN_ID" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)"
+            preprod_artifact="macos-arm64-$preprod_sha"
+          else
+            preprod_artifact="preprod-evidence-${PRODUCTION_PLATFORM}-$PREPROD_EVIDENCE_RUN_ID"
+          fi
           gh run download "$PREPROD_EVIDENCE_RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
-            --name "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID" \
+            --name "$preprod_artifact" \
             --dir runtime/readiness-import/preprod
           find runtime/readiness-import -type f \( -name '*.json' -o -name '*.md' \) -print0 |
             while IFS= read -r -d '' path; do
@@ -96,6 +112,31 @@ jobs:
           test -f runtime/validation/fixed-runner-release-capacity-summary.json
           test -f runtime/validation/preprod-recovery-drill-summary.json
           test -f runtime/validation/tls-preprod-multi-run-summary.json
+          python3 - "$PRODUCTION_PLATFORM" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          expected = sys.argv[1]
+          sources = {}
+          for name in ("production-candidate", "long-soak", "capacity", "preprod"):
+              matches = list(Path(f"runtime/readiness-import/{name}").rglob("production-platform-summary.json"))
+              if len(matches) != 1:
+                  raise SystemExit(f"expected one platform summary for {name}, found {len(matches)}")
+              data = json.loads(matches[0].read_text(encoding="utf-8"))
+              if data.get("overall_pass") is not True or data.get("platform") != expected:
+                  raise SystemExit(f"platform evidence mismatch: {matches[0]}")
+              sources[name] = {"path": str(matches[0]), "platform": data["platform"], "inputs": data.get("inputs", {})}
+          summary = {
+              "summary_version": 1,
+              "overall_pass": True,
+              "production_platform": expected,
+              "sources": sources,
+          }
+          Path("runtime/validation/readiness-platform-evidence-summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+          )
+          PY
 
       - name: R2 bounded manifest
         id: r2-bounded
@@ -174,6 +215,7 @@ jobs:
               "expected_candidate_revision": expected_revision,
               "candidate_revision_matches_expected": revision_matches,
               "decision": decision is True and revision_matches,
+              "production_platform": os.environ["PRODUCTION_PLATFORM"],
               "failed_step": summary.get("failed_step", ""),
           }, sort_keys=True))
           raise SystemExit(0 if decision is True and revision_matches else 1)
@@ -183,7 +225,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: production-readiness-${{ github.run_id }}
+          name: production-readiness-${{ inputs.platform }}-${{ github.run_id }}
           path: |
             runtime/validation/r0-*-summary.json
             runtime/validation/long-soak-*-summary.json
@@ -192,5 +234,6 @@ jobs:
             runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json
             runtime/validation/r3-production-readiness-report.md
             runtime/validation/r3-production-readiness-report-summary.json
+            runtime/validation/readiness-platform-evidence-summary.json
           retention-days: 90
           if-no-files-found: warn

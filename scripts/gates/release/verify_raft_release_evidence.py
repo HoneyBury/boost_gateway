@@ -190,14 +190,33 @@ def main() -> int:
             {"protobuf", "abseil"} <= sbom_dependencies and "grpc" not in sbom_dependencies,
             "SBOM contains protobuf and abseil but not grpc",
         )
-        clean = summaries["package_consumer"].get("clean_environment", {})
+        package_consumer = summaries["package_consumer"]
+        production_platform = package_consumer.get("production_platform", "linux-x64")
+        clean = package_consumer.get("clean_environment", {})
+        native_platform = package_consumer.get("platform", {})
+        c_abi = package_consumer.get("c_abi", {})
+        cpp_consumer = package_consumer.get("cpp_consumer", {})
+        linux_isolated = (
+            production_platform in {"linux-x64", "linux-arm64"}
+            and isinstance(clean, dict)
+            and clean.get("network") == "none"
+            and clean.get("pull_policy") == "never"
+        )
+        macos_isolated = (
+            production_platform == "macos-arm64"
+            and isinstance(native_platform, dict)
+            and native_platform.get("system") == "Darwin"
+            and native_platform.get("machine") == "arm64"
+            and isinstance(c_abi, dict)
+            and c_abi.get("loaded") is True
+            and isinstance(cpp_consumer, dict)
+            and cpp_consumer.get("cmake_find_package") is True
+        )
         add(
             checks,
-            "package-consumer:offline",
-            isinstance(clean, dict)
-            and clean.get("network") == "none"
-            and clean.get("pull_policy") == "never",
-            "clean consumer must use network=none and pull=never",
+            "package-consumer:platform-isolation",
+            linux_isolated or macos_isolated,
+            "Linux uses an offline native OCI consumer; macOS uses native Mach-O/C ABI/CMake consumers",
         )
 
         mixed = summaries["mixed_binary"]

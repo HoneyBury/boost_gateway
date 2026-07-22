@@ -34,6 +34,35 @@ REQUIRED_BINARIES = (
     "example_hello_world",
 )
 
+PLATFORM_CONTRACTS = {
+    "linux-x64": {
+        "file_architecture": "x86-64",
+        "docker_platform": "linux/amd64",
+        "image_architecture": "amd64",
+    },
+    "linux-arm64": {
+        "file_architecture": "aarch64",
+        "docker_platform": "linux/arm64",
+        "image_architecture": "arm64",
+    },
+}
+
+
+def validate_elf_identity(identity: str, expected_platform: str) -> None:
+    expected_architecture = PLATFORM_CONTRACTS[expected_platform]["file_architecture"]
+    if expected_architecture not in identity:
+        raise RuntimeError(
+            f"expected {expected_platform} ELF architecture, observed {identity}"
+        )
+
+
+def validate_image_identity(image_identity: list[str], expected_platform: str) -> None:
+    expected_architecture = PLATFORM_CONTRACTS[expected_platform]["image_architecture"]
+    if len(image_identity) != 2 or image_identity[1] != expected_architecture:
+        raise RuntimeError(
+            f"container image does not match {expected_platform}: {' '.join(image_identity)}"
+        )
+
 
 def sha256(path: Path) -> str:
     digest = hashlib.sha256()
@@ -53,7 +82,7 @@ def extract_archive(archive: Path, destination: Path) -> None:
         bundle.extractall(destination, filter="data")
 
 
-def inspect_installed_binaries(package_root: Path) -> list[dict[str, object]]:
+def inspect_installed_binaries(package_root: Path, expected_platform: str) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     for name in REQUIRED_BINARIES:
         binary = package_root / "bin" / name
@@ -63,27 +92,42 @@ def inspect_installed_binaries(package_root: Path) -> list[dict[str, object]]:
             magic = stream.read(4)
         if magic != b"\x7fELF":
             raise RuntimeError(f"bin/{name}: expected an ELF executable")
+        identity = subprocess.run(
+            ["file", str(binary)], check=True, text=True, capture_output=True
+        ).stdout.strip()
+        try:
+            validate_elf_identity(identity, expected_platform)
+        except RuntimeError as exc:
+            raise RuntimeError(f"bin/{name}: {exc}") from exc
         if not binary.stat().st_mode & 0o111:
             raise RuntimeError(f"bin/{name}: executable bit is not set")
-        entries.append({"name": name, "sha256": sha256(binary)})
+        entries.append({"name": name, "sha256": sha256(binary), "file": identity})
     return entries
 
 
-def run_clean_ubuntu_validation(package_root: Path, image: str) -> dict[str, object]:
+def run_clean_ubuntu_validation(
+    package_root: Path, image: str, expected_platform: str
+) -> dict[str, object]:
     if shutil.which("docker") is None:
         raise RuntimeError("docker is required for clean-environment package validation")
-    image_id = subprocess.run(
-        ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+    image_identity = subprocess.run(
+        ["docker", "image", "inspect", "--format", "{{.Id}} {{.Architecture}}", image],
         check=True,
         text=True,
         capture_output=True,
-    ).stdout.strip()
+    ).stdout.strip().split()
+    validate_image_identity(image_identity, expected_platform)
+    image_id = image_identity[0]
+    docker_platform = PLATFORM_CONTRACTS[expected_platform]["docker_platform"]
     mount = f"{package_root.resolve()}:/opt/boost-gateway:ro"
     libraries: dict[str, list[str]] = {}
     for name in REQUIRED_BINARIES:
         binary = f"/opt/boost-gateway/bin/{name}"
         result = subprocess.run(
-            ["docker", "run", "--rm", "--pull=never", "--network=none", "-v", mount, image, "ldd", binary],
+            [
+                "docker", "run", "--rm", "--pull=never", "--network=none",
+                "--platform", docker_platform, "-v", mount, image, "ldd", binary,
+            ],
             check=True,
             text=True,
             capture_output=True,
@@ -96,6 +140,8 @@ def run_clean_ubuntu_validation(package_root: Path, image: str) -> dict[str, obj
             "--rm",
             "--pull=never",
             "--network=none",
+            "--platform",
+            docker_platform,
             "-v",
             mount,
             image,
@@ -108,6 +154,7 @@ def run_clean_ubuntu_validation(package_root: Path, image: str) -> dict[str, obj
     return {
         "image": image,
         "image_id": image_id,
+        "target_platform": docker_platform,
         "network": "none",
         "pull_policy": "never",
         "runtime_libraries": libraries,
@@ -115,7 +162,9 @@ def run_clean_ubuntu_validation(package_root: Path, image: str) -> dict[str, obj
     }
 
 
-def verify_package(archive: Path, expected_root: str, image: str) -> dict[str, object]:
+def verify_package(
+    archive: Path, expected_root: str, image: str, expected_platform: str
+) -> dict[str, object]:
     failures = verify_archive(archive, expected_root)
     if failures:
         raise RuntimeError("; ".join(failures))
@@ -123,13 +172,14 @@ def verify_package(archive: Path, expected_root: str, image: str) -> dict[str, o
         extraction_root = Path(directory)
         extract_archive(archive, extraction_root)
         package_root = extraction_root / expected_root
-        binaries = inspect_installed_binaries(package_root)
-        container = run_clean_ubuntu_validation(package_root, image)
+        binaries = inspect_installed_binaries(package_root, expected_platform)
+        container = run_clean_ubuntu_validation(package_root, image, expected_platform)
     return {
         "summary_version": 2,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "overall_pass": True,
         "passed": True,
+        "production_platform": expected_platform,
         "archive": {"name": archive.name, "sha256": sha256(archive), "root": expected_root},
         "binaries": binaries,
         "clean_environment": container,
@@ -141,6 +191,9 @@ def main() -> int:
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--expected-root", required=True)
     parser.add_argument("--image", default="ubuntu:24.04")
+    parser.add_argument(
+        "--expected-platform", choices=sorted(PLATFORM_CONTRACTS), default="linux-x64"
+    )
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--candidate-revision")
     parser.add_argument("--lockfile", type=Path)
@@ -151,7 +204,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     try:
-        summary = verify_package(args.archive.resolve(), args.expected_root, args.image)
+        summary = verify_package(
+            args.archive.resolve(), args.expected_root, args.image, args.expected_platform
+        )
     except (OSError, RuntimeError, subprocess.CalledProcessError) as exc:
         print(f"release package clean-environment validation: FAIL ({exc})")
         return 1

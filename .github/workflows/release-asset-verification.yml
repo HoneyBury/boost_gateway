@@ -8,6 +8,15 @@ env:
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Published production platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       tag:
         description: "Published release tag"
         required: true
@@ -17,8 +26,8 @@ on:
         required: true
       runner:
         description: "Runner JSON string or array"
-        required: true
-        default: '["self-hosted","Linux","X64"]'
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -26,7 +35,7 @@ permissions:
 
 jobs:
   verify-published-assets:
-    runs-on: ${{ fromJSON(inputs.runner) }}
+    runs-on: ${{ fromJSON(inputs.runner || (inputs.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || inputs.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
     timeout-minutes: 30
 
     steps:
@@ -38,6 +47,7 @@ jobs:
           [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
 
       - name: Normalize stale Go cache permissions
+        if: inputs.platform != 'macos-arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -52,6 +62,12 @@ jobs:
         with:
           ref: ${{ inputs.tag }}
           fetch-depth: 0
+
+      - name: Resolve native production platform
+        uses: ./.github/actions/resolve-production-platform
+        with:
+          platform: ${{ inputs.platform }}
+          build-type: Release
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -77,8 +93,8 @@ jobs:
           gh release download "$RELEASE_TAG" \
             --repo "${{ github.repository }}" \
             --dir "$asset_dir" \
-            --pattern "boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
-            --pattern "boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
+            --pattern "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --pattern "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
             --pattern SHA256SUMS.txt
           printf 'RELEASE_ASSET_DIR=%s\n' "$asset_dir" >> "$GITHUB_ENV"
 
@@ -86,29 +102,67 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          (cd "$RELEASE_ASSET_DIR" && sha256sum -c SHA256SUMS.txt)
+          python3 - <<'PY'
+          import hashlib
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["RELEASE_ASSET_DIR"])
+          platform = os.environ["PRODUCTION_ARCHIVE_PLATFORM"]
+          wanted = {
+              f"boost-gateway-{os.environ['RELEASE_TAG']}-{platform}.tar.gz",
+              f"boost-gateway-{os.environ['RELEASE_TAG']}-{platform}-sbom.spdx.json",
+          }
+          entries = {}
+          for line in (root / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
+              digest, name = line.split(None, 1)
+              entries[name.strip().lstrip("*")] = digest
+          if not wanted.issubset(entries):
+              raise SystemExit(f"checksum manifest is missing platform assets: {sorted(wanted - set(entries))}")
+          for name in wanted:
+              actual = hashlib.sha256((root / name).read_bytes()).hexdigest()
+              if actual != entries[name]:
+                  raise SystemExit(f"checksum mismatch: {name}")
+          PY
           python3 scripts/tools/verify_release_archive.py \
-            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64"
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}"
 
       - name: Verify published SBOM semantics
         shell: bash
         run: |
           python3 scripts/tools/harden_release_sbom.py verify \
-            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
-            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64" \
-            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
             --policy config/release/sbom-policy.json \
             --summary-path runtime/validation/published-release-sbom-semantics-summary.json
 
       - name: Verify runtime consumer offline
+        if: inputs.platform != 'macos-arm64'
         shell: bash
         run: |
           python3 scripts/tools/verify_release_package_consumer.py \
-            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz" \
-            --expected-root "boost-gateway-${RELEASE_TAG}-linux-x64" \
+            --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+            --expected-root "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --image ubuntu:24.04 \
+            --expected-platform "$PRODUCTION_PLATFORM" \
+            --summary-path runtime/validation/published-release-package-consumer-summary.json
+
+      - name: Verify native macOS runtime consumer
+        if: inputs.platform == 'macos-arm64'
+        shell: bash
+        run: |
+          set -euo pipefail
+          extract_root="$RUNNER_TEMP/published-macos-${GITHUB_RUN_ID}"
+          rm -rf "$extract_root"
+          mkdir -p "$extract_root"
+          tar -xzf "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" -C "$extract_root"
+          python3 scripts/tools/verify_macos_arm64_package.py \
+            --install-root "$extract_root/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}" \
+            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
+            --candidate-revision "$EXPECTED_COMMIT" \
             --summary-path runtime/validation/published-release-package-consumer-summary.json
 
       - name: Install checksum-verified GitHub CLI for attestation verification
@@ -116,17 +170,42 @@ jobs:
         run: |
           set -euo pipefail
           gh_version=2.96.0
-          archive="gh_${gh_version}_linux_amd64.tar.gz"
+          case "$PRODUCTION_PLATFORM" in
+            linux-x64)
+              archive="gh_${gh_version}_linux_amd64.tar.gz"
+              digest=83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60
+              executable="gh_${gh_version}_linux_amd64/bin/gh"
+              ;;
+            linux-arm64)
+              archive="gh_${gh_version}_linux_arm64.tar.gz"
+              digest=06f86ec7103d41993b76cd78072f43595c34aaa56506d971d9860e67140bf909
+              executable="gh_${gh_version}_linux_arm64/bin/gh"
+              ;;
+            macos-arm64)
+              archive="gh_${gh_version}_macOS_arm64.zip"
+              digest=f23a0c37d963aacc3bed703ccbd59b41c5ca22101fab7f00eb2b7cad23aba463
+              executable="bin/gh"
+              ;;
+          esac
           tool_dir="$RUNNER_TEMP/gh-${gh_version}-${{ github.run_id }}"
           mkdir -p "$tool_dir"
           curl --fail --location --retry 3 \
             "https://github.com/cli/cli/releases/download/v${gh_version}/${archive}" \
             --output "$tool_dir/$archive"
-          printf '%s  %s\n' \
-            '83d5c2ccad5498f58bf6368acb1ab32588cf43ab3a4b1c301bf36328b1c8bd60' \
-            "$tool_dir/$archive" | sha256sum -c -
-          tar -xzf "$tool_dir/$archive" -C "$tool_dir"
-          printf 'VERIFICATION_GH=%s\n' "$tool_dir/gh_${gh_version}_linux_amd64/bin/gh" >> "$GITHUB_ENV"
+          python3 - "$tool_dir/$archive" "$digest" <<'PY'
+          import hashlib
+          import sys
+          from pathlib import Path
+          actual = hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest()
+          if actual != sys.argv[2]:
+              raise SystemExit(f"GitHub CLI checksum mismatch: {actual}")
+          PY
+          if [[ "$archive" = *.zip ]]; then
+            ditto -x -k "$tool_dir/$archive" "$tool_dir"
+          else
+            tar -xzf "$tool_dir/$archive" -C "$tool_dir"
+          fi
+          printf 'VERIFICATION_GH=%s\n' "$tool_dir/$executable" >> "$GITHUB_ENV"
 
       - name: Verify provenance and SBOM attestations
         shell: bash
@@ -134,7 +213,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz"
+          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz"
           signer='HoneyBury/boost_gateway/.github/workflows/release.yml'
           common=(
             "$archive" --repo "${{ github.repository }}" --format json
@@ -149,7 +228,7 @@ jobs:
             --predicate-type https://spdx.dev/Document/v2.3 \
             > runtime/validation/published-release-sbom-verification.json
 
-          export ARTIFACT_DIGEST="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          export ARTIFACT_DIGEST="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$archive")"
           python3 - <<'PY'
           import json
           import os
@@ -168,7 +247,7 @@ jobs:
         shell: bash
         run: |
           python3 scripts/tools/harden_release_sbom.py verify-attestation \
-            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json" \
+            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
             --attestation-verification runtime/validation/published-release-sbom-verification.json \
             --summary-path runtime/validation/published-release-sbom-attestation-binding-summary.json
 
@@ -178,10 +257,10 @@ jobs:
           VERIFICATION_RUNNER: ${{ runner.name }}
         run: |
           set -euo pipefail
-          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-linux-x64.tar.gz"
-          sbom="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-sbom.spdx.json"
-          export ARCHIVE_SHA256="$(sha256sum "$archive" | cut -d ' ' -f 1)"
-          export SBOM_SHA256="$(sha256sum "$sbom" | cut -d ' ' -f 1)"
+          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz"
+          sbom="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json"
+          export ARCHIVE_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$archive")"
+          export SBOM_SHA256="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$sbom")"
           python3 - <<'PY'
           import json
           import os
@@ -217,6 +296,7 @@ jobs:
               "tag": os.environ["RELEASE_TAG"],
               "expected_commit": os.environ["EXPECTED_COMMIT"],
               "runner": os.environ["VERIFICATION_RUNNER"],
+              "production_platform": os.environ["PRODUCTION_PLATFORM"],
               "archive_sha256": os.environ["ARCHIVE_SHA256"],
               "sbom_sha256": os.environ["SBOM_SHA256"],
               "runtime_consumer": consumer,
@@ -234,6 +314,8 @@ jobs:
       - name: Upload published asset verification
         uses: actions/upload-artifact@v4
         with:
-          name: published-release-asset-verification-${{ github.run_id }}
-          path: runtime/validation/published-release-*.json
+          name: published-release-asset-verification-${{ inputs.platform }}-${{ github.run_id }}
+          path: |
+            runtime/validation/published-release-*.json
+            runtime/validation/production-platform-summary.json
           retention-days: 90

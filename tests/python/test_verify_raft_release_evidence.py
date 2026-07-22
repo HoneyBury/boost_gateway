@@ -166,6 +166,24 @@ class VerifyRaftReleaseEvidenceTest(unittest.TestCase):
         self.assertTrue(summary["overall_pass"])
         self.assertTrue(all(check["passed"] for check in summary["checks"]))
 
+    def test_accepts_native_macos_package_consumer(self) -> None:
+        self.summaries["package_consumer"] = {
+            "summary_version": 2,
+            "overall_pass": True,
+            "passed": True,
+            "production_platform": "macos-arm64",
+            "platform": {"system": "Darwin", "machine": "arm64"},
+            "c_abi": {"loaded": True, "version": "4.2.0"},
+            "cpp_consumer": {"cmake_find_package": True, "sdk_version": "4.2.0"},
+            "provenance": provenance(),
+        }
+
+        result, summary = self.run_main()
+
+        self.assertEqual(result, 0)
+        checks = {check["name"]: check["passed"] for check in summary["checks"]}
+        self.assertTrue(checks["package-consumer:platform-isolation"])
+
     def test_rejects_cross_revision_and_missing_protobuf_sbom(self) -> None:
         self.summaries["data_recovery"]["provenance"]["candidate_revision"] = "d" * 40
         self.summaries["data_recovery"]["provenance"]["git_commit"] = "d" * 40

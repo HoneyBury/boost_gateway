@@ -185,8 +185,17 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     conan_validate_workflow = read(".github/workflows/conan-validate.yml")
     long_soak_workflow = read(".github/workflows/long-soak-capacity.yml")
     production_gates_workflow = read(".github/workflows/production-gates.yml")
+    production_platform_action = read(".github/actions/resolve-production-platform/action.yml")
     linux_lockfile = "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock"
-    add(checks, "p3:conan-linux-lockfile-default", linux_lockfile in conan_validate_workflow and linux_lockfile in long_soak_workflow and linux_lockfile in production_gates_workflow, "fixed-runner workflows default to the Linux nosqlite lockfile path")
+    add(
+        checks,
+        "p3:conan-linux-lockfile-default",
+        linux_lockfile in conan_validate_workflow
+        and "uses: ./.github/actions/resolve-production-platform" in long_soak_workflow
+        and "uses: ./.github/actions/resolve-production-platform" in production_gates_workflow
+        and linux_lockfile in production_platform_action,
+        "fixed-runner workflows resolve the Linux nosqlite lockfile through the shared platform contract",
+    )
     add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
     add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
     add(checks, "p3:evidence-provenance-contract-gate", exists("scripts/check_evidence_provenance_contract.py"), "evidence provenance contract governance gate exists")

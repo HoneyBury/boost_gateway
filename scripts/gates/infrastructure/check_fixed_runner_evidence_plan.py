@@ -132,7 +132,7 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/r5-preprod-recovery-drill-record.json",
             "runtime/validation/monitoring-operability-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",
-            "preprod-evidence-${{ github.run_id }}",
+            "preprod-evidence-${{ inputs.platform }}-${{ github.run_id }}",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
@@ -147,7 +147,8 @@ WORKFLOW_REQUIREMENTS = {
             "long_soak_run_id",
             "capacity_run_id",
             "preprod_evidence_run_id",
-            "preprod-evidence-$PREPROD_EVIDENCE_RUN_ID",
+            "preprod-evidence-${PRODUCTION_PLATFORM}-$PREPROD_EVIDENCE_RUN_ID",
+            "macos-arm64-$preprod_sha",
             "gh run download",
             "--require-fixed-runner",
             "runtime/validation/r2-production-evidence-manifest-summary.json",
@@ -291,12 +292,24 @@ def main() -> int:
     composite_action_path = ".github/actions/setup-cpp-conan/action.yml"
     composite_action = read(composite_action_path) if exists(composite_action_path) else ""
     composite_venv_ok = composite_uses_pinned_venv(composite_action)
+    production_platform_action_path = ".github/actions/resolve-production-platform/action.yml"
+    production_platform_action = (
+        read(production_platform_action_path) if exists(production_platform_action_path) else ""
+    )
     for name, requirement in WORKFLOW_REQUIREMENTS.items():
         path = str(requirement["path"])
         add(checks, f"workflow:{name}:exists", exists(path), f"{path} exists")
         content = read(path) if exists(path) else ""
+        effective_content = content
+        if "uses: ./.github/actions/resolve-production-platform" in content:
+            effective_content += "\n" + production_platform_action
         for token in requirement["tokens"]:
-            add(checks, f"workflow:{name}:token:{token}", token in content, f"{path} includes {token}")
+            add(
+                checks,
+                f"workflow:{name}:token:{token}",
+                token in effective_content,
+                f"{path} or its platform resolver includes {token}",
+            )
         for summary in requirement["summaries"]:
             expected_summaries.append(summary)
             add(checks, f"workflow:{name}:uploads:{summary}", summary in content, f"{path} uploads {summary}")
@@ -387,9 +400,17 @@ def main() -> int:
     )
     add(
         checks,
-        "workflow:release:release-runner-override",
-        "vars.RELEASE_RUNNER" in release_workflow,
-        ".github/workflows/release.yml keeps RELEASE_RUNNER override",
+        "workflow:release:three-platform-runner-matrix",
+        all(
+            token in release_workflow
+            for token in (
+                "node-aoi-omen-gaming-laptop-16-am0xxx",
+                "node-honeybury-m4-linux-arm64",
+                "macos-arm64-candidate",
+                "format('[\"{0}\"]', inputs.platform)",
+            )
+        ),
+        ".github/workflows/release.yml routes tag and manual candidates to native platform runners",
     )
 
     conan_validate_workflow = read(".github/workflows/conan-validate.yml")
@@ -632,9 +653,10 @@ def main() -> int:
     )
     add(
         checks,
-        "workflow:preprod:r5-eligible-runner-default",
-        f"default: '{PREPROD_R5_RUNNER}'" in preprod_workflow,
-        "R5 workflow defaults to the preprod-r5 eligible runner pool rather than all Linux runners",
+        "workflow:preprod:native-runner-defaults",
+        "node-aoi-omen-gaming-laptop-16-am0xxx" in preprod_workflow
+        and "node-honeybury-m4-linux-arm64" in preprod_workflow,
+        "R5 workflow selects the native x64 or ARM64 fixed runner unless explicitly overridden",
     )
     specialized_gate = read("scripts/gates/e2e/verify_specialized_e2e.py")
     add(

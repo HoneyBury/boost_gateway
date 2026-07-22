@@ -51,9 +51,12 @@ FIXED_RUNNER_CONAN_WORKFLOWS = {
     "specialized_e2e": ".github/workflows/specialized-e2e.yml",
     "preprod_evidence": ".github/workflows/preprod-evidence.yml",
     "macos_arm64": ".github/workflows/macos-arm64.yml",
+    "sdk_distribution": ".github/workflows/sdk-distribution.yml",
+    "debug_symbols": ".github/workflows/debug-symbols.yml",
 }
 RUNNER_CACHE_RESOLVER = "scripts/tools/resolve_runner_cache.py"
 COMPOSITE_CONAN_ACTION = ".github/actions/setup-cpp-conan/action.yml"
+PRODUCTION_PLATFORM_ACTION = ".github/actions/resolve-production-platform/action.yml"
 CONAN_VENV_HELPER = "scripts/tools/ensure_conan_venv.py"
 RAFT_OFFLINE_INSTALLER = "scripts/tools/verify_conan_offline_install.py"
 PINNED_CONAN_VERSION = "2.8.1"
@@ -78,7 +81,11 @@ def bootstrap_uses_resolved_home(content: str) -> bool:
         line.strip()
         for line in content.splitlines()
         if "scripts/bootstrap_conan.py" in line
-        and (re.search(r"\bpython(?:3(?:\.\d+)?)?\s+", line) is not None or "args=(" in line)
+        and (
+            re.search(r"\bpython(?:3(?:\.\d+)?)?\s+", line) is not None
+            or "EVIDENCE_PYTHON" in line
+            or "args=(" in line
+        )
     ]
     return bool(calls) and all("--conan-home" in call and "CONAN_HOME" in call for call in calls)
 
@@ -250,8 +257,36 @@ def main() -> int:
     )
 
     contents = {name: read(path) if exists(path) else "" for name, path in WORKFLOWS.items()}
+    production_platform_action = (
+        read(PRODUCTION_PLATFORM_ACTION) if exists(PRODUCTION_PLATFORM_ACTION) else ""
+    )
     for name, path in WORKFLOWS.items():
-        workflow_checks(checks, name, path, contents[name])
+        effective_content = contents[name]
+        if "uses: ./.github/actions/resolve-production-platform" in effective_content:
+            effective_content += "\n" + production_platform_action
+        workflow_checks(checks, name, path, effective_content)
+
+    add(
+        checks,
+        "production-platform-action:three-native-conan-contracts",
+        all(
+            token in production_platform_action
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                LINUX_ARM64_DEBUG_LOCKFILE,
+                MACOS_PROFILE,
+                MACOS_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "macos-arm64",
+                "PRODUCTION_CONAN_LOCKFILE",
+            )
+        ),
+        "the shared production platform action binds native hosts to independent Conan graphs",
+    )
 
     long_soak = contents["long_soak_capacity"]
     release = contents["release"]
@@ -445,6 +480,19 @@ def main() -> int:
         and "--parallel ${{ inputs.build_parallelism || '2' }}" in preprod,
         "preprod evidence caps C++ build concurrency for memory-constrained fixed runners",
     )
+    add(
+        checks,
+        "workflow:preprod-evidence:native-linux-platform-routing",
+        "linux-x64" in preprod
+        and "linux-arm64" in preprod
+        and "uses: ./.github/actions/resolve-production-platform" in preprod
+        and 'DOCKER_DEFAULT_PLATFORM="$PRODUCTION_DOCKER_PLATFORM"' in preprod
+        and PROFILE in production_platform_action
+        and LOCKFILE in production_platform_action
+        and LINUX_ARM64_PROFILE in production_platform_action
+        and LINUX_ARM64_LOCKFILE in production_platform_action,
+        "preprod evidence derives its native Linux Conan and OCI contracts from one platform input",
+    )
 
     macos = read(FIXED_RUNNER_CONAN_WORKFLOWS["macos_arm64"])
     add(
@@ -479,9 +527,57 @@ def main() -> int:
         and LOCKFILE in jwks
         and MACOS_PROFILE in jwks
         and MACOS_LOCKFILE in jwks
+        and LINUX_ARM64_PROFILE in jwks
+        and LINUX_ARM64_LOCKFILE in jwks
+        and "inputs.platform == 'linux-arm64'" in jwks
         and "inputs.platform == 'macos-arm64'" in jwks
         and "scripts/tools/verify_conan_offline_install.py" in jwks,
-        "JWKS evidence selects the admitted native profile and lockfile for Linux x64 or macOS ARM64",
+        "JWKS evidence selects the admitted native profile and lockfile for Linux x64, Linux ARM64, or macOS ARM64",
+    )
+
+    sdk_distribution = read(FIXED_RUNNER_CONAN_WORKFLOWS["sdk_distribution"])
+    add(
+        checks,
+        "workflow:sdk-distribution:three-platform-offline-routing",
+        all(
+            token in sdk_distribution
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                MACOS_PROFILE,
+                MACOS_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "macos-arm64",
+                "--offline",
+                "--no-remote",
+                "scripts/tools/verify_conan_offline_install.py",
+            )
+        ),
+        "SDK distribution routes all production platforms through their strict-offline Conan namespace",
+    )
+
+    debug_symbols = read(FIXED_RUNNER_CONAN_WORKFLOWS["debug_symbols"])
+    add(
+        checks,
+        "workflow:debug-symbols:linux-architecture-offline-routing",
+        all(
+            token in debug_symbols
+            for token in (
+                PROFILE,
+                LOCKFILE,
+                LINUX_ARM64_PROFILE,
+                LINUX_ARM64_LOCKFILE,
+                "linux-x64",
+                "linux-arm64",
+                "--expected-platform",
+                "--offline",
+                "--no-remote",
+            )
+        ),
+        "debug-symbol evidence routes x64 and ARM64 through separate strict-offline Conan namespaces",
     )
 
     failed = [check for check in checks if not check["passed"]]

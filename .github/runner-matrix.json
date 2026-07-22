@@ -1,6 +1,6 @@
 {
   "schema_version": 3,
-  "description": "Versioned workflow runner matrix. Mainline CI may default to GitHub-hosted ubuntu-latest when self-hosted Linux runners are unavailable; fixed-runner evidence workflows continue to default to self-hosted Linux labels. Repository-level GitHub Variables (vars.XXX_RUNNER) override these values at runtime.",
+  "description": "Versioned workflow runner matrix. Mainline CI may default to GitHub-hosted ubuntu-latest. Platform-aware production workflows select a native runner from their platform map unless an explicit runner input is supplied; legacy single-platform workflows may still use vars.XXX_RUNNER overrides.",
   "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
   "workflows": {
     "ci": {
@@ -15,6 +15,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": {},
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "RELEASE_RUNNER"
     },
     "release-asset-verification": {
@@ -22,6 +27,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64", "mode": "published-asset-verification" },
       "capabilities": { "docker": true },
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "RELEASE_ASSET_VERIFICATION_RUNNER"
     },
     "perf-regression": {
@@ -29,6 +39,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": {},
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "PERF_REGRESSION_RUNNER"
     },
     "nightly-stability": {
@@ -64,6 +79,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "redis": true, "kind": true, "large_disk": true },
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "PRODUCTION_GATES_RUNNER"
     },
     "production-candidate-evidence": {
@@ -71,6 +91,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "redis": true, "kind": true, "large_disk": true },
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "PRODUCTION_CANDIDATE_RUNNER"
     },
     "preprod-evidence": {
@@ -78,6 +103,12 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "docker": true, "redis": true },
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
+      "platform_producers": { "macos-arm64": "macos-arm64.yml native R5/R6" },
       "vars_hint": "PREPROD_EVIDENCE_RUNNER"
     },
     "production-readiness": {
@@ -85,6 +116,7 @@
       "runner": "\"ubuntu-latest\"",
       "labels": { "os": "linux", "arch": "x64", "mode": "artifact-aggregation" },
       "capabilities": { "github_hosted_fallback": true },
+      "target_platforms": ["linux-x64", "linux-arm64", "macos-arm64"],
       "vars_hint": "PRODUCTION_READINESS_RUNNER"
     },
     "long-soak-capacity": {
@@ -92,6 +124,11 @@
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": { "redis": true, "large_disk": true, "dedicated": true },
+      "platforms": {
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\"]",
+        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
+        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+      },
       "vars_hint": "LONG_SOAK_CAPACITY_RUNNER"
     },
     "specialized-e2e": {

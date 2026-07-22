@@ -9,9 +9,17 @@ import hashlib
 import json
 import platform
 import subprocess
+import sys
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib.evidence_provenance import build_evidence_provenance
 
 
 def run(command: list[str], *, cwd: Path | None = None) -> str:
@@ -108,6 +116,7 @@ def verify(install_root: Path, lockfile: Path | None, candidate_revision: str) -
         "summary_version": 1,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "overall_pass": True,
+        "production_platform": "macos-arm64",
         "candidate_revision": candidate_revision,
         "platform": {
             "system": platform.system(),
@@ -135,6 +144,7 @@ def main() -> int:
     parser.add_argument("--install-root", type=Path, required=True)
     parser.add_argument("--lockfile", type=Path)
     parser.add_argument("--candidate-revision", required=True)
+    parser.add_argument("--configuration", default="Release")
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -150,6 +160,12 @@ def main() -> int:
     except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
         print(f"macOS ARM64 package verification: FAIL ({error})")
         return 1
+    summary["provenance"] = build_evidence_provenance(
+        ROOT,
+        build_configuration=args.configuration,
+        conan_lockfile=args.lockfile.resolve() if args.lockfile else None,
+        candidate_revision=args.candidate_revision,
+    )
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print("macOS ARM64 package verification: PASS")

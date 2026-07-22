@@ -1,28 +1,101 @@
 name: SDK / Wheel & NuGet Candidate
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native SDK target platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
+          - macos-arm64
       runner:
-        description: "Runner JSON array"
+        description: "Runner JSON array matching the selected platform"
         required: true
         default: '["self-hosted","Linux","X64"]'
+      build_parallelism:
+        description: "Maximum concurrent C++ build jobs"
+        required: true
+        default: "4"
 
 permissions:
   contents: read
 
 jobs:
-  linux-x64-packages:
+  platform-packages:
     runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 90
-    env:
-      BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
-      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Resolve native SDK platform contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ inputs.platform }}" in
+            linux-x64)
+              test "$(uname -s)" = Linux
+              test "$(uname -m)" = x86_64
+              profile=conan/profiles/linux-gcc-x64
+              lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+              rid=linux-x64
+              wheel_tag=manylinux_2_35_x86_64
+              native_library=build/sdk-distribution/sdk/libboost_gateway_sdk.so
+              cache_root=/opt/boost-gateway
+              evidence_python=python
+              ;;
+            linux-arm64)
+              test "$(uname -s)" = Linux
+              test "$(uname -m)" = aarch64
+              profile=conan/profiles/linux-gcc-arm64
+              lockfile=conan/locks/linux-gcc-arm64-release-nogrpc-nosqlite.lock
+              rid=linux-arm64
+              wheel_tag=manylinux_2_39_aarch64
+              native_library=build/sdk-distribution/sdk/libboost_gateway_sdk.so
+              cache_root=/opt/boost-gateway
+              evidence_python=python3.12
+              ;;
+            macos-arm64)
+              test "$(uname -s)" = Darwin
+              test "$(uname -m)" = arm64
+              test -n "${RUNNER_TOOL_CACHE:-}"
+              profile=conan/profiles/macos-apple-clang-arm64
+              lockfile=conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
+              rid=osx-arm64
+              wheel_tag=macosx_26_0_arm64
+              native_library=build/sdk-distribution/sdk/libboost_gateway_sdk.dylib
+              cache_root="$RUNNER_TOOL_CACHE/boost-gateway"
+              evidence_python=python3.12
+              ;;
+            *)
+              echo "unsupported SDK platform: ${{ inputs.platform }}" >&2
+              exit 2
+              ;;
+          esac
+          {
+            echo "CONAN_PROFILE=$profile"
+            echo "BOOST_GATEWAY_CONAN_LOCKFILE=$lockfile"
+            echo "SDK_RID=$rid"
+            echo "SDK_WHEEL_TAG=$wheel_tag"
+            echo "SDK_NATIVE_LIBRARY=$native_library"
+            echo "BOOST_GATEWAY_RUNNER_CACHE_ROOT=$cache_root"
+            echo "BOOST_GATEWAY_CONAN_VENV=$cache_root/tools/conan-2.8.1-py3.12"
+            echo "SDK_PACKAGE_VENV=$cache_root/tools/sdk-package-py3.12"
+            echo "PACKAGE_PYTHON=$cache_root/tools/sdk-package-py3.12/bin/python"
+            echo "EVIDENCE_PYTHON=$evidence_python"
+          } >> "$GITHUB_ENV"
+          echo "$cache_root/tools/sdk-package-py3.12/bin" >> "$GITHUB_PATH"
+
+      - name: Setup Python on Linux x64
+        if: inputs.platform == 'linux-x64'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -30,19 +103,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(uname -m)" = x86_64
-          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+          test -x "$PACKAGE_PYTHON"
           package_python="$(command -v python)"
-          "$package_python" -c 'import setuptools, wheel'
+          test "$package_python" = "$PACKAGE_PYTHON"
+          "$package_python" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+          "$package_python" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
           printf 'BOOST_GATEWAY_PACKAGE_PYTHON=%s\n' "$package_python" >> "$GITHUB_ENV"
-          auditwheel --version
           dotnet --version
           syft version
+          if [[ "${{ inputs.platform }}" == linux-* ]]; then
+            getconf GNU_LIBC_VERSION
+            auditwheel --version | grep -Eq '^auditwheel 6\.7\.0([[:space:]]|$)'
+          else
+            xcrun clang --version
+            xcrun --show-sdk-version
+          fi
 
       - name: Ensure pinned Conan virtual environment
         shell: bash
         run: |
-          python scripts/tools/ensure_conan_venv.py \
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -52,51 +133,72 @@ jobs:
       - name: Resolve persistent runner caches
         shell: bash
         run: |
-          python scripts/tools/resolve_runner_cache.py \
+          set -euo pipefail
+          export PATH="$BOOST_GATEWAY_CONAN_VENV/bin:$PATH"
+          "$EVIDENCE_PYTHON" scripts/tools/resolve_runner_cache.py \
             --build-type Release \
-            --profile conan/profiles/linux-gcc-x64 \
+            --profile "$CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --cache-root "$BOOST_GATEWAY_RUNNER_CACHE_ROOT" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/sdk-runner-cache-summary.json
 
       - name: Verify strict offline Conan graph
         shell: bash
         run: |
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          python scripts/tools/verify_conan_offline_install.py \
-            --profile conan/profiles/linux-gcc-x64 \
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          "$EVIDENCE_PYTHON" scripts/tools/verify_conan_offline_install.py \
+            --profile "$CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --output-folder build/conan-sdk-distribution \
             --build-type Release \
+            --conan-executable "$BOOST_GATEWAY_CONAN_VENV/bin/conan" \
             --candidate-revision "$GITHUB_SHA" \
             --summary-path runtime/validation/sdk-conan-offline-summary.json
 
       - name: Build native SDK and full-flow targets
         shell: bash
         run: |
-          cmake -S . -B build/sdk-distribution -G Ninja \
-            -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DENABLE_TESTING=ON \
+          set -euo pipefail
+          cmake_args=(
+            -S . -B build/sdk-distribution -G Ninja
+            -DBOOST_DEPENDENCY_PROVIDER=conan
+            -DCMAKE_BUILD_TYPE=Release
+            -DENABLE_TESTING=ON
             -DCMAKE_TOOLCHAIN_FILE=build/conan-sdk-distribution/build/Release/generators/conan_toolchain.cmake
-          cmake --build build/sdk-distribution --parallel
-          ctest --test-dir build/sdk-distribution -R 'CApiV41Test|CodecV4Test|ClientV4Test|Transport' --output-on-failure
+          )
+          if [ "${{ inputs.platform }}" = macos-arm64 ]; then
+            cmake_args+=(-DCMAKE_OSX_ARCHITECTURES=arm64)
+          fi
+          cmake "${cmake_args[@]}"
+          cmake --build build/sdk-distribution --parallel "${{ inputs.build_parallelism }}" --target \
+            boost_gateway_sdk_dll sdk_tests \
+            v2_gateway_demo v2_login_backend v2_room_backend v2_battle_backend \
+            v2_match_backend v2_leaderboard_backend
+          ctest --test-dir build/sdk-distribution \
+            -R 'CApiV41Test|CodecV4Test|ClientV4Test|Transport' --output-on-failure
 
       - name: Build and verify wheel and NuGet
         shell: bash
         run: |
           set -euo pipefail
           "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/build_sdk_packages.py \
-            --native-library build/sdk-distribution/sdk/libboost_gateway_sdk.so \
-            --rid linux-x64 \
-            --wheel-platform-tag manylinux_2_35_x86_64 \
+            --native-library "$SDK_NATIVE_LIBRARY" \
+            --rid "$SDK_RID" \
+            --wheel-platform-tag "$SDK_WHEEL_TAG" \
             --output-dir runtime/sdk-packages \
             --require-nuget
           wheel=$(find runtime/sdk-packages -maxdepth 1 -name '*.whl' -print -quit)
           nuget=$(find runtime/sdk-packages -maxdepth 1 -name '*.nupkg' -print -quit)
-          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py \
-            --wheel "$wheel" --nuget "$nuget" --rid linux-x64 --require-nuget --require-auditwheel \
+          verify_args=(
+            --wheel "$wheel" --nuget "$nuget" --rid "$SDK_RID" --require-nuget
             --summary-path runtime/validation/sdk-package-summary.json
+          )
+          if [[ "${{ inputs.platform }}" == linux-* ]]; then
+            verify_args+=(--require-auditwheel)
+          fi
+          "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py "${verify_args[@]}"
           "$BOOST_GATEWAY_PACKAGE_PYTHON" -m venv runtime/sdk-package-flow-venv
           runtime/sdk-package-flow-venv/bin/pip install --no-index --no-deps "$wheel"
           "$BOOST_GATEWAY_PACKAGE_PYTHON" scripts/gates/sdk/verify_sdk_full_flow_client.py \
@@ -111,12 +213,20 @@ jobs:
           for package in runtime/sdk-packages/*.whl runtime/sdk-packages/*.nupkg; do
             syft packages "$package" -o "spdx-json=${package}.spdx.json"
           done
-          (cd runtime/sdk-packages && sha256sum * > SHA256SUMS-all.txt)
+          cd runtime/sdk-packages
+          assets=( *.whl *.nupkg *.json )
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${assets[@]}" > SHA256SUMS-all.txt
+          else
+            shasum -a 256 "${assets[@]}" > SHA256SUMS-all.txt
+          fi
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: sdk-distribution-linux-x64-${{ github.sha }}
+          name: sdk-distribution-${{ inputs.platform }}-${{ github.sha }}
           path: |
             runtime/sdk-packages/*
             runtime/validation/sdk-*-summary.json
+          if-no-files-found: warn
           retention-days: 30

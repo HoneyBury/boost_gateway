@@ -1,12 +1,27 @@
 name: Release / Linux Debug Symbols Candidate
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   workflow_dispatch:
     inputs:
+      platform:
+        description: "Native Linux target platform"
+        required: true
+        default: linux-x64
+        type: choice
+        options:
+          - linux-x64
+          - linux-arm64
       runner:
-        description: "Runner JSON array"
+        description: "Runner JSON array matching the selected platform"
         required: true
         default: '["self-hosted","Linux","X64"]'
+      build_parallelism:
+        description: "Maximum concurrent C++ build jobs"
+        required: true
+        default: "4"
 
 permissions:
   contents: read
@@ -15,14 +30,44 @@ jobs:
   runtime-symbol-pair:
     runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 90
-    env:
-      BOOST_GATEWAY_CONAN_VENV: /opt/boost-gateway/tools/conan-2.8.1-py3.12
-      BOOST_GATEWAY_CONAN_LOCKFILE: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Resolve native ELF platform contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -s)" = Linux
+          case "${{ inputs.platform }}" in
+            linux-x64)
+              test "$(uname -m)" = x86_64
+              profile=conan/profiles/linux-gcc-x64
+              lockfile=conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+              evidence_python=python
+              ;;
+            linux-arm64)
+              test "$(uname -m)" = aarch64
+              profile=conan/profiles/linux-gcc-arm64
+              lockfile=conan/locks/linux-gcc-arm64-release-nogrpc-nosqlite.lock
+              evidence_python=python3.12
+              ;;
+            *)
+              echo "unsupported debug-symbol platform: ${{ inputs.platform }}" >&2
+              exit 2
+              ;;
+          esac
+          {
+            echo "CONAN_PROFILE=$profile"
+            echo "BOOST_GATEWAY_CONAN_LOCKFILE=$lockfile"
+            echo "BOOST_GATEWAY_CONAN_VENV=/opt/boost-gateway/tools/conan-2.8.1-py3.12"
+            echo "BOOST_GATEWAY_RUNNER_CACHE_ROOT=/opt/boost-gateway"
+            echo "EVIDENCE_PYTHON=$evidence_python"
+          } >> "$GITHUB_ENV"
+
+      - name: Setup Python on Linux x64
+        if: inputs.platform == 'linux-x64'
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
@@ -30,15 +75,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(uname -s)" = Linux
-          test "$(uname -m)" = x86_64
+          "$EVIDENCE_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           for tool in objcopy strip readelf nm addr2line c++; do command -v "$tool"; done
           syft version
 
       - name: Ensure pinned Conan virtual environment
         shell: bash
         run: |
-          python scripts/tools/ensure_conan_venv.py \
+          "$EVIDENCE_PYTHON" scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
             --offline \
@@ -48,22 +92,25 @@ jobs:
       - name: Resolve persistent runner caches
         shell: bash
         run: |
-          python scripts/tools/resolve_runner_cache.py \
+          "$EVIDENCE_PYTHON" scripts/tools/resolve_runner_cache.py \
             --build-type Release \
-            --profile conan/profiles/linux-gcc-x64 \
+            --profile "$CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
+            --cache-root "$BOOST_GATEWAY_RUNNER_CACHE_ROOT" \
             --github-env "$GITHUB_ENV" \
             --summary-path runtime/validation/debug-symbol-runner-cache-summary.json
 
       - name: Verify strict offline Conan graph
         shell: bash
         run: |
-          python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
-          python scripts/tools/verify_conan_offline_install.py \
-            --profile conan/profiles/linux-gcc-x64 \
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+          "$EVIDENCE_PYTHON" scripts/tools/verify_conan_offline_install.py \
+            --profile "$CONAN_PROFILE" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --output-folder build/conan-debug-symbols \
             --build-type Release \
+            --conan-executable "$BOOST_GATEWAY_CONAN_VENV/bin/conan" \
             --candidate-revision "$GITHUB_SHA" \
             --summary-path runtime/validation/debug-symbol-conan-offline-summary.json
 
@@ -78,7 +125,7 @@ jobs:
             -DCMAKE_EXE_LINKER_FLAGS='-Wl,--build-id' \
             -DCMAKE_SHARED_LINKER_FLAGS='-Wl,--build-id' \
             -DCMAKE_TOOLCHAIN_FILE=build/conan-debug-symbols/build/Release/generators/conan_toolchain.cmake
-          cmake --build build/debug-symbols --parallel
+          cmake --build build/debug-symbols --parallel "${{ inputs.build_parallelism }}"
           ctest --test-dir build/debug-symbols --output-on-failure --timeout 300
           cmake --install build/debug-symbols --prefix runtime/debug-symbol-install
           cp README.md CHANGELOG.md LICENSE runtime/debug-symbol-install/
@@ -86,16 +133,17 @@ jobs:
       - name: Create and independently verify runtime-symbol pair
         shell: bash
         run: |
-          python scripts/tools/create_debug_symbol_package.py \
+          "$EVIDENCE_PYTHON" scripts/tools/create_debug_symbol_package.py \
             --install-root runtime/debug-symbol-install \
             --version 3.6.0 \
             --candidate-revision "$GITHUB_SHA" \
             --output-dir runtime/debug-symbol-assets \
             --summary-path runtime/validation/debug-symbol-build-summary.json
-          python scripts/tools/verify_debug_symbol_package.py \
-            --runtime-archive runtime/debug-symbol-assets/boost-gateway-3.6.0-linux-x64.tar.gz \
-            --symbols-archive runtime/debug-symbol-assets/boost-gateway-3.6.0-linux-x64-debug-symbols.tar.gz \
+          "$EVIDENCE_PYTHON" scripts/tools/verify_debug_symbol_package.py \
+            --runtime-archive "runtime/debug-symbol-assets/boost-gateway-3.6.0-${{ inputs.platform }}.tar.gz" \
+            --symbols-archive "runtime/debug-symbol-assets/boost-gateway-3.6.0-${{ inputs.platform }}-debug-symbols.tar.gz" \
             --candidate-revision "$GITHUB_SHA" \
+            --expected-platform "${{ inputs.platform }}" \
             --summary-path runtime/validation/debug-symbol-verify-summary.json
 
       - name: Controlled crash symbolization probe
@@ -106,19 +154,20 @@ jobs:
           c++ -g -O2 -fno-omit-frame-pointer -no-pie -Wl,--build-id \
             tests/fixtures/debug_symbol_crash_probe.cpp \
             -o runtime/debug-symbol-probe-install/bin/debug_symbol_crash_probe
-          python scripts/tools/create_debug_symbol_package.py \
+          "$EVIDENCE_PYTHON" scripts/tools/create_debug_symbol_package.py \
             --install-root runtime/debug-symbol-probe-install \
             --version 3.6.0-probe \
             --candidate-revision "$GITHUB_SHA" \
             --output-dir runtime/debug-symbol-probe-assets \
             --summary-path runtime/validation/debug-symbol-probe-build-summary.json
-          python scripts/tools/verify_debug_symbol_package.py \
-            --runtime-archive runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-linux-x64.tar.gz \
-            --symbols-archive runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-linux-x64-debug-symbols.tar.gz \
+          "$EVIDENCE_PYTHON" scripts/tools/verify_debug_symbol_package.py \
+            --runtime-archive "runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-${{ inputs.platform }}.tar.gz" \
+            --symbols-archive "runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-${{ inputs.platform }}-debug-symbols.tar.gz" \
             --candidate-revision "$GITHUB_SHA" \
+            --expected-platform "${{ inputs.platform }}" \
             --summary-path runtime/validation/debug-symbol-probe-verify-summary.json
           set +e
-          runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-linux-x64/bin/debug_symbol_crash_probe
+          "runtime/debug-symbol-probe-assets/boost-gateway-3.6.0-probe-${{ inputs.platform }}/bin/debug_symbol_crash_probe"
           status=$?
           set -e
           test "$status" -ne 0
@@ -134,14 +183,17 @@ jobs:
             sha256sum *.tar.gz *.spdx.json > SHA256SUMS-debug-symbols.txt)
 
       - uses: actions/upload-artifact@v4
+        if: always()
         env:
           ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"
           ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"
         with:
-          name: linux-debug-symbols-${{ github.sha }}
+          name: linux-debug-symbols-${{ inputs.platform }}-${{ github.sha }}
           path: |
             runtime/debug-symbol-assets/*.tar.gz
             runtime/debug-symbol-assets/*.spdx.json
             runtime/debug-symbol-assets/SHA256SUMS-debug-symbols.txt
             runtime/validation/debug-symbol-*-summary.json
+            runtime/validation/debug-symbol-runner-cache-summary.json
+          if-no-files-found: warn
           retention-days: 30

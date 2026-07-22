@@ -12,11 +12,18 @@
       "status": "candidate_fixed_runner_required"
     },
     {
+      "rid": "linux-arm64",
+      "python": ">=3.8",
+      "dotnet": "8.0",
+      "wheel_platform": "manylinux_2_39_aarch64",
+      "status": "candidate_exact_sha_verified"
+    },
+    {
       "rid": "osx-arm64",
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "macosx_26_0_arm64",
-      "status": "candidate_local_wheel_verified"
+      "status": "candidate_exact_sha_verified"
     }
   ],
   "public_registries": {
