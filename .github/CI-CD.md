@@ -4,7 +4,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 - `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
 - `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
-- release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为执行与证据事实源。
+- Linux release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为事实源；macOS ARM64 构建、R5、JWKS 和平台基线只使用原生 Apple Silicon runner。
 
 ## Workflow 总览
 
@@ -14,7 +14,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `conan-validate.yml` | Dependencies / Conan Graph Validation | 手动 | Conan 依赖图验证 |
 | `debug-symbols.yml` | Release / Linux Debug Symbols Candidate | 手动 | RelWithDebInfo runtime/symbol pair、build-id/debuglink、受控崩溃符号化候选证据 |
 | `grpc-experimental.yml` | Experimental / gRPC | 手动 | gRPC 可选依赖图、构建、SDK consumer 与决策边界 |
-| `jwks-rotation.yml` | Security / JWKS Rotation Drill | 手动 | 真实 HTTPS、多 `kid` 轮换、stale grace、outage 与静态 key-ring 回滚证据 |
+| `jwks-rotation.yml` | Security / JWKS Rotation Drill | 手动 | Linux x64 / macOS ARM64 原生 HTTPS、多 `kid` 轮换、stale grace、outage 与静态 key-ring 回滚证据 |
 | `long-soak-capacity.yml` | Stability / Fixed-Runner Soak & Capacity | 手动 | 2h/8h 长稳 + 容量测试 |
 | `nightly-stability.yml` | Stability / Bounded Soak | 手动 | 有界 smoke/short/medium stability soak |
 | `perf-regression.yml` | Performance / Baseline & Regression | 手动 | smoke / baseline / capacity 性能门禁 |
@@ -26,16 +26,16 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
-| `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、install、SDK consumer 与候选资产 |
+| `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、install、SDK consumer 与候选资产 |
 
 ## Runner 要求
 
 - **主线回归兜底**: GitHub-hosted `ubuntu-latest`
 - **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
-- **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；不声明容量或生产长稳
+- **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；有界 smoke/baseline 不声明容量或生产长稳
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **Linux 调试符号候选**: Linux x64 + GNU binutils、支持 build-id 的 linker、Syft
-- **JWKS 轮换证据**: Linux x64 + 记录实际 glibc、OpenSSL、localhost bind、临时 CA trust 和严格离线 Conan 图
+- **JWKS 轮换证据**: `linux-x64` 或 `macos-arm64` 原生 runner + 实际 OS/arch、OpenSSL、localhost bind、临时 CA trust 和对应平台严格离线 Conan 图
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
@@ -59,7 +59,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
 - SDK 候选包: `boost_gateway_sdk-4.2.0-*.whl`、`BoostGateway.Sdk.4.2.0.nupkg`
 - Linux symbols: `boost-gateway-{version}-linux-x64-debug-symbols.tar.gz`
-- JWKS 轮换证据: `jwks-rotation-{candidate-sha}`
+- JWKS 轮换证据: `jwks-rotation-{platform}-{candidate-sha}`
 - 验证 summary: `runtime/validation/*-summary.json`
 - 性能基线: `runtime/perf/release-baseline/summary.json`
 

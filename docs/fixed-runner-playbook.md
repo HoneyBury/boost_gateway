@@ -714,12 +714,15 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 ## Identity JWKS rotation evidence
 
 `jwks-rotation.yml` 必须从与其它 v3.6 候选 workflow 相同的 exact SHA 手动触发。
-Linux x64 runner 需要可识别的 glibc、OpenSSL CLI、localhost 随机端口绑定能力，
-以及当前 lockfile 对应的严格离线 Conan namespace。workflow 会把实际 glibc 和
-runner identity 写入证据；机器专属复验应显式传入：
+`platform=linux-x64` 使用 GCC/x86_64 lockfile 并记录 glibc；`platform=macos-arm64`
+使用 Apple Clang/ARM64 lockfile 和 `$RUNNER_TOOL_CACHE/boost-gateway` 持久 Conan
+namespace。两条路径都要求 OpenSSL CLI、localhost 随机端口绑定和严格离线 Conan
+图，并把实际 host/runner identity 写入证据。机器专属复验应同时显式传入平台和
+匹配的 runner 标签，例如：
 
 ```text
-runner=["self-hosted","node-aoi-omen-gaming-laptop-16-am0xxx"]
+platform=linux-x64 runner=["self-hosted","node-aoi-omen-gaming-laptop-16-am0xxx"]
+platform=macos-arm64 runner=["self-hosted","macOS","ARM64"]
 ```
 
 workflow 会在临时目录生成两组 RSA/RS256 signing key 和一组短期 CA/server
@@ -740,6 +743,11 @@ certificate，通过 `SSL_CERT_FILE` 只向当前 probe 建立信任，并启动
   `jwks_stale_expired`；无初始 snapshot 的 production Login Backend 启动失败。
 - 独立静态 multi-`kid` key ring 回滚仍可验签，summary/artifact 不得包含 token、
   PEM、private key 或 JWK modulus/exponent。
+
+`macos-arm64.yml` 默认额外运行 `perf_preset=smoke`、一次 repetition 和
+`soak_profile=smoke`，用于验证原生服务拓扑及证据路径。候选冻结时使用
+`perf_preset=baseline`、`perf_repetitions=3`；该 bounded evidence 不等于 2h/8h
+长稳、capacity 或 Linux affinity/cgroup 结论。
 
 ## Raft Phase B release evidence
 

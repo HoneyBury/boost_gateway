@@ -39,6 +39,7 @@ WORKFLOWS = {
 FIXED_RUNNER_CONAN_WORKFLOWS = {
     "conan_validate": ".github/workflows/conan-validate.yml",
     "grpc_experimental": ".github/workflows/grpc-experimental.yml",
+    "jwks_rotation": ".github/workflows/jwks-rotation.yml",
     "release": ".github/workflows/release.yml",
     "long_soak_capacity": ".github/workflows/long-soak-capacity.yml",
     "nightly_stability": ".github/workflows/nightly-stability.yml",
@@ -445,6 +446,19 @@ def main() -> int:
         and "--allow-public" not in macos
         and "--build=missing" not in macos,
         "macOS candidate only consumes its admitted persistent Conan namespace",
+    )
+
+    jwks = read(FIXED_RUNNER_CONAN_WORKFLOWS["jwks_rotation"])
+    add(
+        checks,
+        "workflow:jwks-rotation:native-platform-lockfiles",
+        PROFILE in jwks
+        and LOCKFILE in jwks
+        and MACOS_PROFILE in jwks
+        and MACOS_LOCKFILE in jwks
+        and "inputs.platform == 'macos-arm64'" in jwks
+        and "scripts/tools/verify_conan_offline_install.py" in jwks,
+        "JWKS evidence selects the admitted native profile and lockfile for Linux x64 or macOS ARM64",
     )
 
     failed = [check for check in checks if not check["passed"]]

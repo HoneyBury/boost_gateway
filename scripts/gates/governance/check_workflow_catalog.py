@@ -200,6 +200,7 @@ def main() -> int:
     candidate_workflow = read(WORKFLOWS_ROOT / "production-candidate-evidence.yml")
     long_soak_workflow = read(WORKFLOWS_ROOT / "long-soak-capacity.yml")
     jwks_workflow = read(WORKFLOWS_ROOT / "jwks-rotation.yml")
+    macos_workflow = read(WORKFLOWS_ROOT / "macos-arm64.yml")
     add(
         checks,
         "ci:next-minor-decision-gate",
@@ -328,6 +329,33 @@ def main() -> int:
         and "- name: Validate JWKS evidence summary contract\n        if: always()"
         in jwks_workflow,
         "JWKS workflow builds the real HTTPS probe and archives same-SHA strict-offline evidence",
+    )
+    add(
+        checks,
+        "jwks-rotation:native-production-platform-routing",
+        "platform:" in jwks_workflow
+        and "linux-x64" in jwks_workflow
+        and "macos-arm64" in jwks_workflow
+        and "conan/profiles/linux-gcc-x64" in jwks_workflow
+        and "conan/profiles/macos-apple-clang-arm64" in jwks_workflow
+        and "conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock" in jwks_workflow
+        and "conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock" in jwks_workflow
+        and "Setup native macOS Conan toolchain" in jwks_workflow
+        and 'cache_root="$RUNNER_TOOL_CACHE/boost-gateway"' in jwks_workflow
+        and "-DCMAKE_OSX_ARCHITECTURES=arm64" in jwks_workflow,
+        "JWKS routes strict-offline builds and native host checks independently for Linux x64 and macOS ARM64",
+    )
+    add(
+        checks,
+        "macos-arm64:bounded-native-platform-evidence",
+        "run_platform_baseline:" in macos_workflow
+        and "scripts/collect_v2_perf_baseline.py" in macos_workflow
+        and "scripts/verify_stability_soak.py" in macos_workflow
+        and "runtime/perf/macos-arm64" in macos_workflow
+        and "runtime/validation/macos-arm64-stability-summary.json" in macos_workflow
+        and "--baseline-profile release" in macos_workflow
+        and "--skip-build" in macos_workflow,
+        "macOS candidate can produce bounded native performance and stability evidence from its Mach-O build",
     )
     add(
         checks,
