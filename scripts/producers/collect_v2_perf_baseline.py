@@ -646,7 +646,7 @@ def wait_for_otel_mode_quiescence(
     *,
     mode: str,
     initial_backend_requests: int,
-    timeout_seconds: float = 5.0,
+    timeout_seconds: float = 30.0,
 ) -> dict[str, Any]:
     deadline = time.monotonic() + timeout_seconds
     previous: tuple[int, int] | None = None
