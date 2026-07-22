@@ -279,11 +279,10 @@ int main(int argc, char** argv) {
                   !retired_old.valid && retired_old.error == "unknown_kid",
                   retired_old.error);
 
-        auto wrong_issuer_payload = payload;
         const auto wrong_issuer_token = signer(new_public, new_private, "new-2026",
                                                arguments.issuer + "/wrong",
                                                arguments.audience)
-                                            .generate(wrong_issuer_payload);
+                                            .generate(payload);
         const auto wrong_issuer = verifier.validate(wrong_issuer_token);
         add_check("claims:issuer-remains-enforced",
                   !wrong_issuer.valid && wrong_issuer.error == "invalid_issuer",

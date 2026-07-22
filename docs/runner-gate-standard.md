@@ -48,7 +48,7 @@ registered -> initialized -> conan-ready -> docker-ready -> preprod-r5 eligible 
 |---|---|---|---|
 | G0 Identity | 机器可定位 | runner online，系统 labels 与唯一 custom label 正确 | `gh api .../runners/<id>/labels` 输出 |
 | G1 Host | 工具链与容量 | Linux 使用 GCC 与 Docker/Compose；macOS 使用 Apple Clang 和原生进程模式；均要求 Python 3.12，构建前空间/并发满足平台基线 | host inventory 与平台资源 summary |
-| G2 Conan | 固定工具链和本机 ABI-safe 依赖缓存 | Linux 的 `/opt/boost-gateway/{conan,sccache,tools}` 或 macOS `${{ runner.tool_cache }}/boost-gateway` 可写；隔离 venv 只含 Conan `2.8.1`；按 OS release、实际 compiler、arch、build type 和 graph remote digest 生成 namespace；`--no-remote --build=never` install 成功 | `runner-cache-identity.json`、venv `conan --version` 和离线 install 日志 |
+| G2 Conan | 固定工具链和本机 ABI-safe 依赖缓存 | Linux 的 `/opt/boost-gateway/{conan,sccache,tools}` 或 macOS `$RUNNER_TOOL_CACHE/boost-gateway` 可写；隔离 venv 只含 Conan `2.8.1`；按 OS release、实际 compiler、arch、build type 和 graph remote digest 生成 namespace；`--no-remote --build=never` install 成功 | `runner-cache-identity.json`、venv `conan --version` 和离线 install 日志 |
 | G3 Runtime | 目标平台运行时准入 | Linux 的所有 Compose images 精确匹配 `linux/amd64` 或 `linux/arm64` 且离线 preflight 通过；macOS 的 Mach-O server/SDK 架构检查通过 | Docker preflight 或 macOS package summary |
 | G4 R5 Drill | gateway restart 恢复路径 | Linux Docker Compose 或 macOS 原生进程启动，重启前后 SDK full-flow、readiness 和 record validation 全部通过 | `preprod-recovery-drill-summary.json` |
 | G5 GitHub Evidence | 可接受的预发 artifact | workflow 使用 `preprod-r5` 或唯一 R5 label，候选 SHA 一致，R5/R6 artifact 上传且通过 | `preprod-evidence-<run-id>` artifact |
@@ -62,7 +62,7 @@ Conan 可执行文件也是可追溯构建输入，而不是由系统 Python 隐
 开发、runner 预热和 R5 离线证据必须使用 Conan `2.8.1` 的隔离 virtual environment。
 开发 checkout 使用 `.venv/conan-2.8.1`；Ubuntu runner 使用
 `/opt/boost-gateway/tools/conan-2.8.1-py3.12`；macOS runner 使用
-`${{ runner.tool_cache }}/boost-gateway/tools/conan-2.8.1-py3.12`。三者都必须由
+`$RUNNER_TOOL_CACHE/boost-gateway/tools/conan-2.8.1-py3.12`。三者都必须由
 `scripts/tools/ensure_conan_venv.py` 创建或验收。
 该 helper 默认要求 venv 内解释器为 Python 3.12，并精确验证 Conan `2.8.1`；不能
 只因宿主 `python` 或 `conan` 命令可用就视为通过 G2。

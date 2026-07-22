@@ -35,7 +35,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；不声明容量或生产长稳
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **Linux 调试符号候选**: Linux x64 + GNU binutils、支持 build-id 的 linker、Syft
-- **JWKS 轮换证据**: Ubuntu 22.04/glibc 2.35 x64 + OpenSSL、localhost bind、临时 CA trust 和严格离线 Conan 图
+- **JWKS 轮换证据**: Linux x64 + 记录实际 glibc、OpenSSL、localhost bind、临时 CA trust 和严格离线 Conan 图
 - **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 

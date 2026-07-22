@@ -16,8 +16,6 @@ jobs:
     runs-on: ${{ fromJSON(inputs.runner) }}
     timeout-minutes: 90
     env:
-      BOOST_GATEWAY_RUNNER_CACHE_ROOT: ${{ runner.tool_cache }}/boost-gateway
-      BOOST_GATEWAY_CONAN_VENV: ${{ runner.tool_cache }}/boost-gateway/tools/conan-2.8.1-py3.12
       LOCKFILE: conan/locks/macos-apple-clang-arm64-release-nogrpc-nosqlite.lock
 
     steps:
@@ -26,6 +24,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Resolve persistent runner tool paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${RUNNER_TOOL_CACHE:-}"
+          cache_root="$RUNNER_TOOL_CACHE/boost-gateway"
+          printf 'BOOST_GATEWAY_RUNNER_CACHE_ROOT=%s\n' "$cache_root" >> "$GITHUB_ENV"
+          printf 'BOOST_GATEWAY_CONAN_VENV=%s\n' \
+            "$cache_root/tools/conan-2.8.1-py3.12" >> "$GITHUB_ENV"
 
       - name: Verify native toolchain
         shell: bash

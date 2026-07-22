@@ -38,7 +38,7 @@ jobs:
           set -euo pipefail
           test "$(uname -s)" = Linux
           test "$(uname -m)" = x86_64
-          test "$(getconf GNU_LIBC_VERSION)" = "glibc 2.35"
+          getconf GNU_LIBC_VERSION | grep -E '^glibc [0-9]+\.[0-9]+$'
           openssl version
           python --version
 
@@ -111,6 +111,7 @@ jobs:
         with:
           name: jwks-rotation-${{ github.sha }}
           path: |
+            runtime/validation/runner-cache-identity.json
             runtime/validation/jwks-conan-offline-summary.json
             runtime/validation/jwks-focused-ctest.log
             runtime/validation/jwks-rotation-summary.json

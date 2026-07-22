@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[3]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lib.evidence_provenance import build_evidence_provenance
+from scripts.lib.evidence_provenance import build_evidence_provenance  # noqa: E402
 
 
 JWKS_PATH = "/.well-known/jwks.json"

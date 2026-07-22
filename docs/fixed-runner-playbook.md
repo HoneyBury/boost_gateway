@@ -104,13 +104,13 @@ gRPC 使用独立的 `conan/locks/linux-gcc-x64-release-grpc-nosqlite.lock` 和 
 
 ### macOS ARM64 Runner 的持久 Conan 准入
 
-macOS self-hosted runner 使用 `${{ runner.tool_cache }}/boost-gateway`，不使用 checkout
+macOS self-hosted runner 使用 `$RUNNER_TOOL_CACHE/boost-gateway`，不使用 checkout
 内的 `.conan2-*`。该目录位于 runner 的持久 tool cache，`actions/checkout` 清理候选
 工作区时不会删除它。Conan venv 和 graph namespace 分别为：
 
 ```text
-${{ runner.tool_cache }}/boost-gateway/tools/conan-2.8.1-py3.12
-${{ runner.tool_cache }}/boost-gateway/conan/macos-<release>-apple-clang<actual>-arm64-release/conan-2.8.1-graph-<key>
+$RUNNER_TOOL_CACHE/boost-gateway/tools/conan-2.8.1-py3.12
+$RUNNER_TOOL_CACHE/boost-gateway/conan/macos-<release>-apple-clang<actual>-arm64-release/conan-2.8.1-graph-<key>
 ```
 
 `resolve_runner_cache.py` 在 macOS 上把系统版本、`/usr/bin/clang` 的 Apple Clang
@@ -714,8 +714,9 @@ python scripts/verify_production_evidence_gate.py --build-dir build/release --co
 ## Identity JWKS rotation evidence
 
 `jwks-rotation.yml` 必须从与其它 v3.6 候选 workflow 相同的 exact SHA 手动触发。
-Linux runner 需要 glibc 2.35、OpenSSL CLI、localhost 随机端口绑定能力，以及当前
-lockfile 对应的严格离线 Conan namespace。AOI runner 应显式传入：
+Linux x64 runner 需要可识别的 glibc、OpenSSL CLI、localhost 随机端口绑定能力，
+以及当前 lockfile 对应的严格离线 Conan namespace。workflow 会把实际 glibc 和
+runner identity 写入证据；机器专属复验应显式传入：
 
 ```text
 runner=["self-hosted","node-aoi-omen-gaming-laptop-16-am0xxx"]

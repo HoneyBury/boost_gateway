@@ -426,7 +426,9 @@ def main() -> int:
     add(
         checks,
         "workflow:macos-arm64:persistent-tool-cache",
-        "${{ runner.tool_cache }}/boost-gateway" in macos
+        'cache_root="$RUNNER_TOOL_CACHE/boost-gateway"' in macos
+        and "BOOST_GATEWAY_RUNNER_CACHE_ROOT" in macos
+        and "BOOST_GATEWAY_CONAN_VENV" in macos
         and 'CONAN_HOME: ${{ github.workspace }}' not in macos,
         "macOS runner keeps Conan tools and packages outside the checkout workspace",
     )
