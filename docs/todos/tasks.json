@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "HoneyBury/boost_gateway",
-  "next_id": 3,
+  "next_id": 4,
   "tasks": [
     {
       "id": "TODO-0001",
@@ -45,6 +45,27 @@
       "github": {
         "issue_number": 9,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/9"
+      }
+    },
+    {
+      "id": "TODO-0003",
+      "title": "Review and integrate Linux runner changes",
+      "status": "open",
+      "priority": "P0",
+      "category": "runner-integration",
+      "description": "After the Linux runner changes are committed and pushed, fetch the exact remote branch or commit, review and integrate it locally, validate the combined platform evidence implementation, and use the resulting facts to reprioritize the remaining production-platform work.",
+      "acceptance_criteria": [
+        "The Linux runner branch name and exact commit SHA are recorded before integration starts.",
+        "The remote changes are fetched without overwriting unrelated local work and are reviewed for runner labels, persistent Conan cache identity, Linux architecture handling, Docker image platform, R5 evidence, workflow security, and documentation consistency.",
+        "Merge or rebase conflicts are resolved without weakening linux-x64, linux-arm64, or macos-arm64 platform boundaries.",
+        "Relevant Python tests, Conan governance, workflow catalog, fixed-runner plan, Docker R5 policy checks, and any runner-specific validation introduced by the change all pass on the integrated revision.",
+        "TODO-0002 and the project priority plan are updated from the integrated runner evidence, with completed items checked only when supported by exact-SHA artifacts."
+      ],
+      "created_at": "2026-07-22T06:29:45Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 10,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/10"
       }
     }
   ]
