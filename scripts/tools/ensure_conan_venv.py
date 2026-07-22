@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import shutil
 import subprocess
 import venv
 from pathlib import Path
@@ -43,8 +44,23 @@ def installed_conan_version(venv_path: Path) -> str:
     return match.group(1)
 
 
-def ensure_conan_venv(venv_path: Path, conan_version: str, python_version: str, offline: bool) -> tuple[str, str]:
+def ensure_conan_venv(
+    venv_path: Path,
+    conan_version: str,
+    python_version: str,
+    offline: bool,
+    recreate_if_python_mismatch: bool = False,
+) -> tuple[str, str]:
     python_path = venv_python(venv_path)
+    if python_path.is_file():
+        installed_python = installed_python_version(venv_path)
+        if installed_python != python_version:
+            if offline or not recreate_if_python_mismatch:
+                raise RuntimeError(
+                    f"expected Python {python_version}, found {installed_python} in {venv_path}; recreate the virtual environment with Python {python_version}"
+                )
+            shutil.rmtree(venv_path)
+
     if not python_path.is_file():
         if offline:
             raise RuntimeError(f"offline mode requires a pre-created Conan virtual environment: {venv_path}")
@@ -97,6 +113,11 @@ def parse_args() -> argparse.Namespace:
         help="Virtual environment path; default: .venv/conan-2.8.1 in this checkout.",
     )
     parser.add_argument("--offline", action="store_true", help="Fail unless the requested virtual environment already exists and matches.")
+    parser.add_argument(
+        "--recreate-if-python-mismatch",
+        action="store_true",
+        help="Recreate a non-offline virtual environment when its Python major.minor does not match.",
+    )
     parser.add_argument("--github-env", type=Path, help="Append BOOST_GATEWAY_CONAN_VENV to this GitHub Actions environment file.")
     parser.add_argument("--github-path", type=Path, help="Append the virtual environment bin directory to this GitHub Actions path file.")
     return parser.parse_args()
@@ -105,7 +126,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     venv_path = args.venv if args.venv.is_absolute() else ROOT / args.venv
-    python_version, conan_version = ensure_conan_venv(venv_path, args.conan_version, args.python_version, args.offline)
+    python_version, conan_version = ensure_conan_venv(
+        venv_path,
+        args.conan_version,
+        args.python_version,
+        args.offline,
+        args.recreate_if_python_mismatch,
+    )
     bin_path = venv_path / "bin"
     append_line(args.github_env, f"BOOST_GATEWAY_CONAN_VENV={venv_path}")
     append_line(args.github_path, str(bin_path))

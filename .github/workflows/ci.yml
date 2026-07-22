@@ -28,6 +28,11 @@ jobs:
           clean: false
           fetch-depth: 0
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Restore sccache cache
         id: restore-sccache
         uses: actions/cache/restore@v4
@@ -70,6 +75,7 @@ jobs:
           python3 scripts/tools/ensure_conan_venv.py \
             --venv "$BOOST_GATEWAY_CONAN_VENV" \
             --conan-version 2.8.1 \
+            --recreate-if-python-mismatch \
             --github-env "$GITHUB_ENV" \
             --github-path "$GITHUB_PATH"
           "$BOOST_GATEWAY_CONAN_VENV/bin/conan" --version

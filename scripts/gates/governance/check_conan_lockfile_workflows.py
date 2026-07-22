@@ -375,6 +375,14 @@ def main() -> int:
     )
     add(
         checks,
+        "workflow:ci:pinned-python-and-stale-venv-recovery",
+        "uses: actions/setup-python@v5" in ci
+        and 'python-version: "3.12"' in ci
+        and "--recreate-if-python-mismatch" in ci,
+        "ci pins Python 3.12 and can replace a stale checkout-local Conan virtual environment",
+    )
+    add(
+        checks,
         "workflow:ci:no-global-or-floating-conan",
         FLOATING_CONAN_REQUIREMENT not in ci and "command -v conan" not in ci,
         "ci does not accept a global Conan executable or a floating Conan version range",
