@@ -56,6 +56,76 @@ def check_kind_cluster(required: bool, errors: list[str], warnings: list[str]) -
         return {"name": "kind:clusters", "required": required, "status": "failed" if required else "warning", "message": message}
 
 
+def check_orbstack_port_isolation(errors: list[str]) -> dict[str, object]:
+    """Reject host port forwarding when this Mac also owns the Linux ARM VM."""
+    if platform.system() != "Darwin" or not shutil.which("orbctl"):
+        return {
+            "name": "orbstack:linux-arm64-port-isolation",
+            "required": False,
+            "status": "skipped",
+            "message": "OrbStack Linux ARM host boundary is not present",
+        }
+
+    try:
+        machines = subprocess.check_output(
+            ["orbctl", "list"], text=True, stderr=subprocess.STDOUT, timeout=10
+        )
+    except Exception as exc:
+        message = f"cannot inspect OrbStack machines: {exc}"
+        errors.append(message)
+        return {
+            "name": "orbstack:linux-arm64-port-isolation",
+            "required": True,
+            "status": "failed",
+            "message": message,
+        }
+
+    if "boost-linux-arm64" not in machines:
+        return {
+            "name": "orbstack:linux-arm64-port-isolation",
+            "required": False,
+            "status": "skipped",
+            "message": "boost-linux-arm64 VM is not configured on this host",
+        }
+
+    try:
+        value = subprocess.check_output(
+            ["orbctl", "config", "get", "machines.forward_ports"],
+            text=True,
+            stderr=subprocess.STDOUT,
+            timeout=10,
+        ).strip().lower()
+    except Exception as exc:
+        message = f"cannot inspect OrbStack machines.forward_ports: {exc}"
+        errors.append(message)
+        return {
+            "name": "orbstack:linux-arm64-port-isolation",
+            "required": True,
+            "status": "failed",
+            "message": message,
+        }
+
+    if value != "false":
+        message = (
+            "OrbStack machines.forward_ports must be false when macOS and Linux ARM64 "
+            "fixed runners share this host"
+        )
+        errors.append(message)
+        return {
+            "name": "orbstack:linux-arm64-port-isolation",
+            "required": True,
+            "status": "failed",
+            "value": value,
+            "message": message,
+        }
+    return {
+        "name": "orbstack:linux-arm64-port-isolation",
+        "required": True,
+        "status": "passed",
+        "value": value,
+    }
+
+
 def environment_snapshot() -> dict[str, object]:
     return {
         "platform": platform.platform(),
@@ -103,6 +173,7 @@ def main() -> int:
 
     for command in ["python3", "cmake"]:
         checks.append(check_command(command, True, errors, warnings))
+    checks.append(check_orbstack_port_isolation(errors))
 
     if args.profile == "release-baseline":
         checks.append(check_command("ninja", False, errors, warnings))

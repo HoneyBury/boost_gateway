@@ -180,19 +180,36 @@ VM 的固定配置如下：
 - Docker 29.1、Compose 2.40、Go 1.22、.NET 8、sccache 0.7.7、Syft 1.49。
 - runner `2.336.0` 位于 `/opt/boost-gateway/actions-runner`，systemd 服务 enabled；唯一 label 为 `node-honeybury-m4-linux-arm64`。
 - Conan venv、cache 和 sccache 分别位于 `/opt/boost-gateway/tools/conan-2.8.1-py3.12`、`/opt/boost-gateway/conan`、`/opt/boost-gateway/sccache`；SDK packaging 独立 venv 位于 `/opt/boost-gateway/tools/sdk-package-py3.12`。
-- OrbStack `app.start_at_login=true`、`rosetta=false`；Mac Docker image inventory 只允许 ARM64。
+- OrbStack `app.start_at_login=true`、`rosetta=false`、`machines.forward_ports=false`；Mac Docker image inventory 只允许 ARM64。关闭 VM 端口自动转发是 Mac/Linux ARM64 workflow 并行运行的硬隔离条件，避免 Mac 的 9080/9201/9202/9302-9305 探测或压力流量误入 Linux VM。
 
 日常状态和恢复命令：
 
 ```bash
 orbctl start
 orbctl start boost-linux-arm64
+orbctl config get machines.forward_ports
 orbctl run -m boost-linux-arm64 uname -m
 orbctl run -m boost-linux-arm64 \
   systemctl status actions.runner.HoneyBury-boost_gateway.HoneyBury-M4-Linux-ARM64.service
 gh api repos/HoneyBury/boost_gateway/actions/runners \
   --jq '.runners[] | select(.name == "HoneyBury-M4-Linux-ARM64")'
 ```
+
+首次配置或该选项变更后必须重启整个 OrbStack 服务，而不只是 VM：
+
+```bash
+orbctl config set machines.forward_ports false
+orbctl stop
+orbctl start
+orbctl config get machines.forward_ports
+for port in 9080 9201 9202 9302 9303 9304 9305; do
+  lsof -nP -iTCP:"$port" -sTCP:LISTEN
+done
+```
+
+最后一条命令在 workflow 空闲时应无输出。`check_fixed_runner_environment.py` 会在承载
+`boost-linux-arm64` VM 的 macOS host 上把该设置作为 required preflight；Linux VM
+内部仍可正常绑定同一组端口，且不再发布到 Mac loopback/host 接口。
 
 Linux ARM64 workflow 使用 runner 自带的原生 CMake/Ninja/Python。提交
 `fec858d13e5366ab46668cb759b8ec6a87169926` 对 Linux ARM64 跳过只提供 x86_64

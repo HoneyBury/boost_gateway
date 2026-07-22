@@ -79,6 +79,11 @@ systemd 状态为 enabled/active。OrbStack 已启用登录启动，VM 重启后
 `node-honeybury-m4-linux-arm64`。G3-G5 完成后已添加
 `preprod-r5-honeybury-m4-linux-arm64` 与 `preprod-r5`。
 
+Mac host 固定设置 `machines.forward_ports=false`，防止 VM 的
+9080/9201/9202/9302-9305 自动映射到 Mac 并污染原生 macOS workflow。修改该配置后
+必须执行 `orbctl stop && orbctl start`；恢复后同时验证 Linux runner online、VM 内
+Redis `PING`、ARM64 Docker/kind image，以及 Mac 上上述端口在任务空闲时无监听。
+
 SDK packaging 工具使用独立持久 venv
 `/opt/boost-gateway/tools/sdk-package-py3.12`，固定 setuptools 83.0.0、wheel 0.47.0
 与 auditwheel 6.7.0，不污染 Conan venv。run `29926003937` 在
