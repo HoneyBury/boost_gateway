@@ -47,7 +47,7 @@ own revisions:
   two kind lifecycles, P5/P6, release baseline and SDK enterprise gates. Artifact
   `production-candidate-evidence-29902403738` has ID `8522927830` and records
   `overall_pass=true`, the exact checkout revision and the lockfile digest above.
-- Because `jwks-rotation.yml` is not registered on the default branch, its Linux
+- At that revision, `jwks-rotation.yml` was not registered on the default branch, so its Linux
   path was reproduced locally at `76715ba53326e825052f5f496465e5862960a64d`
   instead of being presented as a workflow artifact. Strict-offline Conan passed,
   focused CTest passed 53/53, the security release gate passed, and the real HTTPS
@@ -58,12 +58,13 @@ own revisions:
 These results do not form one final candidate set: the R5/R6 run and the later
 Release/R0/JWKS checks have different exact SHAs, repository changes continued
 after both revisions, and the project version on `main` remains `3.5.3`. The
-default branch also does not yet register `jwks-rotation.yml`,
+default branch at that stage did not register `jwks-rotation.yml`,
 `sdk-distribution.yml` or `debug-symbols.yml`, so the local JWKS result, SDK checks
 inside R0 and Release consumers do not substitute for their dedicated immutable
 artifacts. The Linux ARM64 runner added later on the same day does not retroactively
-change these x64 results. Final v3.6 claims remain blocked on workflow registration,
-a frozen revision, exact-SHA refresh, platform baselines and formal release assets.
+change these x64 results. At that stage final v3.6 claims remained blocked on
+workflow registration, a frozen revision, exact-SHA refresh, platform baselines
+and formal release assets.
 
 ## 2026-07-22 Linux x64 completion batch
 
@@ -89,7 +90,7 @@ Ubuntu x64 runner, strict-offline Conan and lockfile SHA-256
   with overhead ratios `1.046` and `1.047`. Artifact
   `preprod-evidence-29913176854` has ID `8527016097`.
 
-The dedicated workflows are not registered on the default branch, so their Linux
+At the time of this batch the dedicated workflows were not registered on the default branch, so their Linux
 paths were rehearsed locally and must not be described as GitHub workflow
 artifacts. The JWKS drill at `d687b9e` passed 10/10 outer checks and its summary
 contract passed 5/5; the unchanged native probe had already passed 53/53 focused
@@ -120,12 +121,54 @@ flow disable ambient Redis auto-connect and makes the symbol verifier tolerate r
 debuglink CRC bytes. Commit `c0c203f`, made after the `d687b9e` evidence batch,
 restricts debug-symbol checksums to publishable tarball/SPDX files rather than the
 materialized work directories. Consequently `d687b9e` remains the evidence SHA;
-`c0c203f` is a later workflow-only correction and requires another frozen-SHA
-refresh before final release claims.
+`c0c203f` is a later workflow-only correction. The default-branch dedicated refresh
+that closes this specific gap is recorded below.
 
 The downloaded artifacts and local summaries are retained at
 `/home/aoi/actions-runner/_evidence/boost-gateway/v3.6/aoi-runner-20260722`.
-`MANIFEST.sha256` covers all 660 retained files and passes a full local verification.
+At that point `MANIFEST.sha256` covered 660 retained files and passed a full local
+verification.
+
+## 2026-07-22 default-branch Linux x64 dedicated artifacts
+
+PRs #12-#16 registered the JWKS, SDK-distribution and debug-symbol workflows on
+`main` and closed the environment-boundary defects found by their first runs. The
+final workflow candidate is `00ce82e0b00d57f1ca68558d1e31fefd09fe506d`.
+All three successful jobs selected runner `aoi-omen-gaming-laptop-16-am0xxx` by its
+unique label and used strict-offline Conan namespace
+`/opt/boost-gateway/conan/ubuntu-22.04-gcc13.4.0-x64-release/conan-2.8.1-graph-db659b3b1f9ce8163985`
+with lockfile SHA-256
+`8edf407134fef2cd8b58b1f24b8012c578812fa4373130d989c27b9dde96f88c`.
+
+- Debug-symbol run [`29922341090`](https://github.com/HoneyBury/boost_gateway/actions/runs/29922341090)
+  passed the full Release build/CTest, 14-ELF pair verification 115/115 and the
+  controlled crash probe 11/11. Artifact ID `8530608986` contains only the two
+  tarballs, their SPDX files, checksum manifest and six validation summaries: 11
+  declared files and no unchecksummed materialized packaging directory. All four
+  asset checksums pass after download.
+- SDK run [`29923068133`](https://github.com/HoneyBury/boost_gateway/actions/runs/29923068133)
+  passed native SDK tests, wheel/NuGet validation 25/25 and a fresh
+  `--no-index --no-deps` six-service flow 15/15. Artifact ID `8530788482` contains
+  the packages, SPDX, provenance, both checksum manifests and validation summaries;
+  both checksum layers pass after download.
+- JWKS run [`29923314097`](https://github.com/HoneyBury/boost_gateway/actions/runs/29923314097)
+  passed 10/10 outer checks, 16/16 C++ HTTPS rotation/outage checks and the 6/6
+  summary contract. Artifact ID `8530992597` records exact candidate, run, runner,
+  Release configuration and lockfile provenance.
+
+The first debug refresh, run `29920565226`, completed all build, verification,
+crash-probe, SBOM and checksum steps but failed artifact upload after a network
+pause exceeded the action's default five-minute chunk timeout. It is retained as
+a failed transport diagnostic, not a passing candidate. The workflow now uploads
+only published assets, limits upload concurrency to three and uses a 20-minute
+chunk timeout; successful run `29922341090` proves the bounded retry path.
+
+The persistent archive now contains 686 files under
+`/home/aoi/actions-runner/_evidence/boost-gateway/v3.6/aoi-runner-20260722` and the
+regenerated `MANIFEST.sha256` passes 686/686. These runs close the Linux x64
+dedicated-workflow gap only. They do not rebind the earlier `d687b9e` Release/R0/R5-R6
+evidence and do not substitute for ARM platform baselines, one final cross-platform
+frozen SHA or formal release/published-asset verification.
 
 ## Mac-hosted Linux ARM64 runner
 
