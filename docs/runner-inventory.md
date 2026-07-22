@@ -9,7 +9,7 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 ## 验证来源
 
 - 仓库：`HoneyBury/boost_gateway`
-- 验证时间：2026-07-22 10:05 UTC
+- 验证时间：2026-07-22 14:28 UTC
 - 验证命令：`gh api repos/HoneyBury/boost_gateway/actions/runners`
 
 ## 当前快照
@@ -17,22 +17,22 @@ runner 命名、custom labels、Conan/Docker/R5 准入规则见
 | Runner | OS | 状态 | Busy | 版本 | Labels |
 |---|---|---|---|---|---|
 | `aoi-omen-gaming-laptop-16-am0xxx` | Linux | `online` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `node-aoi-omen-gaming-laptop-16-am0xxx` |
-| `HoneyBurydeMacBook-Pro` | macOS | `online` | `false` | `2.335.1` | `self-hosted`, `macOS`, `ARM64` |
-| `HoneyBury-M4-Linux-ARM64` | Linux | `online` | `false` | `2.336.0` | `self-hosted`, `Linux`, `ARM64`, `node-honeybury-m4-linux-arm64`, `ubuntu-2404`, `conan-gcc13-release`, `conan-gcc13-debug`, `conan-gcc13-grpc`, `preprod-r5-honeybury-m4-linux-arm64`, `preprod-r5` |
+| `HoneyBurydeMacBook-Pro` | macOS | `online` | `false` | `2.335.1` | `self-hosted`, `macOS`, `ARM64`, `node-honeybury-macbook-pro`, `sdk-osx-arm64`, `jwks-macos-arm64`, `macos-arm64-candidate` |
+| `HoneyBury-M4-Linux-ARM64` | Linux | `online` | `false` | `2.336.0` | `self-hosted`, `Linux`, `ARM64`, `node-honeybury-m4-linux-arm64`, `ubuntu-2404`, `conan-gcc13-release`, `conan-gcc13-debug`, `conan-gcc13-grpc`, `preprod-r5-honeybury-m4-linux-arm64`, `preprod-r5`, `sdk-linux-arm64`, `debug-symbols-linux-arm64`, `jwks-linux-arm64` |
 | `MyDesktop-Win` | Windows | `offline` | `false` | `2.334.0` | `self-hosted`, `Windows`, `X64` |
 | `myserver` | Linux | `offline` | `false` | `2.335.1` | `self-hosted`, `X64`, `Linux`, `preprod-r5`, `preprod-r5-myserver` |
 
 ## 当前结论
 
 - Linux runner `aoi-omen-gaming-laptop-16-am0xxx` 已在线，并匹配 `["self-hosted","Linux","X64"]`。
-- macOS runner `HoneyBurydeMacBook-Pro` 已在线，并匹配 `["self-hosted","macOS","ARM64"]`。本机 persistent Conan namespace 已完成 13/13 严格离线准入；run `29902706777` 已形成原生 R5 与 dSYM 候选 artifact。
+- macOS runner `HoneyBurydeMacBook-Pro` 已在线，并具备唯一 label `node-honeybury-macbook-pro`。run `29927622379` 已形成原生 R5、bounded baseline、package 与 dSYM exact-SHA artifact；runs `29925779628`、`29928355843` 分别完成原生 JWKS 与 osx-arm64 SDK evidence。
 - Linux ARM64 runner `HoneyBury-M4-Linux-ARM64` 已在线，并匹配唯一 label `node-honeybury-m4-linux-arm64`。Release run `29906228268`、Debug run `29907949804`、gRPC run `29908827298` 和原生 `linux/arm64` R5/R6 run `29909904605` 已完成 G0-G5 准入；runner 已获得机器专属及共享 `preprod-r5` labels。
 - AOI 已安装并验签 kind `v0.32.0` 与 kubectl `v1.36.1`，固定 Kubernetes `v1.36.1` node digest 已进入本地 cache；run `29563770679` 的真实 Operator kind summary 为 `overall_pass=true`。
 - 默认指向 Linux fixed-runner 的 workflow 可以开始实际执行；是否形成生产证据仍取决于各 workflow 的 preflight、summary 和 artifact，而不只是 job 被派发。
 - `myserver` 当前离线且正在重新配置；历史 G2/G3/R5 事实不能代替新环境准入。
 - Windows runner `MyDesktop-Win` 当前离线，且已经退出 Linux/macOS 双平台维护范围。
 
-GitHub API 在 2026-07-22 10:05 UTC 确认 AOI Linux、Mac 原生 runner 与 Mac-hosted
+GitHub API 在 2026-07-22 14:28 UTC 确认 AOI Linux、Mac 原生 runner 与 Mac-hosted
 Linux ARM64 runner 在线且 `busy=false`；Windows 与 `myserver` 离线。
 R5 机器专属复验必须使用目标机器的 unique custom label；不能用共享 label 代替
 当前候选的 G2/G3 cache 准入。
@@ -51,11 +51,20 @@ R5 机器专属复验必须使用目标机器的 unique custom label；不能用
 
 | Runner | 原生工具链 | Persistent Conan | Docker/R5 |
 |---|---|---|---|
-| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过 | run `29902706777` 已完成原生 Mach-O R5、package/SBOM/checksum 与 UUID-bound dSYM 候选验收 |
+| `HoneyBurydeMacBook-Pro` | macOS 26.5.2 ARM64、Apple Clang 21、CMake 4.2.1、Ninja 1.13.2、Python 3.12、.NET 8、Syft 1.49 | runner tool cache 下 Conan 2.8.1 namespace `graph-27de4eada077b868e6b4`，13 个锁定包 `--no-remote --build=never` 通过；独立 SDK package venv 固定 setuptools 83.0.0/wheel 0.47.0 | run `29927622379` 完成原生 R5/package/dSYM，run `29925779628` 完成 JWKS，run `29928355843` 完成 osx-arm64 SDK |
 
 Mac 原生生产候选与 Linux Docker R5 是两条证据线。`macos-arm64.yml` 使用 Mach-O
 server 进程执行 gateway restart 前后完整 SDK flow；Mac-hosted Linux ARM64 runner
 则只消费 ARM64 ELF 和 `linux/arm64` image。两条证据不能互相替代。
+
+Mac SDK packaging 使用 runner tool cache 下独立的 `tools/sdk-package-py3.12`，固定
+setuptools 83.0.0 与 wheel 0.47.0。JWKS run `29925779628` 在
+`19b1a67d439dc3c82cf18eb2990b02a38c05131c` 完成真实 HTTPS drill 10/10 和 summary
+contract 6/6，artifact ID `8531893301`。当前候选 SHA
+`a355fb7500ad259ae8921db04effbe325483400f` 上，run `29927622379` 完成全量 CTest、
+原生 R5、bounded performance/stability、package 与 dSYM 160/160，artifact ID
+`8532883869`；SDK run `29928355843` 完成 osx-arm64 package 23/23、full-flow 15/15，
+artifact ID `8532949790`。
 
 ## 2026-07-22 Mac-hosted Linux ARM64 Runner 准入
 
@@ -69,6 +78,16 @@ systemd 状态为 enabled/active。OrbStack 已启用登录启动，VM 重启后
 原有 ARM64 容器均完成恢复验证。runner 具备唯一 identity label
 `node-honeybury-m4-linux-arm64`。G3-G5 完成后已添加
 `preprod-r5-honeybury-m4-linux-arm64` 与 `preprod-r5`。
+
+SDK packaging 工具使用独立持久 venv
+`/opt/boost-gateway/tools/sdk-package-py3.12`，固定 setuptools 83.0.0、wheel 0.47.0
+与 auditwheel 6.7.0，不污染 Conan venv。run `29926003937` 在
+`19b1a67d439dc3c82cf18eb2990b02a38c05131c` 完成 Linux ARM64 JWKS 10/10 和
+summary contract 6/6，artifact ID `8532055003`。同平台 SDK run `29926636641`
+在 `a355fb7500ad259ae8921db04effbe325483400f` 完成 package 25/25、full-flow 15/15、
+SBOM/checksum，artifact ID `8532281062`。debug-symbol run `29926847088` 在同 SHA
+完成 14 ELF pair、独立验证 116/116 与 crash probe 12/12，artifact ID
+`8532586136`。
 
 首次 run `29905435922` 暴露 `gha-setup-ninja@v5` 下载 x86_64 Linux 二进制的问题。
 提交 `fec858d13e5366ab46668cb759b8ec6a87169926` 让 Linux ARM64 fixed-runner workflow

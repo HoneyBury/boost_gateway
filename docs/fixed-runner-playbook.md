@@ -47,8 +47,8 @@ own revisions:
   two kind lifecycles, P5/P6, release baseline and SDK enterprise gates. Artifact
   `production-candidate-evidence-29902403738` has ID `8522927830` and records
   `overall_pass=true`, the exact checkout revision and the lockfile digest above.
-- At that revision, `jwks-rotation.yml` was not registered on the default branch, so its Linux
-  path was reproduced locally at `76715ba53326e825052f5f496465e5862960a64d`
+- Before `jwks-rotation.yml` was registered on the default branch, its Linux path
+  was reproduced locally at `76715ba53326e825052f5f496465e5862960a64d`
   instead of being presented as a workflow artifact. Strict-offline Conan passed,
   focused CTest passed 53/53, the security release gate passed, and the real HTTPS
   rotation drill passed 10/10 outer plus 16/16 probe checks. It observed HTTP
@@ -57,14 +57,12 @@ own revisions:
 
 These results do not form one final candidate set: the R5/R6 run and the later
 Release/R0/JWKS checks have different exact SHAs, repository changes continued
-after both revisions, and the project version on `main` remains `3.5.3`. The
-default branch at that stage did not register `jwks-rotation.yml`,
-`sdk-distribution.yml` or `debug-symbols.yml`, so the local JWKS result, SDK checks
-inside R0 and Release consumers do not substitute for their dedicated immutable
-artifacts. The Linux ARM64 runner added later on the same day does not retroactively
-change these x64 results. At that stage final v3.6 claims remained blocked on
-workflow registration, a frozen revision, exact-SHA refresh, platform baselines
-and formal release assets.
+after both revisions, and the project version on `main` remains `3.5.3`. Those
+three workflows are now registered, but this earlier local JWKS result, SDK checks
+inside R0 and Release consumers still do not substitute for dedicated immutable
+Linux x64 artifacts. The Linux ARM64 runner added later on the same day does not
+retroactively change these x64 results. Final v3.6 claims remain blocked on a
+frozen revision, exact-SHA refresh, platform baselines and formal release assets.
 
 ## 2026-07-22 Linux x64 completion batch
 
@@ -90,9 +88,9 @@ Ubuntu x64 runner, strict-offline Conan and lockfile SHA-256
   with overhead ratios `1.046` and `1.047`. Artifact
   `preprod-evidence-29913176854` has ID `8527016097`.
 
-At the time of this batch the dedicated workflows were not registered on the default branch, so their Linux
-paths were rehearsed locally and must not be described as GitHub workflow
-artifacts. The JWKS drill at `d687b9e` passed 10/10 outer checks and its summary
+Before the dedicated workflows were registered on the default branch, their Linux
+paths were rehearsed locally and must not be described as GitHub workflow artifacts.
+The JWKS drill at `d687b9e` passed 10/10 outer checks and its summary
 contract passed 5/5; the unchanged native probe had already passed 53/53 focused
 CTest, the security gate and 16/16 probe checks at `c2504f6`. The SDK rehearsal
 produced wheel and NuGet `4.2.0` candidates, passed independent package validation
@@ -181,7 +179,7 @@ VM 的固定配置如下：
 - Ubuntu 24.04.4 `aarch64`，12 vCPU、12 GiB 内存；GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12。
 - Docker 29.1、Compose 2.40、Go 1.22、.NET 8、sccache 0.7.7、Syft 1.49。
 - runner `2.336.0` 位于 `/opt/boost-gateway/actions-runner`，systemd 服务 enabled；唯一 label 为 `node-honeybury-m4-linux-arm64`。
-- Conan venv、cache 和 sccache 分别位于 `/opt/boost-gateway/tools/conan-2.8.1-py3.12`、`/opt/boost-gateway/conan`、`/opt/boost-gateway/sccache`。
+- Conan venv、cache 和 sccache 分别位于 `/opt/boost-gateway/tools/conan-2.8.1-py3.12`、`/opt/boost-gateway/conan`、`/opt/boost-gateway/sccache`；SDK packaging 独立 venv 位于 `/opt/boost-gateway/tools/sdk-package-py3.12`。
 - OrbStack `app.start_at_login=true`、`rosetta=false`；Mac Docker image inventory 只允许 ARM64。
 
 日常状态和恢复命令：
@@ -225,6 +223,33 @@ Redis 恢复的 R5 和两轮 R6。preflight 为 11/11 ARM64、0 missing、0 wron
 1.044、1.028。artifact `preprod-evidence-29909904605` 的 ID 为 `8525559864`。
 该 runner 已完成 G0-G5，并获得 `preprod-r5-honeybury-m4-linux-arm64` 与
 `preprod-r5`。平台级 baseline/soak/capacity 和最终 frozen-SHA artifact 仍是独立任务。
+
+### 2026-07-22 ARM package/security evidence
+
+分支 `codex/v36-arm-platform-evidence` 将 `sdk-distribution.yml` 扩展为
+`linux-x64`、`linux-arm64`、`macos-arm64` 三平台，将 `jwks-rotation.yml` 扩展到
+Linux ARM64，并让 Linux debug-symbol 创建器从原生架构生成平台标签。SDK packaging
+与 Conan 工具隔离：Linux ARM64 的持久 venv 固定 setuptools 83.0.0、wheel 0.47.0、
+auditwheel 6.7.0；Mac venv固定前两项。证据 workflow 只离线验收，不在 job 中安装。
+
+- Linux ARM64 JWKS run `29926003937` 在 `19b1a67d439dc3c82cf18eb2990b02a38c05131c`
+  通过 strict-offline Conan、focused tests、真实 HTTPS rotation/outage 10/10 和 summary
+  contract 6/6；artifact `8532055003`。
+- Linux ARM64 SDK run `29926636641` 在 `a355fb7500ad259ae8921db04effbe325483400f`
+  生成 `manylinux_2_39_aarch64` wheel 与 `linux-arm64` NuGet，package checks 25/25、
+  fresh package full-flow 15/15，并上传逐资产 SPDX/checksum；artifact `8532281062`。
+- Linux ARM64 debug-symbol run `29926847088` 在同 SHA 完成全量 build/CTest/install，
+  14 个 ELF 的 runtime/symbol pair 独立验证 116/116，crash probe 12/12；artifact
+  `8532586136`。
+- macOS JWKS run `29925779628` 通过 drill 10/10 与 contract 6/6；artifact
+  `8531893301`。macOS candidate run `29927622379` 在 `a355fb7` 完成原生 R5、bounded
+  baseline、package 与 dSYM 160/160；artifact `8532883869`。同 SHA SDK run
+  `29928355843` 生成 `macosx_26_0_arm64` wheel 与 `osx-arm64` NuGet，package 23/23、
+  full-flow 15/15；artifact `8532949790`。
+
+这些是预冻结能力证据。Linux ARM64 Release 仍要求预置并验收 v3.5.3 ARM64 legacy
+leaderboard binary；两平台完整 baseline/soak/capacity、Mac notarization、最终 tag 和
+published-asset verification 仍未完成。
 
 Ubuntu fixed-runner 必须同时固化仓库内 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`conan-validate.yml`、`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 默认使用 Linux `nosqlite` lockfile；新增 `grpc-experimental.yml` 会在同一 Conan home 上使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 
@@ -324,6 +349,7 @@ macOS self-hosted runner 使用 `$RUNNER_TOOL_CACHE/boost-gateway`，不使用 c
 
 ```text
 $RUNNER_TOOL_CACHE/boost-gateway/tools/conan-2.8.1-py3.12
+$RUNNER_TOOL_CACHE/boost-gateway/tools/sdk-package-py3.12
 $RUNNER_TOOL_CACHE/boost-gateway/conan/macos-<release>-apple-clang<actual>-arm64-release/conan-2.8.1-graph-<key>
 ```
 

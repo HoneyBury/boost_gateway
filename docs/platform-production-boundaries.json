@@ -20,7 +20,7 @@
       "architecture": "arm64",
       "artifact_format": "ELF",
       "container_platform": "linux/arm64",
-      "status": "foundation"
+      "status": "production-candidate"
     },
     "macos-arm64": {
       "os": "macos",
@@ -32,21 +32,21 @@
   },
   "workflows": {
     "ci": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "implemented-by-macos-arm64"},
-    "conan-validate": {"linux-x64": "implemented", "linux-arm64": "foundation", "macos-arm64": "implemented-by-macos-arm64"},
-    "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "candidate-exact-sha-evidence"},
-    "grpc-experimental": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
-    "jwks-rotation": {"linux-x64": "implemented", "linux-arm64": "planned-native-security-evidence", "macos-arm64": "foundation-native-workflow"},
+    "conan-validate": {"linux-x64": "implemented", "linux-arm64": "implemented-exact-sha-evidence", "macos-arm64": "implemented-by-macos-arm64"},
+    "debug-symbols": {"linux-x64": "implemented", "linux-arm64": "implemented-exact-sha-evidence", "macos-arm64": "implemented-exact-sha-evidence"},
+    "grpc-experimental": {"linux-x64": "implemented", "linux-arm64": "implemented-exact-sha-experimental", "macos-arm64": "planned"},
+    "jwks-rotation": {"linux-x64": "implemented", "linux-arm64": "implemented-exact-sha-evidence", "macos-arm64": "implemented-exact-sha-evidence"},
     "long-soak-capacity": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "planned-platform-baseline"},
     "macos-arm64": {"linux-x64": "not-applicable", "linux-arm64": "not-applicable", "macos-arm64": "implemented-exact-sha-evidence"},
     "nightly-stability": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "bounded-smoke-exact-sha-evidence"},
     "perf-regression": {"linux-x64": "implemented", "linux-arm64": "planned-platform-baseline", "macos-arm64": "bounded-smoke-exact-sha-evidence"},
-    "preprod-evidence": {"linux-x64": "implemented-linux-amd64", "linux-arm64": "foundation-linux-arm64", "macos-arm64": "implemented-by-macos-arm64-native"},
+    "preprod-evidence": {"linux-x64": "implemented-linux-amd64", "linux-arm64": "implemented-linux-arm64-exact-sha-evidence", "macos-arm64": "implemented-by-macos-arm64-native"},
     "production-candidate-evidence": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
     "production-gates": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned"},
     "production-readiness": {"linux-x64": "implemented", "linux-arm64": "planned-platform-decision", "macos-arm64": "planned-platform-decision"},
     "release": {"linux-x64": "implemented", "linux-arm64": "planned-asset", "macos-arm64": "planned-asset"},
     "release-asset-verification": {"linux-x64": "implemented", "linux-arm64": "planned-asset", "macos-arm64": "planned-asset"},
-    "sdk-distribution": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-osx-arm64"},
+    "sdk-distribution": {"linux-x64": "implemented", "linux-arm64": "implemented-exact-sha-evidence", "macos-arm64": "implemented-exact-sha-evidence"},
     "specialized-e2e": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-native-subset"}
   }
 }
