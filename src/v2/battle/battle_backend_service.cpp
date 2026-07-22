@@ -661,7 +661,6 @@ private:
                 }
             }
 
-            runtime_.destroy_instance(battle_id);
         }
 
         auto resp = make_ok({
