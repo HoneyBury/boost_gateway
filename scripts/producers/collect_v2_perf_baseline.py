@@ -732,6 +732,87 @@ def wait_for_service_quiescence(
     )
 
 
+def _darwin_ephemeral_port_range() -> tuple[int, int]:
+    completed = subprocess.run(
+        ["sysctl", "-n", "net.inet.ip.portrange.first", "net.inet.ip.portrange.last"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    values = [int(value) for value in completed.stdout.split() if value.isdigit()]
+    if completed.returncode != 0 or len(values) != 2 or values[0] > values[1]:
+        raise RuntimeError("failed to resolve the Darwin ephemeral TCP port range")
+    return values[0], values[1]
+
+
+def _darwin_time_wait_count() -> int:
+    completed = subprocess.run(
+        ["netstat", "-an", "-p", "tcp"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        raise RuntimeError("failed to inspect Darwin TCP socket state")
+    return sum(1 for line in completed.stdout.splitlines() if "TIME_WAIT" in line.split())
+
+
+def wait_for_local_connection_budget(
+    target_connections: int,
+    *,
+    headroom: int = 1024,
+    timeout_seconds: float = 60.0,
+    interval_seconds: float = 1.0,
+) -> dict[str, Any]:
+    """Wait for Darwin's bounded ephemeral port pool before a local capacity run."""
+    if platform.system() != "Darwin":
+        return {
+            "required": False,
+            "platform": platform.system(),
+            "target_connections": target_connections,
+            "wait_seconds": 0.0,
+        }
+
+    first, last = _darwin_ephemeral_port_range()
+    port_capacity = last - first + 1
+    required_free = target_connections + headroom
+    if required_free > port_capacity:
+        raise RuntimeError(
+            "Darwin ephemeral TCP port range cannot support the requested local capacity: "
+            f"target={target_connections}, headroom={headroom}, capacity={port_capacity}"
+        )
+
+    maximum_time_wait = port_capacity - required_free
+    started_at = time.monotonic()
+    deadline = started_at + timeout_seconds
+    initial_time_wait: int | None = None
+    while True:
+        current_time_wait = _darwin_time_wait_count()
+        if initial_time_wait is None:
+            initial_time_wait = current_time_wait
+        if current_time_wait <= maximum_time_wait:
+            return {
+                "required": True,
+                "platform": "Darwin",
+                "target_connections": target_connections,
+                "headroom": headroom,
+                "ephemeral_port_first": first,
+                "ephemeral_port_last": last,
+                "ephemeral_port_capacity": port_capacity,
+                "maximum_time_wait": maximum_time_wait,
+                "initial_time_wait": initial_time_wait,
+                "final_time_wait": current_time_wait,
+                "wait_seconds": round(time.monotonic() - started_at, 6),
+            }
+        if time.monotonic() >= deadline:
+            raise RuntimeError(
+                "Darwin ephemeral TCP port budget did not recover before capacity load: "
+                f"target={target_connections}, time_wait={current_time_wait}, "
+                f"maximum_time_wait={maximum_time_wait}"
+            )
+        time.sleep(interval_seconds)
+
+
 def invoke_bench_case(
     pressure_exe: Path,
     gateway_port: int,
@@ -3426,6 +3507,7 @@ def main() -> int:
             case_runs: list[dict[str, Any]] = []
             for repetition in range(args.repetitions):
                 run_key = f"{case['name']}.run{repetition + 1}"
+                connection_budget = wait_for_local_connection_budget(int(case["clients"]))
                 service_before = snapshot_processes(managed)
                 resource_started_at = time.monotonic()
                 load_end: dict[str, Any] = {}
@@ -3463,6 +3545,7 @@ def main() -> int:
                 run_result["case_name"] = run_key
                 run_result["base_case_name"] = case["name"]
                 run_result["case_identity"] = case_identity_by_name[str(case["name"])]
+                run_result["local_connection_budget"] = connection_budget
                 run_result["resource_elapsed_seconds"] = round(
                     load_window_elapsed_seconds, 6
                 )
