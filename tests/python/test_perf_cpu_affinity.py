@@ -1,3 +1,4 @@
+import inspect
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -15,6 +16,12 @@ from scripts.producers.collect_v2_perf_baseline import (
 
 
 class PerfCpuAffinityTest(unittest.TestCase):
+    def test_service_quiescence_uses_bounded_drain_window(self) -> None:
+        timeout = inspect.signature(wait_for_service_quiescence).parameters[
+            "timeout_seconds"
+        ].default
+        self.assertEqual(timeout, 30.0)
+
     def test_parse_and_format_cpu_set(self) -> None:
         self.assertEqual(parse_cpu_set("0-2,4,6-7"), {0, 1, 2, 4, 6, 7})
         self.assertEqual(format_cpu_set({7, 2, 1, 0, 6, 4}), "0-2,4,6-7")
