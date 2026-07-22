@@ -270,7 +270,7 @@ def main() -> int:
         "conan_remote_environment_sha256": remote_env_digest,
         "conan_home": str(conan_home),
         "sccache_dir": str(sccache_dir),
-        "sccache_server_port": sccache_server_port(os_id),
+        "sccache_server_port": sccache_server_port(distro),
     }
     if args.github_env:
         args.github_env.parent.mkdir(parents=True, exist_ok=True)
@@ -281,7 +281,7 @@ def main() -> int:
                 "BOOST_GATEWAY_CONAN_CACHE_KEY": conan_key,
                 "BOOST_GATEWAY_RUNNER_CACHE_PLATFORM": platform_namespace,
             }
-            if port := sccache_server_port(os_id):
+            if port := sccache_server_port(distro):
                 environment["SCCACHE_SERVER_PORT"] = port
             for key, value in environment.items():
                 handle.write(f"{key}={value}\n")
