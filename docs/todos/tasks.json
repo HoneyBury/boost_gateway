@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "HoneyBury/boost_gateway",
-  "next_id": 4,
+  "next_id": 5,
   "tasks": [
     {
       "id": "TODO-0001",
@@ -65,6 +65,28 @@
       "github": {
         "issue_number": 10,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/10"
+      }
+    },
+    {
+      "id": "TODO-0004",
+      "title": "Execute parallel Linux and macOS production evidence tracks",
+      "status": "open",
+      "priority": "P0",
+      "category": "platform-evidence",
+      "description": "Run Linux and macOS evidence work in parallel from the same repository branch, then freeze one candidate SHA and refresh final artifacts without substituting evidence across linux-x64, linux-arm64, and macos-arm64.",
+      "acceptance_criteria": [
+        "The integration branch is synchronized on both runner hosts and the pre-freeze revision used for capability runs is recorded.",
+        "Linux x64 prepares and runs strict-offline JWKS, release, SDK distribution, debug-symbol, R0, and R5/R6 evidence as soon as each workflow is available on the default branch.",
+        "A native Linux ARM64 runner completes identity, GCC 13 Conan Release/Debug/gRPC cache admission, linux/arm64 image preflight, and native R5 recovery evidence.",
+        "macOS ARM64 completes native JWKS workflow wiring, platform-specific stability/performance baselines, dSYM/debug-symbol packaging, osx-arm64 SDK consumers, and release-asset verification.",
+        "After repository changes stop, one candidate SHA is frozen and every claimed platform refreshes its required summaries and immutable assets on that exact SHA.",
+        "Production readiness rejects cross-platform or cross-SHA evidence and records remaining unsupported platform capabilities explicitly."
+      ],
+      "created_at": "2026-07-22T07:15:55Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 11,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/11"
       }
     }
   ]
