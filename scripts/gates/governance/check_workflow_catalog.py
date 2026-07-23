@@ -634,6 +634,13 @@ def main() -> int:
         and "test \"${#sboms[@]}\" -eq 3" in release_workflow,
         "release publishes and checksums each platform tarball and SPDX SBOM",
     )
+    add(
+        checks,
+        "release-asset-verification:macos-gh-archive-layout",
+        'executable="gh_${gh_version}_macOS_arm64/bin/gh"'
+        in release_asset_verification,
+        "published asset verification resolves the versioned macOS GitHub CLI archive layout",
+    )
     production_platform_workflows = {
         "release": release_workflow,
         "production-candidate-evidence": candidate_workflow,
