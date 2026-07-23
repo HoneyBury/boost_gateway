@@ -6,11 +6,12 @@
 
 ### 证据与发布工程
 
+- `v3.6.0` annotated tag 固定在 `79930cc2fe21aafa71d34cc6631315373d8b27ae`。三平台 tag Release run `30025684329` 已发布 Linux x64、Linux ARM64、macOS ARM64 runtime archive、逐平台 SPDX SBOM 和总 checksum；线上独立复验 runs `30026727708`、`30026727913`、`30027061993` 均通过 checksum、SBOM 语义、provenance、attested SPDX predicate 与无源码 package consumer。
 - 完成 v3.6 Raft Phase A-C 候选：strict disk/command codec、legacy/protobuf 双读、确定性 fixtures、显式 peer capability 和 gated protobuf writer 已落地；apply 只有成功后才推进持久化 index，失败会 fail closed 并在重启后重试。默认配置仍使用 legacy writer。
-- 加固 Raft Phase B 回滚与发布证据：capability 探测失败会撤销旧缓存，三节点 protocol-profile E2E 覆盖逐节点升级/回滚、leader 重选和 committed log catch-up；新增严格 `raft_state_tool` v1-to-v0 转换、每方向最多八对的内容寻址迁移历史及中断续写，并用真实 `v3.5.3`/候选 backend 完成本地十三阶段双周期三进程门禁。Release 在签名前额外校验旧制品预期 SHA-256、三节点读回、提交索引、双周期 schema 轨迹、六次 downgrade 和第二周期独立 history sidecar，再与 strict-offline Conan、Raft 专项、data recovery、clean package consumer 与 protobuf/abseil SBOM 做同 run 绑定；Linux x64 和 ARM64 的预冻结 fixed-runner Release 已通过，最终冻结 SHA 仍需刷新。
-- 接受 v3.6 身份、SDK 分发、Raft schema、macOS ARM64 和独立 debug symbols 五项 ADR，并增加机器可读决策 manifest 与 fail-closed 治理门禁；本次只固定实现边界和顺序，不声明这些能力或发布资产已交付。
+- 加固 Raft Phase B 回滚与发布证据：capability 探测失败会撤销旧缓存，三节点 protocol-profile E2E 覆盖逐节点升级/回滚、leader 重选和 committed log catch-up；新增严格 `raft_state_tool` v1-to-v0 转换、内容寻址迁移历史及中断续写，并用真实 `v3.5.3`/候选 backend 完成双周期三进程门禁。最终三平台 tag Release 将 strict-offline Conan、Raft 专项、data recovery、clean package consumer 与 protobuf/abseil SBOM 绑定到同一冻结 revision。
+- 接受 v3.6 身份、SDK 分发、Raft schema、macOS ARM64 和独立 debug symbols 五项 ADR，并增加机器可读决策 manifest 与 fail-closed 治理门禁。三平台 runtime/C++/C ABI 资产已交付；SDK 4.2.0 wheel/NuGet 和独立 symbols/dSYM 仍是候选资产，不在本次 GitHub Release manifest 或 supported asset 声明中。
 - 身份验证新增 static multi-kid/JWKS resolver、immutable snapshot、TTL/stale grace、单 worker refresh 和严格 RS256/JWK/config 边界；新增真实 localhost HTTPS、临时受信 CA、双 `kid` 轮换、受控 outage、过期 fail-closed 与静态 key-ring 回滚 fixed-runner workflow，私钥、token 和 JWK modulus 不进入 summary 或 artifact。
-- 新增 macOS ARM64 Conan profile/lockfile/preset、native install/package verifier 与候选 workflow；原生 Release/R0、三轮 baseline、capacity/R4 和带 Darwin 资源采样的 2h soak 已形成预冻结事实。
+- 新增 macOS ARM64 Conan profile/lockfile/preset、native install/package verifier 与候选 workflow；冻结 SHA 上的原生 Release/R0、R5/R6、三轮 baseline、capacity/R4、`7213.991s` 2h soak、readiness 和 published-asset verification 均通过。
 - SDK 升级到 4.2.0，新增 platform wheel/NuGet 构建器、包内 native manifest、clean consumer、安装后真实 Gateway full-flow 与逐包 SBOM/checksum 候选 workflow。
 - 新增 Linux `RelWithDebInfo` runtime/debug-symbol pair、build-id/debuglink/hash 映射、独立 archive verifier、受控崩溃探针和离线符号化 runbook。
 - 容量采集将 service 与 load generator CPU affinity 分离，固定 loadgen I/O 线程，按相邻快照和 quiescence 计算逐轮资源差值，并拒绝超过物理 CPU 上限或缺少进程级 affinity 证明的证据。
@@ -21,7 +22,8 @@
 - Runtime 候选 `37897e8` 通过主线 CI run `29822268701`；AOI run `29822268782` 完成 6 点、每点三轮的 closed-loop 饱和曲线，18/18 轮有效并选出 `echo-sat-c2000-i10-60s` 比较点。该点使用 2,000 个客户端，200K 表示配置请求率上限，不是客户端数。
 - 同一候选的 service CPU 1/2/4 runs `29823733478` / `29823736393` / `29823739153` 聚合为 `partial_cpu_scaling`；`io_cores=1/2/4` runs `29823742465` / `29823745289` / `29823733478` 聚合为 `no_material_io_core_gain`。两条轴证据均完整通过，但不自动修改 runtime 或部署默认值。
 - OTel run `29823748288` 完成 fresh Gateway/Battle Backend 的 off/on 各三轮对照和 routed/exporter/collector 计数对账；吞吐变化 `+0.103%`、P99 与 Gateway CPU 无变化、RSS `+46.695%`，相对变化保持 `observed_not_thresholded`。
-- Linux ARM64 与 macOS ARM64 的 Release、R0、三轮 baseline、capacity/R4 和原生 2h soak 均已通过；这些运行分属 `46dc79d` 与修复 Darwin sampler 后的 `a01e7bb`，只作为预冻结能力事实，正式候选必须在本版本冻结 SHA 上刷新。
+- Linux ARM64 与 macOS ARM64 已在冻结 SHA 完成各自证据闭环。Linux ARM64 `battle-100` 三轮中位数为 `250ms` 且单轮出现 `300ms`，按既有 gate 通过但没有性能余量；阈值未放宽，余量改进进入后续任务。
+- macOS ARM64 资产面向命令行/服务端开发，首版按 ADR 明确 `signed=false`、`notarized=false`；checksum、SBOM、provenance、Mach-O 架构、C ABI、native consumer、恢复、性能、容量与长稳证据不因此豁免。
 
 ## v3.5.3 — 高风险部署证据闭环（2026-07-20）
 

@@ -70,7 +70,7 @@ artifact ID `8532949790`。
 
 | Runner | 原生工具链 | Persistent Conan | 当前 Gate |
 |---|---|---|---|
-| `HoneyBury-M4-Linux-ARM64` | OrbStack Ubuntu 24.04.4 `aarch64`、GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12、Docker/Compose 29.1/2.40、Go 1.22、.NET 8、Syft 1.49 | `/opt/boost-gateway` 下 Conan 2.8.1 Release/Debug/gRPC namespaces；三类图均完成 `--no-remote --build=never` | G0-G5、三轮 baseline、capacity/R4 与原生 2h soak 已有预冻结证据；等待 frozen-SHA refresh |
+| `HoneyBury-M4-Linux-ARM64` | OrbStack Ubuntu 24.04.4 `aarch64`、GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12、Docker/Compose 29.1/2.40、Go 1.22、.NET 8、Syft 1.49、GitHub CLI 2.45 | `/opt/boost-gateway` 下 Conan 2.8.1 Release/Debug/gRPC namespaces；三类图均完成 `--no-remote --build=never` | frozen-SHA Release/readiness、tag Release 与 published runtime asset verification 已通过；ARM baseline 通过但余量为零 |
 
 VM 名为 `boost-linux-arm64`，runner 由
 `actions.runner.HoneyBury-boost_gateway.HoneyBury-M4-Linux-ARM64.service` 管理，
@@ -78,6 +78,11 @@ systemd 状态为 enabled/active。OrbStack 已启用登录启动，VM 重启后
 原有 ARM64 容器均完成恢复验证。runner 具备唯一 identity label
 `node-honeybury-m4-linux-arm64`。G3-G5 完成后已添加
 `preprod-r5-honeybury-m4-linux-arm64` 与 `preprod-r5`。
+
+`production-readiness.yml` 会使用 `gh run download` 导入跨 run artifact，因此 Linux
+ARM64 VM 必须在 runner service 的系统 PATH 中提供 GitHub CLI。2026-07-24 已通过
+Ubuntu 包安装 `/usr/bin/gh` 2.45；readiness run `30025271500` attempt 1 暴露缺失，
+安装后 attempt 2 通过。重建 VM 时该工具属于必需环境，不得只在交互 shell 临时配置。
 
 Mac host 固定设置 `machines.forward_ports=false`，防止 VM 的
 9080/9201/9202/9302-9305 自动映射到 Mac 并污染原生 macOS workflow。修改该配置后

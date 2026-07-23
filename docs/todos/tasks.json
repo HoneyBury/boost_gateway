@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
   "repository": "HoneyBury/boost_gateway",
-  "next_id": 5,
+  "next_id": 7,
   "tasks": [
     {
       "id": "TODO-0001",
       "title": "Provision v3.6 activation and evidence environments",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "release-environment",
-      "description": "Provision the external runner, package, authentication, and signing environments required to turn the completed v3.6 repository implementation into same-revision fixed-runner and immutable release evidence. Linux x64, Linux ARM64 and macOS ARM64 runners, persistent strict-offline Conan graphs, legacy Raft binaries and platform hashes, native JWKS/SDK/symbol workflows, ARM Release/R0/baseline/capacity/2h soak, and GitHub workflow dispatch are now validated. The remaining environment blocker is final macOS signing/notarization and publication credentials; the frozen-SHA refresh and published-asset verification remain execution tasks.",
+      "description": "Provision the external runner, package, authentication, and publication environments required to turn the v3.6 repository implementation into same-revision fixed-runner and immutable release evidence. Linux x64, Linux ARM64 and macOS ARM64 runners, persistent strict-offline Conan graphs, native evidence workflows, tag publication and independent runtime-asset verification are complete. The accepted macOS ADR deliberately ships the first command-line/server archive with signed=false and notarized=false, so Apple Developer ID credentials are not a v3.6.0 activation requirement.",
       "acceptance_criteria": [
-        "macOS Developer ID signing material and notarization credentials are provisioned through the approved GitHub environment without exposing secret values.",
-        "Release publication credentials and repository environment protections permit the immutable v3.6.0 tag workflow and post-release verification.",
-        "The final signing, notarization, publication and independent asset verification run identifiers are recorded before this TODO is completed."
+        "The macOS signed=false and notarized=false distribution boundary is approved by the platform ADR and disclosed in the public v3.6.0 release notes.",
+        "Release publication credentials and repository protections permit the immutable v3.6.0 tag workflow and post-release verification.",
+        "The final publication and three-platform independent runtime-asset verification run identifiers are recorded before this TODO is completed."
       ],
       "created_at": "2026-07-22T00:00:00Z",
-      "completed_at": null,
+      "completed_at": "2026-07-23T17:01:22Z",
       "github": {
         "issue_number": 8,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/8"
@@ -25,17 +25,17 @@
     {
       "id": "TODO-0002",
       "title": "Close Linux ARM64 and macOS ARM64 production evidence",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "platform-production",
-      "description": "Linux ARM64 and macOS ARM64 native pre-freeze boundaries are operational. In addition to Conan/R5/JWKS/SDK/symbol evidence, Linux ARM64 and macOS ARM64 passed Release 29950040168/29950397639, R0 29950844165/29951222384, three-run baselines 29951531926/29952053505, capacity/R4 29947599925/29948796107 and native 2h soak 29952596945/29961425142. The Mac soak includes native CPU, memory, process-tree, fd and thread evidence. These runs span 46dc79d and a01e7bb, so the remaining priority is one frozen-SHA refresh, macOS notarization, immutable release assets and independent published-asset verification.",
+      "description": "Linux ARM64 and macOS ARM64 completed native production evidence on frozen revision 79930cc2fe21aafa71d34cc6631315373d8b27ae. Both platforms have exact-SHA Release/R0/R5/JWKS/SDK/symbol candidate evidence, repeated baseline, capacity/R4, native 2h soak and readiness. Runtime archives and SPDX SBOMs were published by v3.6.0 run 30025684329 and independently verified on Linux ARM64 run 30026727913 and macOS ARM64 run 30027061993. SDK registry/GitHub assets and independent symbol assets remain separately blocked activation tracks and are not claimed as v3.6.0 published assets.",
       "acceptance_criteria": [
         "Platform-specific soak, capacity, and performance baselines pass for Linux ARM64 and macOS ARM64 on one frozen candidate SHA.",
         "Release, R0, R5, JWKS, debug-symbol and SDK distribution workflows refresh separate linux-arm64 and macos-arm64 artifacts on that SHA.",
-        "macOS artifacts are signed/notarized and both ARM platforms pass readiness plus independent published-asset verification."
+        "Both ARM platforms pass readiness and independent published runtime-asset verification; unsigned/unnotarized macOS and separately blocked SDK/symbol capabilities are disclosed explicitly."
       ],
       "created_at": "2026-07-22T03:09:47Z",
-      "completed_at": null,
+      "completed_at": "2026-07-23T17:01:31Z",
       "github": {
         "issue_number": 9,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/9"
@@ -65,20 +65,58 @@
     {
       "id": "TODO-0004",
       "title": "Execute parallel Linux and macOS production evidence tracks",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "platform-evidence",
-      "description": "Run Linux and macOS evidence without substituting results across linux-x64, linux-arm64 and macos-arm64. All three platforms now have native workflow routing and pre-freeze package/security evidence; both ARM platforms additionally passed Release/R0, three-run baseline, capacity/R4 and 2h soak. SDK artifacts use platform-specific RID/wheel tags and independent persistent packaging venvs, and evidence jobs remain strict-offline for Conan. The pre-freeze runs span multiple SHAs and do not form a final candidate set. One cross-platform frozen-SHA refresh, Mac notarization, readiness aggregation and published-asset verification remain open.",
+      "description": "Execute platform-specific evidence without substituting results across linux-x64, linux-arm64 and macos-arm64. Frozen revision 79930cc2fe21aafa71d34cc6631315373d8b27ae completed all three readiness decisions, tag Release run 30025684329 published three native runtime archives and SPDX SBOMs, and independent verification passed on each platform. SDK 4.2.0 packages and debug-symbol/dSYM bundles retain exact-SHA candidate evidence but remain outside the v3.6.0 release manifest and default supported asset matrix.",
       "acceptance_criteria": [
         "After repository changes stop, one candidate SHA is frozen and every claimed platform refreshes its required summaries and immutable assets on that exact SHA.",
         "Production readiness rejects cross-platform or cross-SHA evidence and records remaining unsupported platform capabilities explicitly.",
-        "The v3.6.0 tag assets pass independent checksum, SBOM, provenance, package-consumer and symbol verification on every claimed platform."
+        "The v3.6.0 runtime tag assets pass independent checksum, SBOM, provenance and package-consumer verification on every claimed platform; SDK and symbol assets are not claimed published and remain tracked separately."
       ],
       "created_at": "2026-07-22T07:15:55Z",
-      "completed_at": null,
+      "completed_at": "2026-07-23T17:01:41Z",
       "github": {
         "issue_number": 11,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/11"
+      }
+    },
+    {
+      "id": "TODO-0005",
+      "title": "Increase Linux ARM64 performance headroom",
+      "status": "open",
+      "priority": "P2",
+      "category": "platform-performance",
+      "description": "The frozen v3.6.0 Linux ARM64 Release passed the existing three-run median gate, but battle-100 produced 250/250/300ms and therefore has no margin below the 250ms limit. Improve attribution and headroom without weakening thresholds or rewriting v3.6.0 evidence.",
+      "acceptance_criteria": [
+        "A fixed isolated Linux ARM64 run records service/load-generator resources and at least three valid battle-100 repetitions with no infrastructure contention.",
+        "The cause of the 300ms tail sample is attributed to runtime, kernel/VM scheduling, topology, or measurement granularity with reproducible evidence.",
+        "Any optimization preserves the 250ms gate, passes the full platform regression matrix, and is released only in a new version."
+      ],
+      "created_at": "2026-07-23T17:00:41Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 19,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/19"
+      }
+    },
+    {
+      "id": "TODO-0006",
+      "title": "Publish immutable SDK and symbol assets",
+      "status": "open",
+      "priority": "P2",
+      "category": "release-assets",
+      "description": "Frozen-SHA SDK 4.2.0 wheel/NuGet and Linux debug-symbol/macOS dSYM candidate workflows pass, but those packages are not part of the v3.6.0 GitHub Release manifest. Add them only through a new immutable v3.6.x release with subject-specific supply-chain evidence.",
+      "acceptance_criteria": [
+        "The release workflow publishes supported wheel/NuGet and runtime/symbol pairs with platform-specific names, checksums, SPDX SBOMs, provenance and SBOM attestations.",
+        "Published-asset verification independently downloads each package, validates RID or build-id/UUID binding, and runs a clean no-source consumer or symbolization probe.",
+        "Compatibility and release notes distinguish supported assets from candidate RIDs, PyPI/NuGet.org remain blocked without trusted publishing, and v3.6.0 assets are never overwritten."
+      ],
+      "created_at": "2026-07-23T17:01:04Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 20,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/20"
       }
     }
   ]

@@ -1,6 +1,6 @@
 # v3.5.3 发布后主线执行计划
 
-更新时间：2026-07-22
+更新时间：2026-07-24
 
 ## 阶段目标
 
@@ -27,10 +27,14 @@
 5. 增加长稳取消与 checkpoint 契约。checkpoint 只保留诊断事实，最终 long/overnight 仍要求单一 run ID 连续运行不少于 7200/28800 秒。
 6. 修正 SBOM 生成源并增加语义门禁，避免“文件已签名”被误解为“组件清单完整”。
 7. 五项下一 minor ADR 与 P0-P6 仓库内实现已完成并登记到 `docs/decisions/v3.6-decision-manifest.json` 和 `docs/v3.6-implementation-status.md`；由治理门禁保持默认阻断和事实口径。
-8. Linux x64 已在 `d687b9e` 完成 Release/R0/R5-R6，并在 `00ce82e0` 完成专用 JWKS、SDK wheel/NuGet 和 debug-symbol exact-SHA artifact；Linux ARM64 与 macOS ARM64 已完成各自 JWKS、SDK、符号、Release/R0、三轮 baseline、capacity/R4 和原生 2h soak。剩余顺序是冻结 `v3.6.0` 唯一候选 SHA、刷新三平台 required evidence、补齐 Mac notarization，再发布并独立复验 GitHub Release 资产。Raft protobuf writer 只允许显式配置且全 peer capability 成立时启用；任何能力撤销都必须回落 legacy writer。
+8. `v3.6.0` 已冻结并发布：tag 指向 `79930cc2fe21aafa71d34cc6631315373d8b27ae`，三平台 readiness、tag Release 和独立 runtime 资产复验均通过。macOS 首版按 ADR 明确不签名、不 notarize；SDK 4.2.0 与独立 symbols/dSYM 仍保持候选和默认阻断，后续只能由新的 v3.6.x 版本发布，不覆盖 `v3.6.0` 同名资产。Raft protobuf writer 只允许显式配置且全 peer capability 成立时启用；任何能力撤销都必须回落 legacy writer。
 
 ## 当前事实
 
+- `v3.6.0` annotated tag 固定在 `79930cc2fe21aafa71d34cc6631315373d8b27ae`。x64/ARM64/macOS readiness runs `30024521544`、`30025271500` attempt 2、`30023671267` 均通过；tag Release run `30025684329` 成功发布三平台 runtime/SBOM/checksum。
+- 三平台 published-asset verification runs `30026727708`、`30026727913`、`30027061993` 均通过。Mac 首次 run `30026727581` 只因 verifier 错误解析官方 GitHub CLI zip 路径失败；post-release 修复 `4e47754` 增加了版本目录并由 workflow catalog 契约覆盖，未移动 tag 或修改资产。
+- Linux ARM64 Release run `30024521097` 三轮 `battle-100` P99 为 `250/250/300ms`，正式中位 gate `250ms` 通过但余量为零；后续优化不得放宽阈值。macOS 2h run `30013982216` 实际 `7213.991s` 且 `overall_pass=true`。
+- SDK wheel/NuGet 与 Linux debug-symbol/macOS dSYM 有冻结 SHA 候选 workflow 证据，但未进入 `v3.6.0` GitHub Release manifest；在新的版本完成独立 attestation 与线上消费前继续保持 blocked。
 - `v3.5.3` tag Release run `29708970775` 成功，GitHub Release 包含 Linux x64 tarball、SPDX SBOM 和 `SHA256SUMS.txt`。
 - 同 SHA 8h run `29711044558` 连续执行 `28801.652s`，完成 3207 轮；960 个资源样本覆盖 `28801.542s`，最大间隔 `30.073s`，FD 起止均为 4。
 - 线上资产验证 run `29740136895` 的 checksum、archive layout、离线 runtime consumer、provenance attestation 和 SBOM attestation 全部通过。
