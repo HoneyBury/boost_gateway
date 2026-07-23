@@ -674,6 +674,14 @@ def main() -> int:
     )
     add(
         checks,
+        "production-platform:system-python-compatibility",
+        "from datetime import datetime, timezone" in production_platform_action
+        and "datetime.now(timezone.utc)" in production_platform_action
+        and "from datetime import UTC" not in production_platform_action,
+        "shared platform resolution remains compatible with runner system Python before managed Python setup",
+    )
+    add(
+        checks,
         "production-platform:readiness-artifact-isolation",
         all(
             token in production_readiness_workflow

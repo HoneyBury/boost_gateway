@@ -133,7 +133,7 @@ runs:
         import hashlib
         import json
         import sys
-        from datetime import UTC, datetime
+        from datetime import datetime, timezone
         from pathlib import Path
 
         platform_name, system, machine, profile, active_lockfile = sys.argv[1:]
@@ -147,7 +147,7 @@ runs:
             identities[item] = hashlib.sha256(path.read_bytes()).hexdigest()
         summary = {
             "summary_version": 1,
-            "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
             "overall_pass": True,
             "platform": platform_name,
             "native_system": system,
