@@ -104,8 +104,7 @@ jobs:
         run: |
           set -euo pipefail
           test -x "$PACKAGE_PYTHON"
-          package_python="$(command -v python)"
-          test "$package_python" = "$PACKAGE_PYTHON"
+          package_python="$PACKAGE_PYTHON"
           "$package_python" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
           "$package_python" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
           printf 'BOOST_GATEWAY_PACKAGE_PYTHON=%s\n' "$package_python" >> "$GITHUB_ENV"

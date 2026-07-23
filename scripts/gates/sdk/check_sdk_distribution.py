@@ -334,7 +334,8 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-workflow:dedicated-package-python",
-        'package_python="$(command -v python)"' in package_workflow
+        'package_python="$PACKAGE_PYTHON"' in package_workflow
+        and 'package_python="$(command -v python)"' not in package_workflow
         and 'BOOST_GATEWAY_PACKAGE_PYTHON=%s' in package_workflow
         and package_workflow.count('"$BOOST_GATEWAY_PACKAGE_PYTHON"') >= 4,
         "wheel/NuGet tools keep using the admitted setup-python interpreter after Conan PATH setup",
