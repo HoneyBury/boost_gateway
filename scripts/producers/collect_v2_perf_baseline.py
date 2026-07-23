@@ -1835,6 +1835,20 @@ def git_commit(root: Path) -> str:
 
 
 def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str, Any]:
+    def steady_window_valid(run: dict[str, Any]) -> bool:
+        if run.get("steady_state_completed") is not True:
+            return False
+        target = float(run.get("steady_state_target_seconds", 0.0))
+        elapsed = float(run.get("steady_state_elapsed_seconds", 0.0))
+        if elapsed >= max(0.0, target - 0.25):
+            return True
+        return (
+            case_name.startswith("battle")
+            and elapsed > 0.0
+            and str(run.get("termination_reason", ""))
+            in {"natural_completion", "clients_completed"}
+        )
+
     def numeric_series(key: str) -> list[float]:
         return [float(run.get(key, 0.0)) for run in runs]
 
@@ -1941,6 +1955,7 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
         "steady_state_target_seconds": numeric_distribution(steady_target),
         "steady_state_elapsed_seconds": numeric_distribution(steady_elapsed),
         "steady_state_completed": all(run.get("steady_state_completed") is True for run in runs),
+        "steady_state_windows_valid": all(steady_window_valid(run) for run in runs),
         "termination_reasons": sorted({str(run.get("termination_reason", "")) for run in runs}),
         "load_models": sorted({str(run.get("load_model", "")) for run in runs}),
         "configured_request_rate_is_bounded": all(
@@ -3007,7 +3022,12 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             and bool(termination_reasons)
             and termination_reasons <= {"natural_completion", "clients_completed"}
         )
-        steady_window_valid = duration_window_valid or natural_battle_window_valid
+        aggregate_window_valid = aggregate.get("steady_state_windows_valid")
+        steady_window_valid = (
+            aggregate_window_valid is True
+            if aggregate_window_valid is not None
+            else duration_window_valid or natural_battle_window_valid
+        )
 
         evidence_observed = {
             "target_clients": target_min,
@@ -3022,6 +3042,7 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
             "steady_state_target_seconds": steady_target,
             "steady_state_elapsed_seconds_min": steady_elapsed,
             "steady_state_completed": steady_completed,
+            "steady_state_windows_valid": steady_window_valid,
             "termination_reasons": sorted(termination_reasons),
             "bench_exit_code": bench_exit_code,
         }

@@ -142,6 +142,42 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         run["push_messages"] -= 1
         self.assertFalse(self.evaluate("battle-100-30s", run)["passed"])
 
+    def test_battle_mixed_valid_completion_modes_pass_across_repetitions(self) -> None:
+        natural = pressure_run(100, scenario="battle")
+        duration = dict(natural)
+        duration.update(
+            steady_state_elapsed_seconds=30.0,
+            termination_reason="steady_duration_elapsed",
+        )
+
+        aggregate = aggregate_case_runs(
+            "battle-100-30s", [natural, duration, natural]
+        )
+        check = evaluate_release_gates([aggregate])["checks"][0]
+
+        self.assertTrue(aggregate["steady_state_windows_valid"])
+        self.assertTrue(check["passed"])
+        self.assertEqual(
+            check["observed"]["termination_reasons"],
+            ["natural_completion", "steady_duration_elapsed"],
+        )
+
+    def test_battle_mixed_completion_rejects_short_duration_run(self) -> None:
+        natural = pressure_run(100, scenario="battle")
+        invalid_duration = dict(natural)
+        invalid_duration.update(
+            steady_state_elapsed_seconds=12.0,
+            termination_reason="steady_duration_elapsed",
+        )
+
+        aggregate = aggregate_case_runs(
+            "battle-100-30s", [natural, invalid_duration, natural]
+        )
+        check = evaluate_release_gates([aggregate])["checks"][0]
+
+        self.assertFalse(aggregate["steady_state_windows_valid"])
+        self.assertFalse(check["passed"])
+
     def test_capacity_preset_uses_bounded_high_rate_ramp(self) -> None:
         cases = build_run_cases("capacity")
         ten_thousand = next(case for case in cases if case["clients"] == 10_000)
