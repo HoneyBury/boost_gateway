@@ -559,6 +559,16 @@ def main() -> int:
     )
     add(
         checks,
+        "release:legacy-raft-linux-x64-writable-fallback",
+        'destination="$PRODUCTION_CACHE_ROOT/tools/releases/v3.5.3/bin/v2_leaderboard_backend"'
+        in release_workflow
+        and '[ ! -f "$default_legacy_binary" ]' in release_workflow
+        and 'default_legacy_binary="$PRODUCTION_CACHE_ROOT/tools/releases/v3.5.3/bin/v2_leaderboard_backend"'
+        in release_workflow,
+        "Linux x64 legacy asset recovery uses the admitted writable tools namespace and remains reusable",
+    )
+    add(
+        checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
         and "scripts/tools/harden_release_sbom.py enrich" in release_workflow

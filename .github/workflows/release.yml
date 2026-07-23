@@ -255,7 +255,7 @@ jobs:
 
           archive_sha256=4ad6945b08b4f7bfceac7e0b8e41a1d61c9ae12c0075d85e4268b209cc4ab4d8
           archive_url=https://github.com/HoneyBury/boost_gateway/releases/download/v3.5.3/boost-gateway-v3.5.3-linux-x64.tar.gz
-          destination="$PRODUCTION_CACHE_ROOT/releases/v3.5.3/bin/v2_leaderboard_backend"
+          destination="$PRODUCTION_CACHE_ROOT/tools/releases/v3.5.3/bin/v2_leaderboard_backend"
           temp_dir="$(mktemp -d "${RUNNER_TEMP:-/tmp}/boost-gateway-v353.XXXXXX")"
           trap 'rm -rf "$temp_dir"' EXIT
 
@@ -282,7 +282,11 @@ jobs:
           LEGACY_RAFT_SHA256_MACOS_ARM64: ${{ vars.LEGACY_RAFT_SHA256_MACOS_ARM64 }}
         run: |
           set -euo pipefail
-          legacy_binary="${LEGACY_RAFT_BINARY_INPUT:-$PRODUCTION_CACHE_ROOT/releases/v3.5.3/bin/v2_leaderboard_backend}"
+          default_legacy_binary="$PRODUCTION_CACHE_ROOT/releases/v3.5.3/bin/v2_leaderboard_backend"
+          if [ "$PRODUCTION_PLATFORM" = linux-x64 ] && [ ! -f "$default_legacy_binary" ]; then
+            default_legacy_binary="$PRODUCTION_CACHE_ROOT/tools/releases/v3.5.3/bin/v2_leaderboard_backend"
+          fi
+          legacy_binary="${LEGACY_RAFT_BINARY_INPUT:-$default_legacy_binary}"
           legacy_sha="$LEGACY_RAFT_SHA256_INPUT"
           if [ -z "$legacy_sha" ]; then
             case "$PRODUCTION_PLATFORM" in

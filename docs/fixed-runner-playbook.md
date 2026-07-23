@@ -294,8 +294,10 @@ archive 和三份 SPDX 全部存在时才生成 `SHA256SUMS.txt`。Release mixed
 共享另一架构的 digest。Linux x64 文件丢失时，可在手动 Release dispatch 中一次性
 设置 `prepare_legacy_raft_linux_x64_binary=true`；该维护步骤只接受固定 v3.5.3
 Release URL，先校验归档 SHA-256 `4ad6945b...ab4d8`，再按仓库变量校验二进制摘要并
-原子写入持久目录。ARM64 资产没有公开的 v3.5.3 对应归档，不能使用此开关或拿 x64
-资产替代。
+原子写入持久目录。Linux x64 标准路径不存在且 runner 用户不能创建其父目录时，恢复
+资产存放到已准入的可写 `$PRODUCTION_CACHE_ROOT/tools/releases/...`，后续默认关闭维护
+开关的运行会自动复用；不会放宽 `/opt/boost-gateway` 根目录权限。ARM64 资产没有公开
+的 v3.5.3 对应归档，不能使用此开关或拿 x64 资产替代。
 
 `long-soak-capacity.yml` 在 macOS 禁止 Linux CPU affinity 和 Redis Docker comparison；
 `production-candidate-evidence.yml` / `production-gates.yml` 在 macOS 禁止 kind。
