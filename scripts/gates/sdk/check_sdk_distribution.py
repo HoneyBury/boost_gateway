@@ -338,7 +338,19 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
         and 'package_python="$(command -v python)"' not in package_workflow
         and 'BOOST_GATEWAY_PACKAGE_PYTHON=%s' in package_workflow
         and package_workflow.count('"$BOOST_GATEWAY_PACKAGE_PYTHON"') >= 4,
-        "wheel/NuGet tools keep using the admitted setup-python interpreter after Conan PATH setup",
+        "wheel/NuGet tools use the admitted package venv by absolute path after managed Python setup",
+    )
+    add_check(
+        checks,
+        "sdk-workflow:package-toolchain-maintenance",
+        "prepare_package_toolchain:" in package_workflow
+        and "if: inputs.prepare_package_toolchain" in package_workflow
+        and '"setuptools==83.0.0"' in package_workflow
+        and '"wheel==0.47.0"' in package_workflow
+        and '"auditwheel==6.7.0"' in package_workflow
+        and "backup-${GITHUB_RUN_ID}" in package_workflow
+        and "restore_backup" in package_workflow,
+        "manual SDK dispatch can restore the pinned package venv with rollback while normal evidence remains offline",
     )
     add_check(
         checks,

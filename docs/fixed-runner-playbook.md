@@ -248,6 +248,9 @@ Redis 恢复的 R5 和两轮 R6。preflight 为 11/11 ARM64、0 missing、0 wron
 Linux ARM64，并让 Linux debug-symbol 创建器从原生架构生成平台标签。SDK packaging
 与 Conan 工具隔离：Linux ARM64 的持久 venv 固定 setuptools 83.0.0、wheel 0.47.0、
 auditwheel 6.7.0；Mac venv固定前两项。证据 workflow 只离线验收，不在 job 中安装。
+`sdk-distribution.yml` 的 `prepare_package_toolchain=true` 只用于 package venv 丢失或
+版本漂移时的手动 runner 维护：使用平台 Python 3.12 重建并安装精确版本，失败时恢复
+原 venv。恢复成功后必须关闭该开关重跑，正式 SDK 候选仍不得现场联网安装工具。
 
 - Linux ARM64 JWKS run `29926003937` 在 `19b1a67d439dc3c82cf18eb2990b02a38c05131c`
   通过 strict-offline Conan、focused tests、真实 HTTPS rotation/outage 10/10 和 summary

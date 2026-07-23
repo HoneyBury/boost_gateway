@@ -23,6 +23,11 @@ on:
         description: "Maximum concurrent C++ build jobs"
         required: true
         default: "4"
+      prepare_package_toolchain:
+        description: "Maintenance only: rebuild the pinned SDK package virtual environment"
+        required: true
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -98,6 +103,42 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+
+      - name: Restore pinned package toolchain
+        if: inputs.prepare_package_toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$EVIDENCE_PYTHON" -c 'import sys; assert sys.version_info[:2] == (3, 12)'
+
+          backup_venv="${SDK_PACKAGE_VENV}.backup-${GITHUB_RUN_ID}"
+          rm -rf "$backup_venv"
+          if [ -d "$SDK_PACKAGE_VENV" ]; then
+            mv "$SDK_PACKAGE_VENV" "$backup_venv"
+          fi
+          restore_backup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              rm -rf "$SDK_PACKAGE_VENV"
+              if [ -d "$backup_venv" ]; then mv "$backup_venv" "$SDK_PACKAGE_VENV"; fi
+            else
+              rm -rf "$backup_venv"
+            fi
+            exit "$status"
+          }
+          trap restore_backup EXIT
+
+          "$EVIDENCE_PYTHON" -m venv "$SDK_PACKAGE_VENV"
+          package_python="$SDK_PACKAGE_VENV/bin/python"
+          packages=("setuptools==83.0.0" "wheel==0.47.0")
+          if [[ "${{ inputs.platform }}" == linux-* ]]; then
+            packages+=("auditwheel==6.7.0")
+          fi
+          "$package_python" -m pip install --disable-pip-version-check --no-cache-dir "${packages[@]}"
+          "$package_python" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
+          if [[ "${{ inputs.platform }}" == linux-* ]]; then
+            "$SDK_PACKAGE_VENV/bin/auditwheel" --version | grep -Eq '^auditwheel 6\.7\.0([[:space:]]|$)'
+          fi
 
       - name: Verify pinned package toolchain
         shell: bash
