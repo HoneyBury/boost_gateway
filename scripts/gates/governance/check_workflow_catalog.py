@@ -546,6 +546,19 @@ def main() -> int:
     )
     add(
         checks,
+        "release:legacy-raft-linux-x64-maintenance",
+        "prepare_legacy_raft_linux_x64_binary:" in release_workflow
+        and "github.event_name == 'workflow_dispatch' && inputs.prepare_legacy_raft_linux_x64_binary"
+        in release_workflow
+        and "boost-gateway-v3.5.3-linux-x64.tar.gz" in release_workflow
+        and "4ad6945b08b4f7bfceac7e0b8e41a1d61c9ae12c0075d85e4268b209cc4ab4d8"
+        in release_workflow
+        and "sha256sum --check --strict" in release_workflow
+        and "test \"$PRODUCTION_PLATFORM\" = linux-x64" in release_workflow,
+        "manual release dispatch can restore the immutable verified v3.5.3 x64 binary without changing tag behavior",
+    )
+    add(
+        checks,
         "release:sbom-and-attestations",
         "uses: anchore/sbom-action@v0" in release_workflow
         and "scripts/tools/harden_release_sbom.py enrich" in release_workflow

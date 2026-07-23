@@ -291,7 +291,11 @@ archive 和三份 SPDX 全部存在时才生成 `SHA256SUMS.txt`。Release mixed
 分别读取 `LEGACY_RAFT_SHA256_LINUX_X64`、`LEGACY_RAFT_SHA256_LINUX_ARM64` 和
 `LEGACY_RAFT_SHA256_MACOS_ARM64`；原生 v3.5.3 binary 默认位于对应平台持久 cache root
 的 `releases/v3.5.3/bin/v2_leaderboard_backend`。最终发布前必须分别预置和验收，禁止
-共享另一架构的 digest。
+共享另一架构的 digest。Linux x64 文件丢失时，可在手动 Release dispatch 中一次性
+设置 `prepare_legacy_raft_linux_x64_binary=true`；该维护步骤只接受固定 v3.5.3
+Release URL，先校验归档 SHA-256 `4ad6945b...ab4d8`，再按仓库变量校验二进制摘要并
+原子写入持久目录。ARM64 资产没有公开的 v3.5.3 对应归档，不能使用此开关或拿 x64
+资产替代。
 
 `long-soak-capacity.yml` 在 macOS 禁止 Linux CPU affinity 和 Redis Docker comparison；
 `production-candidate-evidence.yml` / `production-gates.yml` 在 macOS 禁止 kind。
@@ -782,11 +786,16 @@ GitHub Actions 手动触发时，`runner` 输入填实际 label。`production-ga
 | `perf_repetitions` | `3` | `3` |
 | `conan_lockfile` | `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock` | 同 baseline |
 | `prepare_cmake_consumer_image` | 仅 runner 镜像缺失时为 `true` | 通常为 `false` |
+| `prepare_legacy_raft_linux_x64_binary` | 仅 x64 持久文件缺失时为 `true` | 通常为 `false` |
 | `legacy_raft_binary` | runner 上预置的 `v3.5.3` leaderboard backend | 同 baseline |
 | `legacy_raft_revision` | `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` | 同 baseline |
 | `legacy_raft_sha256` | 预置 Linux x64 binary 的实际 SHA-256 | 同 baseline |
 
 `prepare_cmake_consumer_image=true` 只用于手动候选运行恢复固定 digest Dockerfile 对应的 compiler image。构建完成后的 consumer 仍强制 `--network=none --pull=never`；正式 tag 触发没有该输入，必须消费候选阶段已经准入的本地镜像，不能在发布时隐式联网预热。
+
+`prepare_legacy_raft_linux_x64_binary=true` 只用于恢复已发布且双重验签的 v3.5.3 x64
+legacy binary。该开关在 tag 触发时不存在，且对 ARM 平台 fail closed；恢复后的正常
+候选重跑应回到 `false`，证明 persistent runner environment 可以独立复用该文件。
 
 通过标准：
 
