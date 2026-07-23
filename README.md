@@ -2,7 +2,7 @@
 
 > Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
-高性能 C++20 实时服务框架，当前版本为 `v3.5.3`，维护线为 `v3.5.x`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
+高性能 C++20 实时服务框架，当前候选版本为 `v3.6.0`；已发布维护线为 `v3.5.x`。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
 ## 当前状态
 
@@ -44,6 +44,7 @@
 - 脚本入口索引：`docs/script-inventory.json`
 - 性能事实：`docs/performance-baseline.md`
 - v3.5.x 维护计划：`docs/v3.5.x-maintenance-plan.md`
+- v3.6.0 实现与证据状态：`docs/v3.6-implementation-status.md`
 - v3.5.2 历史冻结清单（已关闭）：`docs/v3.5.2-freeze-todo.md`
 - 完整版本变更：`CHANGELOG.md`
 

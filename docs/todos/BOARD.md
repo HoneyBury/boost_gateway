@@ -13,39 +13,31 @@ Open: **3** | Completed: **1** | Total: **4**
 
 ## TODO-0001: Provision v3.6 activation and evidence environments
 
-Provision the external runner, package, authentication, and JWKS environments required to turn the completed v3.6 repository implementation into same-revision fixed-runner and immutable release evidence. Linux x64 now has its runner/toolchain, persistent strict-offline Conan graph, legacy Raft boundary, dedicated SDK/debug-symbol artifacts and real HTTPS JWKS drill validated. Linux ARM64 and macOS ARM64 have isolated persistent SDK packaging venvs and native JWKS/SDK evidence; Linux ARM64 also has debug-symbol evidence. The remaining production workflows now have explicit three-platform routing, but Release still requires pre-provisioned v3.5.3 native legacy leaderboard binaries and platform SHA-256 values; final signing/notarization and publication credentials remain external prerequisites.
+Provision the external runner, package, authentication, and signing environments required to turn the completed v3.6 repository implementation into same-revision fixed-runner and immutable release evidence. Linux x64, Linux ARM64 and macOS ARM64 runners, persistent strict-offline Conan graphs, legacy Raft binaries and platform hashes, native JWKS/SDK/symbol workflows, ARM Release/R0/baseline/capacity/2h soak, and GitHub workflow dispatch are now validated. The remaining environment blocker is final macOS signing/notarization and publication credentials; the frozen-SHA refresh and published-asset verification remain execution tasks.
 
-- [ ] Ubuntu 22.04 x86_64 fixed runner is online with self-hosted/Linux/X64 labels, glibc 2.35, GCC 13, CMake, Ninja, sccache, Docker, Python 3.12, .NET 8, Syft, auditwheel, and GNU binutils.
-- [ ] The runner user can write /opt/boost-gateway/{conan,sccache,tools}; the Conan 2.8.1 Python 3.12 environment and the default v3.6 lockfile graph pass strict offline install.
-- [ ] The v3.5.3 native legacy leaderboard binary is installed on every claimed Release runner, with LEGACY_RAFT_REVISION and the matching LEGACY_RAFT_SHA256_<PLATFORM> variable configured.
-- [ ] GitHub DNS plus HTTPS/SSH connectivity is available, and GitHub CLI authentication can push the branch, dispatch workflows, read artifacts, and manage repository Issues without timeout.
-- [ ] A native macOS ARM64 self-hosted runner is registered with Syft and the approved Conan acquisition path.
-- [ ] A runner-reachable HTTPS JWKS endpoint has trusted TLS, two rotatable RSA/RS256 kids, stable issuer/audience, and a controllable outage mode.
-- [ ] release.yml, sdk-distribution.yml, debug-symbols.yml, macos-arm64.yml, and the JWKS rotation drill pass on one exact candidate SHA and their artifact/run identifiers are recorded.
+- [ ] macOS Developer ID signing material and notarization credentials are provisioned through the approved GitHub environment without exposing secret values.
+- [ ] Release publication credentials and repository environment protections permit the immutable v3.6.0 tag workflow and post-release verification.
+- [ ] The final signing, notarization, publication and independent asset verification run identifiers are recorded before this TODO is completed.
 
 Status: `open`. Created: `2026-07-22T00:00:00Z`.
 
 ## TODO-0002: Close Linux ARM64 and macOS ARM64 production evidence
 
-Linux ARM64 and macOS ARM64 now have native pre-freeze package/security evidence. Linux ARM64 G0-G5 remains anchored by Release/Debug/gRPC Conan runs 29906228268, 29907949804, 29908827298 and linux/arm64 R5/R6 run 29909904605. New JWKS run 29926003937, SDK run 29926636641 and debug-symbol run 29926847088 passed; Mac JWKS 29925779628, candidate 29927622379 and SDK 29928355843 also passed. Release, R0, performance, long-soak/capacity, P5/P6, readiness and published-asset verification now route all three native platforms with platform-isolated artifacts. These routes still require exact-SHA execution evidence. Remaining priority is Linux ARM64/macOS legacy Release inputs, ARM Release/R0, full platform baselines/soak/capacity, one frozen SHA, notarization and published-asset verification.
+Linux ARM64 and macOS ARM64 native pre-freeze boundaries are operational. In addition to Conan/R5/JWKS/SDK/symbol evidence, Linux ARM64 and macOS ARM64 passed Release 29950040168/29950397639, R0 29950844165/29951222384, three-run baselines 29951531926/29952053505, capacity/R4 29947599925/29948796107 and native 2h soak 29952596945/29961425142. The Mac soak includes native CPU, memory, process-tree, fd and thread evidence. These runs span 46dc79d and a01e7bb, so the remaining priority is one frozen-SHA refresh, macOS notarization, immutable release assets and independent published-asset verification.
 
-- [ ] Linux ARM64 runner is online and its GCC 13 Release Conan namespace passes --no-remote --build=never for the ARM64 lockfile.
-- [ ] The linux/arm64 Compose image set passes offline R5 preflight and gateway recovery on the Linux ARM64 runner.
 - [ ] Platform-specific soak, capacity, and performance baselines pass for Linux ARM64 and macOS ARM64 on one frozen candidate SHA.
-- [ ] Release, debug-symbol, SDK distribution, published-asset verification, and readiness workflows emit and verify separate linux-arm64 and macos-arm64 artifacts.
+- [ ] Release, R0, R5, JWKS, debug-symbol and SDK distribution workflows refresh separate linux-arm64 and macos-arm64 artifacts on that SHA.
+- [ ] macOS artifacts are signed/notarized and both ARM platforms pass readiness plus independent published-asset verification.
 
 Status: `open`. Created: `2026-07-22T03:09:47Z`.
 
 ## TODO-0004: Execute parallel Linux and macOS production evidence tracks
 
-Run Linux and macOS evidence work in parallel without substituting evidence across linux-x64, linux-arm64, and macos-arm64. Linux x64 has Release/R0/R5-R6 at d687b9e and dedicated debug-symbol 29922341090, SDK 29923068133 and JWKS 29923314097 at 00ce82e0. Linux ARM64 has native JWKS 29926003937, SDK 29926636641 and debug-symbol 29926847088 evidence. macOS ARM64 has JWKS 29925779628, refreshed native candidate 29927622379 and osx-arm64 SDK 29928355843. SDK artifacts use platform-specific RID/wheel tags and independent persistent packaging venvs; evidence jobs remain strict-offline for Conan. These pre-freeze runs span multiple SHAs and do not form a final candidate set. Linux ARM64 Release/R0, full ARM platform baselines, Mac notarization, published-asset verification and one final cross-platform frozen-SHA refresh remain open.
+Run Linux and macOS evidence without substituting results across linux-x64, linux-arm64 and macos-arm64. All three platforms now have native workflow routing and pre-freeze package/security evidence; both ARM platforms additionally passed Release/R0, three-run baseline, capacity/R4 and 2h soak. SDK artifacts use platform-specific RID/wheel tags and independent persistent packaging venvs, and evidence jobs remain strict-offline for Conan. The pre-freeze runs span multiple SHAs and do not form a final candidate set. One cross-platform frozen-SHA refresh, Mac notarization, readiness aggregation and published-asset verification remain open.
 
-- [ ] The integration branch is synchronized on both runner hosts and the pre-freeze revision used for capability runs is recorded.
-- [ ] Linux x64 prepares and runs strict-offline JWKS, release, SDK distribution, debug-symbol, R0, and R5/R6 evidence as soon as each workflow is available on the default branch.
-- [ ] A native Linux ARM64 runner completes identity, GCC 13 Conan Release/Debug/gRPC cache admission, linux/arm64 image preflight, and native R5 recovery evidence.
-- [ ] macOS ARM64 completes native JWKS workflow wiring, platform-specific stability/performance baselines, dSYM/debug-symbol packaging, osx-arm64 SDK consumers, and release-asset verification.
 - [ ] After repository changes stop, one candidate SHA is frozen and every claimed platform refreshes its required summaries and immutable assets on that exact SHA.
 - [ ] Production readiness rejects cross-platform or cross-SHA evidence and records remaining unsupported platform capabilities explicitly.
+- [ ] The v3.6.0 tag assets pass independent checksum, SBOM, provenance, package-consumer and symbol verification on every claimed platform.
 
 Status: `open`. Created: `2026-07-22T07:15:55Z`.
 

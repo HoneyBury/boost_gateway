@@ -70,7 +70,7 @@ artifact ID `8532949790`。
 
 | Runner | 原生工具链 | Persistent Conan | 当前 Gate |
 |---|---|---|---|
-| `HoneyBury-M4-Linux-ARM64` | OrbStack Ubuntu 24.04.4 `aarch64`、GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12、Docker/Compose 29.1/2.40、Go 1.22、.NET 8、Syft 1.49 | `/opt/boost-gateway` 下 Conan 2.8.1 Release/Debug/gRPC namespaces；三类图均完成 `--no-remote --build=never` | G0-G5 已通过；完整平台 baseline/soak/capacity 仍待完成 |
+| `HoneyBury-M4-Linux-ARM64` | OrbStack Ubuntu 24.04.4 `aarch64`、GCC 13.3、CMake 3.28、Ninja 1.11、Python 3.12、Docker/Compose 29.1/2.40、Go 1.22、.NET 8、Syft 1.49 | `/opt/boost-gateway` 下 Conan 2.8.1 Release/Debug/gRPC namespaces；三类图均完成 `--no-remote --build=never` | G0-G5、三轮 baseline、capacity/R4 与原生 2h soak 已有预冻结证据；等待 frozen-SHA refresh |
 
 VM 名为 `boost-linux-arm64`，runner 由
 `actions.runner.HoneyBury-boost_gateway.HoneyBury-M4-Linux-ARM64.service` 管理，
