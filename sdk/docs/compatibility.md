@@ -10,7 +10,7 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | `v3.3.2` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 校验 native 主版本 `4.x` | 校验 native 主版本 `4.x` | stable |
 | `v3.5.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | stable |
-| `v3.6.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.1` GitHub Release 原生 wheel | `v3.6.1` GitHub Release 三 RID NuGet | stable on listed RIDs |
+| `v3.6.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.2` GitHub Release 原生 wheel | `v3.6.2` GitHub Release 三 RID NuGet | stable on listed RIDs |
 
 ## 客户端兼容矩阵
 
@@ -39,11 +39,11 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 
 该门禁聚合：
 
-- `scripts/check_sdk_distribution.py`：SDK 版本、CMake package、C ABI、Python/C# wrapper、native 加载诊断。
-- `scripts/verify_sdk_package_consumer.py`：临时安装 SDK，并让外部 CMake consumer `find_package()`、链接和运行；`--with-grpc` 还会校验实验 `boost_gateway::sdk_grpc`、生成的 `gateway.pb.h/gateway.grpc.pb.h` 与 package config 的 gRPC 依赖导出。
-- `scripts/verify_sdk_business_flow.py`：in-process gateway 业务闭环，覆盖 heartbeat、reconnect、push、disconnect callback。
-- `scripts/verify_sdk_full_flow_client.py`：真实 `v2_gateway_demo` + 五后端 + `sdk_full_flow_client`，覆盖最接近客户端接入的生产链路。
-- `scripts/verify_sdk_full_flow_client.py --backend-tls`：同一 SDK 客户端 API，在服务端 backend TLS profile 下跑通真实 full-flow。
+- `scripts/gates/sdk/check_sdk_distribution.py`：SDK 版本、CMake package、C ABI、Python/C# wrapper、native 加载诊断。
+- `scripts/gates/sdk/verify_sdk_package_consumer.py`：临时安装 SDK，并让外部 CMake consumer `find_package()`、链接和运行；`--with-grpc` 还会校验实验 `boost_gateway::sdk_grpc`、生成的 `gateway.pb.h/gateway.grpc.pb.h` 与 package config 的 gRPC 依赖导出。
+- `scripts/gates/sdk/verify_sdk_business_flow.py`：in-process gateway 业务闭环，覆盖 heartbeat、reconnect、push、disconnect callback。
+- `scripts/gates/sdk/verify_sdk_full_flow_client.py`：真实 `v2_gateway_demo` + 五后端 + `sdk_full_flow_client`，覆盖最接近客户端接入的生产链路。
+- `scripts/gates/sdk/verify_sdk_full_flow_client.py --backend-tls`：同一 SDK 客户端 API，在服务端 backend TLS profile 下跑通真实 full-flow。
 
 ## 兼容边界
 
@@ -52,7 +52,7 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。
 - 兼容升级默认策略：Gateway patch/minor 版本保持 SDK `4.x` 主版本兼容；破坏性协议变化必须提升 SDK 主版本并更新本矩阵。
-- Python/C# 继续是轻量 wrapper；`v3.6.1` 只承诺 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
+- Python/C# 继续是轻量 wrapper；`v3.6.2` 只承诺 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
 
 ## 示例入口
 

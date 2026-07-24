@@ -1,6 +1,6 @@
 {
-  "schema_version": 2,
-  "description": "Maintained script inventory. Public entrypoints are stable user/workflow surfaces; producers and tools are internal implementation details unless documented otherwise. All .ps1 platform wrappers were removed in v3.5.0.",
+  "schema_version": 3,
+  "description": "Maintained script inventory. Every tracked Python or shell script is represented exactly once. Root commands are the stable public surface; gates, producers, tools, and libraries use canonical role-oriented paths.",
   "categories": {
     "public_entrypoint": "Stable commands intended for humans and workflows.",
     "aggregate_gate": "Composed validation gates called by public entrypoints or workflows.",
@@ -9,6 +9,9 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "public_entrypoints": [
+    "scripts/run_tests.py",
+    "scripts/bootstrap_conan.py",
+    "scripts/generate_conan_lock.py",
     "scripts/verify_release_candidate.py",
     "scripts/check_mainline_readiness.py",
     "scripts/verify_production_candidate_evidence.py",
@@ -23,119 +26,355 @@
     "scripts/verify_jwks_rotation.py",
     "scripts/manage_todos.py"
   ],
+  "compatibility_policy": {
+    "cycle": "v3.6-completed",
+    "rule": "A non-public root script must name a canonical implementation and may be removed only after active references reach zero.",
+    "archive_rule": "Retired executable code is removed and remains available through Git history; it is not copied into an executable scripts/archive tree."
+  },
+  "internal_scripts": {
+    "scripts/gates/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/gates/security/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/lib/cancellable_process.py": {
+      "category": "tool"
+    },
+    "scripts/lib/evidence_provenance.py": {
+      "category": "tool"
+    },
+    "scripts/lib/summary_utils.py": {
+      "category": "tool"
+    },
+    "scripts/producers/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/tools/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/tools/bootstrap_kind_tools.py": {
+      "category": "tool"
+    },
+    "scripts/tools/build_multi_rid_nuget.py": {
+      "category": "tool"
+    },
+    "scripts/tools/build_sdk_packages.py": {
+      "category": "tool"
+    },
+    "scripts/tools/create_debug_symbol_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/create_macos_dsym_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/render_release_notes.py": {
+      "category": "tool"
+    },
+    "scripts/tools/resolve_release_version.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_conan_offline_install.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_debug_symbol_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_macos_dsym_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_release_archive.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_release_cmake_consumer.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_release_package_consumer.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_sdk_distribution_packages.py": {
+      "category": "tool"
+    }
+  },
   "scripts": {
-    "scripts/README.md": {"category": "tool"},
-    "scripts/__init__.py": {"category": "tool"},
-    "scripts/lib/__init__.py": {"category": "tool"},
-    "scripts/lib/subprocess_utils.py": {"category": "tool"},
-
-    "scripts/aggregate_cpu_capacity_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/aggregate_cpu_capacity_evidence.py"},
-    "scripts/aggregate_saturation_axis_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/aggregate_saturation_axis_evidence.py"},
-    "scripts/analyze_test_results.py": {"category": "tool", "canonical": "scripts/tools/analyze_test_results.py"},
-    "scripts/bootstrap_conan.py": {"category": "tool", "canonical": "scripts/tools/bootstrap_conan.py"},
-    "scripts/build_docker.py": {"category": "tool", "canonical": "scripts/tools/build_docker.py"},
-    "scripts/tools/prepare_docker_runtime_context.py": {"category": "tool"},
-    "scripts/tools/harden_release_sbom.py": {"category": "tool"},
-    "scripts/deploy_k8s.py": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.py"},
-    "scripts/gen_certs.py": {"category": "tool", "canonical": "scripts/tools/gen_certs.py"},
-    "scripts/generate_conan_lock.py": {"category": "tool", "canonical": "scripts/tools/generate_conan_lock.py"},
-    "scripts/generate_proto_cpp.py": {"category": "tool", "canonical": "scripts/tools/generate_proto_cpp.py"},
-    "scripts/inspect_dependency_layout.py": {"category": "tool", "canonical": "scripts/tools/inspect_dependency_layout.py"},
-    "scripts/operator_kind_smoke.py": {"category": "tool", "canonical": "scripts/tools/operator_kind_smoke.py"},
-    "scripts/perf_analyze.py": {"category": "tool", "canonical": "scripts/tools/perf_analyze.py"},
-    "scripts/read_runner_matrix.py": {"category": "tool", "canonical": "scripts/tools/read_runner_matrix.py"},
-    "scripts/tools/r5_docker_cache_bundle.py": {"category": "tool"},
-    "scripts/tools/ensure_conan_venv.py": {"category": "tool"},
-    "scripts/tools/resolve_runner_cache.py": {"category": "tool"},
-    "scripts/render_validation_summary.py": {"category": "tool", "canonical": "scripts/tools/render_validation_summary.py"},
-    "scripts/run_tests.py": {"category": "tool"},
-    "scripts/manage_todos.py": {"category": "public_entrypoint", "canonical": "scripts/tools/manage_todos.py"},
-    "scripts/tools/manage_todos.py": {"category": "tool"},
-
-    "scripts/build_docker.sh": {"category": "tool", "canonical": "scripts/tools/build_docker.sh"},
-    "scripts/deploy_k8s.sh": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.sh"},
-    "scripts/gen_certs.sh": {"category": "tool", "canonical": "scripts/tools/gen_certs.sh"},
-    "scripts/inspect_dependency_layout.sh": {"category": "tool", "canonical": "scripts/tools/inspect_dependency_layout.sh"},
-    "scripts/operator_kind_smoke.sh": {"category": "tool", "canonical": "scripts/tools/operator_kind_smoke.sh"},
-
-    "scripts/collect_docker_production_perf_snapshot.py": {"category": "producer", "canonical": "scripts/producers/collect_docker_production_perf_snapshot.py"},
-    "scripts/collect_release_baseline.py": {"category": "producer", "canonical": "scripts/producers/collect_release_baseline.py"},
-    "scripts/collect_v2_arch_baseline.py": {"category": "producer", "canonical": "scripts/producers/collect_v2_arch_baseline.py"},
-    "scripts/collect_v2_perf_baseline.py": {"category": "producer", "canonical": "scripts/producers/collect_v2_perf_baseline.py"},
-    "scripts/run_cloud_production_closure.py": {"category": "producer", "canonical": "scripts/producers/run_cloud_production_closure.py"},
-
-    "scripts/check_mainline_readiness.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/check_mainline_readiness.py"},
-    "scripts/check_next_minor_decisions.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_next_minor_decisions.py"},
-    "scripts/check_production_evidence_manifest.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/check_production_evidence_manifest.py"},
-    "scripts/render_production_readiness_report.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/render_production_readiness_report.py"},
-    "scripts/run_long_soak_capacity.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/run_long_soak_capacity.py"},
-
-    "scripts/check_config_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_config_governance.py"},
-    "scripts/check_config_source_layout.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_config_source_layout.py"},
-    "scripts/check_conan_lockfile_workflows.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_conan_lockfile_workflows.py"},
-    "scripts/check_current_docs_install.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_current_docs_install.py"},
-    "scripts/check_evidence_provenance_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_evidence_provenance_contract.py"},
-    "scripts/check_legacy_helper_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_legacy_helper_inventory.py"},
-    "scripts/check_openssl_dependency_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_openssl_dependency_governance.py"},
-    "scripts/check_reliability_matrix.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_reliability_matrix.py"},
-    "scripts/check_r5_docker_image_policy_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_r5_docker_image_policy_contract.py"},
-    "scripts/check_script_inventory.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_script_inventory.py"},
-    "scripts/check_v3_grpc_poc_decision.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_v3_grpc_poc_decision.py"},
-    "scripts/check_v3_proto_schema.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_v3_proto_schema.py"},
-    "scripts/check_validation_summary_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_validation_summary_contract.py"},
-    "scripts/check_workflow_catalog.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_workflow_catalog.py"},
-    "scripts/check_workflow_python_cli_contracts.py": {"category": "aggregate_gate", "canonical": "scripts/gates/governance/check_workflow_python_cli_contracts.py"},
-
-    "scripts/check_fixed_runner_environment.py": {"category": "aggregate_gate", "canonical": "scripts/gates/infrastructure/check_fixed_runner_environment.py"},
-    "scripts/check_fixed_runner_evidence_plan.py": {"category": "aggregate_gate", "canonical": "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py"},
-
-    "scripts/check_operator_manifests.py": {"category": "aggregate_gate", "canonical": "scripts/gates/k8s/check_operator_manifests.py"},
-    "scripts/verify_k8s_full_flow.py": {"category": "aggregate_gate", "canonical": "scripts/gates/k8s/verify_k8s_full_flow.py"},
-
-    "scripts/check_deploy_operability.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_deploy_operability.py"},
-    "scripts/check_monitoring_operability.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_monitoring_operability.py"},
-    "scripts/check_production_candidate_audit.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_production_candidate_audit.py"},
-    "scripts/check_production_hardening_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_production_hardening_gate.py"},
-    "scripts/check_production_recovery_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_production_recovery_gate.py"},
-    "scripts/check_recovery_drill_record.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/check_recovery_drill_record.py"},
-    "scripts/verify_control_plane_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_control_plane_gate.py"},
-    "scripts/verify_data_recovery_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_data_recovery_gate.py"},
-    "scripts/verify_gateway_observability_runtime.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_gateway_observability_runtime.py"},
-    "scripts/verify_observability_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_observability_gate.py"},
-    "scripts/verify_production_evidence_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_production_evidence_gate.py"},
-    "scripts/verify_production_resilience_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/production/verify_production_resilience_gate.py"},
-
-    "scripts/check_p3_p4_release_readiness.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/check_p3_p4_release_readiness.py"},
-    "scripts/check_security_release_gate.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/check_security_release_gate.py"},
-    "scripts/verify_fixed_runner_release_capacity.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_fixed_runner_release_capacity.py"},
-    "scripts/verify_p5_p8_business_closure.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_p5_p8_business_closure.py"},
-    "scripts/verify_r4_contract.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_r4_contract.py"},
-    "scripts/verify_release_candidate.py": {"category": "public_entrypoint", "canonical": "scripts/gates/release/verify_release_candidate.py"},
-    "scripts/verify_raft_release_evidence.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_raft_release_evidence.py"},
-    "scripts/verify_raft_mixed_binary.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_raft_mixed_binary.py"},
-    "scripts/verify_jwks_rotation.py": {"category": "public_entrypoint", "canonical": "scripts/gates/security/verify_jwks_rotation.py"},
-    "scripts/verify_macos_arm64_package.py": {"category": "public_entrypoint", "canonical": "scripts/tools/verify_macos_arm64_package.py"},
-    "scripts/verify_stability_soak.py": {"category": "aggregate_gate", "canonical": "scripts/gates/release/verify_stability_soak.py"},
-
-    "scripts/check_sdk_distribution.py": {"category": "aggregate_gate", "canonical": "scripts/gates/sdk/check_sdk_distribution.py"},
-    "scripts/verify_sdk_business_flow.py": {"category": "aggregate_gate", "canonical": "scripts/gates/sdk/verify_sdk_business_flow.py"},
-    "scripts/verify_sdk_enterprise_delivery.py": {"category": "public_entrypoint", "canonical": "scripts/gates/sdk/verify_sdk_enterprise_delivery.py"},
-    "scripts/verify_sdk_full_flow_client.py": {"category": "aggregate_gate", "canonical": "scripts/gates/sdk/verify_sdk_full_flow_client.py"},
-    "scripts/verify_sdk_package_consumer.py": {"category": "aggregate_gate", "canonical": "scripts/gates/sdk/verify_sdk_package_consumer.py"},
-
-    "scripts/check_tls_profile.py": {"category": "aggregate_gate", "canonical": "scripts/gates/transport/check_tls_profile.py"},
-    "scripts/check_transport_config_governance.py": {"category": "aggregate_gate", "canonical": "scripts/gates/transport/check_transport_config_governance.py"},
-    "scripts/verify_tls_preprod_multi_run.py": {"category": "public_entrypoint", "canonical": "scripts/gates/transport/verify_tls_preprod_multi_run.py"},
-    "scripts/verify_tls_production_readiness.py": {"category": "aggregate_gate", "canonical": "scripts/gates/transport/verify_tls_production_readiness.py"},
-
-    "scripts/verify_specialized_e2e.py": {"category": "aggregate_gate", "canonical": "scripts/gates/e2e/verify_specialized_e2e.py"},
-    "scripts/tools/verify_macos_arm64_package.py": {"category": "tool"},
-
-    "scripts/verify_preprod_recovery_drill.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_preprod_recovery_drill.py"},
-    "scripts/verify_prometheus_alert_states.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_prometheus_alert_states.py"},
-    "scripts/verify_production_candidate_evidence.py": {"category": "public_entrypoint", "canonical": "scripts/gates/production/verify_production_candidate_evidence.py"},
-
-    "scripts/gates/infrastructure/check_fixed_runner_readiness.py": {"category": "aggregate_gate", "merged_from": ["check_fixed_runner_environment.py", "check_fixed_runner_evidence_plan.py"]},
-    "scripts/gates/governance/check_v3_proto_governance.py": {"category": "aggregate_gate", "merged_from": ["check_v3_grpc_poc_decision.py", "check_v3_proto_schema.py"]}
+    "scripts/README.md": {
+      "category": "tool"
+    },
+    "scripts/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/bootstrap_conan.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/bootstrap_conan.py"
+    },
+    "scripts/check_mainline_readiness.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/release/check_mainline_readiness.py"
+    },
+    "scripts/check_production_evidence_manifest.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/check_production_evidence_manifest.py"
+    },
+    "scripts/gates/e2e/verify_raft_mixed_binary.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/e2e/verify_specialized_e2e.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_conan_lockfile_workflows.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_config_governance.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_config_source_layout.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_current_docs_install.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_evidence_provenance_contract.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_legacy_helper_inventory.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_next_minor_decisions.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_r5_docker_image_policy_contract.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_reliability_matrix.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_script_inventory.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_v3_grpc_poc_decision.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_v3_proto_schema.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_validation_summary_contract.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_workflow_catalog.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/governance/check_workflow_python_cli_contracts.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/infrastructure/check_fixed_runner_environment.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/k8s/check_operator_manifests.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/k8s/verify_k8s_full_flow.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_deploy_operability.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_monitoring_operability.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_production_candidate_audit.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_production_hardening_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_production_recovery_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/check_recovery_drill_record.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_control_plane_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_data_recovery_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_gateway_observability_runtime.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_observability_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_production_evidence_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/production/verify_production_resilience_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/aggregate_cpu_capacity_evidence.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/aggregate_saturation_axis_evidence.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/check_p3_p4_release_readiness.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/check_security_release_gate.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/verify_fixed_runner_release_capacity.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/verify_p5_p8_business_closure.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/verify_r4_contract.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/verify_raft_release_evidence.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/release/verify_stability_soak.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/sdk/check_sdk_distribution.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/sdk/verify_sdk_business_flow.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/sdk/verify_sdk_full_flow_client.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/sdk/verify_sdk_package_consumer.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/transport/check_tls_profile.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/transport/check_transport_config_governance.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/transport/verify_tls_production_readiness.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/generate_conan_lock.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/generate_conan_lock.py"
+    },
+    "scripts/lib/__init__.py": {
+      "category": "tool"
+    },
+    "scripts/lib/subprocess_utils.py": {
+      "category": "tool"
+    },
+    "scripts/manage_todos.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/manage_todos.py"
+    },
+    "scripts/producers/collect_docker_production_perf_snapshot.py": {
+      "category": "producer"
+    },
+    "scripts/producers/collect_release_baseline.py": {
+      "category": "producer"
+    },
+    "scripts/producers/collect_v2_arch_baseline.py": {
+      "category": "producer"
+    },
+    "scripts/producers/collect_v2_perf_baseline.py": {
+      "category": "producer"
+    },
+    "scripts/producers/run_cloud_production_closure.py": {
+      "category": "producer"
+    },
+    "scripts/render_production_readiness_report.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/render_production_readiness_report.py"
+    },
+    "scripts/run_long_soak_capacity.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/run_long_soak_capacity.py"
+    },
+    "scripts/run_tests.py": {
+      "category": "public_entrypoint"
+    },
+    "scripts/tools/build_docker.py": {
+      "category": "tool"
+    },
+    "scripts/tools/deploy_k8s.py": {
+      "category": "tool"
+    },
+    "scripts/tools/ensure_conan_venv.py": {
+      "category": "tool"
+    },
+    "scripts/tools/gen_certs.py": {
+      "category": "tool"
+    },
+    "scripts/tools/generate_proto_cpp.py": {
+      "category": "tool"
+    },
+    "scripts/tools/harden_release_sbom.py": {
+      "category": "tool"
+    },
+    "scripts/tools/inspect_dependency_layout.py": {
+      "category": "tool"
+    },
+    "scripts/tools/manage_todos.py": {
+      "category": "tool"
+    },
+    "scripts/tools/operator_kind_smoke.py": {
+      "category": "tool"
+    },
+    "scripts/tools/prepare_docker_runtime_context.py": {
+      "category": "tool"
+    },
+    "scripts/tools/r5_docker_cache_bundle.py": {
+      "category": "tool"
+    },
+    "scripts/tools/render_validation_summary.py": {
+      "category": "tool"
+    },
+    "scripts/tools/resolve_runner_cache.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_macos_arm64_package.py": {
+      "category": "tool"
+    },
+    "scripts/verify_jwks_rotation.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/security/verify_jwks_rotation.py"
+    },
+    "scripts/verify_macos_arm64_package.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/verify_macos_arm64_package.py"
+    },
+    "scripts/verify_preprod_recovery_drill.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/verify_preprod_recovery_drill.py"
+    },
+    "scripts/verify_production_candidate_evidence.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/verify_production_candidate_evidence.py"
+    },
+    "scripts/verify_prometheus_alert_states.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/production/verify_prometheus_alert_states.py"
+    },
+    "scripts/verify_release_candidate.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/release/verify_release_candidate.py"
+    },
+    "scripts/verify_sdk_enterprise_delivery.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/sdk/verify_sdk_enterprise_delivery.py"
+    },
+    "scripts/verify_tls_preprod_multi_run.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/transport/verify_tls_preprod_multi_run.py"
+    }
   }
 }

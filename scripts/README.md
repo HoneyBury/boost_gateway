@@ -16,17 +16,16 @@ Canonical groups migrated so far:
 - Release/RC/perf gates: `scripts/gates/release/`
 - Tools: `scripts/tools/`
 - Producers: `scripts/producers/`
-- Wrappers: `scripts/wrappers/ps1/` and `scripts/wrappers/sh/`
 - CI/CD runner matrix helper: `scripts/tools/read_runner_matrix.py`
 - Conan bootstrap helper: `scripts/tools/bootstrap_conan.py`
 - Pinned isolated Conan environment helper: `scripts/tools/ensure_conan_venv.py`
 - Conan lockfile helper: `scripts/tools/generate_conan_lock.py`
 - Fixed-runner Conan/sccache namespace resolver: `scripts/tools/resolve_runner_cache.py`
-- Conan lockfile workflow gate: `scripts/check_conan_lockfile_workflows.py`
-- Workflow catalog gate: `scripts/check_workflow_catalog.py`
-- Workflow Python CLI contract gate: `scripts/check_workflow_python_cli_contracts.py`
-- Evidence provenance contract gate: `scripts/check_evidence_provenance_contract.py`
-- R5 Docker image policy contract gate: `scripts/check_r5_docker_image_policy_contract.py`
+- Conan lockfile workflow gate: `scripts/gates/governance/check_conan_lockfile_workflows.py`
+- Workflow catalog gate: `scripts/gates/governance/check_workflow_catalog.py`
+- Workflow Python CLI contract gate: `scripts/gates/governance/check_workflow_python_cli_contracts.py`
+- Evidence provenance contract gate: `scripts/gates/governance/check_evidence_provenance_contract.py`
+- R5 Docker image policy contract gate: `scripts/gates/governance/check_r5_docker_image_policy_contract.py`
 - R5 offline image-cache transport for `linux/amd64` and `linux/arm64`: `scripts/tools/r5_docker_cache_bundle.py`
 
 Use these stable public entrypoints first:

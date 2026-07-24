@@ -104,15 +104,15 @@ a true boolean.
 ## Evidence commands
 
 ```bash
-python scripts/verify_specialized_e2e.py \
+python scripts/gates/e2e/verify_specialized_e2e.py \
   --build-dir build/release --configuration Release --profile raft-ha --skip-build \
   --summary-path runtime/validation/raft-release-specialized-summary.json
 
-python scripts/verify_data_recovery_gate.py \
+python scripts/gates/production/verify_data_recovery_gate.py \
   --build-dir build/release --configuration Release --skip-build \
   --summary-path runtime/validation/raft-release-data-recovery-summary.json
 
-python scripts/verify_raft_mixed_binary.py \
+python scripts/gates/e2e/verify_raft_mixed_binary.py \
   --legacy-binary /opt/boost-gateway/releases/v3.5.3/bin/v2_leaderboard_backend \
   --legacy-revision b9c348b4b58fdeeffa9d82ff87a67ed781a96b78 \
   --expected-legacy-sha256 <platform-sha256> \
@@ -124,4 +124,4 @@ python scripts/verify_raft_mixed_binary.py \
 
 The complete release workflow additionally creates the strict offline Conan,
 package-consumer and SBOM inputs before invoking
-`scripts/verify_raft_release_evidence.py`.
+`scripts/gates/release/verify_raft_release_evidence.py`.

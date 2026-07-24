@@ -86,7 +86,7 @@ def main() -> int:
     steps: list[dict[str, object]] = []
     obs_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_observability_gate.py"),
+        str(ROOT / "scripts/gates/production/verify_observability_gate.py"),
         *common_build_args,
         "--summary-path",
         str(ROOT / "runtime/validation/p5-observability-summary.json"),
@@ -99,19 +99,19 @@ def main() -> int:
 
     tls_cmd = [
         sys.executable,
-        str(ROOT / "scripts/check_tls_profile.py"),
+        str(ROOT / "scripts/gates/transport/check_tls_profile.py"),
         "--generate-dev-certs",
         "--summary-path",
         str(ROOT / "runtime/validation/p6-tls-profile-summary.json"),
     ]
     steps.append(run_step("P6 TLS profile boundary gate", "p6_tls", tls_cmd, 60))
 
-    security_cmd = [sys.executable, str(ROOT / "scripts/check_security_release_gate.py")]
+    security_cmd = [sys.executable, str(ROOT / "scripts/gates/release/check_security_release_gate.py")]
     steps.append(run_step("P6 security release gate", "p6_security", security_cmd, 60))
 
     control_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_control_plane_gate.py"),
+        str(ROOT / "scripts/gates/production/verify_control_plane_gate.py"),
         "--summary-path",
         str(ROOT / "runtime/validation/p7-control-plane-summary.json"),
     ]
@@ -122,7 +122,7 @@ def main() -> int:
     if args.include_k8s_full_flow:
         k8s_cmd = [
             sys.executable,
-            str(ROOT / "scripts/verify_k8s_full_flow.py"),
+            str(ROOT / "scripts/gates/k8s/verify_k8s_full_flow.py"),
             "--build-dir",
             str(build_dir),
             "--summary-path",
@@ -135,7 +135,7 @@ def main() -> int:
     steps.append(run_step(
         "P8 v3 proto schema gate",
         "p8_proto",
-        [sys.executable, str(ROOT / "scripts/check_v3_proto_schema.py"), "--proto-dir", "proto/v3"],
+        [sys.executable, str(ROOT / "scripts/gates/governance/check_v3_proto_schema.py"), "--proto-dir", "proto/v3"],
         60,
     ))
     steps.append(run_step(
@@ -143,7 +143,7 @@ def main() -> int:
         "p8_proto",
         [
             sys.executable,
-            str(ROOT / "scripts/check_v3_proto_schema.py"),
+            str(ROOT / "scripts/gates/governance/check_v3_proto_schema.py"),
             "--proto-dir",
             "proto/v3",
             "--require-transport-contract",

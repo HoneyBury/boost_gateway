@@ -54,14 +54,14 @@ make test
 The repository-level P5 gate wraps this default test path:
 
 ```bash
-python ../../scripts/verify_control_plane_gate.py
+python3.12 ../../scripts/gates/production/verify_control_plane_gate.py
 ```
 
 The default gate also validates the committed CRD, RBAC, manager deployment,
 and sample `BoostGatewayCluster` manifests:
 
 ```bash
-python ../../scripts/check_operator_manifests.py
+python3.12 ../../scripts/gates/k8s/check_operator_manifests.py
 ```
 
 `envtest` is also wired for reconcile-level validation. It requires
@@ -85,9 +85,9 @@ six component status entries, then deletes the sample CR and waits for deletion.
 Repository-level fixed-runner variants:
 
 ```bash
-python ../../scripts/verify_control_plane_gate.py --include-envtest
-python ../../scripts/verify_control_plane_gate.py --include-kind
-python ../../scripts/verify_control_plane_gate.py --include-envtest --include-kind
+python3.12 ../../scripts/gates/production/verify_control_plane_gate.py --include-envtest
+python3.12 ../../scripts/gates/production/verify_control_plane_gate.py --include-kind
+python3.12 ../../scripts/gates/production/verify_control_plane_gate.py --include-envtest --include-kind
 ```
 
 ## Next steps

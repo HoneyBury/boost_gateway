@@ -178,7 +178,7 @@ jobs:
           V2_RATE_LIMIT_LOGIN: "50000"
         run: |
           set -euo pipefail
-          python3.12 scripts/collect_v2_perf_baseline.py \
+          python3.12 scripts/producers/collect_v2_perf_baseline.py \
             --build-dir build/macos-arm64-release \
             --run-preset "${{ inputs.perf_preset }}" \
             --repetitions "${{ inputs.perf_repetitions }}" \
@@ -189,7 +189,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3.12 scripts/verify_stability_soak.py \
+          python3.12 scripts/gates/release/verify_stability_soak.py \
             --build-dir build/macos-arm64-release \
             --configuration Release \
             --skip-build \

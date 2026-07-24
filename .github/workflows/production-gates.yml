@@ -170,7 +170,7 @@ jobs:
             profile=production-resilience
           fi
           args=(
-            scripts/check_fixed_runner_environment.py
+            scripts/gates/infrastructure/check_fixed_runner_environment.py
             --profile "$profile"
             --build-dir "$PRODUCTION_BUILD_DIR"
             --summary-path runtime/validation/fixed-runner-preflight-summary.json
@@ -256,7 +256,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/verify_production_resilience_gate.py
+            scripts/gates/production/verify_production_resilience_gate.py
             --build-dir "$PRODUCTION_BUILD_DIR"
             --configuration "$PRODUCTION_BUILD_TYPE"
             --soak-profile "${{ inputs.soak_profile || 'smoke' }}"
@@ -289,7 +289,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/verify_production_evidence_gate.py
+            scripts/gates/production/verify_production_evidence_gate.py
             --build-dir "$PRODUCTION_BUILD_DIR"
             --configuration "$PRODUCTION_BUILD_TYPE"
             --soak-profile "${{ inputs.soak_profile || 'smoke' }}"
@@ -320,7 +320,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/verify_observability_gate.py \
+          python3 scripts/gates/production/verify_observability_gate.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration "$PRODUCTION_BUILD_TYPE" \
             --skip-build \
@@ -355,7 +355,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload production gate evidence

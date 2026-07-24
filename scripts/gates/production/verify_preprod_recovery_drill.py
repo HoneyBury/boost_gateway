@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import hashlib
 import importlib.util
@@ -1495,7 +1505,7 @@ def main() -> int:
             "recovery_gate",
             [
                 sys.executable,
-                str(REPO_ROOT / "scripts/check_production_recovery_gate.py"),
+                str(REPO_ROOT / "scripts/gates/production/check_production_recovery_gate.py"),
                 "--summary-path",
                 str(recovery_summary),
             ],
@@ -1508,7 +1518,7 @@ def main() -> int:
             "monitoring_operability",
             [
                 sys.executable,
-                str(REPO_ROOT / "scripts/check_monitoring_operability.py"),
+                str(REPO_ROOT / "scripts/gates/production/check_monitoring_operability.py"),
                 "--summary-path",
                 str(monitoring_summary),
             ],
@@ -1968,7 +1978,7 @@ def main() -> int:
                             sys.executable,
                             str(
                                 REPO_ROOT
-                                / "scripts/collect_docker_production_perf_snapshot.py"
+                                / "scripts/producers/collect_docker_production_perf_snapshot.py"
                             ),
                             "--output-dir",
                             str(REPO_ROOT / "runtime/perf/docker-production-snapshot"),
@@ -1987,7 +1997,7 @@ def main() -> int:
                 "sdk_full_flow",
                 [
                     sys.executable,
-                    str(REPO_ROOT / "scripts/verify_sdk_full_flow_client.py"),
+                    str(REPO_ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
                     "--build-dir",
                     str(build_dir),
                     "--skip-build",
@@ -2029,7 +2039,7 @@ def main() -> int:
                 "recovery_drill_record",
                 [
                     sys.executable,
-                    str(REPO_ROOT / "scripts/check_recovery_drill_record.py"),
+                    str(REPO_ROOT / "scripts/gates/production/check_recovery_drill_record.py"),
                     "--record",
                     str(record_path),
                     "--summary-path",

@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — CI/CD Pipeline
+# Boost Gateway v3.6.2 — CI/CD Pipeline
 #
 # Triggers:
 #   - Push to develop or main: builds, tests, builds Docker images
@@ -47,7 +47,7 @@ jobs:
 
       - name: Inspect dependency layout
         shell: bash
-        run: bash scripts/inspect_dependency_layout.sh
+        run: python3.12 scripts/tools/inspect_dependency_layout.py
 
   build:
     name: "Build (${{ matrix.os }})"
@@ -169,7 +169,7 @@ jobs:
 
       - name: Operator kind smoke
         shell: bash
-        run: bash scripts/operator_kind_smoke.sh
+        run: python3.12 scripts/tools/operator_kind_smoke.py
 
       - name: Assert operator status conditions
         shell: bash

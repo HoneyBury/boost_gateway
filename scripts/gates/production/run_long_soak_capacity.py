@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import os
@@ -378,7 +388,7 @@ def main() -> int:
                 preset = LONG_SOAK_PRESETS["2h"]
                 cmd = [
                     sys.executable,
-                    str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
+                    str(ROOT / "scripts/gates/production/verify_production_resilience_gate.py"),
                     *common,
                     "--soak-profile", preset["soak_profile"],
                     "--baseline-profile", "release",
@@ -395,7 +405,7 @@ def main() -> int:
                 preset = LONG_SOAK_PRESETS["8h"]
                 cmd = [
                     sys.executable,
-                    str(ROOT / "scripts" / "verify_production_resilience_gate.py"),
+                    str(ROOT / "scripts/gates/production/verify_production_resilience_gate.py"),
                     *common,
                     "--soak-profile", preset["soak_profile"],
                     "--baseline-profile", "release",
@@ -410,7 +420,7 @@ def main() -> int:
 
             if args.run_capacity and not cancellation.cancelled:
                 cmd = [
-                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    sys.executable, str(ROOT / "scripts/producers/collect_release_baseline.py"),
                     *common,
                     "--perf-preset", "capacity",
                     "--perf-repetitions", str(args.perf_repetitions),
@@ -445,7 +455,7 @@ def main() -> int:
 
             if args.run_saturation and not cancellation.cancelled:
                 cmd = [
-                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    sys.executable, str(ROOT / "scripts/producers/collect_release_baseline.py"),
                     *common,
                     "--perf-preset", "saturation",
                     "--perf-repetitions", str(args.perf_repetitions),
@@ -476,7 +486,7 @@ def main() -> int:
 
             if args.run_business_capacity and not cancellation.cancelled:
                 cmd = [
-                    sys.executable, str(ROOT / "scripts" / "collect_release_baseline.py"),
+                    sys.executable, str(ROOT / "scripts/producers/collect_release_baseline.py"),
                     *common,
                     "--perf-preset", "business-capacity",
                     "--perf-repetitions", str(args.perf_repetitions),

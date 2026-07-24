@@ -316,7 +316,7 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-tools:consumer-smoke",
-        (REPO_ROOT / "scripts/verify_sdk_package_consumer.py").exists(),
+        (REPO_ROOT / "scripts/gates/sdk/verify_sdk_package_consumer.py").exists(),
         "installed package consumer verification script exists",
     )
     add_check(
@@ -393,13 +393,13 @@ def validate_tests_and_tools(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-tools:business-flow",
-        (REPO_ROOT / "scripts/verify_sdk_business_flow.py").exists(),
+        (REPO_ROOT / "scripts/gates/sdk/verify_sdk_business_flow.py").exists(),
         "SDK business flow verification script exists",
     )
     add_check(
         checks,
         "sdk-tools:full-flow-client",
-        (REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").exists()
+        (REPO_ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py").exists()
         and "--backend-tls" in read_text("scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "SDK full-flow example verification script exists and supports backend TLS profile",
     )

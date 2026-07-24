@@ -153,7 +153,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/check_fixed_runner_environment.py
+            scripts/gates/infrastructure/check_fixed_runner_environment.py
             --profile production-evidence
             --build-dir "$PRODUCTION_BUILD_DIR"
             --summary-path runtime/validation/r0-fixed-runner-preflight-summary.json
@@ -261,7 +261,7 @@ jobs:
             if [ -f "$path" ]; then summaries+=("$path"); fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload production candidate evidence

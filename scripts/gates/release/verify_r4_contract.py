@@ -143,7 +143,7 @@ def cmake_build_args(args: argparse.Namespace, targets: list[str]) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-msvc-debug"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/contributor-debug"))
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--skip-arch-baseline", action="store_true")
@@ -192,7 +192,7 @@ def main() -> int:
             "schema",
             [
                 sys.executable,
-                str(root / "scripts" / "check_v3_proto_schema.py"),
+                str(root / "scripts/gates/governance/check_v3_proto_schema.py"),
                 "--proto-dir",
                 str(root / "proto" / "v3"),
                 "--require-transport-contract",
@@ -242,7 +242,7 @@ def main() -> int:
                 "baseline",
                 [
                     sys.executable,
-                    str(root / "scripts" / "collect_v2_arch_baseline.py"),
+                    str(root / "scripts/producers/collect_v2_arch_baseline.py"),
                     "--build-dir",
                     str(build_dir),
                     "--output-root",
@@ -288,4 +288,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

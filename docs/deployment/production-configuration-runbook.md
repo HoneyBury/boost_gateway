@@ -228,12 +228,12 @@ docker compose -f env/docker/docker-compose.yml up -d --no-build --force-recreat
 配置治理校验：
 
 ```bash
-python3 scripts/check_config_governance.py --summary-path runtime/validation/config-governance-summary.json
+python3 scripts/gates/governance/check_config_governance.py --summary-path runtime/validation/config-governance-summary.json
 ```
 
 ## Config Drift 规则
 
-发布前必须把配置漂移当成阻断项处理。`scripts/check_config_governance.py` 会检查：
+发布前必须把配置漂移当成阻断项处理。`scripts/gates/governance/check_config_governance.py` 会检查：
 
 - `config/environments/<env>/*.json` 是否齐全、可解析、端口和 `service.config_version` 是否符合约定。
 - Docker Compose 是否挂载统一配置目录，并为每个服务注入 `/app/config/environments/docker/<service>.json`。
@@ -247,8 +247,8 @@ python3 scripts/check_config_governance.py --summary-path runtime/validation/con
 完整发布前建议叠加：
 
 ```bash
-python3 scripts/check_deploy_operability.py --build-dir build/release
-python3 scripts/check_monitoring_operability.py
+python3 scripts/gates/production/check_deploy_operability.py --build-dir build/release
+python3 scripts/gates/production/check_monitoring_operability.py
 build/release/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
 ```
 
@@ -278,7 +278,7 @@ build/release/sdk/examples/sdk_full_flow_client 127.0.0.1 9201
 
 1. 修改 `config/environments/<env>/*.json`
 2. 更新 `service.config_version`
-3. 运行 `scripts/check_config_governance.py`
+3. 运行 `scripts/gates/governance/check_config_governance.py`
 4. 运行 Compose/K8s 渲染校验
 5. 对需要重启的服务执行滚动重启
 6. 检查 `/health`、Prometheus targets、SDK full-flow

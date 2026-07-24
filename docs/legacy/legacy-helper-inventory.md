@@ -8,7 +8,7 @@
 
 - 说明哪些兼容层仍然存在，为什么存在，以及它们是否属于默认生产主线。
 - 约束新增功能不得继续扩张 legacy raw JSON 或 v1 example surface。
-- 为 `scripts/check_legacy_helper_inventory.py` 提供可校验的事实源。
+- 为 `scripts/gates/governance/check_legacy_helper_inventory.py` 提供可校验的事实源。
 
 ## 总体规则
 
@@ -25,8 +25,8 @@
 | `BackendEnvelope` | 当前跨服务默认外层契约 | 默认主线的一部分 | `include/v2/service/backend_envelope.h`, `src/v2/gateway/gateway_service_bridge.cpp` |
 | typed envelope helper | 已覆盖 `login/room/battle/match/leaderboard` | 默认主线的一部分 | `include/v2/service/envelope_adapter.h`, `src/v2/service/envelope_adapter.cpp`, `proto/README.md` |
 | `legacy raw JSON` | 兼容窗口仍在，带 deprecation notice | compatibility-only，不得扩展 | `include/v2/service/envelope_adapter.h`, `tests/v2/unit/service_boundary_test.cpp` |
-| generated proto | 已有 schema 和生成入口 | migration layer，不是默认 transport | `proto/v3/*.proto`, `scripts/generate_proto_cpp.py`, `proto/README.md` |
-| generated protobuf / gRPC stub | Raft protobuf runtime 已进入默认内部依赖；外部 generated gRPC 仍属实验能力 | raft_internal_default / grpc_experimental_only | `proto/README.md`, `proto/v3/raft.proto`, `scripts/check_v3_grpc_poc_decision.py`, `src/v2/grpc/` |
+| generated proto | 已有 schema 和生成入口 | migration layer，不是默认 transport | `proto/v3/*.proto`, `scripts/tools/generate_proto_cpp.py`, `proto/README.md` |
+| generated protobuf / gRPC stub | Raft protobuf runtime 已进入默认内部依赖；外部 generated gRPC 仍属实验能力 | raft_internal_default / grpc_experimental_only | `proto/README.md`, `proto/v3/raft.proto`, `scripts/gates/governance/check_v3_grpc_poc_decision.py`, `src/v2/grpc/` |
 
 ## 服务级迁移状态
 
@@ -92,9 +92,9 @@
 ## 治理入口
 
 ```bash
-python scripts/check_legacy_helper_inventory.py
+python scripts/gates/governance/check_legacy_helper_inventory.py
 python scripts/check_mainline_readiness.py
-python scripts/check_script_inventory.py
+python scripts/gates/governance/check_script_inventory.py
 ```
 
 Conan 依赖治理入口：

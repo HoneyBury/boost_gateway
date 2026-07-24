@@ -19,7 +19,7 @@ gateway 地址。当前服务端主链包含：
 命令与 Docker Compose 一致。
 
 ```bash
-cd /Users/honeybury/workspace/boost_gateway
+cd /path/to/boost_gateway
 
 python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
 docker compose -f env/docker/docker-compose.yml build
@@ -61,7 +61,7 @@ docker compose -f env/docker/docker-compose.yml down -v
 适合修改服务端代码、客户端 live gate 和快速定位问题。
 
 ```bash
-cd /Users/honeybury/workspace/boost_gateway
+cd /path/to/boost_gateway
 
 cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan \
   -DCMAKE_BUILD_TYPE=Release \
@@ -76,27 +76,24 @@ cmake --build build/release --target \
   v2_leaderboard_backend
 ```
 
-最省心的启动方式是从客户端仓库运行 live gate，让脚本自动分配动态端口并启动
-全部后端：
+最省心的验证方式是运行仓库内 SDK full-flow gate，让脚本自动分配动态端口并启动
+gateway 和全部后端：
 
 ```bash
-cd /Users/honeybury/workspace/BoostGatewayTankClient
-
-./scripts/run-live-gate.sh \
-  --server-root /Users/honeybury/workspace/boost_gateway \
-  --server-build-dir /Users/honeybury/workspace/boost_gateway/build
+python3.12 scripts/gates/sdk/verify_sdk_full_flow_client.py \
+  --build-dir build/release --skip-build
 ```
 
 如果要手动启动固定端口，请确保 gateway 指向五个 backend：
 
 ```bash
-build/examples/v2_login_backend/v2_login_backend 9202
-build/examples/v2_room_backend/v2_room_backend 9302
-build/examples/v2_battle_backend/v2_battle_backend 9303
-build/examples/v2_match_backend/v2_match_backend 9304
-build/examples/v2_leaderboard_backend/v2_leaderboard_backend 9305
+build/release/examples/v2_login_backend/v2_login_backend 9202
+build/release/examples/v2_room_backend/v2_room_backend 9302
+build/release/examples/v2_battle_backend/v2_battle_backend 9303
+build/release/examples/v2_match_backend/v2_match_backend 9304
+build/release/examples/v2_leaderboard_backend/v2_leaderboard_backend 9305
 
-build/examples/v2_gateway_demo/v2_gateway_demo \
+build/release/examples/v2_gateway_demo/v2_gateway_demo \
   --port 9201 \
   --http-port 9080 \
   --login-port 9202 \
@@ -126,19 +123,11 @@ curl http://127.0.0.1:9080/ready
 业务闭环验证：
 
 ```bash
-cd /Users/honeybury/workspace/BoostGatewayTankClient
-BGTC_GATEWAY_HOST=127.0.0.1 BGTC_GATEWAY_PORT=9201 ./scripts/run-headless-gate.sh
+python3.12 scripts/gates/sdk/verify_sdk_full_flow_client.py \
+  --build-dir build/release --skip-build
 ```
 
-如果希望脚本自动启动服务端和客户端 headless gate：
-
-```bash
-./scripts/run-live-gate.sh \
-  --server-root /Users/honeybury/workspace/boost_gateway \
-  --server-build-dir /Users/honeybury/workspace/boost_gateway/build
-```
-
-当前 headless/live gate 覆盖：
+当前 SDK full-flow gate 覆盖：
 
 - 注册 / 登录
 - 创建房间 / 加入房间 / 离开房间

@@ -3,73 +3,31 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
-import json
-import subprocess
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-
-def normalize_output(text: str | bytes | None) -> str:
-    if text is None:
-        return ""
-    if isinstance(text, bytes):
-        return text.decode("utf-8", errors="replace")
-    return text
+from scripts.lib.subprocess_utils import run_gate_step
+from scripts.lib.summary_utils import write_json_summary
 
 
-def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
-    text = normalize_output(text)
-    return text if len(text) <= max_chars else text[-max_chars:]
-
-
-def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict[str, object]:
-    print(f"==> {name}", flush=True)
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            cmd,
-            cwd=cwd,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "name": name,
-            "category": category,
-            "command": cmd,
-            "status": "timeout",
-            "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout),
-            "stderr_tail": tail(exc.stderr),
-        }
-
-    stdout = normalize_output(completed.stdout)
-    stderr = normalize_output(completed.stderr)
-    if stdout:
-        print(stdout, end="")
-    if stderr:
-        print(stderr, end="", file=sys.stderr)
-    return {
-        "name": name,
-        "category": category,
-        "command": cmd,
-        "status": "passed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
-        "duration_seconds": round(time.monotonic() - started, 3),
-        "stdout_tail": tail(stdout),
-        "stderr_tail": tail(stderr),
-    }
+run_step = run_gate_step
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-msvc-debug"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/contributor-debug"))
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--baseline-profile", choices=["debug", "release"], default="debug")
     parser.add_argument("--soak-profile", choices=["smoke", "short", "medium"], default="smoke")
@@ -107,7 +65,7 @@ def main() -> int:
         "docs",
         [
             sys.executable,
-            str(root / "scripts" / "check_current_docs_install.py"),
+            str(root / "scripts/gates/governance/check_current_docs_install.py"),
             "--summary-path",
             str(root / "runtime" / "validation" / "rc-current-docs-install-summary.json"),
         ],
@@ -117,7 +75,7 @@ def main() -> int:
     steps.append(run_step(
         "reliability matrix evidence",
         "docs",
-        [sys.executable, str(root / "scripts" / "check_reliability_matrix.py")],
+        [sys.executable, str(root / "scripts/gates/governance/check_reliability_matrix.py")],
         root,
         30,
     ))
@@ -138,7 +96,7 @@ def main() -> int:
         "release_readiness",
         [
             sys.executable,
-            str(root / "scripts" / "check_p3_p4_release_readiness.py"),
+            str(root / "scripts/gates/release/check_p3_p4_release_readiness.py"),
             "--summary-path",
             str(root / "runtime" / "validation" / "rc-p3-p4-release-readiness-summary.json"),
         ],
@@ -150,7 +108,7 @@ def main() -> int:
         "contract",
         [
             sys.executable,
-            str(root / "scripts" / "verify_r4_contract.py"),
+            str(root / "scripts/gates/release/verify_r4_contract.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -168,7 +126,7 @@ def main() -> int:
     steps.append(run_step(
         "security release gate",
         "security",
-        [sys.executable, str(root / "scripts" / "check_security_release_gate.py")],
+        [sys.executable, str(root / "scripts/gates/release/check_security_release_gate.py")],
         root,
         30,
     ))
@@ -177,7 +135,7 @@ def main() -> int:
         "monitoring",
         [
             sys.executable,
-            str(root / "scripts" / "check_monitoring_operability.py"),
+            str(root / "scripts/gates/production/check_monitoring_operability.py"),
             "--summary-path",
             str(root / "runtime" / "validation" / "rc-monitoring-operability-summary.json"),
         ],
@@ -189,7 +147,7 @@ def main() -> int:
         "data_recovery",
         [
             sys.executable,
-            str(root / "scripts" / "verify_data_recovery_gate.py"),
+            str(root / "scripts/gates/production/verify_data_recovery_gate.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -206,7 +164,7 @@ def main() -> int:
         "observability",
         [
             sys.executable,
-            str(root / "scripts" / "verify_observability_gate.py"),
+            str(root / "scripts/gates/production/verify_observability_gate.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -223,7 +181,7 @@ def main() -> int:
         "control_plane",
         [
             sys.executable,
-            str(root / "scripts" / "verify_control_plane_gate.py"),
+            str(root / "scripts/gates/production/verify_control_plane_gate.py"),
             "--summary-path",
             str(root / "runtime" / "validation" / "rc-control-plane-gate-summary.json"),
         ],
@@ -235,7 +193,7 @@ def main() -> int:
         "soak",
         [
             sys.executable,
-            str(root / "scripts" / "verify_stability_soak.py"),
+            str(root / "scripts/gates/release/verify_stability_soak.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -257,7 +215,7 @@ def main() -> int:
             "baseline",
             [
                 sys.executable,
-                str(root / "scripts" / "collect_release_baseline.py"),
+                str(root / "scripts/producers/collect_release_baseline.py"),
                 "--build-dir",
                 str(args.build_dir),
                 "--configuration",
@@ -305,12 +263,10 @@ def main() -> int:
         summary["overall_pass"] = True
         summary["passed"] = True
 
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json_summary(summary_path, summary)
     print(f"summary: {summary_path}")
     return 0 if summary["passed"] else 1
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

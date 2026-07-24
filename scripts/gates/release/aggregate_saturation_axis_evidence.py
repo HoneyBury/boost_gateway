@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 from dataclasses import dataclass

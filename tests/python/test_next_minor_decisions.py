@@ -11,7 +11,7 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPT = ROOT / "scripts/check_next_minor_decisions.py"
+SCRIPT = ROOT / "scripts/gates/governance/check_next_minor_decisions.py"
 
 
 class NextMinorDecisionsTest(unittest.TestCase):

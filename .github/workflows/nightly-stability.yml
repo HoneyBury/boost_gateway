@@ -141,7 +141,7 @@ jobs:
       - name: Stability soak
         shell: bash
         run: |
-          python3 scripts/verify_stability_soak.py \
+          python3 scripts/gates/release/verify_stability_soak.py \
             --build-dir build/release \
             --configuration Release \
             --baseline-profile release \
@@ -156,7 +156,7 @@ jobs:
         shell: bash
         run: |
           if [ -f runtime/validation/nightly-stability-soak-summary.json ]; then
-            python3 scripts/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload stability summary

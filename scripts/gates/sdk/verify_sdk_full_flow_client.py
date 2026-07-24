@@ -173,7 +173,7 @@ def ensure_dev_certs(checks: list[dict[str, Any]], cert_dir: Path) -> bool:
         return False
     return run_command(
         "generate-backend-tls-dev-certs",
-        [sys.executable, str(REPO_ROOT / "scripts" / "gen_certs.py")],
+        [sys.executable, str(REPO_ROOT / "scripts/tools/gen_certs.py")],
         checks,
     )
 

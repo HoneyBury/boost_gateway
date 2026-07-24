@@ -156,7 +156,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/check_fixed_runner_environment.py \
+          python3 scripts/gates/infrastructure/check_fixed_runner_environment.py \
             --profile production-evidence \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path "${{ github.workspace }}/runtime/validation/preprod-evidence-preflight-summary.json"
@@ -261,7 +261,7 @@ jobs:
             if [ -f "$path" ]; then summaries+=("$path"); fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload pre-production evidence

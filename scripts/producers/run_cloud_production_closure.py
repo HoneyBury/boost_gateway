@@ -102,7 +102,7 @@ def main() -> int:
         "preflight",
         [
             sys.executable,
-            str(ROOT / "scripts" / "check_fixed_runner_environment.py"),
+            str(ROOT / "scripts/gates/infrastructure/check_fixed_runner_environment.py"),
             "--profile",
             "cloud-production",
             "--build-dir",
@@ -122,7 +122,7 @@ def main() -> int:
         "deploy_operability",
         [
             sys.executable,
-            str(ROOT / "scripts" / "check_deploy_operability.py"),
+            str(ROOT / "scripts/gates/production/check_deploy_operability.py"),
             *common,
             "--summary-path",
             str(ROOT / "runtime/validation/cloud-deploy-operability-summary.json"),
@@ -146,7 +146,7 @@ def main() -> int:
         steps.append(run_step(
             "docker production snapshot",
             "compose",
-            [sys.executable, str(ROOT / "scripts" / "collect_docker_production_perf_snapshot.py")],
+            [sys.executable, str(ROOT / "scripts/producers/collect_docker_production_perf_snapshot.py")],
             600,
         ))
 
@@ -154,7 +154,7 @@ def main() -> int:
         steps.append(run_step(
             "kubernetes deploy dry-run",
             "k8s",
-            [sys.executable, str(ROOT / "scripts" / "deploy_k8s.py"), "--dry-run"],
+            [sys.executable, str(ROOT / "scripts/tools/deploy_k8s.py"), "--dry-run"],
             300,
         ))
         steps.append(run_step(
@@ -162,7 +162,7 @@ def main() -> int:
             "k8s",
             [
                 sys.executable,
-                str(ROOT / "scripts" / "verify_control_plane_gate.py"),
+                str(ROOT / "scripts/gates/production/verify_control_plane_gate.py"),
                 "--include-kind",
                 "--summary-path",
                 str(ROOT / "runtime/validation/cloud-kind-control-plane-summary.json"),
@@ -176,7 +176,7 @@ def main() -> int:
             "production_evidence",
             [
                 sys.executable,
-                str(ROOT / "scripts" / "verify_production_evidence_gate.py"),
+                str(ROOT / "scripts/gates/production/verify_production_evidence_gate.py"),
                 *common,
                 "--include-release-baseline",
                 "--summary-path",

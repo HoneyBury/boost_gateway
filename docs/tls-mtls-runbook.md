@@ -19,19 +19,19 @@
 开发/预发证书：
 
 ```bash
-python3.12 scripts/gen_certs.py
+python3.12 scripts/tools/gen_certs.py
 ```
 
 如需给实验 gRPC mTLS 或其他本机双向 TLS 验证生成临时 client cert：
 
 ```bash
-python3.12 scripts/gen_certs.py --include-client
+python3.12 scripts/tools/gen_certs.py --include-client
 ```
 
 也可以为轮换演练输出到独立目录：
 
 ```bash
-python3.12 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --days 90
+python3.12 scripts/tools/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --days 90
 ```
 
 产物：
@@ -50,20 +50,20 @@ python3.12 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs
 TLS profile 边界检查：
 
 ```bash
-python3.12 scripts/check_tls_profile.py --generate-dev-certs
+python3.12 scripts/gates/transport/check_tls_profile.py --generate-dev-certs
 ```
 
 N4 传输安全与配置治理聚合门禁：
 
 ```bash
-python3.12 scripts/check_transport_config_governance.py --generate-dev-certs \
+python3.12 scripts/gates/transport/check_transport_config_governance.py --generate-dev-certs \
   --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
 
 TLS profile 生产业务闭环实测：
 
 ```bash
-python3.12 scripts/check_transport_config_governance.py --generate-dev-certs \
+python3.12 scripts/gates/transport/check_transport_config_governance.py --generate-dev-certs \
   --include-tls-full-flow --build-dir build/release \
   --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
@@ -71,7 +71,7 @@ python3.12 scripts/check_transport_config_governance.py --generate-dev-certs \
 R1 TLS 上线前置证据：
 
 ```bash
-python3.12 scripts/verify_tls_production_readiness.py \
+python3.12 scripts/gates/transport/verify_tls_production_readiness.py \
   --build-dir build/release --skip-build \
   --summary-path runtime/validation/r1-tls-production-readiness-summary.json
 ```
@@ -87,7 +87,7 @@ python3.12 scripts/verify_tls_production_readiness.py \
 P5-P8 聚合入口会自动运行该检查：
 
 ```bash
-python3.12 scripts/verify_p5_p8_business_closure.py \
+python3.12 scripts/gates/release/verify_p5_p8_business_closure.py \
   --build-dir build/release --skip-build
 ```
 
@@ -98,19 +98,19 @@ python3.12 scripts/verify_p5_p8_business_closure.py \
 - gateway bridge 按 `security_policy.require_tls` 和 `v3_tls_enabled` 控制 TLS。
 - backend connection 在传入 `tls_config` 时具备 TLS handshake 路径。
 - backend 服务端具备 opt-in TLS listener；`BackendTlsListenerCompletesLoginRequest` 覆盖 backend TLS listener + `BackendConnection` 的真实 request/response 闭环。
-- `scripts/verify_sdk_full_flow_client.py --backend-tls` 会启动五个 backend、gateway 和 SDK full-flow client，验证 login、room、battle、matchmaking、leaderboard 业务闭环全部通过 TLS profile。
+- `scripts/gates/sdk/verify_sdk_full_flow_client.py --backend-tls` 会启动五个 backend、gateway 和 SDK full-flow client，验证 login、room、battle、matchmaking、leaderboard 业务闭环全部通过 TLS profile。
 - 证书生成器和证书可读性正常。
 - Docker Compose 和 Kubernetes 为 backend TLS profile 保留显式 cert mount / Secret mount，默认仍关闭。
 - 配置治理门禁能发现 Docker/K8s/Helm 与生产配置事实源之间的漂移。
 
-`scripts/verify_production_resilience_gate.py` 也会运行 N4 聚合门禁，默认写出 `runtime/validation/p5-transport-config-governance-summary.json`，用于发布前归档。
+`scripts/gates/production/verify_production_resilience_gate.py` 也会运行 N4 聚合门禁，默认写出 `runtime/validation/p5-transport-config-governance-summary.json`，用于发布前归档。
 
 ## 证书轮换与回滚
 
 生产证书轮换建议使用灰度发布：
 
 1. 在 Secret Manager、Kubernetes Secret 或 Vault 中发布新 CA/server/client 证书，记录指纹与过期时间。
-2. 先运行 `scripts/check_tls_profile.py --generate-dev-certs` 验证本地 profile 没有误打开默认 TLS。
+2. 先运行 `scripts/gates/transport/check_tls_profile.py --generate-dev-certs` 验证本地 profile 没有误打开默认 TLS。
 3. 在预发或固定 runner 上打开 `security_policy.require_tls=true` 与 `feature_flags.v3_tls_enabled` 灰度比例，运行 SDK full-flow。
 4. 观察连接失败率、backend TLS handshake 错误、leaderboard mTLS 拒绝数和证书过期告警。
 5. 回滚时先关闭 `v3_tls_enabled`，必要时回退 Secret 版本并滚动重启 gateway/backend。

@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import subprocess
@@ -194,7 +204,7 @@ def run_r4_case(root: Path, name: str, *, mismatched_capacity: bool) -> tuple[in
     output = case_root / "result.json"
     command = [
         sys.executable,
-        str(ROOT / "scripts/verify_fixed_runner_release_capacity.py"),
+        str(ROOT / "scripts/gates/release/verify_fixed_runner_release_capacity.py"),
         "--skip-collect",
         "--configuration",
         "Release",

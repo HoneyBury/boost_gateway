@@ -97,14 +97,14 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         add(checks, f"p2:manifest:{evidence_id}", evidence_id in ids, f"manifest declares {evidence_id}")
 
     for script in (
-        "scripts/check_script_inventory.py",
+        "scripts/gates/governance/check_script_inventory.py",
         "scripts/manage_todos.py",
-        "scripts/check_validation_summary_contract.py",
-        "scripts/check_evidence_provenance_contract.py",
-        "scripts/check_r5_docker_image_policy_contract.py",
-        "scripts/check_config_source_layout.py",
-        "scripts/check_fixed_runner_evidence_plan.py",
-        "scripts/verify_fixed_runner_release_capacity.py",
+        "scripts/gates/governance/check_validation_summary_contract.py",
+        "scripts/gates/governance/check_evidence_provenance_contract.py",
+        "scripts/gates/governance/check_r5_docker_image_policy_contract.py",
+        "scripts/gates/governance/check_config_source_layout.py",
+        "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py",
+        "scripts/gates/release/verify_fixed_runner_release_capacity.py",
         "scripts/verify_preprod_recovery_drill.py",
         "scripts/verify_tls_preprod_multi_run.py",
         "scripts/check_production_evidence_manifest.py",
@@ -119,7 +119,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "include_capacity_baseline",
         "include_observability_runtime",
         "actions/upload-artifact@v4",
-        "scripts/render_validation_summary.py",
+        "scripts/tools/render_validation_summary.py",
     ):
         add(checks, f"p2:workflow:{token}", token in workflow, f"production gates workflow includes {token}")
 
@@ -140,7 +140,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "p2:next-minor-decision-gate",
-        exists("scripts/check_next_minor_decisions.py")
+        exists("scripts/gates/governance/check_next_minor_decisions.py")
         and exists("scripts/gates/governance/check_next_minor_decisions.py"),
         "next-minor decision gate has stable and canonical entrypoints",
     )
@@ -174,10 +174,10 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     env_readme = read("env/README.md")
     add(checks, "p3:env-source-of-truth", "`env/` is the maintained production configuration source of truth" in env_readme, "env README declares config source of truth")
     add(checks, "p3:legacy-config-boundary", "legacy/reference surfaces" in env_readme, "env README documents legacy config boundary")
-    add(checks, "p3:legacy-helper-gate-exists", exists("scripts/check_legacy_helper_inventory.py"), "legacy/helper governance gate exists")
+    add(checks, "p3:legacy-helper-gate-exists", exists("scripts/gates/governance/check_legacy_helper_inventory.py"), "legacy/helper governance gate exists")
     add(checks, "p4:legacy-helper-gate-guards-raw-json", "no-new-raw-json-marker" in read("scripts/gates/governance/check_legacy_helper_inventory.py"), "legacy/helper gate guards against new raw JSON-only business markers")
     add(checks, "p3:conan-governance-readme", exists("conan/README.md"), "repository documents Conan governance entrypoints")
-    add(checks, "p3:conan-managed-profile", exists("conan/profiles/windows-msvc-x64"), "repository ships a managed Conan profile")
+    add(checks, "p3:conan-managed-profile", exists("conan/profiles/linux-gcc-x64"), "repository ships the managed production Conan profile")
     add(checks, "p3:conan-linux-profile", exists("conan/profiles/linux-gcc-x64"), "repository ships a Linux fixed-runner Conan profile")
     add(checks, "p3:conan-lock-generator", exists("scripts/tools/generate_conan_lock.py"), "repository ships a Conan lockfile generator")
     linux_profile = read("conan/profiles/linux-gcc-x64")
@@ -196,11 +196,11 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         and linux_lockfile in production_platform_action,
         "fixed-runner workflows resolve the Linux nosqlite lockfile through the shared platform contract",
     )
-    add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
-    add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
-    add(checks, "p3:evidence-provenance-contract-gate", exists("scripts/check_evidence_provenance_contract.py"), "evidence provenance contract governance gate exists")
-    add(checks, "p3:r5-docker-image-policy-contract-gate", exists("scripts/check_r5_docker_image_policy_contract.py"), "R5 Docker image policy contract governance gate exists")
-    add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
+    add(checks, "p3:conan-lockfile-workflow-gate", exists("scripts/gates/governance/check_conan_lockfile_workflows.py"), "Conan lockfile workflow governance gate exists")
+    add(checks, "p3:workflow-python-cli-contract-gate", exists("scripts/gates/governance/check_workflow_python_cli_contracts.py"), "workflow Python CLI contract governance gate exists")
+    add(checks, "p3:evidence-provenance-contract-gate", exists("scripts/gates/governance/check_evidence_provenance_contract.py"), "evidence provenance contract governance gate exists")
+    add(checks, "p3:r5-docker-image-policy-contract-gate", exists("scripts/gates/governance/check_r5_docker_image_policy_contract.py"), "R5 Docker image policy contract governance gate exists")
+    add(checks, "p3:fixed-runner-evidence-plan-gate", exists("scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py"), "fixed-runner evidence plan governance gate exists")
     add(checks, "p3:long-soak-consumes-conan-lockfile", "build/conan-long-soak-capacity-cmake" in long_soak_workflow and "--lockfile" in long_soak_workflow, "long-soak-capacity workflow performs lockfile-based Conan configure/build preflight")
     add(checks, "p3:production-gates-consumes-conan-lockfile", "build/conan-production-gates-cmake" in production_gates_workflow and "--lockfile" in production_gates_workflow, "production-gates workflow performs lockfile-based Conan configure/build preflight")
     add(
@@ -223,28 +223,28 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "p3:ci-runs-workflow-python-cli-contract-gate",
-        "Workflow Python CLI contract gate" in ci_workflow and "scripts/check_workflow_python_cli_contracts.py" in ci_workflow,
+        "Workflow Python CLI contract gate" in ci_workflow and "scripts/gates/governance/check_workflow_python_cli_contracts.py" in ci_workflow,
         "CI runs the workflow Python CLI contract governance gate",
     )
     add(
         checks,
         "p3:ci-runs-evidence-provenance-contract-gate",
         "Evidence provenance contract gate" in ci_workflow
-        and "scripts/check_evidence_provenance_contract.py" in ci_workflow,
+        and "scripts/gates/governance/check_evidence_provenance_contract.py" in ci_workflow,
         "CI runs the evidence provenance contract governance gate",
     )
     add(
         checks,
         "p3:ci-runs-r5-docker-image-policy-contract-gate",
         "R5 Docker image policy contract gate" in ci_workflow
-        and "scripts/check_r5_docker_image_policy_contract.py" in ci_workflow,
+        and "scripts/gates/governance/check_r5_docker_image_policy_contract.py" in ci_workflow,
         "CI runs the R5 Docker image policy contract governance gate",
     )
     add(
         checks,
         "p3:ci-runs-next-minor-decision-gate",
         "Next minor decision gate" in ci_workflow
-        and "scripts/check_next_minor_decisions.py" in ci_workflow,
+        and "scripts/gates/governance/check_next_minor_decisions.py" in ci_workflow,
         "CI runs the accepted next-minor decision governance gate",
     )
 

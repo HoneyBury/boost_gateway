@@ -193,7 +193,7 @@ def check_p7_regression(demo_root: Path, errors: list, warnings: list) -> bool:
     repo_root = demo_root.parent.parent.parent
     # Check that SDK full-flow still works (basic file existence)
     sdk_scripts = [
-        "scripts/verify_sdk_full_flow_client.py",
+        "scripts/gates/sdk/verify_sdk_full_flow_client.py",
         "scripts/verify_release_candidate.py",
     ]
     for s in sdk_scripts:

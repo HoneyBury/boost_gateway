@@ -140,23 +140,23 @@ jobs:
 
       - name: R4 contract gate
         shell: bash
-        run: python3 scripts/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release
+        run: python3 scripts/gates/release/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release
 
       - name: Monitoring operability gate
         shell: bash
-        run: python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
+        run: python3 scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
       - name: Workflow Python CLI contract gate
         shell: bash
-        run: python3 scripts/check_workflow_python_cli_contracts.py
+        run: python3 scripts/gates/governance/check_workflow_python_cli_contracts.py
 
       - name: Workflow catalog gate
         shell: bash
-        run: python3 scripts/check_workflow_catalog.py
+        run: python3 scripts/gates/governance/check_workflow_catalog.py
 
       - name: Next minor decision gate
         shell: bash
-        run: python3 scripts/check_next_minor_decisions.py
+        run: python3 scripts/gates/governance/check_next_minor_decisions.py
 
       - name: Project TODO board gate
         shell: bash
@@ -164,11 +164,11 @@ jobs:
 
       - name: Evidence provenance contract gate
         shell: bash
-        run: python3 scripts/check_evidence_provenance_contract.py
+        run: python3 scripts/gates/governance/check_evidence_provenance_contract.py
 
       - name: R5 Docker image policy contract gate
         shell: bash
-        run: python3 scripts/check_r5_docker_image_policy_contract.py
+        run: python3 scripts/gates/governance/check_r5_docker_image_policy_contract.py
 
       - name: Legacy/helper inventory gate
         shell: bash

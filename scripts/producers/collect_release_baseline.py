@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import platform
@@ -81,7 +91,7 @@ def run_step(name: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-ninja-release"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/release"))
     parser.add_argument("--configuration", default="Release")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--baseline-timeout-seconds", type=int, default=60)
@@ -237,7 +247,7 @@ def main() -> int:
     if not args.skip_r4:
         cmd = [
             sys.executable,
-            str(root / "scripts" / "verify_r4_contract.py"),
+            str(root / "scripts/gates/release/verify_r4_contract.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -262,7 +272,7 @@ def main() -> int:
     if not args.skip_perf:
         perf_cmd = [
             sys.executable,
-            str(root / "scripts" / "collect_v2_perf_baseline.py"),
+            str(root / "scripts/producers/collect_v2_perf_baseline.py"),
             "--build-dir",
             str(args.build_dir),
             "--run-preset",

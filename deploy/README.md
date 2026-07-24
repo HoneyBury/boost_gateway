@@ -129,7 +129,7 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 提交或发布前运行：
 
 ```bash
-python3 scripts/check_deploy_operability.py --build-dir build/default
+python3 scripts/gates/production/check_deploy_operability.py --build-dir build/default
 ```
 
 脚本会检查 Dockerfile、两套 Compose、systemd unit、CMake 安装清单、Kubernetes 探针、Prometheus scrape 目标、入口参数、非交互运行语义以及可选构建产物，并生成：

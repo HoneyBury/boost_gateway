@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 production alert rules.
+# Boost Gateway v3.6.2 production alert rules.
 #
 # These rules intentionally reference only metrics exposed by the current
 # gateway `/metrics` endpoint or common optional exporters. Backend services do

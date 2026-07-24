@@ -180,7 +180,7 @@ jobs:
       - name: Enforce production identity security contracts
         shell: bash
         run: |
-          "$EVIDENCE_PYTHON" scripts/check_security_release_gate.py
+          "$EVIDENCE_PYTHON" scripts/gates/release/check_security_release_gate.py
 
       - name: Run real HTTPS JWKS rotation and outage drill
         shell: bash
@@ -197,7 +197,7 @@ jobs:
         if: always()
         shell: bash
         run: |
-          "$EVIDENCE_PYTHON" scripts/check_validation_summary_contract.py \
+          "$EVIDENCE_PYTHON" scripts/gates/governance/check_validation_summary_contract.py \
             --summary runtime/validation/jwks-rotation-summary.json \
             --summary-path runtime/validation/jwks-summary-contract-summary.json
 

@@ -19,7 +19,7 @@ endif()
 apply_project_warnings(project_v3)
 
 add_custom_target(generate_v3_proto_cpp
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/generate_proto_cpp.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/tools/generate_proto_cpp.py"
             --proto-dir "${CMAKE_SOURCE_DIR}/proto/v3"
             --out-dir "${CMAKE_SOURCE_DIR}/src/v3/proto"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
@@ -27,14 +27,14 @@ add_custom_target(generate_v3_proto_cpp
 )
 
 add_custom_target(check_v3_proto_schema
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check_v3_proto_schema.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/gates/governance/check_v3_proto_schema.py"
             --proto-dir "${CMAKE_SOURCE_DIR}/proto/v3"
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
     COMMENT "Validate v3 proto schema without requiring protoc"
 )
 
 add_custom_target(check_v3_proto_transport_contract
-    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/check_v3_proto_schema.py"
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/scripts/gates/governance/check_v3_proto_schema.py"
             --proto-dir "${CMAKE_SOURCE_DIR}/proto/v3"
             --require-transport-contract
     WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"

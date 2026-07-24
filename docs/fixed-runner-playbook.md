@@ -323,7 +323,7 @@ Compose；`macos-arm64.yml` 的原生恢复 drill 同时归档统一的
 `tls-preprod-multi-run-summary.json`。readiness 根据目标平台选择 Linux preprod artifact
 或 Mac candidate artifact，四类来源都必须携带相同平台摘要。
 
-每个 fixed runner 必须固化仓库内与其平台匹配的 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 由共享平台解析器选择 `nosqlite` 图；`grpc-experimental.yml` 继续使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/check_conan_lockfile_workflows.py`、`python3 scripts/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
+每个 fixed runner 必须固化仓库内与其平台匹配的 Conan profile / lockfile，避免“同一台固定机器”仍依赖宿主预装库漂移。`release.yml`、`long-soak-capacity.yml` 与 `production-gates.yml` 由共享平台解析器选择 `nosqlite` 图；`grpc-experimental.yml` 继续使用 `with_grpc=True`、`with_sqlite=False` 的独立 lockfile/依赖图。`release.yml` 必须在正式门禁前执行 lockfile-based `conan install` 预检，`long-soak-capacity.yml` 与 `production-gates.yml` 还必须执行 `project_v2` 构建预检。本地治理入口为 `python3 scripts/gates/governance/check_conan_lockfile_workflows.py`、`python3 scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py` 和 `python3 scripts/gates/governance/check_workflow_catalog.py`。2026-07-12 已在 `main` / `0af5c91` 通过 run `29196150703` 完成这条 gRPC 实验 fixed-runner 事实链。
 Linux `nosqlite` lockfile 仍是 Linux x64 默认事实源；ARM workflow 不得因此回落或
 交叉消费 x64 graph。
 
@@ -731,9 +731,9 @@ runner OS 分区的 `CONAN_HOME`，以及 `--build=missing` 后紧跟
 
 - 每个 workflow 的 Conan lockfile install/build 预检通过。
 - `release-baseline-summary.json`、`long-soak-capacity-summary.json`、`fixed-runner-release-capacity-summary.json`、`production-evidence-summary.json` 均为 `overall_pass=true`。
-- 投产准入检查必须运行不带 `--allow-missing` 的 `python scripts/check_validation_summary_contract.py`，并运行 `python scripts/check_production_evidence_manifest.py --require-fixed-runner`。
+- 投产准入检查必须运行不带 `--allow-missing` 的 `python scripts/gates/governance/check_validation_summary_contract.py`，并运行 `python scripts/check_production_evidence_manifest.py --require-fixed-runner`。
 - 如 fixed runner 缺 Redis、kind 或外部网络，summary 必须明确失败在 `preflight` 或 Conan remote/cache 阶段，不得把缺失环境解释为业务通过。
-- 仓库内 wiring 变更必须先通过 `python scripts/check_fixed_runner_evidence_plan.py`；该脚本只校验 workflow/summary 归档计划，不能替代 fixed-runner 真实执行。
+- 仓库内 wiring 变更必须先通过 `python scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py`；该脚本只校验 workflow/summary 归档计划，不能替代 fixed-runner 真实执行。
 
 ## N0 统一约定
 
@@ -743,7 +743,7 @@ runner OS 分区的 `CONAN_HOME`，以及 `--build=missing` 后紧跟
 - 统一包含 `overall_pass`、`passed`、`failed_category`、`failed_step`
 - 统一包含 `environment`，至少记录 `platform`、`python`、`host`
 - 统一包含 `artifacts`，指向 summary、report 或子 summary 路径
-- workflow step summary 统一通过 `scripts/render_validation_summary.py` 渲染，不再只上传 artifact
+- workflow step summary 统一通过 `scripts/tools/render_validation_summary.py` 渲染，不再只上传 artifact
 - R0、long-soak、R4、R5、R6 还必须包含 `provenance`：候选提交、实际 checkout、workflow/run、runner、构建配置、Conan lockfile 与 SHA-256；`revision_matches_checkout` 必须为 `true`
 - 用于同一次 R2/R3 最终准入的五类核心证据必须具有完全相同的 `candidate_revision`，不能把不同提交上的成功 artifact 拼接成一个候选结论
 
@@ -838,13 +838,13 @@ legacy binary。该开关在 tag 触发时不存在，且对 ARM 平台 fail clo
 
 ## Observability / P4
 
-默认 release gate 已运行 `scripts/verify_observability_gate.py`，覆盖 rate limit、trace、OTel buffer、backend RED metrics、gateway metrics 与 audit。固定观测 runner 可追加 fake OTel collector POST 验证和真实 gateway HTTP 观测入口验证：
+默认 release gate 已运行 `scripts/gates/production/verify_observability_gate.py`，覆盖 rate limit、trace、OTel buffer、backend RED metrics、gateway metrics 与 audit。固定观测 runner 可追加 fake OTel collector POST 验证和真实 gateway HTTP 观测入口验证：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile observability --build-dir build/default
-python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector
-python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http
-python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector --include-runtime-http
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile observability --build-dir build/default
+python scripts/gates/production/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector
+python scripts/gates/production/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http
+python scripts/gates/production/verify_observability_gate.py --build-dir build/default --skip-build --include-otel-collector --include-runtime-http
 ```
 
 通过标准：
@@ -862,8 +862,8 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 - Conan：`with_grpc=True`、`with_sqlite=False`
 - 构建：`project_proto`、`boost_gateway_sdk_grpc`、`project_v2_*tests`、`sdk_tests`
 - 测试：`ctest -R "GrpcGateway|OtelExporter"`
-- 包契约：`python scripts/verify_sdk_package_consumer.py --with-grpc`
-- 决策边界：`python scripts/check_v3_grpc_poc_decision.py`
+- 包契约：`python scripts/gates/sdk/verify_sdk_package_consumer.py --with-grpc`
+- 决策边界：`python scripts/gates/governance/check_v3_grpc_poc_decision.py`
 
 当前固定事实：
 
@@ -884,9 +884,9 @@ python scripts/verify_observability_gate.py --build-dir build/default --skip-bui
 P5-P8 剩余 profile 的聚合入口：
 
 ```bash
-python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build
-python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-otel-collector --include-runtime-http
-python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-operator-kind --include-k8s-full-flow
+python scripts/gates/release/verify_p5_p8_business_closure.py --build-dir build/default --skip-build
+python scripts/gates/release/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-otel-collector --include-runtime-http
+python scripts/gates/release/verify_p5_p8_business_closure.py --build-dir build/default --skip-build --include-operator-kind --include-k8s-full-flow
 ```
 
 通过标准：
@@ -899,22 +899,22 @@ python scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip
 
 ## Control Plane / P5
 
-默认 release gate 已运行 `scripts/verify_control_plane_gate.py`，只依赖 Operator manifest 静态契约和 Go fake-client/unit tests，不要求 Docker 或 kind。固定控制面 runner 可追加：
+默认 release gate 已运行 `scripts/gates/production/verify_control_plane_gate.py`，只依赖 Operator manifest 静态契约和 Go fake-client/unit tests，不要求 Docker 或 kind。固定控制面 runner 可追加：
 
 ```bash
-python scripts/check_operator_manifests.py --summary-path runtime/validation/operator-manifests-summary.json
-python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
-python scripts/verify_control_plane_gate.py --include-kind
-python scripts/verify_control_plane_gate.py --include-envtest --include-kind
+python scripts/gates/k8s/check_operator_manifests.py --summary-path runtime/validation/operator-manifests-summary.json
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
+python scripts/gates/production/verify_control_plane_gate.py --include-kind
+python scripts/gates/production/verify_control_plane_gate.py --include-envtest --include-kind
 ```
 
 本机收束 P5 时，如 Redis、Docker/kind、Go、kubectl 已配置完成，推荐先跑预检再跑专项聚合：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-redis
-python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
-python scripts/verify_specialized_e2e.py --build-dir build/default --skip-build --profile all --summary-path runtime/validation/dev-p5-specialized-e2e-summary.json --operator-timeout-seconds 1200
-python scripts/verify_control_plane_gate.py --include-kind --summary-path runtime/validation/dev-p5-control-plane-kind-summary.json --kind-timeout-seconds 1200
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-redis
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
+python scripts/gates/e2e/verify_specialized_e2e.py --build-dir build/default --skip-build --profile all --summary-path runtime/validation/dev-p5-specialized-e2e-summary.json --operator-timeout-seconds 1200
+python scripts/gates/production/verify_control_plane_gate.py --include-kind --summary-path runtime/validation/dev-p5-control-plane-kind-summary.json --kind-timeout-seconds 1200
 ```
 
 通过标准：
@@ -928,17 +928,17 @@ python scripts/verify_control_plane_gate.py --include-kind --summary-path runtim
 
 ## Production Resilience / P5
 
-P5 长稳、故障注入与回滚演练使用 `scripts/verify_production_resilience_gate.py` 作为统一入口。默认模式保持有界，只跑固定 runner 预检、bounded stability soak、data recovery 和 Redis/Raft/Operator failure-path 专项；真实 Redis、kind、runtime HTTP、release/capacity baseline 必须显式启用。
+P5 长稳、故障注入与回滚演练使用 `scripts/gates/production/verify_production_resilience_gate.py` 作为统一入口。默认模式保持有界，只跑固定 runner 预检、bounded stability soak、data recovery 和 Redis/Raft/Operator failure-path 专项；真实 Redis、kind、runtime HTTP、release/capacity baseline 必须显式启用。
 
 手动触发 `.github/workflows/production-gates.yml` 并选择 `gate=p5-resilience`。`runner` 输入必须是 JSON：单 runner 使用 `"ubuntu-latest"`，多个 label 使用 `["self-hosted","production-resilience"]` 或 `["self-hosted","Linux","X64"]`。
 
 推荐本机或固定 runner 命令：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default
-python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --summary-path runtime/validation/dev-p5-production-resilience-summary.json
-python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --soak-profile short --include-redis-live --include-runtime-http --summary-path runtime/validation/dev-p5-production-resilience-live-summary.json
-python scripts/verify_production_resilience_gate.py --build-dir build/default --skip-build --include-operator-kind --kind-timeout-seconds 1200 --summary-path runtime/validation/dev-p5-production-resilience-kind-summary.json
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default
+python scripts/gates/production/verify_production_resilience_gate.py --build-dir build/default --skip-build --summary-path runtime/validation/dev-p5-production-resilience-summary.json
+python scripts/gates/production/verify_production_resilience_gate.py --build-dir build/default --skip-build --soak-profile short --include-redis-live --include-runtime-http --summary-path runtime/validation/dev-p5-production-resilience-live-summary.json
+python scripts/gates/production/verify_production_resilience_gate.py --build-dir build/default --skip-build --include-operator-kind --kind-timeout-seconds 1200 --summary-path runtime/validation/dev-p5-production-resilience-kind-summary.json
 ```
 
 通过标准：
@@ -954,13 +954,13 @@ python scripts/verify_production_resilience_gate.py --build-dir build/default --
 执行长任务前可先跑：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile release-baseline --build-dir build/release
-python scripts/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-redis
-python scripts/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-kind
-python scripts/check_fixed_runner_environment.py --profile observability --build-dir build/default
-python scripts/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
-python scripts/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default --require-redis --require-kind
-python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile release-baseline --build-dir build/release
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-redis
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile specialized-e2e --build-dir build/default --require-kind
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile observability --build-dir build/default
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile control-plane --build-dir build/default --require-kind
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile production-resilience --build-dir build/default --require-redis --require-kind
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
 ```
 
 预检只检查工具链和外部服务可达性，不替代实际测试。
@@ -970,11 +970,11 @@ python scripts/check_fixed_runner_environment.py --profile cloud-production --bu
 当前云服务器如果被用作生产环境或生产候选环境，应把它视为固定 runner，而不是继续沿用 macOS / Windows 的开发预演口径。推荐在该主机上执行：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release
 python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak
 python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3 --run-business-operation-perf --leaderboard-redis-comparison --leaderboard-redis-host 127.0.0.1 --leaderboard-redis-port 6379
-python scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release
-python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
+python scripts/gates/release/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release
+python scripts/producers/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence
 ```
 
 通过标准：
@@ -989,19 +989,19 @@ python scripts/run_cloud_production_closure.py --build-dir build/release --confi
 
 N1/N2/N3 建议按以下顺序收集：
 
-1. `python scripts/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release`
+1. `python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile cloud-production --build-dir build/release`
 2. `python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-2h-soak`
 3. `python scripts/run_long_soak_capacity.py --build-dir build/release --configuration Release --skip-build --run-capacity --run-business-capacity --perf-repetitions 3`
-4. `python scripts/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release`
-5. `python scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
-6. `python scripts/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`
+4. `python scripts/gates/release/verify_fixed_runner_release_capacity.py --build-dir build/release --configuration Release`
+5. `python scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
+6. `python scripts/producers/run_cloud_production_closure.py --build-dir build/release --configuration Release --include-compose --include-kind --include-production-evidence`
 
 这样可以把 N1 长稳/容量、N2 监控口径、N3 部署恢复都沉淀到统一的 fixed-runner summary 契约里。
 
 如果当前环境是 macOS + OrbStack Docker，本机更适合作为 `local pre-production rehearsal` 而不是 `cloud-production` profile：
 
-- 可以直接刷新 `python3 scripts/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
-- 可以直接刷新 `python3 scripts/check_deploy_operability.py --summary-path runtime/validation/n3-deploy-operability-summary.json`
+- 可以直接刷新 `python3 scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/n2-monitoring-operability-summary.json`
+- 可以直接刷新 `python3 scripts/gates/production/check_deploy_operability.py --summary-path runtime/validation/n3-deploy-operability-summary.json`
 - 可以继续复用 `python3 scripts/verify_preprod_recovery_drill.py --build-dir build/release` 形成 Docker Compose 恢复演练证据
 
 `cloud-production` 预检里的 `systemctl`、真实 kind cluster 和更严格的宿主能力要求，仍保留给 Linux 固定 runner，不强行套用到 OrbStack 本机预演环境。
@@ -1011,7 +1011,7 @@ N1/N2/N3 建议按以下顺序收集：
 P6 聚合入口用于把固定 runner 上的稳定性、数据恢复、Redis/Raft/Operator、生产候选完整性审核和 release baseline 证据收束到一个 summary。默认命令只跑有界任务：
 
 ```bash
-python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build
+python scripts/gates/production/verify_production_evidence_gate.py --build-dir build/default --skip-build
 ```
 
 手动触发 `.github/workflows/production-gates.yml` 并选择 `gate=p6-evidence`。`runner` 建议填 `["self-hosted","Linux","X64"]`。如同时启用 Redis live 或 Operator kind，runner 需具备对应服务/工具链。
@@ -1019,21 +1019,21 @@ python scripts/verify_production_evidence_gate.py --build-dir build/default --sk
 本机或固定 runner 已具备 Redis + Docker/kind 时：
 
 ```bash
-python scripts/check_fixed_runner_environment.py --profile production-evidence --build-dir build/default --require-redis --require-kind
-python scripts/verify_production_evidence_gate.py --build-dir build/default --skip-build --include-redis-live --include-operator-kind
+python scripts/gates/infrastructure/check_fixed_runner_environment.py --profile production-evidence --build-dir build/default --require-redis --require-kind
+python scripts/gates/production/verify_production_evidence_gate.py --build-dir build/default --skip-build --include-redis-live --include-operator-kind
 ```
 
 Runtime observability 固定 runner 建议：
 
 ```bash
-python scripts/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http --summary-path runtime/validation/p2-observability-runtime-summary.json
+python scripts/gates/production/verify_observability_gate.py --build-dir build/default --skip-build --include-runtime-http --summary-path runtime/validation/p2-observability-runtime-summary.json
 ```
 
 Release baseline / capacity 固定机器建议：
 
 ```bash
-python scripts/verify_production_evidence_gate.py --build-dir build/release --configuration Release --skip-build --soak-profile short --baseline-profile release --include-release-baseline --perf-repetitions 3
-python scripts/verify_production_evidence_gate.py --build-dir build/release --configuration Release --skip-build --include-capacity-baseline --perf-repetitions 3 --step-timeout-seconds 1800
+python scripts/gates/production/verify_production_evidence_gate.py --build-dir build/release --configuration Release --skip-build --soak-profile short --baseline-profile release --include-release-baseline --perf-repetitions 3
+python scripts/gates/production/verify_production_evidence_gate.py --build-dir build/release --configuration Release --skip-build --include-capacity-baseline --perf-repetitions 3 --step-timeout-seconds 1800
 ```
 
 通过标准：
@@ -1090,7 +1090,7 @@ runtime hash、dSYM DWARF hash、ARM64 UUID 和已验证的 source lookup；UUID
 
 ## Raft Phase B release evidence
 
-Raft Phase B 必须从同一 exact SHA 触发 `release.yml`。runner 必须预置来自完整提交 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 的 `v3.5.3` leaderboard backend，并通过 `legacy_raft_sha256` 或 `LEGACY_RAFT_SHA256` 固定其平台摘要。该 workflow 在签名之前依次生成严格离线 Conan、`raft-ha`、data recovery、真实三进程 mixed-binary、clean package consumer 和 SBOM semantic summary，并由 `scripts/verify_raft_release_evidence.py` 拒绝跨 SHA、跨 workflow run、跨 runner、lockfile digest 漂移或旧制品摘要不符。
+Raft Phase B 必须从同一 exact SHA 触发 `release.yml`。runner 必须预置来自完整提交 `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 的 `v3.5.3` leaderboard backend，并通过 `legacy_raft_sha256` 或 `LEGACY_RAFT_SHA256` 固定其平台摘要。该 workflow 在签名之前依次生成严格离线 Conan、`raft-ha`、data recovery、真实三进程 mixed-binary、clean package consumer 和 SBOM semantic summary，并由 `scripts/gates/release/verify_raft_release_evidence.py` 拒绝跨 SHA、跨 workflow run、跨 runner、lockfile digest 漂移或旧制品摘要不符。
 
 通过标准：
 
@@ -1117,14 +1117,14 @@ gh workflow run production-readiness.yml --ref <candidate-sha> \
   -f require_fixed_runner=true
 ```
 
-该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；该值只有在 bounded/fixed 两份 R2 同时通过时才为 `true`。缺少 R5/R6、其他固定 runner summary 或任一跨 SHA 证据时应失败并列出 blocker。可先运行 `python3 scripts/check_evidence_provenance_contract.py` 验证本地 provenance 判定逻辑。
+该 workflow 会以 R3 `final_production_ready` 作为最终 job 结论；该值只有在 bounded/fixed 两份 R2 同时通过时才为 `true`。缺少 R5/R6、其他固定 runner summary 或任一跨 SHA 证据时应失败并列出 blocker。可先运行 `python3 scripts/gates/governance/check_evidence_provenance_contract.py` 验证本地 provenance 判定逻辑。
 
 ## R4/R5/R6 production blocking evidence
 
 Before final production approval, refresh these fixed-runner or pre-production producers and consume them with `python3 scripts/check_production_evidence_manifest.py --require-fixed-runner`:
 
 ```bash
-python3 scripts/verify_fixed_runner_release_capacity.py
+python3 scripts/gates/release/verify_fixed_runner_release_capacity.py
 python3 scripts/verify_preprod_recovery_drill.py --build-dir build/release
 python3 scripts/verify_tls_preprod_multi_run.py --build-dir build/release --skip-build
 ```

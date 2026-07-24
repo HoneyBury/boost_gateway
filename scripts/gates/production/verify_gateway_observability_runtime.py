@@ -91,7 +91,7 @@ def main() -> int:
 
     full_flow_summary = args.summary_path.parent / "gateway-observability-runtime-full-flow-summary.json"
     cmd = [
-        str(REPO_ROOT / "scripts" / "verify_sdk_full_flow_client.py"),
+        str(REPO_ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "--build-dir",
         str(args.build_dir),
         "--summary-path",

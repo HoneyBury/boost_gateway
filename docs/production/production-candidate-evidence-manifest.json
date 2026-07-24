@@ -102,7 +102,7 @@
       "fixed_runner_required": true,
       "provenance_required": true,
       "freshness_hours": 336,
-      "producer": "python3 scripts/verify_fixed_runner_release_capacity.py",
+      "producer": "python3 scripts/gates/release/verify_fixed_runner_release_capacity.py",
       "notes": "R4 validates release baseline, capacity profile, and business-capacity evidence. Prefer fixed low-noise performance runner output before final production approval."
     },
     {

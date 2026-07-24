@@ -241,7 +241,7 @@ def main() -> int:
         checks,
         "docs:next-minor-decisions-indexed",
         "decisions/v3.6-decision-manifest.json" in docs_index
-        and "scripts/check_next_minor_decisions.py" in (ROOT / "docs/current-state.md").read_text(encoding="utf-8"),
+        and "scripts/gates/governance/check_next_minor_decisions.py" in (ROOT / "docs/current-state.md").read_text(encoding="utf-8"),
         "docs index and current state point to the governed next-minor decisions",
     )
     operations_plan = (ROOT / "docs/single-node-enterprise-validation-plan.md").read_text(

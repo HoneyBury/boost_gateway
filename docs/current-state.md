@@ -106,6 +106,12 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 
 ## 当前阻断和非目标
 
+- P3 数据恢复与 P4 可观测性仍由
+  `scripts/gates/production/verify_data_recovery_gate.py` 和
+  `scripts/gates/production/verify_observability_gate.py` 作为当前发布能力验证。
+- `admin_service` 仅属于 `legacy-v1 / demo-only` 历史管理面，不进入默认 gate，不能据此
+  声明当前 v2 主线提供正式 admin 控制面。
+
 - 不把 v3.6.2 的三平台发布解释为多节点 HA、任意规模容量或所有云环境支持。
 - 不因 PoC 完整而把 gRPC 升级为默认传输。
 - 不在当前运营主线中扩大业务 demo、公共协议或 SDK 表面积。
@@ -117,11 +123,11 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 ## 当前验证入口
 
 ```bash
-python3.12 scripts/check_current_docs_install.py
+python3.12 scripts/gates/governance/check_current_docs_install.py
 python3.12 scripts/check_mainline_readiness.py
-python3.12 scripts/check_config_source_layout.py
-python3.12 scripts/check_transport_config_governance.py
-python3.12 scripts/check_next_minor_decisions.py
+python3.12 scripts/gates/governance/check_config_source_layout.py
+python3.12 scripts/gates/transport/check_transport_config_governance.py
+python3.12 scripts/gates/governance/check_next_minor_decisions.py
 python3.12 scripts/verify_release_candidate.py \
   --skip-release-baseline --soak-profile smoke
 ```

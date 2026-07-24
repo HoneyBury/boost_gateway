@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import subprocess
@@ -112,7 +122,7 @@ def main() -> int:
 
     preflight_cmd = [
         sys.executable,
-        str(ROOT / "scripts/check_fixed_runner_environment.py"),
+        str(ROOT / "scripts/gates/infrastructure/check_fixed_runner_environment.py"),
         "--profile",
         "production-evidence",
         "--build-dir",
@@ -124,7 +134,7 @@ def main() -> int:
     resilience_summary = validation_dir / "r0-production-resilience-summary.json"
     resilience_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_production_resilience_gate.py"),
+        str(ROOT / "scripts/gates/production/verify_production_resilience_gate.py"),
         "--build-dir",
         str(args.build_dir),
         "--configuration",
@@ -142,7 +152,7 @@ def main() -> int:
     evidence_summary = validation_dir / "r0-production-evidence-gate-summary.json"
     evidence_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_production_evidence_gate.py"),
+        str(ROOT / "scripts/gates/production/verify_production_evidence_gate.py"),
         "--build-dir",
         str(args.build_dir),
         "--configuration",
@@ -188,7 +198,7 @@ def main() -> int:
                 "transport_tls",
                 [
                     sys.executable,
-                    str(ROOT / "scripts/check_transport_config_governance.py"),
+                    str(ROOT / "scripts/gates/transport/check_transport_config_governance.py"),
                     "--generate-dev-certs",
                     "--include-tls-full-flow",
                     "--build-dir",
@@ -204,7 +214,7 @@ def main() -> int:
     if args.include_n6_grpc_decision:
         n6_cmd = [
             sys.executable,
-            str(ROOT / "scripts/check_v3_grpc_poc_decision.py"),
+            str(ROOT / "scripts/gates/governance/check_v3_grpc_poc_decision.py"),
             "--build-dir",
             str(args.build_dir),
             "--summary-path",

@@ -253,14 +253,14 @@ clang-format -i <changed-files>
 
 ```bash
 # 快速 smoke（30s）
-python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
+python3 scripts/producers/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整 baseline（需要固定性能机器）
-python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
+python3 scripts/producers/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
   --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
 
 # Matchmaking/Leaderboard 并发专项
-python3 scripts/collect_release_baseline.py --perf-preset business-capacity \
+python3 scripts/producers/collect_release_baseline.py --perf-preset business-capacity \
   --business-operation-scenario matchmaking \
   --business-operation-scenario leaderboard \
   --business-operation-clients 16 --business-operation-iterations 10
@@ -419,10 +419,10 @@ python3 scripts/run_tests.py --list                    # 列出可用层级
 
 ```bash
 # 手动 smoke（仓库当前没有 PR 自动性能 workflow）
-python3 scripts/collect_v2_perf_baseline.py --run-preset smoke
+python3 scripts/producers/collect_v2_perf_baseline.py --run-preset smoke
 
 # 完整基线
-python3 scripts/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
+python3 scripts/producers/collect_release_baseline.py --perf-preset baseline --perf-repetitions 3 \
   --cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4
 ```
 

@@ -159,7 +159,7 @@ jobs:
           if [ "${{ inputs.platform }}" = linux-arm64 ]; then
             isolation_args+=(--cpu-set 0-7 --loadgen-cpu-set 8-11)
           fi
-          python3 scripts/collect_v2_perf_baseline.py \
+          python3 scripts/producers/collect_v2_perf_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
