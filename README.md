@@ -2,7 +2,7 @@
 
 > Historical repository name: `BoostAsioDemo`. The repository path and some compatibility surfaces still keep that name during the transition period.
 
-高性能 C++20 实时服务框架，当前候选版本为 `v3.6.1`；`v3.6.0` 已作为三平台 runtime 基线发布。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
+高性能 C++20 实时服务框架，当前候选版本为 `v3.6.2`；`v3.6.0` 已作为三平台 runtime 基线发布。项目主链已经收束到 `gateway + login + room + battle + matchmaking + leaderboard` 六服务闭环，并具备 SDK、Redis/Raft、TLS profile、生产候选证据门禁等能力。
 
 ## 当前状态
 

@@ -557,6 +557,21 @@ jobs:
           syft packages "$symbol_archive" -o "spdx-json=${symbol_archive}.spdx.json"
           syft packages "$wheel" -o "spdx-json=${wheel}.spdx.json"
 
+      - name: Resolve wheel attestation inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          wheels=(runtime/release-sdk-assets/*.whl)
+          test "${#wheels[@]}" -eq 1
+          wheel="${wheels[0]}"
+          wheel_sbom="${wheel}.spdx.json"
+          test -f "$wheel"
+          test -f "$wheel_sbom"
+          {
+            echo "SDK_WHEEL_PATH=$wheel"
+            echo "SDK_WHEEL_SBOM_PATH=$wheel_sbom"
+          } >> "$GITHUB_ENV"
+
       - name: Harden and verify SPDX SBOM semantics
         shell: bash
         run: |
@@ -612,14 +627,14 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@v4
         with:
-          subject-path: runtime/release-sdk-assets/*.whl
+          subject-path: ${{ env.SDK_WHEEL_PATH }}
 
       - name: Attest wheel SBOM
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@v4
         with:
-          subject-path: runtime/release-sdk-assets/*.whl
-          sbom-path: runtime/release-sdk-assets/*.whl.spdx.json
+          subject-path: ${{ env.SDK_WHEEL_PATH }}
+          sbom-path: ${{ env.SDK_WHEEL_SBOM_PATH }}
 
       - name: Render release notes
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')

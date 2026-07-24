@@ -585,6 +585,19 @@ def main() -> int:
         and "id-token: write" in release_workflow,
         "tag release publishes SPDX SBOM plus build-provenance and SBOM attestations",
     )
+    add(
+        checks,
+        "release:wheel-sbom-exact-attestation-path",
+        "Resolve wheel attestation inputs" in release_workflow
+        and 'test "${#wheels[@]}" -eq 1' in release_workflow
+        and 'echo "SDK_WHEEL_PATH=$wheel"' in release_workflow
+        and 'echo "SDK_WHEEL_SBOM_PATH=$wheel_sbom"' in release_workflow
+        and "subject-path: ${{ env.SDK_WHEEL_PATH }}" in release_workflow
+        and "sbom-path: ${{ env.SDK_WHEEL_SBOM_PATH }}" in release_workflow
+        and "sbom-path: runtime/release-sdk-assets/*.whl.spdx.json"
+        not in release_workflow,
+        "release resolves the single wheel SBOM before passing an exact path to actions/attest",
+    )
     raft_release_gate = "scripts/verify_raft_release_evidence.py"
     add(
         checks,

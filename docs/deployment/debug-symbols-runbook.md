@@ -1,6 +1,6 @@
 # Debug Symbols Runbook
 
-The v3.6.1 release creates the stripped runtime and debug archive from the same
+The v3.6.2 release creates the stripped runtime and debug archive from the same
 release-with-debug-info install tree. Never rebuild symbols for an existing runtime or
 replace an asset attached to an immutable tag.
 
@@ -10,8 +10,8 @@ Verify the release checksums and attestations first, then run:
 
 ```bash
 python3 scripts/tools/verify_debug_symbol_package.py \
-  --runtime-archive boost-gateway-v3.6.1-linux-x64.tar.gz \
-  --symbols-archive boost-gateway-v3.6.1-linux-x64-debug-symbols.tar.gz \
+  --runtime-archive boost-gateway-v3.6.2-linux-x64.tar.gz \
+  --symbols-archive boost-gateway-v3.6.2-linux-x64-debug-symbols.tar.gz \
   --candidate-revision <full-release-sha> \
   --summary-path debug-symbol-verification.json
 ```
@@ -40,8 +40,8 @@ The macOS pair is valid only when every stripped Mach-O UUID matches its dSYM:
 
 ```bash
 python3.12 scripts/tools/verify_macos_dsym_package.py \
-  --runtime-archive boost-gateway-v3.6.1-macos-arm64.tar.gz \
-  --symbols-archive boost-gateway-v3.6.1-macos-arm64-dsym.tar.gz \
+  --runtime-archive boost-gateway-v3.6.2-macos-arm64.tar.gz \
+  --symbols-archive boost-gateway-v3.6.2-macos-arm64-dsym.tar.gz \
   --candidate-revision <full-release-sha> \
   --summary-path macos-dsym-verification.json
 ```

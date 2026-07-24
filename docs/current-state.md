@@ -2,7 +2,7 @@
 
 更新时间：2026-07-24
 
-本文档作为当前进度的入口事实源。当前候选版本以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.6.1` 为准；提交状态以 `git HEAD` 为准。`v3.6.0` 已发布并固定在 `79930cc2fe21aafa71d34cc6631315373d8b27ae`，三平台 runtime 线上复验已通过；当前 `v3.6.1` 只新增 ARM 性能余量和 SDK/符号不可变资产，不移动或覆盖 `v3.6.0`。
+本文档作为当前进度的入口事实源。当前候选版本以 `CMakeLists.txt` 中的 `boost_gateway VERSION 3.6.2` 为准；提交状态以 `git HEAD` 为准。`v3.6.0` 已发布并固定在 `79930cc2fe21aafa71d34cc6631315373d8b27ae`，三平台 runtime 线上复验已通过；当前 `v3.6.2` 只新增 ARM 性能余量、SDK/符号不可变资产及发布路径修复，不移动或覆盖 `v3.6.0`。`v3.6.1` tag 固定在 `a0da5fab7e7fe91cf8096243fea869742eb195ba`，tag run `30062402095` 因 wheel SBOM glob 不能作为 `actions/attest` 的具体 `sbom-path` 而在三平台一致 fail closed，未创建 GitHub Release；该失败 tag 不移动、不删除。
 
 2026-07-24 的 P2 ARM 归因 run `30058635595` 证明 backend route 平均约 `10.2ms`，但实际 pool=1/worker=4 的 Gateway route queue 平均 `146055us`、最大 `254833us`，采集器却错误记录 pool=8。修复跨战局锁、统一并显式注入 pool/worker `8/8` 后，隔离 run `30059535441` 在 service CPU `0-7`、loadgen CPU `8-11` 上取得 `battle-100` 三轮 P99 `10/10/10ms`，吞吐 `2719.46/2716.80/2721.42 msg/s`，queue 平均/最大降至 `266/8639us`，且 0 rejected/failed。
 
