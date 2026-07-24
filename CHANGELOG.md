@@ -121,7 +121,7 @@
 
 ### 文档与治理
 
-- 新增 `docs/v3.5.x-maintenance-plan.md`，固定 `v3.5.1-v3.5.3` 的维护边界和冻结条件。
+- 新增 `docs/archive/releases/v3.5.x-maintenance-plan.md`，固定 `v3.5.1-v3.5.3` 的维护边界和冻结条件。
 - 新增 MIT `LICENSE` 并纳入安装包与治理门禁。
 - 回填 `v3.5.0` 最终候选、R0/R4/R5/R6/R2/R3 和正式发布事实。
 
@@ -164,7 +164,7 @@
 
 ### 后续维护
 
-- 脚本、文档、代码质量和 CI/CD 收束阶段已完成；后续补丁版本范围见 `docs/v3.5.x-maintenance-plan.md`。
+- 脚本、文档、代码质量和 CI/CD 收束阶段已完成；后续补丁版本范围见 `docs/archive/releases/v3.5.x-maintenance-plan.md`。
 
 ### 发布后已知问题
 

@@ -91,16 +91,22 @@
 
 发布前必须运行以下门禁并确保全部通过：
 
-1. **RC 总门禁**: `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke`
-2. **R4 契约门禁**: `python3 scripts/verify_r4_contract.py --build-dir build/release --skip-build`
-3. **稳定性 soak**: `python3 scripts/verify_stability_soak.py --soak-profile smoke`
+1. **文档/治理**: 使用 Python 3.12 运行 `scripts/check_current_docs_install.py` 和
+   `scripts/check_mainline_readiness.py`
+2. **RC 总门禁**: `python3.12 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke`
+3. **R4 契约门禁**: `python3.12 scripts/verify_r4_contract.py --build-dir build/release --skip-build`
+4. **稳定性 smoke**: `python3.12 scripts/verify_stability_soak.py --soak-profile smoke`
+5. **目标平台证据**: release、R0、R4/R5/R6、SDK、symbols 和 readiness 按目标版本的
+   platform matrix 完成并保持同一候选 provenance
 
 ### 发布流程
 
-1. 确保 `main` 分支所有 CI workflow 通过
-2. 创建 `v*` tag 触发自动发布
-3. `release.yml` workflow 自动执行：构建 → 测试 → 门禁 → 打包 → 发布
-4. 检查 GitHub Release 页面确认 artifact 上传成功
+1. 冻结 candidate SHA，并完成三个目标平台 required evidence。
+2. 确认版本、CHANGELOG、asset manifest、SDK 和 symbol 版本一致。
+3. 创建不可移动的 annotated `v*` tag，触发 `release.yml`。
+4. `release.yml` 完成构建、测试、门禁、打包、SBOM/provenance 和发布。
+5. 在三个原生平台运行 `release-asset-verification.yml`，独立下载并消费线上资产。
+6. 发布 readiness 结论时只汇聚同 tag/SHA、匹配平台和 provenance 的 artifact。
 
 ### 版本号规则
 
@@ -140,3 +146,5 @@ Linux debug-symbol 或 macOS dSYM、三个 SDK 4.2.0 wheel、一个三 RID NuGet
 - 稳定性 soak 未通过
 - 任何 public entrypoint 脚本报错
 - 性能 smoke gate 未通过
+- 任一目标平台 archive、SDK、symbol、SBOM、checksum 或 provenance 缺失/不匹配
+- 发布后原生资产消费失败，或 artifact 与 tag/SHA 不一致

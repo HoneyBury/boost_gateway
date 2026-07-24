@@ -48,15 +48,15 @@ Gateway 同步 backend route 排队和错误的拓扑元数据，不是 ARM CPU 
 
 | 维度 | 状态 |
 |---|---|
-| Linux capacity / business-capacity | v3.5.3 历史发布产物保留；候选 `37897e8` 已完成真实 lifecycle 的闭环饱和曲线，生产容量上限仍须按部署 SLO 单独声明 |
-| 2h soak | v3.5.3 冻结 SHA 已通过 |
-| 8h soak | v3.5.3 冻结 SHA run `29711044558` 已连续通过 28801.652 秒 |
+| Linux capacity / business-capacity | v3.5.3 与候选 `37897e8` 的历史事实保留；生产容量上限仍须按实际部署 SLO 单独声明 |
+| 2h soak | Linux x64 历史冻结候选、Linux ARM64 和 macOS ARM64 原生候选均有连续证据；只对各自 SHA/平台成立 |
+| 8h soak | v3.5.3 冻结 SHA run `29711044558` 连续通过 28801.652 秒；不自动改绑 v3.6.2 |
 | 1/2/4 service CPU 轴 | 候选 `37897e8` 三轮单变量矩阵已通过聚合；结论为 `partial_cpu_scaling`，不自动调整默认值 |
-| TLS on/off | 阶段性 fixed-runner 对照已通过；最终冻结 SHA 待刷新 |
+| TLS on/off | 阶段性 fixed-runner 对照已通过；不作为任意平台的容量级 TLS 开销承诺 |
 | `io_cores=1/2/4` 轴 | 候选 `37897e8` 三轮单变量矩阵已通过聚合；结论为 `no_material_io_core_gain`，保持当前默认值 |
 | OTel on/off | 候选 `37897e8` 的 fresh Gateway/Battle Backend 三轮对照与 exporter/collector/backend 对账已通过 |
-| Matchmaking 专项 | 并发 join/status/leave 阶段性 fixed-runner 数据已形成；最终冻结 SHA 待刷新 |
-| Leaderboard 专项 | submit/top/rank 与可信 Redis on/off 阶段性数据已形成；最终冻结 SHA 待刷新 |
+| Matchmaking 专项 | 并发 join/status/leave 阶段性 fixed-runner 数据已形成；结果保持候选绑定 |
+| Leaderboard 专项 | submit/top/rank 与可信 Redis on/off 阶段性数据已形成；结果保持候选绑定 |
 
 ## 测量拓扑
 

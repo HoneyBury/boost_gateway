@@ -20,14 +20,14 @@
       "architecture": "arm64",
       "artifact_format": "ELF",
       "container_platform": "linux/arm64",
-      "status": "supported-v3.6.0"
+      "status": "supported-v3.6.2"
     },
     "macos-arm64": {
       "os": "macos",
       "architecture": "arm64",
       "artifact_format": "Mach-O",
       "container_platform": null,
-      "status": "supported-v3.6.0"
+      "status": "supported-v3.6.2"
     }
   },
   "workflows": {

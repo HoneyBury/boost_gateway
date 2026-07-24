@@ -9,6 +9,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -20,9 +21,10 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/runner-inventory.md",
     "docs/runner-gate-standard.md",
     "docs/project-blueprint.md",
+    "docs/mainline-execution-plan.md",
     "docs/single-node-enterprise-validation-plan.md",
-    "docs/v3.5.x-maintenance-plan.md",
-    "docs/v3.5.2-freeze-todo.md",
+    "docs/platform-production-boundaries.md",
+    "docs/platform-production-boundaries.json",
     "docs/legacy/legacy-helper-inventory.md",
     "docs/architecture-overview.md",
     "docs/performance-baseline.md",
@@ -31,10 +33,17 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/production-operations-runbook.md",
     "docs/deployment/production-configuration-runbook.md",
     "docs/fixed-runner-playbook.md",
+    "docs/release-governance.md",
     "docs/tls-mtls-runbook.md",
     "docs/decisions/v3.6-decision-manifest.json",
     "docs/production/production-candidate-evidence-manifest.json",
     "docs/production/production-recovery-drill-record-template.json",
+]
+
+ARCHIVED_RELEASE_DOCS = [
+    "docs/archive/releases/v3.5.x-maintenance-plan.md",
+    "docs/archive/releases/v3.5.2-freeze-todo.md",
+    "docs/archive/releases/v3.6-implementation-status.md",
 ]
 
 
@@ -45,6 +54,19 @@ def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> N
 def cmake_doc_references() -> list[str]:
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     return sorted(set(re.findall(r"docs/[A-Za-z0-9_./-]+", cmake)))
+
+
+def local_markdown_links(path: Path) -> list[tuple[str, Path]]:
+    links: list[tuple[str, Path]] = []
+    text = path.read_text(encoding="utf-8")
+    for match in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", text):
+        target = match.group(1).strip().strip("<>")
+        if not target or target.startswith(("#", "http://", "https://", "mailto:")):
+            continue
+        relative = unquote(target.split("#", 1)[0])
+        if relative:
+            links.append((target, (path.parent / relative).resolve()))
+    return links
 
 
 def main() -> int:
@@ -60,6 +82,19 @@ def main() -> int:
     checks: list[dict[str, Any]] = []
     for relative in REQUIRED_TOP_LEVEL_DOCS:
         add(checks, f"required:{relative}", (ROOT / relative).exists(), f"{relative} exists")
+    for relative in ARCHIVED_RELEASE_DOCS:
+        add(checks, f"archive:{relative}", (ROOT / relative).exists(), f"{relative} exists")
+
+    maintained_markdown = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    for path in maintained_markdown:
+        for target, resolved in local_markdown_links(path):
+            relative = path.relative_to(ROOT).as_posix()
+            add(
+                checks,
+                f"link:{relative}:{target}",
+                resolved.exists(),
+                f"{relative} local link {target!r} resolves to {resolved}",
+            )
 
     for relative in cmake_doc_references():
         if relative == "docs/archive/":
@@ -71,9 +106,14 @@ def main() -> int:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     docs_index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
     onboarding = (ROOT / "docs/ONBOARDING.md").read_text(encoding="utf-8")
-    maintenance_plan = (ROOT / "docs/v3.5.x-maintenance-plan.md").read_text(encoding="utf-8")
-    freeze_todo = (ROOT / "docs/v3.5.2-freeze-todo.md").read_text(encoding="utf-8")
+    maintenance_plan = (ROOT / ARCHIVED_RELEASE_DOCS[0]).read_text(encoding="utf-8")
+    freeze_todo = (ROOT / ARCHIVED_RELEASE_DOCS[1]).read_text(encoding="utf-8")
+    archived_v36 = (ROOT / ARCHIVED_RELEASE_DOCS[2]).read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    platform_boundaries = json.loads(
+        (ROOT / "docs/platform-production-boundaries.json").read_text(encoding="utf-8")
+    )
+    runner_matrix = json.loads((ROOT / ".github/runner-matrix.json").read_text(encoding="utf-8"))
     version_match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", cmake)
     version = version_match.group(1) if version_match else ""
     add(checks, "release:project-version", bool(version), f"project version={version!r}")
@@ -107,29 +147,48 @@ def main() -> int:
     )
     add(
         checks,
-        "release:readme-published-facts",
-        "releases/tag/v3.5.2" in readme
-        and "29589708378" in readme
-        and "3142ffe7578e457e7d6fba63a6a00c3366874252b9f56894e9e8f9c7a31e047b" in readme,
-        "README records the current stable tag release, workflow and independently verified digest",
+        "release:readme-current-release",
+        f"releases/tag/v{version}" in readme
+        and "SDK 4.2.0" in readme
+        and "docs/current-state.md" in readme,
+        "README points to the current release, SDK and maintained fact source",
     )
     add(
         checks,
-        "release:readme-closed-boundary",
-        "29587996645" in readme
-        and "29588720453" in readme
-        and "29591469812" in readme
-        and "myserver" in readme
-        and "overall_pass=true" in readme,
-        "README records same-SHA myserver evidence and AOI published-asset verification",
+        "release:platform-boundaries-current",
+        platform_boundaries.get("platforms", {}).get("linux-arm64", {}).get("status")
+        == f"supported-v{version}"
+        and platform_boundaries.get("platforms", {}).get("macos-arm64", {}).get("status")
+        == f"supported-v{version}",
+        "ARM production platform statuses match the current project release",
+    )
+    macos_capabilities = runner_matrix.get("workflows", {}).get("macos-arm64", {}).get(
+        "capabilities", {}
     )
     add(
         checks,
-        "release:freeze-todo-indexed",
-        "docs/v3.5.2-freeze-todo.md" in readme
-        and "v3.5.2-freeze-todo.md" in docs_index
-        and "docs/v3.5.2-freeze-todo.md" in maintenance_plan,
-        "v3.5.2 freeze TODO is linked from README, docs index and maintenance plan",
+        "runner:macos-capacity-baseline-current",
+        macos_capabilities.get("capacity_baseline") is True
+        and "capacity_baseline_pending" not in macos_capabilities,
+        "the macOS ARM64 runner matrix records the completed capacity baseline",
+    )
+    add(
+        checks,
+        "docs:readme-entrypoint-scope",
+        len(readme.splitlines()) <= 140
+        and "docs/ONBOARDING.md" in readme
+        and "docs/archive/README.md" in readme
+        and "29589708378" not in readme,
+        "README stays concise and routes detailed setup/history to maintained docs",
+    )
+    add(
+        checks,
+        "release:history-archived-and-indexed",
+        "archive/releases/v3.5.2-freeze-todo.md" in docs_index
+        and "archive/releases/v3.6-implementation-status.md" in docs_index
+        and "v3.5.2-freeze-todo.md" in maintenance_plan
+        and "30063021104" in archived_v36,
+        "closed v3.5/v3.6 release records are archived and indexed",
     )
     add(
         checks,
@@ -161,6 +220,22 @@ def main() -> int:
         'install(DIRECTORY docs/decisions/' in cmake
         and 'DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/decisions"' in cmake,
         "accepted next-minor decisions install under docs/decisions",
+    )
+    add(
+        checks,
+        "cmake:maintained-index-targets-installed",
+        all(
+            f"    {relative}\n" in cmake
+            for relative in (
+                "docs/platform-production-boundaries.md",
+                "docs/platform-production-boundaries.json",
+                "docs/runner-gate-standard.md",
+                "docs/runner-inventory.md",
+                "docs/script-inventory.json",
+            )
+        )
+        and "install(DIRECTORY docs/todos/" in cmake,
+        "CMake installs maintained top-level index targets and the TODO directory",
     )
     add(
         checks,

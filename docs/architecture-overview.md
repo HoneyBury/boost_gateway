@@ -1,197 +1,163 @@
-# Boost Gateway Architecture Overview
+# BoostGateway 架构总览
 
-**Version**: 3.5.0
+更新时间：2026-07-24
+当前发布基线：v3.6.2
 
-## High-Level Architecture
+本文档描述当前默认代码和部署边界。实验能力、历史设计和候选交付记录分别以
+[当前状态](current-state.md)、[决策目录](decisions/)和
+[历史归档](archive/README.md)为准。
 
-```
-+-----------------------------------------------------------------------+
-|                         Clients (SDK)                                 |
-|  C++ SDK  |  Python (ctypes)  |  C# (P/Invoke)  |  gRPC (experimental)|
-+-----------------------------+------------------------------------------+
-                              | TCP (length-prefixed protocol)
-                              v
-+-----------------------------------------------------------------------+
-|                      Gateway (v2_gateway_demo)                        |
-|  +------------+  +------------+  +------------+  +------------------+  |
-|  | Session    |  | Gateway    |  | Runtime    |  | HTTP Management |  |
-|  | Manager    |  | Actor      |  | (actor)    |  | Port (health/   |  |
-|  | (RCU)      |  |            |  |            |  |  metrics/audit) |  |
-|  +------------+  +------------+  +------------+  +------------------+  |
-|  +------------------------------------------------------------------+  |
-|  |               GatewayServiceBridge                                |  |
-|  |  Route requests | Circuit breaker | ClusterRouter | Shard        |  |
-|  +------------------------------------------------------------------+  |
-+-----------------------------------------------------------------------+
-                              |
-                +-------------+------------+------------+-----------+
-                v             v            v            v           v
-          +----------+ +--------+ +----------+ +-----------+ +----------+
-          |  Login   | |  Room  | |  Battle  | |Matchmaking| |Leaderbrd |
-          |  Backend | | Backend| |  Backend | | Backend   | | Backend  |
-          +----------+ +--------+ +----------+ +-----------+ +----------+
-                                                       |              |
-                                                 +-----+-----+  +----+----+
-                                                 | Raft      |  | Raft    |
-                                                 | Consensus |  |Consensus|
-                                                 +-----------+  +---------+
+## 系统拓扑
+
+```text
+Clients
+  C++ SDK | Python ctypes | C# P/Invoke
+                    |
+                    | length-prefixed TCP
+                    v
+             Gateway :9201
+          management :9080
+                    |
+       +------------+------------+------------+--------------+
+       |            |            |            |              |
+ Login :9202  Room :9302  Battle :9303  Match :9304  Leaderboard :9305
+                                                    |
+                                             optional Redis
 ```
 
-## Core Components
+Gateway 是唯一默认客户端入口。五个 backend 使用内部 `BackendEnvelope` 帧协议，不把
+backend TCP 端口作为 HTTP 或公共 SDK 接口。Prometheus 默认只抓取 Gateway management
+端口的 `/metrics`。
 
-### Gateway Layer
-- **SessionManager**: Lock-free RCU-based session tracking with backpressure (max_pending_per_session=1024)
-- **GatewayActor**: Actor-model request handler, message dispatch, push delivery
-- **Runtime**: Battle lifecycle management, match->battle auto-flow, session orchestration
-- **GatewayServiceBridge**: Backend routing with circuit breaker, cluster discovery, shard-aware routing
+## 组件职责
 
-### Backend Services
-Each backend runs as an independent process with its own port:
-- **Login** (:9101): Authentication, token management, rate limiting
-- **Room** (:9102): Room CRUD, player join/leave, ready states, TTL cleanup
-- **Battle** (:9103): Real-time game loop, ECS, anti-cheat, replay recording
-- **Matchmaking** (:9104): MMR-based matching, Raft consensus for fault tolerance
-- **Leaderboard** (:9105): Score submission/query, Raft consensus for consistency
+| 组件 | 主要职责 | 代码入口 |
+|---|---|---|
+| Gateway | session、packet 校验、Actor dispatch、路由、熔断、限流、health/metrics | `src/v2/gateway/`, `examples/v2_gateway_demo/` |
+| Login | 开发身份、外部 JWT/JWKS 验证、登录和注册 contract | `src/v2/login/` |
+| Room | 房间生命周期、成员、owner、ready 和 battle 协调 | `src/v2/room/` |
+| Battle | 实例生命周期、ECS、输入、快照、结算和 replay | `src/v2/battle/`, `src/v2/realtime/` |
+| Matchmaking | 匹配队列、结果推送和可选 Raft 状态复制 | `src/v2/match/` |
+| Leaderboard | 提交、查询、可选 Redis 持久化和 Raft 状态复制 | `src/v2/leaderboard/` |
+| SDK | TCP transport、协议 codec、C++ API、C ABI 和语言 wrapper | `sdk/` |
 
-### Realtime Instance Runtime (v3.5.0+)
-The Realtime Instance Framework provides a generic tick-based game loop runtime that decouples business logic from lifecycle management.
+## 请求链路
 
-- **InstanceRuntime** (`v2::realtime::InstanceRuntime`): Manages instance lifecycle (creating/waiting/running/finishing/finished/closed), tick scheduling (`tick_instance()`/`tick_all()`), input queue with per-player ordering, snapshot push, resume support (`get_resume_snapshot()`), and backpressure
-- **InstancePlugin SPI** (`v2::realtime::InstancePlugin`): Pure virtual interface with 8 methods — lifecycle hooks (`on_instance_created`, `on_player_join`, `on_player_leave`), input processing (`on_input`), hot-path tick (`on_tick`, noexcept), and snapshot/settlement (`build_snapshot`, `build_settlement`, `build_resume_snapshot`, all noexcept)
-- **Error isolation**: Framework wraps all plugin calls in try-catch; noexcept methods include defensive try-catch as deep protection; plugin exceptions never crash the runtime
-- **Plugin registry** (`InstancePluginFactory`): Map of `instance_type` → factory function, enabling per-type plugin instantiation
+主请求路径是：
 
-**Concrete plugins:**
-- **TankBattlePlugin** (`v2::battle::TankBattlePlugin`, `src/v2/battle/`): Full InstancePlugin implementation using ECS SimpleWorld, supporting move/attack/shoot/finish actions. Used as the framework-integrated reference implementation and SPI compliance test vehicle.
-- **EchoPlugin** (`echo_plugin::EchoPlugin`, `examples/realtime_echo_plugin/`): Minimal echo plugin demonstrating the SPI with input→response round-trip.
-- **TankPlugin** (`tank::TankPlugin`, `demo/games/tank_battle/`): Demo-specific plugin adapting the standalone TankWorld simulation to the InstancePlugin SPI.
-
-### Actor System
-- ActorSystem manages actor lifecycle and message dispatching
-- Actors: GatewayActor, RoomBackend, BattleBackend, etc.
-- Messages typed via `MessageKind` enum with `target_service` routing
-
-### ECS (Entity Component System)
-- World/SimpleWorld architecture with typed component access and `for_each<T>()` iteration
-- ParallelSystemExecutor with topological sort (Kahn algorithm) for concurrent system execution via `std::async`; SequentialSystemExecutor as default fallback
-
-**Registered systems in `create_battle_world()`** (7 systems):
-- `BattleClockSystem` — per-tick frame counter and trigger tracking
-- `BattleInputSystem` — parses pending input strings into move/attack intents
-- `MovementSystem` — speed-limited movement with anti-cheat teleport detection
-- `CombatSystem` — attack cooldown, damage bounds, attacks-per-frame limit
-- `AoiSystem` — ECS-integrated Area of Interest via SpatialGrid
-- `BattleLifecycleSystem` — auto lifecycle state machine (kCreated→kRunning→kFinished) with idle timeout (300 frames) and all-offline timeout (60 frames)
-- `BattleReplaySystem` — per-frame state snapshot capture for deterministic replay
-
-**Additional system used by TankBattlePlugin:**
-- `ProjectileSystem` — travel-time projectiles with interpolation, single-target damage, AoE radius, and Damage-over-Time (DoT) ticks
-
-**ECS Component types** (defined in `runtime_components.h`):
-- `BattleClockComponent`, `BattleParticipantComponent`, `BattleMetadataComponent`, `BattleReplayLogComponent`
-- `PositionComponent`, `HealthComponent`, `AttackStateComponent`, `AttackCooldownComponent`
-- `ProjectileComponent`, `DamageOverlayComponent`
-
-### Performance Features
-- RCU (Read-Copy-Update) for lock-free broadcast in AOI and session management
-- PerfCounters with TSC-based timing and TLS storage
-- Cache-line aligned arena allocator
-- Parallel system execution with dependency graph
-- Per-session flow control and backpressure
-
-### Persistence Layer
-- **BattleArchiveSink** abstract interface: save/load replay, result, snapshot; high-level `persist()` method.
-- **JsonFileBattleDataStore**: File-backed JSON implementation storing in `replays/`, `results/`, `snapshots/` subdirectories.
-- **CachedBattleDataStore**: Decorator wrapping a delegate with separate LRU caches (1000 entries each for replay/result/snapshot) + `WriteBehindDataStore` for asynchronous flush.
-- **WriteBehindDataStore**: Background worker thread processes queued commands; failed saves increment `failed_count_` and continue (no retry).
-- **LruCache<K,V>**: Generic thread-safe LRU cache with `put()` returning evicted entries, `for_each()` read-only iteration, `drain()` bulk retrieval.
-- **StorageEngineSQLite**: Optional SQLite engine with connection pool (min=2/max=8, WAL mode) behind `#ifdef HAS_SQLITE`.
-- **PlayerData LRU cache**: 1024 entries for player profile caching.
-
-### SDK
-- C API (src/sdk/src/c_api.cpp) as the stable ABI boundary
-- Python bindings via ctypes
-- C# bindings via P/Invoke
-- Async API available via callback registration
-
-### Consistency & HA
-- **Raft consensus** for matchmaking and leaderboard state (3-node configs in config/environments/ha/)
-- **Circuit breaker** pattern in gateway-to-backend routing
-- **ClusterRouter** for dynamic service discovery and health checks (5s interval)
-- **ServiceRegistrar** for automatic backend registration
-
-## Data Flow: Request Routing
-
-```
+```text
 Client -> Gateway Session -> GatewayActor -> GatewayServiceBridge
-    -> resolve_backend() [cluster router -> consistent hash -> static fallback]
-    -> ensure_connection() [connection pool with round-robin]
-    -> send_request() [with retry on failure]
-    -> circuit breaker tracking
-    -> response -> Client
+       -> ClusterRouter/static backend -> BackendConnection
+       -> backend handler -> response/push -> Client
 ```
 
-## Data Flow: Matchmaking -> Battle
+具体行为：
 
-```
-Client A -> MatchJoin
-Client B -> MatchJoin
-    -> Matchmaker (MMR-based pairing)
-    -> MatchFoundCallback
-    -> Runtime::on_match_found()
-    -> create_room_with_players()
-    -> send_push(kMatchFoundPush) to both clients
-    -> wait for ready (or timeout)
-    -> start_battle()
-    -> redirect clients to Battle backend
-```
+1. `project_net` 解析 length-prefixed packet 并执行大小、版本和 session 流控检查。
+2. `DemoServer` 将非 fast-path 消息送入 `SessionAdapter` 和 `GatewayActor`。
+3. `Runtime` 校验 typed request、session 状态和角色权限，并选择目标 service。
+4. `GatewayServiceBridge` 通过 cluster router 或静态配置选择 backend，应用 connection
+   pool、timeout、retry 和 circuit breaker。
+5. Backend handler 返回 typed response；Gateway 保留 request correlation 并把 response
+   或 push 写回 SDK client。
 
-## Deployment Models
+Matchmaking 到 Battle 的业务链路为：
 
-### Single Process (Development)
-```
-v2_gateway_demo --io-cores 4 --port 9201
-```
-All backends are in-process actors. No Raft.
-
-### Multi-Process (Production)
-```
-v2_gateway_demo --port 9201    (gateway)
-v2_login_backend --port 9101
-v2_room_backend --port 9102
-v2_battle_backend --port 9103
-v2_matchmaking_backend --port 9104 [--raft]
-v2_leaderboard_backend --port 9105 [--raft]
-```
-Each process independent. Raft for stateful services.
-
-### Kubernetes
-```yaml
-# Helm values/source-of-truth: env/k8s/helm/boost-gateway/
-# Operator scaffold: operator/boostgateway-operator/
-# CRD: operator/boostgateway-operator/config/crd/bases/gateway.boost.io_boostgatewayclusters.yaml
+```text
+MatchJoin -> Matchmaking -> MatchFound push -> Room/ready
+          -> Battle instance -> input/snapshot -> settlement
+          -> Leaderboard submit
 ```
 
-## Testing Strategy
-| Level | Location | Scope |
-|-------|----------|-------|
-| Unit | tests/v2/unit/ | Individual components with mocks |
-| Integration | tests/v2/integration/ | Multi-component E2E |
-| Multi-process | tests/v2/integration/ (multi_process) | Real OS process orchestration |
-| Chaos | tests/chaos/ | Network partition, crash, latency injection |
-| Fuzz | tests/fuzz/ | Protocol codec fuzzing (libFuzzer) |
-| Security | tests/security/ | Protocol-level attack simulation |
-| Performance | scripts/collect_release_baseline.py | Throughput/latency regression detection |
+## 运行时和扩展边界
 
-## Key Protocols
-- **Wire format**: `[length:4][version:1][message_id:2][request_id:4][sequence:4][error_code:4][flags:1][body:N]`
-- **kFixedMetadataSize**: 16 bytes
-- **Transport**: TCP (default), gRPC (experimental, behind BOOST_BUILD_GRPC flag)
+`v2::realtime::InstanceRuntime` 管理 creating/waiting/running/finishing/finished/closed
+生命周期、输入序列、tick、snapshot、settlement 和 resume。业务实现通过
+`InstancePlugin` SPI 接入，plugin 异常被 runtime 隔离。
 
-## Related Documents
-- [Current State](current-state.md)
-- [Docs Index](README.md)
-- [Performance Baseline](performance-baseline.md)
-- [Release Governance](release-governance.md)
-- [Production Deployment Runbook](production-deployment-runbook.md)
-- [TLS / mTLS Runbook](tls-mtls-runbook.md)
+- `BattleInstancePlugin` 是默认 battle backend 实现。
+- `TankBattlePlugin` 和 `demo/games/tank_battle/` 用于验证 SPI，不属于默认生产主链。
+- `examples/realtime_echo_plugin` 是可选最小 plugin 示例，默认不构建。
+
+ECS 默认执行 movement、combat、AOI、lifecycle 和 replay 等系统。具体地图、碰撞、计分
+或胜负规则必须留在 demo/plugin，不能进入 Gateway、Room、Leaderboard 或公共 SDK。
+
+## 协议和一致性
+
+客户端 TCP 帧的固定元数据包含 length、version、message ID、request ID、sequence、
+error code 和 flags。业务 payload 使用 schema-backed typed contract；不得新增只靠 raw
+JSON 字符串约定的业务消息。
+
+Backend 使用 `BackendEnvelope`，提供 correlation ID、service、message kind 和 payload
+encoding。Raft command/state/wire codec 位于 `src/v3/cluster/`，支持受治理的 legacy/
+protobuf 兼容窗口。
+
+gRPC 位于 `BOOST_BUILD_GRPC=ON` 条件构建面。它已有 generated schema、SDK 和专项测试，
+但默认值仍为 OFF，也不是生产客户端的默认 transport。
+
+## 数据和持久化
+
+| 能力 | 默认状态 | 边界 |
+|---|---|---|
+| JSON replay/archive | 可用 | Battle 可按配置落盘 |
+| Redis leaderboard/event store | 可选 | 未配置 Redis 时 Leaderboard 使用内存实现 |
+| Raft | 可选部署 | Matchmaking/Leaderboard 使用显式 HA 配置 |
+| SQLite | 构建默认 OFF | 仅在 `BOOST_BUILD_SQLITE=ON` 时启用 |
+| OTel persistence/export | 可配置 | 生产启用需 collector 和证据门禁 |
+
+## 部署模型
+
+### 进程内 smoke
+
+```bash
+build/contributor-debug/examples/v2_gateway_demo/v2_gateway_demo --script
+```
+
+该模式不监听端口，只验证内置 login/room/battle 交换。它不是单进程生产服务器。
+
+### 本地多进程
+
+backend 默认读取 `config/environments/local/<service>.json`。从仓库根目录启动 Login、
+Room、Battle、Matchmaking、Leaderboard 后，再启动 Gateway。多进程测试目标会自动管理
+所需子进程，优先推荐：
+
+```bash
+python3.12 scripts/run_tests.py e2e --build-dir build/contributor-debug --verbose
+```
+
+### Docker Compose
+
+`env/docker/docker-compose.yml` 启动六服务、Redis 和观测组件。镜像构建前必须使用
+`prepare_docker_runtime_context.py` staging 完整 Release 二进制；具体命令见
+[部署快速入门](deployment/deployment-quickstart.md)。
+
+### Kubernetes 和 Operator
+
+- Helm source of truth：`env/k8s/helm/boost-gateway/`
+- Operator：`operator/boostgateway-operator/`
+- CRD：`operator/boostgateway-operator/config/crd/bases/`
+
+Kubernetes/Operator 结论必须来自真实 kind 或目标集群验证，静态 manifest 校验不能代替
+rollout、restart、rollback、scale 和 delete/cleanup 证据。
+
+## 构建和测试边界
+
+默认 CMake provider 是 Conan，默认启用测试、Raft protobuf，关闭 gRPC、SQLite 和业务
+demo。首次配置见 [开发者入门](ONBOARDING.md)。
+
+| 层级 | 主要范围 | 本地入口 |
+|---|---|---|
+| unit | codec、数据结构、Actor、service、runtime | `scripts/run_tests.py unit` |
+| integration | gateway/backend、Raft、service bus | `scripts/run_tests.py integration` |
+| e2e | 真实多进程业务闭环 | `scripts/run_tests.py e2e` |
+| sdk | C++/C ABI 和 business flow | `scripts/run_tests.py sdk` |
+| perf/security/fuzz | 显式可选构建 | 对应 CMake option 和专项 workflow |
+
+## 相关文档
+
+- [当前状态](current-state.md)
+- [开发者入门](ONBOARDING.md)
+- [发布治理](release-governance.md)
+- [性能基线](performance-baseline.md)
+- [TLS/mTLS Runbook](tls-mtls-runbook.md)
+- [平台生产边界](platform-production-boundaries.md)

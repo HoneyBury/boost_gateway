@@ -96,12 +96,15 @@ install(FILES
     docs/project-blueprint.md
     docs/mainline-execution-plan.md
     docs/single-node-enterprise-validation-plan.md
-    docs/v3.5.x-maintenance-plan.md
-    docs/v3.5.2-freeze-todo.md
     docs/architecture-overview.md
+    docs/platform-production-boundaries.md
+    docs/platform-production-boundaries.json
     docs/release-governance.md
     docs/performance-baseline.md
     docs/fixed-runner-playbook.md
+    docs/runner-gate-standard.md
+    docs/runner-inventory.md
+    docs/script-inventory.json
     docs/tls-mtls-runbook.md
     docs/ONBOARDING.md
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs"
@@ -121,6 +124,10 @@ install(DIRECTORY docs/decisions/
 
 install(DIRECTORY docs/legacy/
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/legacy"
+)
+
+install(DIRECTORY docs/todos/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/docs/todos"
 )
 
 install(DIRECTORY docs/archive/

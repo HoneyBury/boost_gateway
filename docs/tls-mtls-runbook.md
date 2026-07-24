@@ -1,6 +1,6 @@
 # TLS / mTLS Runbook
 
-更新时间：2026-05-18
+更新时间：2026-07-24
 
 本文档对应生产业务闭环 P6。当前项目已经具备 gateway->backend TLS client 配置、security policy、feature flag、证书生成和测试门禁；默认生产链路仍是 plain TCP。不要把默认生产部署描述成已经启用全链路 TLS/mTLS。
 
@@ -19,19 +19,19 @@
 开发/预发证书：
 
 ```bash
-python3 scripts/gen_certs.py
+python3.12 scripts/gen_certs.py
 ```
 
 如需给实验 gRPC mTLS 或其他本机双向 TLS 验证生成临时 client cert：
 
 ```bash
-python3 scripts/gen_certs.py --include-client
+python3.12 scripts/gen_certs.py --include-client
 ```
 
 也可以为轮换演练输出到独立目录：
 
 ```bash
-python3 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --days 90
+python3.12 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --days 90
 ```
 
 产物：
@@ -50,25 +50,30 @@ python3 scripts/gen_certs.py --output-dir runtime/tls-readiness/rotated-certs --
 TLS profile 边界检查：
 
 ```bash
-python3 scripts/check_tls_profile.py --generate-dev-certs
+python3.12 scripts/check_tls_profile.py --generate-dev-certs
 ```
 
 N4 传输安全与配置治理聚合门禁：
 
 ```bash
-python3 scripts/check_transport_config_governance.py --generate-dev-certs --summary-path runtime/validation/n4-transport-config-governance-summary.json
+python3.12 scripts/check_transport_config_governance.py --generate-dev-certs \
+  --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
 
 TLS profile 生产业务闭环实测：
 
 ```bash
-python3 scripts/check_transport_config_governance.py --generate-dev-certs --include-tls-full-flow --build-dir build/release --summary-path runtime/validation/n4-transport-config-governance-summary.json
+python3.12 scripts/check_transport_config_governance.py --generate-dev-certs \
+  --include-tls-full-flow --build-dir build/release \
+  --summary-path runtime/validation/n4-transport-config-governance-summary.json
 ```
 
 R1 TLS 上线前置证据：
 
 ```bash
-python3 scripts/verify_tls_production_readiness.py --build-dir build/release --skip-build --summary-path runtime/validation/r1-tls-production-readiness-summary.json
+python3.12 scripts/verify_tls_production_readiness.py \
+  --build-dir build/release --skip-build \
+  --summary-path runtime/validation/r1-tls-production-readiness-summary.json
 ```
 
 该入口会在本机启动 gateway、五个 backend 和 SDK full-flow client，验证：
@@ -82,7 +87,8 @@ python3 scripts/verify_tls_production_readiness.py --build-dir build/release --s
 P5-P8 聚合入口会自动运行该检查：
 
 ```bash
-python3 scripts/verify_p5_p8_business_closure.py --build-dir build/default --skip-build
+python3.12 scripts/verify_p5_p8_business_closure.py \
+  --build-dir build/release --skip-build
 ```
 
 该检查验证：

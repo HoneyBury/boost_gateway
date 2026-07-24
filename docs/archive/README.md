@@ -27,3 +27,14 @@
 - 归档文档仅用于追溯背景，不作为当前事实源。
 - 当前项目状态、可执行入口、验证口径，以 `../current-state.md` 为准。
 - 当前主线文档索引，以 `../README.md` 为准。
+
+## 近期版本归档
+
+- [`v3.5.x-maintenance-plan.md`](releases/v3.5.x-maintenance-plan.md)：v3.5.1-v3.5.3
+  维护计划与冻结结果。
+- [`v3.5.2-freeze-todo.md`](releases/v3.5.2-freeze-todo.md)：v3.5.2 第二 runner、
+  tag 和线上资产复验清单。
+- [`v3.6-implementation-status.md`](releases/v3.6-implementation-status.md)：v3.6.0-v3.6.2
+  P0-P6 实现与三平台发布证据。
+- [`project-blueprint-2026-07-09.md`](plans/project-blueprint-2026-07-09.md)：Conan、命名、
+  Developer Guide 和 v3.6 发布前阶段的旧蓝图。
