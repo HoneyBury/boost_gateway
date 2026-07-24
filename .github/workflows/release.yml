@@ -773,10 +773,28 @@ jobs:
             --require-nuget \
             --summary-path runtime/validation/release-nuget-summary.json
 
+      - name: Prepare NuGet SBOM input
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile
+          from pathlib import Path, PurePosixPath
+
+          package = Path("runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg")
+          output = Path("runtime/nuget-sbom-root")
+          output.mkdir(parents=True, exist_ok=True)
+          with zipfile.ZipFile(package) as archive:
+              names = archive.namelist()
+              if any(PurePosixPath(name).is_absolute() or ".." in PurePosixPath(name).parts for name in names):
+                  raise SystemExit("NuGet package contains an unsafe path")
+              archive.extractall(output)
+          PY
+
       - name: Generate NuGet SBOM
         uses: anchore/sbom-action@v0
         with:
-          path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+          path: runtime/nuget-sbom-root
           format: spdx-json
           output-file: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
           upload-artifact: false
