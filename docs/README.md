@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-07-21
+更新时间：2026-07-24
 
 本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
 
@@ -14,6 +14,7 @@
 | [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
 | [生产平台边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的 workflow、R5、Docker、Conan 与发布证据契约 |
 | [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
+| [企业级单机运营与 30 天验证计划](single-node-enterprise-validation-plan.md) | 两个月自动部署、治理、可观测、恢复和冻结运行路线图 |
 | [v3.6 决策清单](decisions/v3.6-decision-manifest.json) | 下一 minor 的身份、SDK、Raft schema、平台和符号包 ADR 状态与实现阻断条件 |
 | [v3.5.x 维护计划](v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 的补丁版本边界、顺序和冻结条件 |
 | [v3.5.2 历史冻结清单](v3.5.2-freeze-todo.md) | 已关闭的第二 runner、同资产复验和最终 tag 冻结记录；不属于当前待办 |

@@ -192,6 +192,14 @@ P0-P7 框架现代化已在 `main` 分支提交，commit 范围 `7bb4898..5a43ed
 后续长期开发以 `docs/project-blueprint.md` 为规划依据。本文档继续作为”已经实现/当前默认链路”的事实源；`docs/fixed-runner-playbook.md`、`docs/release-governance.md` 和各 runtime summary 继续作为生产候选证据事实源。
 当前 1-3 个月的实际主线执行顺序，见 `docs/mainline-execution-plan.md`。
 
+`v3.6.2` 发布后的当前主任务是两个月企业级单机运营计划：先完成 Ubuntu 24.04
+Linux x64 的不可变 release 自动部署、仓库强制治理、监控追溯、异机备份和恢复闭环，
+再通过 72 小时预演冻结候选，并以同一 tag/SHA/runtime digest 连续运行至少 30 天。
+完整目标、排除项、SLI/SLO、RTO/RPO、Day 0 重置规则和阶段验收见
+`docs/single-node-enterprise-validation-plan.md`；执行状态由 `TODO-0007` 至
+`TODO-0018` 和对应 GitHub Issues 管理。期间性能修改必须由长期指标或 incident
+驱动，并保留 RCA、前后基线、全量回归和回滚方案。
+
 P2 的五项下一 minor ADR 已接受，机器可校验状态见 `docs/decisions/v3.6-decision-manifest.json`，治理入口为 `scripts/check_next_minor_decisions.py`。P0-P6 的仓库内实现现已完成，逐阶段事实见 `docs/v3.6-implementation-status.md`；生产平台目标为 `linux-x64`、`linux-arm64`、`macos-arm64` 三条不可互换的证据链，机器契约见 `docs/platform-production-boundaries.json`。macOS 与 Linux ARM64 runner 已完成各自 G0-G5 预冻结准入，并完成 ARM Release/R0、三轮 baseline、容量/R4 和原生 2h soak；Linux x64 的既有生产证据和三平台专用 workflow 事实见后续段落。不同 SHA 不得拼接为最终候选；冻结 SHA 的三平台刷新、notarized release asset 和线上独立复验仍未完成。仓库内实现和预冻结闭环不代表默认激活或正式发布资产已交付，默认生产链路和 manifest 阻断状态不变。
 
 2026-07-22 后续 Linux x64 收口批次固定在 `d687b9ed4293e6ea300ddc14d5868f59d989795c`：AOI Release `29912054968`、R0 `29912422049` 和 R5/R6 `29913176854` 均以 strict-offline Conan 通过并记录一致 provenance；对应主要 artifact ID 为 `8526405108`、`8526704598`、`8527016097`。默认分支随后经 PR #12-#16 注册并修复三条 dedicated workflow；统一候选 `00ce82e0b00d57f1ca68558d1e31fefd09fe506d` 上的 debug-symbol `29922341090` / artifact `8530608986`、SDK `29923068133` / artifact `8530788482`、JWKS `29923314097` / artifact `8530992597` 全部在 AOI Linux x64 runner 使用同一 strict-offline lockfile graph 通过。结果分别为 14-ELF 115/115 加 crash probe 11/11、package 25/25 加 fresh no-index flow 15/15、JWKS 10/10 加 probe 16/16 与 contract 6/6；下载后的 checksum 全部通过，debug artifact 只含 11 个声明文件。该 dedicated 批次不改绑较早的 Release/R0/R5-R6，也不冒充最终跨平台冻结候选。686 个线上与本机证据文件已归档到 `/home/aoi/actions-runner/_evidence/boost-gateway/v3.6/aoi-runner-20260722` 并由总 SHA-256 清单 686/686 复验。

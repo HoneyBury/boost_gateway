@@ -1,12 +1,28 @@
-# v3.5.3 发布后主线执行计划
+# v3.6.2 发布后企业级运营主线执行计划
 
 更新时间：2026-07-24
 
 ## 阶段目标
 
-`v3.5.3` 已在最终 SHA `b9c348b4b58fdeeffa9d82ff87a67ed781a96b78` 完成 Release、连续 8h、生产证据汇总、tag publish 和线上资产独立验签。当前阶段不移动已发布 tag，也不直接扩大业务或协议面；先修正容量证据的资源隔离与统计口径，再根据可归因数据决定运行时优化和下一 minor 的范围。
+`v3.6.2` 已完成三平台不可变 runtime/symbol/SDK 发布与线上独立复验。当前两个月
+主线不扩大业务或默认协议面，而是交付 Ubuntu 24.04 x64 单节点自动部署、观测、
+追溯、备份、恢复和仓库强制治理，并在 72 小时预演后以单一不可变 runtime 连续运行
+至少 30 天。完整契约和验收门槛见
+`docs/single-node-enterprise-validation-plan.md`，版本化执行状态见 `TODO-0007` 至
+`TODO-0018`。
 
-## 优先级与验收标准
+## 当前两个月优先级与验收标准
+
+| 优先级 | 工作项 | 主要交付 | 阶段完成标准 |
+|---|---|---|---|
+| P0 | 单节点部署与主机准入 | release-driven Compose、host preflight、幂等 install/upgrade/rollback | 服务器不编译项目；全新主机一条治理入口部署并通过 full-flow，失败可在 10 分钟内回滚 |
+| P0 | 观测、追溯和恢复 | 45 天 metrics、外部 canary、deployment/evidence ledger、异机备份和恢复演练 | 真实告警可达；gateway/backend 5 分钟、Redis/host/rollback 10 分钟 RTO 通过 |
+| P0/P1 | 企业仓库治理 | PR CI、required checks/review、CODEOWNERS/CONTRIBUTING/SECURITY、Action SHA pinning | 代码和发布不能绕过自动门禁；计划缺口全部进入 TODO/Issue |
+| P1 | 72 小时上线预演 | 完整部署、重启、网络、Redis、备份、恢复和回滚证据 | 无未知重启/OOM/无界资源增长；所有缺陷有 Issue/RCA，冻结正式候选 |
+| P1 | 30 天不可变验证 | 单一 tag/SHA/digest、每分钟外部 canary、每日/每周证据 | `>=2,592,000s`、availability/canary `>=99.9%`、coverage `>=99.9%`，runtime 变化重置 Day 0 |
+| P2 | 运营评审与证据驱动优化 | 最终 readiness report、性能 RCA、下一版本计划 | 区分已证明单节点能力与未证明容量/HA；优化有前后基线且不放宽门槛 |
+
+## 已完成历史优先级与验收标准
 
 | 优先级 | 工作项 | 交付物 | 完成标准 |
 |---|---|---|---|

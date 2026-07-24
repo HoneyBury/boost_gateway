@@ -19,6 +19,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/runner-inventory.md",
     "docs/runner-gate-standard.md",
     "docs/project-blueprint.md",
+    "docs/single-node-enterprise-validation-plan.md",
     "docs/v3.5.x-maintenance-plan.md",
     "docs/v3.5.2-freeze-todo.md",
     "docs/legacy/legacy-helper-inventory.md",
@@ -139,6 +140,33 @@ def main() -> int:
         "decisions/v3.6-decision-manifest.json" in docs_index
         and "scripts/check_next_minor_decisions.py" in (ROOT / "docs/current-state.md").read_text(encoding="utf-8"),
         "docs index and current state point to the governed next-minor decisions",
+    )
+    operations_plan = (ROOT / "docs/single-node-enterprise-validation-plan.md").read_text(
+        encoding="utf-8"
+    )
+    add(
+        checks,
+        "docs:single-node-enterprise-plan-indexed",
+        "single-node-enterprise-validation-plan.md" in docs_index
+        and "docs/single-node-enterprise-validation-plan.md" in cmake,
+        "the maintained single-node enterprise plan is indexed and installed",
+    )
+    add(
+        checks,
+        "docs:single-node-enterprise-plan-contract",
+        all(
+            token in operations_plan
+            for token in (
+                "2,592,000s",
+                "TODO-0007",
+                "TODO-0018",
+                "external SDK canary",
+                "Day 0",
+                "RTO",
+                "RPO",
+            )
+        ),
+        "the two-month plan preserves duration, TODO, canary, restart and recovery boundaries",
     )
 
     failed = [check for check in checks if not check["passed"]]

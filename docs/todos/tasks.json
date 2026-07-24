@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "HoneyBury/boost_gateway",
-  "next_id": 7,
+  "next_id": 19,
   "tasks": [
     {
       "id": "TODO-0001",
@@ -117,6 +117,246 @@
       "github": {
         "issue_number": 20,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/20"
+      }
+    },
+    {
+      "id": "TODO-0007",
+      "title": "Freeze the two-month enterprise operations contract",
+      "status": "open",
+      "priority": "P0",
+      "category": "enterprise-roadmap",
+      "description": "Freeze the eight-week Ubuntu x64 single-node operations program before implementation. The contract separates preparation, a repairable 72-hour shakedown, one immutable 30-day runtime window, and the final enterprise readiness review.",
+      "acceptance_criteria": [
+        "The maintained plan defines scope, exclusions, topology, timeline, SLI/SLO, RTO/RPO, security, evidence, and performance-change policies.",
+        "The formal 30-day clock requires one release tag, commit, runtime digest and at least 2,592,000 seconds; runtime changes reset the clock to Day 0.",
+        "Single-node operability is not represented as capacity, multi-node HA, or cross-failure-domain evidence.",
+        "The plan is indexed, installed, covered by the docs governance gate, and mapped to TODO-0007 through TODO-0018."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 21,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/21"
+      }
+    },
+    {
+      "id": "TODO-0008",
+      "title": "Admit and harden the Ubuntu x64 operations host",
+      "status": "open",
+      "priority": "P0",
+      "category": "host-admission",
+      "description": "Create a fail-closed admission and security baseline for the Ubuntu 24.04 x64 host so long-run evidence cannot begin on an unknown, sleeping, thermally throttled, exposed, or storage-unsafe machine.",
+      "acceptance_criteria": [
+        "An idempotent preflight records OS, kernel, CPU, memory, filesystem, Docker/Compose, clock sync, network, SMART, temperature, suspend and restart-on-power-loss facts.",
+        "Only the gateway business port is externally exposed; management, Redis, monitoring and exporter ports remain loopback or trusted-network only.",
+        "A dedicated service identity, firewall, secret locations, persistent directories, log policy and least-privilege Docker access are documented and verified.",
+        "A real host reboot restores systemd, Compose, monitoring and the service topology without an interactive login."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 22,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/22"
+      }
+    },
+    {
+      "id": "TODO-0009",
+      "title": "Deploy immutable release assets without compiling on the server",
+      "status": "open",
+      "priority": "P0",
+      "category": "single-node-deployment",
+      "description": "Extend the Docker runtime preparation path to consume an immutable Linux x64 GitHub Release directly, eliminating Conan and CMake compilation from the long-running production-validation host.",
+      "acceptance_criteria": [
+        "The deploy path downloads the runtime, checksum, SBOM and provenance inputs and verifies tag, commit, SHA-256, attestation and ELF x86_64 identity before staging.",
+        "Runtime-only images are built from the verified archive with a pinned Ubuntu 24.04 base digest and carry the release and configuration provenance.",
+        "A production Compose overlay uses immutable project image identities, explicit resource limits, health checks, persistent volumes and bounded log rotation.",
+        "A clean admitted host can reach healthy services and pass SDK full-flow without a source build or public Conan access."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 23,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/23"
+      }
+    },
+    {
+      "id": "TODO-0010",
+      "title": "Automate idempotent install upgrade and rollback",
+      "status": "open",
+      "priority": "P0",
+      "category": "deployment-lifecycle",
+      "description": "Provide one governed command surface for install, deploy, upgrade, rollback, status and verification while retaining enough state to recover from a failed release.",
+      "acceptance_criteria": [
+        "Repeated install or deploy of the same release is idempotent and does not erase persistent data, evidence or backups.",
+        "The current and previous verified release, image identities, configuration snapshot and deployment record are retained under versioned directories.",
+        "Every deployment runs health, readiness, Prometheus target, Redis and external or local SDK canary checks; failure writes a summary and automatically restores the previous verified release.",
+        "Release rollback completes within 10 minutes and a real rollback drill proves the restored digest and business flow."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 24,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/24"
+      }
+    },
+    {
+      "id": "TODO-0011",
+      "title": "Establish long-run observability and an evidence ledger",
+      "status": "open",
+      "priority": "P0",
+      "category": "observability-evidence",
+      "description": "Turn the single-node deployment into an auditable operations environment with host, container, application, Redis and deployment evidence retained beyond the formal validation window.",
+      "acceptance_criteria": [
+        "Prometheus retains at least 45 days and records host CPU, load, memory, filesystem, disk I/O, network, thermal signals, container resources, restarts, gateway RED metrics and Redis persistence health.",
+        "Alertmanager uses a real tested notification receiver; placeholder routing and default Grafana credentials are rejected by production preflight.",
+        "Each deployment record binds tag, commit, asset and image digests, config digest, host identity, timestamp, operator and result.",
+        "Daily checkpoints, weekly trend reports, incident records and the final report reference raw summaries and are copied off-host with a verifiable manifest."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 25,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/25"
+      }
+    },
+    {
+      "id": "TODO-0012",
+      "title": "Automate backup restore and recovery drills",
+      "status": "open",
+      "priority": "P0",
+      "category": "recovery",
+      "description": "Implement an off-host backup and real restoration loop for Redis, configuration, deployment state and evidence, then exercise the existing recovery matrix on the target server.",
+      "acceptance_criteria": [
+        "The production-validation Redis profile explicitly decides and verifies AOF everysec plus RDB behavior, including measured performance impact and a declared RPO target of at most 60 seconds.",
+        "Encrypted daily backups are copied off-host with retention and checksum manifests; a backup only on the same disk is rejected.",
+        "Gateway and backend recovery meet 5-minute RTO; Redis restore, host reboot and release rollback meet 10-minute RTO.",
+        "At least two independent restore drills recreate leaderboard state and pass submit, top, rank and SDK full-flow verification from retained backups."
+      ],
+      "created_at": "2026-07-24T07:00:29Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 26,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/26"
+      }
+    },
+    {
+      "id": "TODO-0013",
+      "title": "Run an external synthetic business canary",
+      "status": "open",
+      "priority": "P1",
+      "category": "long-run-canary",
+      "description": "Run a low-impact client outside the service host so availability and business latency reflect the real network path without contaminating service CPU and memory evidence.",
+      "acceptance_criteria": [
+        "At least once per minute the canary covers login, room, battle, settlement, leaderboard and reconnect with per-step latency and typed error output.",
+        "Canary summaries bind the deployed tag, commit, runtime digest and target endpoint without storing credentials or user secrets.",
+        "Canary failure reaches Alertmanager and creates or links an incident record; silent failures are rejected.",
+        "The 72-hour and 30-day aggregators compute success rate, latency percentiles, gaps and maintenance-window-inclusive availability from the raw samples."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 27,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27"
+      }
+    },
+    {
+      "id": "TODO-0014",
+      "title": "Enforce pull request and main branch governance",
+      "status": "open",
+      "priority": "P0",
+      "category": "repository-governance",
+      "description": "Convert existing build, test and governance capability into organization-level controls so an enterprise release cannot depend only on an operator remembering to run manual workflows.",
+      "acceptance_criteria": [
+        "Every pull request automatically runs a bounded build, unit/integration test and governance workflow on an appropriate hosted runner.",
+        "Main requires successful checks, at least one review, conversation resolution and a documented emergency-change path; administrator bypass is removed or fully audited.",
+        "CODEOWNERS, CONTRIBUTING.md, SECURITY.md and support/governance boundaries define ownership, review, disclosure and maintenance expectations.",
+        "Release creation requires the governed main commit and cannot bypass the immutable tag ruleset or required candidate evidence."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 28,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/28"
+      }
+    },
+    {
+      "id": "TODO-0015",
+      "title": "Harden workflow supply chain and documentation governance",
+      "status": "open",
+      "priority": "P1",
+      "category": "platform-governance",
+      "description": "Close workflow dependency and documentation drift risks in parallel with deployment work so supply-chain attestations are produced by a governed pipeline and current documents remain a reliable operating surface.",
+      "acceptance_criteria": [
+        "Third-party GitHub Actions are restricted and pinned to reviewed full commit SHAs; default workflow token permissions are least privilege.",
+        "Dependency vulnerability, sanitizer and fuzz jobs have bounded scheduled or manual workflows that do not execute on the production-validation host.",
+        "Current-state, architecture, Compose, monitoring and deployment documents use the current version and no longer contradict released or supported platform facts.",
+        "Every planned platform or governance gap maps to an open TODO/Issue, and documentation/TODO drift is blocked by CI."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 29,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/29"
+      }
+    },
+    {
+      "id": "TODO-0016",
+      "title": "Pass the 72-hour single-node production shakedown",
+      "status": "open",
+      "priority": "P1",
+      "category": "validation-shakedown",
+      "description": "Exercise the complete automatic deployment and operations loop for 72 continuous hours before freezing the formal 30-day candidate. Runtime fixes remain allowed only in this stage.",
+      "acceptance_criteria": [
+        "One candidate completes 72 hours with complete host, container, application and canary evidence and no unknown restart, OOM, disk pressure or unbounded resource trend.",
+        "Gateway, backend, Redis, network, host reboot and release rollback drills meet their RTO/RPO targets and produce validated records.",
+        "Alert transitions, backup copy, restore, daily checkpoint and weekly report paths are observed in the real environment rather than only statically checked.",
+        "All discovered defects have an Issue, RCA and disposition; the final shakedown result explicitly identifies the immutable release selected for Day 0."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 30,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/30"
+      }
+    },
+    {
+      "id": "TODO-0017",
+      "title": "Complete the immutable 30-day operations validation",
+      "status": "open",
+      "priority": "P1",
+      "category": "long-run-validation",
+      "description": "Run one immutable runtime release on the admitted Ubuntu host for at least 30 continuous days and produce a fail-closed evidence set for availability, business behavior, resources, recovery and operator actions.",
+      "acceptance_criteria": [
+        "The same tag, commit and runtime digest run for at least 2,592,000 seconds; interrupted segments and different runtime versions are never accumulated.",
+        "Overall availability and external business-canary success are at least 99.9 percent, with inclusive and approved-maintenance views both reported.",
+        "Monitoring coverage is at least 99.9 percent, non-maintenance sampling gaps are at most 2 minutes, host memory remains below 80 percent, disk below 75 percent, and unknown restart, OOM and sustained thermal throttle counts are zero.",
+        "All maintenance, faults, alerts, deployments, backups and recoveries are traceable, and any runtime hotfix resets the formal clock to Day 0."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 31,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/31"
+      }
+    },
+    {
+      "id": "TODO-0018",
+      "title": "Issue the enterprise operations readiness decision",
+      "status": "open",
+      "priority": "P2",
+      "category": "enterprise-readiness",
+      "description": "Audit the full two-month program and decide which single-node operations capabilities are proven, which remain unsupported, and which evidence-driven code or platform work enters the next release.",
+      "acceptance_criteria": [
+        "A final readiness report links deployment, canary, Prometheus, resource, backup, drill, incident and daily/weekly evidence and independently recomputes the hard gates.",
+        "The report separates proven single-node operability from unproven capacity, multi-node HA, disaster recovery and cross-platform conclusions.",
+        "Every performance or resilience optimization has an Issue, RCA, before/after baseline, full regression result and rollback decision; no threshold is weakened after observation.",
+        "The TODO board, GitHub Issues, current-state, platform boundaries and next release plan are reconciled before the program is marked complete."
+      ],
+      "created_at": "2026-07-24T07:00:30Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 32,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/32"
       }
     }
   ]

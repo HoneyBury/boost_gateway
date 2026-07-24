@@ -95,6 +95,7 @@ install(FILES
     docs/current-state.md
     docs/project-blueprint.md
     docs/mainline-execution-plan.md
+    docs/single-node-enterprise-validation-plan.md
     docs/v3.5.x-maintenance-plan.md
     docs/v3.5.2-freeze-todo.md
     docs/architecture-overview.md
