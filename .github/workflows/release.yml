@@ -629,6 +629,9 @@ jobs:
       - name: Upload packaged artifact
         if: always()
         uses: actions/upload-artifact@v4
+        env:
+          ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"
+          ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"
         with:
           name: boost-gateway-${{ matrix.platform }}-${{ github.sha }}
           path: |
