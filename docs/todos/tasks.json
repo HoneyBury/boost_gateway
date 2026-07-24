@@ -122,7 +122,7 @@
     {
       "id": "TODO-0007",
       "title": "Freeze the two-month enterprise operations contract",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "enterprise-roadmap",
       "description": "Freeze the eight-week Ubuntu x64 single-node operations program before implementation. The contract separates preparation, a repairable 72-hour shakedown, one immutable 30-day runtime window, and the final enterprise readiness review.",
@@ -133,7 +133,7 @@
         "The plan is indexed, installed, covered by the docs governance gate, and mapped to TODO-0007 through TODO-0018."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-07-24T07:08:23Z",
       "github": {
         "issue_number": 21,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/21"
