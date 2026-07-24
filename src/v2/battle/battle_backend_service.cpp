@@ -13,7 +13,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <array>
 #include <chrono>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <mutex>
@@ -254,7 +256,8 @@ private:
     std::string instance_type_ = "battle";
     std::unique_ptr<v2::data::CachedBattleDataStore> archive_store_;
     std::unique_ptr<v2::persistence::ReplayStorage> replay_storage_;
-    std::mutex battle_input_mutex_;
+    static constexpr std::size_t kBattleInputLockStripeCount = 256;
+    std::array<std::mutex, kBattleInputLockStripeCount> battle_input_mutexes_;
 
     // Track per-instance frame numbers.  This is needed because
     // InstanceContext does not expose the current frame; the handler
@@ -500,7 +503,6 @@ private:
 
     v2::service::BackendEnvelope handle_battle_input(
         const v2::service::BackendEnvelope& request) {
-        std::scoped_lock input_lock(battle_input_mutex_);
         auto decoded = v2::service::decode_handler_payload(request);
         if (!decoded.has_value() || !decoded->payload.is_object() ||
             !decoded->payload.contains("user_id") ||
@@ -516,6 +518,12 @@ private:
         const auto score = doc.value("score", std::int64_t{0});
         const auto submitted_frame = doc.value("submitted_frame", std::uint32_t{0});
         const auto pickup_item_id = parse_pickup_input(input_data);
+
+        // Input and frame advancement must stay ordered within one battle, but
+        // unrelated battles must not queue behind a process-wide mutex.
+        auto& input_mutex = battle_input_mutexes_[
+            std::hash<std::string>{}(battle_id) % battle_input_mutexes_.size()];
+        std::scoped_lock input_lock(input_mutex);
 
         // Find instance first to check existence
         auto* instance_ctx = runtime_.find_instance(battle_id);
