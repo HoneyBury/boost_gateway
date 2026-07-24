@@ -9,21 +9,21 @@
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "manylinux_2_35_x86_64",
-      "status": "candidate_fixed_runner_required"
+      "status": "supported_github_release_v3.6.1"
     },
     {
       "rid": "linux-arm64",
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "manylinux_2_39_aarch64",
-      "status": "candidate_exact_sha_verified"
+      "status": "supported_github_release_v3.6.1"
     },
     {
       "rid": "osx-arm64",
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "macosx_26_0_arm64",
-      "status": "candidate_exact_sha_verified"
+      "status": "supported_github_release_v3.6.1"
     }
   ],
   "public_registries": {

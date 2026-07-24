@@ -1,6 +1,6 @@
-# BoostGateway v3.5.x 性能基线
+# BoostGateway 性能基线
 
-更新时间：2026-07-21
+更新时间：2026-07-24
 
 ## 当前口径
 
@@ -18,6 +18,17 @@
 主线严格使用 Conan 2.8.1、仓库 profile 和 `conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock`。证据必须记录 commit、runner、构建目录、profile、lockfile 和原始 summary 路径。
 
 ## 已确认的 Fixed-Runner 事实
+
+`v3.6.1` ARM 优化候选 `7f706b2398c6fc73c26b05d26d37787a9e2e1896` 的 Linux
+ARM64 run `30059535441` 使用互不重叠的 service `0-7` / loadgen `8-11` CPU set，
+pool/route workers 固定为 `8/8`。`battle-100` 三轮 P99 均为 `10ms`，吞吐分别为
+`2719.46/2716.80/2721.42 msg/s`，三轮均为 100 started/connected/authenticated/active、
+0 rejected/failed。既有 P99 `250ms` 门槛没有修改。
+
+前序归因 run `30058635595` 的实际单连接拓扑产生 route queue 平均 `146055us`、
+最大 `254833us`，而 backend route 平均仅 `10215us`；因此历史 `300ms` 尾样本归因于
+Gateway 同步 backend route 排队和错误的拓扑元数据，不是 ARM CPU 饱和或 histogram
+粒度。修复后 queue 平均/最大为 `266/8639us`。
 
 `v3.5.0` 候选 `eed73cc` 的 `long-soak-capacity.yml` run `29509769283` 已在 Linux AOI fixed runner 上完成真实 2h、capacity、business-capacity 和 R4，核心 summary provenance 一致且 `overall_pass=true`。
 

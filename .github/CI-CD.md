@@ -22,8 +22,8 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-candidate-evidence.yml` | Production / Candidate Evidence | 手动 | 独立 R0 production candidate 聚合 |
 | `production-gates.yml` | Production / Gate Diagnostics | 手动 | P5 resilience 与 P6 production evidence 诊断入口 |
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
-| `release.yml` | Release / Package & Publish | v* tag / 手动 | 构建 → 测试 → 门禁 → baseline；仅 tag push 进入发布 |
-| `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收线上 checksum、runtime consumer 和 attestations |
+| `release.yml` | Release / Package & Publish | v* tag / 手动 | 三平台 runtime/symbol/wheel、三 RID NuGet、测试与门禁；手动 `platform=all` 预演，tag 才发布/attest |
+| `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收 runtime/symbol、wheel/NuGet、checksum、consumer 和 attestations |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 | `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、UUID-bound dSYM、SDK consumer 与候选资产 |
@@ -52,8 +52,9 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 生产 workflow 的 `platform` 必须显式选择 `linux-x64`、`linux-arm64` 或
 `macos-arm64`。Release、R0、performance、long-soak/capacity、P5/P6、readiness 和
 published-asset verification 使用同一原生平台契约；profile、lockfile、build directory、
-Docker target 与 artifact suffix 不接受独立覆盖。tag Release 只有三平台 package job
-全部成功后才发布三份 archive、三份 SPDX 和统一 checksum manifest。
+Docker target 与 artifact suffix 不接受独立覆盖。tag Release 只有三平台 package 与
+多 RID NuGet job 全部成功后，才发布 runtime/symbol、三个 wheel、一个 NuGet、逐资产
+SPDX/provenance metadata 和统一 checksum manifest。
 
 `preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=never`；完整
 Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 仅用于
@@ -63,7 +64,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 - Release 包: `boost-gateway-{version}-linux-x64.tar.gz`
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
-- SDK 候选包: `boost_gateway_sdk-4.2.0-*.whl`、`BoostGateway.Sdk.4.2.0.nupkg`
+- SDK 发布包: 三个 `boost_gateway_sdk-4.2.0-*.whl`、一个多 RID `BoostGateway.Sdk.4.2.0.nupkg`
 - Linux symbols: `boost-gateway-{version}-linux-x64-debug-symbols.tar.gz`
 - macOS symbols: `boost-gateway-{version}-macos-arm64-dsym.tar.gz`
 - JWKS 轮换证据: `jwks-rotation-{platform}-{candidate-sha}`

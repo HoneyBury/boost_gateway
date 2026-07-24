@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## v3.6.1 — ARM 尾延迟与不可变 SDK/符号资产（2026-07-24）
+
+### 性能与发布
+
+- 修复 Battle 后端跨战局输入被进程级互斥锁串行化的问题，并将已通过容量验证的 Gateway backend pool / battle route worker 默认拓扑统一为 `8/8`；Docker Compose 与原生运行时使用同一生产默认值。
+- Linux ARM64 隔离 baseline run `30059535441` 将服务固定到 CPU `0-7`、loadgen 固定到 `8-11`。`battle-100` 三轮 P99 均为 `10ms`、吞吐为 `2719.46/2716.80/2721.42 msg/s`，0 rejected/failed；既有 `250ms` 门槛未放宽。route queue 平均值由失败归因 run `30058635595` 的 `146055us` 降至 `266us`，最大值由 `254833us` 降至 `8639us`。
+- Release 从同一 `-O3 -g -DNDEBUG` install tree 生成 stripped runtime 与 Linux build-id/debuglink 或 macOS UUID/dSYM 精确配对；runtime、symbol、wheel 和 NuGet 分别生成 SPDX SBOM、provenance 与 SBOM attestation，并统一进入 `SHA256SUMS.txt`。
+- SDK 4.2.0 发布三个原生 wheel 和一个包含 `linux-x64`、`linux-arm64`、`osx-arm64` 的多 RID NuGet 包。GitHub Release 是本版支持的不可变分发面；PyPI 和 NuGet.org 仍保持关闭，不把候选或本地 package feed 宣称为公共 registry 发布。
+- Published Asset Verification 从空目录下载平台 runtime/symbol、wheel、多 RID NuGet、SBOM 和 provenance metadata，独立校验 checksum、ELF build-id 或 Mach-O UUID、RID/native hash、clean consumer 以及四类 subject-specific attestation。历史 `v3.6.0` tag 与资产不移动、不替换。
+
 ## v3.6.0 — 多平台生产边界与发行工程（2026-07-23）
 
 ### 证据与发布工程

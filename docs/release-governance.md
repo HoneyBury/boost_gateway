@@ -120,6 +120,12 @@
 | **文档** | README.md, CHANGELOG.md, docs/ 目录下当前维护的文档 |
 | **部署** | deploy/systemd/*.service, deploy/README.md |
 
+`v3.6.1` 起，GitHub Release manifest 还必须包含三平台 stripped runtime、对应
+Linux debug-symbol 或 macOS dSYM、三个 SDK 4.2.0 wheel、一个三 RID NuGet、每个
+二进制/package subject 的 SPDX SBOM、SDK provenance metadata 和总
+`SHA256SUMS.txt`。PyPI/NuGet.org 不属于该发布事务；未配置 trusted publishing 时
+必须保持关闭。
+
 ### 性能基线要求
 
 - echo smoke: P99 ≤ 50ms

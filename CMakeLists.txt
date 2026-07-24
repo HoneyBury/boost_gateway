@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.21)
 
 project(boost_gateway
-    VERSION 3.6.0
+    VERSION 3.6.1
     DESCRIPTION "Enterprise-grade C++20 realtime service framework"
     LANGUAGES CXX
 )
