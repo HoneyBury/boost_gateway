@@ -36,6 +36,7 @@ include_override/
 /.conan2-local/
 /.conan2-macos-arm64/
 /.conan2-lock-*/
+/conan/remotes.local.json
 /.venv/
 /sdk/csharp/bin/
 /sdk/csharp/obj/

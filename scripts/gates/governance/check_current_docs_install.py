@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[3]
 
 REQUIRED_TOP_LEVEL_DOCS = [
     "docs/README.md",
+    "docs/ONBOARDING.md",
     "docs/current-state.md",
     "docs/runner-inventory.md",
     "docs/runner-gate-standard.md",
@@ -69,6 +70,7 @@ def main() -> int:
     cmake = (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     docs_index = (ROOT / "docs/README.md").read_text(encoding="utf-8")
+    onboarding = (ROOT / "docs/ONBOARDING.md").read_text(encoding="utf-8")
     maintenance_plan = (ROOT / "docs/v3.5.x-maintenance-plan.md").read_text(encoding="utf-8")
     freeze_todo = (ROOT / "docs/v3.5.2-freeze-todo.md").read_text(encoding="utf-8")
     changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -77,6 +79,32 @@ def main() -> int:
     add(checks, "release:project-version", bool(version), f"project version={version!r}")
     add(checks, "release:readme-version", f"v{version}" in readme, f"README mentions v{version}")
     add(checks, "release:changelog-version", f"## v{version} " in changelog, f"CHANGELOG has v{version} section")
+    add(
+        checks,
+        "docs:onboarding-indexed",
+        "[开发者入门](ONBOARDING.md)" in docs_index,
+        "the docs index identifies ONBOARDING.md as the new-contributor entrypoint",
+    )
+    add(
+        checks,
+        "docs:onboarding-development-contract",
+        all(
+            token in onboarding
+            for token in (
+                "python3.12 scripts/tools/ensure_conan_venv.py",
+                "--conan-version 2.8.1",
+                "linux-gcc-x64-debug-nogrpc-nosqlite.lock",
+                '"&:with_raft_protobuf=True"',
+                "build/contributor-debug",
+                "scripts/run_tests.py unit",
+                "v2_gateway_demo --script",
+                "## CLion 配置",
+                "--allow-dirty",
+                "当前 `4.2.0`",
+            )
+        ),
+        "onboarding preserves the pinned Conan, build, test, smoke, IDE, Docker and SDK contracts",
+    )
     add(
         checks,
         "release:readme-published-facts",
