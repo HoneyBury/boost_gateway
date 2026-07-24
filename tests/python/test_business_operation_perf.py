@@ -55,10 +55,15 @@ class FakeGateway:
                 connection, _ = self.sock.accept()
             except TimeoutError:
                 continue
+            except OSError:
+                if self.stopped.is_set():
+                    return
+                raise
             threading.Thread(target=self._handle, args=(connection,), daemon=True).start()
 
     def _handle(self, connection: socket.socket) -> None:
         with connection:
+            connection.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             while True:
                 try:
                     request = recv_business_packet(connection)
