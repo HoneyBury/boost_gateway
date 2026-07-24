@@ -3537,7 +3537,7 @@ def main() -> int:
                 "battle_max_frames": battle_max_frames,
                 "backend_connection_pool_size": args.backend_pool_size or int(os.environ.get("V2_BACKEND_CONNECTION_POOL_SIZE", "8")),
                 "battle_frame_push_every": args.battle_frame_push_every or int(os.environ.get("V2_BATTLE_FRAME_PUSH_EVERY", "1")),
-                "battle_route_workers": args.battle_route_workers or int(os.environ.get("V2_BATTLE_ROUTE_WORKERS", "0")),
+                "battle_route_workers": args.battle_route_workers or int(os.environ.get("V2_BATTLE_ROUTE_WORKERS", "8")),
             },
             "cases": [],
             "case_aggregates": [],

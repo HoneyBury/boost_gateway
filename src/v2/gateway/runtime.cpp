@@ -221,7 +221,7 @@ v2::actor::ActorRef Runtime::create_gateway_actor() {
     }
     if (battle_route_worker_count_ == 0) {
         battle_route_worker_count_ = read_uint32_override_allow_zero(
-            "V2_BATTLE_ROUTE_WORKERS", 4);
+            "V2_BATTLE_ROUTE_WORKERS", 8);
     }
     if (battle_route_queue_capacity_ == 0) {
         battle_route_queue_capacity_ = read_nonzero_uint32_override(

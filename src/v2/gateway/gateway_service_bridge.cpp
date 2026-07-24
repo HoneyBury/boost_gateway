@@ -21,7 +21,7 @@ namespace {
 std::size_t backend_connection_pool_size() {
     const char* raw = std::getenv("V2_BACKEND_CONNECTION_POOL_SIZE");
     if (raw == nullptr || raw[0] == '\0') {
-        return 1;
+        return 8;
     }
     const auto parsed = std::strtoul(raw, nullptr, 10);
     return parsed > 0 ? static_cast<std::size_t>(parsed) : 1U;

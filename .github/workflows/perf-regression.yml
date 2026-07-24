@@ -155,10 +155,17 @@ jobs:
           V2_RATE_LIMIT_LOGIN: "50000"
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
+          isolation_args=()
+          if [ "${{ inputs.platform }}" = linux-arm64 ]; then
+            isolation_args+=(--cpu-set 0-7 --loadgen-cpu-set 8-11)
+          fi
           python3 scripts/collect_v2_perf_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --run-preset ${{ inputs.perf_preset || 'baseline' }} \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
+            --backend-pool-size 8 \
+            --battle-route-workers 8 \
+            "${isolation_args[@]}" \
             --output-root "$OUTPUT_DIR" \
             2>&1 | tee perf_run.log
 
