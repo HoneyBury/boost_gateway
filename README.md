@@ -19,6 +19,7 @@
   - `v3.5.1` 发布包、增强 R0、tag publish 与线上资产独立验签通过
   - `v3.5.2` 同 SHA Release/R0、clean CMake consumer、tag publish/attestations 与双 runner 线上资产验收通过
   - `v3.5.3` 已在同一冻结 SHA 完成 Release/R0、2h/8h、Redis/Raft 恢复、告警生命周期、R2/R3、tag publish 和线上资产独立验签；历史容量与 TLS/OTel 数据按各自证据边界使用，不视为当前候选的冻结结论
+  - `v3.6.2` 已发布三平台 runtime、debug-symbol/dSYM、SDK 4.2.0 wheel、多 RID NuGet、逐 subject SPDX/attestation 与总 checksum；三平台线上独立消费和符号绑定复验均通过
 
 ## 发布事实与边界
 

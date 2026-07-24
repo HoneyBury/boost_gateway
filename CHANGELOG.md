@@ -9,6 +9,7 @@
 - 修复 Release workflow 将 wheel SBOM glob 直接传给 `actions/attest` 导致文件无法解析的问题；workflow 现在先验证唯一 wheel/SBOM 对，再向 provenance 与 SBOM attestation 传递精确路径。
 - `v3.6.1` tag 固定在 `a0da5fab7e7fe91cf8096243fea869742eb195ba`，其三平台 package 均在 wheel SBOM attestation 处 fail closed，NuGet/publish 未执行且没有创建 GitHub Release。该 tag 不移动、不删除，修复只通过新的不可变 `v3.6.2` 发布。
 - 继承 `v3.6.1` 候选的 ARM 尾延迟优化、三平台 SDK 4.2.0 wheel/多 RID NuGet、runtime-symbol 精确配对、SPDX 与独立线上复验能力；`v3.6.0` 资产仍不覆盖。
+- `v3.6.2` annotated tag 固定在 `ac99ae353a2a6e846f934c8d81c78a07f420f683`；Release run `30063021104` 的三平台 package、NuGet 与 publish 全部成功并发布 25 个资产。Linux x64、Linux ARM64、macOS ARM64 线上独立复验 runs `30063950242`、`30063441646`、`30063444082` 均通过。
 
 ## v3.6.1 — ARM 尾延迟与不可变 SDK/符号资产（2026-07-24）
 

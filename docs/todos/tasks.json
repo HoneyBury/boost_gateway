@@ -84,17 +84,17 @@
     {
       "id": "TODO-0005",
       "title": "Increase Linux ARM64 performance headroom",
-      "status": "open",
+      "status": "completed",
       "priority": "P2",
       "category": "platform-performance",
-      "description": "The frozen v3.6.0 Linux ARM64 Release passed the existing three-run median gate, but battle-100 produced 250/250/300ms and therefore has no margin below the 250ms limit. Improve attribution and headroom without weakening thresholds or rewriting v3.6.0 evidence.",
+      "description": "Linux ARM64 attribution run 30058635595 isolated the historical tail to Gateway route queue/topology, not backend CPU. Isolated runs 30059535441 and 30061707672 used pool/workers 8/8 and disjoint service/loadgen CPU sets; battle-100 P99 was 10/10/10ms with zero rejected/failed and the 250ms gate unchanged. The optimization shipped only in immutable v3.6.2.",
       "acceptance_criteria": [
         "A fixed isolated Linux ARM64 run records service/load-generator resources and at least three valid battle-100 repetitions with no infrastructure contention.",
         "The cause of the 300ms tail sample is attributed to runtime, kernel/VM scheduling, topology, or measurement granularity with reproducible evidence.",
         "Any optimization preserves the 250ms gate, passes the full platform regression matrix, and is released only in a new version."
       ],
       "created_at": "2026-07-23T17:00:41Z",
-      "completed_at": null,
+      "completed_at": "2026-07-24T03:28:50Z",
       "github": {
         "issue_number": 19,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/19"
@@ -103,17 +103,17 @@
     {
       "id": "TODO-0006",
       "title": "Publish immutable SDK and symbol assets",
-      "status": "open",
+      "status": "completed",
       "priority": "P2",
       "category": "release-assets",
-      "description": "Frozen-SHA SDK 4.2.0 wheel/NuGet and Linux debug-symbol/macOS dSYM candidate workflows pass, but those packages are not part of the v3.6.0 GitHub Release manifest. Add them only through a new immutable v3.6.x release with subject-specific supply-chain evidence.",
+      "description": "Immutable v3.6.2 Release run 30063021104 published 25 runtime, symbol/dSYM, SDK 4.2.0 wheel, multi-RID NuGet, SPDX, provenance and checksum assets. Linux x64, Linux ARM64 and macOS ARM64 independent published-asset runs 30063950242, 30063441646 and 30063444082 passed; PyPI/NuGet.org and Apple notarization remain separate activation boundaries.",
       "acceptance_criteria": [
         "The release workflow publishes supported wheel/NuGet and runtime/symbol pairs with platform-specific names, checksums, SPDX SBOMs, provenance and SBOM attestations.",
         "Published-asset verification independently downloads each package, validates RID or build-id/UUID binding, and runs a clean no-source consumer or symbolization probe.",
         "Compatibility and release notes distinguish supported assets from candidate RIDs, PyPI/NuGet.org remain blocked without trusted publishing, and v3.6.0 assets are never overwritten."
       ],
       "created_at": "2026-07-23T17:01:04Z",
-      "completed_at": null,
+      "completed_at": "2026-07-24T03:29:00Z",
       "github": {
         "issue_number": 20,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/20"

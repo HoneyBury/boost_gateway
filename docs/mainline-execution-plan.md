@@ -16,7 +16,7 @@
 | P1 | 单核 `io_cores` 单变量实验 | 同一 fixed-case 的 `io_cores=1/2/4` 三轮对照 | loadgen 隔离且其它参数固定；只有聚合决策支持且人工评审通过后才调整默认或部署配置 |
 | P1 | 长任务中断取证 | 原子 checkpoint、取消 summary、完整子进程组清理 | SIGINT/SIGTERM 可记录当前步骤、连续时长、完成轮数和资源样本；中断段不得累计成 2h/8h 通过 |
 | P1 | SBOM 语义质量 | 非占位文件 hash、依赖组件/version 清单和发布前/发布后门禁 | 禁止全零 checksum；运行时资产与 Conan 依赖可追溯；签名验证与内容质量分别阻断 |
-| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 五项 ADR 和 P0-P6 仓库内实现已完成；fixed-runner、真实外部依赖和不可变发布资产证据尚待补齐，未满足各 ADR 退出条件前不进入默认生产链路 |
+| P2 | 下一 minor ADR | 身份、SDK 分发、Raft schema、平台/符号包决策 | 五项 ADR、P0-P6 仓库内实现、ARM 性能余量和 `v3.6.2` SDK/符号不可变资产证据已完成；registry、notarization 与默认协议激活仍按各 ADR 独立阻断 |
 
 ## 执行顺序
 
@@ -35,7 +35,7 @@
 - 三平台 published-asset verification runs `30026727708`、`30026727913`、`30027061993` 均通过。Mac 首次 run `30026727581` 只因 verifier 错误解析官方 GitHub CLI zip 路径失败；post-release 修复 `4e47754` 增加了版本目录并由 workflow catalog 契约覆盖，未移动 tag 或修改资产。
 - Linux ARM64 Release run `30024521097` 三轮 `battle-100` P99 为 `250/250/300ms`，正式中位 gate `250ms` 通过但余量为零；后续优化不得放宽阈值。macOS 2h run `30013982216` 实际 `7213.991s` 且 `overall_pass=true`。
 - P2 归因 run `30058635595` 将尾延迟定位到实际单连接/4 worker 的 Gateway route queue，而非 backend CPU；隔离复测 `30059535441` 显式使用 pool/worker `8/8` 和 service/loadgen `0-7`/`8-11`，`battle-100` 三轮 P99 为 `10/10/10ms`，门槛保持 `250ms`。
-- SDK wheel/NuGet 与 Linux debug-symbol/macOS dSYM 有冻结 SHA 候选 workflow 证据，但未进入 `v3.6.0` GitHub Release manifest；在新的版本完成独立 attestation 与线上消费前继续保持 blocked。
+- `v3.6.2` tag 固定在 `ac99ae353a2a6e846f934c8d81c78a07f420f683`；Release run `30063021104` 发布 25 个 runtime/symbol/SDK/SBOM/provenance/checksum 资产，三平台线上复验 runs `30063950242`、`30063441646`、`30063444082` 全部通过。GitHub Release SDK/符号资产不再 blocked；PyPI/NuGet.org 与 Apple notarization 继续独立阻断。
 - `v3.5.3` tag Release run `29708970775` 成功，GitHub Release 包含 Linux x64 tarball、SPDX SBOM 和 `SHA256SUMS.txt`。
 - 同 SHA 8h run `29711044558` 连续执行 `28801.652s`，完成 3207 轮；960 个资源样本覆盖 `28801.542s`，最大间隔 `30.073s`，FD 起止均为 4。
 - 线上资产验证 run `29740136895` 的 checksum、archive layout、离线 runtime consumer、provenance attestation 和 SBOM attestation 全部通过。
@@ -69,4 +69,4 @@
 
 ## 阶段退出条件
 
-P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成。下一 minor 的五项 ADR 与 P0-P6 仓库内候选实现也已完成，但这不代表默认激活或发布资产已经交付。下一步只收集 `docs/v3.6-implementation-status.md` 列出的同 SHA 外部证据；任何默认链路变化仍必须等待对应退出条件。既有 P0/P1 容量证据的事实锚点始终是 `37897e8`，不能用后续实现提交或 `v3.5.3` tag 代替。
+P0/P1 的六项证据工程已经在运行时候选 `37897e8` 上完成。下一 minor 的五项 ADR、P0-P6 仓库内实现、ARM 性能余量和 `v3.6.2` GitHub Release SDK/符号资产闭环也已完成。默认 Raft protobuf writer、公共 package registry 与 Apple notarization 不因 GitHub Release 完成而自动激活，仍必须等待各自退出条件。既有 P0/P1 容量证据的事实锚点始终是 `37897e8`，不能用后续实现提交或历史 tag 代替。
