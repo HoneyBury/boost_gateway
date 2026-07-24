@@ -21,7 +21,12 @@
     "scripts/verify_tls_preprod_multi_run.py",
     "scripts/verify_macos_arm64_package.py",
     "scripts/verify_jwks_rotation.py",
-    "scripts/manage_todos.py"
+    "scripts/manage_todos.py",
+    "scripts/check_operations_host.py",
+    "scripts/apply_operations_host_baseline.py",
+    "scripts/prepare_release_runtime.py",
+    "scripts/build_release_images.py",
+    "scripts/verify_release_deployment.py"
   ],
   "scripts": {
     "scripts/README.md": {"category": "tool"},
@@ -35,6 +40,10 @@
     "scripts/bootstrap_conan.py": {"category": "tool", "canonical": "scripts/tools/bootstrap_conan.py"},
     "scripts/build_docker.py": {"category": "tool", "canonical": "scripts/tools/build_docker.py"},
     "scripts/tools/prepare_docker_runtime_context.py": {"category": "tool"},
+    "scripts/tools/prepare_release_runtime.py": {"category": "tool"},
+    "scripts/tools/build_release_images.py": {"category": "tool"},
+    "scripts/tools/check_release_compose.py": {"category": "tool"},
+    "scripts/tools/verify_release_deployment.py": {"category": "tool"},
     "scripts/tools/harden_release_sbom.py": {"category": "tool"},
     "scripts/deploy_k8s.py": {"category": "tool", "canonical": "scripts/tools/deploy_k8s.py"},
     "scripts/gen_certs.py": {"category": "tool", "canonical": "scripts/tools/gen_certs.py"},
@@ -88,6 +97,11 @@
 
     "scripts/check_fixed_runner_environment.py": {"category": "aggregate_gate", "canonical": "scripts/gates/infrastructure/check_fixed_runner_environment.py"},
     "scripts/check_fixed_runner_evidence_plan.py": {"category": "aggregate_gate", "canonical": "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py"},
+    "scripts/check_operations_host.py": {"category": "public_entrypoint", "canonical": "scripts/gates/infrastructure/check_operations_host.py"},
+    "scripts/apply_operations_host_baseline.py": {"category": "public_entrypoint", "canonical": "scripts/gates/infrastructure/apply_operations_host_baseline.py"},
+    "scripts/prepare_release_runtime.py": {"category": "public_entrypoint", "canonical": "scripts/tools/prepare_release_runtime.py"},
+    "scripts/build_release_images.py": {"category": "public_entrypoint", "canonical": "scripts/tools/build_release_images.py"},
+    "scripts/verify_release_deployment.py": {"category": "public_entrypoint", "canonical": "scripts/tools/verify_release_deployment.py"},
 
     "scripts/check_operator_manifests.py": {"category": "aggregate_gate", "canonical": "scripts/gates/k8s/check_operator_manifests.py"},
     "scripts/verify_k8s_full_flow.py": {"category": "aggregate_gate", "canonical": "scripts/gates/k8s/verify_k8s_full_flow.py"},

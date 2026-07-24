@@ -1,0 +1,32 @@
+# Runtime-only image built from a verified Linux x64 release staging directory.
+# The build context must contain bin/, config/, and manifest.json.
+FROM ubuntu@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
+
+ARG RELEASE_TAG
+ARG RELEASE_REVISION
+ARG RELEASE_ASSET_SHA256
+ARG RELEASE_CONFIG_SHA256
+
+LABEL org.opencontainers.image.title="BoostGateway Gateway" \
+      org.opencontainers.image.source="https://github.com/HoneyBury/boost_gateway" \
+      org.opencontainers.image.version="${RELEASE_TAG}" \
+      org.opencontainers.image.revision="${RELEASE_REVISION}" \
+      io.boost-gateway.release.asset.sha256="${RELEASE_ASSET_SHA256}" \
+      io.boost-gateway.release.config.sha256="${RELEASE_CONFIG_SHA256}"
+
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+WORKDIR /app
+
+COPY bin/v2_gateway_demo /app/bin/v2_gateway_demo
+COPY config/ /app/config/
+COPY manifest.json /app/release-manifest.json
+
+EXPOSE 9201 9080
+
+HEALTHCHECK --interval=10s --timeout=3s --retries=3 --start-period=10s \
+    CMD timeout 2 bash -c '</dev/tcp/127.0.0.1/${MANAGEMENT_PORT:-9080}' || exit 1
+
+ENTRYPOINT ["/app/bin/v2_gateway_demo"]
+CMD ["--http-port", "9080"]

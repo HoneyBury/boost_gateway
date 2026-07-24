@@ -1,0 +1,352 @@
+name: boost-gateway-production
+
+networks:
+  boost-net:
+    driver: bridge
+
+volumes:
+  gateway-logs:
+    name: boost-gateway-production-gateway-logs
+  login-logs:
+    name: boost-gateway-production-login-logs
+  room-logs:
+    name: boost-gateway-production-room-logs
+  battle-logs:
+    name: boost-gateway-production-battle-logs
+  match-logs:
+    name: boost-gateway-production-match-logs
+  leaderboard-logs:
+    name: boost-gateway-production-leaderboard-logs
+  redis-data:
+    name: boost-gateway-production-redis-data
+  prometheus-data:
+    name: boost-gateway-production-prometheus-data
+  alertmanager-data:
+    name: boost-gateway-production-alertmanager-data
+  grafana-data:
+    name: boost-gateway-production-grafana-data
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  pull_policy: never
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "5"
+
+x-backend-defaults: &backend-defaults
+  <<: *service-defaults
+  networks:
+    - boost-net
+  pids_limit: 256
+  mem_limit: 768m
+  cpus: 1.0
+  ulimits:
+    nofile:
+      soft: 32768
+      hard: 32768
+
+services:
+  gateway:
+    <<: *service-defaults
+    image: ${GATEWAY_IMAGE_ID:?GATEWAY_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-gateway
+    networks:
+      - boost-net
+    ports:
+      - "${GATEWAY_HOST_BIND:-0.0.0.0}:9201:9201"
+      - "127.0.0.1:9080:9080"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/gateway.json
+      MANAGEMENT_PORT: "9080"
+      V2_BACKEND_CONNECTION_POOL_SIZE: "8"
+      V2_BATTLE_ROUTE_WORKERS: "8"
+      BOOST_LOG_LEVEL: info
+      OTEL_EXPORT_ENDPOINT: ${OTEL_EXPORT_ENDPOINT:-}
+    volumes:
+      - gateway-logs:/app/logs
+    pids_limit: 512
+    mem_limit: 1024m
+    cpus: 2.0
+    ulimits:
+      nofile:
+        soft: 65535
+        hard: 65535
+    command:
+      - --http-port
+      - "9080"
+      - --login-host
+      - login-backend
+      - --login-port
+      - "9202"
+      - --room-host
+      - room-backend
+      - --room-port
+      - "9302"
+      - --battle-host
+      - battle-backend
+      - --battle-port
+      - "9303"
+      - --matchmaking-host
+      - matchmaking-backend
+      - --matchmaking-port
+      - "9304"
+      - --leaderboard-host
+      - leaderboard-backend
+      - --leaderboard-port
+      - "9305"
+    depends_on:
+      login-backend:
+        condition: service_healthy
+      room-backend:
+        condition: service_healthy
+      battle-backend:
+        condition: service_healthy
+      matchmaking-backend:
+        condition: service_healthy
+      leaderboard-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9080'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  login-backend:
+    <<: *backend-defaults
+    image: ${LOGIN_IMAGE_ID:?LOGIN_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-login-backend
+    ports:
+      - "127.0.0.1:9202:9202"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/login.json
+      SERVICE_PORT: "9202"
+      BOOST_LOG_LEVEL: info
+    volumes:
+      - login-logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9202'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  room-backend:
+    <<: *backend-defaults
+    image: ${ROOM_IMAGE_ID:?ROOM_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-room-backend
+    ports:
+      - "127.0.0.1:9302:9302"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/room.json
+      SERVICE_PORT: "9302"
+      BOOST_LOG_LEVEL: info
+    volumes:
+      - room-logs:/app/logs
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9302'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  battle-backend:
+    <<: *backend-defaults
+    image: ${BATTLE_IMAGE_ID:?BATTLE_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-battle-backend
+    ports:
+      - "127.0.0.1:9303:9303"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/battle.json
+      SERVICE_PORT: "9303"
+      BOOST_LOG_LEVEL: info
+    volumes:
+      - battle-logs:/app/logs
+    mem_limit: 1024m
+    cpus: 1.5
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9303'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  matchmaking-backend:
+    <<: *backend-defaults
+    image: ${MATCHMAKING_IMAGE_ID:?MATCHMAKING_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-matchmaking-backend
+    ports:
+      - "127.0.0.1:9304:9304"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/matchmaking.json
+      SERVICE_PORT: "9304"
+      BOOST_LOG_LEVEL: info
+    volumes:
+      - match-logs:/app/logs
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9304'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  leaderboard-backend:
+    <<: *backend-defaults
+    image: ${LEADERBOARD_IMAGE_ID:?LEADERBOARD_IMAGE_ID must be an immutable sha256 image ID}
+    container_name: boost-leaderboard-backend
+    ports:
+      - "127.0.0.1:9305:9305"
+    environment:
+      CONFIG_PATH: /app/config/environments/docker/leaderboard.json
+      SERVICE_PORT: "9305"
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      BOOST_LOG_LEVEL: info
+    volumes:
+      - leaderboard-logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "timeout 2 bash -c '</dev/tcp/127.0.0.1/9305'"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  redis:
+    <<: *service-defaults
+    image: redis:7-alpine
+    container_name: boost-redis
+    networks:
+      - boost-net
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6380}:6379"
+    volumes:
+      - redis-data:/data
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    command: ["redis-server", "--appendonly", "no", "--save", "900", "1", "--save", "300", "10"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  redis-exporter:
+    <<: *service-defaults
+    image: oliver006/redis_exporter:v1.69.0
+    container_name: boost-redis-exporter
+    networks:
+      - boost-net
+    ports:
+      - "127.0.0.1:9121:9121"
+    environment:
+      REDIS_ADDR: redis://redis:6379
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/redis_exporter", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  prometheus:
+    <<: *service-defaults
+    image: prom/prometheus:v2.53.0
+    container_name: boost-prometheus
+    networks:
+      - boost-net
+    ports:
+      - "127.0.0.1:9090:9090"
+    volumes:
+      - ../../env/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../../env/monitoring/prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro
+      - prometheus-data:/prometheus
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=30d
+    depends_on:
+      gateway:
+        condition: service_healthy
+      redis-exporter:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/bin/prometheus", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  alertmanager:
+    <<: *service-defaults
+    image: prom/alertmanager:v0.28.1
+    container_name: boost-alertmanager
+    networks:
+      - boost-net
+    ports:
+      - "127.0.0.1:9093:9093"
+    volumes:
+      - ../../env/monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    pids_limit: 128
+    mem_limit: 256m
+    cpus: 0.5
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    healthcheck:
+      test: ["CMD", "/bin/alertmanager", "--version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  grafana:
+    <<: *service-defaults
+    image: grafana/grafana:10.4.2
+    container_name: boost-grafana
+    networks:
+      - boost-net
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../../env/monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro
+      - ../../env/monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro
+      - ../../env/monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

@@ -142,7 +142,7 @@
     {
       "id": "TODO-0008",
       "title": "Admit and harden the Ubuntu x64 operations host",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "host-admission",
       "description": "Create a fail-closed admission and security baseline for the Ubuntu 24.04 x64 host so long-run evidence cannot begin on an unknown, sleeping, thermally throttled, exposed, or storage-unsafe machine.",
@@ -153,7 +153,7 @@
         "A real host reboot restores systemd, Compose, monitoring and the service topology without an interactive login."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-07-24T16:55:05Z",
       "github": {
         "issue_number": 22,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/22"
@@ -162,7 +162,7 @@
     {
       "id": "TODO-0009",
       "title": "Deploy immutable release assets without compiling on the server",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "single-node-deployment",
       "description": "Extend the Docker runtime preparation path to consume an immutable Linux x64 GitHub Release directly, eliminating Conan and CMake compilation from the long-running production-validation host.",
@@ -173,7 +173,7 @@
         "A clean admitted host can reach healthy services and pass SDK full-flow without a source build or public Conan access."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-07-24T16:41:33Z",
       "github": {
         "issue_number": 23,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/23"

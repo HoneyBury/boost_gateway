@@ -22,6 +22,17 @@
 [主线执行计划](mainline-execution-plan.md)与
 [单节点运营计划](single-node-enterprise-validation-plan.md)。
 
+项目待办以 `docs/todos/tasks.json` 为版本化事实源，`docs/todos/BOARD.md` 提供生成视图。
+`TODO-0008` 已在 Ubuntu 24.04 x64 目标主机真实完成：baseline、SMART/thermal、端口与
+权限准入通过；boot ID 从 `347f0099-eaa5-4f0e-a0e8-7a93803e0f6d` 变为
+`3872f22c-1b67-4d29-8c04-280a58619c6e` 后，systemd 在无交互登录条件下恢复 Compose、
+11 个 healthy 容器、监控和端口拓扑，正式 `verify-reboot` summary 为 PASS。
+
+`TODO-0009` 也已在同一目标机真实完成：v3.6.2 的 tag/commit/checksum/SLSA/SPDX/ELF
+校验、固定 Ubuntu digest 的六个 runtime-only image、不可变项目 image ID 的生产 Compose
+和 release SDK full-flow 均通过，全程没有源码构建或公共 Conan 访问。目标机证据位于
+`/var/lib/boost-gateway-evidence/release/`，主线下一项为 `TODO-0010` 的幂等安装、升级和回滚。
+
 ## 默认生产链路
 
 默认生产主链仍是 SDK + TCP gateway + `BackendEnvelope` + Login/Room/Battle/

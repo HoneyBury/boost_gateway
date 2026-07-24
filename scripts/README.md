@@ -44,6 +44,11 @@ Use these stable public entrypoints first:
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
 - `verify_jwks_rotation.py` for the real HTTPS multi-`kid` rotation, stale-grace, outage, and rollback drill.
 - `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
+- `check_operations_host.py` for fail-closed Ubuntu operations-host admission and real reboot verification.
+- `apply_operations_host_baseline.py` for the explicit plan/apply surface that converges the admitted host security baseline.
+- `prepare_release_runtime.py` for anonymous download, supply-chain verification, and atomic Linux x64 release staging.
+- `build_release_images.py` for network-disabled runtime-only image builds and immutable image-ID output.
+- `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
 
 R5 offline-cache execution order:
 
