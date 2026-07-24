@@ -73,7 +73,7 @@ Conan 可执行文件也是可追溯构建输入，而不是由系统 Python 隐
 
 ```bash
 # 开发 checkout
-python3 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
+python3.12 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
 source .venv/conan-2.8.1/bin/activate
 
 # Ubuntu runner，预热前执行一次

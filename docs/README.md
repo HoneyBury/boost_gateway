@@ -2,61 +2,86 @@
 
 更新时间：2026-07-24
 
-本文档是 BoostGateway 项目的文档入口。当前事实源以 `current-state.md` 为准。
+`docs/` 顶层只保留当前仍维护的事实源、规范、计划和操作手册。已经结束的版本计划、
+交付记录和旧 runbook 进入 [`docs/archive/`](archive/README.md)，不作为当前事实源，
+也不得作为当前实施依据。
 
-## 核心文档
+## 从这里开始
 
-| 文档 | 用途 |
+| 读者/任务 | 入口 |
 |---|---|
-| [开发者入门](ONBOARDING.md) | **新贡献者从这里开始** — 环境搭建、构建、测试、开发工作流、编码规范、协议/SDK/demo 开发指南 |
-| [当前状态](current-state.md) | 已实现能力的权威事实源 |
-| [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
-| [项目蓝图](project-blueprint.md) | 中长期规划和决策门禁 |
-| [生产平台边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的 workflow、R5、Docker、Conan 与发布证据契约 |
-| [执行计划](mainline-execution-plan.md) | 当前版本执行计划和阶段状态 |
-| [企业级单机运营与 30 天验证计划](single-node-enterprise-validation-plan.md) | 两个月自动部署、治理、可观测、恢复和冻结运行路线图 |
-| [v3.6 决策清单](decisions/v3.6-decision-manifest.json) | 下一 minor 的身份、SDK、Raft schema、平台和符号包 ADR 状态与实现阻断条件 |
-| [v3.5.x 维护计划](v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 的补丁版本边界、顺序和冻结条件 |
-| [v3.5.2 历史冻结清单](v3.5.2-freeze-todo.md) | 已关闭的第二 runner、同资产复验和最终 tag 冻结记录；不属于当前待办 |
-| [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
-| [Legacy / Helper 清单](legacy/legacy-helper-inventory.md) | 当前保留的 legacy/helper 兼容面与治理边界 |
+| 新贡献者 | [开发者入门](ONBOARDING.md) |
+| 了解当前能力和边界 | [当前状态](current-state.md) |
+| 理解组件和请求链路 | [架构总览](architecture-overview.md) |
+| 查看当前执行优先级 | [主线执行计划](mainline-execution-plan.md) |
+| 部署和运维 | [部署文档](deployment/) |
+
+## 当前事实与规划
+
+| 文档 | 维护范围 |
+|---|---|
+| [当前状态](current-state.md) | 已发布版本、已实现能力、默认链路、当前阻断和主任务 |
+| [架构总览](architecture-overview.md) | 组件、端口、数据流、代码边界和部署模型 |
+| [项目蓝图](project-blueprint.md) | 六个月以上的方向、取舍原则和长期门禁 |
+| [主线执行计划](mainline-execution-plan.md) | v3.6.2 发布后两个月的具体执行顺序 |
+| [单节点运营与 30 天验证](single-node-enterprise-validation-plan.md) | 自动部署、SLI/SLO、备份恢复、72 小时预演和 30 天运行契约 |
+| [平台生产边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的不可互换证据边界 |
+| [平台边界清单](platform-production-boundaries.json) | 平台契约的机器可读事实源 |
+| [TODO Board](todos/BOARD.md) | 当前版本化任务状态；由 `tasks.json` 生成 |
+
+## 开发与治理
+
+| 文档 | 维护范围 |
+|---|---|
+| [开发者入门](ONBOARDING.md) | Conan/CMake、测试、CLion、编码规范、协议和 SDK 开发 |
+| [发布治理](release-governance.md) | 可靠性矩阵、发布门禁、产物和阻断条件 |
+| [性能基线](performance-baseline.md) | 测量命令、有效证据、历史数据和容量声明边界 |
+| [TLS/mTLS Runbook](tls-mtls-runbook.md) | TLS profile、证书、验证、轮换和回滚 |
+| [Legacy/Helper 清单](legacy/legacy-helper-inventory.md) | 当前仍保留的兼容面和删除条件 |
+| [脚本索引](script-inventory.json) | public entrypoint、gate、producer、tool 和 legacy 分类 |
+
+## Runner 与生产证据
+
+| 文档 | 维护范围 |
+|---|---|
+| [Runner Inventory](runner-inventory.md) | 当前 runner 身份、在线状态和平台能力 |
+| [Runner Gate Standard](runner-gate-standard.md) | 命名、标签、准入生命周期和缓存隔离规则 |
+| [固定 Runner 手册](fixed-runner-playbook.md) | Conan/Docker 预热、R4/R5/R6 和专项证据操作 |
+| [生产证据](production/) | 当前 manifest 和恢复演练模板 |
+
+## 决策与配置
+
+| 目录 | 内容 |
+|---|---|
+| [decisions/](decisions/) | 已接受 ADR；接受不等于默认激活，当前状态以 decision manifest 为准 |
+| [v3.6 decision manifest](decisions/v3.6-decision-manifest.json) | 身份、SDK、Raft、macOS ARM64 和符号决策的机器可读状态 |
+| [deployment/](deployment/) | 快速部署、生产配置、发布、运维和迁移 runbook |
+| [legacy/](legacy/) | 仍受治理的兼容清单和预案，不是新功能入口 |
+
+## 历史归档
+
+以下文档记录已经结束的版本工作，只用于追溯：
+
+| 文档 | 历史范围 |
+|---|---|
+| [v3.5.x 维护计划](archive/releases/v3.5.x-maintenance-plan.md) | v3.5.1-v3.5.3 补丁版本计划与结果 |
+| [v3.5.2 冻结清单](archive/releases/v3.5.2-freeze-todo.md) | 第二 runner、发布和资产复验清单 |
+| [v3.6 实现状态](archive/releases/v3.6-implementation-status.md) | v3.6.0-v3.6.2 P0-P6 交付和跨平台证据 |
+| [完整归档索引](archive/README.md) | v1/v2 历史、旧计划、流程、release 和 runbook |
 
 ## 贡献入口
 
 | 资源 | 用途 |
 |---|---|
-| [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md) | 提交 PR 时的检查清单 |
-| [Bug 报告](../.github/ISSUE_TEMPLATE/bug_report.md) | 报告可复现的缺陷 |
-| [功能请求](../.github/ISSUE_TEMPLATE/feature_request.md) | 提议新能力或改进 |
+| [PR 模板](../.github/PULL_REQUEST_TEMPLATE.md) | PR 检查清单 |
+| [Bug 报告](../.github/ISSUE_TEMPLATE/bug_report.md) | 可复现缺陷 |
+| [功能请求](../.github/ISSUE_TEMPLATE/feature_request.md) | 新能力或改进建议 |
+| [提交规范](../.github/COMMIT_CONVENTION.md) | Conventional Commit 格式和 scope |
 
-## 发布与可靠性
+## 事实优先级
 
-| 文档 | 用途 |
-|---|---|
-| [发布治理](release-governance.md) | 可靠性矩阵 + 发布检查清单 |
-| [性能基线](performance-baseline.md) | 性能数据和归档口径 |
-| [固定 Runner 手册](fixed-runner-playbook.md) | 固定 runner 操作指南 |
-| [Runner Gate Standard](runner-gate-standard.md) | runner 命名、标签、Conan/Docker 缓存与 R5 证据准入规范 |
-| [Runner Inventory](runner-inventory.md) | runner 在线状态与默认 fixed-runner 阻断说明 |
-
-## 安全与传输
-
-| 文档 | 用途 |
-|---|---|
-| [TLS/mTLS Runbook](tls-mtls-runbook.md) | 传输安全配置和运维 |
-
-## 子目录
-
-| 目录 | 内容 |
-|---|---|
-| [deployment/](deployment/) | 部署快速入门、生产部署/运维/配置 Runbook |
-| [production/](production/) | 生产候选证据 manifest、恢复演练模板 |
-| [decisions/](decisions/) | 已接受的下一 minor ADR 与机器可校验决策清单；接受决策不代表对应能力已交付 |
-| [legacy/](legacy/) | Legacy helper 清单、控制面预案、脚本整合计划 |
-| [archive/](archive/) | 历史版本文档（仓库路径 `docs/archive/`，仅供参考，不作为当前事实源） |
-
-## 文档优先级规则
-
-1. 如果本文档与其他文档冲突，以 `current-state.md` 为准
-2. 蓝图规划以 `project-blueprint.md` 为准
-3. 归档文档 (`archive/`) 仅用于历史追溯，不代表当前实现
+1. 已实现能力和当前边界以 [current-state.md](current-state.md) 为准。
+2. 当前两个月执行顺序以 [mainline-execution-plan.md](mainline-execution-plan.md) 为准。
+3. 六个月以上方向以 [project-blueprint.md](project-blueprint.md) 为准。
+4. runner 在线状态以 [runner-inventory.md](runner-inventory.md) 为准。
+5. `archive/` 仅用于历史追溯；与当前文档冲突时一律服从当前事实源。

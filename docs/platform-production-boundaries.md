@@ -1,61 +1,78 @@
 # Production Platform Boundaries
 
-项目维护三个彼此独立的原生生产边界：`linux-x64`、`linux-arm64` 和
-`macos-arm64`。`docs/platform-production-boundaries.json` 是机器可校验的能力与
-迁移状态清单；`implemented` 才表示当前证据链已经闭环，`foundation` 和 `planned`
-都不能用于发布声明。
+更新时间：2026-07-24
 
-| 平台 | 原生产物 | R5 运行模型 | 当前状态 |
+BoostGateway 维护三个彼此独立的原生生产平台。机器可读事实源是
+[`platform-production-boundaries.json`](platform-production-boundaries.json)；本文档解释
+发布和证据边界。
+
+## 当前状态
+
+| 平台 | 原生产物 | 容器/运行模型 | v3.6.2 状态 |
 |---|---|---|---|
-| `linux-x64` | ELF x86_64 | `linux/amd64` Docker Compose 或原生进程 | 已实现的生产事实源 |
-| `linux-arm64` | ELF ARM64 | `linux/arm64` Docker Compose 或原生进程 | 生产候选；Conan、R5/R6、JWKS、SDK、符号、Release/R0、三轮基线、容量/R4 与 2h soak 已有预冻结证据，等待 frozen-SHA refresh 和发布资产 |
-| `macos-arm64` | Mach-O ARM64 | 原生进程编排，重启 gateway 后复跑 SDK full-flow | 生产候选；原生 R5、JWKS、SDK/dSYM、Release/R0、三轮基线、容量/R4 与 2h soak 已有预冻结证据，等待 frozen-SHA refresh 和 notarized 发布资产 |
+| `linux-x64` | ELF x86_64 | 原生进程或 `linux/amd64` Compose | runtime、SDK、debug symbols 已发布复验 |
+| `linux-arm64` | ELF ARM64 | 原生进程或 `linux/arm64` Compose | runtime、SDK、debug symbols 已发布复验 |
+| `macos-arm64` | Mach-O ARM64 | macOS 原生进程编排 | runtime、SDK、dSYM 已发布复验；未声明 notarized |
 
-Docker 只产生 Linux container。Mac runner 上的 Docker daemon 即使能够运行
-`linux/arm64` 或仿真的 `linux/amd64` image，也不等同于 macOS 生产验证。macOS
-生产证据必须运行 Apple Clang 构建的 Mach-O 服务；Linux ARM64 生产证据必须运行
-ARM64 ELF 和 `linux/arm64` image。不同平台的 R5、长稳、容量、性能阈值和发布资产
-不得互相替代或拼接。
+v3.6.2 Release run `30063021104` 生成三平台 runtime、SDK、symbol/dSYM、SPDX、
+provenance 和 checksum 资产。线上复验 runs `30063950242`、`30063441646`、
+`30063444082` 分别在目标平台完成独立消费。详细交付记录位于
+[v3.6 实现状态归档](archive/releases/v3.6-implementation-status.md)。
 
-两种 ARM64 runner 的 strict-offline Conan、原生 R5、JWKS、SDK package、符号资产、
-Release/R0、三轮性能基线、容量/R4 和 2h soak 预冻结证据已经完成。当前迁移顺序
-变为：冻结一个 SHA 并刷新三个平台的 required evidence，随后扩展 release manifest、
-notarization、线上资产复验和按平台汇聚的 readiness decision。
+## 不可替代原则
 
-默认分支已把 `release.yml`、
-`production-candidate-evidence.yml`、`perf-regression.yml`、
-`long-soak-capacity.yml`、`production-gates.yml`、`production-readiness.yml` 和
-`release-asset-verification.yml` 接入统一的原生平台解析契约。解析器在 job 内校验
-真实 OS/CPU，并固定 profile、Release/Debug lockfile、cache root、build directory、
-Docker target 和 artifact suffix。tag Release 使用三平台矩阵；发布汇总要求恰好三份
-archive 和三份 SPDX。ARM Release/R0/baseline/soak/capacity 已有预冻结运行事实；
-该路由状态仍不能替代冻结 SHA 或已发布资产证据。
+- macOS 证据必须运行 Apple Clang 生成的 Mach-O；Mac 上的 Linux VM/Docker 结果不等于
+  macOS runtime 证据。
+- Linux ARM64 证据必须运行 ARM64 ELF 和 `linux/arm64` image；Rosetta 或 amd64 image
+  不能替代。
+- Linux x64、Linux ARM64、macOS ARM64 的 R5、性能、长稳、SDK、符号和发布消费结果
+  不得跨平台拼接。
+- GitHub-hosted runner 可执行有界治理或聚合任务，但不能替代要求固定机器、原生 ABI、
+  Docker cache 或性能隔离的证据。
 
-macOS 路径拒绝 Linux CPU affinity、kind 和 Redis Docker comparison 等 Linux 专属
-开关；其 package consumer 直接检查 Mach-O ARM64、C ABI 和原生 CMake consumer。
-Linux 发布消费同时检查 ELF 架构与 OCI image 架构，并强制 `linux/amd64` 或
-`linux/arm64`。readiness artifact 名包含平台，且在汇聚前验证每个输入 artifact 的
-`production-platform-summary.json`，禁止跨平台 run ID 拼接。
-Linux R5/R6 继续由 `preprod-evidence.yml` 使用 `linux/amd64` 或 `linux/arm64`；Mac
-readiness 则消费 `macos-arm64.yml` 产生的原生 R5 和 TLS multi-run 别名，不把 Mac
-Docker daemon 作为证据来源。
+## Workflow 路由
 
-`macos-arm64.yml` 的 performance/stability 输入只产生原生有界能力证据。默认
-`smoke` 用于快速验证脚本、Mach-O 服务拓扑和 artifact 契约；冻结候选时应选择
-`perf_preset=baseline`、`perf_repetitions=3` 重新采样。该结果建立 macOS 自身的
-基线，不继承 Linux CPU affinity、cgroup、长稳时长或容量阈值。
-最新预冻结能力 run `29927622379` 已在
-`a355fb7500ad259ae8921db04effbe325483400f` 通过 strict-offline Conan、全量 build/CTest、
-默认 smoke、原生 R5、package、SBOM、checksum 与 dSYM 候选；同 SHA SDK run
-`29928355843` 又完成 `osx-arm64` wheel/NuGet、23/23 package checks 和 15/15 full-flow。
-后续 runs `29952053505`、`29948796107` 与 `29961425142` 已分别补齐三次 baseline、
-capacity/R4 与原生 2h soak；这些结果仍不替代最终冻结 SHA 的刷新证据。
+以下 workflow 已接入平台解析契约：
 
-macOS dSYM 使用同一个已准入的 Release Conan 图，仅对项目代码固定
-`-O2 -g -DNDEBUG`。创建器先从未 strip 的 Mach-O 生成 dSYM，再执行 `strip -S`；
-独立验证器要求每个 runtime/dSYM 的 ARM64 UUID、hash 和 DWARF source lookup 一致，
-并验证 stripped runtime 的 ad-hoc signature 与 hello-world 行为。当前只接入候选
-artifact；notarization、正式 release manifest 和线上资产复验仍是独立阻断项。
-run `29927622379` 为 14 个 Mach-O 生成 pair，独立校验 `160/160`，两个 archive
-及各自 SPDX checksum 均通过；artifact
-`macos-arm64-a355fb7500ad259ae8921db04effbe325483400f` 仍是候选而非已发布资产。
+- `release.yml`
+- `release-asset-verification.yml`
+- `production-candidate-evidence.yml`
+- `production-gates.yml`
+- `production-readiness.yml`
+- `perf-regression.yml`
+- `long-soak-capacity.yml`
+- `preprod-evidence.yml` / `macos-arm64.yml`
+- `sdk-distribution.yml`
+- `debug-symbols.yml`
+- `jwks-rotation.yml`
+
+workflow 必须校验实际 OS/architecture，并选择对应 profile、lockfile、Conan cache、build
+directory、Docker target 和 artifact suffix。跨 workflow 聚合前还必须验证每份 artifact
+中的 candidate SHA、platform summary、runner identity 和 lockfile provenance。
+
+## 平台特有边界
+
+### Linux
+
+- Docker image 必须精确匹配 `linux/amd64` 或 `linux/arm64`。
+- R5 使用 Compose gateway restart 前后 SDK full-flow，并包含 Redis degraded/recovery。
+- CPU affinity、cgroup、kind 和 Docker comparison 只用于 Linux 原生证据。
+- debug-symbol package 通过 ELF build-id、debuglink、source lookup 和 crash probe 绑定。
+
+### macOS ARM64
+
+- R5 使用原生 Mach-O 六服务进程，不使用 Docker 作为 runtime 证据。
+- 不继承 Linux 的 affinity、cgroup、kind 或容量阈值。
+- dSYM 必须与 stripped runtime UUID 一致，并通过 DWARF source lookup。
+- v3.6.2 GitHub Release 资产已验证，但 Apple signing/notarization 仍是独立状态。
+
+## 当前限制
+
+- 三平台发布支持不等于多节点 HA、任意云环境或统一容量声明。
+- `grpc-experimental` 不是默认生产 transport；各平台专项状态见 JSON 清单。
+- Windows 和 macOS x64 不在当前维护平台中；恢复支持需要新的 ADR、工具链和原生证据。
+- 新平台只有在 profile/lockfile、runtime、SDK、符号、R5、性能和发布后消费全部闭环后，
+  才能加入 `production_platforms`。
+
+runner 的当前身份和在线状态见 [runner-inventory.md](runner-inventory.md)，准入规则见
+[runner-gate-standard.md](runner-gate-standard.md)。

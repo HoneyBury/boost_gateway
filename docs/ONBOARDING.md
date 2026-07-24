@@ -1,57 +1,171 @@
 # 开发者入门指南
 
-欢迎参与 BoostGateway 项目开发。本文档帮助你在 30 分钟内完成环境搭建和首次构建。
+欢迎参与 BoostGateway 项目开发。本文档给出从新克隆到首次构建、测试、运行和 IDE
+调试的完整路径。命令默认面向 Linux x64 本地开发；固定 runner、发布证据和其它平台的
+严格离线流程见 [`conan/README.md`](../conan/README.md)。
 
 ## 前置要求
 
-- **OS**: Ubuntu 22.04+ 或 macOS 14+（Linux 和 macOS 共享 POSIX API）
+- **OS**: Ubuntu 22.04+ 或 macOS 14+
 - **CMake**: 3.21+
-- **Ninja**: 推荐作为默认 generator
-- **编译器**: GCC 11+ 或 Clang 15+（需要 C++20 支持）
-- **Python**: 3.10+（用于验证脚本）
+- **Ninja**: 默认 generator
+- **Linux 编译器**: GCC 13；仓库 profile 显式使用 `/usr/bin/gcc-13` 和
+  `/usr/bin/g++-13`
+- **Python**: 3.12；Conan venv helper 会拒绝其它 Python major.minor
+- **Conan**: 2.8.1；默认构建必需，必须使用隔离 venv，不使用全局浮动版本
 - **Git**: 2.30+
 
 可选依赖：
-- **Conan 2.8.1**: 默认构建必需；使用隔离 venv 和仓库 lockfile
 - **Redis**: 用于集群相关功能测试
 - **Docker / OrbStack**: 用于容器化部署测试
 
+首次配置前可检查关键工具：
+
+```bash
+gcc-13 --version
+g++-13 --version
+cmake --version
+ninja --version
+python3.12 --version
+git --version
+```
+
 ## 快速开始
 
-### 克隆和构建
+### 克隆并准备 Conan
 
 ```bash
 git clone <repo-url> boost_gateway
 cd boost_gateway
 
-# 先按 conan/README.md 完成 lockfile 驱动的 conan install，然后严格配置
-cmake -S . -B build/release -G Ninja -DBOOST_DEPENDENCY_PROVIDER=conan \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_TOOLCHAIN_FILE=build/conan-release/build/Release/generators/conan_toolchain.cmake
-cmake --build build/release --parallel
+python3.12 scripts/tools/ensure_conan_venv.py --conan-version 2.8.1
+source .venv/conan-2.8.1/bin/activate
+
+export CONAN_HOME="$PWD/.conan2-local"
+python3 scripts/bootstrap_conan.py \
+  --conan-home "$CONAN_HOME" \
+  --disable-example-internal \
+  --allow-public
+
+conan install . \
+  --profile:host conan/profiles/linux-gcc-x64 \
+  --profile:build conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock \
+  -o "&:with_grpc=False" \
+  -o "&:with_raft_protobuf=True" \
+  -o "&:with_sqlite=False" \
+  --output-folder=build/conan-debug \
+  --build=missing \
+  -s build_type=Debug
 ```
 
-### 运行测试
+`--allow-public` 只用于允许新开发环境从 Conan Center 填充缺失包。使用公司镜像时，
+在被 `.gitignore` 忽略的 `conan/remotes.local.json` 中配置实际 remote，然后去掉
+`--allow-public`。已经准入并预热的 fixed runner 必须改用 `--no-remote` 和
+`--build=never`，不要把开发机的联网流程当作发布证据。
+
+### 配置和构建 Debug
 
 ```bash
-ctest --preset release --timeout 300
+cmake -S . -B build/contributor-debug -G Ninja \
+  -DBOOST_DEPENDENCY_PROVIDER=conan \
+  -DENABLE_TESTING=ON \
+  -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/build/conan-debug/build/Debug/generators/conan_toolchain.cmake"
+
+cmake --build build/contributor-debug --parallel \
+  --target project_v2_unit_tests v2_gateway_demo
 ```
 
-### 运行网关 Demo
+默认 Conan 图为 `with_grpc=False`、`with_raft_protobuf=True`、`with_sqlite=False`。
+gRPC 和 SQLite 是独立实验/可选构建面，不应在首次开发构建中开启。CMake 的 Conan
+模式是严格模式：toolchain 或任何锁定依赖缺失时会直接失败，不会回退到 FetchContent。
+
+仓库的 `CMakePresets.json` 当前没有注入 Conan toolchain，因此新克隆不要直接以
+`cmake --preset default` 代替上述首次配置命令。
+
+### 运行首次测试
 
 ```bash
-# 启动 gateway（需要先启动 5 个后端服务，或使用单进程模式）
-./build/release/examples/v2_gateway_demo/v2_gateway_demo --port 9201
+python3 scripts/run_tests.py unit \
+  --build-dir build/contributor-debug \
+  --timeout 300 \
+  --verbose
 ```
+
+### 最快运行一个业务闭环
+
+```bash
+./build/contributor-debug/examples/v2_gateway_demo/v2_gateway_demo --script
+```
+
+`--script` 不监听网络端口，也不要求先启动五个 backend。它会在进程内执行 login、
+room、ready、battle input、settlement 等基本交换，适合作为首次运行和 Gateway Runtime
+修改后的快速 smoke。真实多进程路径由 `project_v2_multi_process_tests` 和 Docker
+Compose 覆盖。
 
 ### Docker 方式启动
 
+Docker runtime staging 面向完整 Release 二进制，不复用上面的 Debug 输出。先生成
+Release Conan toolchain 并构建全部六个服务：
+
 ```bash
-python3 scripts/tools/prepare_docker_runtime_context.py --build-dir build/release
+conan install . \
+  --profile:host conan/profiles/linux-gcc-x64 \
+  --profile:build conan/profiles/linux-gcc-x64 \
+  --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
+  -o "&:with_grpc=False" \
+  -o "&:with_raft_protobuf=True" \
+  -o "&:with_sqlite=False" \
+  --output-folder=build/conan-release \
+  --build=missing \
+  -s build_type=Release
+
+cmake -S . -B build/release -G Ninja \
+  -DBOOST_DEPENDENCY_PROVIDER=conan \
+  -DENABLE_TESTING=ON \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_TOOLCHAIN_FILE="$PWD/build/conan-release/build/Release/generators/conan_toolchain.cmake"
+cmake --build build/release --parallel
+
+python3 scripts/tools/prepare_docker_runtime_context.py \
+  --build-dir build/release \
+  --allow-dirty
 docker compose -f env/docker/docker-compose.yml build
 docker compose -f env/docker/docker-compose.yml up -d
 curl http://127.0.0.1:9080/health
 ```
+
+staging helper 会检查六个 ELF、动态依赖和 lockfile。开发工作树通常是 dirty，因此本地
+镜像使用 `--allow-dirty`；发布证据不得使用该参数。
+
+## CLion 配置
+
+CLion 需要消费已经由 `conan install` 生成的 toolchain。先在终端完成本页的 Debug
+Conan install，再配置 IDE：
+
+1. 在 `Settings | Build, Execution, Deployment | Toolchains` 中选择 Ninja，C 编译器
+   设为 `/usr/bin/gcc-13`，C++ 编译器设为 `/usr/bin/g++-13`。
+2. 在 `Settings | Build, Execution, Deployment | CMake` 新建 `Debug-Conan` profile，
+   build directory 使用 `build/clion-debug`，不要复用命令行 build 目录。
+3. CMake options 设置为：
+
+```text
+-DBOOST_DEPENDENCY_PROVIDER=conan
+-DENABLE_TESTING=ON
+-DCMAKE_BUILD_TYPE=Debug
+-DCMAKE_TOOLCHAIN_FILE=/absolute/path/to/boost_gateway/build/conan-debug/build/Debug/generators/conan_toolchain.cmake
+```
+
+4. Reload CMake 后先构建 `project_v2_unit_tests`。项目已设置
+   `CMAKE_EXPORT_COMPILE_COMMANDS=ON`，CLion 会从这个 CMake profile 获得完整索引。
+5. 新建 `v2_gateway_demo` Run Configuration，program arguments 使用 `--script`，
+   working directory 设置为仓库根目录。
+
+调试 backend 时也必须把 working directory 设为仓库根目录，因为默认配置路径是
+`config/environments/local/<service>.json`。也可以显式传入
+`--config config/environments/local/<service>.json`。Debug 和 Release 应始终使用不同
+的 Conan output folder 与 CMake build directory。
 
 ## 项目结构
 
@@ -113,7 +227,7 @@ clang-format -i <changed-files>
 
 | 门禁 | 命令 | 触发方式 |
 |---|---|---|
-| 本地构建+测试 | `cmake --preset default && ctest --preset default --timeout 300` | 本地 |
+| 本地构建+测试 | `cmake --build build/contributor-debug --parallel && python3 scripts/run_tests.py unit --build-dir build/contributor-debug --verbose` | 本地 |
 | GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref main -f runner='"ubuntu-latest"'` | 手动 |
 | 本地 RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | 本地/手动 |
 | Release 构建与发布门禁 | `.github/workflows/release.yml` | `v*` tag 自动或手动 |
@@ -221,19 +335,19 @@ python3 scripts/collect_release_baseline.py --perf-preset business-capacity \
 
 ```bash
 # 全部测试
-ctest --preset default --timeout 300
+python3 scripts/run_tests.py all --build-dir build/contributor-debug --verbose
 
 # 分层运行
-ctest --preset default -R project_v2_unit_tests
-ctest --preset default -R project_v2_integration_tests
-ctest --preset default -R project_v2_multi_process_tests
+python3 scripts/run_tests.py unit --build-dir build/contributor-debug --verbose
+python3 scripts/run_tests.py integration --build-dir build/contributor-debug --verbose
+python3 scripts/run_tests.py e2e --build-dir build/contributor-debug --verbose
 
 # 仅 SDK 测试
-ctest --preset default -R sdk
+python3 scripts/run_tests.py sdk --build-dir build/contributor-debug --verbose
 
 # Release 模式（性能相关）
-cmake --build --preset release
-ctest --preset release
+cmake --build build/release --parallel
+python3 scripts/run_tests.py all --build-dir build/release --verbose
 ```
 
 ### 测试要求
@@ -249,14 +363,14 @@ ctest --preset release
 `scripts/run_tests.py` 封装了 ctest 的分层过滤：
 
 ```bash
-# 运行全部测试（等同 ctest --preset default）
-python3 scripts/run_tests.py
+# 运行当前 build directory 中的全部测试
+python3 scripts/run_tests.py all --build-dir build/contributor-debug
 
 # 按层级运行
-python3 scripts/run_tests.py unit          # 单元测试
-python3 scripts/run_tests.py integration   # 集成测试
-python3 scripts/run_tests.py e2e           # 多进程 E2E
-python3 scripts/run_tests.py sdk           # SDK 测试
+python3 scripts/run_tests.py unit --build-dir build/contributor-debug
+python3 scripts/run_tests.py integration --build-dir build/contributor-debug
+python3 scripts/run_tests.py e2e --build-dir build/contributor-debug
+python3 scripts/run_tests.py sdk --build-dir build/contributor-debug
 
 # 可选构建层（需要 CMake 选项）
 python3 scripts/run_tests.py perf          # 性能基准测试
@@ -264,7 +378,6 @@ python3 scripts/run_tests.py fuzz          # 模糊测试
 python3 scripts/run_tests.py security      # 安全测试
 
 # 选项
-python3 scripts/run_tests.py unit --preset release     # Release 模式
 python3 scripts/run_tests.py unit --timeout 120        # 超时控制
 python3 scripts/run_tests.py unit --parallel 4         # 并行数
 python3 scripts/run_tests.py --list                    # 列出可用层级
@@ -283,7 +396,7 @@ python3 scripts/run_tests.py --list                    # 列出可用层级
 | Release 构建 | `v*` tag push / 手动 | unit + integration + e2e + 所选性能 profile |
 | Bounded stability | 手动 | `nightly-stability.yml`，smoke/short/medium soak |
 | 固定 Runner 容量 | 手动 | e2e + perf capacity |
-| 本地开发 | `python3 scripts/run_tests.py` | unit + integration（默认） |
+| 本地开发 | `python3 scripts/run_tests.py <layer> --build-dir <dir>` | 按改动选择 unit / integration / e2e / sdk；`all` 会运行已注册的全部测试 |
 
 ### 测试层级选择指南
 
@@ -331,7 +444,7 @@ CPU 隔离仅支持 Linux：`--cpu-set` 只约束 Gateway 和后端服务，`--l
 
 ## SDK 扩展指南
 
-SDK 版本独立管理（当前 `4.1.0`），支持 C++ / C ABI / Python / C#。
+SDK 版本独立管理（当前 `4.2.0`），支持 C++ / C ABI / Python / C#。
 
 ### 新增 API 的路径
 
