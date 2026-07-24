@@ -496,9 +496,9 @@ def main() -> int:
         checks,
         "release:checksum-only-published-archive",
         "find \"$RELEASE_ASSET_DIR\" -type f -name '*.tar.gz'" in release_workflow
-        and "test \"${#archives[@]}\" -eq 3" in release_workflow
+        and "test \"${#archives[@]}\" -eq 6" in release_workflow
         and "for platform in linux-x64 linux-arm64 macos-arm64" in release_workflow,
-        "release checksums exactly one packaged tarball for every production platform",
+        "release checksums one runtime and one symbol tarball for every production platform",
     )
     add(
         checks,
@@ -509,8 +509,10 @@ def main() -> int:
     add(
         checks,
         "release:archive-without-dist-prefix",
-        '(cd dist && cmake -E tar czfv "../${archive_basename}.tar.gz"' in release_workflow,
-        "release archive is gzip-compressed and starts at the version directory instead of persistent dist",
+        "scripts/tools/create_debug_symbol_package.py" in release_workflow
+        and "scripts/tools/create_macos_dsym_package.py" in release_workflow
+        and "--standard-runtime-name" in release_workflow,
+        "release creates stripped archives rooted at the version directory while retaining exact symbols",
     )
     add(
         checks,
@@ -574,7 +576,10 @@ def main() -> int:
         and "scripts/tools/harden_release_sbom.py enrich" in release_workflow
         and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
         < release_workflow.index("Attest release archive SBOM")
-        and release_workflow.count("uses: actions/attest@v4") == 2
+        and release_workflow.count("uses: actions/attest@v4") >= 8
+        and "Attest symbol archive SBOM" in release_workflow
+        and "Attest wheel SBOM" in release_workflow
+        and "Attest NuGet SBOM" in release_workflow
         and "sbom-path:" in release_workflow
         and "attestations: write" in release_workflow
         and "id-token: write" in release_workflow,
@@ -604,24 +609,24 @@ def main() -> int:
         "published asset verification rechecks SBOM file digests and Conan dependency semantics",
     )
     binding_command = "scripts/tools/harden_release_sbom.py verify-attestation"
-    binding_summary = "published-release-sbom-attestation-binding-summary.json"
+    binding_summary = "published-${label}-sbom-attestation-binding-summary.json"
     add(
         checks,
         "release:published-sbom-attestation-binding",
         binding_command in release_asset_verification
         and binding_summary in release_asset_verification
-        and "published-release-sbom-verification.json" in release_asset_verification
+        and "published-${label}-sbom-verification.json" in release_asset_verification
         and "Render published asset summary" in release_asset_verification
-        and release_asset_verification.index("published-release-sbom-verification.json")
+        and release_asset_verification.index("Verify provenance and SBOM attestations")
         < release_asset_verification.index(binding_command)
         < release_asset_verification.index("Render published asset summary")
-        and 'sbom_attestation_binding.get("overall_pass") is True'
+        and 'all(item.get("overall_pass") is True for item in bindings.values())'
         in release_asset_verification
-        and 'sbom_attestation_binding.get("predicate_matches_published_sbom") is True'
+        and 'item.get("predicate_matches_published_sbom") is True for item in bindings.values()'
         in release_asset_verification
         and '"predicate_matches_published_sbom": predicate_matches_published_sbom'
         in release_asset_verification
-        and '"sbom_attestation_binding": sbom_attestation_binding'
+        and '"sbom_attestation_bindings": bindings'
         in release_asset_verification
         and "runtime/validation/published-release-*.json" in release_asset_verification,
         "published asset verification binds the standalone SBOM to its verified SPDX predicate",
@@ -629,10 +634,10 @@ def main() -> int:
     add(
         checks,
         "release:sbom-published-and-checksummed",
-        "*-sbom.spdx.json" in release_workflow
-        and 'for asset in "${archives[@]}" "${sboms[@]}"' in release_workflow
-        and "test \"${#sboms[@]}\" -eq 3" in release_workflow,
-        "release publishes and checksums each platform tarball and SPDX SBOM",
+        "*.spdx.json" in release_workflow
+        and '"${nugets[@]}" "${sboms[@]}" "${provenance[@]}"' in release_workflow
+        and "test \"${#sboms[@]}\" -eq 10" in release_workflow,
+        "release publishes and checksums runtime, symbol, wheel and NuGet SPDX SBOMs",
     )
     add(
         checks,

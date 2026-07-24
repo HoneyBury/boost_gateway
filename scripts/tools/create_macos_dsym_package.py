@@ -86,6 +86,12 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--candidate-revision", required=True)
     parser.add_argument("--summary-path", type=Path, required=True)
+    parser.add_argument(
+        "--standard-runtime-name",
+        action="store_true",
+        help="Name the stripped runtime like the primary release archive instead of a candidate symbol runtime.",
+    )
+    parser.add_argument("--project-flags", default="-O2 -g -DNDEBUG")
     args = parser.parse_args()
 
     if platform.system() != "Darwin" or platform.machine() != "arm64":
@@ -97,7 +103,8 @@ def main() -> int:
     install_root = args.install_root.resolve()
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    runtime_root = output / f"boost-gateway-{args.version}-macos-arm64-symbol-runtime"
+    runtime_suffix = "" if args.standard_runtime_name else "-symbol-runtime"
+    runtime_root = output / f"boost-gateway-{args.version}-macos-arm64{runtime_suffix}"
     symbols_root = output / f"boost-gateway-{args.version}-macos-arm64-dsym"
     for path in (runtime_root, symbols_root):
         if path.exists():
@@ -152,7 +159,7 @@ def main() -> int:
         "platform": "macos-arm64",
         "build_contract": {
             "cmake_configuration": "Release",
-            "project_flags": "-O2 -g -DNDEBUG",
+            "project_flags": args.project_flags,
             "conan_dependency_configuration": "Release",
             "notarized": False,
         },
@@ -178,8 +185,9 @@ def main() -> int:
     }
     args.summary_path.parent.mkdir(parents=True, exist_ok=True)
     args.summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    shutil.rmtree(runtime_root)
-    shutil.rmtree(symbols_root)
+    if not args.standard_runtime_name:
+        shutil.rmtree(runtime_root)
+        shutil.rmtree(symbols_root)
     print(f"macOS dSYM package: PASS ({len(records)} Mach-O files)")
     return 0
 

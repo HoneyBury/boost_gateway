@@ -69,6 +69,36 @@ jobs:
           platform: ${{ inputs.platform }}
           build-type: Release
 
+      - name: Resolve published SDK and symbol assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$PRODUCTION_PLATFORM" in
+            linux-x64)
+              rid=linux-x64
+              wheel=boost_gateway_sdk-4.2.0-py3-none-manylinux_2_35_x86_64.whl
+              symbol=boost-gateway-${RELEASE_TAG}-linux-x64-debug-symbols.tar.gz
+              ;;
+            linux-arm64)
+              rid=linux-arm64
+              wheel=boost_gateway_sdk-4.2.0-py3-none-manylinux_2_39_aarch64.whl
+              symbol=boost-gateway-${RELEASE_TAG}-linux-arm64-debug-symbols.tar.gz
+              ;;
+            macos-arm64)
+              rid=osx-arm64
+              wheel=boost_gateway_sdk-4.2.0-py3-none-macosx_26_0_arm64.whl
+              symbol=boost-gateway-${RELEASE_TAG}-macos-arm64-dsym.tar.gz
+              ;;
+          esac
+          {
+            echo "SDK_RID=$rid"
+            echo "SDK_WHEEL_ASSET=$wheel"
+            echo "SYMBOL_ASSET=$symbol"
+            echo "NUGET_ASSET=BoostGateway.Sdk.4.2.0.nupkg"
+            echo "SDK_PROVENANCE_ASSET=sdk-package-provenance-${rid}.json"
+            echo "NUGET_PROVENANCE_ASSET=sdk-package-provenance-multi-rid.json"
+          } >> "$GITHUB_ENV"
+
       - name: Setup Python
         if: runner.os == 'Linux' && runner.arch != 'ARM64'
         uses: actions/setup-python@v5
@@ -96,6 +126,14 @@ jobs:
             --dir "$asset_dir" \
             --pattern "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
             --pattern "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
+            --pattern "$SYMBOL_ASSET" \
+            --pattern "$SYMBOL_ASSET.spdx.json" \
+            --pattern "$SDK_WHEEL_ASSET" \
+            --pattern "$SDK_WHEEL_ASSET.spdx.json" \
+            --pattern "$NUGET_ASSET" \
+            --pattern "$NUGET_ASSET.spdx.json" \
+            --pattern "$SDK_PROVENANCE_ASSET" \
+            --pattern "$NUGET_PROVENANCE_ASSET" \
             --pattern SHA256SUMS.txt
           printf 'RELEASE_ASSET_DIR=%s\n' "$asset_dir" >> "$GITHUB_ENV"
 
@@ -113,6 +151,14 @@ jobs:
           wanted = {
               f"boost-gateway-{os.environ['RELEASE_TAG']}-{platform}.tar.gz",
               f"boost-gateway-{os.environ['RELEASE_TAG']}-{platform}-sbom.spdx.json",
+              os.environ["SYMBOL_ASSET"],
+              os.environ["SYMBOL_ASSET"] + ".spdx.json",
+              os.environ["SDK_WHEEL_ASSET"],
+              os.environ["SDK_WHEEL_ASSET"] + ".spdx.json",
+              os.environ["NUGET_ASSET"],
+              os.environ["NUGET_ASSET"] + ".spdx.json",
+              os.environ["SDK_PROVENANCE_ASSET"],
+              os.environ["NUGET_PROVENANCE_ASSET"],
           }
           entries = {}
           for line in (root / "SHA256SUMS.txt").read_text(encoding="utf-8").splitlines():
@@ -128,6 +174,34 @@ jobs:
           python3 scripts/tools/verify_release_archive.py \
             --archive "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
             --expected-root "boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}"
+
+      - name: Verify published runtime-symbol and SDK packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          runtime="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz"
+          symbols="$RELEASE_ASSET_DIR/$SYMBOL_ASSET"
+          if [[ "$PRODUCTION_PLATFORM" == linux-* ]]; then
+            python3 scripts/tools/verify_debug_symbol_package.py \
+              --runtime-archive "$runtime" \
+              --symbols-archive "$symbols" \
+              --candidate-revision "$EXPECTED_COMMIT" \
+              --expected-platform "$PRODUCTION_ARCHIVE_PLATFORM" \
+              --summary-path runtime/validation/published-symbol-verification-summary.json
+          else
+            python3 scripts/tools/verify_macos_dsym_package.py \
+              --runtime-archive "$runtime" \
+              --symbols-archive "$symbols" \
+              --candidate-revision "$EXPECTED_COMMIT" \
+              --summary-path runtime/validation/published-symbol-verification-summary.json
+          fi
+          dotnet --version
+          python3 scripts/tools/verify_sdk_distribution_packages.py \
+            --wheel "$RELEASE_ASSET_DIR/$SDK_WHEEL_ASSET" \
+            --nuget "$RELEASE_ASSET_DIR/$NUGET_ASSET" \
+            --rid "$SDK_RID" \
+            --require-nuget \
+            --summary-path runtime/validation/published-sdk-verification-summary.json
 
       - name: Verify published SBOM semantics
         shell: bash
@@ -214,43 +288,64 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          archive="$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz"
           signer='HoneyBury/boost_gateway/.github/workflows/release.yml'
-          common=(
-            "$archive" --repo "${{ github.repository }}" --format json
-            --signer-workflow "$signer"
-            --signer-digest "$EXPECTED_COMMIT"
-            --source-digest "$EXPECTED_COMMIT"
-            --source-ref "refs/tags/${RELEASE_TAG}"
+          labels=(runtime symbol wheel nuget)
+          assets=(
+            "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz"
+            "$RELEASE_ASSET_DIR/$SYMBOL_ASSET"
+            "$RELEASE_ASSET_DIR/$SDK_WHEEL_ASSET"
+            "$RELEASE_ASSET_DIR/$NUGET_ASSET"
           )
-          "$VERIFICATION_GH" attestation verify "${common[@]}" \
-            > runtime/validation/published-release-provenance-verification.json
-          "$VERIFICATION_GH" attestation verify "${common[@]}" \
-            --predicate-type https://spdx.dev/Document/v2.3 \
-            > runtime/validation/published-release-sbom-verification.json
-
-          export ARTIFACT_DIGEST="$(python3 -c 'import hashlib,sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$archive")"
-          python3 - <<'PY'
+          for index in "${!assets[@]}"; do
+            label="${labels[$index]}"
+            asset="${assets[$index]}"
+            common=(
+              "$asset" --repo "${{ github.repository }}" --format json
+              --signer-workflow "$signer"
+              --signer-digest "$EXPECTED_COMMIT"
+              --source-digest "$EXPECTED_COMMIT"
+              --source-ref "refs/tags/${RELEASE_TAG}"
+            )
+            "$VERIFICATION_GH" attestation verify "${common[@]}" \
+              > "runtime/validation/published-${label}-provenance-verification.json"
+            "$VERIFICATION_GH" attestation verify "${common[@]}" \
+              --predicate-type https://spdx.dev/Document/v2.3 \
+              > "runtime/validation/published-${label}-sbom-verification.json"
+            python3 - "$asset" "$label" <<'PY'
+          import hashlib
           import json
-          import os
+          import sys
           from pathlib import Path
 
-          expected = os.environ["ARTIFACT_DIGEST"]
-          for name in ("provenance", "sbom"):
-              path = Path(f"runtime/validation/published-release-{name}-verification.json")
+          expected = hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest()
+          label = sys.argv[2]
+          for kind in ("provenance", "sbom"):
+              path = Path(f"runtime/validation/published-{label}-{kind}-verification.json")
               results = json.loads(path.read_text(encoding="utf-8"))
               actual = results[0]["verificationResult"]["statement"]["subject"][0]["digest"]["sha256"]
               if actual != expected:
-                  raise SystemExit(f"{name} attestation digest mismatch: {actual}")
+                  raise SystemExit(f"{label} {kind} attestation digest mismatch: {actual}")
           PY
+          done
 
       - name: Verify published SBOM matches attested predicate
         shell: bash
         run: |
-          python3 scripts/tools/harden_release_sbom.py verify-attestation \
-            --sbom "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
-            --attestation-verification runtime/validation/published-release-sbom-verification.json \
-            --summary-path runtime/validation/published-release-sbom-attestation-binding-summary.json
+          set -euo pipefail
+          labels=(runtime symbol wheel nuget)
+          sboms=(
+            "$RELEASE_ASSET_DIR/boost-gateway-${RELEASE_TAG}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json"
+            "$RELEASE_ASSET_DIR/$SYMBOL_ASSET.spdx.json"
+            "$RELEASE_ASSET_DIR/$SDK_WHEEL_ASSET.spdx.json"
+            "$RELEASE_ASSET_DIR/$NUGET_ASSET.spdx.json"
+          )
+          for index in "${!sboms[@]}"; do
+            label="${labels[$index]}"
+            python3 scripts/tools/harden_release_sbom.py verify-attestation \
+              --sbom "${sboms[$index]}" \
+              --attestation-verification "runtime/validation/published-${label}-sbom-verification.json" \
+              --summary-path "runtime/validation/published-${label}-sbom-attestation-binding-summary.json"
+          done
 
       - name: Render published asset summary
         shell: bash
@@ -275,18 +370,29 @@ jobs:
           sbom_semantics = json.loads(
               (validation / "published-release-sbom-semantics-summary.json").read_text(encoding="utf-8")
           )
-          sbom_attestation_binding = json.loads(
-              (validation / "published-release-sbom-attestation-binding-summary.json").read_text(
-                  encoding="utf-8"
-              )
+          symbol = json.loads(
+              (validation / "published-symbol-verification-summary.json").read_text(encoding="utf-8")
           )
-          predicate_matches_published_sbom = (
-              sbom_attestation_binding.get("predicate_matches_published_sbom") is True
+          sdk = json.loads(
+              (validation / "published-sdk-verification-summary.json").read_text(encoding="utf-8")
+          )
+          bindings = {
+              label: json.loads(
+                  (validation / f"published-{label}-sbom-attestation-binding-summary.json").read_text(
+                      encoding="utf-8"
+                  )
+              )
+              for label in ("runtime", "symbol", "wheel", "nuget")
+          }
+          predicate_matches_published_sbom = all(
+              item.get("predicate_matches_published_sbom") is True for item in bindings.values()
           )
           passed = (
               consumer.get("overall_pass") is True
               and sbom_semantics.get("overall_pass") is True
-              and sbom_attestation_binding.get("overall_pass") is True
+              and symbol.get("overall_pass") is True
+              and sdk.get("overall_pass") is True
+              and all(item.get("overall_pass") is True for item in bindings.values())
               and predicate_matches_published_sbom
           )
           summary = {
@@ -301,9 +407,11 @@ jobs:
               "archive_sha256": os.environ["ARCHIVE_SHA256"],
               "sbom_sha256": os.environ["SBOM_SHA256"],
               "runtime_consumer": consumer,
+              "symbol_verification": symbol,
+              "sdk_verification": sdk,
               "sbom_semantics": sbom_semantics,
               "predicate_matches_published_sbom": predicate_matches_published_sbom,
-              "sbom_attestation_binding": sbom_attestation_binding,
+              "sbom_attestation_bindings": bindings,
               "provenance_attestation_verified": True,
               "sbom_attestation_verified": True,
           }

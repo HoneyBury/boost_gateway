@@ -88,6 +88,37 @@ jobs:
           platform: ${{ matrix.platform }}
           build-type: Release
 
+      - name: Resolve SDK release platform
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ matrix.platform }}" in
+            linux-x64)
+              rid=linux-x64
+              wheel_tag=manylinux_2_35_x86_64
+              native_name=libboost_gateway_sdk.so
+              package_venv=/opt/boost-gateway/tools/sdk-package-py3.12
+              ;;
+            linux-arm64)
+              rid=linux-arm64
+              wheel_tag=manylinux_2_39_aarch64
+              native_name=libboost_gateway_sdk.so
+              package_venv=/opt/boost-gateway/tools/sdk-package-py3.12
+              ;;
+            macos-arm64)
+              rid=osx-arm64
+              wheel_tag=macosx_26_0_arm64
+              native_name=libboost_gateway_sdk.dylib
+              package_venv="$RUNNER_TOOL_CACHE/boost-gateway/tools/sdk-package-py3.12"
+              ;;
+          esac
+          {
+            echo "SDK_RID=$rid"
+            echo "SDK_WHEEL_TAG=$wheel_tag"
+            echo "SDK_NATIVE_NAME=$native_name"
+            echo "SDK_PACKAGE_PYTHON=$package_venv/bin/python"
+          } >> "$GITHUB_ENV"
+
       - name: Resolve release version
         shell: bash
         run: |
@@ -180,12 +211,21 @@ jobs:
           set -euo pipefail
           : "${SCCACHE_BIN:?missing sccache path}"
           mkdir -p runtime/validation
-          cmake --preset "$PRODUCTION_CONFIGURE_PRESET" \
-            -DBOOST_DEPENDENCY_PROVIDER=conan \
-            -DCMAKE_TOOLCHAIN_FILE=build/conan-preflight/build/Release/generators/conan_toolchain.cmake \
-            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
-            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN" \
-            2>&1 | tee runtime/validation/release-configure.log
+          configure_args=(
+            --preset "$PRODUCTION_CONFIGURE_PRESET"
+            -DBOOST_DEPENDENCY_PROVIDER=conan
+            -DCMAKE_TOOLCHAIN_FILE=build/conan-preflight/build/Release/generators/conan_toolchain.cmake
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN"
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+            '-DCMAKE_CXX_FLAGS_RELEASE=-O3 -g -DNDEBUG'
+          )
+          if [[ "$PRODUCTION_PLATFORM" == linux-* ]]; then
+            configure_args+=(
+              '-DCMAKE_EXE_LINKER_FLAGS=-Wl,--build-id'
+              '-DCMAKE_SHARED_LINKER_FLAGS=-Wl,--build-id'
+            )
+          fi
+          cmake "${configure_args[@]}" 2>&1 | tee runtime/validation/release-configure.log
 
       - name: Verify Conan dependency provider
         shell: bash
@@ -381,12 +421,67 @@ jobs:
           cmake --install "$PRODUCTION_BUILD_DIR" --prefix "$install_dir"
           cp README.md CHANGELOG.md LICENSE "$install_dir/"
 
-      - name: Archive package
+      - name: Create exact runtime-symbol pair
         shell: bash
         run: |
           set -euo pipefail
-          archive_basename="boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
-          (cd dist && cmake -E tar czfv "../${archive_basename}.tar.gz" --format=gnutar "${archive_basename}")
+          mkdir -p runtime/release-assets runtime/validation
+          install_root="dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}"
+          if [[ "$PRODUCTION_PLATFORM" == linux-* ]]; then
+            python3 scripts/tools/create_debug_symbol_package.py \
+              --install-root "$install_root" \
+              --version "$RELEASE_LABEL" \
+              --candidate-revision "$GITHUB_SHA" \
+              --output-dir runtime/release-assets \
+              --summary-path runtime/validation/release-symbol-build-summary.json
+            python3 scripts/tools/verify_debug_symbol_package.py \
+              --runtime-archive "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+              --symbols-archive "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}-debug-symbols.tar.gz" \
+              --candidate-revision "$GITHUB_SHA" \
+              --expected-platform "$PRODUCTION_ARCHIVE_PLATFORM" \
+              --summary-path runtime/validation/release-symbol-verify-summary.json
+          else
+            python3 scripts/tools/create_macos_dsym_package.py \
+              --install-root "$install_root" \
+              --version "$RELEASE_LABEL" \
+              --candidate-revision "$GITHUB_SHA" \
+              --output-dir runtime/release-assets \
+              --summary-path runtime/validation/release-symbol-build-summary.json \
+              --project-flags '-O3 -g -DNDEBUG' \
+              --standard-runtime-name
+            python3 scripts/tools/verify_macos_dsym_package.py \
+              --runtime-archive "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" \
+              --symbols-archive "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}-dsym.tar.gz" \
+              --candidate-revision "$GITHUB_SHA" \
+              --summary-path runtime/validation/release-symbol-verify-summary.json
+          fi
+          cp "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}.tar.gz" .
+
+      - name: Build and verify platform wheel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "$SDK_PACKAGE_PYTHON"
+          "$SDK_PACKAGE_PYTHON" -c 'import setuptools, wheel; assert setuptools.__version__ == "83.0.0"; assert wheel.__version__ == "0.47.0"'
+          if [[ "$PRODUCTION_PLATFORM" == linux-* ]]; then
+            "$SDK_PACKAGE_PYTHON" -m auditwheel --version | grep -Eq '^auditwheel 6\.7\.0([[:space:]]|$)'
+          fi
+          native_library="runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}/lib/${SDK_NATIVE_NAME}"
+          "$SDK_PACKAGE_PYTHON" scripts/tools/build_sdk_packages.py \
+            --native-library "$native_library" \
+            --rid "$SDK_RID" \
+            --wheel-platform-tag "$SDK_WHEEL_TAG" \
+            --output-dir runtime/release-sdk-assets \
+            --skip-nuget
+          wheel=$(find runtime/release-sdk-assets -maxdepth 1 -name '*.whl' -print -quit)
+          verify_args=(
+            --wheel "$wheel" --rid "$SDK_RID"
+            --summary-path runtime/validation/release-sdk-package-summary.json
+          )
+          if [[ "$PRODUCTION_PLATFORM" == linux-* ]]; then
+            verify_args+=(--require-auditwheel)
+          fi
+          "$SDK_PACKAGE_PYTHON" scripts/tools/verify_sdk_distribution_packages.py "${verify_args[@]}"
 
       - name: Verify release archive layout
         shell: bash
@@ -413,7 +508,7 @@ jobs:
         shell: bash
         run: |
           python3 scripts/tools/verify_macos_arm64_package.py \
-            --install-root "dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
+            --install-root "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
             --candidate-revision "$GITHUB_SHA" \
             --summary-path runtime/validation/release-package-consumer-summary.json
@@ -443,18 +538,29 @@ jobs:
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@v0
         with:
-          path: dist/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}
+          path: runtime/release-assets/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}
           format: spdx-json
           output-file: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
           upload-artifact: false
           upload-release-assets: false
+
+      - name: Generate symbol and wheel SBOMs
+        shell: bash
+        run: |
+          set -euo pipefail
+          symbol_archive=$(find runtime/release-assets -maxdepth 1 \( -name '*-debug-symbols.tar.gz' -o -name '*-dsym.tar.gz' \) -print -quit)
+          wheel=$(find runtime/release-sdk-assets -maxdepth 1 -name '*.whl' -print -quit)
+          test -f "$symbol_archive"
+          test -f "$wheel"
+          syft packages "$symbol_archive" -o "spdx-json=${symbol_archive}.spdx.json"
+          syft packages "$wheel" -o "spdx-json=${wheel}.spdx.json"
 
       - name: Harden and verify SPDX SBOM semantics
         shell: bash
         run: |
           python3 scripts/tools/harden_release_sbom.py enrich \
             --sbom "boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}-sbom.spdx.json" \
-            --package-root "dist/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
+            --package-root "runtime/release-assets/boost-gateway-${RELEASE_LABEL}-${PRODUCTION_ARCHIVE_PLATFORM}" \
             --lockfile "$BOOST_GATEWAY_CONAN_LOCKFILE" \
             --policy config/release/sbom-policy.json \
             --configuration Release \
@@ -487,6 +593,32 @@ jobs:
           subject-path: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}.tar.gz
           sbom-path: boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
 
+      - name: Attest symbol archive provenance
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-assets/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-${{ matrix.platform == 'macos-arm64' && 'dsym' || 'debug-symbols' }}.tar.gz
+
+      - name: Attest symbol archive SBOM
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-assets/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-${{ matrix.platform == 'macos-arm64' && 'dsym' || 'debug-symbols' }}.tar.gz
+          sbom-path: runtime/release-assets/boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-${{ matrix.platform == 'macos-arm64' && 'dsym' || 'debug-symbols' }}.tar.gz.spdx.json
+
+      - name: Attest wheel provenance
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-sdk-assets/*.whl
+
+      - name: Attest wheel SBOM
+        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-sdk-assets/*.whl
+          sbom-path: runtime/release-sdk-assets/*.whl.spdx.json
+
       - name: Render release notes
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         shell: bash
@@ -499,6 +631,14 @@ jobs:
           path: |
             boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}.tar.gz
             boost-gateway-${{ env.RELEASE_LABEL }}-${{ matrix.platform }}-sbom.spdx.json
+            runtime/release-assets/*-debug-symbols.tar.gz
+            runtime/release-assets/*-debug-symbols.tar.gz.spdx.json
+            runtime/release-assets/*-dsym.tar.gz
+            runtime/release-assets/*-dsym.tar.gz.spdx.json
+            runtime/release-sdk-assets/*.whl
+            runtime/release-sdk-assets/*.whl.spdx.json
+            runtime/release-sdk-assets/sdk-package-provenance-*.json
+            runtime/release-sdk-assets/SHA256SUMS-sdk-*.txt
             RELEASE_NOTES.md
             runtime/validation/release-package-consumer-summary.json
             runtime/validation/release-cmake-consumer-summary.json
@@ -510,6 +650,9 @@ jobs:
             runtime/validation/raft-mixed-binary/**
             runtime/validation/raft-release-evidence-summary.json
             runtime/validation/production-platform-summary.json
+            runtime/validation/release-symbol-build-summary.json
+            runtime/validation/release-symbol-verify-summary.json
+            runtime/validation/release-sdk-package-summary.json
 
       - name: Show sccache stats
         if: always()
@@ -540,10 +683,125 @@ jobs:
           }
           EOF
 
-  publish:
+  nuget:
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     needs: package
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Download platform package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: boost-gateway-*-${{ github.sha }}
+          path: runtime/platform-assets
+
+      - name: Extract and validate native SDK libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import zipfile
+          from pathlib import Path
+
+          root = Path("runtime/platform-assets")
+          output = Path("runtime/nuget-native")
+          output.mkdir(parents=True, exist_ok=True)
+          expected = {
+              "linux-x64": "manylinux_2_35_x86_64",
+              "linux-arm64": "manylinux_2_39_aarch64",
+              "osx-arm64": "macosx_26_0_arm64",
+          }
+          wheels = list(root.rglob("*.whl"))
+          if len(wheels) != len(expected):
+              raise SystemExit(f"expected three platform wheels, found {len(wheels)}")
+          observed = set()
+          for wheel in wheels:
+              with zipfile.ZipFile(wheel) as archive:
+                  manifests = [name for name in archive.namelist() if name.endswith("/_native_manifest.json")]
+                  natives = [
+                      name for name in archive.namelist()
+                      if "/libboost_gateway_sdk." in name and not name.endswith(".json")
+                  ]
+                  if len(manifests) != 1 or len(natives) != 1:
+                      raise SystemExit(f"invalid native payload in {wheel.name}")
+                  manifest = json.loads(archive.read(manifests[0]))
+                  rid = manifest.get("rid")
+                  if rid not in expected or expected[rid] not in wheel.name:
+                      raise SystemExit(f"wheel RID/tag mismatch: {wheel.name} -> {rid}")
+                  native = archive.read(natives[0])
+                  if hashlib.sha256(native).hexdigest() != manifest.get("native_sha256"):
+                      raise SystemExit(f"wheel native hash mismatch: {wheel.name}")
+                  rid_dir = output / rid
+                  rid_dir.mkdir(parents=True, exist_ok=True)
+                  (rid_dir / Path(natives[0]).name).write_bytes(native)
+                  observed.add(rid)
+          if observed != set(expected):
+              raise SystemExit(f"wheel RID set mismatch: {sorted(observed)}")
+          PY
+
+      - name: Build and verify multi-RID NuGet package
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/tools/build_multi_rid_nuget.py \
+            --native linux-x64=runtime/nuget-native/linux-x64/libboost_gateway_sdk.so \
+            --native linux-arm64=runtime/nuget-native/linux-arm64/libboost_gateway_sdk.so \
+            --native osx-arm64=runtime/nuget-native/osx-arm64/libboost_gateway_sdk.dylib \
+            --output-dir runtime/release-nuget-assets \
+            --candidate-revision "$GITHUB_SHA"
+          wheel=$(find runtime/platform-assets -name '*manylinux_2_35_x86_64.whl' -print -quit)
+          python3 scripts/tools/verify_sdk_distribution_packages.py \
+            --wheel "$wheel" \
+            --nuget runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg \
+            --rid linux-x64 \
+            --require-nuget \
+            --summary-path runtime/validation/release-nuget-summary.json
+
+      - name: Generate NuGet SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+          format: spdx-json
+          output-file: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest NuGet provenance
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+
+      - name: Attest NuGet SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+          sbom-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
+
+      - name: Upload NuGet release artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: boost-gateway-nuget-${{ github.sha }}
+          path: |
+            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
+            runtime/release-nuget-assets/sdk-package-provenance-multi-rid.json
+            runtime/validation/release-nuget-summary.json
+
+  publish:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs:
+      - package
+      - nuget
 
     steps:
       - name: Prepare isolated release asset directory
@@ -564,18 +822,25 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -d '' archives < <(find "$RELEASE_ASSET_DIR" -type f -name '*.tar.gz' -print0)
-          test "${#archives[@]}" -eq 3
-          mapfile -d '' sboms < <(find "$RELEASE_ASSET_DIR" -type f -name '*-sbom.spdx.json' -print0)
-          test "${#sboms[@]}" -eq 3
+          test "${#archives[@]}" -eq 6
+          mapfile -d '' wheels < <(find "$RELEASE_ASSET_DIR" -type f -name '*.whl' -print0)
+          test "${#wheels[@]}" -eq 3
+          mapfile -d '' nugets < <(find "$RELEASE_ASSET_DIR" -type f -name '*.nupkg' -print0)
+          test "${#nugets[@]}" -eq 1
+          mapfile -d '' sboms < <(find "$RELEASE_ASSET_DIR" -type f -name '*.spdx.json' -print0)
+          test "${#sboms[@]}" -eq 10
+          mapfile -d '' provenance < <(find "$RELEASE_ASSET_DIR" -type f -name 'sdk-package-provenance-*.json' -print0)
+          test "${#provenance[@]}" -eq 4
           for platform in linux-x64 linux-arm64 macos-arm64; do
             find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}.tar.gz" -print -quit | grep -q .
             find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}-sbom.spdx.json" -print -quit | grep -q .
           done
           : > "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
-          for asset in "${archives[@]}" "${sboms[@]}"; do
+          for asset in "${archives[@]}" "${wheels[@]}" "${nugets[@]}" "${sboms[@]}" "${provenance[@]}"; do
             digest="$(sha256sum "$asset" | cut -d ' ' -f 1)"
             printf '%s  %s\n' "$digest" "$(basename "$asset")" >> "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
           done
+          sort -k2,2 -o "$RELEASE_ASSET_DIR/SHA256SUMS.txt" "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
           mapfile -d '' notes < <(find "$RELEASE_ASSET_DIR" -type f -name RELEASE_NOTES.md -print0)
           test "${#notes[@]}" -eq 3
           cp "${notes[0]}" "$RELEASE_ASSET_DIR/RELEASE_NOTES.md"
@@ -586,5 +851,8 @@ jobs:
           body_path: ${{ env.RELEASE_ASSET_DIR }}/RELEASE_NOTES.md
           files: |
             ${{ env.RELEASE_ASSET_DIR }}/**/*.tar.gz
-            ${{ env.RELEASE_ASSET_DIR }}/**/*-sbom.spdx.json
+            ${{ env.RELEASE_ASSET_DIR }}/**/*.whl
+            ${{ env.RELEASE_ASSET_DIR }}/**/*.nupkg
+            ${{ env.RELEASE_ASSET_DIR }}/**/*.spdx.json
+            ${{ env.RELEASE_ASSET_DIR }}/**/sdk-package-provenance-*.json
             ${{ env.RELEASE_ASSET_DIR }}/SHA256SUMS.txt

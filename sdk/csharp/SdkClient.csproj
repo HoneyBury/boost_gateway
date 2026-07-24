@@ -25,6 +25,24 @@
     <Content Include="$(NativeManifest)" Condition="'$(NativeManifest)' != ''" PackagePath="runtimes\$(RuntimeIdentifier)\native\_native_manifest.json">
       <Pack>true</Pack>
     </Content>
+    <Content Include="$(NativeLibraryLinuxX64)" Condition="'$(NativeLibraryLinuxX64)' != ''" PackagePath="runtimes\linux-x64\native\">
+      <Pack>true</Pack>
+    </Content>
+    <Content Include="$(NativeManifestLinuxX64)" Condition="'$(NativeManifestLinuxX64)' != ''" PackagePath="runtimes\linux-x64\native\_native_manifest.json">
+      <Pack>true</Pack>
+    </Content>
+    <Content Include="$(NativeLibraryLinuxArm64)" Condition="'$(NativeLibraryLinuxArm64)' != ''" PackagePath="runtimes\linux-arm64\native\">
+      <Pack>true</Pack>
+    </Content>
+    <Content Include="$(NativeManifestLinuxArm64)" Condition="'$(NativeManifestLinuxArm64)' != ''" PackagePath="runtimes\linux-arm64\native\_native_manifest.json">
+      <Pack>true</Pack>
+    </Content>
+    <Content Include="$(NativeLibraryOsxArm64)" Condition="'$(NativeLibraryOsxArm64)' != ''" PackagePath="runtimes\osx-arm64\native\">
+      <Pack>true</Pack>
+    </Content>
+    <Content Include="$(NativeManifestOsxArm64)" Condition="'$(NativeManifestOsxArm64)' != ''" PackagePath="runtimes\osx-arm64\native\_native_manifest.json">
+      <Pack>true</Pack>
+    </Content>
     <None Include="..\..\LICENSE" Pack="true" PackagePath="" />
     <None Include="..\docs\README.md" Pack="true" PackagePath="docs\" />
   </ItemGroup>
