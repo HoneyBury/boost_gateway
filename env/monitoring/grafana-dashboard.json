@@ -525,7 +525,7 @@
       "description": "Redis memory usage and configured cap"
     },
     {
-      "title": "Optional Container Runtime",
+      "title": "Container Runtime",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -548,7 +548,157 @@
           "unit": "short"
         }
       },
-      "description": "Optional cAdvisor metrics. Empty until the host-observability profile is enabled."
+      "description": "Governed cAdvisor container CPU and working-set metrics"
+    },
+    {
+      "title": "Host CPU / Load / Memory",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "1 - avg(rate(node_cpu_seconds_total{mode=\"idle\"}[5m]))",
+          "legendFormat": "cpu used ratio"
+        },
+        {
+          "expr": "node_load1 / count without (cpu, mode) (node_cpu_seconds_total{mode=\"idle\"})",
+          "legendFormat": "load1 per cpu"
+        },
+        {
+          "expr": "1 - node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes",
+          "legendFormat": "memory used ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        }
+      },
+      "description": "Node exporter host saturation signals"
+    },
+    {
+      "title": "Host Filesystem / Disk I/O",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "node_filesystem_avail_bytes{fstype!~\"tmpfs|overlay|squashfs\"} / node_filesystem_size_bytes{fstype!~\"tmpfs|overlay|squashfs\"}",
+          "legendFormat": "{{mountpoint}} available ratio"
+        },
+        {
+          "expr": "sum by (device) (rate(node_disk_read_bytes_total[5m]))",
+          "legendFormat": "{{device}} read B/s"
+        },
+        {
+          "expr": "sum by (device) (rate(node_disk_written_bytes_total[5m]))",
+          "legendFormat": "{{device}} write B/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "description": "Persistent filesystem capacity and block-device throughput"
+    },
+    {
+      "title": "Host Network / Thermal",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "sum by (device) (rate(node_network_receive_bytes_total{device!=\"lo\"}[5m]))",
+          "legendFormat": "{{device}} receive B/s"
+        },
+        {
+          "expr": "sum by (device) (rate(node_network_transmit_bytes_total{device!=\"lo\"}[5m]))",
+          "legendFormat": "{{device}} transmit B/s"
+        },
+        {
+          "expr": "node_hwmon_temp_celsius or node_thermal_zone_temp",
+          "legendFormat": "{{chip}} {{sensor}} {{zone}} temperature"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "description": "Host network throughput and available hwmon or thermal-zone sensors"
+    },
+    {
+      "title": "Container Starts / Restarts",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 46
+      },
+      "targets": [
+        {
+          "expr": "container_start_time_seconds{name=~\"boost-.*\"}",
+          "legendFormat": "{{name}} start time"
+        },
+        {
+          "expr": "boost_gateway_container_restart_count",
+          "legendFormat": "{{container}} restart count"
+        },
+        {
+          "expr": "boost_gateway_container_restart_collection_success",
+          "legendFormat": "restart collector success"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "description": "Container start timestamps and detected changes from cAdvisor"
+    },
+    {
+      "title": "Redis Persistence Health",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "targets": [
+        {
+          "expr": "redis_rdb_last_bgsave_status",
+          "legendFormat": "last background save status"
+        },
+        {
+          "expr": "redis_rdb_changes_since_last_save",
+          "legendFormat": "changes since save"
+        },
+        {
+          "expr": "time() - redis_rdb_last_save_timestamp_seconds",
+          "legendFormat": "seconds since save"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        }
+      },
+      "description": "Read-only observation of the active Redis RDB persistence state"
     }
   ]
 }

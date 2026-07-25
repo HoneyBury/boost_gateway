@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect BoostGateway Docker restart metrics every minute
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Persistent=true
+Unit=boost-gateway-container-metrics.service
+
+[Install]
+WantedBy=timers.target
+

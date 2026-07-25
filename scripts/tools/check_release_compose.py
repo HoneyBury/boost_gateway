@@ -14,6 +14,8 @@ from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DEFAULT_COMPOSE = ROOT / "deploy/operations/docker-compose.production.yml"
 PROJECT_SERVICES = {
     "gateway",
@@ -22,6 +24,32 @@ PROJECT_SERVICES = {
     "battle-backend",
     "matchmaking-backend",
     "leaderboard-backend",
+}
+REQUIRED_RUNTIME_SERVICES = PROJECT_SERVICES | {
+    "redis",
+    "redis-exporter",
+    "node-exporter",
+    "cadvisor",
+    "prometheus",
+    "alertmanager",
+    "grafana",
+}
+NODE_EXPORTER_IMAGE = "quay.io/prometheus/node-exporter:v1.8.2"
+CADVISOR_IMAGE = "gcr.io/cadvisor/cadvisor:v0.49.1"
+NODE_EXPORTER_BINDS = {
+    ("/", "/host"),
+    ("/run/dbus/system_bus_socket", "/var/run/dbus/system_bus_socket"),
+    (
+        "/var/lib/boost-gateway-evidence/metrics",
+        "/var/lib/node_exporter/textfile_collector",
+    ),
+}
+CADVISOR_BINDS = {
+    ("/", "/rootfs"),
+    ("/var/run", "/var/run"),
+    ("/sys", "/sys"),
+    ("/var/lib/docker", "/var/lib/docker"),
+    ("/dev/disk", "/dev/disk"),
 }
 IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LOOPBACK_ADDRESSES = {"127.0.0.1", "::1"}
@@ -133,6 +161,147 @@ def _volume_entries(service: dict[str, Any]) -> list[tuple[str, str, str]]:
     return entries
 
 
+def _read_only_bind_entries(service: dict[str, Any]) -> set[tuple[str, str]]:
+    entries: set[tuple[str, str]] = set()
+    raw_volumes = service.get("volumes")
+    if not isinstance(raw_volumes, list):
+        return entries
+    for raw in raw_volumes:
+        if (
+            isinstance(raw, dict)
+            and raw.get("type") == "bind"
+            and raw.get("read_only") is True
+        ):
+            entries.add((str(raw.get("source", "")), str(raw.get("target", ""))))
+    return entries
+
+
+def _command_arguments(service: dict[str, Any]) -> set[str]:
+    command = service.get("command")
+    if isinstance(command, list):
+        return {str(argument) for argument in command}
+    if isinstance(command, str):
+        return set(command.split())
+    return set()
+
+
+def _prometheus_retention_days(service: dict[str, Any]) -> float | None:
+    prefix = "--storage.tsdb.retention.time="
+    for argument in _command_arguments(service):
+        if not argument.startswith(prefix):
+            continue
+        value = argument[len(prefix) :]
+        match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([dwy])", value)
+        if match is None:
+            return None
+        multiplier = {"d": 1.0, "w": 7.0, "y": 365.0}[match.group(2)]
+        return float(match.group(1)) * multiplier
+    return None
+
+
+def _validate_node_exporter(service: dict[str, Any], failures: list[str]) -> None:
+    if service.get("image") != NODE_EXPORTER_IMAGE:
+        failures.append(f"node-exporter: image must be {NODE_EXPORTER_IMAGE}")
+    if service.get("pull_policy") != "never":
+        failures.append("node-exporter: pull_policy must be never")
+    if service.get("pid") != "host":
+        failures.append("node-exporter: host PID namespace is required")
+    volumes = service.get("volumes")
+    if (
+        not isinstance(volumes, list)
+        or len(volumes) != len(NODE_EXPORTER_BINDS)
+        or _read_only_bind_entries(service) != NODE_EXPORTER_BINDS
+    ):
+        failures.append("node-exporter: exact read-only host and D-Bus binds are required")
+    required_arguments = {
+        "--path.rootfs=/host",
+        "--collector.hwmon",
+        "--collector.thermal_zone",
+        "--collector.systemd",
+        "--collector.textfile.directory=/var/lib/node_exporter/textfile_collector",
+    }
+    if not required_arguments.issubset(_command_arguments(service)):
+        failures.append("node-exporter: required host and thermal collectors are missing")
+    if service.get("devices"):
+        failures.append("node-exporter: host devices are forbidden")
+    if service.get("ports"):
+        failures.append("node-exporter: published ports are forbidden")
+
+
+def _validate_cadvisor(service: dict[str, Any], failures: list[str]) -> None:
+    if service.get("image") != CADVISOR_IMAGE:
+        failures.append(f"cadvisor: image must be {CADVISOR_IMAGE}")
+    if service.get("pull_policy") != "never":
+        failures.append("cadvisor: pull_policy must be never")
+    if service.get("privileged") is not True:
+        failures.append("cadvisor: governed privileged mode is required")
+    if service.get("read_only") is not True:
+        failures.append("cadvisor: read-only root filesystem is required")
+    volumes = service.get("volumes")
+    if (
+        not isinstance(volumes, list)
+        or len(volumes) != len(CADVISOR_BINDS)
+        or _read_only_bind_entries(service) != CADVISOR_BINDS
+    ):
+        failures.append("cadvisor: exact read-only host metric binds are required")
+    devices = service.get("devices")
+    expected_devices = [
+        {"source": "/dev/kmsg", "target": "/dev/kmsg", "permissions": "rwm"}
+    ]
+    if devices != expected_devices:
+        failures.append("cadvisor: /dev/kmsg must be the only host device")
+    if service.get("tmpfs") != ["/tmp"]:
+        failures.append("cadvisor: /tmp must be the only tmpfs mount")
+    if service.get("ports"):
+        failures.append("cadvisor: published ports are forbidden")
+
+
+def _validate_prometheus(service: dict[str, Any], failures: list[str]) -> None:
+    retention_days = _prometheus_retention_days(service)
+    if retention_days is None or retention_days < 45:
+        failures.append("prometheus: TSDB retention must be at least 45 days")
+    data_volumes = [
+        (source, target)
+        for kind, source, target in _volume_entries(service)
+        if kind == "volume" and target == "/prometheus"
+    ]
+    if len(data_volumes) != 1:
+        failures.append("prometheus: exactly one persistent /prometheus volume is required")
+
+
+def _validate_grafana(service: dict[str, Any], failures: list[str]) -> None:
+    environment = service.get("environment")
+    if not isinstance(environment, dict):
+        failures.append("grafana: resolved admin credentials are required")
+        return
+    username = str(environment.get("GF_SECURITY_ADMIN_USER", "")).strip().lower()
+    password = str(environment.get("GF_SECURITY_ADMIN_PASSWORD", ""))
+    if not username or username == "admin":
+        failures.append("grafana: default or empty admin username is forbidden")
+    forbidden_passwords = {
+        "admin",
+        "password",
+        "boost-gateway-change-me",
+        "changeme",
+    }
+    if len(password) < 20 or password.lower() in forbidden_passwords:
+        failures.append("grafana: default, empty, or short admin password is forbidden")
+
+
+def _validate_alertmanager(service: dict[str, Any], failures: list[str]) -> None:
+    config_binds = [
+        (source, target)
+        for source, target in _read_only_bind_entries(service)
+        if target == "/etc/alertmanager/alertmanager.yml"
+    ]
+    if config_binds != [
+        ("/etc/boost-gateway/alertmanager.yml", "/etc/alertmanager/alertmanager.yml")
+    ]:
+        failures.append(
+            "alertmanager: root-managed production config bind is required"
+        )
+
+
 def validate_compose_document(document: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(document, dict):
@@ -145,7 +314,7 @@ def validate_compose_document(document: object) -> list[str]:
         failures.append("Compose document has no named volumes object")
         volumes = {}
 
-    missing = sorted(PROJECT_SERVICES - set(services))
+    missing = sorted(REQUIRED_RUNTIME_SERVICES - set(services))
     if missing:
         failures.append("missing project services: " + ", ".join(missing))
 
@@ -159,7 +328,7 @@ def validate_compose_document(document: object) -> list[str]:
             failures.append(f"{name}: source build is forbidden")
         if service.get("network_mode") == "host":
             failures.append(f"{name}: host network mode is forbidden")
-        if service.get("privileged") is True:
+        if service.get("privileged") is True and name != "cadvisor":
             failures.append(f"{name}: privileged containers are forbidden")
         if service.get("restart") not in {"always", "unless-stopped"}:
             failures.append(f"{name}: restart policy must survive host restart")
@@ -189,6 +358,17 @@ def validate_compose_document(document: object) -> list[str]:
                 failures.append(f"{name}: exactly one named /app/logs volume is required")
             elif named_logs[0][0] not in volumes:
                 failures.append(f"{name}: log volume is not declared at top level")
+
+        if name == "node-exporter":
+            _validate_node_exporter(service, failures)
+        elif name == "cadvisor":
+            _validate_cadvisor(service, failures)
+        elif name == "prometheus":
+            _validate_prometheus(service, failures)
+        elif name == "grafana":
+            _validate_grafana(service, failures)
+        elif name == "alertmanager":
+            _validate_alertmanager(service, failures)
 
         raw_ports = service.get("ports", [])
         if not isinstance(raw_ports, list):
@@ -250,6 +430,24 @@ def main() -> int:
         for failure in failures:
             print(f"- {failure}", file=sys.stderr)
         return 1
+    if sys.platform == "linux" and os.geteuid() == 0:
+        try:
+            from scripts.tools.check_observability_preflight import (
+                DEFAULT_ATTESTATION,
+                DEFAULT_CONFIG,
+                DEFAULT_ENV,
+                DEFAULT_SUMMARY,
+                validate_preflight,
+            )
+
+            summary = validate_preflight(DEFAULT_CONFIG, DEFAULT_ENV, DEFAULT_ATTESTATION)
+            DEFAULT_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
+            atomic_content = json.dumps(summary, indent=2, sort_keys=True) + "\n"
+            DEFAULT_SUMMARY.write_text(atomic_content, encoding="utf-8")
+            os.chmod(DEFAULT_SUMMARY, 0o640)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
+            print(f"release Compose contract: FAIL (observability: {exc})", file=sys.stderr)
+            return 1
     print("release Compose contract: PASS")
     return 0
 

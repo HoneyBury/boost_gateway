@@ -16,6 +16,7 @@ from datetime import UTC, datetime
 REPO_ROOT = Path(__file__).resolve().parents[3]
 OPERATIONS_RUNBOOK = "docs/deployment/production-operations-runbook.md"
 DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
+PRODUCTION_COMPOSE = "deploy/operations/docker-compose.production.yml"
 
 BACKEND_TARGETS = {
     "login-backend:9202",
@@ -29,6 +30,8 @@ REQUIRED_PROMETHEUS_TARGETS = {
     "gateway:9080",
     "localhost:9090",
     "redis-exporter:9121",
+    "node-exporter:9100",
+    "cadvisor:8080",
 }
 
 LEGACY_QUERY_TOKENS = {
@@ -55,6 +58,16 @@ REQUIRED_ALERTS = {
     "BoostGatewayHighRSS",
     "BoostGatewayHighFileDescriptors",
     "BoostGatewayContainerMemoryHigh",
+    "BoostGatewayNodeExporterDown",
+    "BoostGatewayCadvisorDown",
+    "BoostGatewayHostLoadHigh",
+    "BoostGatewayHostMemoryHigh",
+    "BoostGatewayHostFilesystemLow",
+    "BoostGatewayHostTemperatureHigh",
+    "BoostGatewayContainerRestarted",
+    "BoostGatewayContainerRestartCollectorFailed",
+    "BoostGatewayRedisRdbSaveFailed",
+    "BoostGatewayRedisRdbSaveStale",
 }
 
 REQUIRED_DASHBOARD_METRICS = {
@@ -69,6 +82,20 @@ REQUIRED_DASHBOARD_METRICS = {
     "redis_connected_clients",
     "redis_memory_used_bytes",
     "container_memory_working_set_bytes",
+    "node_cpu_seconds_total",
+    "node_load1",
+    "node_memory_MemAvailable_bytes",
+    "node_filesystem_avail_bytes",
+    "node_disk_read_bytes_total",
+    "node_disk_written_bytes_total",
+    "node_network_receive_bytes_total",
+    "node_network_transmit_bytes_total",
+    "node_hwmon_temp_celsius",
+    "container_start_time_seconds",
+    "boost_gateway_container_restart_count",
+    "redis_rdb_last_bgsave_status",
+    "redis_rdb_changes_since_last_save",
+    "redis_rdb_last_save_timestamp_seconds",
 }
 
 
@@ -93,7 +120,7 @@ def collect_dashboard_exprs(dashboard: dict[str, Any]) -> list[str]:
 
 def validate_prometheus(checks: list[dict[str, Any]]) -> None:
     prometheus = read_text("env/monitoring/prometheus.yml")
-    compose = read_text("env/docker/docker-compose.yml")
+    compose = read_text(PRODUCTION_COMPOSE)
 
     add_check(
         checks,
@@ -104,8 +131,8 @@ def validate_prometheus(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "compose:alerts-mounted",
-        "../monitoring/prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro" in compose,
-        "Docker Compose mounts the alert rule file into Prometheus",
+        "../../env/monitoring/prometheus-alerts.yml:/etc/prometheus/prometheus-alerts.yml:ro" in compose,
+        "Production Compose mounts the alert rule file into Prometheus",
     )
     add_check(
         checks,
@@ -136,14 +163,14 @@ def validate_prometheus(checks: list[dict[str, Any]]) -> None:
 
 
 def validate_grafana_provisioning(checks: list[dict[str, Any]]) -> None:
-    compose = read_text("env/docker/docker-compose.yml")
+    compose = read_text(PRODUCTION_COMPOSE)
     datasource = read_text("env/monitoring/grafana-datasource.yml")
     provider = read_text("env/monitoring/grafana-dashboard-provider.yml")
 
     add_check(
         checks,
         "grafana:datasource-provisioned",
-        "../monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro" in compose
+        "../../env/monitoring/grafana-datasource.yml:/etc/grafana/provisioning/datasources/prometheus.yml:ro" in compose
         and "url: http://prometheus:9090" in datasource
         and "isDefault: true" in datasource,
         "Docker Compose provisions the Prometheus datasource for Grafana",
@@ -151,21 +178,23 @@ def validate_grafana_provisioning(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "grafana:dashboard-provider-provisioned",
-        "../monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro" in compose
+        "../../env/monitoring/grafana-dashboard-provider.yml:/etc/grafana/provisioning/dashboards/boost-gateway.yml:ro" in compose
         and "path: /var/lib/grafana/dashboards" in provider,
         "Docker Compose provisions the dashboard provider",
     )
     add_check(
         checks,
         "grafana:dashboard-json-mounted",
-        "../monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro" in compose,
+        "../../env/monitoring/grafana-dashboard.json:/var/lib/grafana/dashboards/boost-gateway.json:ro" in compose,
         "Docker Compose mounts the Boost Gateway dashboard JSON",
     )
     add_check(
         checks,
-        "grafana:admin-password-not-default",
-        "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-boost-gateway-change-me}" in compose,
-        "Grafana compose defaults no longer hardcode admin/admin",
+        "grafana:admin-credentials-required",
+        "GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:?" in compose
+        and "GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?" in compose
+        and "GRAFANA_ADMIN_USER:-admin" not in compose,
+        "Production Compose requires non-default Grafana credential inputs",
     )
 
 
@@ -220,10 +249,11 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
-        "alerts:optional-cadvisor-labeled",
-        "optional-cadvisor" in alerts
+        "alerts:governed-host-container-exporters",
+        "up{job=\"node-exporter\"}" in alerts
+        and "up{job=\"cadvisor\"}" in alerts
         and "container_memory_working_set_bytes" in alerts,
-        "container runtime alerts are clearly marked as optional cAdvisor rules",
+        "host and container runtime alerts use the governed production exporters",
     )
 
 

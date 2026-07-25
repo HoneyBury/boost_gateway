@@ -62,3 +62,28 @@ scrape_configs:
         labels:
           service: "redis-exporter"
           tier: "monitoring"
+
+  # ---------------------------------------------------------------
+  # Node exporter — host CPU, load, memory, filesystems, disk, net,
+  # systemd and hwmon/thermal signals.
+  # ---------------------------------------------------------------
+  - job_name: "node-exporter"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "node-exporter:9100"
+        labels:
+          service: "node-exporter"
+          tier: "host"
+
+  # ---------------------------------------------------------------
+  # cAdvisor — per-container CPU, memory, pids, filesystem and net.
+  # ---------------------------------------------------------------
+  - job_name: "cadvisor"
+    scrape_interval: 15s
+    static_configs:
+      - targets:
+          - "cadvisor:8080"
+        labels:
+          service: "cadvisor"
+          tier: "containers"

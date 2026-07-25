@@ -132,8 +132,87 @@ groups:
           summary: "Core business-flow success counters are not advancing"
           description: "One or more core success counters for login, room join, or battle start stopped advancing. Cross-check SDK full-flow, /ready, and backend diagnostics before release."
 
-  - name: boost-gateway.optional-runtime-exporters
+  - name: boost-gateway.host-and-container
     rules:
+      - alert: BoostGatewayNodeExporterDown
+        expr: up{job="node-exporter"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: host-observability
+        annotations:
+          summary: "Node exporter scrape target is down"
+          description: "Host CPU, load, memory, filesystem, disk, network, thermal, and systemd visibility is unavailable."
+
+      - alert: BoostGatewayCadvisorDown
+        expr: up{job="cadvisor"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: container-observability
+        annotations:
+          summary: "cAdvisor scrape target is down"
+          description: "Container CPU, memory, filesystem, network, and restart visibility is unavailable."
+
+      - alert: BoostGatewayHostLoadHigh
+        expr: node_load1 / count without (cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 1.5
+        for: 15m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: "Host load is high"
+          description: "One-minute host load has exceeded 1.5 per logical CPU for 15 minutes."
+
+      - alert: BoostGatewayHostMemoryHigh
+        expr: 1 - (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes) > 0.90
+        for: 10m
+        labels:
+          severity: warning
+          component: host
+        annotations:
+          summary: "Host memory pressure is high"
+          description: "Available host memory has remained below 10 percent for 10 minutes."
+
+      - alert: BoostGatewayHostFilesystemLow
+        expr: node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"} < 0.10
+        for: 10m
+        labels:
+          severity: critical
+          component: host
+        annotations:
+          summary: "Host filesystem free space is low"
+          description: "A persistent filesystem has remained below 10 percent available space for 10 minutes."
+
+      - alert: BoostGatewayHostTemperatureHigh
+        expr: max(node_hwmon_temp_celsius or node_thermal_zone_temp) > 85
+        for: 10m
+        labels:
+          severity: warning
+          component: host-thermal
+        annotations:
+          summary: "Host temperature is high"
+          description: "A reported hwmon or thermal-zone sensor has remained above 85 degrees Celsius for 10 minutes."
+
+      - alert: BoostGatewayContainerRestarted
+        expr: changes(boost_gateway_container_restart_count[15m]) > 0
+        labels:
+          severity: warning
+          component: containers
+        annotations:
+          summary: "Boost Gateway container restarted"
+          description: "The governed Docker restart counter changed for a container in the last 15 minutes."
+
+      - alert: BoostGatewayContainerRestartCollectorFailed
+        expr: boost_gateway_container_restart_collection_success == 0 or time() - boost_gateway_container_restart_collection_timestamp_seconds > 180
+        for: 2m
+        labels:
+          severity: warning
+          component: container-observability
+        annotations:
+          summary: "Container restart collector is incomplete or stale"
+          description: "The host collector cannot inspect every governed container or has not refreshed metrics for three minutes."
+
       - alert: BoostGatewayHighRSS
         expr: process_resident_memory_bytes{job="gateway"} > 1500000000
         for: 10m
@@ -162,7 +241,29 @@ groups:
         labels:
           severity: warning
           component: containers
-          exporter: optional-cadvisor
+          exporter: governed-cadvisor
         annotations:
           summary: "Container memory usage is high"
-          description: "Requires cAdvisor metrics. One of the core containers exceeded 1 GiB working set."
+          description: "One of the core containers exceeded 1 GiB working set."
+
+  - name: boost-gateway.redis-persistence-observability
+    rules:
+      - alert: BoostGatewayRedisRdbSaveFailed
+        expr: redis_rdb_last_bgsave_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis background save failed"
+          description: "redis_exporter reports that the most recent Redis RDB background save did not succeed."
+
+      - alert: BoostGatewayRedisRdbSaveStale
+        expr: redis_rdb_changes_since_last_save > 0 and time() - redis_rdb_last_save_timestamp_seconds > 1800
+        for: 5m
+        labels:
+          severity: warning
+          component: redis-persistence
+        annotations:
+          summary: "Redis has unsaved changes"
+          description: "Redis reports pending changes and no successful RDB save timestamp within 30 minutes. This observes the current policy without changing it."

@@ -49,6 +49,56 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
         document["data"]["activeTargets"][0]["health"] = "down"
         self.assertTrue(module.validate_prometheus_targets(document))
 
+    def test_prometheus_metric_inventory_requires_every_signal_family(self) -> None:
+        metrics = sorted(
+            module.REQUIRED_PROMETHEUS_METRICS
+            | {
+                "node_hwmon_temp_celsius",
+                "gateway_backend_login_requests_total",
+                "gateway_backend_login_errors_total",
+                "gateway_backend_login_p99_latency_us",
+            }
+        )
+        document = {"status": "success", "data": metrics}
+        self.assertEqual(module.validate_prometheus_metric_inventory(document), [])
+        document["data"].remove("node_hwmon_temp_celsius")
+        self.assertIn(
+            "Prometheus has no host thermal samples",
+            module.validate_prometheus_metric_inventory(document),
+        )
+
+    def test_prometheus_flags_require_45_day_retention(self) -> None:
+        self.assertEqual(
+            module.validate_prometheus_flags(
+                {
+                    "status": "success",
+                    "data": {"storage.tsdb.retention.time": "45d"},
+                }
+            ),
+            [],
+        )
+        self.assertTrue(
+            module.validate_prometheus_flags(
+                {
+                    "status": "success",
+                    "data": {"storage.tsdb.retention.time": "30d"},
+                }
+            )
+        )
+
+    def test_prometheus_nonempty_query_rejects_empty_vector(self) -> None:
+        self.assertEqual(
+            module.validate_prometheus_nonempty_query(
+                {"status": "success", "data": {"result": [{"value": [1, "1"]}]}}
+            ),
+            [],
+        )
+        self.assertTrue(
+            module.validate_prometheus_nonempty_query(
+                {"status": "success", "data": {"result": []}}
+            )
+        )
+
     def test_parse_compose_ps_accepts_array_and_json_lines(self) -> None:
         items = [{"Service": "gateway", "State": "running", "Health": "healthy"}]
         self.assertEqual(module.parse_compose_ps(json.dumps(items)), items)

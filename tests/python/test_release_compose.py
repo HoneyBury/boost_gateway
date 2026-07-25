@@ -42,7 +42,7 @@ def service(*, ports: list[dict[str, object]] | None = None) -> dict[str, object
 def valid_document() -> dict[str, object]:
     services = {
         name: service()
-        for name in sorted(check_release_compose.PROJECT_SERVICES)
+        for name in sorted(check_release_compose.REQUIRED_RUNTIME_SERVICES)
     }
     services["gateway"] = service(
         ports=[
@@ -50,7 +50,96 @@ def valid_document() -> dict[str, object]:
             {"host_ip": "127.0.0.1", "published": "9080", "target": 9080},
         ]
     )
-    return {"name": "test", "services": services, "volumes": {"logs": {}}}
+    services["node-exporter"].update(
+        {
+            "image": check_release_compose.NODE_EXPORTER_IMAGE,
+            "pid": "host",
+            "command": [
+                "--path.rootfs=/host",
+                "--collector.hwmon",
+                "--collector.thermal_zone",
+                "--collector.systemd",
+                "--collector.textfile.directory=/var/lib/node_exporter/textfile_collector",
+            ],
+            "volumes": [
+                {
+                    "type": "bind",
+                    "source": "/",
+                    "target": "/host",
+                    "read_only": True,
+                },
+                {
+                    "type": "bind",
+                    "source": "/run/dbus/system_bus_socket",
+                    "target": "/var/run/dbus/system_bus_socket",
+                    "read_only": True,
+                },
+                {
+                    "type": "bind",
+                    "source": "/var/lib/boost-gateway-evidence/metrics",
+                    "target": "/var/lib/node_exporter/textfile_collector",
+                    "read_only": True,
+                },
+            ],
+        }
+    )
+    services["cadvisor"].update(
+        {
+            "image": check_release_compose.CADVISOR_IMAGE,
+            "privileged": True,
+            "read_only": True,
+            "devices": [
+                {
+                    "source": "/dev/kmsg",
+                    "target": "/dev/kmsg",
+                    "permissions": "rwm",
+                }
+            ],
+            "tmpfs": ["/tmp"],
+            "volumes": [
+                {
+                    "type": "bind",
+                    "source": source,
+                    "target": target,
+                    "read_only": True,
+                }
+                for source, target in sorted(check_release_compose.CADVISOR_BINDS)
+            ],
+        }
+    )
+    services["prometheus"].update(
+        {
+            "command": [
+                "--config.file=/etc/prometheus/prometheus.yml",
+                "--storage.tsdb.path=/prometheus",
+                "--storage.tsdb.retention.time=45d",
+            ],
+            "volumes": [
+                {
+                    "type": "volume",
+                    "source": "prometheus-data",
+                    "target": "/prometheus",
+                }
+            ],
+        }
+    )
+    services["grafana"]["environment"] = {
+        "GF_SECURITY_ADMIN_USER": "unit-test-operator",
+        "GF_SECURITY_ADMIN_PASSWORD": "unit-test-only-secret-value",
+    }
+    services["alertmanager"]["volumes"] = [
+        {
+            "type": "bind",
+            "source": "/etc/boost-gateway/alertmanager.yml",
+            "target": "/etc/alertmanager/alertmanager.yml",
+            "read_only": True,
+        }
+    ]
+    return {
+        "name": "test",
+        "services": services,
+        "volumes": {"logs": {}, "prometheus-data": {}},
+    }
 
 
 class ReleaseComposeContractTest(unittest.TestCase):
@@ -96,6 +185,59 @@ class ReleaseComposeContractTest(unittest.TestCase):
         self.assertTrue(
             any("9202:9202 must bind to loopback" in item for item in failures)
         )
+
+    def test_rejects_privileged_non_cadvisor_service(self) -> None:
+        document = valid_document()
+        document["services"]["redis"]["privileged"] = True
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertIn("redis: privileged containers are forbidden", failures)
+
+    def test_rejects_cadvisor_privilege_scope_drift(self) -> None:
+        document = valid_document()
+        document["services"]["cadvisor"]["volumes"].append(
+            {
+                "type": "bind",
+                "source": "/etc",
+                "target": "/host-etc",
+                "read_only": True,
+            }
+        )
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertTrue(any("exact read-only host metric binds" in item for item in failures))
+
+    def test_rejects_short_prometheus_retention(self) -> None:
+        document = valid_document()
+        document["services"]["prometheus"]["command"][-1] = (
+            "--storage.tsdb.retention.time=30d"
+        )
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertIn("prometheus: TSDB retention must be at least 45 days", failures)
+
+    def test_rejects_default_grafana_credentials(self) -> None:
+        document = valid_document()
+        document["services"]["grafana"]["environment"] = {
+            "GF_SECURITY_ADMIN_USER": "admin",
+            "GF_SECURITY_ADMIN_PASSWORD": "boost-gateway-change-me",
+        }
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertTrue(any("default or empty admin username" in item for item in failures))
+        self.assertTrue(any("default, empty, or short admin password" in item for item in failures))
+
+    def test_rejects_missing_observability_collector(self) -> None:
+        document = valid_document()
+        del document["services"]["node-exporter"]
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertTrue(any("missing project services: node-exporter" in item for item in failures))
 
     def test_rejects_missing_operational_limits(self) -> None:
         for field, expected in (
@@ -161,7 +303,8 @@ class ReleaseComposeContractTest(unittest.TestCase):
             "LEADERBOARD_IMAGE_ID",
         ):
             environment[variable] = IMAGE_ID
-        environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only"
+        environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only-secret-value"
+        environment["GRAFANA_ADMIN_USER"] = "unit-test-operator"
         document = check_release_compose.load_compose_document(
             COMPOSE, environment=environment
         )
@@ -191,7 +334,8 @@ class ReleaseComposeContractTest(unittest.TestCase):
             "LEADERBOARD_IMAGE_ID",
         ):
             environment[variable] = IMAGE_ID
-        environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only"
+        environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only-secret-value"
+        environment["GRAFANA_ADMIN_USER"] = "unit-test-operator"
 
         document = check_release_compose.load_compose_document(
             COMPOSE, environment=environment

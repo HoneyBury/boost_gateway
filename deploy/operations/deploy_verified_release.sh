@@ -154,6 +154,8 @@ pull_runtime_images() {
     "${UBUNTU_IMAGE}" \
     redis:7-alpine \
     oliver006/redis_exporter:v1.69.0 \
+    quay.io/prometheus/node-exporter:v1.8.2 \
+    gcr.io/cadvisor/cadvisor:v0.49.1 \
     prom/prometheus:v2.53.0 \
     prom/alertmanager:v0.28.1 \
     grafana/grafana:10.4.2; do
@@ -174,10 +176,17 @@ build_images() {
 prepare_secrets() {
   if [[ ! -e /etc/boost-gateway/compose.env ]]; then
     umask 0027
-    printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 32)" > /etc/boost-gateway/compose.env
+    {
+      printf 'GRAFANA_ADMIN_USER=boost-gateway-operator\n'
+      printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 32)"
+    } > /etc/boost-gateway/compose.env
   fi
   chown root:boost-gateway /etc/boost-gateway/compose.env
   chmod 0640 /etc/boost-gateway/compose.env
+}
+
+install_observability_host_units() {
+  "${CONTROLLER}/deploy/operations/install_observability_host_units.sh"
 }
 
 start_and_verify() {
@@ -233,6 +242,7 @@ main() {
   pull_runtime_images
   build_images
   prepare_secrets
+  install_observability_host_units
   start_and_verify
   trap - ERR
   printf 'verified release deploy: PASS\n'

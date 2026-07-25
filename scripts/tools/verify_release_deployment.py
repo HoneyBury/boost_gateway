@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -31,11 +32,53 @@ REQUIRED_SERVICES = {
     "leaderboard-backend",
     "redis",
     "redis-exporter",
+    "node-exporter",
+    "cadvisor",
     "prometheus",
     "alertmanager",
     "grafana",
 }
-REQUIRED_PROMETHEUS_JOBS = {"gateway", "prometheus", "redis-exporter"}
+REQUIRED_PROMETHEUS_JOBS = {
+    "gateway",
+    "prometheus",
+    "redis-exporter",
+    "node-exporter",
+    "cadvisor",
+}
+REQUIRED_PROMETHEUS_METRICS = {
+    "node_cpu_seconds_total",
+    "node_load1",
+    "node_memory_MemAvailable_bytes",
+    "node_memory_MemTotal_bytes",
+    "node_filesystem_avail_bytes",
+    "node_filesystem_size_bytes",
+    "node_disk_read_bytes_total",
+    "node_disk_written_bytes_total",
+    "node_network_receive_bytes_total",
+    "node_network_transmit_bytes_total",
+    "container_cpu_usage_seconds_total",
+    "container_memory_working_set_bytes",
+    "container_fs_usage_bytes",
+    "container_network_receive_bytes_total",
+    "container_network_transmit_bytes_total",
+    "container_start_time_seconds",
+    "boost_gateway_container_restart_count",
+    "boost_gateway_container_restart_collection_success",
+    "boost_gateway_container_restart_collection_timestamp_seconds",
+    "redis_rdb_last_bgsave_status",
+    "redis_rdb_changes_since_last_save",
+    "redis_rdb_last_save_timestamp_seconds",
+}
+REQUIRED_PROMETHEUS_METRIC_PATTERNS = {
+    "gateway-backend-requests": re.compile(r"gateway_backend_.*_requests_total\Z"),
+    "gateway-backend-errors": re.compile(
+        r"gateway_backend_.*_(?:errors|timeouts)_total\Z"
+    ),
+    "gateway-backend-latency": re.compile(
+        r"gateway_backend_.*_(?:p99_latency_us|route_latency_us_bucket)\Z"
+    ),
+}
+THERMAL_METRICS = {"node_hwmon_temp_celsius", "node_thermal_zone_temp"}
 IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}")
 IMAGE_ENV_BY_SERVICE = {
     "gateway": "GATEWAY_IMAGE_ID",
@@ -234,6 +277,47 @@ def validate_prometheus_targets(document: object) -> list[str]:
     return failures
 
 
+def validate_prometheus_metric_inventory(document: object) -> list[str]:
+    if not isinstance(document, dict) or document.get("status") != "success":
+        return ["Prometheus metric-name response is not successful"]
+    data = document.get("data")
+    if not isinstance(data, list) or any(not isinstance(item, str) for item in data):
+        return ["Prometheus metric-name response has no string array"]
+    metrics = set(data)
+    failures: list[str] = []
+    missing = REQUIRED_PROMETHEUS_METRICS - metrics
+    if missing:
+        failures.append(f"Prometheus has no samples for required metrics: {sorted(missing)}")
+    if not (THERMAL_METRICS & metrics):
+        failures.append("Prometheus has no host thermal samples")
+    for label, pattern in REQUIRED_PROMETHEUS_METRIC_PATTERNS.items():
+        if not any(pattern.fullmatch(metric) for metric in metrics):
+            failures.append(f"Prometheus has no samples for metric group: {label}")
+    return failures
+
+
+def validate_prometheus_flags(document: object) -> list[str]:
+    if not isinstance(document, dict) or document.get("status") != "success":
+        return ["Prometheus flags response is not successful"]
+    data = document.get("data")
+    value = data.get("storage.tsdb.retention.time") if isinstance(data, dict) else None
+    match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([dwy])", str(value or ""))
+    if match is None:
+        return ["Prometheus retention flag is missing or unsupported"]
+    days = float(match.group(1)) * {"d": 1.0, "w": 7.0, "y": 365.0}[
+        match.group(2)
+    ]
+    return [] if days >= 45 else [f"Prometheus retention is shorter than 45 days: {value}"]
+
+
+def validate_prometheus_nonempty_query(document: object) -> list[str]:
+    if not isinstance(document, dict) or document.get("status") != "success":
+        return ["Prometheus query response is not successful"]
+    data = document.get("data")
+    result = data.get("result") if isinstance(data, dict) else None
+    return [] if isinstance(result, list) and result else ["Prometheus query returned no samples"]
+
+
 def add_check(
     checks: list[dict[str, Any]], name: str, passed: bool, detail: str, **extra: Any
 ) -> None:
@@ -304,6 +388,52 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "prometheus-active-targets",
         targets_passed,
         targets_detail,
+    )
+    restart_collector = run(
+        ["systemctl", "start", "boost-gateway-container-metrics.service"],
+        timeout=30,
+    )
+    add_check(
+        checks,
+        "container-restart-metric-collector",
+        restart_collector.returncode == 0,
+        (restart_collector.stdout + restart_collector.stderr).strip()[-1000:],
+    )
+    metrics_passed, metrics_detail = wait_valid_json(
+        "http://127.0.0.1:9090/api/v1/label/__name__/values",
+        args.ready_timeout_seconds,
+        validate_prometheus_metric_inventory,
+    )
+    add_check(
+        checks,
+        "prometheus-required-metric-samples",
+        metrics_passed,
+        metrics_detail,
+    )
+    retention_passed, retention_detail = wait_valid_json(
+        "http://127.0.0.1:9090/api/v1/status/flags",
+        args.ready_timeout_seconds,
+        validate_prometheus_flags,
+    )
+    add_check(
+        checks,
+        "prometheus-retention-at-least-45-days",
+        retention_passed,
+        retention_detail,
+    )
+    query = urllib.parse.urlencode(
+        {"query": "boost_gateway_container_restart_collection_success == 1"}
+    )
+    restart_samples_passed, restart_samples_detail = wait_valid_json(
+        f"http://127.0.0.1:9090/api/v1/query?{query}",
+        args.ready_timeout_seconds,
+        validate_prometheus_nonempty_query,
+    )
+    add_check(
+        checks,
+        "container-restart-metric-complete",
+        restart_samples_passed,
+        restart_samples_detail,
     )
     redis = run([*compose_command, "exec", "-T", "redis", "redis-cli", "ping"])
     redis_passed = redis.returncode == 0 and redis.stdout.strip() == "PONG"

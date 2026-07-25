@@ -1,0 +1,17 @@
+[Unit]
+Description=Collect BoostGateway Docker restart metrics
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/local/libexec/boost-gateway/collect_container_restart_metrics.py
+User=root
+Group=boost-gateway
+UMask=0027
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/boost-gateway-evidence/metrics
+
