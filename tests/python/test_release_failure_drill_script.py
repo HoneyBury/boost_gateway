@@ -24,6 +24,7 @@ class ReleaseFailureDrillScriptTest(unittest.TestCase):
         self.assertIn('docker unpause "${PAUSED_CONTAINER}"', text)
         self.assertIn("trap cleanup EXIT INT TERM", text)
         self.assertIn("PAUSE_SECONDS:-120", text)
+        self.assertIn('record.get("status") == "candidate_activated"', text)
 
     def test_drill_requires_failed_candidate_and_passing_recovery(self) -> None:
         text = SCRIPT.read_text(encoding="utf-8")

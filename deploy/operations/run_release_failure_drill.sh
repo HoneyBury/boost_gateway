@@ -47,6 +47,22 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+candidate_is_activated() {
+  python3 - "${TRANSACTION_ROOT}" "${CANDIDATE}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+candidate = sys.argv[2]
+for record_path in sorted(root.glob("*/record.json"), reverse=True):
+    record = json.loads(record_path.read_text(encoding="utf-8"))
+    if record.get("operation") == "upgrade" and record.get("candidate") == candidate:
+        raise SystemExit(0 if record.get("status") == "candidate_activated" else 1)
+raise SystemExit(1)
+PY
+}
+
 initial_status=$(python3 "${MANAGER}" status)
 STATUS_JSON=${initial_status} EXPECTED_CURRENT=${EXPECTED_CURRENT} python3 - <<'PY'
 import json
@@ -59,15 +75,26 @@ PY
 
 (
   deadline=$((SECONDS + WATCH_TIMEOUT_SECONDS))
-  while [[ $(docker inspect --format '{{.Image}}' boost-gateway) != "${TARGET_GATEWAY}" ]]; do
+  while ! candidate_is_activated; do
     if ((SECONDS >= deadline)); then
-      printf 'fault worker: candidate gateway did not become active\n' >&2
+      printf 'fault worker: candidate transaction did not become active\n' >&2
       exit 1
     fi
-    sleep 1
+    sleep 0.2
   done
 
-  docker pause "${PAUSED_CONTAINER}" >/dev/null
+  if [[ $(docker inspect --format '{{.Image}}' boost-gateway) != "${TARGET_GATEWAY}" ]]; then
+    printf 'fault worker: active gateway image differs from candidate\n' >&2
+    exit 1
+  fi
+
+  while ! docker pause "${PAUSED_CONTAINER}" >/dev/null 2>&1; do
+    if ((SECONDS >= deadline)); then
+      printf 'fault worker: active Prometheus container could not be paused\n' >&2
+      exit 1
+    fi
+    sleep 0.2
+  done
   printf 'fault worker: Prometheus paused\n'
   sleep "${PAUSE_SECONDS}"
   docker unpause "${PAUSED_CONTAINER}" >/dev/null
