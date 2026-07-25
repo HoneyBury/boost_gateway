@@ -212,6 +212,27 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertTrue((deployment / "configuration-snapshot").is_dir())
         self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
 
+    def test_install_ignores_and_does_not_copy_python_bytecode_cache(self) -> None:
+        source, image_env, release_summary, image_summary = self.make_release(
+            "v1.0.0", "a"
+        )
+        cache = (
+            source
+            / "scripts"
+            / "tools"
+            / "__pycache__"
+            / "check_release_compose.cpython-312.pyc"
+        )
+        cache.parent.mkdir()
+        cache.write_bytes(b"runtime cache")
+
+        record = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+
+        installed = self.layout.releases / str(record["deployment_id"])
+        self.assertFalse((installed / "scripts" / "tools" / "__pycache__").exists())
+
     def test_install_recovers_release_only_interrupted_commit(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(
             "v1.0.0", "a"

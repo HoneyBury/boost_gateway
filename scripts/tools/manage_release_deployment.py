@@ -98,7 +98,13 @@ def sha256_tree(path: Path) -> str:
     if not path.is_dir():
         raise LifecycleError(f"directory is missing: {path}")
     digest = hashlib.sha256()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
+    files = sorted(
+        item
+        for item in path.rglob("*")
+        if item.is_file()
+        and "__pycache__" not in item.relative_to(path).parts
+        and item.suffix not in {".pyc", ".pyo"}
+    )
     if not files:
         raise LifecycleError(f"directory has no files: {path}")
     for item in files:
@@ -359,6 +365,7 @@ class SystemLifecycleExecutor:
 
     def _environment(self, deployment_path: Path) -> dict[str, str]:
         environment = os.environ.copy()
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         images = parse_image_environment(deployment_path / "compose-images.env")
         secrets = parse_simple_environment(self.layout.secret_env)
         conflicts = set(secrets) & IMAGE_VARIABLES
@@ -609,10 +616,15 @@ class ReleaseDeploymentManager:
             "monitoring_sha256": sha256_tree(release_source / "env/monitoring"),
             "verification_tools_sha256": sha256_tree(release_source / "scripts/tools"),
         }
-        if any(
-            controller.get(key) != value for key, value in observed_controller.items()
-        ):
-            raise LifecycleError("release deployment controller digest drift")
+        drifted = sorted(
+            key
+            for key, value in observed_controller.items()
+            if controller.get(key) != value
+        )
+        if drifted:
+            raise LifecycleError(
+                f"release deployment controller digest drift: {drifted}"
+            )
         binaries = manifest.get("binaries")
         if not isinstance(binaries, list) or not binaries:
             raise LifecycleError("release manifest has no binary inventory")
@@ -788,7 +800,12 @@ class ReleaseDeploymentManager:
                             f"partial release install has different content: {deployment_id}"
                         )
                 else:
-                    shutil.copytree(release_source, release_temp, dirs_exist_ok=True)
+                    shutil.copytree(
+                        release_source,
+                        release_temp,
+                        dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+                    )
                     if sha256_tree(release_temp) != source_tree_digest:
                         raise LifecycleError("release changed while installing")
                     os.replace(release_temp, release_destination)
