@@ -25,6 +25,7 @@
     "scripts/verify_macos_arm64_package.py",
     "scripts/verify_jwks_rotation.py",
     "scripts/manage_todos.py",
+    "scripts/manage_release_deployment.py",
     "scripts/check_operations_host.py",
     "scripts/apply_operations_host_baseline.py",
     "scripts/prepare_release_runtime.py",
@@ -299,6 +300,10 @@
       "category": "public_entrypoint",
       "canonical": "scripts/tools/manage_todos.py"
     },
+    "scripts/manage_release_deployment.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/manage_release_deployment.py"
+    },
     "scripts/prepare_release_runtime.py": {
       "category": "public_entrypoint",
       "canonical": "scripts/tools/prepare_release_runtime.py"
@@ -357,6 +362,9 @@
       "category": "tool"
     },
     "scripts/tools/manage_todos.py": {
+      "category": "tool"
+    },
+    "scripts/tools/manage_release_deployment.py": {
       "category": "tool"
     },
     "scripts/tools/operator_kind_smoke.py": {

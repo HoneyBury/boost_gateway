@@ -43,6 +43,7 @@ Use these stable public entrypoints first:
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
 - `verify_jwks_rotation.py` for the real HTTPS multi-`kid` rotation, stale-grace, outage, and rollback drill.
 - `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
+- `manage_release_deployment.py` for immutable release install, deploy, upgrade, rollback, status, and verification transactions.
 - `check_operations_host.py` for fail-closed Ubuntu operations-host admission and real reboot verification.
 - `apply_operations_host_baseline.py` for the explicit plan/apply surface that converges the admitted host security baseline.
 - `prepare_release_runtime.py` for anonymous download, supply-chain verification, and atomic Linux x64 release staging.

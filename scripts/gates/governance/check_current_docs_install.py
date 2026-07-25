@@ -34,6 +34,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/production-configuration-runbook.md",
     "docs/deployment/operations-host-admission-runbook.md",
     "docs/deployment/immutable-release-deployment-runbook.md",
+    "docs/deployment/release-lifecycle-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/release-governance.md",
     "docs/tls-mtls-runbook.md",
@@ -319,6 +320,32 @@ def main() -> int:
             ROOT / "deploy/systemd/boost-gateway-compose.service"
         ).read_text(encoding="utf-8"),
         "the immutable release consumer, runtime image, Compose and full-flow boundary is installed and indexed",
+    )
+    lifecycle_runbook = (
+        ROOT / "docs/deployment/release-lifecycle-runbook.md"
+    ).read_text(encoding="utf-8")
+    add(
+        checks,
+        "docs:release-lifecycle-contract",
+        all(
+            token in lifecycle_runbook
+            for token in (
+                "scripts/manage_release_deployment.py install",
+                "scripts/manage_release_deployment.py deploy",
+                "scripts/manage_release_deployment.py upgrade",
+                "scripts/manage_release_deployment.py rollback",
+                "scripts/manage_release_deployment.py status",
+                "scripts/manage_release_deployment.py verify",
+                "/opt/boost-gateway/deployments",
+                "/opt/boost-gateway/current",
+                "/opt/boost-gateway/previous",
+                "/etc/boost-gateway/compose-images.env",
+                "TODO-0010",
+                "600",
+            )
+        )
+        and "release-lifecycle-runbook.md" in docs_index,
+        "the immutable release lifecycle entrypoint, state machine, rollback deadline and TODO boundary are indexed",
     )
 
     failed = [check for check in checks if not check["passed"]]

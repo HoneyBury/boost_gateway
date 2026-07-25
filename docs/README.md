@@ -17,6 +17,7 @@
 | 部署和运维 | [部署文档](deployment/) |
 | Ubuntu 运营主机准入 | [运营主机准入手册](deployment/operations-host-admission-runbook.md) |
 | 不可变 Release 单节点部署 | [不可变 Release 部署手册](deployment/immutable-release-deployment-runbook.md) |
+| Release 生命周期 | [安装、升级和回滚手册](deployment/release-lifecycle-runbook.md) |
 
 ## 当前事实与规划
 
