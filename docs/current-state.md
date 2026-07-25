@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-07-24
+更新时间：2026-07-26
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
@@ -31,7 +31,20 @@
 `TODO-0009` 也已在同一目标机真实完成：v3.6.2 的 tag/commit/checksum/SLSA/SPDX/ELF
 校验、固定 Ubuntu digest 的六个 runtime-only image、不可变项目 image ID 的生产 Compose
 和 release SDK full-flow 均通过，全程没有源码构建或公共 Conan 访问。目标机证据位于
-`/var/lib/boost-gateway-evidence/release/`，主线下一项为 `TODO-0010` 的幂等安装、升级和回滚。
+`/var/lib/boost-gateway-evidence/release/`。
+
+`TODO-0010` 已在同一目标机真实完成。受控生命周期当前保留
+`v3.6.2-faf2d03ff1b9-6b89c8919d28` 和 `v3.6.0-a9c0465ee821-1a02fa0ae6c2`
+两个完整 deployment；最终 `current` 为 v3.6.2、`previous` 为 v3.6.0，systemd、六个运行
+image ID 和运行状态检查通过。同 release 重复 install/deploy 返回相同 identity 和
+`idempotent=true`，`todo0010-20260725T152655Z` data/backup/evidence 哨兵、Redis key 和
+Compose volume 清单均保留。前向 upgrade 和真实 rollback 分别在约 55–57 秒内完成，rollback
+记录恢复了 runtime asset、image environment 和 configuration digest。受控 Prometheus pause
+使 transaction `20260725T161238-upgrade-257dce6b1f94` 的候选验证真实失败，独立 recovery
+summary 随后 PASS 并自动恢复 v3.6.0；最终 transaction
+`20260725T163615-upgrade-db4ab2d7639d` 已将运行版本恢复到 v3.6.2。目标机证据位于
+`/var/lib/boost-gateway/deployment-transactions/`。主线下一项为 `TODO-0011` 的长期观测与
+evidence ledger，不把本次短时部署证据扩张为长期留存结论。
 
 ## 默认生产链路
 

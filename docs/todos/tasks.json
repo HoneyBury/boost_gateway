@@ -182,7 +182,7 @@
     {
       "id": "TODO-0010",
       "title": "Automate idempotent install upgrade and rollback",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "deployment-lifecycle",
       "description": "Provide one governed command surface for install, deploy, upgrade, rollback, status and verification while retaining enough state to recover from a failed release.",
@@ -193,7 +193,7 @@
         "Release rollback completes within 10 minutes and a real rollback drill proves the restored digest and business flow."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-07-25T16:39:45Z",
       "github": {
         "issue_number": 24,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/24"
