@@ -30,7 +30,7 @@ grafana:3000 -> dashboard backed by Prometheus
 
 - 对公网只开放 gateway TCP `9201`。
 - gateway HTTP management `9080`、Prometheus `9090`、Grafana `3000` 只允许内网、堡垒机或 VPN 访问。
-- Alertmanager `9093`、Redis host publish `6380`、Redis exporter `9121` 和可选 cAdvisor `8081` 也只允许内网、堡垒机或 VPN 访问。
+- Alertmanager `9093`、Redis host publish `6380`、Redis exporter `9121` 和开发 profile 的可选 cAdvisor `8081` 也只允许内网、堡垒机或 VPN 访问；生产 cAdvisor 不发布 host port。
 - 后端服务是自定义 TCP 协议，不暴露 HTTP `/health` 或 `/metrics`。
 - Redis 不应暴露到公网。
 - Grafana 默认口令必须通过环境变量覆盖，不允许生产继续使用默认值。
@@ -179,7 +179,10 @@ python3 scripts/tools/deploy_k8s.py --delete
 
 ## 监控
 
-当前 Prometheus 默认 scrape gateway HTTP `/metrics`、Prometheus 自身、Redis exporter，并为 `host-observability` profile 预留 cAdvisor：
+开发 Compose 默认 scrape gateway HTTP `/metrics`、Prometheus 自身与 Redis exporter，并提供
+可选 `host-observability` profile。Ubuntu 单节点生产路径固定启用 node-exporter 与 cAdvisor、
+45 天 retention 和 Docker restart-count collector，执行入口见
+[`long-run-observability-runbook.md`](long-run-observability-runbook.md)：
 
 ```bash
 docker compose up -d prometheus alertmanager redis-exporter grafana
@@ -208,8 +211,8 @@ Prometheus 告警：
 - gateway `/health` 不是业务 ready，生产发布后必须叠加 SDK full-flow、P6 production evidence 或固定 runner 证据。
 - N2 起 gateway `/metrics` 已导出 backend route latency histogram 和 per-service P50/P90/P99 gauge；P99 告警使用 `gateway_backend_*_p99_latency_us`，容量和长稳结论仍以固定 runner 性能报告为准。
 - RSS/fd 告警需要 process exporter 或等价 agent；默认 Compose 没有启用该 exporter。
-- cAdvisor 属于可选 `host-observability` profile，只有在宿主允许挂载 `/sys`、`/var/run`、`/var/lib/docker` 等目录时才启用。
-- 启用该 profile 时，额外使用 `env/monitoring/prometheus.host-observability.yml` 在 `127.0.0.1:9091` 提供隔离的容器 runtime metrics scrape，不污染默认 Prometheus target 状态。
+- cAdvisor 在开发 Compose 中仍属于可选 profile；生产 Compose 使用严格白名单的 privileged 例外和只读挂载，不允许其他服务继承该权限。
+- `env/monitoring/prometheus.host-observability.yml` 与 `127.0.0.1:9091` 是开发隔离入口，不是 TODO-0011 的生产证据源。
 
 ## 云服务器生产收束
 

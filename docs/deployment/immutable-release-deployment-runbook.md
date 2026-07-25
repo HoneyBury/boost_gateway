@@ -99,6 +99,8 @@ Dockerfile 固定 Ubuntu 24.04 digest
 sudo docker pull ubuntu@sha256:4fbb8e6a8395de5a7550b33509421a2bafbc0aab6c06ba2cef9ebffbc7092d90
 sudo docker pull redis:7-alpine
 sudo docker pull oliver006/redis_exporter:v1.69.0
+sudo docker pull quay.io/prometheus/node-exporter:v1.8.2
+sudo docker pull gcr.io/cadvisor/cadvisor:v0.49.1
 sudo docker pull prom/prometheus:v2.53.0
 sudo docker pull prom/alertmanager:v0.28.1
 sudo docker pull grafana/grafana:10.4.2
@@ -116,7 +118,10 @@ sudo python3 /opt/boost-gateway/current/scripts/tools/build_release_images.py \
 secret 文件必须 root-owned `0640`。下面命令在主机上生成密码且不打印到终端：
 
 ```bash
-sudo sh -c 'umask 027; printf "GRAFANA_ADMIN_PASSWORD=%s\n" "$(openssl rand -hex 32)" > /etc/boost-gateway/compose.env'
+sudo bash -c 'umask 027; {
+  printf "GRAFANA_ADMIN_USER=boost-gateway-operator\n"
+  printf "GRAFANA_ADMIN_PASSWORD=%s\n" "$(openssl rand -hex 32)"
+} > /etc/boost-gateway/compose.env'
 sudo chown root:boost-gateway /etc/boost-gateway/compose.env /etc/boost-gateway/compose-images.env
 sudo chmod 0640 /etc/boost-gateway/compose.env /etc/boost-gateway/compose-images.env
 sudo systemctl daemon-reload
@@ -135,6 +140,9 @@ Alertmanager 和 Grafana 均绑定 loopback。每个服务必须有 CPU/memory/P
 sudo sh -c 'set -a; . /etc/boost-gateway/compose-images.env; . /etc/boost-gateway/compose.env; set +a; exec python3 /opt/boost-gateway/current/scripts/tools/verify_release_deployment.py --staging-dir /opt/boost-gateway/current --compose-file /opt/boost-gateway/current/deploy/operations/docker-compose.production.yml --summary-path /var/lib/boost-gateway-evidence/release/deployment-verification-summary.json'
 ```
 
-该入口验证 resolved Compose 无源码 build、11 个容器 healthy、gateway/Prometheus/
-Alertmanager/Grafana endpoint、Redis PING，并直接运行 release 自带的 `sdk_full_flow_client`。
+`TODO-0011` 启用后，生产 Alertmanager 配置、投递回执和 restart-count host unit 必须先按
+[`long-run-observability-runbook.md`](long-run-observability-runbook.md) 配置。该入口验证
+resolved Compose 无源码 build、13 个容器 healthy、45 天 retention、全部必需指标样本、
+gateway/Prometheus/Alertmanager/Grafana endpoint、Redis PING，并直接运行 release 自带的
+`sdk_full_flow_client`。
 全部通过后才能进入 `TODO-0008` 的 `prepare-reboot` 和真实重启验证。

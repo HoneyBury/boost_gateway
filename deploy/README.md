@@ -116,13 +116,13 @@ systemctl stop boost-gateway boost-leaderboard-backend boost-match-backend boost
 ## 5. 监控
 
 - Gateway HTTP 管理面：`:9080/health`、`:9080/metrics`、`:9080/metrics/json`、`:9080/metrics/diagnostics`
-- Prometheus 配置：`env/monitoring/prometheus.yml`，当前 scrape gateway HTTP `/metrics`、Prometheus 自身、Redis exporter，以及可选 profile 下的 cAdvisor
-- Alertmanager 配置：`env/monitoring/alertmanager.yml`
+- Prometheus 配置：`env/monitoring/prometheus.yml`；生产拓扑以 45 天保留 scrape gateway、Prometheus、Redis exporter、node-exporter 和 cAdvisor
+- Alertmanager 开发模板：`env/monitoring/alertmanager.yml`；生产只挂载 root 管理的 `/etc/boost-gateway/alertmanager.yml`
 - Grafana 仪表盘：`env/monitoring/grafana-dashboard.json`
 - Redis exporter：默认启用，提供 Redis 运行时指标
-- cAdvisor：`host-observability` profile 下可选启用，提供容器 CPU / memory 指标
+- node-exporter 与 cAdvisor：生产拓扑强制启用，提供主机、容器及受控 restart-count 指标；开发 Compose 的 profile 仍是可选入口
 
-管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。gateway `/health` 当前是 liveness stub，不等价于完整业务 ready；发布后必须叠加 SDK full-flow 或生产证据 gate。Grafana 默认密码必须通过 `GRAFANA_ADMIN_PASSWORD` 覆盖，Alertmanager 默认 receiver 需要替换成真实通知通道。
+管理面不应暴露到公网。生产入口建议放在反向代理或负载均衡之后，并在边界层处理 TLS、限流和访问控制。gateway `/health` 当前是 liveness stub，不等价于完整业务 ready；发布后必须叠加 SDK full-flow 或生产证据 gate。生产预检拒绝 `admin` Grafana 用户、默认/短密码、占位 Alertmanager receiver 以及没有 firing/resolved 投递回执的配置。
 
 ## 6. 部署预检
 

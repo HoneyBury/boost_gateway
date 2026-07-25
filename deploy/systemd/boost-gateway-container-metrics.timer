@@ -10,4 +10,3 @@ Unit=boost-gateway-container-metrics.service
 
 [Install]
 WantedBy=timers.target
-

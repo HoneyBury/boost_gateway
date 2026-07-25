@@ -35,7 +35,7 @@ N2 起，gateway `/metrics` 默认导出 `gateway_backend_route_latency_us_bucke
 | --- | --- | --- | --- |
 | `http://127.0.0.1:9080` | Gateway 只读管理 API | 给 curl、Prometheus、脚本读取健康与指标 | 访问根路径 `/` 返回 `Not Found` 是正常的；必须访问具体 path |
 | `http://127.0.0.1:9090` | Prometheus Web UI | 查看 scrape target、PromQL、告警规则 | 打开后使用顶部菜单 `Status`、`Alerts`、`Graph` |
-| `http://127.0.0.1:9093` | Alertmanager Web UI | 查看告警路由、silence、通知链 | 默认 receiver 为占位配置；生产需替换 |
+| `http://127.0.0.1:9093` | Alertmanager Web UI | 查看告警路由、silence、通知链 | 开发模板是占位 receiver；生产预检会拒绝 |
 | `http://127.0.0.1:3000` | Grafana Web UI | 查看仪表盘 | 默认账号来自 Compose：`admin` / `admin` |
 | `127.0.0.1:9201` | Gateway TCP 业务入口 | SDK / 客户端连接，不是浏览器页面 | 浏览器访问无意义；用 SDK full-flow 或业务客户端验证 |
 
@@ -118,17 +118,21 @@ sum by (__name__) (rate({__name__=~"gateway_backend_.*_timeouts_total"}[5m]))
 rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leaderboard_timeouts_total[5m])
 ```
 
-当前 Prometheus 配置只 scrape gateway 和 Prometheus 自身。后端服务是 TCP 协议，不直接暴露 HTTP `/metrics`；后端健康通过 Docker healthcheck、gateway backend counters、日志和 SDK full-flow 共同判断。
+生产 Prometheus 配置 scrape gateway、Prometheus、Redis exporter、node-exporter 和 cAdvisor。
+后端服务是 TCP 协议，不直接暴露 HTTP `/metrics`；后端健康通过 Docker healthcheck、gateway
+backend counters、日志和 SDK full-flow 共同判断。开发 Compose 的可选 profile 不等于生产
+观测事实；生产执行入口见
+[`long-run-observability-runbook.md`](long-run-observability-runbook.md)。
 
 Battle settlement 会由 gateway 自动提交到 leaderboard backend。一次战斗结束后，可以用 `gateway_backend_leaderboard_requests_total` 确认 settlement submit 与后续查询是否进入后端；如果 `gateway_backend_leaderboard_errors_total` 或 `gateway_backend_leaderboard_timeouts_total` 增长，优先检查 leaderboard backend、Redis 可用性和 gateway 日志中的 `leaderboard settlement submit failed`。
 
 ### Grafana（3000）
 
-`3000` 是 Grafana 仪表盘。首次访问需要登录，Docker Compose 默认配置为：
+`3000` 是 Grafana 仪表盘。生产 Compose 不提供默认凭据，必须显式配置：
 
 ```text
-username: admin
-password: 由 `GRAFANA_ADMIN_PASSWORD` 决定；当前默认值是 `boost-gateway-change-me`
+username: 由 `GRAFANA_ADMIN_USER` 决定，且不得为 `admin`
+password: 由 `GRAFANA_ADMIN_PASSWORD` 决定，至少 20 个字符
 ```
 
 登录后查看：
@@ -157,11 +161,14 @@ Grafana 已通过以下文件自动配置 Prometheus 数据源和 dashboard：
 | `Leaderboard / Redis Dependent Errors` | 排行榜/Redis 相关失败 | 优先查 Redis 和 leaderboard backend |
 | `Rate Limit / Blocked Packets` | 限流/丢弃 | 突增可能是重试风暴或异常客户端 |
 
-生产环境不要继续使用默认密码，应改为强密码并限制 `3000`、`9090`、`9093`、`9080`、`9121`、`6380` 只允许内网、VPN 或堡垒机访问。
+生产预检拒绝默认或短凭据。`3000`、`9090`、`9093`、`9080`、`9121`、`6380` 只允许内网、VPN 或堡垒机访问。
 
 ### Alertmanager（9093）
 
-`9093` 是 Alertmanager，用来接收 Prometheus 告警并转发到通知通道。当前 Compose 已经把 Prometheus 指向 `alertmanager:9093`，但仓库内置的 receiver 仍是无副作用占位配置，目的是让本地和 CI 栈可以稳定启动。
+`9093` 是 Alertmanager，用来接收 Prometheus 告警并转发到通知通道。开发 Compose 使用仓库
+内置的无副作用模板；生产 Compose 只读取 `/etc/boost-gateway/alertmanager.yml`，并在候选激活
+及重启前拒绝占位 receiver、无真实 integration、配置摘要漂移、异机 host ID 或缺少
+firing/resolved 投递回执的声明。
 
 常用页面：
 
@@ -174,9 +181,9 @@ Grafana 已通过以下文件自动配置 Prometheus 数据源和 dashboard：
 
 生产需要改的地方：
 
-- 用 email / webhook / Slack / PagerDuty 替换 `env/monitoring/alertmanager.yml` 里的占位 receiver。
+- 将真实 email / webhook / Slack / PagerDuty 配置写入 root 管理的 `/etc/boost-gateway/alertmanager.yml`，不要把 secret 提交到仓库。
 - 保证 `9093` 只在内网开放。
-- 在发布记录里写清接收渠道、值班组和静默流程。
+- 按长期观测手册记录 firing 与 resolved 的接收端 delivery ID，回执不得包含 secret。
 
 ### 业务入口（9201）
 

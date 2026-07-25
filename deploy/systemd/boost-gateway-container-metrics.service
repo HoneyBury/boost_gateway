@@ -14,4 +14,3 @@ PrivateTmp=yes
 ProtectHome=yes
 ProtectSystem=strict
 ReadWritePaths=/var/lib/boost-gateway-evidence/metrics
-

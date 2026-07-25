@@ -46,6 +46,13 @@ summary 随后 PASS 并自动恢复 v3.6.0；最终 transaction
 `/var/lib/boost-gateway/deployment-transactions/`。主线下一项为 `TODO-0011` 的长期观测与
 evidence ledger，不把本次短时部署证据扩张为长期留存结论。
 
+`TODO-0011` 的仓库实现正在推进：生产 Compose 已形成 45 天 Prometheus、node-exporter、
+cAdvisor、Redis persistence 和 Docker restart-count 指标契约；生产预检会拒绝默认 Grafana
+凭据、占位 Alertmanager receiver、过期或未同时证明 firing/resolved 的投递声明。deployment
+与 transaction record 已绑定主机、操作者、结果和原始 summary 摘要，evidence ledger 可
+生成 create-only daily/weekly/incident/final record 及带 `SHA256SUMS` 的异机包。上述内容尚未
+在目标机形成真实 receiver、完整指标样本、定时记录和异机复验，因此 `TODO-0011` 保持 open。
+
 ## 默认生产链路
 
 默认生产主链仍是 SDK + TCP gateway + `BackendEnvelope` + Login/Room/Battle/
