@@ -85,18 +85,18 @@ v2_gateway_pressure --TCP--> v2_gateway_demo (:9201)
 
 ```bash
 # 快速 smoke
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset smoke
 
 # baseline，至少三轮
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset baseline \
   --repetitions 3
 
 # capacity
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset capacity \
   --repetitions 3 \
@@ -105,7 +105,7 @@ python3 scripts/collect_v2_perf_baseline.py \
   --loadgen-io-threads 4
 
 # capacity + SDK 业务闭环
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset business-capacity \
   --repetitions 3 \
@@ -113,7 +113,7 @@ python3 scripts/collect_v2_perf_baseline.py \
   --business-flow-clients 3
 
 # Matchmaking + Leaderboard 并发专项
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset business-capacity \
   --repetitions 3 \
@@ -123,7 +123,7 @@ python3 scripts/collect_v2_perf_baseline.py \
   --business-operation-iterations 10
 
 # OTel off/on 专项；两个模式分别使用 fresh Gateway/Battle Backend 和相同 battle-100 负载
-python3 scripts/collect_v2_perf_baseline.py \
+python3 scripts/producers/collect_v2_perf_baseline.py \
   --build-dir build/release \
   --run-preset business-capacity \
   --repetitions 3 \
@@ -139,7 +139,7 @@ Redis 对照的两个准确模式名是 `in_memory_only` 与 `redis_primary_with
 
 OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用只走 Gateway echo 的流量替代。off/on 每种模式均使用 fresh Gateway 和 fresh Battle Backend、相同 CPU affinity 和至少三轮负载，避免前置 capacity 消耗 Battle Instance 上限污染对照；on 组由采集器内置 loopback collector 接收 OTLP/HTTP JSON。证据必须同时对齐进程 PID、启动日志、collector request/span/invalid/status、runtime exporter enqueued/exported/batch/buffered counters 与 backend routed requests，并输出 P99、吞吐、Gateway CPU/RSS median delta。当前只保留既有 battle 绝对性能门槛，百分比 delta 标记为 `observed_not_thresholded`，待同硬件积累历史样本后再制定回退阈值。
 
-饱和曲线与单变量轴使用 `scripts/aggregate_saturation_axis_evidence.py` 聚合。聚合器会验证选点来自完整曲线，并检查同一候选 SHA、run ID、fixed runner/lockfile、service/loadgen affinity 隔离、相同 loadgen 核数与线程数、逐轮 before/after 资源差值、三轮真实 lifecycle 和非实验变量一致。聚合输出只提供决策证据，不会自动修改 runtime 默认值。
+饱和曲线与单变量轴使用 `scripts/gates/release/aggregate_saturation_axis_evidence.py` 聚合。聚合器会验证选点来自完整曲线，并检查同一候选 SHA、run ID、fixed runner/lockfile、service/loadgen affinity 隔离、相同 loadgen 核数与线程数、逐轮 before/after 资源差值、三轮真实 lifecycle 和非实验变量一致。聚合输出只提供决策证据，不会自动修改 runtime 默认值。
 
 ## 输出与判定
 

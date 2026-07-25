@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import platform
@@ -513,7 +523,7 @@ def main() -> int:
                 "release_smoke",
                 [
                     sys.executable,
-                    str(REPO_ROOT / "scripts/collect_release_baseline.py"),
+                    str(REPO_ROOT / "scripts/producers/collect_release_baseline.py"),
                     "--build-dir",
                     str(build_dir),
                     "--configuration",

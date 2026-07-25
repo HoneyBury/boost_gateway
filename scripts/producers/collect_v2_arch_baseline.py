@@ -129,7 +129,7 @@ def evaluate_gates(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-msvc-debug"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/contributor-debug"))
     parser.add_argument("--output-root", type=Path, default=Path("runtime/perf/v2-arch-baseline"))
     parser.add_argument("--iterations", type=int, default=10000)
     parser.add_argument("--actors", type=int, default=10000)

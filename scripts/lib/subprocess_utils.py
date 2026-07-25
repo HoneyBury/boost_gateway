@@ -109,3 +109,60 @@ def run_step(
     if returncode is not None:
         result["returncode"] = returncode
     return result
+
+
+def run_gate_step(
+    name: str,
+    category: str,
+    command: list[str],
+    cwd: Path,
+    timeout_seconds: int,
+    *,
+    tail_chars: int = 4000,
+    include_execution_context: bool = False,
+) -> dict[str, Any]:
+    """Run an aggregate-gate child while preserving the v2 step contract."""
+
+    print(f"==> {name}", flush=True)
+    started = time.monotonic()
+    try:
+        completed = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        result: dict[str, Any] = {
+            "name": name,
+            "category": category,
+            "command": command,
+            "status": "timeout",
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "stdout_tail": tail_output(exc.stdout, tail_chars),
+            "stderr_tail": tail_output(exc.stderr, tail_chars),
+        }
+    else:
+        if completed.stdout:
+            emit_text(completed.stdout)
+        if completed.stderr:
+            emit_text(completed.stderr, stderr=True)
+        result = {
+            "name": name,
+            "category": category,
+            "command": command,
+            "status": "passed" if completed.returncode == 0 else "failed",
+            "returncode": completed.returncode,
+            "duration_seconds": round(time.monotonic() - started, 3),
+            "stdout_tail": tail_output(completed.stdout, tail_chars),
+            "stderr_tail": tail_output(completed.stderr, tail_chars),
+        }
+    if include_execution_context:
+        result["cwd"] = str(cwd)
+        result["timeout_seconds"] = timeout_seconds
+    return result

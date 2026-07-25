@@ -236,7 +236,7 @@ def main() -> int:
         checks,
         "ci:next-minor-decision-gate",
         "- name: Next minor decision gate" in ci_workflow
-        and "python3 scripts/check_next_minor_decisions.py" in ci_workflow,
+        and "python3 scripts/gates/governance/check_next_minor_decisions.py" in ci_workflow,
         "mainline CI enforces the accepted next-minor decision manifest",
     )
     add(
@@ -408,8 +408,8 @@ def main() -> int:
         checks,
         "macos-arm64:bounded-native-platform-evidence",
         "run_platform_baseline:" in macos_workflow
-        and "scripts/collect_v2_perf_baseline.py" in macos_workflow
-        and "scripts/verify_stability_soak.py" in macos_workflow
+        and "scripts/producers/collect_v2_perf_baseline.py" in macos_workflow
+        and "scripts/gates/release/verify_stability_soak.py" in macos_workflow
         and "runtime/perf/macos-arm64" in macos_workflow
         and "runtime/validation/macos-arm64-stability-summary.json" in macos_workflow
         and "--baseline-profile release" in macos_workflow
@@ -473,7 +473,7 @@ def main() -> int:
         "specialized-e2e:raft-phase-b-evidence",
         "scripts/tools/verify_conan_offline_install.py" in specialized_workflow
         and "runtime/validation/raft-conan-offline-summary.json" in specialized_workflow
-        and "scripts/verify_data_recovery_gate.py" in specialized_workflow
+        and "scripts/gates/production/verify_data_recovery_gate.py" in specialized_workflow
         and "runtime/validation/raft-data-recovery-summary.json" in specialized_workflow,
         "specialized E2E archives strict offline Conan and Raft recovery evidence",
     )
@@ -598,14 +598,14 @@ def main() -> int:
         not in release_workflow,
         "release resolves the single wheel SBOM before passing an exact path to actions/attest",
     )
-    raft_release_gate = "scripts/verify_raft_release_evidence.py"
+    raft_release_gate = "scripts/gates/release/verify_raft_release_evidence.py"
     add(
         checks,
         "release:raft-phase-b-same-run-evidence",
         "scripts/tools/verify_conan_offline_install.py" in release_workflow
-        and "scripts/verify_specialized_e2e.py" in release_workflow
+        and "scripts/gates/e2e/verify_specialized_e2e.py" in release_workflow
         and "--profile raft-ha" in release_workflow
-        and "scripts/verify_data_recovery_gate.py" in release_workflow
+        and "scripts/gates/production/verify_data_recovery_gate.py" in release_workflow
         and raft_release_gate in release_workflow
         and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
         < release_workflow.index(raft_release_gate)

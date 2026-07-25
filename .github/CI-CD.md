@@ -81,6 +81,6 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 ## 配置源
 
 - Runner 标签和默认值: `.github/runner-matrix.json`
-- Workflow 清单一致性: `scripts/check_workflow_catalog.py`
+- Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
 - 推荐策略: 仅 `ci.yml` 默认使用 GitHub-hosted `ubuntu-latest`；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 定向到已完成相应 namespace 准入的 runner

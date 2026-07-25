@@ -49,7 +49,7 @@ class FreezeWiringTest(unittest.TestCase):
 
         self.assertEqual(expected_root, verify_gateway_observability_runtime.REPO_ROOT)
         self.assertTrue(
-            (verify_gateway_observability_runtime.REPO_ROOT / "scripts/verify_sdk_full_flow_client.py").is_file()
+            (verify_gateway_observability_runtime.REPO_ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py").is_file()
         )
 
     def test_candidate_kind_flag_maps_to_child_gate_contracts(self) -> None:

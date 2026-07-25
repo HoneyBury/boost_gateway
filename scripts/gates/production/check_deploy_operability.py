@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import platform
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,16 @@ from datetime import UTC, datetime
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
-PROJECT_VERSION = "3.3.2"
+
+def read_project_version() -> str:
+    cmake = (REPO_ROOT / "CMakeLists.txt").read_text(encoding="utf-8")
+    match = re.search(r"project\(boost_gateway\s+VERSION\s+(\d+\.\d+\.\d+)", cmake)
+    if not match:
+        raise RuntimeError("cannot resolve project version from CMakeLists.txt")
+    return match.group(1)
+
+
+PROJECT_VERSION = read_project_version()
 
 BACKENDS = {
     "login-backend": ("v2_login_backend", "9202"),
@@ -33,12 +43,12 @@ GATEWAY_ROUTED_BACKENDS = {
 }
 
 K8S_IMAGES = {
-    "gateway-deployment.yaml": "ghcr.io/boost-gateway/gateway:v3.3.2",
-    "login-backend-deployment.yaml": "ghcr.io/boost-gateway/login-backend:v3.3.2",
-    "room-backend-deployment.yaml": "ghcr.io/boost-gateway/room-backend:v3.3.2",
-    "battle-backend-deployment.yaml": "ghcr.io/boost-gateway/battle-backend:v3.3.2",
-    "matchmaking-backend-deployment.yaml": "ghcr.io/boost-gateway/matchmaking-backend:v3.3.2",
-    "leaderboard-backend-deployment.yaml": "ghcr.io/boost-gateway/leaderboard-backend:v3.3.2",
+    "gateway-deployment.yaml": f"ghcr.io/boost-gateway/gateway:v{PROJECT_VERSION}",
+    "login-backend-deployment.yaml": f"ghcr.io/boost-gateway/login-backend:v{PROJECT_VERSION}",
+    "room-backend-deployment.yaml": f"ghcr.io/boost-gateway/room-backend:v{PROJECT_VERSION}",
+    "battle-backend-deployment.yaml": f"ghcr.io/boost-gateway/battle-backend:v{PROJECT_VERSION}",
+    "matchmaking-backend-deployment.yaml": f"ghcr.io/boost-gateway/matchmaking-backend:v{PROJECT_VERSION}",
+    "leaderboard-backend-deployment.yaml": f"ghcr.io/boost-gateway/leaderboard-backend:v{PROJECT_VERSION}",
 }
 
 SYSTEMD_UNITS = {
@@ -414,7 +424,7 @@ def validate_monitoring(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "prometheus:version",
-        'version: "3.3.2"' in text,
+        f'version: "{PROJECT_VERSION}"' in text,
         "Prometheus config version matches current release line",
     )
     add_check(

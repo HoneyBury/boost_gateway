@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import fnmatch
 import json
@@ -441,7 +451,7 @@ def main() -> int:
             summary["steps"].append(run_step(
                 "Operator kind smoke",
                 "operator",
-                [sys.executable, str(root / "scripts" / "operator_kind_smoke.py")],
+                [sys.executable, str(root / "scripts/tools/operator_kind_smoke.py")],
                 root,
                 args.operator_timeout_seconds,
             ))

@@ -214,7 +214,7 @@ def check_docs(checks: list[dict[str, Any]]) -> None:
     runbook = text(ROOT / "docs/deployment/production-configuration-runbook.md")
     runbook_lower = runbook.lower()
     for token in (
-        "python3 scripts/check_config_governance.py",
+        "python3 scripts/gates/governance/check_config_governance.py",
         "Config Drift",
     ):
         add(checks, f"configuration runbook documents {token}", token in runbook, token, "docs")

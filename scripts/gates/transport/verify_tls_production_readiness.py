@@ -193,7 +193,7 @@ def main() -> int:
                 "cert_generation",
                 [
                     sys.executable,
-                    str(ROOT / "scripts/gen_certs.py"),
+                    str(ROOT / "scripts/tools/gen_certs.py"),
                     "--output-dir",
                     str(cert_dir),
                     "--days",
@@ -210,7 +210,7 @@ def main() -> int:
             "transport_tls",
             [
                 sys.executable,
-                str(ROOT / "scripts/check_transport_config_governance.py"),
+                str(ROOT / "scripts/gates/transport/check_transport_config_governance.py"),
                 "--generate-dev-certs",
                 "--cert-dir",
                 str(work_dir / "n4-governance-certs"),
@@ -226,7 +226,7 @@ def main() -> int:
     plain_summary = validation_dir / "r1-sdk-full-flow-plain-summary.json"
     plain_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+        str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "--build-dir",
         str(args.build_dir),
         "--summary-path",
@@ -239,7 +239,7 @@ def main() -> int:
     tls_summary = validation_dir / "r1-sdk-full-flow-tls-summary.json"
     tls_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+        str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "--build-dir",
         str(args.build_dir),
         "--backend-tls",
@@ -259,7 +259,7 @@ def main() -> int:
     rotated_summary = validation_dir / "r1-sdk-full-flow-rotated-tls-summary.json"
     rotated_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+        str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "--build-dir",
         str(args.build_dir),
         "--skip-build",
@@ -278,7 +278,7 @@ def main() -> int:
     failure_summary = validation_dir / "r1-sdk-full-flow-mismatched-ca-summary.json"
     mismatch_cmd = [
         sys.executable,
-        str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+        str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
         "--build-dir",
         str(args.build_dir),
         "--skip-build",

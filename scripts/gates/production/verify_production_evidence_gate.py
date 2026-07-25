@@ -3,84 +3,28 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
-import json
 import platform
-import subprocess
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
+from functools import partial
+
+from scripts.lib.subprocess_utils import run_gate_step
+from scripts.lib.summary_utils import write_json_summary
 
 
-def normalize_output(text: str | bytes | None) -> str:
-    if text is None:
-        return ""
-    if isinstance(text, bytes):
-        return text.decode("utf-8", errors="replace")
-    return text
-
-
-def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
-    text = normalize_output(text)
-    return text if len(text) <= max_chars else text[-max_chars:]
-
-
-def emit_text(text: str, *, stderr: bool = False) -> None:
-    stream = sys.stderr if stderr else sys.stdout
-    try:
-        stream.write(text)
-    except UnicodeEncodeError:
-        encoding = getattr(stream, "encoding", None) or "utf-8"
-        stream.buffer.write(text.encode(encoding, errors="replace"))
-
-
-def run_step(name: str, category: str, cmd: list[str], cwd: Path, timeout_seconds: int) -> dict[str, object]:
-    print(f"==> {name}", flush=True)
-    started = time.monotonic()
-    try:
-        completed = subprocess.run(
-            cmd,
-            cwd=cwd,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=timeout_seconds,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as exc:
-        return {
-            "name": name,
-            "category": category,
-            "command": cmd,
-            "cwd": str(cwd),
-            "timeout_seconds": timeout_seconds,
-            "status": "timeout",
-            "duration_seconds": round(time.monotonic() - started, 3),
-            "stdout_tail": tail(exc.stdout),
-            "stderr_tail": tail(exc.stderr),
-        }
-
-    stdout = normalize_output(completed.stdout)
-    stderr = normalize_output(completed.stderr)
-    if stdout:
-        emit_text(stdout)
-    if stderr:
-        emit_text(stderr, stderr=True)
-    return {
-        "name": name,
-        "category": category,
-        "command": cmd,
-        "cwd": str(cwd),
-        "timeout_seconds": timeout_seconds,
-        "status": "passed" if completed.returncode == 0 else "failed",
-        "returncode": completed.returncode,
-        "duration_seconds": round(time.monotonic() - started, 3),
-        "stdout_tail": tail(stdout),
-        "stderr_tail": tail(stderr),
-    }
+run_step = partial(run_gate_step, include_execution_context=True)
 
 
 def parse_args() -> argparse.Namespace:
@@ -141,7 +85,7 @@ def main() -> int:
 
     stability_cmd = [
         sys.executable,
-        str(root / "scripts" / "verify_stability_soak.py"),
+        str(root / "scripts/gates/release/verify_stability_soak.py"),
         "--build-dir",
         str(args.build_dir),
         "--configuration",
@@ -165,7 +109,7 @@ def main() -> int:
 
     data_cmd = [
         sys.executable,
-        str(root / "scripts" / "verify_data_recovery_gate.py"),
+        str(root / "scripts/gates/production/verify_data_recovery_gate.py"),
         "--build-dir",
         str(args.build_dir),
         "--configuration",
@@ -189,7 +133,7 @@ def main() -> int:
 
     specialized_cmd = [
         sys.executable,
-        str(root / "scripts" / "verify_specialized_e2e.py"),
+        str(root / "scripts/gates/e2e/verify_specialized_e2e.py"),
         "--build-dir",
         str(args.build_dir),
         "--configuration",
@@ -213,7 +157,7 @@ def main() -> int:
 
     candidate_cmd = [
         sys.executable,
-        str(root / "scripts" / "check_production_candidate_audit.py"),
+        str(root / "scripts/gates/production/check_production_candidate_audit.py"),
         "--summary-path",
         str(root / "runtime" / "validation" / "p6-candidate-audit-summary.json"),
     ]
@@ -229,7 +173,7 @@ def main() -> int:
         perf_preset = "capacity" if args.include_capacity_baseline else "baseline"
         release_cmd = [
             sys.executable,
-            str(root / "scripts" / "collect_release_baseline.py"),
+            str(root / "scripts/producers/collect_release_baseline.py"),
             "--build-dir",
             str(args.build_dir),
             "--configuration",
@@ -261,8 +205,7 @@ def main() -> int:
         summary["overall_pass"] = True
         summary["passed"] = True
 
-    summary_path.parent.mkdir(parents=True, exist_ok=True)
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json_summary(summary_path, summary)
     print(f"summary: {summary_path}")
     return 0 if summary["passed"] else 1
 

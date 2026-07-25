@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — Redis Deployment + Service
+# Boost Gateway v3.6.2 — Redis Deployment + Service
 #
 # Redis provides caching for leaderboard data, session state, and the
 # write-behind store. Configured with allkeys-lru eviction and 256 MB limit.

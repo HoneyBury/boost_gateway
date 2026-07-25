@@ -225,12 +225,12 @@ Python wrapper 会优先读取 `BOOST_GATEWAY_SDK_LIBRARY` 指定的 native libr
 
 ```bash
 python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --skip-build
-python3 scripts/check_sdk_distribution.py --build-dir build/default
-python3 scripts/verify_sdk_package_consumer.py --build-dir build/default
-python3 scripts/verify_sdk_package_consumer.py --build-dir build/default --with-grpc
-python3 scripts/verify_sdk_business_flow.py --build-dir build/default
-python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default
-python3 scripts/verify_sdk_full_flow_client.py --build-dir build/default --backend-tls
+python3 scripts/gates/sdk/check_sdk_distribution.py --build-dir build/default
+python3 scripts/gates/sdk/verify_sdk_package_consumer.py --build-dir build/default
+python3 scripts/gates/sdk/verify_sdk_package_consumer.py --build-dir build/default --with-grpc
+python3 scripts/gates/sdk/verify_sdk_business_flow.py --build-dir build/default
+python3 scripts/gates/sdk/verify_sdk_full_flow_client.py --build-dir build/default
+python3 scripts/gates/sdk/verify_sdk_full_flow_client.py --build-dir build/default --backend-tls
 ```
 
 `verify_sdk_enterprise_delivery.py` 是 N5 客户端交付总门禁，会依次验证 SDK 分发、外部 CMake consumer、in-process 业务闭环、真实 gateway full-flow，以及 backend TLS profile 下的真实 gateway full-flow。正式交付给客户端团队前优先归档这份 summary。

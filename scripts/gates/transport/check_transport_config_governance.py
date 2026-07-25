@@ -106,7 +106,7 @@ def main() -> int:
     config_summary = ROOT / "runtime/validation/n4-config-governance-summary.json"
     tls_cmd = [
         sys.executable,
-        str(ROOT / "scripts/check_tls_profile.py"),
+        str(ROOT / "scripts/gates/transport/check_tls_profile.py"),
         "--summary-path",
         str(tls_summary),
     ]
@@ -120,7 +120,7 @@ def main() -> int:
             "config_governance",
             [
                 sys.executable,
-                str(ROOT / "scripts/check_config_governance.py"),
+                str(ROOT / "scripts/gates/governance/check_config_governance.py"),
                 "--summary-path",
                 str(config_summary),
             ],
@@ -135,7 +135,7 @@ def main() -> int:
                 "tls_full_flow",
                 [
                     sys.executable,
-                    str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+                    str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
                     "--build-dir",
                     str(args.build_dir),
                     "--skip-build",

@@ -58,10 +58,10 @@ backend。完整六服务环境见
 ## 常用验证
 
 ```bash
-python3.12 scripts/check_current_docs_install.py
+python3.12 scripts/gates/governance/check_current_docs_install.py
 python3.12 scripts/check_mainline_readiness.py
-python3.12 scripts/check_script_inventory.py
-python3.12 scripts/check_config_source_layout.py
+python3.12 scripts/gates/governance/check_script_inventory.py
+python3.12 scripts/gates/governance/check_config_source_layout.py
 python3.12 scripts/verify_release_candidate.py \
   --skip-release-baseline --soak-profile smoke
 ```

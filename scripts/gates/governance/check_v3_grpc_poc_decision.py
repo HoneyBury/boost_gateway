@@ -217,7 +217,7 @@ def main() -> int:
         run_step(
             "v3 proto schema contract",
             "proto_contract",
-            [sys.executable, str(ROOT / "scripts/check_v3_proto_schema.py"), "--proto-dir", "proto/v3"],
+            [sys.executable, str(ROOT / "scripts/gates/governance/check_v3_proto_schema.py"), "--proto-dir", "proto/v3"],
             60,
         ),
         run_step(
@@ -225,7 +225,7 @@ def main() -> int:
             "proto_contract",
             [
                 sys.executable,
-                str(ROOT / "scripts/check_v3_proto_schema.py"),
+                str(ROOT / "scripts/gates/governance/check_v3_proto_schema.py"),
                 "--proto-dir",
                 "proto/v3",
                 "--require-transport-contract",

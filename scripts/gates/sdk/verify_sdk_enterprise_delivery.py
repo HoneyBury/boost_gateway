@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import platform
@@ -46,7 +56,7 @@ def main() -> int:
             category="distribution",
             command=[
                 sys.executable,
-                str(ROOT / "scripts/check_sdk_distribution.py"),
+                str(ROOT / "scripts/gates/sdk/check_sdk_distribution.py"),
                 "--build-dir",
                 str(build_dir),
                 "--summary-path",
@@ -64,7 +74,7 @@ def main() -> int:
             category="package_consumer",
             command=[
                 sys.executable,
-                str(ROOT / "scripts/verify_sdk_package_consumer.py"),
+                str(ROOT / "scripts/gates/sdk/verify_sdk_package_consumer.py"),
                 "--build-dir",
                 str(build_dir),
                 "--configuration",
@@ -84,7 +94,7 @@ def main() -> int:
             category="business_flow",
             command=([
                 sys.executable,
-                str(ROOT / "scripts/verify_sdk_business_flow.py"),
+                str(ROOT / "scripts/gates/sdk/verify_sdk_business_flow.py"),
                 "--build-dir",
                 str(build_dir),
                 "--configuration",
@@ -103,7 +113,7 @@ def main() -> int:
     if not args.skip_runtime_full_flow:
         full_flow_cmd = [
             sys.executable,
-            str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+            str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
             "--build-dir",
             str(build_dir),
             "--port",
@@ -128,7 +138,7 @@ def main() -> int:
         )
         tls_full_flow_cmd = [
             sys.executable,
-            str(ROOT / "scripts/verify_sdk_full_flow_client.py"),
+            str(ROOT / "scripts/gates/sdk/verify_sdk_full_flow_client.py"),
             "--build-dir",
             str(build_dir),
             "--port",

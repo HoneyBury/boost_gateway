@@ -216,7 +216,7 @@
 - `README.md`：明确当前主线已进入 **v3.x 生产就绪加强阶段**，增加对应版本行与文档入口。
 - **新增** `docs/v3-production-readiness-plan.md`：定义 12 周生产就绪收口计划，覆盖性能数据闭环、架构实测、Actor 多核线程边界、通信契约、控制面和发布门槛。
 - **新增** `docs/v3-release-checklist.md`：定义 v3.x 阶段的版本口径、安装产物、配置脚本、控制面入口和发布阻断条件。
-- **新增** `scripts/collect_v2_perf_baseline.py`：跨平台 v2 多进程基线采集入口，统一启动 backend/gateway、运行压测、抓取 diagnostics 和进程资源快照、落盘 `runtime/perf/<timestamp>/`。
+- **新增** `scripts/producers/collect_v2_perf_baseline.py`：跨平台 v2 多进程基线采集入口，统一启动 backend/gateway、运行压测、抓取 diagnostics 和进程资源快照、落盘 `runtime/perf/<timestamp>/`。
 - `scripts/collect_v2_perf_baseline.ps1`：调整为 Windows 包装器，调用同一份 Python 主逻辑，避免脚本双份漂移。
 - `docs/README.md`、`docs/v2-enterprise-roadmap.md`：把 v3.x 生产就绪规划与发布清单纳入当前主线文档索引。
 - `docs/performance-baseline.md`：将 Python 跨平台脚本纳入标准采集入口。

@@ -49,13 +49,13 @@ proto/v3/
 直接运行脚本：
 
 ```bash
-python scripts/generate_proto_cpp.py
+python3.12 scripts/tools/generate_proto_cpp.py
 ```
 
 Windows 包装入口：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts/generate_proto_cpp.ps1
+Windows support is currently deferred; generate protocol sources from a supported Linux or macOS environment.
 ```
 
 CMake helper target：

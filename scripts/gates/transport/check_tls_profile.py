@@ -127,7 +127,7 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "certificate-generator-exists",
-        (ROOT / "scripts/gen_certs.py").exists() and (ROOT / "scripts/gen_certs.sh").exists(),
+        (ROOT / "scripts/tools/gen_certs.py").exists() and (ROOT / "scripts/tools/gen_certs.sh").exists(),
         "dev certificate generator exists",
     )
     add(
@@ -151,7 +151,7 @@ def validate_certs(checks: list[dict[str, Any]], generate: bool, cert_dir: Path)
     if generate and not all(path.exists() for path in certs):
         result = run([
             sys.executable,
-            str(ROOT / "scripts/gen_certs.py"),
+            str(ROOT / "scripts/tools/gen_certs.py"),
             "--output-dir",
             str(cert_dir),
         ])

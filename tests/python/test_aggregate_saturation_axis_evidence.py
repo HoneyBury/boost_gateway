@@ -254,10 +254,10 @@ def write_selection_source(root: Path) -> SelectionSourceSpec:
 class AggregateSaturationAxisEvidenceTest(unittest.TestCase):
     def test_top_level_shim_works_from_repo_and_arbitrary_cwd(self) -> None:
         repo_root = Path(__file__).resolve().parents[2]
-        shim = repo_root / "scripts/aggregate_saturation_axis_evidence.py"
+        shim = repo_root / "scripts/gates/release/aggregate_saturation_axis_evidence.py"
         with tempfile.TemporaryDirectory() as temp:
             invocations = (
-                ([sys.executable, "scripts/aggregate_saturation_axis_evidence.py", "--help"], repo_root),
+                ([sys.executable, "scripts/gates/release/aggregate_saturation_axis_evidence.py", "--help"], repo_root),
                 ([sys.executable, str(shim), "--help"], Path(temp)),
             )
             for command, cwd in invocations:

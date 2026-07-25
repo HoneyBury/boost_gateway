@@ -164,7 +164,7 @@ def cmake_build_args(args: argparse.Namespace, targets: list[str]) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-ninja-debug"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/contributor-debug"))
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--include-otel-collector", action="store_true")
@@ -269,7 +269,7 @@ def main() -> int:
                 "runtime_http",
                 [
                     sys.executable,
-                    str(root / "scripts" / "verify_gateway_observability_runtime.py"),
+                    str(root / "scripts/gates/production/verify_gateway_observability_runtime.py"),
                     "--build-dir",
                     str(args.build_dir),
                     "--summary-path",

@@ -29,14 +29,14 @@ Production evidence summaries must expose:
 - `failed_step`
 - `artifacts`
 
-`scripts/check_validation_summary_contract.py` verifies the current core evidence
+`scripts/gates/governance/check_validation_summary_contract.py` verifies the current core evidence
 set. Producer scripts that still emit legacy summaries should be upgraded before
 they are promoted to public entrypoints.
 
 ## Stage 3: Workflow Boundaries
 
 Workflows should call one public entrypoint or one aggregate gate per stage, then
-render summaries with `scripts/render_validation_summary.py`.
+render summaries with `scripts/tools/render_validation_summary.py`.
 
 Long-running workflows are fixed-runner only:
 

@@ -254,7 +254,7 @@ def main() -> int:
             "manifests",
             [
                 sys.executable,
-                str(root / "scripts" / "check_operator_manifests.py"),
+                str(root / "scripts/gates/k8s/check_operator_manifests.py"),
                 "--operator-dir",
                 str(operator_dir),
                 "--summary-path",
@@ -285,7 +285,7 @@ def main() -> int:
             summary["steps"].append(run_step(
                 "Operator kind status smoke",
                 "kind",
-                [sys.executable, str(root / "scripts" / "operator_kind_smoke.py")],
+                [sys.executable, str(root / "scripts/tools/operator_kind_smoke.py")],
                 root,
                 args.kind_timeout_seconds,
                 env=go_env,

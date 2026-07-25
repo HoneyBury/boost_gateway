@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/check_fixed_runner_environment.py
+            scripts/gates/infrastructure/check_fixed_runner_environment.py
             --profile specialized-e2e
             --build-dir "${{ inputs.build_dir }}"
             --summary-path runtime/validation/fixed-runner-preflight-summary.json
@@ -189,7 +189,7 @@ jobs:
         if: inputs.specialized_profile != 'redis-live'
         shell: bash
         run: |
-          python3 scripts/verify_data_recovery_gate.py \
+          python3 scripts/gates/production/verify_data_recovery_gate.py \
             --build-dir "${{ inputs.build_dir }}" \
             --configuration "${{ inputs.configuration }}" \
             --skip-build \
@@ -215,7 +215,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/verify_specialized_e2e.py
+            scripts/gates/e2e/verify_specialized_e2e.py
             --build-dir "${{ inputs.build_dir }}"
             --configuration "${{ inputs.configuration }}"
             --profile "${{ inputs.specialized_profile }}"
@@ -245,7 +245,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload specialized E2E summary

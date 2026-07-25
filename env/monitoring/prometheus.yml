@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — Prometheus Scrape Configuration
+# Boost Gateway v3.6.2 — Prometheus Scrape Configuration
 #
 # Scrapes HTTP metrics only from services that currently expose an HTTP
 # management endpoint. v2 backends publish custom TCP protocols and do not
@@ -13,7 +13,7 @@ global:
   evaluation_interval: 15s
   external_labels:
     monitor: "boost-gateway"
-    version: "3.3.2"
+    version: "3.6.2"
 
 rule_files:
   - /etc/prometheus/prometheus-alerts.yml

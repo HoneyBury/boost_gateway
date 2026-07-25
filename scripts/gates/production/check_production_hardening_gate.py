@@ -34,19 +34,31 @@ def validate_h0(checks: list[dict[str, Any]]) -> None:
     text = read_text(workflow)
     add(checks, f"h0:{workflow}:manual-dispatch", "workflow_dispatch:" in text and "gate:" in text, "manual fixed-runner diagnostic workflow exists")
     add(checks, f"h0:{workflow}:runner-override", "vars.PRODUCTION_GATES_RUNNER" in text and '["self-hosted","Linux","X64"]' in text, "workflow keeps fixed-runner override")
-    add(checks, f"h0:{workflow}:configure-fallback", "inputs.configure_preset || 'release'" in text, "workflow defaults to the Release configure preset")
+    add(
+        checks,
+        f"h0:{workflow}:strict-conan-configure",
+        "conan install ." in text
+        and "--build=never" in text
+        and "build/conan-production-gates-cmake" in text,
+        "workflow uses the admitted Release Conan graph without a source fallback",
+    )
     add(checks, f"h0:{workflow}:concurrency", "group: production-gates-" in text, "workflow has stable concurrency group")
-    add(checks, f"h0:{workflow}:p5", "scripts/verify_production_resilience_gate.py" in text, "workflow exposes P5 resilience gate")
-    add(checks, f"h0:{workflow}:p6", "scripts/verify_production_evidence_gate.py" in text, "workflow exposes P6 evidence gate")
-    add(checks, f"h0:{workflow}:summary-render", "scripts/render_validation_summary.py" in text, "workflow renders GitHub Step Summary")
+    add(checks, f"h0:{workflow}:p5", "scripts/gates/production/verify_production_resilience_gate.py" in text, "workflow exposes P5 resilience gate")
+    add(checks, f"h0:{workflow}:p6", "scripts/gates/production/verify_production_evidence_gate.py" in text, "workflow exposes P6 evidence gate")
+    add(checks, f"h0:{workflow}:summary-render", "scripts/tools/render_validation_summary.py" in text, "workflow renders GitHub Step Summary")
     add(checks, f"h0:{workflow}:artifact", "actions/upload-artifact@v4" in text, "workflow archives evidence artifacts")
 
 
 def validate_h1(checks: list[dict[str, Any]]) -> None:
     soak = read_text("scripts/gates/release/verify_stability_soak.py")
-    plan = read_text("docs/archive/plans/production-candidate-hardening-plan.md")
+    plan = read_text("docs/mainline-execution-plan.md")
     add(checks, "h1:soak-profiles", all(item in soak for item in ['"smoke"', '"short"', '"medium"']), "bounded soak profiles exist")
-    add(checks, "h1:long-soak-plan", "2h / 8h soak" in plan and "RSS" in plan and "CPU" in plan, "long soak resource plan exists")
+    add(
+        checks,
+        "h1:long-soak-plan",
+        "72 小时" in plan and "30 天不可变验证" in plan and "2,592,000s" in plan,
+        "current long-run operations plan defines shakedown and immutable duration",
+    )
     add(checks, "h1:bounded-stability-workflow", contains(".github/workflows/nightly-stability.yml", "workflow_dispatch:"), "bounded stability workflow exists")
 
 
@@ -78,7 +90,7 @@ def validate_h4(checks: list[dict[str, Any]]) -> None:
     add(checks, "h4:runtime-http-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-runtime-http"), "runtime HTTP observability gate exists")
     add(checks, "h4:otel-collector-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-otel-collector"), "OTel collector gate exists")
     add(checks, "h4:gateway-red-dashboard", contains("env/monitoring/grafana-dashboard.json", "gateway_backend_.*_requests_total"), "dashboard has backend RED panels")
-    add(checks, "h4:p99-boundary-doc", contains("docs/archive/releases/v3.3.2-p3-monitoring-operations.md", "P99"), "P99 observability boundary documented")
+    add(checks, "h4:p99-boundary-doc", contains("docs/performance-baseline.md", "P99"), "current P99 observability boundary is documented")
 
 
 def validate_h5(checks: list[dict[str, Any]]) -> None:
@@ -86,7 +98,7 @@ def validate_h5(checks: list[dict[str, Any]]) -> None:
     add(checks, "h5:csharp-example", exists("sdk/examples/csharp_full_flow/Program.cs"), "C# full-flow SDK example exists")
     add(checks, "h5:csharp-heartbeat-disconnect", contains("sdk/examples/csharp_full_flow/Program.cs", "StartHeartbeat") and contains("sdk/examples/csharp_full_flow/Program.cs", "Disconnect"), "C# example covers heartbeat and disconnect")
     add(checks, "h5:python-business-flow", contains("sdk/examples/python_full_flow.py", "start_battle") and contains("sdk/examples/python_full_flow.py", "disconnect"), "Python example covers battle flow and disconnect")
-    add(checks, "h5:compatibility-matrix", exists("sdk/docs/compatibility.md") and contains("sdk/docs/compatibility.md", "v3.3.2") and contains("sdk/docs/compatibility.md", "v4.2.0"), "SDK compatibility matrix exists")
+    add(checks, "h5:compatibility-matrix", exists("sdk/docs/compatibility.md") and contains("sdk/docs/compatibility.md", "v3.6.x") and contains("sdk/docs/compatibility.md", "v4.2.0"), "current SDK compatibility matrix exists")
     sdk_docs = read_text("sdk/docs/README.md")
     add(checks, "h5:heartbeat-doc", "start_heartbeat" in sdk_docs and "on_disconnect" in sdk_docs, "SDK docs cover heartbeat/disconnect")
     add(checks, "h5:version-diagnostics", "BOOST_GATEWAY_SDK_LIBRARY" in sdk_docs and "gsdk_version()" in sdk_docs, "SDK docs cover native version/load diagnostics")

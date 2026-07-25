@@ -38,4 +38,4 @@ uninstall-sample:
 
 .PHONY: kind-smoke
 kind-smoke:
-	bash ../../scripts/operator_kind_smoke.sh
+	python3.12 ../../scripts/tools/operator_kind_smoke.py

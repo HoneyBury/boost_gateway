@@ -8,6 +8,16 @@ and Kubernetes kind control-plane exercises.
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import platform
 import signal
@@ -186,7 +196,7 @@ def main() -> int:
         try:
             preflight_cmd = [
                 sys.executable,
-                str(root / "scripts" / "check_fixed_runner_environment.py"),
+                str(root / "scripts/gates/infrastructure/check_fixed_runner_environment.py"),
                 "--profile", "production-resilience",
                 "--build-dir", str(args.build_dir),
                 "--summary-path", str(root / "runtime/validation/p5-fixed-runner-preflight-summary.json"),
@@ -204,7 +214,7 @@ def main() -> int:
                     "recovery",
                     [
                         sys.executable,
-                        str(root / "scripts/check_production_recovery_gate.py"),
+                        str(root / "scripts/gates/production/check_production_recovery_gate.py"),
                         "--summary-path", str(root / "runtime/validation/p5-production-recovery-summary.json"),
                     ],
                     60,
@@ -216,7 +226,7 @@ def main() -> int:
                     "transport_config",
                     [
                         sys.executable,
-                        str(root / "scripts/check_transport_config_governance.py"),
+                        str(root / "scripts/gates/transport/check_transport_config_governance.py"),
                         "--generate-dev-certs",
                         "--summary-path", str(root / "runtime/validation/p5-transport-config-governance-summary.json"),
                     ],
@@ -226,7 +236,7 @@ def main() -> int:
             if not cancellation.cancelled:
                 stability_cmd = [
                     sys.executable,
-                    str(root / "scripts/verify_stability_soak.py"),
+                    str(root / "scripts/gates/release/verify_stability_soak.py"),
                     "--build-dir", str(args.build_dir),
                     "--configuration", args.configuration,
                     "--soak-profile", args.soak_profile,
@@ -243,7 +253,7 @@ def main() -> int:
             if not cancellation.cancelled:
                 data_cmd = [
                     sys.executable,
-                    str(root / "scripts/verify_data_recovery_gate.py"),
+                    str(root / "scripts/gates/production/verify_data_recovery_gate.py"),
                     "--build-dir", str(args.build_dir),
                     "--configuration", args.configuration,
                     "--summary-path", str(root / "runtime/validation/p5-fault-data-recovery-summary.json"),
@@ -260,7 +270,7 @@ def main() -> int:
             if not cancellation.cancelled:
                 specialized_cmd = [
                     sys.executable,
-                    str(root / "scripts/verify_specialized_e2e.py"),
+                    str(root / "scripts/gates/e2e/verify_specialized_e2e.py"),
                     "--build-dir", str(args.build_dir),
                     "--configuration", args.configuration,
                     "--summary-path", str(root / "runtime/validation/p5-specialized-failure-summary.json"),
@@ -277,7 +287,7 @@ def main() -> int:
             if args.include_runtime_http and not cancellation.cancelled:
                 observability_cmd = [
                     sys.executable,
-                    str(root / "scripts/verify_observability_gate.py"),
+                    str(root / "scripts/gates/production/verify_observability_gate.py"),
                     "--build-dir", str(args.build_dir),
                     "--configuration", args.configuration,
                     "--include-runtime-http",
@@ -296,7 +306,7 @@ def main() -> int:
                     "control_plane",
                     [
                         sys.executable,
-                        str(root / "scripts/verify_control_plane_gate.py"),
+                        str(root / "scripts/gates/production/verify_control_plane_gate.py"),
                         "--include-kind",
                         "--kind-timeout-seconds", str(args.kind_timeout_seconds),
                         "--summary-path", str(root / "runtime/validation/p5-control-plane-kind-summary.json"),
@@ -311,7 +321,7 @@ def main() -> int:
                 perf_preset = "capacity" if args.include_capacity_baseline else "baseline"
                 release_cmd = [
                     sys.executable,
-                    str(root / "scripts/collect_release_baseline.py"),
+                    str(root / "scripts/producers/collect_release_baseline.py"),
                     "--build-dir", str(args.build_dir),
                     "--configuration", args.configuration,
                     "--perf-preset", perf_preset,

@@ -270,7 +270,7 @@ jobs:
 
       - name: Raft Phase B specialized evidence
         run: |
-          python3 scripts/verify_specialized_e2e.py \
+          python3 scripts/gates/e2e/verify_specialized_e2e.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --profile raft-ha \
@@ -279,7 +279,7 @@ jobs:
 
       - name: Raft Phase B data recovery evidence
         run: |
-          python3 scripts/verify_data_recovery_gate.py \
+          python3 scripts/gates/production/verify_data_recovery_gate.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --configuration Release \
             --skip-build \
@@ -338,7 +338,7 @@ jobs:
             esac
           fi
           : "${legacy_sha:?configure a platform-specific legacy Raft SHA-256}"
-          python3 scripts/verify_raft_mixed_binary.py \
+          python3 scripts/gates/e2e/verify_raft_mixed_binary.py \
             --legacy-binary "$legacy_binary" \
             --legacy-revision "$LEGACY_RAFT_REVISION" \
             --expected-legacy-sha256 "$legacy_sha" \
@@ -361,31 +361,31 @@ jobs:
           if-no-files-found: warn
 
       - name: R4 release contract gate
-        run: python scripts/verify_r4_contract.py --build-dir "$PRODUCTION_BUILD_DIR" --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
+        run: python scripts/gates/release/verify_r4_contract.py --build-dir "$PRODUCTION_BUILD_DIR" --skip-build --skip-arch-baseline --configuration Release --baseline-profile release
 
       - name: Security release gate
-        run: python scripts/check_security_release_gate.py
+        run: python scripts/gates/release/check_security_release_gate.py
 
       - name: Monitoring operability gate
-        run: python scripts/check_monitoring_operability.py --summary-path runtime/validation/release-monitoring-operability-summary.json
+        run: python scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/release-monitoring-operability-summary.json
 
       - name: Observability release gate
-        run: python scripts/verify_observability_gate.py --build-dir "$PRODUCTION_BUILD_DIR" --configuration Release --skip-build
+        run: python scripts/gates/production/verify_observability_gate.py --build-dir "$PRODUCTION_BUILD_DIR" --configuration Release --skip-build
 
       - name: Control-plane operator gate
-        run: python scripts/verify_control_plane_gate.py
+        run: python scripts/gates/production/verify_control_plane_gate.py
 
       - name: Workflow Python CLI contract gate
-        run: python scripts/check_workflow_python_cli_contracts.py
+        run: python scripts/gates/governance/check_workflow_python_cli_contracts.py
 
       - name: Workflow catalog gate
-        run: python scripts/check_workflow_catalog.py
+        run: python scripts/gates/governance/check_workflow_catalog.py
 
       - name: Evidence provenance contract gate
-        run: python scripts/check_evidence_provenance_contract.py
+        run: python scripts/gates/governance/check_evidence_provenance_contract.py
 
       - name: R5 Docker image policy contract gate
-        run: python scripts/check_r5_docker_image_policy_contract.py
+        run: python scripts/gates/governance/check_r5_docker_image_policy_contract.py
 
       - name: Legacy/helper inventory gate
         run: python scripts/gates/governance/check_legacy_helper_inventory.py
@@ -395,7 +395,7 @@ jobs:
 
       - name: Collect release baseline
         run: |
-          python3 scripts/collect_release_baseline.py \
+          python3 scripts/producers/collect_release_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --perf-preset ${{ inputs.perf_preset || 'smoke' }} \
             --perf-repetitions ${{ inputs.perf_repetitions || '3' }} \
@@ -587,7 +587,7 @@ jobs:
       - name: Verify Raft Phase B release evidence binding
         shell: bash
         run: |
-          python3 scripts/verify_raft_release_evidence.py \
+          python3 scripts/gates/release/verify_raft_release_evidence.py \
             --specialized-summary runtime/validation/raft-release-specialized-summary.json \
             --data-recovery-summary runtime/validation/raft-release-data-recovery-summary.json \
             --conan-offline-summary runtime/validation/raft-conan-offline-summary.json \

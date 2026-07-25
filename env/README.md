@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — Environment Configuration
+# Boost Gateway v3.6.2 — Environment Configuration
 
 This directory contains the production-ready environment infrastructure for the
 BoostGateway realtime service framework. It covers Docker Compose orchestration,

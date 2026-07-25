@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — Gateway Deployment + Service + HPA + PDB
+# Boost Gateway v3.6.2 — Gateway Deployment + Service + HPA + PDB
 #
 # The gateway is the single client-facing TCP ingress point.
 # It exposes port 9201 for game traffic and port 9080 for HTTP management.
@@ -83,7 +83,7 @@ metadata:
   labels:
     app.kubernetes.io/name: boost-gateway
     app.kubernetes.io/component: gateway
-    app.kubernetes.io/version: "3.3.2"
+    app.kubernetes.io/version: "3.6.2"
 spec:
   replicas: 2
   strategy:
@@ -114,7 +114,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: gateway
-          image: ghcr.io/boost-gateway/gateway:v3.3.2
+          image: ghcr.io/boost-gateway/gateway:v3.6.2
           imagePullPolicy: IfNotPresent
           args:
             - "--http-port"

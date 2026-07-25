@@ -3,6 +3,16 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import json
 import os
@@ -216,7 +226,7 @@ def cmake_build_args(args: argparse.Namespace, targets: list[str]) -> list[str]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=Path("build/windows-ninja-debug"))
+    parser.add_argument("--build-dir", type=Path, default=Path("build/contributor-debug"))
     parser.add_argument("--configuration", default="Debug")
     parser.add_argument("--skip-build", action="store_true")
     parser.add_argument("--include-redis-live", action="store_true")

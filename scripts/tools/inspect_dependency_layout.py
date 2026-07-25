@@ -33,7 +33,7 @@ def main() -> int:
         ("toolchain-cache", ".conan2-local"),
         ("toolchain-cache", "build/conan-debug"),
         ("toolchain-cache", "build/_deps"),
-        ("toolchain-cache", "build/windows-msvc-debug/_deps"),
+        ("toolchain-cache", "build/contributor-debug"),
     ]:
         print_status(category, root / rel_path)
 
@@ -41,11 +41,11 @@ def main() -> int:
     print("  python scripts/bootstrap_conan.py")
     print("  python scripts/bootstrap_conan.py --allow-public")
     print("  python scripts/bootstrap_conan.py --no-remote")
-    print("  conan install . --profile:host conan/profiles/windows-msvc-x64 --profile:build conan/profiles/windows-msvc-x64 --lockfile conan/locks/windows-msvc-x64-debug-nogrpc-nosqlite.lock -o \"&:with_grpc=False\" -o \"&:with_sqlite=False\" --output-folder=build/conan-debug --build=missing -s build_type=Debug")
+    print("  conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-debug-nogrpc-nosqlite.lock -o \"&:with_grpc=False\" -o \"&:with_raft_protobuf=True\" -o \"&:with_sqlite=False\" --output-folder=build/conan-debug --build=missing -s build_type=Debug")
     print("  conan install . --profile:host conan/profiles/linux-gcc-x64 --profile:build conan/profiles/linux-gcc-x64 --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock -o \"&:with_grpc=False\" -o \"&:with_sqlite=False\" --output-folder=build/conan-release --build=missing -s build_type=Release")
     print("  bash third_party/download_deps.sh")
     print("  bash third_party/bootstrap_from_build_cache.sh")
-    print("  cmake --preset windows-msvc-debug")
+    print("  cmake --build build/contributor-debug --parallel")
     return 0
 
 

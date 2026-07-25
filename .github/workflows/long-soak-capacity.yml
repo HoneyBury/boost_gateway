@@ -180,7 +180,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/check_fixed_runner_environment.py \
+          python3 scripts/gates/infrastructure/check_fixed_runner_environment.py \
             --profile long-soak-capacity \
             --build-dir "$PRODUCTION_BUILD_DIR" \
             --summary-path runtime/validation/long-soak-capacity-preflight-summary.json
@@ -334,7 +334,7 @@ jobs:
         run: |
           set -euo pipefail
           args=(
-            scripts/verify_fixed_runner_release_capacity.py
+            scripts/gates/release/verify_fixed_runner_release_capacity.py
             --build-dir "$PRODUCTION_BUILD_DIR"
             --configuration Release
             --release-summary runtime/validation/capacity-baseline-summary.json
@@ -397,7 +397,7 @@ jobs:
             fi
           done
           if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
+            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload long-soak capacity evidence

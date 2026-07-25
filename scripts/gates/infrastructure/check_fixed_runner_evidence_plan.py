@@ -57,8 +57,8 @@ WORKFLOW_REQUIREMENTS = {
             "--build=never",
             "--no-remote",
             "BOOST_BUILD_GRPC=ON",
-            "scripts/verify_sdk_package_consumer.py",
-            "scripts/check_v3_grpc_poc_decision.py",
+            "scripts/gates/sdk/verify_sdk_package_consumer.py",
+            "scripts/gates/governance/check_v3_grpc_poc_decision.py",
             "actions/upload-artifact@v4",
         ),
         "summaries": (
@@ -166,7 +166,7 @@ WORKFLOW_REQUIREMENTS = {
 DOC_TOKENS = (
     "Ubuntu Fixed-Runner 第一批执行矩阵",
     "不能用本机 smoke 或 `--allow-missing` 结果替代",
-    "python3 scripts/check_fixed_runner_evidence_plan.py",
+    "python3 scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py",
     "Linux `nosqlite` lockfile",
     "overall_pass=true",
     "docs/runner-inventory.md",
@@ -620,7 +620,7 @@ def main() -> int:
         checks,
         "workflow:preprod:r5-monitoring-record-evidence",
         "R5 monitoring operability static gate" in preprod_recovery_gate
-        and "scripts/check_monitoring_operability.py" in preprod_recovery_gate
+        and "scripts/gates/production/check_monitoring_operability.py" in preprod_recovery_gate
         and "monitoring-operability-summary.json" in preprod_recovery_gate,
         "R5 generates the monitoring summary required by its recovery drill record",
     )

@@ -1,4 +1,4 @@
-# Boost Gateway v3.3.2 — Login Backend Deployment + Service + HPA
+# Boost Gateway v3.6.2 — Login Backend Deployment + Service + HPA
 #
 # Usage:
 #   kubectl apply -f env/k8s/login-backend-deployment.yaml
@@ -47,7 +47,7 @@ metadata:
   labels:
     app.kubernetes.io/name: boost-gateway
     app.kubernetes.io/component: backend
-    app.kubernetes.io/version: "3.3.2"
+    app.kubernetes.io/version: "3.6.2"
     boost-gateway.io/backend: login
 spec:
   replicas: 2
@@ -82,7 +82,7 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: backend
-          image: ghcr.io/boost-gateway/login-backend:v3.3.2
+          image: ghcr.io/boost-gateway/login-backend:v3.6.2
           imagePullPolicy: IfNotPresent
           args:
             - "9202"

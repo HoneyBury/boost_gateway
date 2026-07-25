@@ -86,7 +86,7 @@ std::filesystem::path make_temp_dir(const std::string& prefix) {
 bool generate_dev_certs(const std::filesystem::path& output_dir,
                         bool include_client,
                         std::string& out_error) {
-    const std::string script = std::string(PROJECT_SOURCE_DIR) + "/scripts/gen_certs.py";
+    const std::string script = std::string(PROJECT_SOURCE_DIR) + "/scripts/tools/gen_certs.py";
     std::string command = "python3 \"" + script + "\" --output-dir \"" + output_dir.string() + "\"";
     if (include_client) {
         command += " --include-client";
