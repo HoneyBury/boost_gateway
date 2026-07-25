@@ -19,7 +19,14 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterator, Protocol
+from typing import Any, Callable, Iterator, Protocol
+
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.lib.operations_identity import collect_operations_identity
 
 
 IMAGE_VARIABLES = {
@@ -58,6 +65,12 @@ INCOMPLETE_TRANSACTION_STATES = {
     "rollback_failed",
 }
 BLOCKING_TRANSACTION_STATES = {"recovery_failed"}
+PASSING_TRANSACTION_STATES = {"passed", "passed_reconciled"}
+TRANSACTION_SUMMARIES = {
+    "deployment": "deployment-verification-summary.json",
+    "recovery": "recovery-verification-summary.json",
+    "reconcile": "reconcile-verification-summary.json",
+}
 
 
 class LifecycleError(RuntimeError):
@@ -564,10 +577,76 @@ class ReleaseDeploymentManager:
         executor: LifecycleExecutor,
         *,
         monotonic: Any = time.monotonic,
+        identity_provider: Callable[[], dict[str, Any]] = collect_operations_identity,
     ) -> None:
         self.layout = layout
         self.executor = executor
         self.monotonic = monotonic
+        self.identity_provider = identity_provider
+
+    def _identity(self) -> dict[str, Any]:
+        try:
+            identity = self.identity_provider()
+            host = identity["host"]
+            operator = identity["operator"]
+            if not isinstance(host, dict) or not isinstance(operator, dict):
+                raise ValueError("identity fields must be objects")
+            return {"host": dict(host), "operator": dict(operator)}
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            raise LifecycleError(f"cannot collect operations identity: {exc}") from exc
+
+    @staticmethod
+    def _install_result(installed_at: str) -> dict[str, Any]:
+        return {
+            "operation": "install",
+            "status": "installed",
+            "completed": True,
+            "overall_pass": True,
+            "recorded_at": installed_at,
+        }
+
+    @staticmethod
+    def _summary_references(transaction: Path) -> list[dict[str, Any]]:
+        references: list[dict[str, Any]] = []
+        for kind, name in TRANSACTION_SUMMARIES.items():
+            path = transaction / name
+            if not path.exists() and not path.is_symlink():
+                continue
+            if path.is_symlink() or not path.is_file():
+                raise LifecycleError(f"transaction summary is not a regular file: {path}")
+            status = path.stat()
+            references.append(
+                {
+                    "kind": kind,
+                    "path": str(path),
+                    "sha256": sha256_file(path),
+                    "size_bytes": status.st_size,
+                }
+            )
+        return references
+
+    def _write_transaction_record(
+        self, transaction: Path, record: dict[str, Any]
+    ) -> None:
+        if "host" not in record or "operator" not in record:
+            identity = self._identity()
+            record.setdefault("host", identity["host"])
+            record.setdefault("operator", identity["operator"])
+        status = str(record.get("status", ""))
+        completed = status != "pending" and status not in INCOMPLETE_TRANSACTION_STATES
+        result: dict[str, Any] = {
+            "operation": str(record.get("operation", "")),
+            "status": status,
+            "completed": completed,
+            "overall_pass": status in PASSING_TRANSACTION_STATES if completed else None,
+            "recorded_at": record.get("completed_at")
+            or record.get("failed_at")
+            or record.get("started_at"),
+        }
+        if completed:
+            result["summaries"] = self._summary_references(transaction)
+        record["result"] = result
+        atomic_write_json(transaction / "record.json", record)
 
     def _ensure_layout(self) -> None:
         self.layout.root.mkdir(parents=True, exist_ok=True)
@@ -781,6 +860,22 @@ class ReleaseDeploymentManager:
                     raise LifecycleError(
                         f"existing deployment identity has different inputs: {deployment_id}"
                     )
+                changed = False
+                missing_identity = {
+                    field for field in ("host", "operator") if field not in existing
+                }
+                if missing_identity:
+                    identity = self._identity()
+                    for field in missing_identity:
+                        existing[field] = identity[field]
+                    changed = True
+                if "result" not in existing:
+                    existing["result"] = self._install_result(
+                        str(existing.get("installed_at", ""))
+                    )
+                    changed = True
+                if changed:
+                    atomic_write_json(deployment_destination / "record.json", existing)
                 return existing
 
             if release_destination.exists() and deployment_destination.exists():
@@ -845,11 +940,13 @@ class ReleaseDeploymentManager:
                         "manifest.json",
                     ):
                         (deployment_temp / name).symlink_to(Path("release") / name)
+                    installed_at = now()
+                    identity = self._identity()
                     record = {
                         "schema_version": 1,
                         "deployment_id": deployment_id,
                         "deployment_path": str(deployment_destination),
-                        "installed_at": now(),
+                        "installed_at": installed_at,
                         "status": "installed",
                         "release_path": str(release_destination),
                         "tag": manifest["tag"],
@@ -870,6 +967,9 @@ class ReleaseDeploymentManager:
                         ),
                         "image_ids": values,
                         "configuration_sha256": config_digest,
+                        "host": identity["host"],
+                        "operator": identity["operator"],
+                        "result": self._install_result(installed_at),
                         "secret_material_recorded": False,
                         "protected_state_policy": {
                             "volumes_deleted": False,
@@ -1025,7 +1125,7 @@ class ReleaseDeploymentManager:
             "secret_material_recorded": False,
             **fields,
         }
-        atomic_write_json(path / "record.json", record)
+        self._write_transaction_record(path, record)
         return path, record
 
     def _reconcile_pending(self) -> None:
@@ -1073,7 +1173,7 @@ class ReleaseDeploymentManager:
                     "reconciled": True,
                 }
             )
-            atomic_write_json(transaction / "record.json", record)
+            self._write_transaction_record(transaction, record)
             return
 
         current = self._resolve_link(self.layout.current, required=False)
@@ -1130,7 +1230,7 @@ class ReleaseDeploymentManager:
                             "recovery_failure": str(recovery_exc),
                         }
                     )
-                    atomic_write_json(transaction / "record.json", record)
+                    self._write_transaction_record(transaction, record)
                     raise LifecycleError(
                         f"transaction reconciliation recovery failed: {recovery_exc}"
                     ) from recovery_exc
@@ -1143,7 +1243,7 @@ class ReleaseDeploymentManager:
                         "restored_current": previous,
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 return
             record.update(
                 {
@@ -1154,7 +1254,7 @@ class ReleaseDeploymentManager:
                     "previous": previous,
                 }
             )
-            atomic_write_json(transaction / "record.json", record)
+            self._write_transaction_record(transaction, record)
             return
 
         if current is not None:
@@ -1176,7 +1276,7 @@ class ReleaseDeploymentManager:
                     "restored_current": current,
                 }
             )
-            atomic_write_json(transaction / "record.json", record)
+            self._write_transaction_record(transaction, record)
             return
 
         self.executor.deactivate(
@@ -1195,7 +1295,7 @@ class ReleaseDeploymentManager:
                 "reconciled": True,
             }
         )
-        atomic_write_json(transaction / "record.json", record)
+        self._write_transaction_record(transaction, record)
 
     @staticmethod
     def _remaining(started: float, budget: float, monotonic: Any) -> float:
@@ -1342,7 +1442,7 @@ class ReleaseDeploymentManager:
                     self._remaining(started, budget, self.monotonic),
                 )
                 record["status"] = "candidate_activated"
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 self._verify_target(
                     candidate,
                     transaction,
@@ -1355,7 +1455,7 @@ class ReleaseDeploymentManager:
                     last_transaction=record["transaction_id"],
                 )
                 record["status"] = "candidate_verified"
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 self.executor.commit(
                     self._deployment_dir(candidate),
                     self._remaining(started, budget, self.monotonic),
@@ -1372,7 +1472,7 @@ class ReleaseDeploymentManager:
                         "elapsed_seconds": round(self.monotonic() - started, 3),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 return record
             except Exception as exc:
                 self._ensure_failure_summary(transaction, exc)
@@ -1383,7 +1483,7 @@ class ReleaseDeploymentManager:
                         "failure": str(exc),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 if legacy_adoption:
                     recovery_started = self.monotonic()
                     try:
@@ -1421,7 +1521,7 @@ class ReleaseDeploymentManager:
                                 "recovery_failure": str(recovery_exc),
                             }
                         )
-                        atomic_write_json(transaction / "record.json", record)
+                        self._write_transaction_record(transaction, record)
                         raise LifecycleError(
                             "legacy adoption and topology recovery both failed: "
                             f"{exc}; {recovery_exc}"
@@ -1436,7 +1536,7 @@ class ReleaseDeploymentManager:
                             ),
                         }
                     )
-                    atomic_write_json(transaction / "record.json", record)
+                    self._write_transaction_record(transaction, record)
                     raise LifecycleError(
                         f"legacy adoption failed; TODO-0009 pointer was preserved: {exc}"
                     ) from exc
@@ -1460,7 +1560,7 @@ class ReleaseDeploymentManager:
                             ),
                         }
                     )
-                    atomic_write_json(transaction / "record.json", record)
+                    self._write_transaction_record(transaction, record)
                     raise LifecycleError(
                         f"{operation} failed and previous recovery failed: {exc}; {recovery_exc}"
                     ) from recovery_exc
@@ -1476,7 +1576,7 @@ class ReleaseDeploymentManager:
                         ),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 raise LifecycleError(
                     f"{operation} verification failed; previous deployment restored: {exc}"
                 ) from exc
@@ -1519,14 +1619,14 @@ class ReleaseDeploymentManager:
                     self._remaining(started, ROLLBACK_DEADLINE_SECONDS, self.monotonic),
                 )
                 record["status"] = "candidate_activated"
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 self._verify_target(
                     target,
                     transaction,
                     self._remaining(started, ROLLBACK_DEADLINE_SECONDS, self.monotonic),
                 )
                 record["status"] = "candidate_verified"
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 self.executor.commit(
                     self._deployment_dir(target),
                     self._remaining(started, ROLLBACK_DEADLINE_SECONDS, self.monotonic),
@@ -1551,7 +1651,7 @@ class ReleaseDeploymentManager:
                         "elapsed_seconds": round(self.monotonic() - started, 3),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 return record
             except Exception as exc:
                 self._ensure_failure_summary(transaction, exc)
@@ -1562,7 +1662,7 @@ class ReleaseDeploymentManager:
                         "failure": str(exc),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 recovery_started = self.monotonic()
                 try:
                     self._restore(
@@ -1583,7 +1683,7 @@ class ReleaseDeploymentManager:
                             ),
                         }
                     )
-                    atomic_write_json(transaction / "record.json", record)
+                    self._write_transaction_record(transaction, record)
                     raise LifecycleError(
                         f"rollback failed and current recovery failed: {exc}; {recovery_exc}"
                     ) from recovery_exc
@@ -1599,7 +1699,7 @@ class ReleaseDeploymentManager:
                         ),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 raise LifecycleError(
                     f"rollback failed; original current deployment restored: {exc}"
                 ) from exc
@@ -1628,7 +1728,7 @@ class ReleaseDeploymentManager:
                         "elapsed_seconds": round(self.monotonic() - started, 3),
                     }
                 )
-                atomic_write_json(transaction / "record.json", record)
+                self._write_transaction_record(transaction, record)
                 raise
             record.update(
                 {
@@ -1637,7 +1737,7 @@ class ReleaseDeploymentManager:
                     "elapsed_seconds": round(self.monotonic() - started, 3),
                 }
             )
-            atomic_write_json(transaction / "record.json", record)
+            self._write_transaction_record(transaction, record)
             return summary
 
         if already_locked:

@@ -66,7 +66,23 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             unit_path=root / "etc/boost-gateway-compose.service",
         )
         self.executor = FakeExecutor(self.layout)
-        self.manager = module.ReleaseDeploymentManager(self.layout, self.executor)
+        self.identity = {
+            "host": {
+                "hostname": "operations-host",
+                "host_id_sha256": "a" * 64,
+                "boot_id": "boot-1",
+                "os": {
+                    "id": "ubuntu",
+                    "version_id": "24.04",
+                    "kernel_release": "test-kernel",
+                },
+                "architecture": "x86_64",
+            },
+            "operator": {"name": "release-operator", "uid": 1000, "source": "sudo"},
+        }
+        self.manager = module.ReleaseDeploymentManager(
+            self.layout, self.executor, identity_provider=lambda: self.identity
+        )
 
     def tearDown(self) -> None:
         self.temporary.cleanup()
@@ -211,6 +227,43 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertTrue((deployment / "compose-images.env").is_file())
         self.assertTrue((deployment / "configuration-snapshot").is_dir())
         self.assertEqual(sentinel.read_text(encoding="utf-8"), "keep")
+        self.assertEqual(first["host"], self.identity["host"])
+        self.assertEqual(first["operator"], self.identity["operator"])
+        self.assertEqual(first["result"]["status"], "installed")
+        self.assertTrue(first["result"]["overall_pass"])
+
+    def test_idempotent_install_backfills_only_missing_identity(self) -> None:
+        source, image_env, release_summary, image_summary = self.make_release(
+            "v1.0.0", "a"
+        )
+        first = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+        record_path = (
+            self.layout.deployments / str(first["deployment_id"]) / "record.json"
+        )
+        legacy = json.loads(record_path.read_text(encoding="utf-8"))
+        legacy.pop("host")
+        legacy.pop("operator")
+        legacy.pop("result")
+        module.atomic_write_json(record_path, legacy)
+
+        backfilled = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+        self.assertEqual(backfilled["host"], self.identity["host"])
+        self.assertEqual(backfilled["operator"], self.identity["operator"])
+        self.assertEqual(backfilled["result"]["operation"], "install")
+
+        original = json.loads(json.dumps(backfilled))
+        self.manager.identity_provider = lambda: (_ for _ in ()).throw(
+            AssertionError("complete identity must not be collected again")
+        )
+        repeated = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+        self.assertEqual(repeated["host"], original["host"])
+        self.assertEqual(repeated["operator"], original["operator"])
 
     def test_install_ignores_and_does_not_copy_python_bytecode_cache(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(
@@ -274,6 +327,12 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
 
         result = self.manager.rollback()
         self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["result"]["status"], "passed")
+        self.assertTrue(result["result"]["overall_pass"])
+        self.assertEqual(
+            {item["kind"] for item in result["result"]["summaries"]},
+            {"deployment"},
+        )
         self.assertLessEqual(result["elapsed_seconds"], 600)
         self.assertEqual(self.layout.current.resolve().name, first)
         self.assertEqual(self.layout.previous.resolve().name, second)
@@ -326,6 +385,19 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             (transaction / "deployment-verification-summary.json").is_file()
         )
         self.assertTrue((transaction / "recovery-verification-summary.json").is_file())
+        self.assertEqual(record["host"], self.identity["host"])
+        self.assertEqual(record["operator"], self.identity["operator"])
+        self.assertEqual(record["result"]["status"], "rolled_back")
+        self.assertTrue(record["result"]["completed"])
+        self.assertFalse(record["result"]["overall_pass"])
+        references = {
+            item["kind"]: item for item in record["result"]["summaries"]
+        }
+        self.assertEqual(set(references), {"deployment", "recovery"})
+        for item in references.values():
+            path = Path(item["path"])
+            self.assertEqual(item["sha256"], module.sha256_file(path))
+            self.assertEqual(item["size_bytes"], path.stat().st_size)
 
     def test_next_command_reconciles_interrupted_candidate_activation(self) -> None:
         first = self.install("v1.0.0", "a")
@@ -335,6 +407,9 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             "upgrade", candidate=second, from_current=first, from_previous=None
         )
         record["status"] = "candidate_activated"
+        record.pop("host")
+        record.pop("operator")
+        record.pop("result")
         module.atomic_write_json(transaction / "record.json", record)
 
         status = self.manager.status()
@@ -344,6 +419,9 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         )
         self.assertTrue(status["overall_pass"])
         self.assertEqual(reconciled["status"], "interrupted_rolled_back")
+        self.assertEqual(reconciled["host"], self.identity["host"])
+        self.assertEqual(reconciled["operator"], self.identity["operator"])
+        self.assertEqual(reconciled["result"]["status"], "interrupted_rolled_back")
         self.assertEqual(self.layout.current.resolve().name, first)
 
     def test_reconcile_failure_on_committed_candidate_restores_previous(self) -> None:
@@ -372,6 +450,10 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         )
         self.assertTrue(status["overall_pass"])
         self.assertEqual(reconciled["status"], "interrupted_rolled_back")
+        self.assertEqual(
+            {item["kind"] for item in reconciled["result"]["summaries"]},
+            {"recovery", "reconcile"},
+        )
         self.assertEqual(self.layout.current.resolve().name, first)
         self.assertEqual(self.layout.previous.resolve().name, original_previous)
 
