@@ -115,6 +115,20 @@ record 必须保留 tag、commit、runtime asset digest、六个 image IDs、配
 若候选激活和 previous 恢复都失败，必须保持 fail closed、保留 `recovery_failed` 记录并进入
 incident 处理；不得把候选标记 verified 或人工改写 record。
 
+固定测试机使用仓库脚本制造真实的 post-activation Prometheus outage。脚本会等待候选 gateway
+镜像实际运行后暂停 Prometheus 120 秒，并以 trap 保证解除暂停；它要求候选 verification summary
+为 FAIL、recovery verification summary 为 PASS、transaction 为 `rolled_back`，且 current 恢复：
+
+```bash
+sudo deploy/operations/run_release_failure_drill.sh \
+  <candidate-deployment-id> \
+  <expected-current-deployment-id> \
+  <candidate-gateway-image-sha256>
+```
+
+该脚本不执行 `down -v`、volume/image 删除或持久数据回滚。若候选意外通过，脚本自身必须失败，
+不得生成伪造的自动恢复 PASS 结论。
+
 ## 显式回滚演练
 
 成功升级并确认 current/previous 为两个不同的 verified deployment 后执行：
