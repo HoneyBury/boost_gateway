@@ -24,7 +24,12 @@
     "scripts/verify_tls_preprod_multi_run.py",
     "scripts/verify_macos_arm64_package.py",
     "scripts/verify_jwks_rotation.py",
-    "scripts/manage_todos.py"
+    "scripts/manage_todos.py",
+    "scripts/check_operations_host.py",
+    "scripts/apply_operations_host_baseline.py",
+    "scripts/prepare_release_runtime.py",
+    "scripts/build_release_images.py",
+    "scripts/verify_release_deployment.py"
   ],
   "compatibility_policy": {
     "cycle": "v3.6-completed",
@@ -103,9 +108,17 @@
     "scripts/__init__.py": {
       "category": "tool"
     },
+    "scripts/apply_operations_host_baseline.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/infrastructure/apply_operations_host_baseline.py"
+    },
     "scripts/bootstrap_conan.py": {
       "category": "public_entrypoint",
       "canonical": "scripts/tools/bootstrap_conan.py"
+    },
+    "scripts/build_release_images.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/build_release_images.py"
     },
     "scripts/check_mainline_readiness.py": {
       "category": "public_entrypoint",
@@ -114,6 +127,10 @@
     "scripts/check_production_evidence_manifest.py": {
       "category": "public_entrypoint",
       "canonical": "scripts/gates/production/check_production_evidence_manifest.py"
+    },
+    "scripts/check_operations_host.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/gates/infrastructure/check_operations_host.py"
     },
     "scripts/gates/e2e/verify_raft_mixed_binary.py": {
       "category": "aggregate_gate"
@@ -170,6 +187,12 @@
       "category": "aggregate_gate"
     },
     "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/infrastructure/apply_operations_host_baseline.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/infrastructure/check_operations_host.py": {
       "category": "aggregate_gate"
     },
     "scripts/gates/k8s/check_operator_manifests.py": {
@@ -276,6 +299,10 @@
       "category": "public_entrypoint",
       "canonical": "scripts/tools/manage_todos.py"
     },
+    "scripts/prepare_release_runtime.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/prepare_release_runtime.py"
+    },
     "scripts/producers/collect_docker_production_perf_snapshot.py": {
       "category": "producer"
     },
@@ -305,6 +332,12 @@
     "scripts/tools/build_docker.py": {
       "category": "tool"
     },
+    "scripts/tools/build_release_images.py": {
+      "category": "tool"
+    },
+    "scripts/tools/check_release_compose.py": {
+      "category": "tool"
+    },
     "scripts/tools/deploy_k8s.py": {
       "category": "tool"
     },
@@ -332,6 +365,9 @@
     "scripts/tools/prepare_docker_runtime_context.py": {
       "category": "tool"
     },
+    "scripts/tools/prepare_release_runtime.py": {
+      "category": "tool"
+    },
     "scripts/tools/r5_docker_cache_bundle.py": {
       "category": "tool"
     },
@@ -342,6 +378,9 @@
       "category": "tool"
     },
     "scripts/tools/verify_macos_arm64_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_release_deployment.py": {
       "category": "tool"
     },
     "scripts/verify_jwks_rotation.py": {
@@ -367,6 +406,10 @@
     "scripts/verify_release_candidate.py": {
       "category": "public_entrypoint",
       "canonical": "scripts/gates/release/verify_release_candidate.py"
+    },
+    "scripts/verify_release_deployment.py": {
+      "category": "public_entrypoint",
+      "canonical": "scripts/tools/verify_release_deployment.py"
     },
     "scripts/verify_sdk_enterprise_delivery.py": {
       "category": "public_entrypoint",

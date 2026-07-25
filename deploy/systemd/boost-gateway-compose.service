@@ -1,0 +1,28 @@
+[Unit]
+Description=BoostGateway single-node Docker Compose topology
+Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/operations-host-admission-runbook.md
+Wants=network-online.target
+After=network-online.target docker.service
+Requires=docker.service
+ConditionPathExists=/opt/boost-gateway/current/deploy/operations/docker-compose.production.yml
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/boost-gateway/current
+EnvironmentFile=/etc/boost-gateway/compose-images.env
+EnvironmentFile=/etc/boost-gateway/compose.env
+ExecStartPre=/usr/bin/python3 scripts/tools/check_release_compose.py --compose-file deploy/operations/docker-compose.production.yml
+ExecStart=/usr/bin/docker compose -f deploy/operations/docker-compose.production.yml up -d --no-build --remove-orphans --wait --wait-timeout 240
+ExecStartPost=/usr/bin/docker compose -f deploy/operations/docker-compose.production.yml ps
+ExecReload=/usr/bin/docker compose -f deploy/operations/docker-compose.production.yml up -d --no-build --remove-orphans --wait --wait-timeout 240
+ExecStop=/usr/bin/docker compose -f deploy/operations/docker-compose.production.yml stop --timeout 30
+TimeoutStartSec=300
+TimeoutStopSec=120
+UMask=0027
+NoNewPrivileges=yes
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

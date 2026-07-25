@@ -1,0 +1,7 @@
+{
+  "host_id_sha256": "replace-with-sha256-of-etc-machine-id",
+  "restart_on_power_loss": false,
+  "verified_at": "YYYY-MM-DDTHH:MM:SSZ",
+  "method": "firmware-console-or-out-of-band-power-cycle",
+  "operator": "replace-with-operator-identity"
+}

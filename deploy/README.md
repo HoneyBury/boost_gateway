@@ -139,3 +139,28 @@ runtime/validation/deploy-operability-summary.json
 ```
 
 完整生产部署、回滚、监控和发布后验证流程见 `docs/deployment/production-deployment-runbook.md`。
+
+## 7. Ubuntu 运营主机准入
+
+两个月单节点运营主线使用独立的 fail-closed 入口，不复用面向构建 runner 的 preflight：
+
+```bash
+sudo python3 scripts/check_operations_host.py admit
+```
+
+主机加固、UFW/端口边界、断电恢复声明、Compose systemd unit 和真实 reboot 前后
+boot-id 证据流程见 `docs/deployment/operations-host-admission-runbook.md`。目标机证据通过前，
+`TODO-0008` 保持 open；该入口不执行后续 release consumer 或 upgrade/rollback 工作。
+
+## 8. 不可变 Release 生产路径
+
+已通过主机静态准入后，使用 `scripts/prepare_release_runtime.py` 从 GitHub Release 直接消费
+Linux x64 runtime、SPDX、checksum 和 attestation bundle。`deploy/runtime/` 的 Dockerfile
+固定 Ubuntu 24.04 digest，只复制已验证的 staging；
+`deploy/operations/docker-compose.production.yml` 禁止项目源码 build，并要求六个项目镜像
+使用 Docker `sha256:` image ID。首次部署和 SDK full-flow 命令见
+`docs/deployment/immutable-release-deployment-runbook.md`。
+
+这条路径不执行 CMake/Conan，也不提供 upgrade/rollback；后者属于 `TODO-0010`。
+目标机首次部署优先使用 `deploy/operations/deploy_verified_release.sh`；脚本在任何写操作前
+强制校验 Ubuntu 24.04 x86-64，且不会自动重启主机。

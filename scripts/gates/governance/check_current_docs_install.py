@@ -32,6 +32,8 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/production-deployment-runbook.md",
     "docs/deployment/production-operations-runbook.md",
     "docs/deployment/production-configuration-runbook.md",
+    "docs/deployment/operations-host-admission-runbook.md",
+    "docs/deployment/immutable-release-deployment-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/release-governance.md",
     "docs/tls-mtls-runbook.md",
@@ -270,6 +272,53 @@ def main() -> int:
             )
         ),
         "the two-month plan preserves duration, TODO, canary, restart and recovery boundaries",
+    )
+    host_runbook = (ROOT / "docs/deployment/operations-host-admission-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    add(
+        checks,
+        "docs:operations-host-admission-contract",
+        all(
+            token in host_runbook
+            for token in (
+                "scripts/check_operations_host.py admit",
+                "scripts/apply_operations_host_baseline.py plan",
+                "prepare-reboot",
+                "verify-reboot",
+                "boot ID",
+                "TODO-0008",
+            )
+        )
+        and "operations-host-admission-runbook.md" in docs_index
+        and "deploy/operations/" in cmake
+        and "boost-gateway-compose.service" in cmake,
+        "the operations host runbook, policy and Compose lifecycle unit are indexed and installed",
+    )
+    release_runbook = (
+        ROOT / "docs/deployment/immutable-release-deployment-runbook.md"
+    ).read_text(encoding="utf-8")
+    add(
+        checks,
+        "docs:immutable-release-deployment-contract",
+        all(
+            token in release_runbook
+            for token in (
+                "scripts/prepare_release_runtime.py",
+                "scripts/tools/build_release_images.py",
+                "scripts/tools/verify_release_deployment.py",
+                "--network=none",
+                "sdk_full_flow_client",
+                "TODO-0009",
+                "TODO-0010",
+            )
+        )
+        and "immutable-release-deployment-runbook.md" in docs_index
+        and "deploy/runtime/" in cmake
+        and "docker-compose.production.yml" in (
+            ROOT / "deploy/systemd/boost-gateway-compose.service"
+        ).read_text(encoding="utf-8"),
+        "the immutable release consumer, runtime image, Compose and full-flow boundary is installed and indexed",
     )
 
     failed = [check for check in checks if not check["passed"]]

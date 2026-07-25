@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "target": {
+    "os_id": "ubuntu",
+    "os_version": "24.04",
+    "architectures": ["x86_64", "amd64"],
+    "min_physical_cores": 6,
+    "min_logical_cpus": 12,
+    "min_memory_bytes": 16000000000,
+    "min_physical_disk_bytes": 512000000000,
+    "min_root_filesystem_bytes": 500000000000,
+    "min_root_available_bytes": 429496729600,
+    "allowed_root_filesystems": ["ext4", "xfs", "btrfs"]
+  },
+  "docker": {
+    "min_server_major": 24,
+    "min_compose_major": 2
+  },
+  "network": {
+    "public_tcp_ports": [9201],
+    "restricted_tcp_ports": [22, 3000, 4318, 6379, 6380, 8081, 9080, 9090, 9091, 9093, 9121, 9202, 9302, 9303, 9304, 9305],
+    "trusted_cidrs": ["10.0.0.0/8", "100.64.0.0/10", "172.16.0.0/12", "192.168.0.0/16", "fd7a:115c:a1e0::/48"],
+    "firewall_protected_tcp_ports": [22],
+    "required_trusted_tcp_ports": [22],
+    "required_public_listener": 9201
+  },
+  "identity": {
+    "user": "boost-gateway",
+    "group": "boost-gateway",
+    "forbidden_groups": ["docker", "sudo"],
+    "allowed_shells": ["/usr/sbin/nologin", "/sbin/nologin", "/bin/false"]
+  },
+  "directories": [
+    {"path": "/opt/boost-gateway", "owner": "root", "group": "root", "mode": "0755"},
+    {"path": "/etc/boost-gateway", "owner": "root", "group": "boost-gateway", "mode": "0750"},
+    {"path": "/etc/boost-gateway/secrets", "owner": "root", "group": "root", "mode": "0700"},
+    {"path": "/var/lib/boost-gateway", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"},
+    {"path": "/var/log/boost-gateway", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"},
+    {"path": "/var/backups/boost-gateway", "owner": "root", "group": "root", "mode": "0700"},
+    {"path": "/var/lib/boost-gateway-evidence", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"}
+  ],
+  "power": {
+    "masked_targets": ["sleep.target", "suspend.target", "hibernate.target", "hybrid-sleep.target"],
+    "restart_attestation": "/etc/boost-gateway/restart-on-power-loss.json",
+    "max_temperature_celsius": 85.0
+  },
+  "logging": {
+    "journald_config": "/etc/systemd/journald.conf.d/boost-gateway.conf",
+    "docker_daemon_config": "/etc/docker/daemon.json",
+    "docker_log_drivers": ["json-file", "local"]
+  },
+  "systemd": {
+    "compose_unit": "boost-gateway-compose.service",
+    "unit_path": "/etc/systemd/system/boost-gateway-compose.service",
+    "unit_sha256": "279dc829d60db289a439ec986d232da28d60d52615d2b204571c2c94b0339091"
+  },
+  "runtime": {
+    "required_containers": [
+      "boost-gateway",
+      "boost-login-backend",
+      "boost-room-backend",
+      "boost-battle-backend",
+      "boost-matchmaking-backend",
+      "boost-leaderboard-backend",
+      "boost-redis",
+      "boost-prometheus",
+      "boost-alertmanager",
+      "boost-redis-exporter",
+      "boost-grafana"
+    ],
+    "local_endpoints": [
+      "http://127.0.0.1:9080/health",
+      "http://127.0.0.1:9090/-/ready",
+      "http://127.0.0.1:9093/-/ready"
+    ]
+  }
+}

@@ -146,5 +146,14 @@ install(FILES
     deploy/systemd/boost-battle-backend.service
     deploy/systemd/boost-match-backend.service
     deploy/systemd/boost-leaderboard-backend.service
+    deploy/systemd/boost-gateway-compose.service
     DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy/systemd"
+)
+
+install(DIRECTORY deploy/operations/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy/operations"
+)
+
+install(DIRECTORY deploy/runtime/
+    DESTINATION "${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}/deploy/runtime"
 )
