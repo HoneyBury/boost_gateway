@@ -1,0 +1,150 @@
+{
+  "schema_version": 1,
+  "todo": "TODO-0012",
+  "activation": {
+    "state": "candidate_only",
+    "production_compose_mount_enabled": false,
+    "host_units_install_enabled": false,
+    "live_policy_changed": false,
+    "required_before_activation": [
+      "measured_aof_performance_evidence",
+      "verified_encryption_recipient",
+      "verified_distinct_remote_storage_identity",
+      "governed_change_record",
+      "rollback_plan"
+    ]
+  },
+  "objectives": {
+    "redis_rpo_seconds": 60,
+    "rto_seconds": {
+      "gateway": 300,
+      "backend": 300,
+      "redis_restore": 600,
+      "host_reboot": 600,
+      "release_rollback": 600
+    }
+  },
+  "redis": {
+    "profile": "env/redis/redis.production-validation.conf",
+    "profile_sha256": "f71445c805814a862a257dc072c409b67f1c21930dba992d2173e70c3b047945",
+    "expected_data_directory": "/data",
+    "expected_maxmemory_policy": "noeviction",
+    "expected_rdb_save_rules": [
+      "300 100",
+      "60 10000"
+    ],
+    "performance_impact": {
+      "status": "pending_measurement",
+      "required_before_activation": true,
+      "baseline_mode": "rdb_only",
+      "candidate_mode": "aof_everysec_plus_rdb",
+      "minimum_repetitions_per_mode": 3,
+      "required_metrics": [
+        "leaderboard_operation_throughput",
+        "leaderboard_operation_p50_latency",
+        "leaderboard_operation_p99_latency",
+        "redis_cpu",
+        "redis_rss",
+        "redis_disk_write_bytes",
+        "redis_aof_delayed_fsync"
+      ]
+    }
+  },
+  "backup": {
+    "schedule": "daily",
+    "consistent_redis_snapshot_required": true,
+    "create_only_artifacts": true,
+    "checksum_algorithm": "sha256",
+    "plaintext_staging_root": "/var/backups/boost-gateway/staging",
+    "plaintext_removed_after_encryption": true,
+    "source_contracts": [
+      {
+        "id": "redis_snapshot",
+        "kind": "generated_redis_snapshot",
+        "path": "/var/backups/boost-gateway/staging/redis",
+        "required": true,
+        "contains_secrets": false
+      },
+      {
+        "id": "host_configuration",
+        "kind": "directory",
+        "path": "/etc/boost-gateway",
+        "required": true,
+        "contains_secrets": true
+      },
+      {
+        "id": "deployment_state",
+        "kind": "directory",
+        "path": "/opt/boost-gateway/deployments",
+        "required": true,
+        "contains_secrets": false
+      },
+      {
+        "id": "deployment_transactions",
+        "kind": "directory",
+        "path": "/var/lib/boost-gateway/deployment-transactions",
+        "required": true,
+        "contains_secrets": false
+      },
+      {
+        "id": "operations_evidence",
+        "kind": "directory",
+        "path": "/var/lib/boost-gateway-evidence",
+        "required": true,
+        "contains_secrets": false
+      }
+    ],
+    "encryption": {
+      "tool": "age",
+      "recipient_file": "/etc/boost-gateway/backup.age-recipient",
+      "private_key_present_on_source_host": false,
+      "encrypt_before_transfer": true,
+      "manifest_contains_secret_values": false
+    },
+    "off_host": {
+      "transport": "ssh",
+      "destination": "ssh://backup-operator@backup-vault/srv/boost-gateway",
+      "remote_identity_attestation": "/etc/boost-gateway/backup-remote-host-id.sha256",
+      "require_distinct_host_identity": true,
+      "allow_local_filesystem_destination": false,
+      "require_remote_readback_sha256": true,
+      "receipt_required": true
+    },
+    "retention": {
+      "daily_copies": 14,
+      "weekly_copies": 8,
+      "minimum_known_good_copies": 2,
+      "delete_only_after_verified_remote_copy": true,
+      "deletion_record_required": true
+    }
+  },
+  "restore": {
+    "stage_into_new_volume": true,
+    "preserve_original_volume": true,
+    "reject_active_volume_destination": true,
+    "offline_validation": [
+      "redis-check-rdb",
+      "redis-check-aof"
+    ],
+    "required_business_checks": [
+      "redis_ping",
+      "leaderboard_seed_exact",
+      "leaderboard_submit",
+      "leaderboard_top",
+      "leaderboard_rank",
+      "sdk_full_flow"
+    ],
+    "minimum_independent_drills": 2,
+    "distinct_backup_id_required": true,
+    "distinct_restore_target_required": true,
+    "rollback_to_original_volume_on_failure": true
+  },
+  "evidence": {
+    "bind_source_host_identity": true,
+    "bind_deployment_identity": true,
+    "bind_redis_profile_sha256": true,
+    "bind_backup_manifest_sha256": true,
+    "bind_remote_receipt_sha256": true,
+    "secret_material_recorded": false
+  }
+}
