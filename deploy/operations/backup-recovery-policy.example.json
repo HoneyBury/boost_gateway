@@ -80,6 +80,13 @@
         "contains_secrets": false
       },
       {
+        "id": "release_state",
+        "kind": "directory",
+        "path": "/opt/boost-gateway/releases",
+        "required": true,
+        "contains_secrets": false
+      },
+      {
         "id": "deployment_transactions",
         "kind": "directory",
         "path": "/var/lib/boost-gateway/deployment-transactions",
@@ -94,6 +101,21 @@
         "contains_secrets": false
       }
     ],
+    "archive_contract": {
+      "format": "tar",
+      "symbolic_link_entries_allowed": false,
+      "hard_link_entries_allowed": false,
+      "follow_symbolic_links": false,
+      "reject_broken_symbolic_links": true,
+      "reject_symbolic_link_target_escape": true,
+      "manifest_link_fields": [
+        "archive_path",
+        "original_link_text",
+        "target_source_id",
+        "target_relative_path",
+        "target_type"
+      ]
+    },
     "encryption": {
       "tool": "age",
       "recipient_file": "/etc/boost-gateway/backup.age-recipient",
@@ -137,12 +159,19 @@
     "minimum_independent_drills": 2,
     "distinct_backup_id_required": true,
     "distinct_restore_target_required": true,
+    "link_reconstruction": {
+      "source_mapping_required": true,
+      "trust_original_link_text": false,
+      "target_source_id_required": true,
+      "target_relative_path_required": true
+    },
     "rollback_to_original_volume_on_failure": true
   },
   "evidence": {
     "bind_source_host_identity": true,
     "bind_deployment_identity": true,
     "bind_redis_profile_sha256": true,
+    "bind_backup_policy_sha256": true,
     "bind_backup_manifest_sha256": true,
     "bind_remote_receipt_sha256": true,
     "secret_material_recorded": false

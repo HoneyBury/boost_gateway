@@ -346,6 +346,9 @@
     "scripts/tools/build_release_images.py": {
       "category": "tool"
     },
+    "scripts/tools/backup_vault_ssh_receiver.py": {
+      "category": "tool"
+    },
     "scripts/tools/check_backup_recovery_policy.py": {
       "category": "tool"
     },
@@ -379,6 +382,9 @@
     "scripts/tools/manage_observability_evidence.py": {
       "category": "tool"
     },
+    "scripts/tools/manage_backup_recovery.py": {
+      "category": "tool"
+    },
     "scripts/tools/manage_release_deployment.py": {
       "category": "tool"
     },
@@ -407,6 +413,9 @@
       "category": "tool"
     },
     "scripts/tools/verify_macos_arm64_package.py": {
+      "category": "tool"
+    },
+    "scripts/tools/verify_backup_vault.py": {
       "category": "tool"
     },
     "scripts/tools/verify_release_deployment.py": {

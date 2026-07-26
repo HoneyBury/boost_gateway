@@ -27,6 +27,7 @@ REQUIRED_SOURCE_CONTRACTS = {
     ),
     "host_configuration": ("directory", "/etc/boost-gateway"),
     "deployment_state": ("directory", "/opt/boost-gateway/deployments"),
+    "release_state": ("directory", "/opt/boost-gateway/releases"),
     "deployment_transactions": (
         "directory",
         "/var/lib/boost-gateway/deployment-transactions",
@@ -56,6 +57,13 @@ REQUIRED_ACTIVATION_GATES = {
     "verified_distinct_remote_storage_identity",
     "governed_change_record",
     "rollback_plan",
+}
+REQUIRED_MANIFEST_LINK_FIELDS = {
+    "archive_path",
+    "original_link_text",
+    "target_source_id",
+    "target_relative_path",
+    "target_type",
 }
 
 
@@ -326,6 +334,28 @@ def validate_backup_contract(
             f"{source_id} has the governed type, absolute path and required flag",
         )
 
+    archive_contract = backup.get("archive_contract")
+    add(
+        checks,
+        "backup:link-free-archive",
+        isinstance(archive_contract, dict)
+        and archive_contract.get("format") == "tar"
+        and archive_contract.get("symbolic_link_entries_allowed") is False
+        and archive_contract.get("hard_link_entries_allowed") is False
+        and archive_contract.get("follow_symbolic_links") is False
+        and archive_contract.get("reject_broken_symbolic_links") is True
+        and archive_contract.get("reject_symbolic_link_target_escape") is True,
+        "Backup tar contains no symbolic/hard links and rejects broken or escaping links",
+    )
+    add(
+        checks,
+        "backup:validated-link-metadata",
+        isinstance(archive_contract, dict)
+        and string_set(archive_contract.get("manifest_link_fields"))
+        == REQUIRED_MANIFEST_LINK_FIELDS,
+        "Manifest records original link evidence plus a validated source-relative target",
+    )
+
     encryption = backup.get("encryption")
     add(
         checks,
@@ -465,6 +495,17 @@ def validate_restore_contract(
         and restore.get("distinct_restore_target_required") is True,
         "Independent drills use distinct backups and restore targets",
     )
+    link_reconstruction = restore.get("link_reconstruction")
+    add(
+        checks,
+        "restore:validated-link-reconstruction",
+        isinstance(link_reconstruction, dict)
+        and link_reconstruction.get("source_mapping_required") is True
+        and link_reconstruction.get("trust_original_link_text") is False
+        and link_reconstruction.get("target_source_id_required") is True
+        and link_reconstruction.get("target_relative_path_required") is True,
+        "Restore rebuilds links from validated source mappings, never raw link text",
+    )
 
 
 def validate_objectives_and_activation(
@@ -544,6 +585,7 @@ def validate_evidence_contract(
         "bind_source_host_identity",
         "bind_deployment_identity",
         "bind_redis_profile_sha256",
+        "bind_backup_policy_sha256",
         "bind_backup_manifest_sha256",
         "bind_remote_receipt_sha256",
     }
