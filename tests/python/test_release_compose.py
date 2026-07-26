@@ -133,8 +133,15 @@ def valid_document() -> dict[str, object]:
             "source": "/etc/boost-gateway/alertmanager.yml",
             "target": "/etc/alertmanager/alertmanager.yml",
             "read_only": True,
-        }
+        },
+        {
+            "type": "bind",
+            "source": "/etc/boost-gateway/alertmanager-secrets",
+            "target": "/etc/alertmanager/secrets",
+            "read_only": True,
+        },
     ]
+    services["alertmanager"]["user"] = "65534:1234"
     return {
         "name": "test",
         "services": services,
@@ -305,6 +312,7 @@ class ReleaseComposeContractTest(unittest.TestCase):
             environment[variable] = IMAGE_ID
         environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only-secret-value"
         environment["GRAFANA_ADMIN_USER"] = "unit-test-operator"
+        environment["BOOST_GATEWAY_GID"] = "1234"
         document = check_release_compose.load_compose_document(
             COMPOSE, environment=environment
         )
@@ -336,6 +344,7 @@ class ReleaseComposeContractTest(unittest.TestCase):
             environment[variable] = IMAGE_ID
         environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only-secret-value"
         environment["GRAFANA_ADMIN_USER"] = "unit-test-operator"
+        environment["BOOST_GATEWAY_GID"] = "1234"
 
         document = check_release_compose.load_compose_document(
             COMPOSE, environment=environment

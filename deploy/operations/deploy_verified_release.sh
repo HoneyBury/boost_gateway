@@ -174,15 +174,28 @@ build_images() {
 }
 
 prepare_secrets() {
+  local env_file=/etc/boost-gateway/compose.env
+  local group_id
+  local temporary
+  group_id="$(getent group boost-gateway | awk -F: '{print $3}')"
+  [[ "${group_id}" =~ ^[0-9]+$ ]] || die "cannot resolve boost-gateway group ID"
+
   if [[ ! -e /etc/boost-gateway/compose.env ]]; then
     umask 0027
-    {
-      printf 'GRAFANA_ADMIN_USER=boost-gateway-operator\n'
-      printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 32)"
-    } > /etc/boost-gateway/compose.env
+    : > "${env_file}"
   fi
-  chown root:boost-gateway /etc/boost-gateway/compose.env
-  chmod 0640 /etc/boost-gateway/compose.env
+  if ! grep -q '^GRAFANA_ADMIN_USER=' "${env_file}"; then
+    printf 'GRAFANA_ADMIN_USER=boost-gateway-operator\n' >> "${env_file}"
+  fi
+  if ! grep -q '^GRAFANA_ADMIN_PASSWORD=' "${env_file}"; then
+    printf 'GRAFANA_ADMIN_PASSWORD=%s\n' "$(openssl rand -hex 32)" >> "${env_file}"
+  fi
+  temporary="$(mktemp "${env_file}.XXXXXX")"
+  awk -F= '$1 != "BOOST_GATEWAY_GID" {print}' "${env_file}" > "${temporary}"
+  printf 'BOOST_GATEWAY_GID=%s\n' "${group_id}" >> "${temporary}"
+  chown root:boost-gateway "${temporary}"
+  chmod 0640 "${temporary}"
+  mv "${temporary}" "${env_file}"
 }
 
 install_observability_host_units() {
@@ -226,6 +239,9 @@ main() {
   require_command awk
   require_command docker
   require_command cmp
+  require_command getent
+  require_command grep
+  require_command mktemp
   require_command openssl
   require_command python3
   require_command sha256sum

@@ -37,7 +37,8 @@ receivers:
         )
         self.env.write_text(
             "GRAFANA_ADMIN_USER=operations-user\n"
-            "GRAFANA_ADMIN_PASSWORD=unit-test-secret-value-1234\n",
+            "GRAFANA_ADMIN_PASSWORD=unit-test-secret-value-1234\n"
+            f"BOOST_GATEWAY_GID={self.config.stat().st_gid}\n",
             encoding="utf-8",
         )
         self._write_attestation()
@@ -118,7 +119,8 @@ receivers:
     def test_rejects_default_grafana_credentials(self) -> None:
         self.env.write_text(
             "GRAFANA_ADMIN_USER=admin\n"
-            "GRAFANA_ADMIN_PASSWORD=boost-gateway-change-me\n",
+            "GRAFANA_ADMIN_PASSWORD=boost-gateway-change-me\n"
+            f"BOOST_GATEWAY_GID={self.config.stat().st_gid}\n",
             encoding="utf-8",
         )
 
@@ -163,6 +165,41 @@ receivers:
 
         with self.assertRaisesRegex(preflight.PreflightError, "resolved notification"):
             self._validate()
+
+    def test_email_receiver_requires_root_managed_password_file(self) -> None:
+        secret_dir = self.root / "alertmanager-secrets"
+        secret_dir.mkdir()
+        password = secret_dir / "gmail-app-password"
+        password.write_text("abcdefghijklmnop\n", encoding="utf-8")
+        config = """global:
+  smtp_auth_password_file: /etc/alertmanager/secrets/gmail-app-password
+route:
+  receiver: operations-email
+receivers:
+  - name: operations-email
+    email_configs:
+      - to: operator@example.invalid
+"""
+
+        observed = preflight._email_password_file(
+            config, self.config, enforce_ownership=False
+        )
+
+        self.assertEqual(observed, password)
+
+    def test_email_receiver_rejects_inline_password(self) -> None:
+        with self.assertRaisesRegex(preflight.PreflightError, "inline SMTP"):
+            preflight._validate_alertmanager_text(
+                """global:
+  smtp_auth_password: do-not-record
+route:
+  receiver: operations-email
+receivers:
+  - name: operations-email
+    email_configs:
+      - to: operator@example.invalid
+"""
+            )
 
 
 if __name__ == "__main__":

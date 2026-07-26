@@ -365,12 +365,14 @@ services:
     <<: *service-defaults
     image: prom/alertmanager:v0.28.1
     container_name: boost-alertmanager
+    user: "65534:${BOOST_GATEWAY_GID:?BOOST_GATEWAY_GID must match the boost-gateway host group}"
     networks:
       - boost-net
     ports:
       - "127.0.0.1:9093:9093"
     volumes:
       - /etc/boost-gateway/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - /etc/boost-gateway/alertmanager-secrets:/etc/alertmanager/secrets:ro
       - alertmanager-data:/alertmanager
     pids_limit: 128
     mem_limit: 256m

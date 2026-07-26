@@ -25,6 +25,7 @@ from scripts.lib.operations_identity import collect_operations_identity
 
 DEFAULT_CONFIG = Path("/etc/boost-gateway/alertmanager.yml")
 DEFAULT_ENV = Path("/etc/boost-gateway/compose.env")
+DEFAULT_SECRET_DIR = Path("/etc/boost-gateway/alertmanager-secrets")
 DEFAULT_ATTESTATION = Path(
     "/var/lib/boost-gateway-evidence/observability/alert-delivery-attestation.json"
 )
@@ -161,10 +162,48 @@ def _validate_alertmanager_text(config: str) -> str:
             "Alertmanager config contains placeholder endpoint tokens: "
             + ", ".join(found_placeholders)
         )
+    if re.search(r"(?m)^\s*(?:smtp_)?auth_password:\s*", config):
+        raise PreflightError("inline SMTP passwords are forbidden; use auth_password_file")
     return receiver
 
 
+def _email_password_file(config: str, config_path: Path, *, enforce_ownership: bool) -> Path | None:
+    if "email_configs:" not in config:
+        return None
+    matches = re.findall(
+        r"(?m)^\s*(?:smtp_)?auth_password_file:\s*['\"]?([^\s#'\"]+)",
+        config,
+    )
+    if len(set(matches)) != 1:
+        raise PreflightError("email receiver requires exactly one SMTP auth password file")
+    container_path = Path(matches[0])
+    if (
+        container_path.parent != Path("/etc/alertmanager/secrets")
+        or not container_path.name
+        or container_path.name in {".", ".."}
+    ):
+        raise PreflightError("SMTP auth password file must be under /etc/alertmanager/secrets")
+    host_path = config_path.parent / "alertmanager-secrets" / container_path.name
+    password = _load_regular_file(
+        host_path, "SMTP app password", enforce_ownership=enforce_ownership
+    ).strip()
+    if enforce_ownership and (
+        stat.S_IMODE(host_path.stat().st_mode) != 0o640
+        or host_path.stat().st_gid != config_path.stat().st_gid
+    ):
+        raise PreflightError(
+            "SMTP app password must be mode 0640 with the Alertmanager config group"
+        )
+    compact_password = password.replace(" ", "")
+    if "smtp.gmail.com" in config and len(compact_password) != 16:
+        raise PreflightError("Gmail app password must contain 16 non-space characters")
+    if len(compact_password) < 8:
+        raise PreflightError("SMTP app password is unexpectedly short")
+    return host_path
+
+
 def run_amtool(config_path: Path) -> None:
+    container_config = Path("/etc/alertmanager/alertmanager.yml")
     command = [
         "docker",
         "run",
@@ -176,14 +215,25 @@ def run_amtool(config_path: Path) -> None:
         "--read-only",
         "--cap-drop",
         "ALL",
+        "--user",
+        f"65534:{config_path.stat().st_gid}",
         "--volume",
-        f"{config_path.parent}:{config_path.parent}:ro",
+        f"{config_path}:{container_config}:ro",
+    ]
+    secret_dir = config_path.parent / "alertmanager-secrets"
+    if secret_dir.is_dir() and not secret_dir.is_symlink():
+        command.extend(
+            ["--volume", f"{secret_dir}:/etc/alertmanager/secrets:ro"]
+        )
+    command.extend(
+        [
         "--entrypoint",
         "/bin/amtool",
         ALERTMANAGER_IMAGE,
         "check-config",
-        str(config_path),
-    ]
+        str(container_config),
+        ]
+    )
     completed = subprocess.run(
         command,
         text=True,
@@ -213,15 +263,22 @@ def validate_preflight(
     config = _load_regular_file(
         config_path, "Alertmanager config", enforce_ownership=enforce_ownership
     )
+    if enforce_ownership and stat.S_IMODE(config_path.stat().st_mode) != 0o640:
+        raise PreflightError(
+            "Alertmanager config must be mode 0640 for the unprivileged container group"
+        )
     receiver = _validate_alertmanager_text(config)
-    config_validator(config_path)
     config_sha256 = sha256_file(config_path)
+    _email_password_file(config, config_path, enforce_ownership=enforce_ownership)
 
     secret_env = _parse_environment(
         _load_regular_file(
             env_path, "Compose secret environment", enforce_ownership=enforce_ownership
         )
     )
+    group_id = secret_env.get("BOOST_GATEWAY_GID", "")
+    if not group_id.isdecimal() or int(group_id) != config_path.stat().st_gid:
+        raise PreflightError("BOOST_GATEWAY_GID does not match the Alertmanager config group")
     username = secret_env.get("GRAFANA_ADMIN_USER", "").strip()
     password = secret_env.get("GRAFANA_ADMIN_PASSWORD", "")
     if not username or username.lower() == "admin":
@@ -233,6 +290,7 @@ def validate_preflight(
         "changeme",
     }:
         raise PreflightError("Grafana admin password is default, empty, or shorter than 20 characters")
+    config_validator(config_path)
 
     attestation_content = _load_regular_file(
         attestation_path,

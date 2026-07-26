@@ -289,17 +289,26 @@ def _validate_grafana(service: dict[str, Any], failures: list[str]) -> None:
 
 
 def _validate_alertmanager(service: dict[str, Any], failures: list[str]) -> None:
-    config_binds = [
+    config_binds = {
         (source, target)
         for source, target in _read_only_bind_entries(service)
-        if target == "/etc/alertmanager/alertmanager.yml"
-    ]
-    if config_binds != [
-        ("/etc/boost-gateway/alertmanager.yml", "/etc/alertmanager/alertmanager.yml")
-    ]:
+    }
+    expected_binds = {
+        (
+            "/etc/boost-gateway/alertmanager.yml",
+            "/etc/alertmanager/alertmanager.yml",
+        ),
+        (
+            "/etc/boost-gateway/alertmanager-secrets",
+            "/etc/alertmanager/secrets",
+        ),
+    }
+    if config_binds != expected_binds:
         failures.append(
-            "alertmanager: root-managed production config bind is required"
+            "alertmanager: exact root-managed config and secret binds are required"
         )
+    if re.fullmatch(r"65534:[1-9][0-9]*", str(service.get("user", ""))) is None:
+        failures.append("alertmanager: unprivileged UID and governed host group are required")
 
 
 def validate_compose_document(document: object) -> list[str]:

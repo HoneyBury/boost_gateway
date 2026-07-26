@@ -45,13 +45,15 @@ Production Compose reads Alertmanager configuration only from the root-managed f
 `env/monitoring/alertmanager.yml` remains a local-development placeholder and is
 rejected by production preflight.
 
-Create `/etc/boost-gateway/compose.env` with a non-`admin` Grafana user and a password of
-at least 20 characters. Do not print the password or store it in evidence:
+Create `/etc/boost-gateway/compose.env` with a non-`admin` Grafana user, a password of
+at least 20 characters, and the numeric `boost-gateway` group ID. Do not print the
+password or store it in evidence:
 
 ```bash
 sudo bash -c 'umask 027; {
   printf "GRAFANA_ADMIN_USER=boost-gateway-operator\n"
   printf "GRAFANA_ADMIN_PASSWORD=%s\n" "$(openssl rand -hex 32)"
+  printf "BOOST_GATEWAY_GID=%s\n" "$(getent group boost-gateway | cut -d: -f3)"
 } > /etc/boost-gateway/compose.env'
 sudo chown root:boost-gateway /etc/boost-gateway/compose.env
 sudo chmod 0640 /etc/boost-gateway/compose.env
@@ -59,12 +61,24 @@ sudo chmod 0640 /etc/boost-gateway/compose.env
 
 Configure one real email, webhook, Slack, PagerDuty, or other Alertmanager integration.
 The top-level route receiver must not be named `default`, and the file must be
-root-owned `0600` or `0640`:
+root-owned `0640`. Receiver credentials must use a separate root-owned `0640` file,
+not an inline YAML value. The production container runs as UID 65534 with only the
+numeric `boost-gateway` group needed to read these two files.
 
 ```bash
 sudo install -o root -g boost-gateway -m 0640 \
   /path/to/private/alertmanager.yml \
   /etc/boost-gateway/alertmanager.yml
+```
+
+For Gmail SMTP to a QQ Mail recipient, first enable Google two-step verification and
+create a dedicated 16-character app password. Then run the interactive helper. It
+stores the app password outside YAML, validates the config, starts an isolated
+Alertmanager on `127.0.0.1:19093`, sends firing and resolved emails, asks for their
+destination `Message-ID` headers, writes the attestation, and runs production preflight:
+
+```bash
+sudo /home/honeybury/boost-gateway-controller/deploy/operations/configure_gmail_alertmanager.sh
 ```
 
 Send a governed test alert through Alertmanager, verify the firing notification at the
