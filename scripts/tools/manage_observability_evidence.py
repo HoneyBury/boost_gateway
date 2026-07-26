@@ -112,6 +112,114 @@ def _write_new_json(path: Path, value: dict[str, Any]) -> None:
         raise
 
 
+def _safe_basename(path: Path) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "_", path.name)
+    return value or "summary"
+
+
+def _raw_snapshot_path(ledger_root: Path, source: Path, digest: str) -> Path:
+    return ledger_root / "raw" / f"{digest}-{_safe_basename(source)}"
+
+
+def snapshot_summary(ledger_root: Path, source: Path) -> dict[str, Any]:
+    reference = file_reference(source, "raw-summary-source")
+    source_path = Path(reference["path"])
+    destination = _raw_snapshot_path(ledger_root, source_path, reference["sha256"])
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    created = False
+    if not destination.exists() and not destination.is_symlink():
+        descriptor = os.open(
+            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640
+        )
+        created = True
+        try:
+            with (
+                os.fdopen(descriptor, "wb") as output,
+                source_path.open("rb") as input_stream,
+            ):
+                for block in iter(lambda: input_stream.read(1024 * 1024), b""):
+                    output.write(block)
+                output.flush()
+                os.fsync(output.fileno())
+        except Exception:
+            destination.unlink(missing_ok=True)
+            raise
+    snapshot = file_reference(destination, "raw-summary")
+    if (
+        snapshot["sha256"] != reference["sha256"]
+        or snapshot["size_bytes"] != reference["size_bytes"]
+    ):
+        if created:
+            destination.unlink(missing_ok=True)
+        raise EvidenceError(f"content-addressed raw snapshot drifted: {destination}")
+    snapshot["source_path"] = reference["path"]
+    return snapshot
+
+
+def _resolve_recorded_summary(
+    ledger_root: Path, summary: dict[str, Any]
+) -> dict[str, Any]:
+    expected_sha256 = str(summary.get("sha256", ""))
+    expected_size = summary.get("size_bytes")
+    recorded_path = Path(str(summary.get("path", "")))
+    source_path = Path(str(summary.get("source_path", recorded_path)))
+    candidates = [
+        recorded_path,
+        _raw_snapshot_path(ledger_root, source_path, expected_sha256),
+    ]
+    for candidate in candidates:
+        try:
+            reference = file_reference(candidate, "raw-summary")
+        except (EvidenceError, OSError):
+            continue
+        if (
+            reference["sha256"] == expected_sha256
+            and reference["size_bytes"] == expected_size
+        ):
+            reference["source_path"] = str(source_path)
+            return reference
+    raise EvidenceError(f"raw summary drifted after record creation: {source_path}")
+
+
+def seal_legacy_records(ledger_root: Path) -> dict[str, Any]:
+    records = sorted((ledger_root / "records").glob("*/*.json"))
+    sealed: list[dict[str, Any]] = []
+    for record_path in records:
+        record = load_json_object(record_path, "ledger record")
+        summaries = record.get("raw_summaries")
+        if not isinstance(summaries, list) or not summaries:
+            raise EvidenceError(f"ledger record has no raw summaries: {record_path}")
+        for summary in summaries:
+            if not isinstance(summary, dict):
+                raise EvidenceError(f"ledger record has an invalid summary: {record_path}")
+            source = Path(str(summary.get("source_path", summary.get("path", ""))))
+            recorded_path = Path(str(summary.get("path", "")))
+            if "source_path" in summary or recorded_path.parent == ledger_root / "raw":
+                snapshot = _resolve_recorded_summary(ledger_root, summary)
+            else:
+                snapshot = snapshot_summary(ledger_root, source)
+            if (
+                snapshot["sha256"] != summary.get("sha256")
+                or snapshot["size_bytes"] != summary.get("size_bytes")
+            ):
+                raise EvidenceError(f"legacy raw summary already drifted: {source}")
+            sealed.append(
+                {
+                    "record": str(record_path),
+                    "source_path": str(source.resolve()),
+                    "snapshot_path": snapshot["path"],
+                    "sha256": snapshot["sha256"],
+                }
+            )
+    return {
+        "schema_version": 1,
+        "overall_pass": True,
+        "sealed_references": sealed,
+        "sealed_count": len(sealed),
+        "secret_material_recorded": False,
+    }
+
+
 def _validate_attributes(kind: str, attributes: dict[str, Any]) -> None:
     missing = sorted(REQUIRED_ATTRIBUTES[kind] - set(attributes))
     if missing:
@@ -150,7 +258,11 @@ def create_record(
         raise EvidenceError("at least one raw summary is required")
     record_attributes = attributes or {}
     _validate_attributes(kind, record_attributes)
-    references = [file_reference(path, f"raw-summary-{index}") for index, path in enumerate(summary_paths, 1)]
+    references = []
+    for index, path in enumerate(summary_paths, 1):
+        reference = snapshot_summary(ledger_root, path)
+        reference["kind"] = f"raw-summary-{index}"
+        references.append(reference)
     observed_identity = identity or collect_operations_identity()
     if not isinstance(observed_identity.get("host"), dict) or not isinstance(
         observed_identity.get("operator"), dict
@@ -199,14 +311,10 @@ def build_manifest(
         for summary in summaries:
             if not isinstance(summary, dict):
                 raise EvidenceError(f"ledger record has an invalid summary: {record_path}")
-            source = Path(str(summary.get("path", "")))
-            reference = file_reference(source, "raw-summary")
-            if (
-                reference["sha256"] != summary.get("sha256")
-                or reference["size_bytes"] != summary.get("size_bytes")
-            ):
-                raise EvidenceError(f"raw summary drifted after record creation: {source}")
-            archive_path = f"raw/{reference['sha256']}-{source.name}"
+            reference = _resolve_recorded_summary(ledger_root, summary)
+            source = Path(reference["path"])
+            original = Path(str(reference.get("source_path", source)))
+            archive_path = f"raw/{reference['sha256']}-{_safe_basename(original)}"
             entries.setdefault(archive_path, reference)
     observed_identity = identity or collect_operations_identity()
     manifest = {
@@ -297,6 +405,9 @@ def main() -> int:
     package_parser.add_argument("--manifest", type=Path, required=True)
     package_parser.add_argument("--output", type=Path, required=True)
 
+    seal_parser = subparsers.add_parser("seal")
+    seal_parser.add_argument("--ledger-root", type=Path, default=DEFAULT_ROOT)
+
     args = parser.parse_args()
     try:
         if args.command == "record":
@@ -317,8 +428,10 @@ def main() -> int:
         elif args.command == "manifest":
             path, value = build_manifest(args.ledger_root, args.manifest_id)
             result = {"manifest": str(path), "manifest_sha256": sha256_file(path), **value}
-        else:
+        elif args.command == "package":
             result = package_manifest(args.manifest, args.output)
+        else:
+            result = seal_legacy_records(args.ledger_root)
     except (EvidenceError, OSError, ValueError) as exc:
         print(f"observability evidence: FAIL: {exc}", file=sys.stderr)
         return 1

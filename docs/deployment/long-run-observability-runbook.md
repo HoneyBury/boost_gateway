@@ -134,8 +134,20 @@ If thermal metrics are absent, do not weaken the verifier. Check `/sys/class/hwm
 ## Evidence records
 
 Every record is create-only and binds the active deployment record plus one or more raw
-summaries by absolute path, size, and SHA-256. Attributes are separate JSON objects and
-secret-like keys are rejected.
+summaries by size and SHA-256. Each raw summary is copied into the content-addressed
+`observability/raw` directory before the record is written, so later regeneration of a
+fixed summary path cannot invalidate historical evidence. Attributes are separate JSON
+objects and secret-like keys are rejected.
+
+Before the first upgrade from a controller that predates content-addressed snapshots,
+seal all existing records while their referenced source summaries are still unchanged:
+
+```bash
+sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" seal
+```
+
+The command is idempotent. It fails if a legacy source has already drifted or an existing
+content-addressed snapshot no longer matches its recorded digest.
 
 Daily checkpoint example:
 

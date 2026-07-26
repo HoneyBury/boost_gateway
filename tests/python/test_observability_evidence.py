@@ -63,6 +63,12 @@ class ObservabilityEvidenceTest(unittest.TestCase):
             record["raw_summaries"][0]["sha256"],
             evidence.sha256_file(self.summary),
         )
+        snapshot = Path(record["raw_summaries"][0]["path"])
+        self.assertEqual(snapshot.parent, (self.ledger / "raw").resolve())
+        self.assertEqual(
+            record["raw_summaries"][0]["source_path"],
+            str(self.summary.resolve()),
+        )
         self.assertFalse(record["formal_30_day_claim"])
         with self.assertRaisesRegex(evidence.EvidenceError, "cannot be overwritten"):
             self._record(
@@ -83,9 +89,40 @@ class ObservabilityEvidenceTest(unittest.TestCase):
                 },
             )
 
-    def test_manifest_detects_raw_summary_drift(self) -> None:
+    def test_manifest_uses_snapshot_after_source_changes(self) -> None:
         self._record("daily", "day-1", {"checkpoint_date": "2026-07-26"})
         self.summary.write_text('{"overall_pass": false}\n', encoding="utf-8")
+
+        _, manifest = evidence.build_manifest(
+            self.ledger, "manifest-1", identity=self.identity
+        )
+
+        self.assertEqual(manifest["entry_count"], 2)
+
+    def test_seal_legacy_record_preserves_summary_before_source_changes(self) -> None:
+        record_path = self.ledger / "records" / "daily" / "day-1.json"
+        record_path.parent.mkdir(parents=True)
+        reference = evidence.file_reference(self.summary, "raw-summary-1")
+        record_path.write_text(
+            json.dumps({"raw_summaries": [reference]}), encoding="utf-8"
+        )
+
+        result = evidence.seal_legacy_records(self.ledger)
+        self.summary.write_text('{"overall_pass": false}\n', encoding="utf-8")
+        _, manifest = evidence.build_manifest(
+            self.ledger, "manifest-1", identity=self.identity
+        )
+
+        self.assertEqual(result["sealed_count"], 1)
+        self.assertEqual(manifest["entry_count"], 2)
+
+    def test_manifest_rejects_snapshot_drift(self) -> None:
+        _, record = self._record(
+            "daily", "day-1", {"checkpoint_date": "2026-07-26"}
+        )
+        Path(record["raw_summaries"][0]["path"]).write_text(
+            '{"overall_pass": false}\n', encoding="utf-8"
+        )
 
         with self.assertRaisesRegex(evidence.EvidenceError, "drifted"):
             evidence.build_manifest(
