@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -590,16 +591,34 @@ def canonical_keyspace(
     records: list[dict[str, str]] = []
     for key in sorted(keys):
         key_type = redis_json(runner, docker, container, "TYPE", key)
-        serialized = redis_json(runner, docker, container, "DUMP", key)
+        serialized = docker_output(
+            runner,
+            [docker, "exec", container, "redis-cli", "--raw", "DUMP", key],
+            timeout=30,
+            binary=True,
+        )
         if (
             not isinstance(key_type, str)
             or key_type == "none"
-            or not isinstance(serialized, str)
+            or not isinstance(serialized, bytes)
+            or not serialized
         ):
             raise RestoreError(f"cannot canonicalize Redis seed key: {key}")
-        records.append({"key": key, "type": key_type, "dump": serialized})
+        records.append(
+            {
+                "key": key,
+                "type": key_type,
+                "dump_base64": base64.b64encode(serialized).decode("ascii"),
+            }
+        )
     digest = hashlib.sha256(
-        canonical_json({"schema_version": 1, "keys": records})
+        canonical_json(
+            {
+                "schema_version": 1,
+                "dump_encoding": "base64(redis-cli --raw DUMP stdout)",
+                "keys": records,
+            }
+        )
     ).hexdigest()
     return digest, len(records), keys
 
@@ -907,6 +926,7 @@ def run_isolated_restore(
         "canonical_seed_key_count": seed_count,
         "leaderboard_seed_exact": success,
         "canonical_seed_method": "SCAN+TYPE+DUMP",
+        "canonical_seed_dump_encoding": "base64(redis-cli --raw stdout)",
         "baseline_from_same_bundle_rdb": success,
         "required_seed_keys": required_keys,
         "required_seed_key_count": len(required_keys),

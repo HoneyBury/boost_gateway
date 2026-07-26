@@ -240,7 +240,7 @@ host identity。receiver 只接受 `boost-gateway-restore store` 和
 必须绑定 Mac Tailscale source address、`restrict` 和以下 forced command：
 
 ```text
-command="/usr/bin/python3 /opt/boost-gateway/restore-tools/restore_bundle_ssh_receiver.py --staging-root /var/lib/boost-gateway/restore-inputs --receiver-identity-file /etc/machine-id",restrict,from="<mac-tailscale-ip>" <mac-restore-public-key>
+command="/usr/bin/python3 /opt/boost-gateway/restore-tools/restore_bundle_ssh_receiver.py --staging-root /var/lib/boost-gateway-restore-inputs --receiver-identity-file /etc/machine-id",restrict,from="<mac-tailscale-ip>" <mac-restore-public-key>
 ```
 
 在 **Mac 终端**发送 bundle；identity 和 known_hosts 必须是 regular non-symlink 文件，private key
@@ -272,7 +272,7 @@ REDIS_IMAGE="$(sudo docker image inspect redis:7-alpine --format '{{.Id}}')"
 sudo python3 \
   /home/honeybury/boost-gateway-controller/scripts/tools/restore_backup_isolated.py \
   --restore-id "$RESTORE_ID" \
-  --bundle-dir "/var/lib/boost-gateway/restore-inputs/$RESTORE_ID" \
+  --bundle-dir "/var/lib/boost-gateway-restore-inputs/$RESTORE_ID" \
   --policy \
     /home/honeybury/boost-gateway-controller/deploy/operations/backup-recovery-policy.example.json \
   --redis-profile \
@@ -289,7 +289,8 @@ sudo python3 \
 bundle RDB 启动 `network=none` baseline Redis，使用 `SCAN`、`TYPE`、`DUMP` 生成 canonical
 keyspace SHA-256；禁止使用 `KEYS`。随后创建全新 named volume，在任何业务写入前用同一算法验证
 fresh-volume target，且强制存在 `lb:global` 和 `lb:global:names`。active production volume 只做
-identity inspect，绝不挂载、写入、切换或删除。失败时只删除本次创建的 target container/volume；
+identity inspect，绝不挂载、写入、切换或删除。`DUMP` 返回任意二进制，因此 canonicalizer 以
+binary stdout 读取并做 Base64 编码，禁止通过 UTF-8 文本解码。失败时只删除本次创建的 target container/volume；
 成功时停止隔离容器并保留 target volume 作为演练证据。
 
 该切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录

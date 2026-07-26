@@ -84,16 +84,20 @@ class FakeDocker:
             elif arguments[:2] == ["--json", "TYPE"]:
                 kind = "zset" if arguments[-1] == "lb:global" else "hash"
                 stdout = json.dumps(kind) if text else b""
-            elif arguments[:2] == ["--json", "DUMP"]:
+            elif arguments[:2] == ["--raw", "DUMP"]:
                 key = arguments[-1]
-                value = "dump-zset" if key == "lb:global" else "dump-hash"
+                value = (
+                    b"\x00\xc3\x28dump-zset\xff\n"
+                    if key == "lb:global"
+                    else b"\x00\x80dump-hash\xfe\n"
+                )
                 if (
                     self.drift_target
                     and container == "restore-target"
                     and key == "lb:global"
                 ):
-                    value = "changed"
-                stdout = json.dumps(value) if text else b""
+                    value = b"\x00\xc3\x28changed\xff\n"
+                stdout = value if not text else ""
         return subprocess.CompletedProcess(command, returncode, stdout, b"")
 
 
@@ -332,6 +336,26 @@ class IsolatedRestoreTest(unittest.TestCase):
         flattened = [item for command in runner.commands for item in command]
         self.assertNotIn("KEYS", flattened)
         self.assertIn("SCAN", flattened)
+        self.assertIn(
+            ["--raw", "DUMP", "lb:global"],
+            [
+                command[command.index("redis-cli") + 1 :]
+                for command in runner.commands
+                if "redis-cli" in command
+            ],
+        )
+        self.assertNotIn(
+            ["--json", "DUMP", "lb:global"],
+            [
+                command[command.index("redis-cli") + 1 :]
+                for command in runner.commands
+                if "redis-cli" in command
+            ],
+        )
+        self.assertEqual(
+            "base64(redis-cli --raw stdout)",
+            result["canonical_seed_dump_encoding"],
+        )
         mounts = [item for item in flattened if item.startswith("type=")]
         self.assertFalse(any("production-redis-data" in item for item in mounts))
         run_commands = [
