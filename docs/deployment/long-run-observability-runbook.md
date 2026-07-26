@@ -38,8 +38,16 @@ Install the restart-count collector before activating the new deployment:
 CONTROLLER=/home/honeybury/boost-gateway-controller
 sudo "$CONTROLLER/deploy/operations/install_observability_host_units.sh"
 sudo systemctl status --no-pager boost-gateway-container-metrics.timer
+sudo systemctl list-timers --all 'boost-gateway-observability-evidence-*'
 sudo cat /var/lib/boost-gateway-evidence/metrics/container-restarts.prom
 ```
+
+The installer also enables create-only daily and weekly evidence timers. The daily job at
+00:15 UTC queries only the previous full UTC day; the Monday 00:45 UTC job queries only
+the previous full ISO week. Both connect directly to `127.0.0.1:9090`, do not receive
+Compose environment files, cannot access the Docker socket, and write reports under
+`observability/reports`. A persistent-timer retry validates an existing record and never
+overwrites it.
 
 ## Credentials and notification receiver
 
@@ -171,6 +179,18 @@ Weekly records require `period_start` and `period_end`; incident records require
 `report_title`, `period_start`, and `period_end`. Each must reference the raw trend,
 alert, incident, or report summaries used to reach its conclusion. All records set
 `formal_30_day_claim=false`.
+
+Scheduled reports cover target availability plus host, governed-container, gateway and
+Redis trends. Missing series, non-finite samples and cadence gaps are retained in the
+report's `gaps` array. The record is still created so an outage cannot erase its own
+evidence; `coverage_complete=false`, `overall_pass=false`, and all formal/SLO claims
+remain false. Inspect recent executions with:
+
+```bash
+sudo systemctl status --no-pager boost-gateway-observability-evidence@daily.service
+sudo systemctl status --no-pager boost-gateway-observability-evidence@weekly.service
+sudo journalctl -u 'boost-gateway-observability-evidence@*' --since '8 days ago'
+```
 
 ## Off-host package
 

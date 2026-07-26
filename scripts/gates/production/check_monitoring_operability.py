@@ -326,6 +326,79 @@ def validate_dashboard(checks: list[dict[str, Any]]) -> None:
     )
 
 
+def validate_evidence_scheduler(checks: list[dict[str, Any]]) -> None:
+    scheduler = read_text("scripts/tools/schedule_observability_evidence.py")
+    service = read_text(
+        "deploy/systemd/boost-gateway-observability-evidence@.service"
+    )
+    daily = read_text(
+        "deploy/systemd/boost-gateway-observability-evidence-daily.timer"
+    )
+    weekly = read_text(
+        "deploy/systemd/boost-gateway-observability-evidence-weekly.timer"
+    )
+    installer = read_text("deploy/operations/install_observability_host_units.sh")
+    add_check(
+        checks,
+        "evidence-scheduler:closed-utc-periods",
+        "previous full UTC day" in scheduler
+        and "previous full ISO week" in scheduler
+        and "daily-" in scheduler
+        and "weekly-" in scheduler,
+        "scheduler records uniquely named previous closed UTC periods",
+    )
+    for signal in (
+        "node_load1",
+        "node_disk_read_bytes_total",
+        "node_network_receive_bytes_total",
+        "boost_gateway_container_info",
+        "gateway_backend_login_errors_total",
+        "prometheus_rule_evaluation_failures_total",
+        "redis_rdb_last_bgsave_status",
+    ):
+        add_check(
+            checks,
+            f"evidence-scheduler:signal:{signal}",
+            signal in scheduler,
+            f"scheduled evidence includes real signal {signal}",
+        )
+    add_check(
+        checks,
+        "evidence-scheduler:no-canary-or-docker",
+        "sdk_full_flow" not in scheduler
+        and "subprocess" not in scheduler
+        and '"docker"' not in scheduler,
+        "scheduler does not run the SDK canary or Docker commands",
+    )
+    add_check(
+        checks,
+        "evidence-scheduler:hardened-loopback-service",
+        "IPAddressDeny=any" in service
+        and "IPAddressAllow=localhost" in service
+        and "InaccessiblePaths=/etc/boost-gateway /run/docker.sock" in service
+        and "ReadWritePaths=/var/lib/boost-gateway-evidence/observability" in service
+        and "EnvironmentFile=" not in service,
+        "scheduled evidence service is loopback-only and cannot read secrets or Docker",
+    )
+    add_check(
+        checks,
+        "evidence-scheduler:persistent-timers",
+        "00:15:00 UTC" in daily
+        and "Mon *-*-* 00:45:00 UTC" in weekly
+        and "Persistent=true" in daily
+        and "Persistent=true" in weekly,
+        "daily and weekly evidence timers are persistent and UTC-governed",
+    )
+    add_check(
+        checks,
+        "evidence-scheduler:installed",
+        "schedule_observability_evidence.py" in installer
+        and "boost-gateway-observability-evidence-daily.timer" in installer
+        and "boost-gateway-observability-evidence-weekly.timer" in installer,
+        "host installer deploys and enables the evidence scheduler",
+    )
+
+
 def validate_docs(checks: list[dict[str, Any]]) -> None:
     env_readme = read_text("env/README.md")
     runbook = read_text(OPERATIONS_RUNBOOK)
@@ -403,6 +476,7 @@ def main() -> int:
     validate_grafana_provisioning(checks)
     validate_alerts(checks)
     validate_dashboard(checks)
+    validate_evidence_scheduler(checks)
     validate_docs(checks)
 
     failed = [check for check in checks if not check["passed"]]

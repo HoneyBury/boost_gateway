@@ -1,0 +1,12 @@
+[Unit]
+Description=Create the previous full UTC day BoostGateway evidence checkpoint
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=boost-gateway-observability-evidence@daily.service
+
+[Install]
+WantedBy=timers.target
+

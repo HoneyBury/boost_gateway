@@ -1,0 +1,11 @@
+[Unit]
+Description=Create the previous full ISO week BoostGateway evidence report
+
+[Timer]
+OnCalendar=Mon *-*-* 00:45:00 UTC
+Persistent=true
+AccuracySec=1min
+Unit=boost-gateway-observability-evidence@weekly.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,41 @@
+[Unit]
+Description=Create BoostGateway %i observability evidence
+After=network-online.target boost-gateway-compose.service
+Wants=network-online.target
+ConditionPathExists=/opt/boost-gateway/current/record.json
+
+[Service]
+Type=oneshot
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/usr/bin/python3 /usr/local/libexec/boost-gateway/scripts/tools/schedule_observability_evidence.py %i
+User=root
+Group=boost-gateway
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ProtectProc=invisible
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+InaccessiblePaths=/etc/boost-gateway /run/docker.sock /var/run/docker.sock
+ReadWritePaths=/var/lib/boost-gateway-evidence/observability
+TimeoutStartSec=15min
