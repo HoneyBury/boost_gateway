@@ -4,6 +4,11 @@
 
 本文档收敛了历史上的可靠性矩阵与发布检查清单内容，作为发布门禁和可靠性要求的唯一入口。
 
+仓库变更必须先服从根目录 `CONTRIBUTING.md` 和 `GOVERNANCE.md`：目标为 `main` 的
+PR 自动执行 hosted `linux-build-and-test`，但 required check、review、conversation
+resolution 和管理员保护是 GitHub 外部状态，必须单独回读验证。仓库 workflow 存在不
+等价于平台保护已经启用。
+
 ## 可靠性场景矩阵
 
 本矩阵只记录已经具备本地证据的可靠性场景。每个场景必须绑定测试、脚本或文档证据；`scripts/gates/governance/check_reliability_matrix.py` 会校验必需场景和证据路径。

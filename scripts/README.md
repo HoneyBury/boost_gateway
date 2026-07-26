@@ -23,6 +23,7 @@ Canonical groups migrated so far:
 - Fixed-runner Conan/sccache namespace resolver: `scripts/tools/resolve_runner_cache.py`
 - Conan lockfile workflow gate: `scripts/gates/governance/check_conan_lockfile_workflows.py`
 - Workflow catalog gate: `scripts/gates/governance/check_workflow_catalog.py`
+- Repository governance gate: `scripts/gates/governance/check_repository_governance.py`
 - Workflow Python CLI contract gate: `scripts/gates/governance/check_workflow_python_cli_contracts.py`
 - Evidence provenance contract gate: `scripts/gates/governance/check_evidence_provenance_contract.py`
 - R5 Docker image policy contract gate: `scripts/gates/governance/check_r5_docker_image_policy_contract.py`
@@ -34,6 +35,7 @@ Use these stable public entrypoints first:
 - `check_mainline_readiness.py` for docs, script, config, and evidence governance checks.
 - `check_legacy_helper_inventory.py` for legacy/helper compatibility-surface governance.
 - `check_workflow_catalog.py` and `check_workflow_python_cli_contracts.py` for workflow inventory and workflow-to-script CLI drift governance before pushing CI changes.
+- `check_repository_governance.py` for CODEOWNERS, contribution, security disclosure, support, and emergency-change policy drift.
 - `check_evidence_provenance_contract.py` for R2/R3 same-candidate provenance and decision-path regression coverage.
 - `check_r5_docker_image_policy_contract.py` for cached/offline/missing/refresh R5 image policy regression coverage.
 - `verify_production_candidate_evidence.py` for R0 production-candidate aggregation.

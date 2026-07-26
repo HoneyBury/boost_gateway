@@ -43,6 +43,10 @@
 | [TLS/mTLS Runbook](tls-mtls-runbook.md) | TLS profile、证书、验证、轮换和回滚 |
 | [Legacy/Helper 清单](legacy/legacy-helper-inventory.md) | 当前仍保留的兼容面和删除条件 |
 | [脚本索引](script-inventory.json) | public entrypoint、gate、producer、tool 和 legacy 分类 |
+| [贡献指南](../CONTRIBUTING.md) | PR、review、测试、文档和敏感变更要求 |
+| [安全策略](../SECURITY.md) | 支持版本、非公开披露和响应预期 |
+| [支持策略](../SUPPORT.md) | 支持范围、Issue 路由和维护预期 |
+| [仓库治理](../GOVERNANCE.md) | ownership、紧急变更、release 和外部 GitHub 控制边界 |
 
 ## Runner 与生产证据
 
@@ -52,6 +56,7 @@
 | [Runner Gate Standard](runner-gate-standard.md) | 命名、标签、准入生命周期和缓存隔离规则 |
 | [固定 Runner 手册](fixed-runner-playbook.md) | Conan/Docker 预热、R4/R5/R6 和专项证据操作 |
 | [生产证据](production/) | 当前 manifest 和恢复演练模板 |
+| [备份恢复候选策略](deployment/backup-recovery-policy-runbook.md) | TODO-0012 Redis AOF/RDB、异机备份和恢复安全边界；当前未激活 |
 
 ## 决策与配置
 
@@ -81,6 +86,7 @@
 | [Bug 报告](../.github/ISSUE_TEMPLATE/bug_report.md) | 可复现缺陷 |
 | [功能请求](../.github/ISSUE_TEMPLATE/feature_request.md) | 新能力或改进建议 |
 | [提交规范](../.github/COMMIT_CONVENTION.md) | Conventional Commit 格式和 scope |
+| [CODEOWNERS](../CODEOWNERS) | 默认和敏感路径 ownership |
 
 ## 事实优先级
 

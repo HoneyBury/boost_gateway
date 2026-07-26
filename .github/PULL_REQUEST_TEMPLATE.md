@@ -23,6 +23,14 @@
 - [ ] Relevant ctest suites pass: `ctest --preset <preset> -R <target>`
 - [ ] Governance gates pass (if applicable)
 - [ ] New tests added for new/changed code
+- [ ] Required `linux-build-and-test` check passes
+
+## Review and Risk
+
+- [ ] At least one independent reviewer approved
+- [ ] All review conversations are resolved
+- [ ] Rollback or compatibility impact is documented for sensitive changes
+- [ ] Emergency changes link the incident and follow `GOVERNANCE.md`
 
 ## Documentation
 

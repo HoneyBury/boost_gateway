@@ -169,6 +169,9 @@
     "scripts/gates/governance/check_reliability_matrix.py": {
       "category": "aggregate_gate"
     },
+    "scripts/gates/governance/check_repository_governance.py": {
+      "category": "aggregate_gate"
+    },
     "scripts/gates/governance/check_script_inventory.py": {
       "category": "aggregate_gate"
     },
@@ -341,6 +344,9 @@
       "category": "tool"
     },
     "scripts/tools/build_release_images.py": {
+      "category": "tool"
+    },
+    "scripts/tools/check_backup_recovery_policy.py": {
       "category": "tool"
     },
     "scripts/tools/check_observability_preflight.py": {

@@ -1,0 +1,9 @@
+# Default ownership. GitHub settings decide whether code-owner review is required.
+* @HoneyBury
+
+# Repository controls and maintained operational facts need explicit ownership.
+/.github/ @HoneyBury
+/scripts/gates/governance/ @HoneyBury
+/docs/ @HoneyBury
+/config/ @HoneyBury
+/env/ @HoneyBury
