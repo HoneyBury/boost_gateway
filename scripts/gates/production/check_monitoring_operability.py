@@ -41,6 +41,18 @@ LEGACY_QUERY_TOKENS = {
     'job="login-backend"',
     'job="room-backend"',
     'job="battle-backend"',
+    "gateway_sessions_accepted_total",
+    "gateway_packets_received_total",
+    "gateway_packets_sent_total",
+    "gateway_packets_blocked_total",
+    "gateway_login_success_total",
+    "gateway_room_join_success_total",
+    "gateway_battle_start_success_total",
+    "gateway_bytes_received_total",
+    "gateway_bytes_sent_total",
+    "gateway_authenticated_sessions",
+    "gateway_active_rooms",
+    "gateway_active_battles",
 }
 
 REQUIRED_ALERTS = {
@@ -50,10 +62,8 @@ REQUIRED_ALERTS = {
     "BoostGatewayLeaderboardBackendErrors",
     "BoostGatewayRedisUnavailable",
     "BoostGatewayHighRouteLatency",
-    "BoostGatewayBusinessFlowFailure",
     "BoostGatewayRedisExporterDown",
     "BoostGatewayRedisMemoryHigh",
-    "BoostGatewayRateLimitSpike",
     "BoostGatewayHighActiveSessions",
     "BoostGatewayHighRSS",
     "BoostGatewayHighFileDescriptors",
@@ -74,14 +84,19 @@ REQUIRED_DASHBOARD_METRICS = {
     "gateway_active_sessions",
     "gateway_accepted_sessions_total",
     "gateway_outbound_dispatches_total",
-    "gateway_backend_.*_requests_total",
-    "gateway_backend_.*_errors_total",
-    "gateway_backend_.*_timeouts_total",
+    "gateway_backend_login_requests_total",
+    "gateway_backend_room_requests_total",
+    "gateway_backend_battle_requests_total",
+    "gateway_backend_matchmaking_requests_total",
+    "gateway_backend_leaderboard_requests_total",
+    "gateway_backend_login_errors_total",
+    "gateway_backend_login_timeouts_total",
     "gateway_backend_.*_p99_latency_us",
     "gateway_backend_route_latency_us_bucket",
     "redis_connected_clients",
     "redis_memory_used_bytes",
     "container_memory_working_set_bytes",
+    "boost_gateway_container_info",
     "node_cpu_seconds_total",
     "node_load1",
     "node_memory_MemAvailable_bytes",
@@ -235,9 +250,14 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
-        "alerts:business-flow-slo",
-        "gateway_login_success_total" in alerts and "gateway_room_join_success_total" in alerts and "gateway_battle_start_success_total" in alerts,
-        "alert rules include business-flow success counters for login/room/battle",
+        "alerts:explicit-backend-red",
+        all(
+            f"gateway_backend_{service}_{outcome}_total" in alerts
+            for service in ("login", "room", "battle", "matchmaking", "leaderboard")
+            for outcome in ("errors", "timeouts")
+        )
+        and "sum(rate({__name__=~" not in alerts,
+        "backend RED alerts enumerate the real metric families without colliding label sets",
     )
     add_check(
         checks,
@@ -252,7 +272,9 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
         "alerts:governed-host-container-exporters",
         "up{job=\"node-exporter\"}" in alerts
         and "up{job=\"cadvisor\"}" in alerts
-        and "container_memory_working_set_bytes" in alerts,
+        and "container_memory_working_set_bytes" in alerts
+        and "boost_gateway_container_info" in alerts
+        and "on (id)" in alerts,
         "host and container runtime alerts use the governed production exporters",
     )
 
@@ -286,6 +308,21 @@ def validate_dashboard(checks: list[dict[str, Any]]) -> None:
         "grafana:no-legacy-token:backend_route",
         "backend_route_" not in joined.replace("gateway_backend_route_latency_us", ""),
         "dashboard does not reference legacy backend_route metrics outside the current gateway latency histogram",
+    )
+    add_check(
+        checks,
+        "grafana:backend-histogram-service-label",
+        "sum by (exported_service, le)" in joined
+        and "sum by (service, le)" not in joined,
+        "dashboard preserves the gateway backend label renamed by Prometheus",
+    )
+    add_check(
+        checks,
+        "grafana:governed-container-identity",
+        "boost_gateway_container_info" in joined
+        and "on (id)" in joined
+        and "name=~\"boost-" not in joined,
+        "dashboard joins cAdvisor samples to the governed container identity map",
     )
 
 

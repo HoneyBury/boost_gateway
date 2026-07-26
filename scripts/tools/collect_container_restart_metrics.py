@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import tempfile
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 
@@ -29,14 +31,46 @@ CONTAINERS = (
 DEFAULT_OUTPUT = Path(
     "/var/lib/boost-gateway-evidence/metrics/container-restarts.prom"
 )
+CONTAINER_ID_RE = re.compile(r"[0-9a-f]{64}\Z")
 
 
-def collect_restart_counts() -> tuple[dict[str, int], list[str]]:
-    counts: dict[str, int] = {}
+@dataclass(frozen=True)
+class ContainerSample:
+    container_id: str
+    cgroup_id: str
+    restart_count: int
+
+
+def read_cgroup_id(pid: int) -> str:
+    lines = Path(f"/proc/{pid}/cgroup").read_text(encoding="utf-8").splitlines()
+    paths: list[str] = []
+    for line in lines:
+        fields = line.split(":", 2)
+        if len(fields) == 3 and fields[2].startswith("/"):
+            paths.append(fields[2])
+            if fields[0] == "0":
+                return fields[2]
+    if len(set(paths)) == 1:
+        return paths[0]
+    raise ValueError(f"container PID {pid} has no unambiguous cgroup path")
+
+
+def prometheus_label(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def collect_container_samples() -> tuple[dict[str, ContainerSample], list[str]]:
+    samples: dict[str, ContainerSample] = {}
     missing: list[str] = []
     for container in CONTAINERS:
         completed = subprocess.run(
-            ["docker", "inspect", "--format", "{{.RestartCount}}", container],
+            [
+                "docker",
+                "inspect",
+                "--format",
+                "{{.Id}} {{.RestartCount}} {{.State.Pid}}",
+                container,
+            ],
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -45,22 +79,49 @@ def collect_restart_counts() -> tuple[dict[str, int], list[str]]:
             check=False,
             timeout=10,
         )
-        value = completed.stdout.strip()
-        if completed.returncode or not value.isdecimal():
+        fields = completed.stdout.split()
+        if (
+            completed.returncode
+            or len(fields) != 3
+            or CONTAINER_ID_RE.fullmatch(fields[0]) is None
+            or not fields[1].isdecimal()
+            or not fields[2].isdecimal()
+            or int(fields[2]) <= 0
+        ):
             missing.append(container)
             continue
-        counts[container] = int(value)
-    return counts, missing
+        try:
+            cgroup_id = read_cgroup_id(int(fields[2]))
+        except (OSError, ValueError):
+            missing.append(container)
+            continue
+        samples[container] = ContainerSample(fields[0], cgroup_id, int(fields[1]))
+    return samples, missing
 
 
-def render_metrics(counts: dict[str, int], missing: list[str], timestamp: int) -> str:
+def render_metrics(
+    samples: dict[str, ContainerSample], missing: list[str], timestamp: int
+) -> str:
     lines = [
         "# HELP boost_gateway_container_restart_count Docker restart count by governed container.",
         "# TYPE boost_gateway_container_restart_count gauge",
     ]
     lines.extend(
-        f'boost_gateway_container_restart_count{{container="{container}"}} {count}'
-        for container, count in sorted(counts.items())
+        f'boost_gateway_container_restart_count{{container="{container}"}} '
+        f"{sample.restart_count}"
+        for container, sample in sorted(samples.items())
+    )
+    lines.extend(
+        [
+            "# HELP boost_gateway_container_info Governed container to Docker cgroup identity mapping.",
+            "# TYPE boost_gateway_container_info gauge",
+        ]
+    )
+    lines.extend(
+        f'boost_gateway_container_info{{container="{container}",'
+        f'container_id="{sample.container_id}",'
+        f'id="{prometheus_label(sample.cgroup_id)}"}} 1'
+        for container, sample in sorted(samples.items())
     )
     lines.extend(
         [
@@ -97,11 +158,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
     args = parser.parse_args()
-    counts, missing = collect_restart_counts()
-    atomic_write(args.output, render_metrics(counts, missing, int(time.time())))
+    samples, missing = collect_container_samples()
+    atomic_write(args.output, render_metrics(samples, missing, int(time.time())))
     print(
         f"container restart metrics: {'PASS' if not missing else 'PARTIAL'} "
-        f"({len(counts)}/{len(CONTAINERS)} containers)"
+        f"({len(samples)}/{len(CONTAINERS)} containers)"
     )
     # A partial sample is itself observable through the success gauge. Keep the
     # timer healthy so it can recover automatically as containers appear.

@@ -77,7 +77,8 @@ scrape_configs:
           tier: "host"
 
   # ---------------------------------------------------------------
-  # cAdvisor — per-container CPU, memory, pids, filesystem and net.
+  # cAdvisor — container CPU, memory and lifecycle cgroup samples. Governed
+  # Docker names are joined through boost_gateway_container_info.
   # ---------------------------------------------------------------
   - job_name: "cadvisor"
     scrape_interval: 15s

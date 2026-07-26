@@ -127,10 +127,6 @@
         {
           "expr": "rate(gateway_accepted_sessions_total[1m])",
           "legendFormat": "accepted/s"
-        },
-        {
-          "expr": "rate(gateway_sessions_accepted_total[1m])",
-          "legendFormat": "accepted/s legacy server"
         }
       ],
       "fieldConfig": {
@@ -138,7 +134,7 @@
           "unit": "ops"
         }
       },
-      "description": "Accepted session rate. The v2 demo exports gateway_accepted_sessions_total; legacy server exports gateway_sessions_accepted_total."
+      "description": "Accepted session rate exported by the production gateway"
     },
     {
       "title": "Outbound Dispatches",
@@ -163,7 +159,7 @@
       "description": "Responses and pushes dispatched by the v2 gateway runtime"
     },
     {
-      "title": "Gateway Packets",
+      "title": "Battle Route Queue",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -173,23 +169,23 @@
       },
       "targets": [
         {
-          "expr": "rate(gateway_packets_received_total[1m])",
-          "legendFormat": "received/s"
+          "expr": "gateway_battle_route_queued_tasks",
+          "legendFormat": "queued tasks"
         },
         {
-          "expr": "rate(gateway_packets_sent_total[1m])",
-          "legendFormat": "sent/s"
+          "expr": "gateway_battle_route_queue_capacity",
+          "legendFormat": "queue capacity"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "pps"
+          "unit": "short"
         }
       },
-      "description": "Packet counters exposed by the game gateway runtime when using the legacy GatewayServer metrics surface"
+      "description": "Current queued battle route work and configured queue capacity"
     },
     {
-      "title": "Rate Limit / Blocked Packets",
+      "title": "Battle Route Rejections",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -199,8 +195,12 @@
       },
       "targets": [
         {
-          "expr": "rate(gateway_packets_blocked_total[5m])",
-          "legendFormat": "blocked/s"
+          "expr": "rate(gateway_battle_route_rejected_tasks_total[5m])",
+          "legendFormat": "rejected/s"
+        },
+        {
+          "expr": "rate(gateway_battle_route_dropped_completions_total[5m])",
+          "legendFormat": "dropped completions/s"
         }
       ],
       "fieldConfig": {
@@ -208,7 +208,7 @@
           "unit": "eps"
         }
       },
-      "description": "Packets blocked by gateway protection controls"
+      "description": "Battle route work rejected at admission or dropped during completion"
     },
     {
       "title": "Backend Requests",
@@ -221,12 +221,24 @@
       },
       "targets": [
         {
-          "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_requests_total\"}[1m]))",
-          "legendFormat": "{{__name__}}"
+          "expr": "rate(gateway_backend_login_requests_total[1m])",
+          "legendFormat": "login requests/s"
         },
         {
-          "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_successes_total\"}[1m]))",
-          "legendFormat": "{{__name__}}"
+          "expr": "rate(gateway_backend_room_requests_total[1m])",
+          "legendFormat": "room requests/s"
+        },
+        {
+          "expr": "rate(gateway_backend_battle_requests_total[1m])",
+          "legendFormat": "battle requests/s"
+        },
+        {
+          "expr": "rate(gateway_backend_matchmaking_requests_total[1m])",
+          "legendFormat": "matchmaking requests/s"
+        },
+        {
+          "expr": "rate(gateway_backend_leaderboard_requests_total[1m])",
+          "legendFormat": "leaderboard requests/s"
         }
       ],
       "fieldConfig": {
@@ -234,7 +246,7 @@
           "unit": "rps"
         }
       },
-      "description": "Gateway-observed backend request and success rates"
+      "description": "Gateway-observed request rates for every production backend"
     },
     {
       "title": "Backend Errors / Timeouts",
@@ -247,12 +259,24 @@
       },
       "targets": [
         {
-          "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_errors_total\"}[5m]))",
-          "legendFormat": "{{__name__}}"
+          "expr": "rate(gateway_backend_login_errors_total[5m]) + rate(gateway_backend_login_timeouts_total[5m])",
+          "legendFormat": "login failures/s"
         },
         {
-          "expr": "sum by (__name__) (rate({__name__=~\"gateway_backend_.*_timeouts_total\"}[5m]))",
-          "legendFormat": "{{__name__}}"
+          "expr": "rate(gateway_backend_room_errors_total[5m]) + rate(gateway_backend_room_timeouts_total[5m])",
+          "legendFormat": "room failures/s"
+        },
+        {
+          "expr": "rate(gateway_backend_battle_errors_total[5m]) + rate(gateway_backend_battle_timeouts_total[5m])",
+          "legendFormat": "battle failures/s"
+        },
+        {
+          "expr": "rate(gateway_backend_matchmaking_errors_total[5m]) + rate(gateway_backend_matchmaking_timeouts_total[5m])",
+          "legendFormat": "matchmaking failures/s"
+        },
+        {
+          "expr": "rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leaderboard_timeouts_total[5m])",
+          "legendFormat": "leaderboard failures/s"
         }
       ],
       "fieldConfig": {
@@ -311,12 +335,12 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.99, sum by (service, le) (rate(gateway_backend_route_latency_us_bucket[5m]))) / 1000",
-          "legendFormat": "{{service}} p99 ms"
+          "expr": "histogram_quantile(0.99, sum by (exported_service, le) (rate(gateway_backend_route_latency_us_bucket[5m]))) / 1000",
+          "legendFormat": "{{exported_service}} p99 ms"
         },
         {
-          "expr": "histogram_quantile(0.90, sum by (service, le) (rate(gateway_backend_route_latency_us_bucket[5m]))) / 1000",
-          "legendFormat": "{{service}} p90 ms"
+          "expr": "histogram_quantile(0.90, sum by (exported_service, le) (rate(gateway_backend_route_latency_us_bucket[5m]))) / 1000",
+          "legendFormat": "{{exported_service}} p90 ms"
         }
       ],
       "fieldConfig": {
@@ -327,7 +351,7 @@
       "description": "Prometheus histogram_quantile view of gateway-observed backend route latency. Empty until route traffic produces bucket samples."
     },
     {
-      "title": "Business Flow Success",
+      "title": "Backend Successes",
       "type": "timeseries",
       "gridPos": {
         "h": 6,
@@ -337,16 +361,24 @@
       },
       "targets": [
         {
-          "expr": "rate(gateway_login_success_total[5m])",
-          "legendFormat": "login success/s"
+          "expr": "rate(gateway_backend_login_successes_total[5m])",
+          "legendFormat": "login successes/s"
         },
         {
-          "expr": "rate(gateway_room_join_success_total[5m])",
-          "legendFormat": "room join success/s"
+          "expr": "rate(gateway_backend_room_successes_total[5m])",
+          "legendFormat": "room successes/s"
         },
         {
-          "expr": "rate(gateway_battle_start_success_total[5m])",
-          "legendFormat": "battle start success/s"
+          "expr": "rate(gateway_backend_battle_successes_total[5m])",
+          "legendFormat": "battle successes/s"
+        },
+        {
+          "expr": "rate(gateway_backend_matchmaking_successes_total[5m])",
+          "legendFormat": "matchmaking successes/s"
+        },
+        {
+          "expr": "rate(gateway_backend_leaderboard_successes_total[5m])",
+          "legendFormat": "leaderboard successes/s"
         }
       ],
       "fieldConfig": {
@@ -354,7 +386,7 @@
           "unit": "ops"
         }
       },
-      "description": "Business SLI view for the core gameplay loop exposed by gateway success counters."
+      "description": "Gateway-observed successful responses from every production backend. This is a backend RED signal, not an end-to-end business SLI."
     },
     {
       "title": "Leaderboard / Redis Dependent Errors",
@@ -383,7 +415,7 @@
       "description": "Current Redis degradation signal is inferred through leaderboard backend route failures"
     },
     {
-      "title": "Gateway Bytes",
+      "title": "Battle Route Totals",
       "type": "timeseries",
       "gridPos": {
         "h": 5,
@@ -393,23 +425,23 @@
       },
       "targets": [
         {
-          "expr": "rate(gateway_bytes_received_total[1m])",
-          "legendFormat": "received B/s"
+          "expr": "gateway_battle_route_rejected_tasks_total",
+          "legendFormat": "rejected tasks"
         },
         {
-          "expr": "rate(gateway_bytes_sent_total[1m])",
-          "legendFormat": "sent B/s"
+          "expr": "gateway_battle_route_dropped_completions_total",
+          "legendFormat": "dropped completions"
         }
       ],
       "fieldConfig": {
         "defaults": {
-          "unit": "Bps"
+          "unit": "short"
         }
       },
-      "description": "Gateway payload byte rates when using the legacy GatewayServer metrics surface"
+      "description": "Cumulative battle route rejection and dropped-completion counters"
     },
     {
-      "title": "Authenticated Sessions / Rooms / Battles",
+      "title": "Battle Route State",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -419,16 +451,12 @@
       },
       "targets": [
         {
-          "expr": "gateway_authenticated_sessions",
-          "legendFormat": "authenticated"
+          "expr": "gateway_battle_route_queued_tasks",
+          "legendFormat": "queued tasks"
         },
         {
-          "expr": "gateway_active_rooms",
-          "legendFormat": "rooms"
-        },
-        {
-          "expr": "gateway_active_battles",
-          "legendFormat": "battles"
+          "expr": "gateway_battle_route_queue_capacity",
+          "legendFormat": "queue capacity"
         }
       ],
       "fieldConfig": {
@@ -436,7 +464,7 @@
           "unit": "short"
         }
       },
-      "description": "Business state gauges exposed by the game gateway runtime when present"
+      "description": "Current battle route queue depth and capacity"
     },
     {
       "title": "Optional Process Exporter",
@@ -535,12 +563,12 @@
       },
       "targets": [
         {
-          "expr": "sum by (name) (container_memory_working_set_bytes{name=~\"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend\"})",
-          "legendFormat": "{{name}} memory"
+          "expr": "sum by (container) (container_memory_working_set_bytes * on (id) group_left (container) boost_gateway_container_info)",
+          "legendFormat": "{{container}} memory"
         },
         {
-          "expr": "sum by (name) (rate(container_cpu_usage_seconds_total{name=~\"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend\"}[5m]))",
-          "legendFormat": "{{name}} cpu/s"
+          "expr": "sum by (container) (rate(container_cpu_usage_seconds_total[5m]) * on (id) group_left (container) boost_gateway_container_info)",
+          "legendFormat": "{{container}} cpu/s"
         }
       ],
       "fieldConfig": {
@@ -651,8 +679,8 @@
       },
       "targets": [
         {
-          "expr": "container_start_time_seconds{name=~\"boost-.*\"}",
-          "legendFormat": "{{name}} start time"
+          "expr": "container_start_time_seconds * on (id) group_left (container) boost_gateway_container_info",
+          "legendFormat": "{{container}} start time"
         },
         {
           "expr": "boost_gateway_container_restart_count",

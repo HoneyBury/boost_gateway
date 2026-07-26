@@ -31,7 +31,12 @@ groups:
   - name: boost-gateway.backend-red
     rules:
       - alert: BoostGatewayBackendErrors
-        expr: sum(rate({__name__=~"gateway_backend_.*_errors_total"}[5m])) > 0
+        expr: >-
+          sum(rate(gateway_backend_login_errors_total[5m]))
+          + sum(rate(gateway_backend_room_errors_total[5m]))
+          + sum(rate(gateway_backend_battle_errors_total[5m]))
+          + sum(rate(gateway_backend_matchmaking_errors_total[5m]))
+          + sum(rate(gateway_backend_leaderboard_errors_total[5m])) > 0
         for: 2m
         labels:
           severity: warning
@@ -41,7 +46,12 @@ groups:
           description: "Gateway backend RED counters report route errors. Check /metrics/diagnostics/json and backend logs."
 
       - alert: BoostGatewayBackendTimeouts
-        expr: sum(rate({__name__=~"gateway_backend_.*_timeouts_total"}[5m])) > 0
+        expr: >-
+          sum(rate(gateway_backend_login_timeouts_total[5m]))
+          + sum(rate(gateway_backend_room_timeouts_total[5m]))
+          + sum(rate(gateway_backend_battle_timeouts_total[5m]))
+          + sum(rate(gateway_backend_matchmaking_timeouts_total[5m]))
+          + sum(rate(gateway_backend_leaderboard_timeouts_total[5m])) > 0
         for: 2m
         labels:
           severity: critical
@@ -102,16 +112,6 @@ groups:
 
   - name: boost-gateway.protection
     rules:
-      - alert: BoostGatewayRateLimitSpike
-        expr: sum(rate(gateway_packets_blocked_total[5m])) > 10
-        for: 5m
-        labels:
-          severity: warning
-          component: gateway
-        annotations:
-          summary: "Gateway rate limiting spike"
-          description: "gateway_packets_blocked_total is increasing quickly. Check client traffic, per-IP limits, and abuse patterns."
-
       - alert: BoostGatewayHighActiveSessions
         expr: max(gateway_active_sessions) > 9000
         for: 5m
@@ -121,16 +121,6 @@ groups:
         annotations:
           summary: "Gateway active sessions are close to capacity"
           description: "Active sessions exceeded the current production warning threshold. Compare with release/capacity baseline."
-
-      - alert: BoostGatewayBusinessFlowFailure
-        expr: rate(gateway_login_success_total[10m]) == 0 or rate(gateway_room_join_success_total[10m]) == 0 or rate(gateway_battle_start_success_total[10m]) == 0
-        for: 10m
-        labels:
-          severity: warning
-          component: business-flow
-        annotations:
-          summary: "Core business-flow success counters are not advancing"
-          description: "One or more core success counters for login, room join, or battle start stopped advancing. Cross-check SDK full-flow, /ready, and backend diagnostics before release."
 
   - name: boost-gateway.host-and-container
     rules:
@@ -152,7 +142,7 @@ groups:
           component: container-observability
         annotations:
           summary: "cAdvisor scrape target is down"
-          description: "Container CPU, memory, filesystem, network, and restart visibility is unavailable."
+          description: "Container CPU, memory, and lifecycle visibility is unavailable."
 
       - alert: BoostGatewayHostLoadHigh
         expr: node_load1 / count without (cpu, mode) (node_cpu_seconds_total{mode="idle"}) > 1.5
@@ -236,7 +226,12 @@ groups:
           description: "Requires process exporter metrics. Open fd usage is above 80% of the configured limit."
 
       - alert: BoostGatewayContainerMemoryHigh
-        expr: container_memory_working_set_bytes{name=~"boost-gateway|boost-login-backend|boost-room-backend|boost-battle-backend|boost-matchmaking-backend|boost-leaderboard-backend"} > 1073741824
+        expr: >-
+          sum by (container) (
+            container_memory_working_set_bytes
+            * on (id) group_left (container)
+            boost_gateway_container_info
+          ) > 1073741824
         for: 10m
         labels:
           severity: warning

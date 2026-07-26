@@ -45,6 +45,46 @@ REQUIRED_PROMETHEUS_JOBS = {
     "node-exporter",
     "cadvisor",
 }
+REQUIRED_ALERT_RULES = {
+    "BoostGatewayBackendErrors",
+    "BoostGatewayBackendTimeouts",
+    "BoostGatewayCadvisorDown",
+    "BoostGatewayContainerMemoryHigh",
+    "BoostGatewayContainerRestartCollectorFailed",
+    "BoostGatewayContainerRestarted",
+    "BoostGatewayHighActiveSessions",
+    "BoostGatewayHighFileDescriptors",
+    "BoostGatewayHighRouteLatency",
+    "BoostGatewayHighRSS",
+    "BoostGatewayHostFilesystemLow",
+    "BoostGatewayHostLoadHigh",
+    "BoostGatewayHostMemoryHigh",
+    "BoostGatewayHostTemperatureHigh",
+    "BoostGatewayLeaderboardBackendErrors",
+    "BoostGatewayNodeExporterDown",
+    "BoostGatewayNoRecentAccepts",
+    "BoostGatewayRedisExporterDown",
+    "BoostGatewayRedisMemoryHigh",
+    "BoostGatewayRedisRdbSaveFailed",
+    "BoostGatewayRedisRdbSaveStale",
+    "BoostGatewayRedisUnavailable",
+    "BoostGatewayScrapeDown",
+}
+REQUIRED_CONTAINER_NAMES = {
+    "boost-gateway",
+    "boost-login-backend",
+    "boost-room-backend",
+    "boost-battle-backend",
+    "boost-matchmaking-backend",
+    "boost-leaderboard-backend",
+    "boost-redis",
+    "boost-redis-exporter",
+    "boost-node-exporter",
+    "boost-cadvisor",
+    "boost-prometheus",
+    "boost-alertmanager",
+    "boost-grafana",
+}
 REQUIRED_PROMETHEUS_METRICS = {
     "node_cpu_seconds_total",
     "node_load1",
@@ -58,16 +98,31 @@ REQUIRED_PROMETHEUS_METRICS = {
     "node_network_transmit_bytes_total",
     "container_cpu_usage_seconds_total",
     "container_memory_working_set_bytes",
-    "container_fs_usage_bytes",
-    "container_network_receive_bytes_total",
-    "container_network_transmit_bytes_total",
     "container_start_time_seconds",
+    "boost_gateway_container_info",
     "boost_gateway_container_restart_count",
     "boost_gateway_container_restart_collection_success",
     "boost_gateway_container_restart_collection_timestamp_seconds",
     "redis_rdb_last_bgsave_status",
     "redis_rdb_changes_since_last_save",
     "redis_rdb_last_save_timestamp_seconds",
+}
+GOVERNED_CONTAINER_QUERIES = {
+    "cpu": (
+        "sum by (container) ("
+        "container_cpu_usage_seconds_total "
+        "* on (id) group_left (container) boost_gateway_container_info)"
+    ),
+    "memory": (
+        "sum by (container) ("
+        "container_memory_working_set_bytes "
+        "* on (id) group_left (container) boost_gateway_container_info)"
+    ),
+    "start-time": (
+        "sum by (container) ("
+        "container_start_time_seconds "
+        "* on (id) group_left (container) boost_gateway_container_info)"
+    ),
 }
 REQUIRED_PROMETHEUS_METRIC_PATTERNS = {
     "gateway-backend-requests": re.compile(r"gateway_backend_.*_requests_total\Z"),
@@ -296,6 +351,61 @@ def validate_prometheus_metric_inventory(document: object) -> list[str]:
     return failures
 
 
+def validate_prometheus_rules(document: object) -> list[str]:
+    if not isinstance(document, dict) or document.get("status") != "success":
+        return ["Prometheus rules response is not successful"]
+    data = document.get("data")
+    groups = data.get("groups") if isinstance(data, dict) else None
+    if not isinstance(groups, list):
+        return ["Prometheus rules response has no groups array"]
+    observed: set[str] = set()
+    failures: list[str] = []
+    for group in groups:
+        rules = group.get("rules") if isinstance(group, dict) else None
+        if not isinstance(rules, list):
+            failures.append("Prometheus returned an invalid rule group")
+            continue
+        for rule in rules:
+            if not isinstance(rule, dict):
+                failures.append("Prometheus returned a non-object rule")
+                continue
+            name = str(rule.get("name", ""))
+            if name:
+                observed.add(name)
+            if rule.get("health") != "ok" or rule.get("lastError"):
+                failures.append(
+                    f"Prometheus rule is unhealthy: {name or 'unknown'}: "
+                    f"{rule.get('lastError') or rule.get('health') or 'unknown'}"
+                )
+    missing = REQUIRED_ALERT_RULES - observed
+    if missing:
+        failures.append(f"Prometheus is missing required alert rules: {sorted(missing)}")
+    return failures
+
+
+def validate_governed_container_query(document: object) -> list[str]:
+    if not isinstance(document, dict) or document.get("status") != "success":
+        return ["Prometheus governed-container query is not successful"]
+    data = document.get("data")
+    result = data.get("result") if isinstance(data, dict) else None
+    if not isinstance(result, list):
+        return ["Prometheus governed-container query has no result array"]
+    observed: set[str] = set()
+    for sample in result:
+        metric = sample.get("metric") if isinstance(sample, dict) else None
+        container = str(metric.get("container", "")) if isinstance(metric, dict) else ""
+        if container:
+            observed.add(container)
+    missing = REQUIRED_CONTAINER_NAMES - observed
+    unexpected = observed - REQUIRED_CONTAINER_NAMES
+    failures: list[str] = []
+    if missing:
+        failures.append(f"Prometheus has no sample for governed containers: {sorted(missing)}")
+    if unexpected:
+        failures.append(f"Prometheus returned unmanaged containers: {sorted(unexpected)}")
+    return failures
+
+
 def validate_prometheus_flags(document: object) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus flags response is not successful"]
@@ -410,6 +520,30 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         metrics_passed,
         metrics_detail,
     )
+    rules_passed, rules_detail = wait_valid_json(
+        "http://127.0.0.1:9090/api/v1/rules?type=alert",
+        args.ready_timeout_seconds,
+        validate_prometheus_rules,
+    )
+    add_check(
+        checks,
+        "prometheus-alert-rules-healthy",
+        rules_passed,
+        rules_detail,
+    )
+    for signal, expression in GOVERNED_CONTAINER_QUERIES.items():
+        query = urllib.parse.urlencode({"query": expression})
+        passed, detail = wait_valid_json(
+            f"http://127.0.0.1:9090/api/v1/query?{query}",
+            args.ready_timeout_seconds,
+            validate_governed_container_query,
+        )
+        add_check(
+            checks,
+            f"governed-container-{signal}-samples",
+            passed,
+            detail,
+        )
     retention_passed, retention_detail = wait_valid_json(
         "http://127.0.0.1:9090/api/v1/status/flags",
         args.ready_timeout_seconds,

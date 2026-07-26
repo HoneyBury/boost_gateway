@@ -86,6 +86,41 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
             )
         )
 
+    def test_prometheus_rules_require_complete_healthy_inventory(self) -> None:
+        document = {
+            "status": "success",
+            "data": {
+                "groups": [
+                    {
+                        "rules": [
+                            {"name": name, "health": "ok", "lastError": ""}
+                            for name in module.REQUIRED_ALERT_RULES
+                        ]
+                    }
+                ]
+            },
+        }
+
+        self.assertEqual(module.validate_prometheus_rules(document), [])
+        document["data"]["groups"][0]["rules"][0]["health"] = "err"
+        document["data"]["groups"][0]["rules"][0]["lastError"] = "parse error"
+        self.assertTrue(module.validate_prometheus_rules(document))
+
+    def test_governed_container_query_requires_exact_inventory(self) -> None:
+        document = {
+            "status": "success",
+            "data": {
+                "result": [
+                    {"metric": {"container": name}, "value": [1, "1"]}
+                    for name in module.REQUIRED_CONTAINER_NAMES
+                ]
+            },
+        }
+
+        self.assertEqual(module.validate_governed_container_query(document), [])
+        document["data"]["result"].pop()
+        self.assertTrue(module.validate_governed_container_query(document))
+
     def test_prometheus_nonempty_query_rejects_empty_vector(self) -> None:
         self.assertEqual(
             module.validate_prometheus_nonempty_query(

@@ -21,8 +21,11 @@ The production Compose topology runs 13 healthy services. Prometheus retains 45 
 on `boost-gateway-production-prometheus-data` and scrapes gateway, Prometheus,
 redis-exporter, node-exporter, and cAdvisor. Node exporter records host CPU, load,
 memory, filesystems, disk I/O, network, hwmon/thermal-zone, systemd, and the governed
-Docker restart-count textfile. cAdvisor records container CPU, memory, filesystem,
-network, and lifecycle metrics.
+Docker restart-count and identity textfile. cAdvisor records container CPU, memory, and
+lifecycle metrics. The host collector maps each governed Docker name to its cgroup ID;
+Prometheus joins that mapping to cAdvisor samples and verifies all 13 containers. Host
+filesystem and network coverage comes from node-exporter and is not claimed as
+per-container evidence.
 
 cAdvisor is the only permitted privileged service. The production contract fixes its
 image, read-only root filesystem, exact read-only host mounts, `/dev/kmsg` device, and
@@ -120,9 +123,10 @@ sudo python3 "$CONTROLLER/scripts/tools/check_observability_preflight.py"
 ## Runtime verification
 
 The lifecycle verifier fails unless all 13 services are healthy, all five Prometheus
-jobs are up, retention is at least 45 days, and every required host, container, gateway
-RED, restart-count, and Redis persistence metric has a real sample. It also requires
-the restart collector to inspect every governed container.
+jobs are up, retention is at least 45 days, every alert rule evaluates with `health=ok`,
+and every required host, container, gateway RED, restart-count, and Redis persistence
+metric has a real sample. It also requires joined CPU, memory, and start-time samples for
+every governed container rather than accepting cAdvisor metric names alone.
 
 ```bash
 sudo python3 "$CONTROLLER/scripts/tools/manage_release_deployment.py" verify

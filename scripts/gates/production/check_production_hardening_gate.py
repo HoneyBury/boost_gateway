@@ -89,7 +89,7 @@ def validate_h3(checks: list[dict[str, Any]]) -> None:
 def validate_h4(checks: list[dict[str, Any]]) -> None:
     add(checks, "h4:runtime-http-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-runtime-http"), "runtime HTTP observability gate exists")
     add(checks, "h4:otel-collector-gate", contains("scripts/gates/production/verify_observability_gate.py", "--include-otel-collector"), "OTel collector gate exists")
-    add(checks, "h4:gateway-red-dashboard", contains("env/monitoring/grafana-dashboard.json", "gateway_backend_.*_requests_total"), "dashboard has backend RED panels")
+    add(checks, "h4:gateway-red-dashboard", contains("env/monitoring/grafana-dashboard.json", "gateway_backend_login_requests_total"), "dashboard has backend RED panels")
     add(checks, "h4:p99-boundary-doc", contains("docs/performance-baseline.md", "P99"), "current P99 observability boundary is documented")
 
 

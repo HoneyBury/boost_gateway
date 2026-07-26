@@ -1,6 +1,6 @@
 # 生产运维 Runbook
 
-更新时间：2026-05-18（P0-P4）
+更新时间：2026-07-26（TODO-0011）
 
 本文档用于 P3 监控、告警与运维流程收束。当前生产监控只 scrape gateway `/metrics`；后端服务是自定义 TCP 协议，不暴露 HTTP `/metrics`。因此后端异常通过 gateway backend RED counters、Docker/systemd/Kubernetes 健康检查和业务 full-flow 共同判断。
 
@@ -13,7 +13,8 @@
 | gateway 可用性 | `up{job="gateway"}`、`/ready` | 最基础的 scrape 与 readiness |
 | backend 错误率 | `gateway_backend_*_errors_total`、`gateway_backend_*_timeouts_total` | 当前后端 RED 指标事实源 |
 | backend route latency | `gateway_backend_*_p99_latency_us`、`gateway_backend_route_latency_us_bucket`、`gateway_backend_*_avg_latency_us` | P99 gauge 和 histogram bucket 是告警主口径，avg 保留作趋势辅助 |
-| 业务闭环成功率 | `gateway_login_success_total`、`gateway_room_join_success_total`、`gateway_battle_start_success_total` | 覆盖 login/room/battle 核心链路 |
+| backend 成功响应 | `gateway_backend_*_successes_total` | gateway 观测到的后端成功响应；不是端到端业务 SLI |
+| 业务闭环 | release SDK full-flow | 当前 `/metrics` 不导出独立 login/room/battle 闭环成功计数，不能用空指标代替业务证据 |
 | Redis 相关异常 | `gateway_backend_leaderboard_*` + `redis_exporter` | 目前通过 leaderboard 路径代理 Redis 异常 |
 | 资源风险 | `process_resident_memory_bytes`、`process_open_fds`、`container_memory_working_set_bytes` | 依赖 optional process exporter / cAdvisor |
 
@@ -22,7 +23,6 @@
 - `BoostGatewayScrapeDown`：gateway scrape 中断
 - `BoostGatewayBackendErrors` / `BoostGatewayBackendTimeouts`：后端路由失败
 - `BoostGatewayHighRouteLatency`：backend route P99 latency 超 200ms
-- `BoostGatewayBusinessFlowFailure`：login / room / battle 成功计数 10 分钟不推进
 - `BoostGatewayHighActiveSessions`：活跃连接逼近当前容量线
 
 N2 起，gateway `/metrics` 默认导出 `gateway_backend_route_latency_us_bucket/_sum/_count` 和 `gateway_backend_<service>_p50/p90/p99_latency_us`。Prometheus 告警使用 P99 gauge；Grafana 同时展示 P99 gauge 和 `histogram_quantile()` 趋势。性能基线脚本仍是容量和长稳结论的事实源。
@@ -287,10 +287,8 @@ P5-P8 的详细边界以当前主线文档和归档计划文档为准；历史�
 | `BoostGatewayBackendTimeouts` | critical | 检查 backend down、网络、CPU/RSS/fd 和 gateway diagnostics |
 | `BoostGatewayBackendErrors` | warning | 查看具体 backend counter、业务错误和后端日志 |
 | `BoostGatewayHighRouteLatency` | warning | 查看 `Backend Avg Route Latency`、`/metrics/diagnostics/json`、对应 backend 日志和 Redis 依赖 |
-| `BoostGatewayBusinessFlowFailure` | warning | 优先跑 SDK full-flow，确认 login/room/battle 是否还在推进 |
 | `BoostGatewayLeaderboardBackendErrors` | warning | 优先检查 Redis down 或 leaderboard backend 降级 |
 | `BoostGatewayRedisUnavailable` | critical | 检查 Redis 进程、持久卷、网络以及 leaderboard 依赖降级 |
-| `BoostGatewayRateLimitSpike` | warning | 检查客户端流量、单 IP、login 专项限流和攻击模式 |
 | `BoostGatewayHighActiveSessions` | warning | 对照容量基线，确认连接 spike 是否符合预期 |
 | `BoostGatewayHighRSS` | warning | 需要 process exporter；检查 RSS 增长和内存泄漏迹象 |
 | `BoostGatewayHighFileDescriptors` | critical | 需要 process exporter；检查 fd limit、连接泄漏和慢客户端 |
@@ -366,14 +364,14 @@ Redis / Raft HA 细节见 `docs/redis-raft-ha-runbook.md`。默认生产配置�
 
 症状：
 
-- `BoostGatewayBackendErrors`、`BoostGatewayBackendTimeouts` 或 `BoostGatewayRateLimitSpike` 触发。
+- `BoostGatewayBackendErrors` 或 `BoostGatewayBackendTimeouts` 触发。
 - `/metrics/diagnostics/json` 中 backend counters 增长。
-- 客户端出现超时、业务错误或被限流。
+- 客户端出现超时或业务错误。
 
 排查：
 
 ```bash
-curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_backend_|gateway_packets_blocked'
+curl -fsS http://127.0.0.1:9080/metrics | grep -E 'gateway_backend_|gateway_battle_route_'
 curl -fsS http://127.0.0.1:9080/metrics/diagnostics/json
 docker compose -f env/docker/docker-compose.yml logs --tail=300 gateway
 python3 scripts/gates/sdk/verify_sdk_full_flow_client.py --build-dir build/default
@@ -382,7 +380,7 @@ python3 scripts/gates/sdk/verify_sdk_full_flow_client.py --build-dir build/defau
 判断：
 
 - backend timeout 增长：优先按 backend down 流程排查。
-- blocked packets 增长：检查 `V2_RATE_LIMIT_*` 配置、客户端重试风暴和异常 IP。
+- 当前指标面没有独立 rate-limit counter；限流判断必须结合配置、gateway 日志、客户端错误和入口流量，不能从不存在的 `gateway_packets_blocked_total` 推断。
 - errors 增长但 timeout 不增长：检查协议、业务错误码、trace_id 和最近发布。
 
 ## connection spike
