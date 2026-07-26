@@ -211,6 +211,91 @@ python3 "$RECEIVER_ROOT/verify_backup_vault.py" \
 该 summary 固定记录 `formal_todo0012_claim=false` 和 `restore_known_good=false`。解密、tar 与 RDB
 离线校验只能证明备份可读取，不能替代隔离恢复、leaderboard 业务验证或 SDK full-flow。
 
+### Redis-Only Restore Bundle And Isolated Controller
+
+首轮隔离恢复不会把含 `/etc/boost-gateway` 和 Gmail credential 的完整 plaintext tar 从 Mac
+复制回 Ubuntu。完整 tar 只在 Mac vault verifier 的流式解密过程中出现；verifier 已验证 schema 2、
+link-free member inventory、`source_links` contract、plaintext SHA-256 和 Redis source checksum。
+
+在 **Mac 终端**导出 create-only Redis restore bundle。bundle 固定只含 `dump.rdb`、`bundle.json`、
+`manifest.json`、`receipt.json` 和 `vault-validation.json`，不含 host configuration 或 age private key：
+
+```bash
+python3 scripts/tools/export_backup_restore_bundle.py \
+  --vault-root /Users/honeybury/Backups/boost-gateway-vault \
+  --backup-id '<verified-backup-id>' \
+  --vault-validation-summary \
+    '/Users/honeybury/Backups/boost-gateway-vault/validations/<verified-backup-id>.json' \
+  --age-identity \
+    /Users/honeybury/.config/boost-gateway-backup/age-identity.txt \
+  --bundle-dir \
+    '/Users/honeybury/Backups/boost-gateway-vault/restore-bundles/<restore-id>' \
+  --age /opt/homebrew/bin/age
+```
+
+Mac 到 Ubuntu 必须使用独立 forced-command SSH key。Ubuntu receiver 的
+`--receiver-identity-file` 固定为 `/etc/machine-id`；它的 SHA-256 必须等于 bundle 绑定的 source
+host identity。receiver 只接受 `boost-gateway-restore store` 和
+`boost-gateway-restore receipt <restore-id>`，没有 shell、路径或删除接口。安装后的 authorized key
+必须绑定 Mac Tailscale source address、`restrict` 和以下 forced command：
+
+```text
+command="/usr/bin/python3 /opt/boost-gateway/restore-tools/restore_bundle_ssh_receiver.py --staging-root /var/lib/boost-gateway/restore-inputs --receiver-identity-file /etc/machine-id",restrict,from="<mac-tailscale-ip>" <mac-restore-public-key>
+```
+
+在 **Mac 终端**发送 bundle；identity 和 known_hosts 必须是 regular non-symlink 文件，private key
+权限必须为 `0600`：
+
+```bash
+python3 scripts/tools/send_restore_bundle.py \
+  --restore-id '<restore-id>' \
+  --bundle-dir \
+    '/Users/honeybury/Backups/boost-gateway-vault/restore-bundles/<restore-id>' \
+  --remote-host 'honeybury@<ubuntu-tailscale-ip>' \
+  --ssh-identity-file "$HOME/.ssh/boost-gateway-restore-ed25519" \
+  --ssh-known-hosts "$HOME/.ssh/boost-gateway-restore-known-hosts" \
+  --receipt-path \
+    '/Users/honeybury/Backups/boost-gateway-vault/restore-receipts/<restore-id>.json'
+```
+
+receiver 在 Ubuntu 的成功目录加入第六个 create-only 文件 `transport-receipt.json`。隔离控制器
+严格要求这六个文件，独立重载和复算 manifest、vault receipt、vault validation、transport receipt、
+policy、Redis profile 和 RDB 的全部 binding。
+
+在 **Ubuntu 小主机终端**运行隔离恢复。`REDIS_IMAGE` 必须是本机已有的 immutable image ID；目标
+volume 必须使用新的 `boost-gateway-recovery-*` 名称：
+
+```bash
+RESTORE_ID='<restore-id>'
+REDIS_IMAGE="$(sudo docker image inspect redis:7-alpine --format '{{.Id}}')"
+
+sudo python3 \
+  /home/honeybury/boost-gateway-controller/scripts/tools/restore_backup_isolated.py \
+  --restore-id "$RESTORE_ID" \
+  --bundle-dir "/var/lib/boost-gateway/restore-inputs/$RESTORE_ID" \
+  --policy \
+    /home/honeybury/boost-gateway-controller/deploy/operations/backup-recovery-policy.example.json \
+  --redis-profile \
+    /home/honeybury/boost-gateway-controller/env/redis/redis.production-validation.conf \
+  --target-volume "boost-gateway-recovery-$RESTORE_ID" \
+  --baseline-container "boost-restore-baseline-$RESTORE_ID" \
+  --target-container "boost-restore-target-$RESTORE_ID" \
+  --redis-image "$REDIS_IMAGE" \
+  --summary-path \
+    "/var/lib/boost-gateway-evidence/recovery/$RESTORE_ID.json"
+```
+
+控制器与 release lifecycle 共用 `.lifecycle.lock`。它先用 `redis-check-rdb` 离线检查，再从同一
+bundle RDB 启动 `network=none` baseline Redis，使用 `SCAN`、`TYPE`、`DUMP` 生成 canonical
+keyspace SHA-256；禁止使用 `KEYS`。随后创建全新 named volume，在任何业务写入前用同一算法验证
+fresh-volume target，且强制存在 `lb:global` 和 `lb:global:names`。active production volume 只做
+identity inspect，绝不挂载、写入、切换或删除。失败时只删除本次创建的 target container/volume；
+成功时停止隔离容器并保留 target volume 作为演练证据。
+
+该切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录
+`restore_known_good=false` 和 `formal_todo0012_claim=false`。完整 host link reconstruction、
+leaderboard submit/top/rank、SDK full-flow、第二份不同 backup/target 演练和最终受控切换仍是后续边界。
+
 ### Local-Only Retention
 
 Ubuntu source key 无权删除异机备份。14 daily、8 weekly 和至少 2 known-good 的 retention 只能在
