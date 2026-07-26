@@ -349,6 +349,9 @@
     "scripts/tools/backup_vault_ssh_receiver.py": {
       "category": "tool"
     },
+    "scripts/tools/export_backup_restore_bundle.py": {
+      "category": "tool"
+    },
     "scripts/tools/check_backup_recovery_policy.py": {
       "category": "tool"
     },
@@ -409,7 +412,16 @@
     "scripts/tools/resolve_runner_cache.py": {
       "category": "tool"
     },
+    "scripts/tools/restore_backup_isolated.py": {
+      "category": "tool"
+    },
+    "scripts/tools/restore_bundle_ssh_receiver.py": {
+      "category": "tool"
+    },
     "scripts/tools/schedule_observability_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/tools/send_restore_bundle.py": {
       "category": "tool"
     },
     "scripts/tools/verify_macos_arm64_package.py": {
