@@ -7,6 +7,14 @@ env:
   BOOST_GATEWAY_CONAN_VENV: ${{ github.workspace }}/.venv/conan-2.8.1
 
 on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
   workflow_dispatch:
     inputs:
       runner:
@@ -17,9 +25,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: mainline-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   linux-build-and-test:
-    runs-on: ${{ fromJSON(inputs.runner || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || fromJSON(inputs.runner || vars.CI_RUNNER || '"ubuntu-latest"') }}
+    timeout-minutes: 45
 
     steps:
       - name: Checkout
@@ -153,6 +166,12 @@ jobs:
       - name: Workflow catalog gate
         shell: bash
         run: python3 scripts/gates/governance/check_workflow_catalog.py
+
+      - name: Repository governance gate
+        shell: bash
+        run: |
+          python3 -m unittest tests.python.test_repository_governance
+          python3 scripts/gates/governance/check_repository_governance.py
 
       - name: Next minor decision gate
         shell: bash

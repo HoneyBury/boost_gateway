@@ -35,6 +35,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/operations-host-admission-runbook.md",
     "docs/deployment/immutable-release-deployment-runbook.md",
     "docs/deployment/release-lifecycle-runbook.md",
+    "docs/deployment/backup-recovery-policy-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/release-governance.md",
     "docs/tls-mtls-runbook.md",
@@ -346,6 +347,31 @@ def main() -> int:
         )
         and "release-lifecycle-runbook.md" in docs_index,
         "the immutable release lifecycle entrypoint, state machine, rollback deadline and TODO boundary are indexed",
+    )
+    recovery_policy_runbook = (
+        ROOT / "docs/deployment/backup-recovery-policy-runbook.md"
+    ).read_text(encoding="utf-8")
+    add(
+        checks,
+        "docs:backup-recovery-candidate-contract",
+        all(
+            token in recovery_policy_runbook
+            for token in (
+                "scripts/tools/check_backup_recovery_policy.py",
+                "env/redis/redis.production-validation.conf",
+                "deploy/operations/backup-recovery-policy.example.json",
+                "activation_ready=false",
+                "formal_todo0012_claim=false",
+                "noeviction",
+                "redis-check-rdb",
+                "redis-check-aof",
+                "TODO-0012",
+            )
+        )
+        and "backup-recovery-policy-runbook.md" in docs_index
+        and "install(DIRECTORY docs/deployment/" in cmake
+        and "install(DIRECTORY deploy/operations/" in cmake,
+        "the candidate Redis, backup and restore contract is documented, indexed and installed without activation",
     )
 
     failed = [check for check in checks if not check["passed"]]

@@ -33,6 +33,7 @@ EXPECTED_NAMES = {
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}
+PULL_REQUEST_WORKFLOWS = {"ci"}
 STRICT_OFFLINE_CONAN_WORKFLOWS = {
     "grpc-experimental",
     "jwks-rotation",
@@ -188,7 +189,13 @@ def main() -> int:
         has_tag_push = "push:" in text and "tags:" in text and "v*" in text
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
         add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
-        add(checks, f"trigger:{stem}:no-pr", "pull_request:" not in text, f"{path.name} has no pull_request trigger")
+        has_pull_request = "pull_request:" in text
+        add(
+            checks,
+            f"trigger:{stem}:pr-policy",
+            has_pull_request == (stem in PULL_REQUEST_WORKFLOWS),
+            f"{path.name} pull_request={has_pull_request}",
+        )
         if "uses: actions/setup-go@" in text:
             add(
                 checks,
@@ -232,6 +239,39 @@ def main() -> int:
     production_readiness_workflow = read(WORKFLOWS_ROOT / "production-readiness.yml")
     preprod_workflow = read(WORKFLOWS_ROOT / "preprod-evidence.yml")
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
+    add(
+        checks,
+        "ci:pull-request-main",
+        "  pull_request:\n    branches:\n      - main" in ci_workflow,
+        "mainline CI runs automatically for pull requests targeting main",
+    )
+    add(
+        checks,
+        "ci:pull-request-hosted-runner",
+        "github.event_name == 'pull_request' && 'ubuntu-latest'" in ci_workflow,
+        "pull-request CI cannot be redirected to a self-hosted runner",
+    )
+    add(
+        checks,
+        "ci:bounded-job",
+        "    timeout-minutes: 45" in ci_workflow,
+        "mainline CI has a bounded job timeout",
+    )
+    add(
+        checks,
+        "ci:pull-request-concurrency",
+        "group: mainline-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}"
+        in ci_workflow
+        and "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in ci_workflow,
+        "new commits cancel stale runs for the same pull request",
+    )
+    add(
+        checks,
+        "ci:repository-governance-gate",
+        "python3 -m unittest tests.python.test_repository_governance" in ci_workflow
+        and "python3 scripts/gates/governance/check_repository_governance.py" in ci_workflow,
+        "mainline CI runs repository governance regression tests and the live-tree gate",
+    )
     add(
         checks,
         "ci:next-minor-decision-gate",

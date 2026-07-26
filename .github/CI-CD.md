@@ -10,7 +10,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 | Workflow | Actions 显示名 | 触发方式 | 用途 |
 |---|---|---|---|
-| `ci.yml` | Mainline / Build, Test & Governance | 手动 | 主线构建 + 测试 + Conan 验证 + 静态治理 |
+| `ci.yml` | Mainline / Build, Test & Governance | PR / 手动 | `main` PR 的 hosted 有界构建、测试、Conan 验证和静态治理；保留手动诊断入口 |
 | `conan-validate.yml` | Dependencies / Conan Graph Validation | 手动 | Conan 依赖图验证 |
 | `debug-symbols.yml` | Release / Linux Debug Symbols Candidate | 手动 | RelWithDebInfo runtime/symbol pair、build-id/debuglink、受控崩溃符号化候选证据 |
 | `grpc-experimental.yml` | Experimental / gRPC | 手动 | gRPC 可选依赖图、构建、SDK consumer 与决策边界 |
@@ -30,7 +30,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 ## Runner 要求
 
-- **主线回归兜底**: GitHub-hosted `ubuntu-latest`
+- **PR 必需回归**: GitHub-hosted `ubuntu-latest`，固定 45 分钟 job 上限；新提交取消同一 PR 的旧运行
 - **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
 - **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；有界 smoke/baseline 不声明容量或生产长稳
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
@@ -73,7 +73,8 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 ## 触发规则
 
-- **普通 push/PR**: 不自动触发 CI（减少 runner 负载）
+- **目标为 `main` 的 PR**: 自动触发 `ci.yml`，固定使用 GitHub-hosted `ubuntu-latest`
+- **普通 branch push**: 不自动触发 CI
 - **v* tag**: 自动触发 `release.yml`；`ci.yml` 保留为手动主线回归，避免 tag 发布重复构建
 - **手动 dispatch**: 所有 workflow 支持 `workflow_dispatch`
 - **定时任务**: 当前没有 `schedule` / `cron` workflow；固定 runner 长任务由人工选择候选 SHA 后启动
@@ -83,4 +84,17 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - Runner 标签和默认值: `.github/runner-matrix.json`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
-- 推荐策略: 仅 `ci.yml` 默认使用 GitHub-hosted `ubuntu-latest`；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 定向到已完成相应 namespace 准入的 runner
+- 推荐策略: `ci.yml` 的 PR 路径强制使用 GitHub-hosted `ubuntu-latest`，手动 dispatch
+  仍可显式选择 runner；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux
+  labels，并可通过 workflow `runner` 输入或 `vars.*_RUNNER` 定向到已完成相应 namespace
+  准入的 runner
+
+## 仓库治理边界
+
+仓库内契约见根目录 `CODEOWNERS`、`CONTRIBUTING.md`、`SECURITY.md`、`SUPPORT.md`
+和 `GOVERNANCE.md`。`scripts/gates/governance/check_repository_governance.py` 阻断这些
+文件、必需章节、敏感路径 ownership 和交叉入口漂移。
+
+required checks、review、conversation resolution、管理员保护、私密漏洞报告和 ruleset
+仍属于 GitHub 外部状态。合并本仓库切片不等于这些设置已经生效；必须通过 GitHub API
+回读后才能关闭对应 TODO。

@@ -13,9 +13,18 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from scripts.tools.check_backup_recovery_policy import validate_policy  # noqa: E402
+
+
 DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"
 OPERATIONS_RUNBOOK = "docs/deployment/production-operations-runbook.md"
 DRILL_RECORD_TEMPLATE = "docs/production/production-recovery-drill-record-template.json"
+BACKUP_RECOVERY_POLICY = "deploy/operations/backup-recovery-policy.example.json"
+REDIS_VALIDATION_PROFILE = "env/redis/redis.production-validation.conf"
+BACKUP_RECOVERY_RUNBOOK = "docs/deployment/backup-recovery-policy-runbook.md"
 DEPLOY_K8S_TOOL = "scripts/tools/deploy_k8s.py"
 K8S_FULL_FLOW_GATE = "scripts/gates/k8s/verify_k8s_full_flow.py"
 DRILL_RECORD_VALIDATOR = "scripts/gates/production/check_recovery_drill_record.py"
@@ -157,6 +166,43 @@ def validate_drill_record_assets(checks: list[dict[str, Any]]) -> None:
     add(checks, "drill-template:verification", "passed" in template.get("verification", {}) and "sdk_full_flow_summary" in template.get("verification", {}), "template captures final verification summaries")
 
 
+def validate_backup_recovery_candidate(checks: list[dict[str, Any]]) -> None:
+    summary = validate_policy(
+        REPO_ROOT / BACKUP_RECOVERY_POLICY,
+        REPO_ROOT / REDIS_VALIDATION_PROFILE,
+    )
+    add(
+        checks,
+        "backup-policy:candidate-contract",
+        summary["overall_pass"] is True,
+        "repository-only Redis and backup/recovery candidate contract passes fail-closed validation",
+    )
+    add(
+        checks,
+        "backup-policy:not-activated",
+        summary["activation_ready"] is False
+        and summary["formal_todo0012_claim"] is False
+        and summary["live_policy_changed"] is False,
+        "static policy validation cannot claim activation or TODO-0012 completion",
+    )
+    production_compose = read_text("deploy/operations/docker-compose.production.yml")
+    add(
+        checks,
+        "backup-policy:compose-unchanged",
+        "redis.production-validation.conf" not in production_compose,
+        "the candidate Redis profile is not mounted by the active production Compose contract",
+    )
+    runbook = read_text(BACKUP_RECOVERY_RUNBOOK)
+    add(
+        checks,
+        "backup-policy:activation-boundary-documented",
+        "Activation Boundary" in runbook
+        and "三轮对照" in runbook
+        and "两轮独立演练" in runbook,
+        "performance and independent restore drills remain documented activation requirements",
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary-path", type=Path, default=REPO_ROOT / "runtime/validation/production-recovery-summary.json")
@@ -169,6 +215,7 @@ def main() -> int:
     validate_scripts(checks)
     validate_runbooks(checks)
     validate_drill_record_assets(checks)
+    validate_backup_recovery_candidate(checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {
@@ -191,6 +238,8 @@ def main() -> int:
             "deployment_runbook": str(REPO_ROOT / DEPLOYMENT_RUNBOOK),
             "operations_runbook": str(REPO_ROOT / OPERATIONS_RUNBOOK),
             "drill_record_template": str(REPO_ROOT / DRILL_RECORD_TEMPLATE),
+            "backup_recovery_policy": str(REPO_ROOT / BACKUP_RECOVERY_POLICY),
+            "redis_validation_profile": str(REPO_ROOT / REDIS_VALIDATION_PROFILE),
         },
     }
 

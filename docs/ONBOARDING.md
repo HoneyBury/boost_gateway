@@ -206,6 +206,7 @@ boost_gateway/
 
 - `main`: 稳定分支，所有发布从 main 打 tag
 - 新功能/修复：从 main 创建 feature branch，完成后 PR 合入
+- ownership、review、敏感变更和紧急路径见根目录 `CONTRIBUTING.md` 与 `GOVERNANCE.md`
 
 ### 代码风格
 
@@ -223,11 +224,15 @@ clang-format -i <changed-files>
 
 ### CI 门禁
 
-当前默认 CI 触发方式已经收敛：`ci.yml` 仅通过手动 `workflow_dispatch` 运行；`v*` tag push 只自动触发 `release.yml`，避免发布时重复构建。开发分支日常验证以本地命令和手动 GitHub-hosted dispatch 为主。
+目标为 `main` 的 PR 自动触发 `ci.yml`：PR 路径固定使用 GitHub-hosted
+`ubuntu-latest`，单 job 最长 45 分钟，同一 PR 的新提交会取消旧运行。手动
+`workflow_dispatch` 继续用于分支诊断，并保留显式 runner 选择；`v*` tag push 只自动
+触发 `release.yml`。
 
 | 门禁 | 命令 | 触发方式 |
 |---|---|---|
 | 本地构建+测试 | `cmake --build build/contributor-debug --parallel && python3 scripts/run_tests.py unit --build-dir build/contributor-debug --verbose` | 本地 |
+| PR build/test/governance | `linux-build-and-test` | 目标为 `main` 的 PR 自动触发 |
 | GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref main -f runner='"ubuntu-latest"'` | 手动 |
 | 本地 RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | 本地/手动 |
 | Release 构建与发布门禁 | `.github/workflows/release.yml` | `v*` tag 自动或手动 |
@@ -278,6 +283,10 @@ python3 scripts/producers/collect_release_baseline.py --perf-preset business-cap
 | [TLS/mTLS](tls-mtls-runbook.md) | 传输安全配置 |
 | [部署运维](deployment/) | 部署、运维、配置 Runbook |
 | [贡献指南](../.github/PULL_REQUEST_TEMPLATE.md) | PR 提交清单与要求 |
+| [仓库贡献策略](../CONTRIBUTING.md) | review、测试、敏感变更和文档要求 |
+| [安全策略](../SECURITY.md) | 非公开漏洞披露与响应边界 |
+| [支持策略](../SUPPORT.md) | 支持范围和 Issue 路由 |
+| [仓库治理](../GOVERNANCE.md) | ownership、紧急变更和 GitHub 外部设置边界 |
 | [提交规范](../.github/COMMIT_CONVENTION.md) | Git 提交消息格式与约定 |
 
 ---

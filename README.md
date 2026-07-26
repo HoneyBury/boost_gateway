@@ -80,13 +80,18 @@ smoke 代替。完整门禁矩阵见 [发布治理](docs/release-governance.md)�
 | [主线执行计划](docs/mainline-execution-plan.md) | v3.6.2 发布后的企业运营主线 |
 | [性能基线](docs/performance-baseline.md) | 性能事实、测量口径和声明边界 |
 | [固定 Runner 手册](docs/fixed-runner-playbook.md) | Conan/Docker cache 和生产证据操作 |
+| [贡献指南](CONTRIBUTING.md) | PR、review、测试和敏感变更要求 |
+| [安全策略](SECURITY.md) | 支持版本和非公开漏洞披露入口 |
+| [支持策略](SUPPORT.md) | 支持范围、Issue 路由和维护预期 |
+| [仓库治理](GOVERNANCE.md) | ownership、紧急变更和 GitHub 外部设置边界 |
 
 历史版本计划和已结束交付记录位于
 [docs/archive](docs/archive/README.md)，不作为当前实施依据。
 
 ## CI 与发布
 
-- 普通 branch push/PR 不自动触发主流水线；`ci.yml` 通过手动 dispatch 执行。
+- 目标为 `main` 的 PR 自动在 GitHub-hosted runner 执行有界 build/test/governance；
+  `ci.yml` 仍保留手动 dispatch。
 - `v*` tag push 自动触发 `release.yml`。
 - 性能、长稳、生产证据和平台专项 workflow 均按需手动触发。
 - runner 选择以 `.github/runner-matrix.json` 和
