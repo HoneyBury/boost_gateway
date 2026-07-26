@@ -180,6 +180,36 @@ class BackupRecoveryPolicyTest(unittest.TestCase):
         self.assertIn("backup:retention-counts", failed)
         self.assertIn("backup:retention-deletion-guards", failed)
 
+    def test_requires_release_state_and_link_free_archive_contract(self) -> None:
+        self.policy["backup"]["source_contracts"] = [
+            source
+            for source in self.policy["backup"]["source_contracts"]
+            if source["id"] != "release_state"
+        ]
+        archive = self.policy["backup"]["archive_contract"]
+        archive["symbolic_link_entries_allowed"] = True
+        archive["manifest_link_fields"].remove("target_source_id")
+        self._write_policy()
+
+        failed = self._failed_names()
+
+        self.assertIn("backup:sources-unique-complete", failed)
+        self.assertIn("backup:source:release_state", failed)
+        self.assertIn("backup:link-free-archive", failed)
+        self.assertIn("backup:validated-link-metadata", failed)
+
+    def test_restore_must_rebuild_links_from_validated_mapping(self) -> None:
+        reconstruction = self.policy["restore"]["link_reconstruction"]
+        reconstruction["trust_original_link_text"] = True
+        reconstruction["target_source_id_required"] = False
+        self.policy["evidence"]["bind_backup_policy_sha256"] = False
+        self._write_policy()
+
+        failed = self._failed_names()
+
+        self.assertIn("restore:validated-link-reconstruction", failed)
+        self.assertIn("evidence:bindings", failed)
+
     def test_rejects_incomplete_performance_and_restore_proof(self) -> None:
         performance = self.policy["redis"]["performance_impact"]
         performance["minimum_repetitions_per_mode"] = 1

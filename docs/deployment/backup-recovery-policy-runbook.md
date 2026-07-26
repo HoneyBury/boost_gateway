@@ -55,8 +55,19 @@ Redis CPU/RSS、disk write bytes 和 delayed fsync。
 - 一致的 Redis snapshot；不能直接打包正在变化的 Docker volume。
 - `/etc/boost-gateway` 配置；其中包含 secret 的内容只能存在于加密载荷中。
 - `/opt/boost-gateway/deployments` deployment state。
+- `/opt/boost-gateway/releases` immutable release state；deployment 中的 release 链接不能替代该源。
 - `/var/lib/boost-gateway/deployment-transactions` transaction records。
 - `/var/lib/boost-gateway-evidence` evidence ledger 和运行证据。
+
+明文 tar 必须是 link-free archive。遍历 source 时不得跟随或写入 symbolic link；同 inode 的
+hardlink 必须物化为独立 regular file，tar member 中 symbolic link 和 hard link 数量都必须为
+0。每个 symbolic link 都要先解析并验证最终目标存在，且最终目标位于上述声明 source root
+之一。损坏链接、循环链接、目标越界或指向 socket/device/FIFO 的链接必须令整次备份失败。
+
+通过校验的链接只在 manifest 的 `source_links` 中记录。每条记录同时包含
+`target_source_id`、`target_relative_path` 和 `target_type`，让恢复端通过受控 source mapping
+重建；`original_link_text` 只作审计证据，不能直接作为恢复目标。manifest 还必须绑定
+`backup_policy_sha256`，从而使归档契约变更可追溯。
 
 加密候选为 `age` recipient-only 模式。源主机只持有 recipient public material；解密 private
 key 不放在源主机，recipient、private key、passphrase、token 或 credential 值不得进入 policy、
@@ -75,7 +86,9 @@ retention 当前冻结为 14 份 daily、8 份 weekly，并始终保留至少两
 
 1. 获取与 release lifecycle 共用的全局 transaction lock。
 2. 校验加密 archive、manifest、远端 receipt 和 source/deployment/profile identity。
-3. 解密到受限 staging，并拒绝 symlink、path traversal、额外文件和 checksum 漂移。
+3. 解密到受限 staging，确认 tar 中没有 symbolic/hard link，并拒绝 path traversal、额外文件和
+   checksum 漂移；随后只依据 `target_source_id` + `target_relative_path` 在 staging 内重建链接，
+   不信任 `original_link_text`。
 4. 用 `redis-check-rdb` 与 `redis-check-aof` 离线检查后写入新的 named volume。
 5. 在隔离目标启动 Redis，验证原始 leaderboard seed 完全一致。
 6. 执行 Redis PING、leaderboard submit/top/rank 和 release SDK full-flow。
@@ -102,12 +115,15 @@ host、deployment、Redis profile、backup manifest 和 remote receipt SHA-256�
 
 ## Encrypted Backup Tool Slice
 
-仓库提供两个尚未安装或定时激活的工具：
+仓库提供三个尚未定时激活的工具：
 
 - `scripts/tools/manage_backup_recovery.py`：在 lifecycle lock 内通过 `redis-cli --rdb`
-  生成一致 RDB，打包必要 source，使用 recipient-only `age` 加密，然后以流式帧上传。
+  生成一致 RDB，生成 link-free tar 和经验证的 link manifest，使用 recipient-only `age` 加密，
+  然后以流式帧上传。
 - `scripts/tools/backup_vault_ssh_receiver.py`：Mac 上的 SSH forced-command receiver；source key
   只能执行 `boost-gateway-vault store` 和 `boost-gateway-vault receipt <backup-id>`。
+- `scripts/tools/verify_backup_vault.py`：在 Mac 上流式解密并复算 plaintext tar、manifest、receipt
+  和 host identity；只把 Redis RDB 写入受限临时目录，再用不可变 Redis image 离线校验。
 
 receiver 不接受远端路径、shell、`prune` 或删除操作。上传先进入 Mac vault 的 `.incoming`，验证长度和
 双 SHA-256 后重新打开 archive/manifest 回读，生成 create-only receipt，再原子改名为最终 backup
@@ -157,6 +173,7 @@ RECEIVER_ROOT="$HOME/.local/libexec/boost-gateway-backup"
 install -d -m 0700 "$RECEIVER_ROOT"
 install -m 0500 scripts/tools/manage_backup_recovery.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/backup_vault_ssh_receiver.py "$RECEIVER_ROOT/"
+install -m 0500 scripts/tools/verify_backup_vault.py "$RECEIVER_ROOT/"
 ```
 
 先在 Mac 上运行 `command -v python3` 确认绝对路径。然后把下列内容作为 `authorized_keys` 的一行；
@@ -173,6 +190,26 @@ source 侧 SSH 调用强制使用 `BatchMode=yes`、`StrictHostKeyChecking=yes` 
 必须在 Mac 本机读取 `/etc/ssh/ssh_host_ed25519_key.pub` 的 fingerprint，
 与 Ubuntu `ssh-keyscan` 结果人工比对，再把精确 host key 安装到 root 使用的 known_hosts。不能把
 `StrictHostKeyChecking` 改为 `accept-new` 或 `no`。
+
+### Vault Verification
+
+上传和 remote readback 通过后，在 Mac 上使用本地不可变 Redis image identity 验证。工具不会把
+包含配置 secret 的完整 plaintext tar 写盘；tar 中任何 link、path traversal、重复路径或特殊文件
+都会 fail closed：
+
+```bash
+python3 "$RECEIVER_ROOT/verify_backup_vault.py" \
+  --vault-root /Users/honeybury/Backups/boost-gateway-vault \
+  --backup-id '<backup-id>' \
+  --age-identity /Users/honeybury/.config/boost-gateway-backup/age-identity.txt \
+  --summary-path "/Users/honeybury/Backups/boost-gateway-vault/validations/<backup-id>.json" \
+  --age /opt/homebrew/bin/age \
+  --docker /usr/local/bin/docker \
+  --redis-image 'sha256:<64-hex-image-id>'
+```
+
+该 summary 固定记录 `formal_todo0012_claim=false` 和 `restore_known_good=false`。解密、tar 与 RDB
+离线校验只能证明备份可读取，不能替代隔离恢复、leaderboard 业务验证或 SDK full-flow。
 
 ### Local-Only Retention
 

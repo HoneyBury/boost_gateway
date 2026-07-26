@@ -43,12 +43,23 @@ class BackupRecoveryToolTest(unittest.TestCase):
         manifest.write_bytes(
             backup.canonical_json(
                 {
-                    "schema_version": 1,
+                    "schema_version": 2,
                     "backup_id": backup_id,
                     "created_at": created_at,
                     "archive": {
                         "sha256": backup.sha256_file(archive),
                         "size_bytes": archive.stat().st_size,
+                    },
+                    "backup_policy_sha256": "a" * 64,
+                    "sources": [
+                        {"id": "redis_snapshot", "archive_path": "redis/dump.rdb"}
+                    ],
+                    "source_links": [],
+                    "archive_contract": {
+                        "format": "link_free_tar_v1",
+                        "symbolic_link_entries": 0,
+                        "hard_link_entries": 0,
+                        "symbolic_links_recorded": 0,
                     },
                     "retention_classes": classes or ["daily"],
                     "secret_material_recorded": False,
@@ -215,6 +226,28 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 self.vault,
                 self.identity,
                 io.BytesIO(self._framed("backup-bad-time", archive, manifest)),
+            )
+
+    def test_remote_store_rejects_unsafe_link_metadata(self) -> None:
+        archive, manifest = self._artifacts("backup-unsafe-link")
+        value = json.loads(manifest.read_text(encoding="utf-8"))
+        value["source_links"] = [
+            {
+                "archive_path": "sources/configuration/current",
+                "original_link_text": "/etc/passwd",
+                "target_source_id": "redis_snapshot",
+                "target_relative_path": "../../etc/passwd",
+                "target_type": "file",
+            }
+        ]
+        value["archive_contract"]["symbolic_links_recorded"] = 1
+        manifest.write_bytes(backup.canonical_json(value))
+
+        with self.assertRaisesRegex(backup.BackupError, "link metadata"):
+            backup.remote_store(
+                self.vault,
+                self.identity,
+                io.BytesIO(self._framed("backup-unsafe-link", archive, manifest)),
             )
 
     def test_remote_store_rejects_symlinked_internal_vault_root(self) -> None:
@@ -466,11 +499,95 @@ class BackupRecoveryToolTest(unittest.TestCase):
         self.assertEqual("candidate_only", manifest["policy_activation_state"])
         self.assertFalse(manifest["formal_todo0012_claim"])
         self.assertFalse(manifest["secret_material_recorded"])
+        self.assertEqual(backup.sha256_file(policy), manifest["backup_policy_sha256"])
+        self.assertEqual("link_free_tar_v1", manifest["archive_contract"]["format"])
+        self.assertEqual([], manifest["source_links"])
         self.assertEqual(
             {"redis_snapshot", "host_configuration"},
             {reference["id"] for reference in manifest["sources"]},
         )
         self.assertEqual([], list(staging.iterdir()))
+
+    def test_archive_excludes_links_and_records_validated_source_mapping(self) -> None:
+        source_a = self.root / "source-a"
+        source_b = self.root / "source-b"
+        source_a.mkdir()
+        source_b.mkdir()
+        target = source_b / "release/config.env"
+        target.parent.mkdir()
+        target.write_text("IMAGE=sha256:test\n", encoding="utf-8")
+        (source_a / "absolute-current").symlink_to(target)
+        (source_a / "relative-current").symlink_to(
+            Path("../source-b/release/config.env")
+        )
+        (source_a / "release-directory").symlink_to(target.parent)
+        hardlink = source_b / "release/config-hardlink.env"
+        hardlink.hardlink_to(target)
+        redis = self.root / "dump.rdb"
+        redis.write_bytes(b"REDIS0011\xfa\x00\x00\xff")
+        archive = self.root / "link-free.tar"
+
+        references, links = backup.build_plain_archive(
+            archive,
+            redis,
+            [("source_a", source_a.resolve()), ("source_b", source_b.resolve())],
+        )
+
+        self.assertEqual(3, len(links))
+        self.assertEqual(
+            {"source_a", "source_b"},
+            {
+                reference["id"]
+                for reference in references
+                if reference["id"] != "redis_snapshot"
+            },
+        )
+        file_links = [link for link in links if link["target_type"] == "file"]
+        self.assertEqual(2, len(file_links))
+        for link in file_links:
+            self.assertEqual("source_b", link["target_source_id"])
+            self.assertEqual("release/config.env", link["target_relative_path"])
+            self.assertEqual("file", link["target_type"])
+        directory_link = next(
+            link for link in links if link["target_type"] == "directory"
+        )
+        self.assertEqual("source_b", directory_link["target_source_id"])
+        self.assertEqual("release", directory_link["target_relative_path"])
+        with backup.tarfile.open(archive, mode="r:") as bundle:
+            members = {member.name: member for member in bundle}
+        self.assertNotIn("sources/source_a/absolute-current", members)
+        self.assertNotIn("sources/source_a/relative-current", members)
+        self.assertNotIn("sources/source_a/release-directory", members)
+        self.assertTrue(members["sources/source_b/release/config.env"].isreg())
+        self.assertTrue(members["sources/source_b/release/config-hardlink.env"].isreg())
+        self.assertFalse(
+            any(member.issym() or member.islnk() for member in members.values())
+        )
+
+    def test_archive_rejects_broken_and_escaping_symbolic_links(self) -> None:
+        source = self.root / "source"
+        source.mkdir()
+        redis = self.root / "dump.rdb"
+        redis.write_bytes(b"REDIS0011\xfa\x00\x00\xff")
+        outside = self.root / "outside.txt"
+        outside.write_text("outside\n", encoding="utf-8")
+
+        (source / "escape").symlink_to(outside)
+        with self.assertRaisesRegex(backup.BackupError, "escapes declared"):
+            backup.build_plain_archive(
+                self.root / "escape.tar",
+                redis,
+                [("source", source.resolve())],
+            )
+
+        (source / "escape").unlink()
+        (source / "broken").symlink_to(source / "missing")
+        with self.assertRaisesRegex(backup.BackupError, "broken or invalid"):
+            backup.build_plain_archive(
+                self.root / "broken.tar",
+                redis,
+                [("source", source.resolve())],
+            )
 
     def test_age_encryption_is_create_only(self) -> None:
         plaintext = self.root / "payload.tar"

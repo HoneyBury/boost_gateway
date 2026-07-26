@@ -415,6 +415,9 @@
     "scripts/tools/verify_macos_arm64_package.py": {
       "category": "tool"
     },
+    "scripts/tools/verify_backup_vault.py": {
+      "category": "tool"
+    },
     "scripts/tools/verify_release_deployment.py": {
       "category": "tool"
     },

@@ -10,6 +10,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import struct
 import subprocess
 import sys
@@ -19,7 +20,7 @@ import uuid
 from collections.abc import Callable, Iterable
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -32,6 +33,7 @@ FRAME = struct.Struct("!Q")
 MAX_HEADER_BYTES = 64 * 1024
 CHUNK_BYTES = 1024 * 1024
 CommandRunner = Callable[..., subprocess.CompletedProcess[Any]]
+SourceRoot = tuple[str, Path]
 
 
 class BackupError(RuntimeError):
@@ -203,11 +205,12 @@ def stage_redis_snapshot(
         raise BackupError("Redis snapshot does not have an RDB header")
 
 
-def policy_sources(policy: dict[str, Any]) -> list[tuple[str, Path]]:
+def policy_sources(policy: dict[str, Any]) -> list[SourceRoot]:
     source_contracts = policy.get("backup", {}).get("source_contracts")
     if not isinstance(source_contracts, list):
         raise BackupError("policy backup source contracts are invalid")
-    sources: list[tuple[str, Path]] = []
+    sources: list[SourceRoot] = []
+    identifiers: set[str] = set()
     for contract in source_contracts:
         if not isinstance(contract, dict) or contract.get("required") is not True:
             continue
@@ -217,18 +220,168 @@ def policy_sources(policy: dict[str, Any]) -> list[tuple[str, Path]]:
         path = contract.get("path")
         if not isinstance(identifier, str) or not isinstance(path, str):
             raise BackupError("policy source contract is invalid")
+        if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", identifier) is None:
+            raise BackupError(f"policy source ID is invalid: {identifier!r}")
+        if identifier in identifiers:
+            raise BackupError(f"policy source ID is duplicated: {identifier}")
+        identifiers.add(identifier)
         sources.append((identifier, require_directory(Path(path), identifier)))
     return sources
+
+
+def source_relative_target(target: Path, sources: list[SourceRoot]) -> tuple[str, str]:
+    matches: list[tuple[int, str, Path]] = []
+    for identifier, root in sources:
+        try:
+            relative = target.relative_to(root)
+        except ValueError:
+            continue
+        matches.append((len(root.parts), identifier, relative))
+    if not matches:
+        raise BackupError(
+            f"symbolic link target escapes declared source roots: {target}"
+        )
+    _, identifier, relative = max(matches, key=lambda item: item[0])
+    return identifier, relative.as_posix() or "."
+
+
+def validated_symbolic_link(
+    link: Path,
+    *,
+    archive_path: str,
+    sources: list[SourceRoot],
+) -> dict[str, Any]:
+    try:
+        original = os.readlink(link)
+        if not original or any(ord(char) < 32 for char in original):
+            raise BackupError(f"symbolic link text is invalid: {link}")
+        unresolved = Path(original)
+        candidate = unresolved if unresolved.is_absolute() else link.parent / unresolved
+        target = candidate.resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise BackupError(f"symbolic link is broken or invalid: {link}: {exc}") from exc
+    target_source_id, target_relative_path = source_relative_target(target, sources)
+    if target.is_file():
+        target_type = "file"
+    elif target.is_dir():
+        target_type = "directory"
+    else:
+        raise BackupError(f"symbolic link target has unsupported type: {link}")
+    return {
+        "archive_path": archive_path,
+        "original_link_text": original,
+        "target_source_id": target_source_id,
+        "target_relative_path": target_relative_path,
+        "target_type": target_type,
+    }
+
+
+def collect_source_entries(
+    identifier: str,
+    source: Path,
+    sources: list[SourceRoot],
+) -> tuple[list[tuple[Path, str]], list[dict[str, Any]]]:
+    archive_root = f"sources/{identifier}"
+    entries: list[tuple[Path, str]] = [(source, archive_root)]
+    links: list[dict[str, Any]] = []
+
+    def visit(directory: Path, archive_directory: str) -> None:
+        try:
+            children = sorted(os.scandir(directory), key=lambda entry: entry.name)
+        except OSError as exc:
+            raise BackupError(
+                f"cannot enumerate backup source: {directory}: {exc}"
+            ) from exc
+        for child in children:
+            if any(ord(char) < 32 for char in child.name):
+                raise BackupError(f"backup source entry name is invalid: {child.path}")
+            child_path = Path(child.path)
+            child_archive = f"{archive_directory}/{child.name}"
+            try:
+                mode = child.stat(follow_symlinks=False).st_mode
+            except OSError as exc:
+                raise BackupError(
+                    f"cannot inspect backup source entry: {child_path}: {exc}"
+                ) from exc
+            if stat.S_ISLNK(mode):
+                links.append(
+                    validated_symbolic_link(
+                        child_path, archive_path=child_archive, sources=sources
+                    )
+                )
+                continue
+            if stat.S_ISDIR(mode):
+                entries.append((child_path, child_archive))
+                visit(child_path, child_archive)
+                continue
+            if stat.S_ISREG(mode):
+                entries.append((child_path, child_archive))
+                continue
+            raise BackupError(f"backup source entry has unsupported type: {child_path}")
+
+    visit(source, archive_root)
+    return entries, links
+
+
+def link_free_tar_filter(member: tarfile.TarInfo) -> tarfile.TarInfo:
+    if member.issym() or member.islnk():
+        raise BackupError(f"archive link entry is forbidden: {member.name}")
+    if not (member.isdir() or member.isreg()):
+        raise BackupError(f"archive member type is forbidden: {member.name}")
+    return member
+
+
+def add_link_free_tar_entry(
+    bundle: tarfile.TarFile, source: Path, archive_path: str
+) -> None:
+    try:
+        member = link_free_tar_filter(
+            bundle.gettarinfo(str(source), arcname=archive_path)
+        )
+    except OSError as exc:
+        raise BackupError(f"cannot inspect archive input: {source}: {exc}") from exc
+    if member.isdir():
+        bundle.addfile(member)
+        return
+
+    descriptor = -1
+    try:
+        descriptor = os.open(source, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        observed = os.fstat(descriptor)
+        if not stat.S_ISREG(observed.st_mode):
+            raise BackupError(f"archive input changed type while reading: {source}")
+        current = os.lstat(source)
+        if (observed.st_dev, observed.st_ino) != (current.st_dev, current.st_ino):
+            raise BackupError(f"archive input changed identity while reading: {source}")
+        member.size = observed.st_size
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            bundle.addfile(member, stream)
+    except OSError as exc:
+        raise BackupError(f"cannot safely read archive input: {source}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def verify_link_free_archive(archive: Path) -> None:
+    with tarfile.open(archive, mode="r:") as bundle:
+        for member in bundle:
+            if member.issym() or member.islnk():
+                raise BackupError(f"archive contains a link entry: {member.name}")
+            if not (member.isdir() or member.isreg()):
+                raise BackupError(f"archive contains unsupported entry: {member.name}")
 
 
 def build_plain_archive(
     archive: Path,
     redis_snapshot: Path,
-    sources: list[tuple[str, Path]],
-) -> list[dict[str, Any]]:
+    sources: list[SourceRoot],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     references: list[dict[str, Any]] = []
-    with tarfile.open(archive, mode="x") as bundle:
-        bundle.add(redis_snapshot, arcname="redis/dump.rdb", recursive=False)
+    link_metadata: list[dict[str, Any]] = []
+    with tarfile.open(archive, mode="x", dereference=True) as bundle:
+        add_link_free_tar_entry(bundle, redis_snapshot, "redis/dump.rdb")
         references.append(
             {
                 "id": "redis_snapshot",
@@ -239,9 +392,19 @@ def build_plain_archive(
         )
         for identifier, source in sources:
             archive_path = f"sources/{identifier}"
-            bundle.add(source, arcname=archive_path, recursive=True)
-            references.append({"id": identifier, "archive_path": archive_path})
-    return references
+            entries, links = collect_source_entries(identifier, source, sources)
+            for entry, entry_archive_path in entries:
+                add_link_free_tar_entry(bundle, entry, entry_archive_path)
+            link_metadata.extend(links)
+            references.append(
+                {
+                    "id": identifier,
+                    "archive_path": archive_path,
+                    "symbolic_link_count": len(links),
+                }
+            )
+    verify_link_free_archive(archive)
+    return references, sorted(link_metadata, key=lambda item: item["archive_path"])
 
 
 def encrypt_archive(
@@ -335,7 +498,7 @@ def create_encrypted_backup(
             snapshot, container=redis_container, docker=docker, runner=runner
         )
         sources = policy_sources(policy)
-        references = build_plain_archive(plaintext, snapshot, sources)
+        references, source_links = build_plain_archive(plaintext, snapshot, sources)
         plaintext_sha256 = sha256_file(plaintext)
         encrypt_archive(
             plaintext,
@@ -359,7 +522,7 @@ def create_encrypted_backup(
         encrypted.unlink(missing_ok=True)
         raise BackupError("operations identity is incomplete")
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "backup_id": backup_id,
         "created_at": now(),
         "archive": {
@@ -372,9 +535,17 @@ def create_encrypted_backup(
         "source_host": host,
         "operator": operator,
         "redis_profile_sha256": sha256_file(profile),
+        "backup_policy_sha256": sha256_file(policy_path),
         "recipient_file_sha256": sha256_file(recipient),
         "policy_activation_state": policy.get("activation", {}).get("state"),
         "sources": references,
+        "source_links": source_links,
+        "archive_contract": {
+            "format": "link_free_tar_v1",
+            "symbolic_link_entries": 0,
+            "hard_link_entries": 0,
+            "symbolic_links_recorded": len(source_links),
+        },
         "retention_classes": sorted(set(retention_classes)),
         "consistent_redis_snapshot": True,
         "encrypted_before_transfer": True,
@@ -439,13 +610,103 @@ def parse_upload_header(stream: BinaryIO) -> dict[str, Any]:
     return value
 
 
+def safe_manifest_path(value: object, *, prefix: str | None = None) -> bool:
+    if not isinstance(value, str) or not value or "\\" in value:
+        return False
+    path = PurePosixPath(value)
+    if (
+        path.is_absolute()
+        or value != path.as_posix()
+        or any(part in {"", ".", ".."} for part in path.parts)
+    ):
+        return False
+    return prefix is None or value.startswith(f"{prefix}/")
+
+
+def validate_manifest_link_contract(manifest: dict[str, Any]) -> None:
+    sources = manifest.get("sources")
+    if not isinstance(sources, list):
+        raise BackupError("backup manifest source inventory is invalid")
+    source_ids: set[str] = set()
+    archive_paths_by_source: dict[str, str] = {}
+    for source in sources:
+        if not isinstance(source, dict):
+            raise BackupError("backup manifest source inventory is invalid")
+        identifier = source.get("id")
+        archive_path = source.get("archive_path")
+        if (
+            not isinstance(identifier, str)
+            or identifier in source_ids
+            or not safe_manifest_path(archive_path)
+        ):
+            raise BackupError("backup manifest source inventory is invalid")
+        source_ids.add(identifier)
+        archive_paths_by_source[identifier] = archive_path
+
+    for identifier, archive_path in archive_paths_by_source.items():
+        expected = (
+            "redis/dump.rdb"
+            if identifier == "redis_snapshot"
+            else f"sources/{identifier}"
+        )
+        if archive_path != expected:
+            raise BackupError("backup manifest source inventory is invalid")
+
+    archive_contract = manifest.get("archive_contract")
+    links = manifest.get("source_links")
+    if (
+        not isinstance(archive_contract, dict)
+        or archive_contract.get("format") != "link_free_tar_v1"
+        or archive_contract.get("symbolic_link_entries") != 0
+        or archive_contract.get("hard_link_entries") != 0
+        or not isinstance(links, list)
+        or archive_contract.get("symbolic_links_recorded") != len(links)
+    ):
+        raise BackupError("backup manifest link-free archive contract is invalid")
+
+    seen_archive_paths: set[str] = set()
+    for link in links:
+        if not isinstance(link, dict) or set(link) != {
+            "archive_path",
+            "original_link_text",
+            "target_source_id",
+            "target_relative_path",
+            "target_type",
+        }:
+            raise BackupError("backup manifest symbolic link metadata is invalid")
+        archive_path = link.get("archive_path")
+        target_source_id = link.get("target_source_id")
+        target_relative_path = link.get("target_relative_path")
+        archive_parts = (
+            PurePosixPath(archive_path).parts if isinstance(archive_path, str) else ()
+        )
+        if (
+            not safe_manifest_path(archive_path, prefix="sources")
+            or len(archive_parts) < 3
+            or archive_parts[1] not in source_ids
+            or archive_parts[1] == "redis_snapshot"
+            or archive_path in seen_archive_paths
+            or not isinstance(link.get("original_link_text"), str)
+            or not link["original_link_text"]
+            or any(ord(char) < 32 for char in link["original_link_text"])
+            or target_source_id not in source_ids
+            or (
+                target_relative_path != "."
+                and not safe_manifest_path(target_relative_path)
+            )
+            or link.get("target_type") not in {"file", "directory"}
+        ):
+            raise BackupError("backup manifest symbolic link metadata is invalid")
+        seen_archive_paths.add(archive_path)
+
+
 def validate_manifest_binding(
     manifest_path: Path, header: dict[str, Any]
 ) -> dict[str, Any]:
     manifest = load_json_object(manifest_path, "backup manifest")
     archive = manifest.get("archive")
     if (
-        manifest.get("schema_version") != 1
+        manifest.get("schema_version") != 2
         or manifest.get("backup_id") != header["backup_id"]
         or not isinstance(archive, dict)
         or archive.get("sha256") != header["archive_sha256"]
@@ -453,6 +714,8 @@ def validate_manifest_binding(
         or manifest.get("secret_material_recorded") is not False
     ):
         raise BackupError("backup manifest does not bind the uploaded archive")
+    validate_sha256(manifest.get("backup_policy_sha256"), "backup policy digest")
+    validate_manifest_link_contract(manifest)
     classes = manifest.get("retention_classes")
     if (
         not isinstance(classes, list)
