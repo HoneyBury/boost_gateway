@@ -51,6 +51,8 @@ Use these stable public entrypoints first:
 - `prepare_release_runtime.py` for anonymous download, supply-chain verification, and atomic Linux x64 release staging.
 - `build_release_images.py` for network-disabled runtime-only image builds and immutable image-ID output.
 - `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
+- `benchmark_redis_persistence.py` for lifecycle-locked RDB-only versus AOF-everysec Redis workload and
+  explicit-checkpoint measurements on disposable server/client topologies without changing production.
 - `manage_backup_recovery.py`, `backup_vault_ssh_receiver.py`, and `verify_backup_vault.py` for create-only
   age-encrypted off-host backups, restricted SSH receipt handling, and link-free vault/RDB verification.
 - `export_backup_restore_bundle.py`, `send_restore_bundle.py`, `restore_bundle_ssh_receiver.py`,
