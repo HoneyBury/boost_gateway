@@ -290,7 +290,9 @@ bundle RDB 启动 `network=none` baseline Redis，使用 `SCAN`、`TYPE`、`DUMP
 keyspace SHA-256；禁止使用 `KEYS`。随后创建全新 named volume，在任何业务写入前用同一算法验证
 fresh-volume target，且强制存在 `lb:global` 和 `lb:global:names`。active production volume 只做
 identity inspect，绝不挂载、写入、切换或删除。`DUMP` 返回任意二进制，因此 canonicalizer 以
-binary stdout 读取并做 Base64 编码，禁止通过 UTF-8 文本解码。失败时只删除本次创建的 target container/volume；
+binary stdout 读取并做 Base64 编码，禁止通过 UTF-8 文本解码。RDB 通过 stdin 流式写入 fresh
+volume，写入进程固定为无新增 capability 的 `redis` 用户，且写入后必须在容器内复算 SHA-256；
+不得为了写入 `redis:redis 0755` 的 `/data` 给 root 加回 `DAC_OVERRIDE`。失败时只删除本次创建的 target container/volume；
 成功时停止隔离容器并保留 target volume 作为演练证据。
 
 该切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录

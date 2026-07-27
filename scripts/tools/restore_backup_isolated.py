@@ -486,6 +486,52 @@ def offline_rdb_check(
     )
 
 
+def seed_volume(
+    runner: Runner,
+    docker: str,
+    image: str,
+    target_volume: str,
+    rdb: Path,
+) -> None:
+    with rdb.open("rb") as stream:
+        completed = checked(
+            runner,
+            [
+                docker,
+                "run",
+                "--rm",
+                "-i",
+                "--network",
+                "none",
+                "--read-only",
+                "--cap-drop",
+                "ALL",
+                "--security-opt",
+                "no-new-privileges",
+                "--user",
+                "redis",
+                "--mount",
+                f"type=volume,src={target_volume},dst=/data",
+                "--entrypoint",
+                "sh",
+                image,
+                "-eu",
+                "-c",
+                "umask 077; test ! -e /data/dump.rdb; cat > /data/dump.rdb; chmod 0600 /data/dump.rdb; test -s /data/dump.rdb; sha256sum /data/dump.rdb",
+            ],
+            stdin=stream,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=300,
+        )
+    try:
+        observed_sha256 = completed.stdout.decode("ascii").split()[0]
+    except (AttributeError, UnicodeDecodeError, IndexError) as exc:
+        raise RestoreError("seeded Redis snapshot digest output is invalid") from exc
+    if observed_sha256 != sha256_file(rdb):
+        raise RestoreError("seeded Redis snapshot digest differs")
+
+
 def start_redis(
     runner: Runner,
     docker: str,
@@ -780,33 +826,12 @@ def run_isolated_restore(
             target_volume_sha = volume_identity(target_volume_state)
             if target_volume_sha == active_before:
                 raise RestoreError("new target volume identity equals active volume")
-            checked(
+            seed_volume(
                 runner,
-                [
-                    docker,
-                    "run",
-                    "--rm",
-                    "--network",
-                    "none",
-                    "--cap-drop",
-                    "ALL",
-                    "--security-opt",
-                    "no-new-privileges",
-                    "--user",
-                    "0",
-                    "--mount",
-                    f"type=volume,src={target_volume},dst=/data",
-                    "--mount",
-                    f"type=bind,src={staging},dst=/restore,readonly",
-                    redis_image,
-                    "sh",
-                    "-eu",
-                    "-c",
-                    "test ! -e /data/dump.rdb; cp /restore/dump.rdb /data/dump.rdb; chown redis:redis /data/dump.rdb; chmod 0600 /data/dump.rdb",
-                ],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=300,
+                docker,
+                redis_image,
+                target_volume,
+                staged_rdb,
             )
             start_redis(
                 runner,
@@ -920,6 +945,7 @@ def run_isolated_restore(
         "shared_lifecycle_lock": str(lock_path),
         "offline_redis_check_rdb": success,
         "restore_payload_copy_verified": success,
+        "restore_payload_seed_method": "stdin-to-unprivileged-redis",
         "redis_ping": success,
         "canonical_seed_baseline_sha256": baseline_sha,
         "canonical_seed_restored_sha256": target_sha,
