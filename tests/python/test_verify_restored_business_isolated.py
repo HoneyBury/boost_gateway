@@ -31,6 +31,24 @@ class CommandRunner:
         return subprocess.CompletedProcess(command, 0, "container-id\n", "")
 
 
+class UnhealthyRunner(CommandRunner):
+    def __call__(
+        self, command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        self.commands.append(command)
+        if command[1:3] == ["inspect", "--format"]:
+            if command[3] == "{{.State.Health.Status}}":
+                return subprocess.CompletedProcess(command, 0, "unhealthy\n", "")
+            return subprocess.CompletedProcess(
+                command, 0, '{"Status":"exited","ExitCode":1}\n', ""
+            )
+        if command[1:2] == ["logs"]:
+            return subprocess.CompletedProcess(
+                command, 0, "gateway startup failure detail\n", ""
+            )
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+
 class RestoredBusinessValidationTest(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -221,6 +239,15 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             if "business-redis" in item and " run " in f" {item} "
         )
         self.assertIn("--protected-mode no", redis)
+
+    def test_unhealthy_container_error_captures_bounded_state_and_logs(self) -> None:
+        with self.assertRaisesRegex(
+            business.BusinessValidationError, "gateway startup failure detail"
+        ) as raised:
+            business.wait_healthy(
+                UnhealthyRunner(), "docker-test", "business-gateway", 1.0
+            )
+        self.assertIn('"ExitCode":1', str(raised.exception))
 
     def test_sdk_output_and_redis_effects_prove_submit_top_rank(self) -> None:
         stdout = "\n".join(

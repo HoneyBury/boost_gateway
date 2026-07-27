@@ -514,6 +514,7 @@ def wait_healthy(
     runner: Runner, docker: str, container: str, timeout_seconds: float
 ) -> None:
     deadline = time.monotonic() + timeout_seconds
+    last_status = "unknown"
     while time.monotonic() < deadline:
         completed = runner(
             [docker, "inspect", "--format", "{{.State.Health.Status}}", container],
@@ -525,13 +526,39 @@ def wait_healthy(
             check=False,
             timeout=5,
         )
-        if completed.returncode == 0 and completed.stdout.strip() == "healthy":
+        if completed.returncode == 0:
+            last_status = completed.stdout.strip() or "empty"
+        if completed.returncode == 0 and last_status == "healthy":
             return
-        if completed.returncode == 0 and completed.stdout.strip() == "unhealthy":
+        if completed.returncode == 0 and last_status == "unhealthy":
             break
         time.sleep(0.25)
+    details: list[str] = []
+    for label, command in (
+        (
+            "state",
+            [docker, "inspect", "--format", "{{json .State}}", container],
+        ),
+        ("logs", [docker, "logs", "--tail", "100", container]),
+    ):
+        try:
+            diagnostic = runner(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+                timeout=10,
+            )
+            text = (diagnostic.stdout or "").strip()[-2000:]
+            details.append(f"{label}={text or '<empty>'}")
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            details.append(f"{label}=unavailable:{exc}")
     raise BusinessValidationError(
-        f"isolated container did not become healthy: {container}"
+        f"isolated container did not become healthy: {container}; "
+        f"health={last_status}; {'; '.join(details)}"
     )
 
 
