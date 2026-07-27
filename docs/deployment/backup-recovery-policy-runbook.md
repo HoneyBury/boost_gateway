@@ -304,8 +304,9 @@ volume，写入进程固定为无新增 capability 的 `redis` 用户，且写�
 业务验证不得直接启动或挂载 retained restore volume 作为可写 Redis。控制器先用 `network=none`
 audit Redis 对 retained volume 生成 canonical keyspace SHA-256，然后通过只读 source mount 将
 `dump.rdb` 复制到新的 disposable work volume。六个 release image 和 work Redis 只加入本次唯一的
-`--internal` bridge network；Redis 不发布端口，gateway 9201 只动态发布到 `127.0.0.1`。这能让
-release SDK 从 host 进入隔离拓扑，同时禁止拓扑向外建立连接。
+`--internal` bridge network；Redis 和 gateway 均不发布 host 端口。控制器严格绑定 network ID、
+IPv4 subnet、唯一 network attachment 和空 PortBindings 后，release SDK 才从本机直连 gateway 的
+internal bridge IPv4:9201；远程 Docker endpoint 被拒绝，隔离拓扑不能向其他网络建立连接。
 
 在 **Ubuntu 小主机终端**运行。以下 `RESTORE_SUMMARY` 必须指向前一步成功且保留 target volume 的
 summary；`RETAINED_VOLUME` 必须与该 summary 的 `target_volume` 完全相同：
@@ -346,7 +347,7 @@ manual leaderboard submit、rank 和 `ALL TESTS PASSED`；top 请求是该 relea
 
 业务写入后，所有隔离容器、internal network 和 work volume 都必须删除。控制器随后第二次只读挂载
 retained volume；前后 canonical keyspace SHA-256、key count、key set 和 volume identity 必须一致，
-active production volume identity 也必须保持一致。internal-network/loopback publish 不兼容、SDK 失败、
+active production volume identity 也必须保持一致。internal bridge host-direct 不可达、SDK 失败、
 cleanup 失败或 retained seed 漂移都会生成 `overall_pass=false` 的 create-only summary。即使本阶段通过，
 summary 仍固定 `restore_known_good=false` 和 `formal_todo0012_claim=false`；第二份独立 backup/target、
 完整 host link reconstruction 和最终聚合尚未完成。

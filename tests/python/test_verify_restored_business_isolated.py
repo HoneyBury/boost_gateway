@@ -20,8 +20,30 @@ class CommandRunner:
         self.commands.append(command)
         if command[1:3] == ["inspect", "--format"]:
             return subprocess.CompletedProcess(command, 0, "healthy\n", "")
-        if command[1:2] == ["port"]:
-            return subprocess.CompletedProcess(command, 0, "127.0.0.1:49123\n", "")
+        if command[1:2] == ["inspect"]:
+            inspection = {
+                "Image": "sha256:" + "1".zfill(64),
+                "State": {"Running": True, "Health": {"Status": "healthy"}},
+                "Config": {
+                    "Labels": {
+                        "boost-gateway.todo": "TODO-0012",
+                        "boost-gateway.business-id": "business-pass-one",
+                    }
+                },
+                "HostConfig": {"PortBindings": {}},
+                "NetworkSettings": {
+                    "Ports": {"9080/tcp": None, "9201/tcp": None},
+                    "Networks": {
+                        "boost-gateway-recovery-business-net": {
+                            "NetworkID": "a" * 64,
+                            "IPAddress": "172.28.0.7",
+                        }
+                    },
+                },
+            }
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps([inspection]) + "\n", ""
+            )
         if command[1:3] == ["exec", "business-redis"]:
             return subprocess.CompletedProcess(command, 0, "PONG\n", "")
         if "sha256sum /data/dump.rdb" in command[-1]:
@@ -47,6 +69,28 @@ class UnhealthyRunner(CommandRunner):
                 command, 0, "gateway startup failure detail\n", ""
             )
         return subprocess.CompletedProcess(command, 0, "", "")
+
+
+class GatewayBindingRunner(CommandRunner):
+    def __init__(self, modifier: object) -> None:
+        super().__init__()
+        self.modifier = modifier
+
+    def __call__(
+        self, command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        completed = super().__call__(command, **kwargs)
+        if (
+            command[1:2] == ["inspect"]
+            and len(command) == 3
+            and callable(self.modifier)
+        ):
+            values = json.loads(completed.stdout)
+            self.modifier(values[0])
+            return subprocess.CompletedProcess(
+                command, 0, json.dumps(values) + "\n", ""
+            )
+        return completed
 
 
 class RestoredBusinessValidationTest(unittest.TestCase):
@@ -191,7 +235,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self.assertNotIn("0", command)
         self.assertNotIn("--cap-add", command)
 
-    def test_topology_uses_internal_aliases_and_loopback_random_port(self) -> None:
+    def test_topology_uses_internal_aliases_without_published_port(self) -> None:
         runner = CommandRunner()
         started: list[str] = []
         business.start_redis_networked(
@@ -201,6 +245,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             "business-redis",
             self.network,
             self.work,
+            "business-pass-one",
             started.append,
         )
         business.start_backend(
@@ -212,17 +257,21 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             "leaderboard-backend",
             "9305",
             {"REDIS_HOST": "redis", "REDIS_PORT": "6379"},
+            "business-pass-one",
             started.append,
         )
-        port = business.start_gateway(
+        address = business.start_gateway(
             runner,
             "docker-test",
             self.images["GATEWAY_IMAGE_ID"],
             "business-gateway",
             self.network,
+            "business-pass-one",
+            {"Id": "a" * 64},
+            business.ipaddress.ip_network("172.28.0.0/16"),
             started.append,
         )
-        self.assertEqual(49123, port)
+        self.assertEqual("172.28.0.7", address)
         joined = [" ".join(command) for command in runner.commands]
         self.assertTrue(any("--network-alias redis" in item for item in joined))
         self.assertTrue(any("REDIS_HOST=redis" in item for item in joined))
@@ -231,7 +280,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             for item in joined
             if "business-gateway" in item and " run " in f" {item} "
         )
-        self.assertIn("--publish 127.0.0.1::9201", gateway)
+        self.assertNotIn("--publish", gateway)
         self.assertIn("--tmpfs /app/v2_archive:rw,noexec,nosuid,size=32m", gateway)
         self.assertNotIn("0.0.0.0", gateway)
         redis = next(
@@ -240,6 +289,106 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             if "business-redis" in item and " run " in f" {item} "
         )
         self.assertIn("--protected-mode no", redis)
+
+        with self.assertRaisesRegex(
+            business.BusinessValidationError, "gateway runtime binding differs"
+        ):
+            business.start_gateway(
+                CommandRunner(),
+                "docker-test",
+                self.images["GATEWAY_IMAGE_ID"],
+                "business-gateway-other",
+                "other-network",
+                "business-pass-one",
+                {"Id": "a" * 64},
+                business.ipaddress.ip_network("172.28.0.0/16"),
+            )
+
+    def test_internal_network_must_use_bridge_driver(self) -> None:
+        valid = {
+            "Id": "a" * 64,
+            "Name": self.network,
+            "Driver": "bridge",
+            "Internal": True,
+            "IPAM": {"Config": [{"Subnet": "172.28.0.0/16"}]},
+            "Containers": {},
+            "Labels": {
+                "boost-gateway.todo": "TODO-0012",
+                "boost-gateway.business-id": "business-pass-one",
+            },
+        }
+        with mock.patch.object(
+            business, "docker_text", return_value=json.dumps([valid])
+        ):
+            value, subnet = business.inspect_internal_network(
+                CommandRunner(),
+                "docker-test",
+                self.network,
+                "business-pass-one",
+            )
+            self.assertEqual(valid, value)
+            self.assertEqual("172.28.0.0/16", str(subnet))
+
+        valid["Driver"] = "overlay"
+        with mock.patch.object(
+            business, "docker_text", return_value=json.dumps([valid])
+        ):
+            with self.assertRaisesRegex(
+                business.BusinessValidationError, "network binding differs"
+            ):
+                business.inspect_internal_network(
+                    CommandRunner(),
+                    "docker-test",
+                    self.network,
+                    "business-pass-one",
+                )
+
+    def test_docker_endpoint_must_be_local_system_socket(self) -> None:
+        with mock.patch.object(
+            business,
+            "docker_text",
+            side_effect=("default", "unix:///var/run/docker.sock"),
+        ):
+            business.assert_local_docker(CommandRunner(), "docker-test")
+
+        with mock.patch.object(
+            business,
+            "docker_text",
+            side_effect=("default", "tcp://remote.example:2376"),
+        ):
+            with self.assertRaisesRegex(
+                business.BusinessValidationError, "not the local system socket"
+            ):
+                business.assert_local_docker(CommandRunner(), "docker-test")
+
+    def test_gateway_endpoint_rejects_publish_and_network_drift(self) -> None:
+        cases = {
+            "published port": lambda value: value["HostConfig"].update(
+                {"PortBindings": {"9201/tcp": [{"HostPort": "49123"}]}}
+            ),
+            "extra network": lambda value: value["NetworkSettings"]["Networks"].update(
+                {"bridge": {"IPAddress": "172.17.0.2"}}
+            ),
+            "wrong network ID": lambda value: value["NetworkSettings"]["Networks"][
+                self.network
+            ].update({"NetworkID": "b" * 64}),
+            "outside subnet": lambda value: value["NetworkSettings"]["Networks"][
+                self.network
+            ].update({"IPAddress": "192.0.2.8"}),
+        }
+        for label, modifier in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaises(business.BusinessValidationError):
+                    business.start_gateway(
+                        GatewayBindingRunner(modifier),
+                        "docker-test",
+                        self.images["GATEWAY_IMAGE_ID"],
+                        "business-gateway",
+                        self.network,
+                        "business-pass-one",
+                        {"Id": "a" * 64},
+                        business.ipaddress.ip_network("172.28.0.0/16"),
+                    )
 
     def test_unhealthy_container_error_captures_bounded_state_and_logs(self) -> None:
         with self.assertRaisesRegex(
@@ -266,8 +415,11 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             business.subprocess,
             "run",
             return_value=subprocess.CompletedProcess(["client"], 0, stdout, ""),
-        ):
-            sdk = business.run_sdk(self.client, 49123, 180)
+        ) as run:
+            sdk = business.run_sdk(self.client, "172.28.0.7", 9201, 180)
+        self.assertEqual(
+            [str(self.client), "172.28.0.7", "9201"], run.call_args.args[0]
+        )
         self.assertEqual("alice_123", sdk["alice_user_id"])
         self.assertFalse(sdk["source_build_performed"])
 
@@ -347,6 +499,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
 
         with (
             mock.patch.object(business, "assert_image_ids"),
+            mock.patch.object(business, "assert_local_docker"),
             mock.patch.object(
                 business.restore,
                 "inspect_volume",
@@ -376,7 +529,14 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business, "clone_retained_volume", return_value=self.snapshot_sha
             ),
-            mock.patch.object(business, "inspect_internal_network"),
+            mock.patch.object(
+                business,
+                "inspect_internal_network",
+                return_value=(
+                    {"Id": "a" * 64},
+                    business.ipaddress.ip_network("172.28.0.0/16"),
+                ),
+            ),
             mock.patch.object(business, "start_redis_networked", side_effect=started),
             mock.patch.object(business, "start_backend", side_effect=started),
             mock.patch.object(
@@ -385,7 +545,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
                 side_effect=lambda *args, **kwargs: (
                     args[-1](str(args[3])) if callable(args[-1]) else None
                 )
-                or 49123,
+                or "172.28.0.7",
             ),
             mock.patch.object(
                 business.restore,
@@ -427,6 +587,13 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self.assertTrue(result["restore_snapshot_binding_verified"])
         self.assertTrue(result["restore_redis_image_binding_verified"])
         self.assertTrue(result["work_seed_mutated_by_business_checks"])
+        self.assertEqual("172.28.0.7", result["gateway_internal_ipv4"])
+        self.assertEqual(9201, result["gateway_container_port"])
+        self.assertFalse(result["gateway_host_port_published"])
+        self.assertTrue(result["gateway_runtime_binding_verified"])
+        self.assertEqual("host-direct-internal-bridge", result["gateway_endpoint_mode"])
+        self.assertEqual("a" * 64, result["isolated_network_id"])
+        self.assertEqual("172.28.0.0/16", result["isolated_network_ipv4_subnet"])
         self.assertTrue(result["work_volume_removed"])
         self.assertTrue(result["isolated_network_removed"])
         self.assertFalse(result["production_switched"])
@@ -451,6 +618,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self._bind_restore_runtime(retained_state, active_state)
         with (
             mock.patch.object(business, "assert_image_ids"),
+            mock.patch.object(business, "assert_local_docker"),
             mock.patch.object(
                 business.restore,
                 "inspect_volume",
