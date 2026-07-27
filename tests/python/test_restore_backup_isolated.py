@@ -17,6 +17,7 @@ class FakeDocker:
         self.drift_target = drift_target
         self.target_created = False
         self.baseline_staging_modes: tuple[int, int] | None = None
+        self.seeded_payload: bytes | None = None
 
     def __call__(
         self, command: list[str], **kwargs: object
@@ -60,6 +61,17 @@ class FakeDocker:
             self.target_created = True
         elif command[1:3] == ["volume", "rm"]:
             self.target_created = False
+        elif command[1:3] == ["run", "--rm"] and "-i" in command:
+            stream = kwargs.get("stdin")
+            if stream is None or not hasattr(stream, "read"):
+                raise AssertionError("seed command did not receive binary stdin")
+            payload = stream.read()
+            if not isinstance(payload, bytes):
+                raise AssertionError("seed command stdin is not binary")
+            self.seeded_payload = payload
+            stdout = (
+                hashlib.sha256(payload).hexdigest().encode() + b"  /data/dump.rdb\n"
+            )
         elif command[1:3] == ["run", "-d"] and "restore-baseline" in command:
             mount = next(
                 value
@@ -333,6 +345,7 @@ class IsolatedRestoreTest(unittest.TestCase):
         self.assertFalse(result["formal_todo0012_claim"])
         self.assertFalse(result["restore_known_good"])
         self.assertEqual((0o700, 0o600), runner.baseline_staging_modes)
+        self.assertEqual(self.rdb, runner.seeded_payload)
         flattened = [item for command in runner.commands for item in command]
         self.assertNotIn("KEYS", flattened)
         self.assertIn("SCAN", flattened)
@@ -362,6 +375,15 @@ class IsolatedRestoreTest(unittest.TestCase):
             command for command in runner.commands if command[1:2] == ["run"]
         ]
         self.assertTrue(all("none" in command for command in run_commands))
+        seed_command = next(command for command in run_commands if "-i" in command)
+        self.assertIn("redis", seed_command)
+        self.assertNotIn("0", seed_command)
+        self.assertNotIn("--cap-add", seed_command)
+        self.assertFalse(any("dst=/restore" in item for item in seed_command))
+        self.assertEqual(
+            "stdin-to-unprivileged-redis",
+            result["restore_payload_seed_method"],
+        )
 
     def test_rejects_copied_evidence_drift_before_docker_mutation(self) -> None:
         manifest = self.bundle / "manifest.json"
