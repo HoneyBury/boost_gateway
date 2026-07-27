@@ -461,6 +461,23 @@ def total_cpu_seconds(info: dict[str, str]) -> float:
     )
 
 
+def delayed_fsync_counter(
+    info: dict[str, str], *, aof_required: bool
+) -> tuple[int, bool]:
+    raw = info.get("aof_delayed_fsync")
+    if raw is None:
+        if not aof_required and info.get("aof_enabled") == "0":
+            return 0, False
+        raise BenchmarkError("Redis INFO field is invalid: aof_delayed_fsync")
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise BenchmarkError("Redis INFO field is invalid: aof_delayed_fsync") from exc
+    if value < 0:
+        raise BenchmarkError("Redis INFO field is invalid: aof_delayed_fsync")
+    return value, True
+
+
 def config_get(runner: Runner, docker: str, container: str) -> dict[str, str]:
     output = docker_text(
         runner,
@@ -919,7 +936,9 @@ def execute_round(
         children_cpu_before = float(
             numeric(before_info, "used_cpu_sys_children")
         ) + float(numeric(before_info, "used_cpu_user_children"))
-        delayed_before = int(numeric(before_info, "aof_delayed_fsync", integer=True))
+        delayed_before, delayed_counter_before_present = delayed_fsync_counter(
+            before_info, aof_required=mode == "aof_everysec_rdb"
+        )
         record_rss(before_info, "before_workload")
         command = benchmark_command(
             docker,
@@ -1003,7 +1022,9 @@ def execute_round(
         children_cpu_after = float(
             numeric(after_info, "used_cpu_sys_children")
         ) + float(numeric(after_info, "used_cpu_user_children"))
-        delayed_after = int(numeric(after_info, "aof_delayed_fsync", integer=True))
+        delayed_after, delayed_counter_after_present = delayed_fsync_counter(
+            after_info, aof_required=mode == "aof_everysec_rdb"
+        )
         elapsed = monotonic() - started
         measurement_elapsed = monotonic() - measurement_started
         if elapsed <= 0:
@@ -1135,6 +1156,10 @@ def execute_round(
             "redis_cgroup_io_devices_after": after_io["devices"],
             "redis_cgroup_io_empty_baseline_accepted": before_io["devices"] == 0,
             "redis_aof_delayed_fsync": delayed_delta,
+            "redis_aof_delayed_fsync_counter_present": {
+                "before": delayed_counter_before_present,
+                "after": delayed_counter_after_present,
+            },
             "redis_bgsave": {
                 "elapsed_seconds": round(bgsave_elapsed, 6),
                 "observed_in_progress": bgsave_observed_in_progress,

@@ -58,6 +58,7 @@ class FakeDocker:
         fail_info_during_workload: bool = False,
         ambiguous_volume_create: bool = False,
         empty_initial_io: bool = True,
+        omit_candidate_delayed_fsync: bool = False,
     ) -> None:
         self.commands: list[list[str]] = []
         self.volumes: dict[str, dict[str, str]] = {}
@@ -73,6 +74,7 @@ class FakeDocker:
         self.fail_info_during_workload = fail_info_during_workload
         self.ambiguous_volume_create = ambiguous_volume_create
         self.empty_initial_io = empty_initial_io
+        self.omit_candidate_delayed_fsync = omit_candidate_delayed_fsync
 
     @staticmethod
     def labels(command: list[str]) -> dict[str, str]:
@@ -254,12 +256,17 @@ class FakeDocker:
                 )
                 enabled = 1 if mode == "aof_everysec_rdb" else 0
                 child_cpu = 0.2 if bgsave_complete else 0.0
+                delayed_line = (
+                    f"aof_delayed_fsync:{delayed}\n"
+                    if enabled and not self.omit_candidate_delayed_fsync
+                    else ""
+                )
                 value = (
                     f"used_cpu_sys:0.5\nused_cpu_user:{0.5 + count * 0.1}\n"
                     f"used_cpu_sys_children:{child_cpu}\n"
                     f"used_cpu_user_children:{child_cpu}\n"
                     f"used_memory_rss:{1000000 + count * 10000}\n"
-                    f"aof_delayed_fsync:{delayed}\naof_enabled:{enabled}\n"
+                    f"{delayed_line}aof_enabled:{enabled}\n"
                     "aof_last_write_status:ok\nrdb_last_bgsave_status:ok\n"
                     f"rdb_bgsave_in_progress:{bgsave_in_progress}\n"
                     f"rdb_changes_since_last_save:{0 if bgsave_complete else 100}\n"
@@ -452,6 +459,11 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
             self.assertEqual("internal_bridge", item["network_mode"])
             self.assertTrue(item["redis_cgroup_io_empty_baseline_accepted"])
             self.assertEqual(0, item["redis_aof_delayed_fsync"])
+            expected_counter = item["mode"] == "aof_everysec_rdb"
+            self.assertEqual(
+                {"before": expected_counter, "after": expected_counter},
+                item["redis_aof_delayed_fsync_counter_present"],
+            )
         bgsaves = [
             command
             for command in runner.commands
@@ -563,6 +575,16 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
                 "docker-test",
                 "boost-redis-benchmark-aof-gate-rdb_only-1",
             )
+
+    def test_missing_delayed_fsync_counter_is_allowed_only_without_aof(self) -> None:
+        self.assertEqual(
+            (0, False),
+            benchmark.delayed_fsync_counter({"aof_enabled": "0"}, aof_required=False),
+        )
+        with self.assertRaisesRegex(benchmark.BenchmarkError, "aof_delayed_fsync"):
+            benchmark.delayed_fsync_counter({"aof_enabled": "1"}, aof_required=True)
+        with self.assertRaisesRegex(benchmark.BenchmarkError, "aof_delayed_fsync"):
+            self._run(runner=FakeDocker(omit_candidate_delayed_fsync=True))
 
     def test_ambiguous_create_is_reconciled_by_exact_labels(self) -> None:
         runner = FakeDocker(ambiguous_volume_create=True)
