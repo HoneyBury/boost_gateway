@@ -48,6 +48,42 @@ python3 scripts/tools/check_backup_recovery_policy.py \
 change record 和 rollback plan 前改变该边界。对照至少记录 leaderboard throughput、P50/P99、
 Redis CPU/RSS、disk write bytes 和 delayed fsync。
 
+在 **Ubuntu 小主机终端**运行同机、同 workload 对照。runner 使用 shared lifecycle lock，每种模式
+至少三轮并交错顺序；每轮只创建带 TODO label 的临时 volume、internal bridge network、Redis
+server 和独立 benchmark client container。server/client 分属固定 CPU/memory/PID cgroup，均使用
+`cap-drop ALL`，并在退出前复核 active production Redis image、volume 和 volume identity：
+
+```bash
+CONTROLLER=/home/honeybury/boost-gateway-controller
+BENCHMARK_ID="todo0012-aof-$(date -u +%Y%m%dT%H%M%SZ)"
+REDIS_IMAGE="$(sudo docker inspect boost-redis --format '{{.Image}}')"
+
+sudo python3 \
+  "$CONTROLLER/scripts/tools/benchmark_redis_persistence.py" \
+  --benchmark-id "$BENCHMARK_ID" \
+  --candidate-profile \
+    "$CONTROLLER/env/redis/redis.production-validation.conf" \
+  --policy \
+    "$CONTROLLER/deploy/operations/backup-recovery-policy.example.json" \
+  --redis-image "$REDIS_IMAGE" \
+  --repetitions 3 \
+  --requests 10000 \
+  --clients 16 \
+  --keyspace 100000 \
+  --summary-path \
+    "/var/lib/boost-gateway-evidence/recovery/$BENCHMARK_ID.json"
+```
+
+summary 记录 synthetic Lua leaderboard workload 的 throughput/P50/P99，以及 Redis sampled RSS、
+main+children CPU、cgroup v2 I/O、`aof_delayed_fsync` 和 effective config。每轮 workload 后两种模式
+都显式执行并等待 BGSAVE，分别记录 steady-state workload 与 checkpoint 的 CPU/I/O 成本；本数据不
+冒充真实 SDK 或服务延迟。证据同时绑定干净的 controller `main` commit、runner SHA-256、candidate
+policy/profile SHA-256 和 active production Redis image/volume。AOF 无可观测写入、BGSAVE 未完整落盘、
+delayed fsync、workload 超时、临时资源残留或 active production binding 漂移均 fail closed。即使
+measurement PASS，summary 仍固定
+`activation_ready=false`；还需人工 performance review、governed change record、rollback plan、
+effective-config 激活验证、release SDK full-flow 和 crash RPO 演练，禁止直接修改生产 Compose。
+
 ## Backup Contract
 
 每日备份最终必须形成一个 create-only、SHA-256 完整覆盖、先加密后传输的集合，至少包含：

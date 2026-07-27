@@ -349,6 +349,9 @@
     "scripts/tools/backup_vault_ssh_receiver.py": {
       "category": "tool"
     },
+    "scripts/tools/benchmark_redis_persistence.py": {
+      "category": "tool"
+    },
     "scripts/tools/export_backup_restore_bundle.py": {
       "category": "tool"
     },
