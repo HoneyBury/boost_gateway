@@ -59,6 +59,7 @@ class FakeDocker:
         ambiguous_volume_create: bool = False,
         empty_initial_io: bool = True,
         omit_candidate_delayed_fsync: bool = False,
+        empty_rdb_workload_io: bool = True,
     ) -> None:
         self.commands: list[list[str]] = []
         self.volumes: dict[str, dict[str, str]] = {}
@@ -75,6 +76,7 @@ class FakeDocker:
         self.ambiguous_volume_create = ambiguous_volume_create
         self.empty_initial_io = empty_initial_io
         self.omit_candidate_delayed_fsync = omit_candidate_delayed_fsync
+        self.empty_rdb_workload_io = empty_rdb_workload_io
 
     @staticmethod
     def labels(command: list[str]) -> dict[str, str]:
@@ -290,6 +292,10 @@ class FakeDocker:
                 value = ""
                 stdout = value if text else value.encode()
                 return subprocess.CompletedProcess(command, returncode, stdout, b"")
+            if count == 2 and mode == "rdb_only" and self.empty_rdb_workload_io:
+                value = ""
+                stdout = value if text else value.encode()
+                return subprocess.CompletedProcess(command, returncode, stdout, b"")
             if count == 1:
                 write_bytes = 100
             elif count == 2:
@@ -458,6 +464,10 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
             self.assertEqual("ok", item["redis_bgsave"]["last_status"])
             self.assertEqual("internal_bridge", item["network_mode"])
             self.assertTrue(item["redis_cgroup_io_empty_baseline_accepted"])
+            self.assertEqual(
+                item["mode"] == "rdb_only",
+                item["redis_cgroup_io_empty_after_workload_accepted"],
+            )
             self.assertEqual(0, item["redis_aof_delayed_fsync"])
             expected_counter = item["mode"] == "aof_everysec_rdb"
             self.assertEqual(
@@ -558,7 +568,7 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
         self.assertEqual({}, runner.networks)
         self.assertEqual({}, runner.containers)
 
-    def test_empty_cgroup_io_is_allowed_only_for_the_initial_baseline(self) -> None:
+    def test_empty_cgroup_io_requires_an_explicit_zero_write_phase(self) -> None:
         runner = FakeDocker(empty_initial_io=True)
         baseline = benchmark.cgroup_io(
             runner,
@@ -575,6 +585,21 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
                 "docker-test",
                 "boost-redis-benchmark-aof-gate-rdb_only-1",
             )
+
+        rdb_runner = FakeDocker(empty_initial_io=False, empty_rdb_workload_io=True)
+        first = benchmark.cgroup_io(
+            rdb_runner,
+            "docker-test",
+            "boost-redis-benchmark-aof-gate-rdb_only-1",
+        )
+        self.assertGreater(first["devices"], 0)
+        workload = benchmark.cgroup_io(
+            rdb_runner,
+            "docker-test",
+            "boost-redis-benchmark-aof-gate-rdb_only-1",
+            allow_empty=True,
+        )
+        self.assertEqual({"write_bytes": 0, "devices": 0}, workload)
 
     def test_missing_delayed_fsync_counter_is_allowed_only_without_aof(self) -> None:
         self.assertEqual(

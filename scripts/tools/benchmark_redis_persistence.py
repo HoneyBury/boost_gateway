@@ -998,7 +998,12 @@ def execute_round(
             raise BenchmarkError("redis-benchmark metrics are invalid")
         sleeper(post_workload_settle_seconds)
         workload_info = redis_info(runner, docker, server_container)
-        workload_io = cgroup_io(runner, docker, server_container)
+        workload_io = cgroup_io(
+            runner,
+            docker,
+            server_container,
+            allow_empty=mode == "rdb_only",
+        )
         record_rss(workload_info, "after_workload")
         workload_cpu_after = total_cpu_seconds(workload_info)
         children_cpu_workload_after = float(
@@ -1153,8 +1158,12 @@ def execute_round(
             "redis_workload_disk_write_bytes": workload_disk_write_bytes,
             "redis_bgsave_disk_write_bytes": bgsave_disk_write_bytes,
             "redis_cgroup_io_devices_before": before_io["devices"],
+            "redis_cgroup_io_devices_after_workload": workload_io["devices"],
             "redis_cgroup_io_devices_after": after_io["devices"],
             "redis_cgroup_io_empty_baseline_accepted": before_io["devices"] == 0,
+            "redis_cgroup_io_empty_after_workload_accepted": (
+                mode == "rdb_only" and workload_io["devices"] == 0
+            ),
             "redis_aof_delayed_fsync": delayed_delta,
             "redis_aof_delayed_fsync_counter_present": {
                 "before": delayed_counter_before_present,
