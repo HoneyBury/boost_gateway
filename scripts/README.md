@@ -53,9 +53,10 @@ Use these stable public entrypoints first:
 - `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
 - `manage_backup_recovery.py`, `backup_vault_ssh_receiver.py`, and `verify_backup_vault.py` for create-only
   age-encrypted off-host backups, restricted SSH receipt handling, and link-free vault/RDB verification.
-- `export_backup_restore_bundle.py`, `send_restore_bundle.py`, `restore_bundle_ssh_receiver.py`, and
-  `restore_backup_isolated.py` for Mac-only secret-bearing archive decryption, pinned forced-command transfer,
-  and fresh-volume `network=none` Redis restore verification without a production switch.
+- `export_backup_restore_bundle.py`, `send_restore_bundle.py`, `restore_bundle_ssh_receiver.py`,
+  `restore_backup_isolated.py`, and `verify_restored_business_isolated.py` for Mac-only secret-bearing archive
+  decryption, pinned forced-command transfer, fresh-volume Redis restore, and isolated release SDK business
+  verification without a production switch.
 
 R5 offline-cache execution order:
 

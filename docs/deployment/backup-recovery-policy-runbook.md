@@ -297,7 +297,59 @@ volume，写入进程固定为无新增 capability 的 `redis` 用户，且写�
 
 该切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录
 `restore_known_good=false` 和 `formal_todo0012_claim=false`。完整 host link reconstruction、
-leaderboard submit/top/rank、SDK full-flow、第二份不同 backup/target 演练和最终受控切换仍是后续边界。
+隔离业务验证、第二份不同 backup/target 演练和最终受控切换仍是后续边界。
+
+### Isolated Restored Business Verification
+
+业务验证不得直接启动或挂载 retained restore volume 作为可写 Redis。控制器先用 `network=none`
+audit Redis 对 retained volume 生成 canonical keyspace SHA-256，然后通过只读 source mount 将
+`dump.rdb` 复制到新的 disposable work volume。六个 release image 和 work Redis 只加入本次唯一的
+`--internal` bridge network；Redis 不发布端口，gateway 9201 只动态发布到 `127.0.0.1`。这能让
+release SDK 从 host 进入隔离拓扑，同时禁止拓扑向外建立连接。
+
+在 **Ubuntu 小主机终端**运行。以下 `RESTORE_SUMMARY` 必须指向前一步成功且保留 target volume 的
+summary；`RETAINED_VOLUME` 必须与该 summary 的 `target_volume` 完全相同：
+
+```bash
+CONTROLLER=/home/honeybury/boost-gateway-controller
+RESTORE_SUMMARY='<successful-isolated-restore-summary.json>'
+RETAINED_VOLUME='boost-gateway-recovery-<restore-id>'
+DEPLOYMENT_RECORD=/opt/boost-gateway/current/record.json
+BUSINESS_ID="todo0012-business-$(date -u +%Y%m%dT%H%M%SZ)"
+
+RELEASE_DIR="$(sudo python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["release_path"])' \
+  "$DEPLOYMENT_RECORD")"
+REDIS_IMAGE="$(sudo python3 -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["redis_image"])' \
+  "$RESTORE_SUMMARY")"
+
+sudo python3 \
+  "$CONTROLLER/scripts/tools/verify_restored_business_isolated.py" \
+  --business-id "$BUSINESS_ID" \
+  --restore-summary "$RESTORE_SUMMARY" \
+  --deployment-record "$DEPLOYMENT_RECORD" \
+  --release-dir "$RELEASE_DIR" \
+  --retained-volume "$RETAINED_VOLUME" \
+  --work-volume "boost-gateway-business-work-$BUSINESS_ID" \
+  --network "boost-gateway-business-net-$BUSINESS_ID" \
+  --redis-image "$REDIS_IMAGE" \
+  --summary-path \
+    "/var/lib/boost-gateway-evidence/recovery/$BUSINESS_ID.json"
+```
+
+控制器强制 release record 为 `verified`，绑定 release manifest、六个 immutable image ID 和 release
+自带的可执行 `bin/sdk_full_flow_client`，并要求 `source_build_performed=false`。SDK stdout 必须包含
+manual leaderboard submit、rank 和 `ALL TESTS PASSED`；top 请求是该 release 客户端成功路径中的
+强制调用。控制器再从 work Redis 复核 Alice/Bob 的 `ZSCORE`、`ZREVRANK`、display name 和 top 20，
+分别记录 submit/top/rank pass。
+
+业务写入后，所有隔离容器、internal network 和 work volume 都必须删除。控制器随后第二次只读挂载
+retained volume；前后 canonical keyspace SHA-256、key count、key set 和 volume identity 必须一致，
+active production volume identity 也必须保持一致。internal-network/loopback publish 不兼容、SDK 失败、
+cleanup 失败或 retained seed 漂移都会生成 `overall_pass=false` 的 create-only summary。即使本阶段通过，
+summary 仍固定 `restore_known_good=false` 和 `formal_todo0012_claim=false`；第二份独立 backup/target、
+完整 host link reconstruction 和最终聚合尚未完成。
 
 ### Local-Only Retention
 

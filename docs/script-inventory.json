@@ -430,6 +430,9 @@
     "scripts/tools/verify_backup_vault.py": {
       "category": "tool"
     },
+    "scripts/tools/verify_restored_business_isolated.py": {
+      "category": "tool"
+    },
     "scripts/tools/verify_release_deployment.py": {
       "category": "tool"
     },
