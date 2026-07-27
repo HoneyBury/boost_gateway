@@ -57,6 +57,7 @@ class FakeDocker:
         active_image: str | None = None,
         fail_info_during_workload: bool = False,
         ambiguous_volume_create: bool = False,
+        empty_initial_io: bool = True,
     ) -> None:
         self.commands: list[list[str]] = []
         self.volumes: dict[str, dict[str, str]] = {}
@@ -71,6 +72,7 @@ class FakeDocker:
         self.active_image = active_image
         self.fail_info_during_workload = fail_info_during_workload
         self.ambiguous_volume_create = ambiguous_volume_create
+        self.empty_initial_io = empty_initial_io
 
     @staticmethod
     def labels(command: list[str]) -> dict[str, str]:
@@ -277,6 +279,10 @@ class FakeDocker:
             count = self.io_calls.get(container, 0) + 1
             self.io_calls[container] = count
             mode = "aof_everysec_rdb" if "aof_everysec_rdb" in container else "rdb_only"
+            if count == 1 and self.empty_initial_io:
+                value = ""
+                stdout = value if text else value.encode()
+                return subprocess.CompletedProcess(command, returncode, stdout, b"")
             if count == 1:
                 write_bytes = 100
             elif count == 2:
@@ -444,6 +450,7 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
             self.assertGreater(item["redis_bgsave_children_cpu_seconds"], 0)
             self.assertEqual("ok", item["redis_bgsave"]["last_status"])
             self.assertEqual("internal_bridge", item["network_mode"])
+            self.assertTrue(item["redis_cgroup_io_empty_baseline_accepted"])
             self.assertEqual(0, item["redis_aof_delayed_fsync"])
         bgsaves = [
             command
@@ -538,6 +545,24 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
         self.assertEqual({}, runner.volumes)
         self.assertEqual({}, runner.networks)
         self.assertEqual({}, runner.containers)
+
+    def test_empty_cgroup_io_is_allowed_only_for_the_initial_baseline(self) -> None:
+        runner = FakeDocker(empty_initial_io=True)
+        baseline = benchmark.cgroup_io(
+            runner,
+            "docker-test",
+            "boost-redis-benchmark-aof-gate-rdb_only-1",
+            allow_empty=True,
+        )
+        self.assertEqual({"write_bytes": 0, "devices": 0}, baseline)
+
+        strict_runner = FakeDocker(empty_initial_io=True)
+        with self.assertRaisesRegex(benchmark.BenchmarkError, "io.stat"):
+            benchmark.cgroup_io(
+                strict_runner,
+                "docker-test",
+                "boost-redis-benchmark-aof-gate-rdb_only-1",
+            )
 
     def test_ambiguous_create_is_reconciled_by_exact_labels(self) -> None:
         runner = FakeDocker(ambiguous_volume_create=True)

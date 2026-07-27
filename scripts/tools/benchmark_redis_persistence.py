@@ -414,7 +414,13 @@ def numeric(info: dict[str, str], field: str, *, integer: bool = False) -> float
         raise BenchmarkError(f"Redis INFO field is invalid: {field}") from exc
 
 
-def cgroup_io(runner: Runner, docker: str, container: str) -> dict[str, int]:
+def cgroup_io(
+    runner: Runner,
+    docker: str,
+    container: str,
+    *,
+    allow_empty: bool = False,
+) -> dict[str, int]:
     text = docker_text(
         runner,
         [docker, "exec", container, "cat", "/sys/fs/cgroup/io.stat"],
@@ -438,7 +444,7 @@ def cgroup_io(runner: Runner, docker: str, container: str) -> dict[str, int]:
         if "wbytes" in values:
             devices += 1
             write_bytes += values["wbytes"]
-    if devices == 0:
+    if devices == 0 and not allow_empty:
         raise BenchmarkError("Redis cgroup v2 io.stat write bytes are unavailable")
     return {"write_bytes": write_bytes, "devices": devices}
 
@@ -907,7 +913,7 @@ def execute_round(
             )
 
         before_info = redis_info(runner, docker, server_container)
-        before_io = cgroup_io(runner, docker, server_container)
+        before_io = cgroup_io(runner, docker, server_container, allow_empty=True)
         measurement_started = monotonic()
         cpu_before = total_cpu_seconds(before_info)
         children_cpu_before = float(
@@ -1127,6 +1133,7 @@ def execute_round(
             "redis_bgsave_disk_write_bytes": bgsave_disk_write_bytes,
             "redis_cgroup_io_devices_before": before_io["devices"],
             "redis_cgroup_io_devices_after": after_io["devices"],
+            "redis_cgroup_io_empty_baseline_accepted": before_io["devices"] == 0,
             "redis_aof_delayed_fsync": delayed_delta,
             "redis_bgsave": {
                 "elapsed_seconds": round(bgsave_elapsed, 6),
