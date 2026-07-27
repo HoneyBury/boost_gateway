@@ -465,6 +465,8 @@ def start_gateway(
     command[image_index:image_index] = [
         "--publish",
         "127.0.0.1::9201",
+        "--tmpfs",
+        "/app/v2_archive:rw,noexec,nosuid,size=32m",
         "--env",
         "CONFIG_PATH=/app/config/environments/docker/gateway.json",
         "--env",

@@ -232,6 +232,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             if "business-gateway" in item and " run " in f" {item} "
         )
         self.assertIn("--publish 127.0.0.1::9201", gateway)
+        self.assertIn("--tmpfs /app/v2_archive:rw,noexec,nosuid,size=32m", gateway)
         self.assertNotIn("0.0.0.0", gateway)
         redis = next(
             item
