@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import ipaddress
 import json
 import os
 import re
@@ -35,7 +36,7 @@ IMAGE_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
 ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
-PORT_RE = re.compile(r"127\.0\.0\.1:([0-9]{1,5})\Z")
+DOCKER_ID_RE = re.compile(r"[0-9a-f]{64}\Z")
 DEFAULT_LOCK = Path("/var/lib/boost-gateway/deployment-transactions/.lifecycle.lock")
 DEFAULT_ACTIVE_VOLUME = "boost-gateway-production-redis-data"
 IMAGE_KEYS = {
@@ -268,8 +269,12 @@ def ensure_absent(runner: Runner, docker: str, kind: str, name: str) -> None:
 
 
 def inspect_internal_network(
-    runner: Runner, docker: str, network: str, business_id: str
-) -> dict[str, Any]:
+    runner: Runner,
+    docker: str,
+    network: str,
+    business_id: str,
+    expected_members: set[str] | None = None,
+) -> tuple[dict[str, Any], ipaddress.IPv4Network]:
     output = docker_text(runner, docker, ["network", "inspect", network], timeout=30)
     try:
         values = json.loads(output)
@@ -283,15 +288,67 @@ def inspect_internal_network(
         raise BusinessValidationError("Docker network inspection is incomplete")
     value = values[0]
     labels = value.get("Labels")
+    network_id = value.get("Id")
+    ipam = value.get("IPAM")
+    configs = ipam.get("Config") if isinstance(ipam, dict) else None
+    if not isinstance(configs, list) or len(configs) != 1:
+        raise BusinessValidationError("isolated network IPv4 IPAM is incomplete")
+    subnet_raw = configs[0].get("Subnet") if isinstance(configs[0], dict) else None
+    try:
+        subnet = ipaddress.ip_network(subnet_raw, strict=False)
+    except (TypeError, ValueError) as exc:
+        raise BusinessValidationError(
+            "isolated network IPv4 subnet is invalid"
+        ) from exc
+    members = value.get("Containers")
+    if not isinstance(members, dict):
+        raise BusinessValidationError("isolated network members are invalid")
+    member_names = {
+        member.get("Name")
+        for member in members.values()
+        if isinstance(member, dict) and isinstance(member.get("Name"), str)
+    }
     if (
         value.get("Name") != network
+        or value.get("Driver") != "bridge"
         or value.get("Internal") is not True
+        or DOCKER_ID_RE.fullmatch(network_id or "") is None
+        or not isinstance(subnet, ipaddress.IPv4Network)
         or not isinstance(labels, dict)
         or labels.get("boost-gateway.todo") != "TODO-0012"
         or labels.get("boost-gateway.business-id") != business_id
     ):
         raise BusinessValidationError("isolated internal network binding differs")
-    return value
+    if len(member_names) != len(members):
+        raise BusinessValidationError("isolated network member identity is incomplete")
+    if expected_members is None:
+        if members:
+            raise BusinessValidationError("new isolated network is not empty")
+    elif member_names != expected_members:
+        raise BusinessValidationError("isolated network member set differs")
+    return value, subnet
+
+
+def assert_local_docker(runner: Runner, docker: str) -> None:
+    if os.environ.get("DOCKER_HOST") or os.environ.get("DOCKER_CONTEXT"):
+        raise BusinessValidationError(
+            "remote or overridden Docker endpoint is forbidden"
+        )
+    context = docker_text(runner, docker, ["context", "show"], timeout=30)
+    endpoint = docker_text(
+        runner,
+        docker,
+        [
+            "context",
+            "inspect",
+            "--format",
+            "{{.Endpoints.docker.Host}}",
+            "default",
+        ],
+        timeout=30,
+    )
+    if context != "default" or endpoint != "unix:///var/run/docker.sock":
+        raise BusinessValidationError("Docker endpoint is not the local system socket")
 
 
 def clone_retained_volume(
@@ -348,7 +405,12 @@ def clone_retained_volume(
 
 
 def base_container_command(
-    docker: str, name: str, network: str, alias: str, image: str
+    docker: str,
+    name: str,
+    network: str,
+    alias: str,
+    image: str,
+    business_id: str,
 ) -> list[str]:
     return [
         docker,
@@ -369,6 +431,8 @@ def base_container_command(
         "no-new-privileges",
         "--label",
         "boost-gateway.todo=TODO-0012",
+        "--label",
+        f"boost-gateway.business-id={business_id}",
         "--tmpfs",
         "/app/logs:rw,noexec,nosuid,size=16m",
         "--tmpfs",
@@ -384,6 +448,7 @@ def start_redis_networked(
     name: str,
     network: str,
     volume: str,
+    business_id: str,
     on_started: Callable[[str], None] | None = None,
 ) -> None:
     command = [
@@ -403,6 +468,10 @@ def start_redis_networked(
         "ALL",
         "--security-opt",
         "no-new-privileges",
+        "--label",
+        "boost-gateway.todo=TODO-0012",
+        "--label",
+        f"boost-gateway.business-id={business_id}",
         "--user",
         "redis",
         "--mount",
@@ -432,9 +501,10 @@ def start_backend(
     alias: str,
     port: str,
     environment: dict[str, str],
+    business_id: str,
     on_started: Callable[[str], None] | None = None,
 ) -> None:
-    command = base_container_command(docker, name, network, alias, image)
+    command = base_container_command(docker, name, network, alias, image, business_id)
     image_index = command.index(image)
     values = {
         "CONFIG_PATH": f"/app/config/environments/docker/{alias.removesuffix('-backend')}.json",
@@ -458,13 +528,16 @@ def start_gateway(
     image: str,
     name: str,
     network: str,
+    business_id: str,
+    network_state: dict[str, Any],
+    network_subnet: ipaddress.IPv4Network,
     on_started: Callable[[str], None] | None = None,
-) -> int:
-    command = base_container_command(docker, name, network, "gateway", image)
+) -> str:
+    command = base_container_command(
+        docker, name, network, "gateway", image, business_id
+    )
     image_index = command.index(image)
     command[image_index:image_index] = [
-        "--publish",
-        "127.0.0.1::9201",
         "--tmpfs",
         "/app/v2_archive:rw,noexec,nosuid,size=32m",
         "--env",
@@ -504,12 +577,68 @@ def start_gateway(
     if on_started is not None:
         on_started(name)
     wait_healthy(runner, docker, name, 90.0)
-    published = docker_text(runner, docker, ["port", name, "9201/tcp"], timeout=30)
-    matches = [PORT_RE.fullmatch(line) for line in published.splitlines()]
-    ports = [int(match.group(1)) for match in matches if match is not None]
-    if len(ports) != 1 or not 1 <= ports[0] <= 65535:
-        raise BusinessValidationError("isolated gateway published port is invalid")
-    return ports[0]
+    inspection_raw = docker_text(runner, docker, ["inspect", name], timeout=30)
+    try:
+        inspections = json.loads(inspection_raw)
+    except json.JSONDecodeError as exc:
+        raise BusinessValidationError("isolated gateway inspection is invalid") from exc
+    if (
+        not isinstance(inspections, list)
+        or len(inspections) != 1
+        or not isinstance(inspections[0], dict)
+    ):
+        raise BusinessValidationError("isolated gateway inspection is incomplete")
+    inspection = inspections[0]
+    state = inspection.get("State")
+    health = state.get("Health") if isinstance(state, dict) else None
+    config = inspection.get("Config")
+    labels = config.get("Labels") if isinstance(config, dict) else None
+    host_config = inspection.get("HostConfig")
+    port_bindings = (
+        host_config.get("PortBindings") if isinstance(host_config, dict) else None
+    )
+    network_settings = inspection.get("NetworkSettings")
+    attachments = (
+        network_settings.get("Networks") if isinstance(network_settings, dict) else None
+    )
+    ports = (
+        network_settings.get("Ports") if isinstance(network_settings, dict) else None
+    )
+    if (
+        inspection.get("Image") != image
+        or not isinstance(state, dict)
+        or state.get("Running") is not True
+        or not isinstance(health, dict)
+        or health.get("Status") != "healthy"
+        or not isinstance(labels, dict)
+        or labels.get("boost-gateway.todo") != "TODO-0012"
+        or labels.get("boost-gateway.business-id") != business_id
+        or port_bindings not in (None, {})
+        or not isinstance(ports, dict)
+        or any(value not in (None, []) for value in ports.values())
+        or not isinstance(attachments, dict)
+        or set(attachments) != {network}
+    ):
+        raise BusinessValidationError("isolated gateway runtime binding differs")
+    attachment = attachments[network]
+    address_raw = attachment.get("IPAddress") if isinstance(attachment, dict) else None
+    try:
+        address = ipaddress.ip_address(address_raw)
+    except (TypeError, ValueError) as exc:
+        raise BusinessValidationError(
+            "isolated gateway IPv4 address is invalid"
+        ) from exc
+    if (
+        not isinstance(address, ipaddress.IPv4Address)
+        or address.is_unspecified
+        or address.is_loopback
+        or address.is_multicast
+        or address not in network_subnet
+        or not isinstance(attachment, dict)
+        or attachment.get("NetworkID") != network_state.get("Id")
+    ):
+        raise BusinessValidationError("isolated gateway IPv4 address is unsafe")
+    return str(address)
 
 
 def wait_healthy(
@@ -564,10 +693,12 @@ def wait_healthy(
     )
 
 
-def run_sdk(client: Path, port: int, timeout_seconds: int) -> dict[str, Any]:
+def run_sdk(
+    client: Path, gateway_host: str, port: int, timeout_seconds: int
+) -> dict[str, Any]:
     try:
         completed = subprocess.run(
-            [str(client), "127.0.0.1", str(port)],
+            [str(client), gateway_host, str(port)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -764,7 +895,11 @@ def run_business_validation(
     work_seed_after = ""
     work_snapshot_sha = ""
     work_volume_identity = ""
-    gateway_port = 0
+    gateway_host = ""
+    gateway_ports_published = False
+    gateway_runtime_binding_verified = False
+    network_id = ""
+    network_ipv4_subnet = ""
     sdk: dict[str, Any] = {}
     leaderboard: dict[str, Any] = {}
     created_containers: list[str] = []
@@ -780,6 +915,7 @@ def run_business_validation(
 
     try:
         with backup.lifecycle_lock(lock_path):
+            assert_local_docker(runner, docker)
             assert_image_ids(runner, docker, [*images.values(), redis_image])
             active_identity_before = restore.volume_identity(
                 restore.inspect_volume(runner, docker, active_volume)
@@ -894,7 +1030,11 @@ def run_business_validation(
             )
             network_created = True
             network_created_once = True
-            inspect_internal_network(runner, docker, network, identifier)
+            network_state, network_subnet = inspect_internal_network(
+                runner, docker, network, identifier
+            )
+            network_id = network_state["Id"]
+            network_ipv4_subnet = str(network_subnet)
             start_redis_networked(
                 runner,
                 docker,
@@ -902,6 +1042,7 @@ def run_business_validation(
                 containers["redis"],
                 network,
                 work_volume,
+                identifier,
                 created_containers.append,
             )
             work_seed_before, work_count, work_keys = restore.canonical_keyspace(
@@ -926,17 +1067,29 @@ def run_business_validation(
                     alias,
                     port,
                     environment,
+                    identifier,
                     created_containers.append,
                 )
-            gateway_port = start_gateway(
+            gateway_host = start_gateway(
                 runner,
                 docker,
                 images["gateway"],
                 containers["gateway"],
                 network,
+                identifier,
+                network_state,
+                network_subnet,
                 created_containers.append,
             )
-            sdk = run_sdk(client, gateway_port, sdk_timeout_seconds)
+            gateway_runtime_binding_verified = True
+            inspect_internal_network(
+                runner,
+                docker,
+                network,
+                identifier,
+                expected_members=set(containers.values()),
+            )
+            sdk = run_sdk(client, gateway_host, 9201, sdk_timeout_seconds)
             leaderboard = verify_leaderboard_effects(
                 runner,
                 docker,
@@ -1060,8 +1213,14 @@ def run_business_validation(
         "isolated_network": network,
         "isolated_network_created": network_created_once,
         "isolated_network_internal": success,
+        "isolated_network_id": network_id,
+        "isolated_network_ipv4_subnet": network_ipv4_subnet,
         "isolated_network_removed": success and not network_created,
-        "gateway_loopback_port": gateway_port,
+        "gateway_endpoint_mode": "host-direct-internal-bridge",
+        "gateway_internal_ipv4": gateway_host,
+        "gateway_container_port": 9201,
+        "gateway_host_port_published": gateway_ports_published,
+        "gateway_runtime_binding_verified": gateway_runtime_binding_verified,
         "leaderboard": leaderboard,
         "leaderboard_submit": bool(success and leaderboard.get("leaderboard_submit")),
         "leaderboard_top": bool(success and leaderboard.get("leaderboard_top")),
