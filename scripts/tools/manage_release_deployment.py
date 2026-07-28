@@ -21,13 +21,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable, Iterator, Protocol
 
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.lib.operations_identity import collect_operations_identity
-
+from scripts.lib.operations_identity import collect_operations_identity  # noqa: E402
+from scripts.tools.check_release_compose import load_compose_document  # noqa: E402
 
 IMAGE_VARIABLES = {
     "GATEWAY_IMAGE_ID",
@@ -70,6 +69,8 @@ TRANSACTION_SUMMARIES = {
     "deployment": "deployment-verification-summary.json",
     "recovery": "recovery-verification-summary.json",
     "reconcile": "reconcile-verification-summary.json",
+    "candidate_persistence_transition": "candidate-persistence-transition-summary.json",
+    "recovery_persistence_transition": "recovery-persistence-transition-summary.json",
 }
 
 
@@ -338,6 +339,14 @@ class LifecycleExecutor(Protocol):
 
     def deactivate(self, deployment_path: Path, timeout_seconds: float) -> None: ...
 
+    def prepare_transition(
+        self,
+        source_path: Path,
+        target_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+    ) -> dict[str, Any] | None: ...
+
     def verify(
         self, deployment_path: Path, summary_path: Path, timeout_seconds: float
     ) -> dict[str, Any]: ...
@@ -403,6 +412,129 @@ class SystemLifecycleExecutor:
             timeout_seconds,
             environment=self._environment(deployment_path),
         )
+
+    @staticmethod
+    def _config_directives(path: Path) -> dict[str, str]:
+        if not path.is_file():
+            raise LifecycleError(f"Redis configuration is missing: {path}")
+        directives: dict[str, str] = {}
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeError) as exc:
+            raise LifecycleError(f"cannot read Redis configuration: {exc}") from exc
+        for raw in lines:
+            content = raw.split("#", 1)[0].strip()
+            if not content:
+                continue
+            parts = content.split(maxsplit=1)
+            if len(parts) == 2:
+                directives[parts[0].lower()] = parts[1].strip().strip('"')
+        return directives
+
+    def _redis_persistence_contract(self, deployment_path: Path) -> dict[str, Any]:
+        compose = deployment_path / "deploy/operations/docker-compose.production.yml"
+        document = load_compose_document(
+            compose, environment=self._environment(deployment_path)
+        )
+        services = document.get("services")
+        redis = services.get("redis") if isinstance(services, dict) else None
+        if not isinstance(redis, dict):
+            return {"mode": "unknown", "source": "missing-redis-service"}
+        command = redis.get("command")
+        if isinstance(command, str):
+            arguments = command.split()
+        elif isinstance(command, list):
+            arguments = [str(item) for item in command]
+        else:
+            arguments = []
+
+        directives: dict[str, str] = {}
+        source = "compose-command"
+        for index, argument in enumerate(arguments):
+            if argument == "--appendonly" and index + 1 < len(arguments):
+                directives["appendonly"] = arguments[index + 1].lower()
+            if argument == "--appendfsync" and index + 1 < len(arguments):
+                directives["appendfsync"] = arguments[index + 1].lower()
+        config_arguments = [
+            item
+            for item in arguments[1:]
+            if not item.startswith("-") and item.lower().endswith(".conf")
+        ]
+        if config_arguments:
+            target = config_arguments[0]
+            volumes = redis.get("volumes")
+            matches = []
+            if isinstance(volumes, list):
+                matches = [
+                    item
+                    for item in volumes
+                    if isinstance(item, dict)
+                    and str(item.get("target", "")) == target
+                    and str(item.get("type", "")) == "bind"
+                    and item.get("read_only") is True
+                ]
+            if len(matches) != 1:
+                raise LifecycleError(
+                    "Redis configuration must have one read-only bind mount"
+                )
+            config_path = Path(str(matches[0].get("source", ""))).resolve()
+            directives = self._config_directives(config_path)
+            source = str(config_path)
+
+        appendonly = directives.get("appendonly", "")
+        appendfsync = directives.get("appendfsync", "")
+        if appendonly == "no":
+            mode = "rdb_only"
+        elif appendonly == "yes" and appendfsync == "everysec":
+            mode = "aof_everysec_rdb"
+        elif appendonly == "yes":
+            mode = "aof_other"
+        else:
+            mode = "unknown"
+        return {
+            "mode": mode,
+            "source": source,
+            "appendonly": appendonly,
+            "appendfsync": appendfsync,
+        }
+
+    def prepare_transition(
+        self,
+        source_path: Path,
+        target_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+    ) -> dict[str, Any] | None:
+        if timeout_seconds <= 0:
+            raise LifecycleError("lifecycle command deadline expired")
+        source = self._redis_persistence_contract(source_path)
+        target = self._redis_persistence_contract(target_path)
+        if source["mode"] == target["mode"]:
+            return None
+        downgrade = source["mode"].startswith("aof_") and not target["mode"].startswith(
+            "aof_"
+        )
+        summary = {
+            "schema_version": 1,
+            "generated_at": now(),
+            "overall_pass": not downgrade,
+            "source_deployment": source_path.name,
+            "target_deployment": target_path.name,
+            "source_redis_persistence": source,
+            "target_redis_persistence": target,
+            "aof_to_rdb_downgrade": downgrade,
+            "checkpoint_required": downgrade,
+            "checkpoint_verified": False,
+            "active_volume_preserved": True,
+            "secret_material_recorded": False,
+        }
+        atomic_write_json(summary_path, summary)
+        if downgrade:
+            raise LifecycleError(
+                "AOF-to-RDB transition requires a verified fresh checkpoint; "
+                "blind RDB-only activation is prohibited"
+            )
+        return summary
 
     def _install_unit(self, deployment_path: Path) -> bool:
         source = deployment_path / "deploy/systemd/boost-gateway-compose.service"
@@ -613,7 +745,9 @@ class ReleaseDeploymentManager:
             if not path.exists() and not path.is_symlink():
                 continue
             if path.is_symlink() or not path.is_file():
-                raise LifecycleError(f"transaction summary is not a regular file: {path}")
+                raise LifecycleError(
+                    f"transaction summary is not a regular file: {path}"
+                )
             status = path.stat()
             references.append(
                 {
@@ -1202,6 +1336,7 @@ class ReleaseDeploymentManager:
                             transaction,
                             recovery_started,
                             ROLLBACK_DEADLINE_SECONDS,
+                            from_deployment=candidate,
                         )
                     else:
                         self.executor.deactivate(
@@ -1267,6 +1402,7 @@ class ReleaseDeploymentManager:
                 transaction,
                 started,
                 ROLLBACK_DEADLINE_SECONDS,
+                from_deployment=candidate,
             )
             record.update(
                 {
@@ -1323,6 +1459,24 @@ class ReleaseDeploymentManager:
             timeout_seconds,
         )
 
+    def _prepare_transition(
+        self,
+        source: str | None,
+        target: str,
+        transaction: Path,
+        started: float,
+        budget: float,
+        summary_name: str,
+    ) -> dict[str, Any] | None:
+        if source is None or source == target:
+            return None
+        return self.executor.prepare_transition(
+            self._deployment_dir(source),
+            self._deployment_dir(target),
+            transaction / summary_name,
+            self._remaining(started, budget, self.monotonic),
+        )
+
     @staticmethod
     def _ensure_failure_summary(transaction: Path, failure: Exception) -> None:
         path = transaction / "deployment-verification-summary.json"
@@ -1348,6 +1502,8 @@ class ReleaseDeploymentManager:
         transaction: Path,
         started: float,
         budget: float,
+        *,
+        from_deployment: str | None = None,
     ) -> dict[str, Any] | None:
         if old_current is None:
             candidate = self._resolve_link(self.layout.current, required=False)
@@ -1360,6 +1516,14 @@ class ReleaseDeploymentManager:
             self._clear_active_image_link()
             self.executor.uncommit(self._remaining(started, budget, self.monotonic))
             return None
+        self._prepare_transition(
+            from_deployment,
+            old_current,
+            transaction,
+            started,
+            budget,
+            "recovery-persistence-transition-summary.json",
+        )
         self.executor.precheck(
             self._deployment_dir(old_current),
             self._remaining(started, budget, self.monotonic),
@@ -1436,6 +1600,14 @@ class ReleaseDeploymentManager:
                 self.executor.precheck(
                     self._deployment_dir(candidate),
                     self._remaining(started, budget, self.monotonic),
+                )
+                self._prepare_transition(
+                    old_current,
+                    candidate,
+                    transaction,
+                    started,
+                    budget,
+                    "candidate-persistence-transition-summary.json",
                 )
                 self.executor.activate(
                     self._deployment_dir(candidate),
@@ -1547,6 +1719,7 @@ class ReleaseDeploymentManager:
                         transaction,
                         recovery_started,
                         ROLLBACK_DEADLINE_SECONDS,
+                        from_deployment=candidate,
                     )
                 except Exception as recovery_exc:
                     record.update(
@@ -1614,6 +1787,14 @@ class ReleaseDeploymentManager:
                     self._deployment_dir(target),
                     self._remaining(started, ROLLBACK_DEADLINE_SECONDS, self.monotonic),
                 )
+                self._prepare_transition(
+                    old_current,
+                    target,
+                    transaction,
+                    started,
+                    ROLLBACK_DEADLINE_SECONDS,
+                    "candidate-persistence-transition-summary.json",
+                )
                 self.executor.activate(
                     self._deployment_dir(target),
                     self._remaining(started, ROLLBACK_DEADLINE_SECONDS, self.monotonic),
@@ -1670,6 +1851,7 @@ class ReleaseDeploymentManager:
                         transaction,
                         recovery_started,
                         ROLLBACK_DEADLINE_SECONDS,
+                        from_deployment=target,
                     )
                 except Exception as recovery_exc:
                     record.update(
