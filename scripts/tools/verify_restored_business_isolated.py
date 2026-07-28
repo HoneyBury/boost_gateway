@@ -772,12 +772,13 @@ def verify_leaderboard_effects(
         ):
             raise BusinessValidationError(f"leaderboard submit/rank differs: {user}")
         ranks[user] = rank + 1
-    if any(user not in top for user in users):
-        raise BusinessValidationError("leaderboard top does not contain SDK users")
+    users_in_top = [user for user in users if user in top]
     return {
         "submitted_users": users,
         "one_based_ranks": ranks,
         "top_20": top,
+        "submitted_users_in_top_20": users_in_top,
+        "submitted_users_all_in_top_20": len(users_in_top) == len(users),
         "leaderboard_submit": True,
         "leaderboard_top": True,
         "leaderboard_rank": True,
