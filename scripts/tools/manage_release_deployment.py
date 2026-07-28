@@ -514,25 +514,26 @@ class SystemLifecycleExecutor:
         downgrade = source["mode"].startswith("aof_") and not target["mode"].startswith(
             "aof_"
         )
+        checkpoint_required = source["mode"] != target["mode"]
         summary = {
             "schema_version": 1,
             "generated_at": now(),
-            "overall_pass": not downgrade,
+            "overall_pass": not checkpoint_required,
             "source_deployment": source_path.name,
             "target_deployment": target_path.name,
             "source_redis_persistence": source,
             "target_redis_persistence": target,
             "aof_to_rdb_downgrade": downgrade,
-            "checkpoint_required": downgrade,
+            "checkpoint_required": checkpoint_required,
             "checkpoint_verified": False,
             "active_volume_preserved": True,
             "secret_material_recorded": False,
         }
         atomic_write_json(summary_path, summary)
-        if downgrade:
+        if checkpoint_required:
             raise LifecycleError(
-                "AOF-to-RDB transition requires a verified fresh checkpoint; "
-                "blind RDB-only activation is prohibited"
+                "Redis persistence mode transition requires a verified fresh "
+                "checkpoint; blind Redis restart is prohibited"
             )
         return summary
 
@@ -827,6 +828,7 @@ class ReleaseDeploymentManager:
                 release_source / "deploy/operations/docker-compose.production.yml"
             ),
             "monitoring_sha256": sha256_tree(release_source / "env/monitoring"),
+            "redis_sha256": sha256_tree(release_source / "env/redis"),
             "verification_tools_sha256": sha256_tree(release_source / "scripts/tools"),
         }
         drifted = sorted(

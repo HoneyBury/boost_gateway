@@ -1,5 +1,5 @@
 [Unit]
-Description=Collect BoostGateway Docker restart metrics every minute
+Description=Collect BoostGateway container and Redis persistence metrics every minute
 
 [Timer]
 OnBootSec=30s

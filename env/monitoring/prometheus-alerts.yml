@@ -243,6 +243,76 @@ groups:
 
   - name: boost-gateway.redis-persistence-observability
     rules:
+      - alert: BoostGatewayRedisPersistenceCollectorFailed
+        expr: boost_gateway_redis_persistence_collection_success == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis persistence collector failed"
+          description: "The host collector cannot verify effective Redis AOF/RDB state. Treat persistence health as unknown."
+
+      - alert: BoostGatewayRedisPersistenceConfigDrift
+        expr: boost_gateway_redis_persistence_effective_config_valid == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis persistence configuration drifted"
+          description: "Effective Redis persistence directives differ from the governed AOF everysec plus RDB profile."
+
+      - alert: BoostGatewayRedisAofDisabled
+        expr: boost_gateway_redis_aof_enabled == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis AOF is disabled"
+          description: "The governed production-validation profile requires AOF everysec in addition to RDB checkpoints."
+
+      - alert: BoostGatewayRedisAofCounterMissing
+        expr: boost_gateway_redis_aof_delayed_fsync_counter_present == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis delayed-fsync counter is unavailable"
+          description: "AOF is expected to expose aof_delayed_fsync; absence prevents the RPO health claim."
+
+      - alert: BoostGatewayRedisAofDelayedFsync
+        expr: boost_gateway_redis_aof_delayed_fsync_total > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis reported delayed AOF fsync"
+          description: "At least one AOF fsync was delayed. Investigate host disk pressure and invalidate the clean persistence window."
+
+      - alert: BoostGatewayRedisAofWriteFailed
+        expr: boost_gateway_redis_aof_last_write_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis AOF write failed"
+          description: "Redis reports that its most recent AOF write did not succeed."
+
+      - alert: BoostGatewayRedisAofRewriteFailed
+        expr: boost_gateway_redis_aof_last_bgrewrite_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis-persistence
+        annotations:
+          summary: "Redis AOF rewrite failed"
+          description: "Redis reports that its most recent background AOF rewrite did not succeed."
+
       - alert: BoostGatewayRedisRdbSaveFailed
         expr: redis_rdb_last_bgsave_status == 0
         for: 1m

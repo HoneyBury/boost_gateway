@@ -370,6 +370,9 @@
     "scripts/tools/collect_container_restart_metrics.py": {
       "category": "tool"
     },
+    "scripts/tools/collect_redis_persistence_metrics.py": {
+      "category": "tool"
+    },
     "scripts/tools/deploy_k8s.py": {
       "category": "tool"
     },

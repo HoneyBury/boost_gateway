@@ -8,7 +8,6 @@ from pathlib import Path
 
 from scripts.tools import check_release_compose
 
-
 ROOT = Path(__file__).resolve().parents[2]
 COMPOSE = ROOT / "deploy/operations/docker-compose.production.yml"
 IMAGE_ID = "sha256:" + ("a" * 64)
@@ -32,9 +31,7 @@ def service(*, ports: list[dict[str, object]] | None = None) -> dict[str, object
             "driver": "json-file",
             "options": {"max-size": "10m", "max-file": "5"},
         },
-        "volumes": [
-            {"type": "volume", "source": "logs", "target": "/app/logs"}
-        ],
+        "volumes": [{"type": "volume", "source": "logs", "target": "/app/logs"}],
         "ports": ports or [],
     }
 
@@ -150,6 +147,30 @@ def valid_document() -> dict[str, object]:
 
 
 class ReleaseComposeContractTest(unittest.TestCase):
+    def test_identifies_legacy_and_profile_persistence_modes(self) -> None:
+        self.assertEqual(
+            "rdb_only",
+            check_release_compose.redis_persistence_mode(
+                {"command": ["redis-server", "--appendonly", "no"]}
+            ),
+        )
+        self.assertEqual(
+            "aof_everysec_rdb",
+            check_release_compose.redis_persistence_mode(
+                {
+                    "command": ["redis-server", "/etc/redis/redis.conf"],
+                    "volumes": [
+                        {
+                            "type": "bind",
+                            "source": "/release/redis.conf",
+                            "target": "/etc/redis/redis.conf",
+                            "read_only": True,
+                        }
+                    ],
+                }
+            ),
+        )
+
     def test_accepts_complete_immutable_contract(self) -> None:
         self.assertEqual(
             [], check_release_compose.validate_compose_document(valid_document())
@@ -214,13 +235,15 @@ class ReleaseComposeContractTest(unittest.TestCase):
 
         failures = check_release_compose.validate_compose_document(document)
 
-        self.assertTrue(any("exact read-only host metric binds" in item for item in failures))
+        self.assertTrue(
+            any("exact read-only host metric binds" in item for item in failures)
+        )
 
     def test_rejects_short_prometheus_retention(self) -> None:
         document = valid_document()
-        document["services"]["prometheus"]["command"][-1] = (
-            "--storage.tsdb.retention.time=30d"
-        )
+        document["services"]["prometheus"]["command"][
+            -1
+        ] = "--storage.tsdb.retention.time=30d"
 
         failures = check_release_compose.validate_compose_document(document)
 
@@ -235,8 +258,12 @@ class ReleaseComposeContractTest(unittest.TestCase):
 
         failures = check_release_compose.validate_compose_document(document)
 
-        self.assertTrue(any("default or empty admin username" in item for item in failures))
-        self.assertTrue(any("default, empty, or short admin password" in item for item in failures))
+        self.assertTrue(
+            any("default or empty admin username" in item for item in failures)
+        )
+        self.assertTrue(
+            any("default, empty, or short admin password" in item for item in failures)
+        )
 
     def test_rejects_missing_observability_collector(self) -> None:
         document = valid_document()
@@ -244,7 +271,9 @@ class ReleaseComposeContractTest(unittest.TestCase):
 
         failures = check_release_compose.validate_compose_document(document)
 
-        self.assertTrue(any("missing project services: node-exporter" in item for item in failures))
+        self.assertTrue(
+            any("missing project services: node-exporter" in item for item in failures)
+        )
 
     def test_rejects_missing_operational_limits(self) -> None:
         for field, expected in (
@@ -299,6 +328,29 @@ class ReleaseComposeContractTest(unittest.TestCase):
             self.assertIn("${" + variable + ":?", text)
         self.assertNotIn("build:", text)
 
+    def test_production_compose_uses_governed_aof_profile(self) -> None:
+        environment = os.environ.copy()
+        for variable in (
+            "GATEWAY_IMAGE_ID",
+            "LOGIN_IMAGE_ID",
+            "ROOM_IMAGE_ID",
+            "BATTLE_IMAGE_ID",
+            "MATCHMAKING_IMAGE_ID",
+            "LEADERBOARD_IMAGE_ID",
+        ):
+            environment[variable] = IMAGE_ID
+        environment["GRAFANA_ADMIN_PASSWORD"] = "unit-test-only-secret-value"
+        environment["GRAFANA_ADMIN_USER"] = "unit-test-operator"
+        environment["BOOST_GATEWAY_GID"] = "1234"
+        document = check_release_compose.load_compose_document(
+            COMPOSE, environment=environment
+        )
+
+        self.assertEqual(
+            check_release_compose.redis_persistence_mode(document["services"]["redis"]),
+            "aof_everysec_rdb",
+        )
+
     def test_redis_has_only_the_volume_initialization_capabilities(self) -> None:
         environment = os.environ.copy()
         for variable in (
@@ -350,9 +402,7 @@ class ReleaseComposeContractTest(unittest.TestCase):
             COMPOSE, environment=environment
         )
 
-        self.assertEqual(
-            [], check_release_compose.validate_compose_document(document)
-        )
+        self.assertEqual([], check_release_compose.validate_compose_document(document))
 
 
 if __name__ == "__main__":

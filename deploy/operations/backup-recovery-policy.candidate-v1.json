@@ -2,12 +2,10 @@
   "schema_version": 1,
   "todo": "TODO-0012",
   "activation": {
-    "state": "approved_candidate_pending_host_activation",
-    "production_compose_mount_enabled": true,
-    "host_units_install_enabled": true,
+    "state": "candidate_only",
+    "production_compose_mount_enabled": false,
+    "host_units_install_enabled": false,
     "live_policy_changed": false,
-    "decision": "docs/decisions/todo0012-redis-aof-activation.json",
-    "benchmark_sha256": "ece4b3ef0d91cb9fd15199a4c6d6d94fb34acb77975fecfa3fd1201bbc7eaebd",
     "required_before_activation": [
       "measured_aof_performance_evidence",
       "verified_encryption_recipient",
@@ -36,8 +34,8 @@
       "60 10000"
     ],
     "performance_impact": {
-      "status": "measured_and_accepted",
-      "required_before_activation": false,
+      "status": "pending_measurement",
+      "required_before_activation": true,
       "baseline_mode": "rdb_only",
       "candidate_mode": "aof_everysec_plus_rdb",
       "minimum_repetitions_per_mode": 3,

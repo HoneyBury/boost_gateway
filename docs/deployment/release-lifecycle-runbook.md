@@ -147,9 +147,9 @@ PING 和 SDK full-flow。数据卷 RPO 为 0，release rollback 不得回滚 Red
 
 相同 volume 不代表不同 Redis persistence mode 之间天然兼容。release manager 会从 source/target
 deployment 的 resolved Compose 识别 Redis mode，并为发生变化的事务生成
-`candidate-persistence-transition-summary.json`。RDB-only→AOF everysec 可以进入后续候选验证；
-AOF→RDB 属于数据格式降级，在具备 fresh BGSAVE、`changes_since_last_save=0`、离线 RDB 校验和
-checkpoint identity 的专用 transition hook 前一律 fail closed。失败候选的自动 previous 恢复和
+`candidate-persistence-transition-summary.json`。RDB-only→AOF everysec 需要先冻结写入并形成
+fresh BGSAVE，AOF→RDB 还属于数据格式降级；在具备 `changes_since_last_save=0`、离线 RDB 校验和
+checkpoint identity 的专用 transition hook 前，两种 mode change 一律 fail closed。失败候选的自动 previous 恢复和
 显式 rollback 都受同一门禁约束；不得为了恢复可用性让旧 RDB-only Compose 忽略 active volume
 中只存在于 AOF 的已确认写入。拒绝记录为
 `recovery-persistence-transition-summary.json` 并保留现场进入恢复 incident。

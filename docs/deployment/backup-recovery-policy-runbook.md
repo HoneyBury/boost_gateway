@@ -2,14 +2,17 @@
 
 更新时间：2026-07-26
 
-本文档对应 `TODO-0012` 的第一个仓库切片。它只冻结 Redis production-validation 候选、
-备份/恢复目标和 fail-closed 校验规则，不修改当前生产 Compose、systemd unit、timer 或目标机
-policy，也不构成备份、恢复、RPO、RTO 或异机留存已经完成的证据。
+本文档对应 `TODO-0012` 的 Redis production-validation 受治理激活候选、备份/恢复目标和
+fail-closed 校验规则。仓库 Compose、host collector unit 和 policy 已进入
+`approved_candidate_pending_host_activation`，但目标 Ubuntu 尚未安装或部署该候选；这不构成
+主机 AOF 激活、RPO、RTO 或正式恢复证据。
 
 ## Repository Contract
 
 - Redis 候选配置：`env/redis/redis.production-validation.conf`
 - 备份恢复策略：`deploy/operations/backup-recovery-policy.example.json`
+- 旧备份恢复策略：`deploy/operations/backup-recovery-policy.candidate-v1.json`（SHA-256 保持
+  `a3af2423357dca4c75b582c0ced366f8ecac66b28b26345998b265bbe5b75d71`）
 - 校验入口：`scripts/tools/check_backup_recovery_policy.py`
 
 运行静态校验：
@@ -22,6 +25,7 @@ python3 scripts/tools/check_backup_recovery_policy.py \
 通过结果只表示候选配置与策略一致。summary 必须继续报告：
 
 - `candidate_contract_valid=true`
+- `governed_candidate_ready=true`
 - `activation_ready=false`
 - `formal_todo0012_claim=false`
 - `live_policy_changed=false`
@@ -43,10 +47,10 @@ python3 scripts/tools/check_backup_recovery_policy.py \
 备份前静默逐出数据，AOF/RDB 无法恢复已经逐出的 key。容量不足应作为显式写入失败、告警和
 扩容信号，而不是被误计为符合 RPO 的正常行为。
 
-当前 `deploy/operations/docker-compose.production.yml` 仍使用 RDB-only inline command，且不
-挂载本候选 profile。不得在完成同机、同 workload 的 RDB-only 与 AOF everysec+RDB 三轮对照、
-change record 和 rollback plan 前改变该边界。对照至少记录 leaderboard throughput、P50/P99、
-Redis CPU/RSS、disk write bytes 和 delayed fsync。
+当前仓库 `deploy/operations/docker-compose.production.yml` 已把 profile 只读挂载为
+`/etc/redis/redis.conf`，并由 `redis-server` 直接读取；该改动只有进入新的 immutable release、
+通过保护分支和目标机 upgrade 后才会改变运行主机。目标机当前 deployment 仍是 RDB-only。
+批准依据仍是两种 persistence mode 各三轮对照；不得把仓库 mount 当作目标机激活证据。
 
 在 **Ubuntu 小主机终端**运行同机、同 workload 对照。runner 使用 shared lifecycle lock，每种模式
 至少三轮并交错顺序；每轮只创建带 TODO label 的临时 volume、internal bridge network、Redis
@@ -64,7 +68,7 @@ sudo python3 \
   --candidate-profile \
     "$CONTROLLER/env/redis/redis.production-validation.conf" \
   --policy \
-    "$CONTROLLER/deploy/operations/backup-recovery-policy.example.json" \
+    "$CONTROLLER/deploy/operations/backup-recovery-policy.candidate-v1.json" \
   --redis-image "$REDIS_IMAGE" \
   --repetitions 3 \
   --requests 10000 \

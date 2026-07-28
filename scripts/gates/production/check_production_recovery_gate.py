@@ -173,24 +173,25 @@ def validate_backup_recovery_candidate(checks: list[dict[str, Any]]) -> None:
     )
     add(
         checks,
-        "backup-policy:candidate-contract",
+        "backup-policy:governed-candidate-contract",
         summary["overall_pass"] is True,
-        "repository-only Redis and backup/recovery candidate contract passes fail-closed validation",
+        "Redis and backup/recovery governed candidate contract passes fail-closed validation",
     )
     add(
         checks,
-        "backup-policy:not-activated",
+        "backup-policy:host-not-activated",
         summary["activation_ready"] is False
         and summary["formal_todo0012_claim"] is False
         and summary["live_policy_changed"] is False,
-        "static policy validation cannot claim activation or TODO-0012 completion",
+        "static candidate policy cannot claim target-host activation or TODO-0012 completion",
     )
     production_compose = read_text("deploy/operations/docker-compose.production.yml")
     add(
         checks,
-        "backup-policy:compose-unchanged",
-        "redis.production-validation.conf" not in production_compose,
-        "the candidate Redis profile is not mounted by the active production Compose contract",
+        "backup-policy:compose-candidate-bound",
+        summary.get("governed_candidate_ready") is True
+        and "redis.production-validation.conf" in production_compose,
+        "the approved Redis profile is bound to the immutable production Compose candidate",
     )
     runbook = read_text(BACKUP_RECOVERY_RUNBOOK)
     add(

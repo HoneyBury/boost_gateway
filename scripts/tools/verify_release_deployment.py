@@ -21,7 +21,11 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from check_release_compose import load_compose_document, validate_compose_document
+from check_release_compose import (  # noqa: E402
+    load_compose_document,
+    redis_persistence_mode,
+    validate_compose_document,
+)
 
 REQUIRED_SERVICES = {
     "gateway",
@@ -70,6 +74,15 @@ REQUIRED_ALERT_RULES = {
     "BoostGatewayRedisUnavailable",
     "BoostGatewayScrapeDown",
 }
+AOF_REQUIRED_ALERT_RULES = {
+    "BoostGatewayRedisAofCounterMissing",
+    "BoostGatewayRedisAofDelayedFsync",
+    "BoostGatewayRedisAofDisabled",
+    "BoostGatewayRedisAofRewriteFailed",
+    "BoostGatewayRedisAofWriteFailed",
+    "BoostGatewayRedisPersistenceCollectorFailed",
+    "BoostGatewayRedisPersistenceConfigDrift",
+}
 REQUIRED_CONTAINER_NAMES = {
     "boost-gateway",
     "boost-login-backend",
@@ -106,6 +119,16 @@ REQUIRED_PROMETHEUS_METRICS = {
     "redis_rdb_last_bgsave_status",
     "redis_rdb_changes_since_last_save",
     "redis_rdb_last_save_timestamp_seconds",
+}
+AOF_REQUIRED_PROMETHEUS_METRICS = {
+    "boost_gateway_redis_aof_delayed_fsync_counter_present",
+    "boost_gateway_redis_aof_delayed_fsync_total",
+    "boost_gateway_redis_aof_enabled",
+    "boost_gateway_redis_aof_last_bgrewrite_status",
+    "boost_gateway_redis_aof_last_write_status",
+    "boost_gateway_redis_persistence_collection_success",
+    "boost_gateway_redis_persistence_collection_timestamp_seconds",
+    "boost_gateway_redis_persistence_effective_config_valid",
 }
 GOVERNED_CONTAINER_QUERIES = {
     "cpu": (
@@ -178,7 +201,9 @@ def parse_compose_ps(output: str) -> list[dict[str, Any]]:
         try:
             item = json.loads(line)
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"docker compose ps returned invalid JSON: {exc}") from exc
+            raise RuntimeError(
+                f"docker compose ps returned invalid JSON: {exc}"
+            ) from exc
         if not isinstance(item, dict):
             raise RuntimeError("docker compose ps returned a non-object entry")
         items.append(item)
@@ -194,7 +219,9 @@ def verify_service_state(items: list[dict[str, Any]]) -> list[str]:
             inventory[service] = item
     missing = REQUIRED_SERVICES - set(inventory)
     if missing:
-        failures.append(f"Compose is missing required running services: {sorted(missing)}")
+        failures.append(
+            f"Compose is missing required running services: {sorted(missing)}"
+        )
     for service in sorted(REQUIRED_SERVICES & set(inventory)):
         item = inventory[service]
         state = str(item.get("State", item.get("state", ""))).lower()
@@ -218,10 +245,14 @@ def load_expected_images(path: Path) -> dict[str, str]:
         for service, variable in IMAGE_ENV_BY_SERVICE.items()
     }
     invalid = [
-        service for service, image in expected.items() if IMAGE_ID_RE.fullmatch(image) is None
+        service
+        for service, image in expected.items()
+        if IMAGE_ID_RE.fullmatch(image) is None
     ]
     if invalid:
-        raise RuntimeError(f"image environment lacks immutable IDs for: {sorted(invalid)}")
+        raise RuntimeError(
+            f"image environment lacks immutable IDs for: {sorted(invalid)}"
+        )
     return expected
 
 
@@ -302,7 +333,9 @@ def validate_gateway_ready(document: object) -> list[str]:
     checks = document.get("checks")
     if not isinstance(checks, list) or not checks:
         failures.append("gateway readiness response has no checks")
-    elif any(not isinstance(item, dict) or item.get("status") == "fail" for item in checks):
+    elif any(
+        not isinstance(item, dict) or item.get("status") == "fail" for item in checks
+    ):
         failures.append("gateway readiness contains a failed check")
     return failures
 
@@ -332,7 +365,9 @@ def validate_prometheus_targets(document: object) -> list[str]:
     return failures
 
 
-def validate_prometheus_metric_inventory(document: object) -> list[str]:
+def validate_prometheus_metric_inventory(
+    document: object, required_metrics: set[str] | None = None
+) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus metric-name response is not successful"]
     data = document.get("data")
@@ -340,9 +375,11 @@ def validate_prometheus_metric_inventory(document: object) -> list[str]:
         return ["Prometheus metric-name response has no string array"]
     metrics = set(data)
     failures: list[str] = []
-    missing = REQUIRED_PROMETHEUS_METRICS - metrics
+    missing = (required_metrics or REQUIRED_PROMETHEUS_METRICS) - metrics
     if missing:
-        failures.append(f"Prometheus has no samples for required metrics: {sorted(missing)}")
+        failures.append(
+            f"Prometheus has no samples for required metrics: {sorted(missing)}"
+        )
     if not (THERMAL_METRICS & metrics):
         failures.append("Prometheus has no host thermal samples")
     for label, pattern in REQUIRED_PROMETHEUS_METRIC_PATTERNS.items():
@@ -351,7 +388,9 @@ def validate_prometheus_metric_inventory(document: object) -> list[str]:
     return failures
 
 
-def validate_prometheus_rules(document: object) -> list[str]:
+def validate_prometheus_rules(
+    document: object, required_rules: set[str] | None = None
+) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus rules response is not successful"]
     data = document.get("data")
@@ -377,9 +416,11 @@ def validate_prometheus_rules(document: object) -> list[str]:
                     f"Prometheus rule is unhealthy: {name or 'unknown'}: "
                     f"{rule.get('lastError') or rule.get('health') or 'unknown'}"
                 )
-    missing = REQUIRED_ALERT_RULES - observed
+    missing = (required_rules or REQUIRED_ALERT_RULES) - observed
     if missing:
-        failures.append(f"Prometheus is missing required alert rules: {sorted(missing)}")
+        failures.append(
+            f"Prometheus is missing required alert rules: {sorted(missing)}"
+        )
     return failures
 
 
@@ -400,9 +441,13 @@ def validate_governed_container_query(document: object) -> list[str]:
     unexpected = observed - REQUIRED_CONTAINER_NAMES
     failures: list[str] = []
     if missing:
-        failures.append(f"Prometheus has no sample for governed containers: {sorted(missing)}")
+        failures.append(
+            f"Prometheus has no sample for governed containers: {sorted(missing)}"
+        )
     if unexpected:
-        failures.append(f"Prometheus returned unmanaged containers: {sorted(unexpected)}")
+        failures.append(
+            f"Prometheus returned unmanaged containers: {sorted(unexpected)}"
+        )
     return failures
 
 
@@ -414,10 +459,10 @@ def validate_prometheus_flags(document: object) -> list[str]:
     match = re.fullmatch(r"([0-9]+(?:\.[0-9]+)?)([dwy])", str(value or ""))
     if match is None:
         return ["Prometheus retention flag is missing or unsupported"]
-    days = float(match.group(1)) * {"d": 1.0, "w": 7.0, "y": 365.0}[
-        match.group(2)
-    ]
-    return [] if days >= 45 else [f"Prometheus retention is shorter than 45 days: {value}"]
+    days = float(match.group(1)) * {"d": 1.0, "w": 7.0, "y": 365.0}[match.group(2)]
+    return (
+        [] if days >= 45 else [f"Prometheus retention is shorter than 45 days: {value}"]
+    )
 
 
 def validate_prometheus_nonempty_query(document: object) -> list[str]:
@@ -425,7 +470,108 @@ def validate_prometheus_nonempty_query(document: object) -> list[str]:
         return ["Prometheus query response is not successful"]
     data = document.get("data")
     result = data.get("result") if isinstance(data, dict) else None
-    return [] if isinstance(result, list) and result else ["Prometheus query returned no samples"]
+    return (
+        []
+        if isinstance(result, list) and result
+        else ["Prometheus query returned no samples"]
+    )
+
+
+def parse_redis_config_get(content: str) -> dict[str, str]:
+    lines = content.splitlines()
+    if len(lines) % 2:
+        raise ValueError("Redis CONFIG GET returned an odd number of lines")
+    return {lines[index]: lines[index + 1] for index in range(0, len(lines), 2)}
+
+
+def validate_redis_aof_runtime(compose_command: list[str]) -> tuple[bool, str]:
+    expected = {
+        "appendonly": "yes",
+        "appendfsync": "everysec",
+        "no-appendfsync-on-rewrite": "no",
+        "aof-load-truncated": "no",
+        "aof-use-rdb-preamble": "yes",
+        "maxmemory-policy": "noeviction",
+        "dir": "/data",
+        "save": "300 100 60 10000",
+        "stop-writes-on-bgsave-error": "yes",
+    }
+    config = run(
+        [
+            *compose_command,
+            "exec",
+            "-T",
+            "redis",
+            "redis-cli",
+            "--raw",
+            "CONFIG",
+            "GET",
+            *expected,
+        ]
+    )
+    if config.returncode:
+        return False, (config.stderr or config.stdout).strip()[-1000:]
+    try:
+        observed = parse_redis_config_get(config.stdout)
+    except ValueError as exc:
+        return False, str(exc)
+    drift = {
+        key: {"expected": value, "observed": observed.get(key)}
+        for key, value in expected.items()
+        if observed.get(key) != value
+    }
+    info = run(
+        [
+            *compose_command,
+            "exec",
+            "-T",
+            "redis",
+            "redis-cli",
+            "--raw",
+            "INFO",
+            "persistence",
+        ]
+    )
+    if info.returncode:
+        return False, (info.stderr or info.stdout).strip()[-1000:]
+    persistence: dict[str, str] = {}
+    for raw in info.stdout.splitlines():
+        if ":" in raw and not raw.startswith("#"):
+            key, value = raw.split(":", 1)
+            persistence[key] = value.strip()
+    required_info = {
+        "aof_enabled": "1",
+        "aof_delayed_fsync": "0",
+        "aof_last_write_status": "ok",
+        "aof_last_bgrewrite_status": "ok",
+        "rdb_last_bgsave_status": "ok",
+    }
+    info_drift = {
+        key: {"expected": value, "observed": persistence.get(key)}
+        for key, value in required_info.items()
+        if persistence.get(key) != value
+    }
+    manifest = run(
+        [
+            *compose_command,
+            "exec",
+            "-T",
+            "redis",
+            "sh",
+            "-eu",
+            "-c",
+            "test -s /data/appendonlydir/appendonly.aof.manifest",
+        ]
+    )
+    detail = json.dumps(
+        {
+            "config_drift": drift,
+            "info_drift": info_drift,
+            "aof_manifest_present": manifest.returncode == 0,
+        },
+        sort_keys=True,
+    )
+    return not drift and not info_drift and manifest.returncode == 0, detail
 
 
 def add_check(
@@ -439,6 +585,10 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     compose = args.compose_file.resolve()
     checks: list[dict[str, Any]] = []
     document = load_compose_document(compose)
+    services = document.get("services") if isinstance(document, dict) else None
+    redis_service = services.get("redis") if isinstance(services, dict) else None
+    expected_redis_persistence = redis_persistence_mode(redis_service)
+    aof_expected = expected_redis_persistence == "aof_everysec_rdb"
     contract_failures = validate_compose_document(document)
     add_check(
         checks,
@@ -512,7 +662,11 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     metrics_passed, metrics_detail = wait_valid_json(
         "http://127.0.0.1:9090/api/v1/label/__name__/values",
         args.ready_timeout_seconds,
-        validate_prometheus_metric_inventory,
+        lambda value: validate_prometheus_metric_inventory(
+            value,
+            REQUIRED_PROMETHEUS_METRICS
+            | (AOF_REQUIRED_PROMETHEUS_METRICS if aof_expected else set()),
+        ),
     )
     add_check(
         checks,
@@ -523,7 +677,11 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     rules_passed, rules_detail = wait_valid_json(
         "http://127.0.0.1:9090/api/v1/rules?type=alert",
         args.ready_timeout_seconds,
-        validate_prometheus_rules,
+        lambda value: validate_prometheus_rules(
+            value,
+            REQUIRED_ALERT_RULES
+            | (AOF_REQUIRED_ALERT_RULES if aof_expected else set()),
+        ),
     )
     add_check(
         checks,
@@ -577,8 +735,32 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         redis_passed,
         (redis.stdout + redis.stderr).strip()[-1000:],
     )
+    if aof_expected:
+        aof_passed, aof_detail = validate_redis_aof_runtime(compose_command)
+        add_check(checks, "redis-aof-effective-runtime", aof_passed, aof_detail)
+        query = urllib.parse.urlencode(
+            {
+                "query": "boost_gateway_redis_persistence_collection_success == 1 "
+                "and boost_gateway_redis_persistence_effective_config_valid == 1 "
+                "and boost_gateway_redis_aof_delayed_fsync_counter_present == 1 "
+                "and boost_gateway_redis_aof_delayed_fsync_total == 0"
+            }
+        )
+        persistence_passed, persistence_detail = wait_valid_json(
+            f"http://127.0.0.1:9090/api/v1/query?{query}",
+            args.ready_timeout_seconds,
+            validate_prometheus_nonempty_query,
+        )
+        add_check(
+            checks,
+            "redis-aof-prometheus-samples",
+            persistence_passed,
+            persistence_detail,
+        )
     client = staging / "bin/sdk_full_flow_client"
-    full_flow = run([str(client), args.host, str(args.port)], timeout=args.full_flow_timeout_seconds)
+    full_flow = run(
+        [str(client), args.host, str(args.port)], timeout=args.full_flow_timeout_seconds
+    )
     add_check(
         checks,
         "release-sdk-full-flow",
@@ -599,6 +781,7 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "public_conan_access_performed": False,
         "staging_manifest": str(staging / "manifest.json"),
         "compose_file": str(compose),
+        "expected_redis_persistence": expected_redis_persistence,
         "checks": checks,
         "failed": failures,
     }
