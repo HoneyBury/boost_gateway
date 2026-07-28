@@ -482,6 +482,7 @@ def stage_runtime(
             "check_release_compose.py",
             "collect_container_restart_metrics.py",
             "collect_redis_persistence_metrics.py",
+            "prepare_redis_persistence_transition.py",
             "verify_release_deployment.py",
         ):
             shutil.copy2(ROOT / "scripts/tools" / name, temporary / "scripts/tools" / name)

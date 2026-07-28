@@ -154,6 +154,15 @@ checkpoint identity 的专用 transition hook 前，两种 mode change 一律 fa
 中只存在于 AOF 的已确认写入。拒绝记录为
 `recovery-persistence-transition-summary.json` 并保留现场进入恢复 incident。
 
+专用 hook 由 `scripts/tools/prepare_redis_persistence_transition.py` 执行。它只在 release lifecycle
+持锁后运行：先核对 active Redis 的 effective source mode 和唯一 read-write `/data` volume，再停止
+gateway 与五个 backend 以冻结外部写入，强制 BGSAVE 并要求 `LASTSAVE` 前进、
+`rdb_changes_since_last_save=0`、`rdb_last_bgsave_status=ok`，最后在原 Redis container 中运行
+`redis-check-rdb` 并记录 `dump.rdb` SHA-256。volume identity 前后漂移、任一 write-capable container
+仍运行、配置 mode 不符、BGSAVE/离线校验失败或 180 秒超时都会阻止 target Compose 启动。若中断
+事务恢复时 runtime 已处于 target mode，hook 记录 `runtime_already_target=true`，避免把已经兼容的
+runtime 再误判成一次降级；其余情况不得跳过 checkpoint。
+
 ## 关闭证据
 
 每次实机操作至少归档：manager 标准输出、deployment record、transaction record、deployment/

@@ -373,6 +373,9 @@
     "scripts/tools/collect_redis_persistence_metrics.py": {
       "category": "tool"
     },
+    "scripts/tools/prepare_redis_persistence_transition.py": {
+      "category": "tool"
+    },
     "scripts/tools/deploy_k8s.py": {
       "category": "tool"
     },
