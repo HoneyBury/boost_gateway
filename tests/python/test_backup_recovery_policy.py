@@ -57,24 +57,25 @@ class BackupRecoveryPolicyTest(unittest.TestCase):
         if sync_digest:
             self._sync_profile_digest()
 
-    def test_accepts_repository_candidate_without_claiming_activation(self) -> None:
+    def test_accepts_governed_candidate_without_claiming_host_activation(self) -> None:
         summary = self._validate()
 
         self.assertTrue(summary["overall_pass"])
         self.assertTrue(summary["candidate_contract_valid"])
+        self.assertTrue(summary["governed_candidate_ready"])
         self.assertFalse(summary["activation_ready"])
         self.assertFalse(summary["formal_todo0012_claim"])
         self.assertFalse(summary["live_policy_changed"])
         self.assertFalse(summary["secret_material_recorded"])
 
-    def test_candidate_profile_is_not_mounted_by_production_compose(self) -> None:
+    def test_approved_candidate_profile_is_mounted_by_production_compose(self) -> None:
         compose = (ROOT / "deploy/operations/docker-compose.production.yml").read_text(
             encoding="utf-8"
         )
 
-        self.assertNotIn("redis.production-validation.conf", compose)
-        self.assertFalse(self.policy["activation"]["production_compose_mount_enabled"])
-        self.assertFalse(self.policy["activation"]["host_units_install_enabled"])
+        self.assertIn("redis.production-validation.conf", compose)
+        self.assertTrue(self.policy["activation"]["production_compose_mount_enabled"])
+        self.assertTrue(self.policy["activation"]["host_units_install_enabled"])
 
     def test_rejects_aof_or_fsync_policy_drift(self) -> None:
         for before, after, failure in (

@@ -12,7 +12,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -156,7 +155,7 @@ def _volume_entries(service: dict[str, Any]) -> list[tuple[str, str, str]]:
             )
         elif isinstance(raw, str):
             parts = raw.split(":", 2)
-            if len(parts) >= 2 and parts[0] and not parts[0].startswith(('.', '/')):
+            if len(parts) >= 2 and parts[0] and not parts[0].startswith((".", "/")):
                 entries.append(("volume", parts[0], parts[1]))
     return entries
 
@@ -183,6 +182,34 @@ def _command_arguments(service: dict[str, Any]) -> set[str]:
     if isinstance(command, str):
         return set(command.split())
     return set()
+
+
+def redis_persistence_mode(service: object) -> str:
+    if not isinstance(service, dict):
+        return "unknown"
+    command = service.get("command")
+    if isinstance(command, str):
+        arguments = command.split()
+    elif isinstance(command, list):
+        arguments = [str(item) for item in command]
+    else:
+        return "unknown"
+    for index, argument in enumerate(arguments):
+        if argument == "--appendonly" and index + 1 < len(arguments):
+            return "rdb_only" if arguments[index + 1].lower() == "no" else "aof_other"
+    config_targets = {
+        str(item.get("target", ""))
+        for item in service.get("volumes", [])
+        if isinstance(item, dict)
+        and item.get("type") == "bind"
+        and item.get("read_only") is True
+    }
+    if any(
+        argument.lower().endswith(".conf") and argument in config_targets
+        for argument in arguments[1:]
+    ):
+        return "aof_everysec_rdb"
+    return "unknown"
 
 
 def _prometheus_retention_days(service: dict[str, Any]) -> float | None:
@@ -212,7 +239,9 @@ def _validate_node_exporter(service: dict[str, Any], failures: list[str]) -> Non
         or len(volumes) != len(NODE_EXPORTER_BINDS)
         or _read_only_bind_entries(service) != NODE_EXPORTER_BINDS
     ):
-        failures.append("node-exporter: exact read-only host and D-Bus binds are required")
+        failures.append(
+            "node-exporter: exact read-only host and D-Bus binds are required"
+        )
     required_arguments = {
         "--path.rootfs=/host",
         "--collector.hwmon",
@@ -221,7 +250,9 @@ def _validate_node_exporter(service: dict[str, Any], failures: list[str]) -> Non
         "--collector.textfile.directory=/var/lib/node_exporter/textfile_collector",
     }
     if not required_arguments.issubset(_command_arguments(service)):
-        failures.append("node-exporter: required host and thermal collectors are missing")
+        failures.append(
+            "node-exporter: required host and thermal collectors are missing"
+        )
     if service.get("devices"):
         failures.append("node-exporter: host devices are forbidden")
     if service.get("ports"):
@@ -266,7 +297,9 @@ def _validate_prometheus(service: dict[str, Any], failures: list[str]) -> None:
         if kind == "volume" and target == "/prometheus"
     ]
     if len(data_volumes) != 1:
-        failures.append("prometheus: exactly one persistent /prometheus volume is required")
+        failures.append(
+            "prometheus: exactly one persistent /prometheus volume is required"
+        )
 
 
 def _validate_grafana(service: dict[str, Any], failures: list[str]) -> None:
@@ -290,8 +323,7 @@ def _validate_grafana(service: dict[str, Any], failures: list[str]) -> None:
 
 def _validate_alertmanager(service: dict[str, Any], failures: list[str]) -> None:
     config_binds = {
-        (source, target)
-        for source, target in _read_only_bind_entries(service)
+        (source, target) for source, target in _read_only_bind_entries(service)
     }
     expected_binds = {
         (
@@ -308,7 +340,9 @@ def _validate_alertmanager(service: dict[str, Any], failures: list[str]) -> None
             "alertmanager: exact root-managed config and secret binds are required"
         )
     if re.fullmatch(r"65534:[1-9][0-9]*", str(service.get("user", ""))) is None:
-        failures.append("alertmanager: unprivileged UID and governed host group are required")
+        failures.append(
+            "alertmanager: unprivileged UID and governed host group are required"
+        )
 
 
 def validate_compose_document(document: object) -> list[str]:
@@ -364,7 +398,9 @@ def validate_compose_document(document: object) -> list[str]:
                 if kind == "volume" and target == "/app/logs"
             ]
             if len(named_logs) != 1:
-                failures.append(f"{name}: exactly one named /app/logs volume is required")
+                failures.append(
+                    f"{name}: exactly one named /app/logs volume is required"
+                )
             elif named_logs[0][0] not in volumes:
                 failures.append(f"{name}: log volume is not declared at top level")
 
@@ -391,7 +427,9 @@ def validate_compose_document(document: object) -> list[str]:
                 target = int(raw_port.get("target"))
                 published = int(raw_port.get("published"))
             except (TypeError, ValueError):
-                failures.append(f"{name}: port mapping has invalid published or target port")
+                failures.append(
+                    f"{name}: port mapping has invalid published or target port"
+                )
                 continue
             if raw_port.get("protocol", "tcp") != "tcp":
                 failures.append(f"{name}: only TCP port mappings are supported")
@@ -402,7 +440,9 @@ def validate_compose_document(document: object) -> list[str]:
             )
             if is_gateway_business:
                 if host_ip in LOOPBACK_ADDRESSES:
-                    failures.append("gateway: business port 9201 must be externally reachable")
+                    failures.append(
+                        "gateway: business port 9201 must be externally reachable"
+                    )
                 else:
                     public_gateway_ports += 1
             elif host_ip not in LOOPBACK_ADDRESSES:
@@ -411,7 +451,9 @@ def validate_compose_document(document: object) -> list[str]:
                 )
 
     if public_gateway_ports != 1:
-        failures.append("exactly one externally reachable gateway 9201 mapping is required")
+        failures.append(
+            "exactly one externally reachable gateway 9201 mapping is required"
+        )
     return failures
 
 
@@ -449,13 +491,18 @@ def main() -> int:
                 validate_preflight,
             )
 
-            summary = validate_preflight(DEFAULT_CONFIG, DEFAULT_ENV, DEFAULT_ATTESTATION)
+            summary = validate_preflight(
+                DEFAULT_CONFIG, DEFAULT_ENV, DEFAULT_ATTESTATION
+            )
             DEFAULT_SUMMARY.parent.mkdir(parents=True, exist_ok=True)
             atomic_content = json.dumps(summary, indent=2, sort_keys=True) + "\n"
             DEFAULT_SUMMARY.write_text(atomic_content, encoding="utf-8")
             os.chmod(DEFAULT_SUMMARY, 0o640)
         except (OSError, RuntimeError, subprocess.SubprocessError) as exc:
-            print(f"release Compose contract: FAIL (observability: {exc})", file=sys.stderr)
+            print(
+                f"release Compose contract: FAIL (observability: {exc})",
+                file=sys.stderr,
+            )
             return 1
     print("release Compose contract: PASS")
     return 0

@@ -52,6 +52,8 @@ Use these stable public entrypoints first:
 - `prepare_release_runtime.py` for anonymous download, supply-chain verification, and atomic Linux x64 release staging.
 - `build_release_images.py` for network-disabled runtime-only image builds and immutable image-ID output.
 - `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
+- `collect_redis_persistence_metrics.py` for fail-closed effective AOF/RDB state and delayed-fsync
+  textfile metrics consumed by node-exporter.
 - `benchmark_redis_persistence.py` for lifecycle-locked RDB-only versus AOF-everysec Redis workload and
   explicit-checkpoint measurements on disposable server/client topologies without changing production.
 - `review_redis_persistence_benchmark.py` for binding those measurements to the governed TODO-0012

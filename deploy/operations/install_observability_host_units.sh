@@ -25,6 +25,9 @@ install -d -o root -g boost-gateway -m 0755 \
 install -o root -g root -m 0755 \
   "${ROOT}/scripts/tools/collect_container_restart_metrics.py" \
   /usr/local/libexec/boost-gateway/collect_container_restart_metrics.py
+install -o root -g root -m 0755 \
+  "${ROOT}/scripts/tools/collect_redis_persistence_metrics.py" \
+  /usr/local/libexec/boost-gateway/collect_redis_persistence_metrics.py
 install -o root -g root -m 0644 \
   "${ROOT}/scripts/__init__.py" \
   /usr/local/libexec/boost-gateway/scripts/__init__.py

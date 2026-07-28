@@ -67,6 +67,36 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
             module.validate_prometheus_metric_inventory(document),
         )
 
+    def test_aof_metric_inventory_is_an_explicit_additional_gate(self) -> None:
+        metrics = sorted(
+            module.REQUIRED_PROMETHEUS_METRICS
+            | module.AOF_REQUIRED_PROMETHEUS_METRICS
+            | {
+                "node_hwmon_temp_celsius",
+                "gateway_backend_login_requests_total",
+                "gateway_backend_login_errors_total",
+                "gateway_backend_login_p99_latency_us",
+            }
+        )
+        document = {"status": "success", "data": metrics}
+
+        self.assertEqual(
+            module.validate_prometheus_metric_inventory(
+                document,
+                module.REQUIRED_PROMETHEUS_METRICS
+                | module.AOF_REQUIRED_PROMETHEUS_METRICS,
+            ),
+            [],
+        )
+        document["data"].remove("boost_gateway_redis_aof_enabled")
+        self.assertTrue(
+            module.validate_prometheus_metric_inventory(
+                document,
+                module.REQUIRED_PROMETHEUS_METRICS
+                | module.AOF_REQUIRED_PROMETHEUS_METRICS,
+            )
+        )
+
     def test_prometheus_flags_require_45_day_retention(self) -> None:
         self.assertEqual(
             module.validate_prometheus_flags(
@@ -106,6 +136,88 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
         document["data"]["groups"][0]["rules"][0]["lastError"] = "parse error"
         self.assertTrue(module.validate_prometheus_rules(document))
 
+    @mock.patch.object(module, "run")
+    def test_aof_runtime_requires_exact_config_info_and_manifest(
+        self, run: mock.Mock
+    ) -> None:
+        expected = {
+            "appendonly": "yes",
+            "appendfsync": "everysec",
+            "no-appendfsync-on-rewrite": "no",
+            "aof-load-truncated": "no",
+            "aof-use-rdb-preamble": "yes",
+            "maxmemory-policy": "noeviction",
+            "dir": "/data",
+            "save": "300 100 60 10000",
+            "stop-writes-on-bgsave-error": "yes",
+        }
+        run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout="\n".join(item for pair in expected.items() for item in pair)
+                + "\n",
+                stderr="",
+            ),
+            mock.Mock(
+                returncode=0,
+                stdout=(
+                    "aof_enabled:1\n"
+                    "aof_delayed_fsync:0\n"
+                    "aof_last_write_status:ok\n"
+                    "aof_last_bgrewrite_status:ok\n"
+                    "rdb_last_bgsave_status:ok\n"
+                ),
+                stderr="",
+            ),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+        ]
+
+        passed, detail = module.validate_redis_aof_runtime(
+            ["docker", "compose", "-f", "/release/compose.yml"]
+        )
+
+        self.assertTrue(passed, detail)
+        self.assertIn('"aof_manifest_present": true', detail)
+
+    @mock.patch.object(module, "run")
+    def test_aof_runtime_rejects_delayed_fsync(self, run: mock.Mock) -> None:
+        expected = {
+            "appendonly": "yes",
+            "appendfsync": "everysec",
+            "no-appendfsync-on-rewrite": "no",
+            "aof-load-truncated": "no",
+            "aof-use-rdb-preamble": "yes",
+            "maxmemory-policy": "noeviction",
+            "dir": "/data",
+            "save": "300 100 60 10000",
+            "stop-writes-on-bgsave-error": "yes",
+        }
+        run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout="\n".join(item for pair in expected.items() for item in pair)
+                + "\n",
+                stderr="",
+            ),
+            mock.Mock(
+                returncode=0,
+                stdout=(
+                    "aof_enabled:1\n"
+                    "aof_delayed_fsync:1\n"
+                    "aof_last_write_status:ok\n"
+                    "aof_last_bgrewrite_status:ok\n"
+                    "rdb_last_bgsave_status:ok\n"
+                ),
+                stderr="",
+            ),
+            mock.Mock(returncode=0, stdout="", stderr=""),
+        ]
+
+        passed, detail = module.validate_redis_aof_runtime(["docker", "compose"])
+
+        self.assertFalse(passed)
+        self.assertIn("aof_delayed_fsync", detail)
+
     def test_governed_container_query_requires_exact_inventory(self) -> None:
         document = {
             "status": "success",
@@ -137,7 +249,9 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
     def test_parse_compose_ps_accepts_array_and_json_lines(self) -> None:
         items = [{"Service": "gateway", "State": "running", "Health": "healthy"}]
         self.assertEqual(module.parse_compose_ps(json.dumps(items)), items)
-        self.assertEqual(module.parse_compose_ps("\n".join(map(json.dumps, items))), items)
+        self.assertEqual(
+            module.parse_compose_ps("\n".join(map(json.dumps, items))), items
+        )
 
     def test_service_state_accepts_complete_healthy_topology(self) -> None:
         items = [

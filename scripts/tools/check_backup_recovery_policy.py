@@ -238,13 +238,24 @@ def validate_performance_contract(
     checks: list[dict[str, Any]], policy: dict[str, Any]
 ) -> None:
     performance = nested(policy, "redis", "performance_impact")
+    activation_state = nested(policy, "activation", "state")
+    performance_valid = isinstance(performance, dict) and (
+        (
+            activation_state == "candidate_only"
+            and performance.get("status") == "pending_measurement"
+            and performance.get("required_before_activation") is True
+        )
+        or (
+            activation_state == "approved_candidate_pending_host_activation"
+            and performance.get("status") == "measured_and_accepted"
+            and performance.get("required_before_activation") is False
+        )
+    )
     add(
         checks,
-        "performance:pending-before-activation",
-        isinstance(performance, dict)
-        and performance.get("status") == "pending_measurement"
-        and performance.get("required_before_activation") is True,
-        "Measured AOF impact remains an explicit activation gate",
+        "performance:governed-state",
+        performance_valid,
+        "Performance state matches the candidate or approved-candidate activation phase",
     )
     add(
         checks,
@@ -524,15 +535,28 @@ def validate_objectives_and_activation(
         "policy is bound to TODO-0012",
     )
     activation = policy.get("activation")
-    add(
-        checks,
-        "activation:candidate-only",
-        isinstance(activation, dict)
-        and activation.get("state") == "candidate_only"
+    state = activation.get("state") if isinstance(activation, dict) else None
+    candidate_only = (
+        state == "candidate_only"
         and activation.get("production_compose_mount_enabled") is False
         and activation.get("host_units_install_enabled") is False
-        and activation.get("live_policy_changed") is False,
-        "Repository candidate does not alter Compose, host units or live policy",
+        and activation.get("live_policy_changed") is False
+    )
+    approved_candidate = (
+        state == "approved_candidate_pending_host_activation"
+        and activation.get("production_compose_mount_enabled") is True
+        and activation.get("host_units_install_enabled") is True
+        and activation.get("live_policy_changed") is False
+        and activation.get("decision")
+        == "docs/decisions/todo0012-redis-aof-activation.json"
+        and re.fullmatch(r"[0-9a-f]{64}", str(activation.get("benchmark_sha256", "")))
+        is not None
+    )
+    add(
+        checks,
+        "activation:governed-state",
+        candidate_only or approved_candidate,
+        "Activation is either isolated or an approved immutable candidate pending host activation",
     )
     gates = (
         string_set(activation.get("required_before_activation"))
@@ -640,6 +664,7 @@ def validate_policy(
         validate_evidence_contract(checks, policy)
 
     failed = [check for check in checks if not check["passed"]]
+    activation_state = nested(policy, "activation", "state") if policy else None
     return {
         "summary_version": 1,
         "generated_at": now(),
@@ -648,6 +673,8 @@ def validate_policy(
         "failed_category": "backup_recovery_policy" if failed else "",
         "failed_step": failed[0]["name"] if failed else "",
         "candidate_contract_valid": not failed,
+        "governed_candidate_ready": not failed
+        and activation_state == "approved_candidate_pending_host_activation",
         "activation_ready": False,
         "formal_todo0012_claim": False,
         "live_policy_changed": False,

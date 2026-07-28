@@ -121,6 +121,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             "deploy/systemd",
             "deploy/operations",
             "env/monitoring",
+            "env/redis",
             "scripts/tools",
         ):
             (source / name).mkdir(parents=True, exist_ok=True)
@@ -136,6 +137,9 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         )
         (source / "env/monitoring/prometheus.yml").write_text(
             "global: {}\n", encoding="utf-8"
+        )
+        (source / "env/redis/redis.production-validation.conf").write_text(
+            "appendonly yes\nappendfsync everysec\n", encoding="utf-8"
         )
         (source / "scripts/tools/check_release_compose.py").write_text(
             "pass\n", encoding="utf-8"
@@ -157,6 +161,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                     source / "deploy/operations/docker-compose.production.yml"
                 ),
                 "monitoring_sha256": module.sha256_tree(source / "env/monitoring"),
+                "redis_sha256": module.sha256_tree(source / "env/redis"),
                 "verification_tools_sha256": module.sha256_tree(
                     source / "scripts/tools"
                 ),
@@ -376,7 +381,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             self.executor.calls,
         )
 
-    def test_system_executor_allows_rdb_to_aof_and_records_transition(self) -> None:
+    def test_system_executor_blocks_rdb_to_aof_without_fresh_checkpoint(self) -> None:
         source = Path(self.temporary.name) / "rdb-deployment"
         target = Path(self.temporary.name) / "aof-deployment"
         profile = Path(self.temporary.name) / "redis.conf"
@@ -409,13 +414,15 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                 "load_compose_document",
                 side_effect=[rdb_document, aof_document],
             ),
+            self.assertRaisesRegex(module.LifecycleError, "verified fresh checkpoint"),
         ):
-            result = executor.prepare_transition(source, target, summary, 60.0)
+            executor.prepare_transition(source, target, summary, 60.0)
 
-        self.assertIsNotNone(result)
-        self.assertTrue(result["overall_pass"])
+        result = json.loads(summary.read_text(encoding="utf-8"))
+        self.assertFalse(result["overall_pass"])
         self.assertEqual(result["target_redis_persistence"]["mode"], "aof_everysec_rdb")
         self.assertFalse(result["aof_to_rdb_downgrade"])
+        self.assertTrue(result["checkpoint_required"])
 
     def test_system_executor_blocks_blind_aof_to_rdb_transition(self) -> None:
         source = Path(self.temporary.name) / "aof-deployment"

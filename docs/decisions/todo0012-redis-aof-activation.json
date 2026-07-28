@@ -64,6 +64,7 @@
     "aof_to_rdb_is_a_data_format_downgrade": true,
     "blind_old_compose_restore_prohibited": true,
     "write_quiescence_required": true,
+    "pre_activation_checkpoint_required": true,
     "fresh_bgsave_required": true,
     "rdb_offline_validation_required": true,
     "checkpoint_identity_must_be_recorded": true,

@@ -297,6 +297,7 @@ def validate_review(benchmark_path: Path, decision_path: Path) -> dict[str, Any]
         "aof_to_rdb_is_a_data_format_downgrade": True,
         "blind_old_compose_restore_prohibited": True,
         "write_quiescence_required": True,
+        "pre_activation_checkpoint_required": True,
         "fresh_bgsave_required": True,
         "rdb_offline_validation_required": True,
         "checkpoint_identity_must_be_recorded": True,

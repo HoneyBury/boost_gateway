@@ -457,16 +457,31 @@ def stage_runtime(
             ROOT / "deploy/systemd/boost-gateway-compose.service",
             temporary / "deploy/systemd/boost-gateway-compose.service",
         )
+        for name in (
+            "boost-gateway-container-metrics.service",
+            "boost-gateway-container-metrics.timer",
+        ):
+            shutil.copy2(
+                ROOT / "deploy/systemd" / name,
+                temporary / "deploy/systemd" / name,
+            )
         (temporary / "deploy/operations").mkdir(parents=True)
         shutil.copy2(
             ROOT / "deploy/operations/docker-compose.production.yml",
             temporary / "deploy/operations/docker-compose.production.yml",
         )
+        shutil.copy2(
+            ROOT / "deploy/operations/install_redis_persistence_collector.sh",
+            temporary / "deploy/operations/install_redis_persistence_collector.sh",
+        )
         shutil.copytree(ROOT / "env/monitoring", temporary / "env/monitoring")
+        shutil.copytree(ROOT / "env/redis", temporary / "env/redis")
         (temporary / "scripts/tools").mkdir(parents=True)
         for name in (
             "build_release_images.py",
             "check_release_compose.py",
+            "collect_container_restart_metrics.py",
+            "collect_redis_persistence_metrics.py",
             "verify_release_deployment.py",
         ):
             shutil.copy2(ROOT / "scripts/tools" / name, temporary / "scripts/tools" / name)
@@ -502,6 +517,7 @@ def stage_runtime(
                     temporary / "deploy/operations/docker-compose.production.yml"
                 ),
                 "monitoring_sha256": sha256_tree(temporary / "env/monitoring"),
+                "redis_sha256": sha256_tree(temporary / "env/redis"),
                 "verification_tools_sha256": sha256_tree(temporary / "scripts/tools"),
             },
             "binaries": binaries,
