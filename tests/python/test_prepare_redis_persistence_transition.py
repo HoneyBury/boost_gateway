@@ -121,6 +121,17 @@ class RedisPersistenceTransitionTest(unittest.TestCase):
         self.assertEqual(result["lastsave_after"], 101)
         self.assertEqual(result["rdb_sha256"], "c" * 64)
         self.assertTrue(result["redis_check_rdb"])
+        for call in run.call_args_list:
+            command = call.args[0]
+            self.assertEqual(
+                command[:5], ["docker", "exec", "--user", "redis", "boost-redis"]
+            )
+        self.assertEqual(
+            run.call_args_list[0].args[0][-2:], ["redis-check-rdb", "/data/dump.rdb"]
+        )
+        self.assertEqual(
+            run.call_args_list[1].args[0][-2:], ["sha256sum", "/data/dump.rdb"]
+        )
 
     @mock.patch.object(transition, "run")
     def test_freeze_writes_stops_and_verifies_exact_containers(
