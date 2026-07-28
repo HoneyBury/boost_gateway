@@ -223,6 +223,14 @@ class ScheduledBackupTest(unittest.TestCase):
         self.assertIn("systemctl enable --now boost-gateway-backup.timer", installer)
         self.assertIn("chmod 0600", installer)
         self.assertIn("--run-now", installer)
+        for runtime_dependency in (
+            '"${ROOT}/scripts/__init__.py"',
+            '"${ROOT}/scripts/lib/__init__.py"',
+            '"${ROOT}/scripts/lib/operations_identity.py"',
+            '"${ROOT}/scripts/tools/__init__.py"',
+        ):
+            self.assertIn(runtime_dependency, installer)
+        self.assertIn("/usr/local/libexec/boost-gateway/backup/scripts/lib", installer)
 
 
 if __name__ == "__main__":
