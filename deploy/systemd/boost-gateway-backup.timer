@@ -1,0 +1,13 @@
+[Unit]
+Description=Run the encrypted off-host BoostGateway backup daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00 UTC
+Persistent=true
+AccuracySec=1min
+RandomizedDelaySec=15min
+FixedRandomDelay=true
+Unit=boost-gateway-backup.service
+
+[Install]
+WantedBy=timers.target
