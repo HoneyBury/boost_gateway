@@ -430,6 +430,9 @@
     "scripts/tools/restore_bundle_ssh_receiver.py": {
       "category": "tool"
     },
+    "scripts/tools/run_scheduled_backup.py": {
+      "category": "tool"
+    },
     "scripts/tools/schedule_observability_evidence.py": {
       "category": "tool"
     },

@@ -479,6 +479,32 @@ completion record。删除失败时保留 quarantine 和 intent，不能生成�
 attestation 时，`remote-prune` 必须在移动任何 backup 前 fail closed。intent 和 completion 都必须
 绑定 retained known-good backup ID 与 attestation SHA-256。
 
-本工具仍未安装 timer，也未改变 production Compose、systemd 或 Redis profile。生成的 manifest
-固定记录 `formal_todo0012_claim=false` 以及 policy activation state；在两轮独立恢复演练通过前，
-不得据此关闭 TODO-0012。
+### Scheduled Daily Backups
+
+仓库提供 root-owned oneshot 和 UTC daily timer。远端 SSH target 只写入
+`/etc/boost-gateway/backup-remote-host`，age recipient、forced-command private key、known_hosts 和 vault
+identity attestation 继续使用 `/etc/boost-gateway` 下的独立 `0600` 文件，不进入 unit、journal 或仓库。
+每周一 UTC 的 daily backup 同时标记为 `weekly`；其他日期只标记为 `daily`：
+
+```bash
+sudo deploy/operations/install_backup_host_units.sh \
+  --remote-host 'honeybury@<mac-tailscale-ip>' \
+  --run-now
+```
+
+安装器把 backup engine、当前 policy/profile 和 scheduler 复制到 root-owned host controller 目录，启用
+`boost-gateway-backup.timer`，并可立即执行一次真实异机备份。scheduler 使用 shared lifecycle lock、
+create-only backup ID 和 forced-command transport；它独立回读 archive、manifest 和 remote receipt，验证
+distinct host identity、SHA-256、retention class 与 formal flags 后，才在
+`/var/lib/boost-gateway-evidence/recovery` 写入 `overall_pass=true` summary。失败同样写 create-only
+`overall_pass=false` summary，且不能声明 off-host copy 已验证。
+
+```bash
+systemctl list-timers boost-gateway-backup.timer --no-pager
+sudo systemctl status boost-gateway-backup.service --no-pager --full
+sudo journalctl -u boost-gateway-backup.service -n 100 --no-pager
+```
+
+安装 timer 不改变 production Compose、Redis volume 或 Redis profile。所有 backup、vault validation、
+restore/business summary 和 known-good attestation 仍固定各自的 formal boundary；只有 repository TODO
+source-of-truth 在全部验收证据通过后才能关闭 TODO-0012。
