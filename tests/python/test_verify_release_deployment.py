@@ -11,6 +11,36 @@ from scripts.tools import verify_release_deployment as module
 
 
 class VerifyReleaseDeploymentTest(unittest.TestCase):
+    def test_legacy_redis_bridge_accepts_only_exact_rdb_contract(self) -> None:
+        document = {
+            "services": {
+                "redis": {
+                    "image": "redis:7-alpine",
+                    "command": ["redis-server", "--appendonly", "no"],
+                    "cap_add": ["CHOWN", "SETGID", "SETUID"],
+                    "cap_drop": ["ALL"],
+                }
+            }
+        }
+        failures = sorted(module.LEGACY_REDIS_CONTRACT_FAILURES)
+
+        self.assertTrue(
+            module.validate_legacy_redis_hardening_bridge(document, failures)
+        )
+        self.assertFalse(
+            module.validate_legacy_redis_hardening_bridge(
+                document, [*failures, "redis: unexpected drift"]
+            )
+        )
+        document["services"]["redis"]["command"] = [
+            "redis-server",
+            "--appendonly",
+            "yes",
+        ]
+        self.assertFalse(
+            module.validate_legacy_redis_hardening_bridge(document, failures)
+        )
+
     @mock.patch.object(module, "load_http_json")
     def test_json_validation_retries_until_semantics_pass(
         self, load_http_json: mock.Mock

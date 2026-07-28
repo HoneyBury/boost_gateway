@@ -73,7 +73,12 @@ class FakeExecutor:
         return {"overall_pass": True}
 
     def verify_read_only(
-        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+        self,
+        deployment_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+        *,
+        allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]:
         self.calls.append(
             (f"verify-read-only:{summary_path.name}", deployment_path.name)
@@ -86,6 +91,7 @@ class FakeExecutor:
             "overall_pass": True,
             "read_only_verification": True,
             "protected_state_mutated": False,
+            "legacy_redis_hardening_bridge": allow_legacy_redis_hardening_bridge,
         }
         summary_path.write_text(json.dumps(result) + "\n", encoding="utf-8")
         return result
@@ -892,12 +898,14 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             environment: dict[str, str] | None = None,
         ) -> mock.Mock:
             self.assertIn("--read-only", command)
+            self.assertIn("--allow-legacy-redis-hardening-bridge", command)
             summary.write_text(
                 json.dumps(
                     {
                         "overall_pass": True,
                         "read_only_verification": True,
                         "protected_state_mutated": False,
+                        "legacy_redis_hardening_bridge": True,
                     }
                 ),
                 encoding="utf-8",
@@ -908,10 +916,16 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             mock.patch.object(executor, "_environment", return_value={}),
             mock.patch.object(executor, "_run", side_effect=run_verifier),
         ):
-            result = executor.verify_read_only(deployment, summary, 60.0)
+            result = executor.verify_read_only(
+                deployment,
+                summary,
+                60.0,
+                allow_legacy_redis_hardening_bridge=True,
+            )
 
         self.assertTrue(result["read_only_verification"])
         self.assertFalse(result["protected_state_mutated"])
+        self.assertTrue(result["legacy_redis_hardening_bridge"])
 
     def test_upgrade_rejects_release_that_changes_host_unit(self) -> None:
         first = self.install("v1.0.0", "a")
@@ -1295,6 +1309,24 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
         self.assertEqual("recovery_reconciled", record["status"])
 
+    def test_reconcile_recovery_records_explicit_legacy_redis_bridge(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+
+        result = self.manager.reconcile_recovery(
+            transaction.name,
+            self.recovery_resolution,
+            allow_legacy_redis_hardening_bridge=True,
+        )
+
+        self.assertTrue(result["overall_pass"])
+        self.assertTrue(result["legacy_redis_hardening_bridge"])
+        verification = json.loads(
+            Path(result["deployment_verification"]["path"]).read_text(encoding="utf-8")
+        )
+        self.assertTrue(verification["legacy_redis_hardening_bridge"])
+
     def test_reconcile_recovery_cli_requires_transaction_id(self) -> None:
         args = module.build_parser().parse_args(
             [
@@ -1303,11 +1335,13 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                 "tx-123",
                 "--resolution-summary",
                 "/tmp/recovery.json",
+                "--allow-legacy-redis-hardening-bridge",
             ]
         )
         self.assertEqual("reconcile-recovery", args.command)
         self.assertEqual("tx-123", args.transaction_id)
         self.assertEqual(Path("/tmp/recovery.json"), args.resolution_summary)
+        self.assertTrue(args.allow_legacy_redis_hardening_bridge)
 
     def test_deploy_adopts_legacy_release_pointer_once(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(
