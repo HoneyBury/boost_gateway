@@ -352,6 +352,9 @@
     "scripts/tools/benchmark_redis_persistence.py": {
       "category": "tool"
     },
+    "scripts/tools/review_redis_persistence_benchmark.py": {
+      "category": "tool"
+    },
     "scripts/tools/export_backup_restore_bundle.py": {
       "category": "tool"
     },

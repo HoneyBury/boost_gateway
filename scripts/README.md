@@ -45,7 +45,8 @@ Use these stable public entrypoints first:
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
 - `verify_jwks_rotation.py` for the real HTTPS multi-`kid` rotation, stale-grace, outage, and rollback drill.
 - `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
-- `manage_release_deployment.py` for immutable release install, deploy, upgrade, rollback, status, and verification transactions.
+- `manage_release_deployment.py` for immutable release install, deploy, upgrade, rollback, status, verification
+  transactions, and fail-closed Redis persistence-mode transitions.
 - `check_operations_host.py` for fail-closed Ubuntu operations-host admission and real reboot verification.
 - `apply_operations_host_baseline.py` for the explicit plan/apply surface that converges the admitted host security baseline.
 - `prepare_release_runtime.py` for anonymous download, supply-chain verification, and atomic Linux x64 release staging.
@@ -53,6 +54,8 @@ Use these stable public entrypoints first:
 - `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
 - `benchmark_redis_persistence.py` for lifecycle-locked RDB-only versus AOF-everysec Redis workload and
   explicit-checkpoint measurements on disposable server/client topologies without changing production.
+- `review_redis_persistence_benchmark.py` for binding those measurements to the governed TODO-0012
+  performance decision and data-compatible rollback contract without claiming production activation.
 - `manage_backup_recovery.py`, `backup_vault_ssh_receiver.py`, and `verify_backup_vault.py` for create-only
   age-encrypted off-host backups, restricted SSH receipt handling, and link-free vault/RDB verification.
 - `export_backup_restore_bundle.py`, `send_restore_bundle.py`, `restore_bundle_ssh_receiver.py`,
