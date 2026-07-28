@@ -74,6 +74,7 @@
   "activation": {
     "production_activated": false,
     "immutable_release_required": true,
+    "governance_path": "protected_pull_request",
     "protected_review_required": true,
     "effective_config_verification_required": true,
     "aof_monitoring_required": true,

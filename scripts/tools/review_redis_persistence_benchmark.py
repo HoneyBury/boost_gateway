@@ -313,6 +313,11 @@ def validate_review(benchmark_path: Path, decision_path: Path) -> dict[str, Any]
         "immutable release requirement",
     )
     require_equal(
+        activation.get("governance_path"),
+        "protected_pull_request",
+        "activation governance path",
+    )
+    require_equal(
         activation.get("formal_todo0012_claim"), False, "formal claim boundary"
     )
     require_equal(review.get("accepted"), True, "performance review decision")
