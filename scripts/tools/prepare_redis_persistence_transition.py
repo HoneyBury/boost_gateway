@@ -189,13 +189,29 @@ def checkpoint(timeout_seconds: float) -> dict[str, Any]:
     if after_lastsave <= before_lastsave:
         raise TransitionError("fresh BGSAVE did not advance LASTSAVE")
     check = run(
-        ["docker", "exec", "boost-redis", "redis-check-rdb", "/data/dump.rdb"],
+        [
+            "docker",
+            "exec",
+            "--user",
+            "redis",
+            "boost-redis",
+            "redis-check-rdb",
+            "/data/dump.rdb",
+        ],
         deadline - time.monotonic(),
     )
     if "RDB looks OK!" not in check.stdout:
         raise TransitionError("redis-check-rdb did not validate dump.rdb")
     digest_line = run(
-        ["docker", "exec", "boost-redis", "sha256sum", "/data/dump.rdb"],
+        [
+            "docker",
+            "exec",
+            "--user",
+            "redis",
+            "boost-redis",
+            "sha256sum",
+            "/data/dump.rdb",
+        ],
         deadline - time.monotonic(),
     ).stdout.split()
     if not digest_line or SHA256_RE.fullmatch(digest_line[0]) is None:
