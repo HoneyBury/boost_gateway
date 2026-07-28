@@ -84,6 +84,26 @@ measurement PASS，summary 仍固定
 `activation_ready=false`；还需人工 performance review、governed change record、rollback plan、
 effective-config 激活验证、release SDK full-flow 和 crash RPO 演练，禁止直接修改生产 Compose。
 
+首份六轮对照证据 `todo0012-aof-20260727T131127Z` 已通过并由
+`docs/decisions/todo0012-redis-aof-activation.json` 绑定。人工评审接受 throughput `-4.76%`、
+P50 `+0.048ms`、P99 `-0.072ms`、Redis CPU `+8.51%`、RSS `+1.18%`，以及候选 workload
+约 `399 bytes/request` 的新增写入；三轮候选 delayed fsync 均为 0，BGSAVE 均成功。该结果只批准
+进入受治理 candidate，实现仍必须保持 `activation_ready=false`，且 synthetic Lua 数据不能替代
+release SDK、长时磁盘观察或 crash RPO 证据。评审校验入口为：
+
+```bash
+python3 scripts/tools/review_redis_persistence_benchmark.py \
+  --benchmark-summary /path/to/todo0012-aof-20260727T131127Z.json \
+  --decision docs/decisions/todo0012-redis-aof-activation.json \
+  --summary-path /create-only/path/todo0012-aof-review.json
+```
+
+AOF 激活后的旧 deployment 不是天然的数据兼容回滚点。旧 Compose 使用 RDB-only；直接恢复它会
+忽略只存在于 AOF 的已确认写入。任何 AOF→RDB 回退必须先隔离写入、成功执行新鲜 BGSAVE、确认
+`changes_since_last_save=0`、离线校验目标 RDB 并记录 checkpoint identity。候选 Redis 无法完成
+checkpoint 时必须 fail closed，转入隔离 AOF/异机备份恢复；禁止直接在 active volume 上启动旧
+RDB-only Compose。通用 release 自动回滚在补齐该 transition hook 前不得承担首次 AOF 激活。
+
 ## Backup Contract
 
 每日备份最终必须形成一个 create-only、SHA-256 完整覆盖、先加密后传输的集合，至少包含：

@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "todo": "TODO-0012",
+  "change_id": "todo0012-redis-aof-everysec-activation",
+  "decision": "approved_for_governed_candidate",
+  "benchmark": {
+    "benchmark_id": "todo0012-aof-20260727T131127Z",
+    "sha256": "ece4b3ef0d91cb9fd15199a4c6d6d94fb34acb77975fecfa3fd1201bbc7eaebd",
+    "controller_commit": "c3cdc78c9b91810b29acde323f4f06efe069da0b",
+    "runner_sha256": "929d864d82c85090d0091d7525165446409617580abae148b1d8c0f224534349",
+    "policy_sha256": "a3af2423357dca4c75b582c0ced366f8ecac66b28b26345998b265bbe5b75d71",
+    "profile_sha256": "f71445c805814a862a257dc072c409b67f1c21930dba992d2173e70c3b047945"
+  },
+  "review": {
+    "workload_scope": "synthetic Lua ZADD+HSET+ZREVRANGE+ZREVRANK; not SDK latency",
+    "repetitions_per_mode": 3,
+    "limits": {
+      "maximum_throughput_regression_percent": 10.0,
+      "maximum_p50_regression_percent": 20.0,
+      "maximum_p99_regression_percent": 20.0,
+      "maximum_redis_cpu_regression_percent": 20.0,
+      "maximum_redis_rss_regression_percent": 10.0,
+      "maximum_candidate_p99_latency_ms": 5.0,
+      "minimum_candidate_round_throughput_requests_per_second": 30000.0,
+      "maximum_candidate_workload_write_bytes_per_request": 1024.0,
+      "maximum_aof_delayed_fsync": 0
+    },
+    "observed": {
+      "throughput_percent": -4.761903,
+      "p50_latency_percent": 13.370474,
+      "p99_latency_percent": -9.102402,
+      "redis_cpu_percent": 8.510972,
+      "redis_rss_percent": 1.176471,
+      "redis_disk_write_bytes_percent": 248.469388,
+      "candidate_throughput_requests_per_second_median": 34013.61,
+      "candidate_p50_latency_ms_median": 0.407,
+      "candidate_p99_latency_ms_median": 0.719,
+      "candidate_redis_cpu_percent_of_one_core_median": 8.6316,
+      "candidate_redis_rss_sampled_peak_bytes_median": 11272192.0,
+      "candidate_workload_disk_write_bytes_median": 3989504.0,
+      "candidate_bgsave_disk_write_bytes_median": 1605632.0,
+      "candidate_aof_delayed_fsync_total": 0,
+      "candidate_worst_round_throughput_requests_per_second": 31746.03,
+      "candidate_worst_round_p99_latency_ms": 0.735
+    },
+    "disk_write_assessment": {
+      "percentage_is_not_a_gate": true,
+      "reason": "The RDB-only workload phase wrote zero bytes, so percentage amplification is not a stable denominator.",
+      "candidate_workload_write_bytes_per_request": 398.9504,
+      "host_filesystem_size_bytes": 500235124736,
+      "host_filesystem_available_bytes": 465705963520,
+      "host_filesystem_used_percent": 3,
+      "host_inode_used_percent": 1,
+      "capacity_observed_on": "2026-07-28",
+      "long_run_disk_alert_required": true
+    },
+    "no_threshold_weakened_after_observation": true,
+    "gateway_release_thresholds_unchanged": true,
+    "accepted": true
+  },
+  "rollback": {
+    "old_deployment_retained": true,
+    "active_volume_must_be_preserved": true,
+    "aof_to_rdb_is_a_data_format_downgrade": true,
+    "blind_old_compose_restore_prohibited": true,
+    "write_quiescence_required": true,
+    "fresh_bgsave_required": true,
+    "rdb_offline_validation_required": true,
+    "checkpoint_identity_must_be_recorded": true,
+    "rollback_rto_seconds": 600,
+    "aof_unavailable_action": "fail_closed_and_restore_in_isolation_from_aof_or_verified_off_host_backup",
+    "automatic_release_restore_requires_data_compatible_transition_hook": true
+  },
+  "activation": {
+    "production_activated": false,
+    "immutable_release_required": true,
+    "protected_review_required": true,
+    "effective_config_verification_required": true,
+    "aof_monitoring_required": true,
+    "release_sdk_full_flow_required": true,
+    "crash_rpo_drill_required": true,
+    "redis_rpo_seconds": 60,
+    "formal_todo0012_claim": false
+  },
+  "secret_material_recorded": false
+}
