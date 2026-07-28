@@ -309,9 +309,11 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                     self.layout.deployments / current / "manifest.json"
                 ),
                 "compose_file": str(
-                    self.layout.deployments
-                    / current
-                    / "deploy/operations/docker-compose.production.yml"
+                    (
+                        self.layout.deployments
+                        / current
+                        / "deploy/operations/docker-compose.production.yml"
+                    ).resolve()
                 ),
                 "checks": [
                     {"name": name, "passed": True}

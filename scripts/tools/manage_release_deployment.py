@@ -1078,6 +1078,20 @@ class ReleaseDeploymentManager:
             raise LifecycleError("manual runtime status summary did not pass")
         verification_checks = verification.get("checks")
         expected_deployment = self._deployment_dir(current)
+        expected_manifest = expected_deployment / "manifest.json"
+        expected_compose = (
+            expected_deployment / "deploy/operations/docker-compose.production.yml"
+        )
+
+        def same_governed_file(recorded: Any, expected: Path) -> bool:
+            if not isinstance(recorded, str) or not recorded:
+                return False
+            observed = Path(recorded)
+            try:
+                return observed.is_file() and os.path.samefile(observed, expected)
+            except OSError:
+                return False
+
         required_verification_checks = {
             "compose-service-state",
             "container-image-identities",
@@ -1088,11 +1102,11 @@ class ReleaseDeploymentManager:
             verification.get("overall_pass") is not True
             or verification.get("source_build_performed") is not False
             or verification.get("public_conan_access_performed") is not False
-            or verification.get("staging_manifest")
-            != str(expected_deployment / "manifest.json")
-            or verification.get("compose_file")
-            != str(
-                expected_deployment / "deploy/operations/docker-compose.production.yml"
+            or not same_governed_file(
+                verification.get("staging_manifest"), expected_manifest
+            )
+            or not same_governed_file(
+                verification.get("compose_file"), expected_compose
             )
             or not isinstance(verification_checks, list)
             or not verification_checks
@@ -1108,7 +1122,26 @@ class ReleaseDeploymentManager:
             }
             or verification.get("failed") != []
         ):
-            raise LifecycleError("manual deployment verification summary did not pass")
+            raise LifecycleError(
+                "manual deployment verification summary did not pass: "
+                + json.dumps(
+                    {
+                        "overall_pass": verification.get("overall_pass"),
+                        "source_build_performed": verification.get(
+                            "source_build_performed"
+                        ),
+                        "public_conan_access_performed": verification.get(
+                            "public_conan_access_performed"
+                        ),
+                        "staging_manifest": verification.get("staging_manifest"),
+                        "expected_manifest": str(expected_manifest),
+                        "compose_file": verification.get("compose_file"),
+                        "expected_compose": str(expected_compose),
+                        "failed": verification.get("failed"),
+                    },
+                    sort_keys=True,
+                )
+            )
 
         rdb_sha = equivalence.get("rdb_canonical_sha256")
         aof_sha = equivalence.get("aof_canonical_sha256")
