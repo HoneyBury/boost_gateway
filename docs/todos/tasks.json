@@ -222,7 +222,7 @@
     {
       "id": "TODO-0012",
       "title": "Automate backup restore and recovery drills",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "recovery",
       "description": "Implement an off-host backup and real restoration loop for Redis, configuration, deployment state and evidence, then exercise the existing recovery matrix on the target server.",
@@ -233,7 +233,7 @@
         "At least two independent restore drills recreate leaderboard state and pass submit, top, rank and SDK full-flow verification from retained backups."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-07-28T16:03:59Z",
       "github": {
         "issue_number": 26,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/26"
