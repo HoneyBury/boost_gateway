@@ -147,6 +147,10 @@ GOVERNED_CONTAINER_QUERIES = {
         "* on (id) group_left (container) boost_gateway_container_info)"
     ),
 }
+LEGACY_REDIS_CONTRACT_FAILURES = {
+    "redis: image redis user is required",
+    "redis: added Linux capabilities are forbidden",
+}
 REQUIRED_PROMETHEUS_METRIC_PATTERNS = {
     "gateway-backend-requests": re.compile(r"gateway_backend_.*_requests_total\Z"),
     "gateway-backend-errors": re.compile(
@@ -587,6 +591,26 @@ def add_check(
     checks.append({"name": name, "passed": passed, "detail": detail, **extra})
 
 
+def validate_legacy_redis_hardening_bridge(
+    document: object, contract_failures: list[str]
+) -> bool:
+    if set(contract_failures) != LEGACY_REDIS_CONTRACT_FAILURES or len(
+        contract_failures
+    ) != len(LEGACY_REDIS_CONTRACT_FAILURES):
+        return False
+    services = document.get("services") if isinstance(document, dict) else None
+    redis = services.get("redis") if isinstance(services, dict) else None
+    if not isinstance(redis, dict):
+        return False
+    return (
+        redis.get("image") == "redis:7-alpine"
+        and redis.get("user") in {None, ""}
+        and set(redis.get("cap_add", [])) == {"CHOWN", "SETGID", "SETUID"}
+        and redis.get("cap_drop") == ["ALL"]
+        and redis_persistence_mode(redis) == "rdb_only"
+    )
+
+
 def verify(args: argparse.Namespace) -> dict[str, Any]:
     staging = args.staging_dir.resolve()
     compose = args.compose_file.resolve()
@@ -597,12 +621,34 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     expected_redis_persistence = redis_persistence_mode(redis_service)
     aof_expected = expected_redis_persistence == "aof_everysec_rdb"
     contract_failures = validate_compose_document(document)
+    legacy_redis_hardening_bridge = False
+    if args.allow_legacy_redis_hardening_bridge:
+        if not args.read_only:
+            raise RuntimeError(
+                "legacy Redis hardening bridge requires read-only verification"
+            )
+        legacy_redis_hardening_bridge = validate_legacy_redis_hardening_bridge(
+            document, contract_failures
+        )
+        if legacy_redis_hardening_bridge:
+            contract_failures = []
     add_check(
         checks,
         "resolved-production-compose-contract",
         not contract_failures,
         "; ".join(contract_failures),
     )
+    if args.allow_legacy_redis_hardening_bridge:
+        add_check(
+            checks,
+            "legacy-redis-hardening-bridge",
+            legacy_redis_hardening_bridge,
+            (
+                "validated one-time RDB-only reconciliation bridge"
+                if legacy_redis_hardening_bridge
+                else "legacy Redis contract differs from the governed bridge"
+            ),
+        )
     compose_command = ["docker", "compose", "-f", str(compose)]
     ps = run([*compose_command, "ps", "--format", "json"])
     compose_items: list[dict[str, Any]] = []
@@ -790,6 +836,7 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "public_conan_access_performed": False,
         "read_only_verification": args.read_only,
         "protected_state_mutated": False if args.read_only else True,
+        "legacy_redis_hardening_bridge": legacy_redis_hardening_bridge,
         "staging_manifest": str(staging / "manifest.json"),
         "compose_file": str(compose),
         "expected_redis_persistence": expected_redis_persistence,
@@ -815,6 +862,11 @@ def main() -> int:
         "--read-only",
         action="store_true",
         help="skip the state-mutating SDK full flow for post-backup reconciliation",
+    )
+    parser.add_argument(
+        "--allow-legacy-redis-hardening-bridge",
+        action="store_true",
+        help="accept only the exact pre-hardening RDB Redis contract during recovery reconciliation",
     )
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()

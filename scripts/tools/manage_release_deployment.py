@@ -383,7 +383,12 @@ class LifecycleExecutor(Protocol):
     ) -> dict[str, Any]: ...
 
     def verify_read_only(
-        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+        self,
+        deployment_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+        *,
+        allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]: ...
 
     def runtime_status(self, deployment_path: Path) -> list[str]: ...
@@ -696,6 +701,7 @@ class SystemLifecycleExecutor:
         timeout_seconds: float,
         *,
         read_only: bool,
+        allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]:
         verifier = Path(__file__).resolve().parent / "verify_release_deployment.py"
         compose = deployment_path / "deploy/operations/docker-compose.production.yml"
@@ -714,6 +720,8 @@ class SystemLifecycleExecutor:
         ]
         if read_only:
             command.append("--read-only")
+        if allow_legacy_redis_hardening_bridge:
+            command.append("--allow-legacy-redis-hardening-bridge")
         self._run(
             command,
             timeout_seconds,
@@ -727,6 +735,11 @@ class SystemLifecycleExecutor:
             or summary.get("protected_state_mutated") is not False
         ):
             raise LifecycleError("read-only deployment verification is invalid")
+        if (
+            allow_legacy_redis_hardening_bridge
+            and summary.get("legacy_redis_hardening_bridge") is not True
+        ):
+            raise LifecycleError("legacy Redis hardening bridge was not validated")
         return summary
 
     def verify(
@@ -737,10 +750,19 @@ class SystemLifecycleExecutor:
         )
 
     def verify_read_only(
-        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+        self,
+        deployment_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+        *,
+        allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]:
         return self._verify(
-            deployment_path, summary_path, timeout_seconds, read_only=True
+            deployment_path,
+            summary_path,
+            timeout_seconds,
+            read_only=True,
+            allow_legacy_redis_hardening_bridge=allow_legacy_redis_hardening_bridge,
         )
 
     def runtime_status(self, deployment_path: Path) -> list[str]:
@@ -1395,6 +1417,7 @@ class ReleaseDeploymentManager:
         record_sha256: str,
         manual_evidence: dict[str, Any],
         final_path: Path,
+        allow_legacy_redis_hardening_bridge: bool,
     ) -> dict[str, Any]:
         final_path = self._regular_evidence(
             final_path, "manual recovery reconcile summary"
@@ -1412,6 +1435,7 @@ class ReleaseDeploymentManager:
             "transaction_record_sha256_before": record_sha256,
             "record_update_authorized": True,
             "protected_state_mutated": False,
+            "legacy_redis_hardening_bridge": allow_legacy_redis_hardening_bridge,
             "secret_material_recorded": False,
         }
         if any(summary.get(key) != value for key, value in required.items()):
@@ -1460,6 +1484,8 @@ class ReleaseDeploymentManager:
             or verification.get("overall_pass") is not True
             or verification.get("read_only_verification") is not True
             or verification.get("protected_state_mutated") is not False
+            or verification.get("legacy_redis_hardening_bridge")
+            is not allow_legacy_redis_hardening_bridge
         ):
             raise LifecycleError("reconcile attempt evidence did not pass")
         return summary
@@ -1506,6 +1532,7 @@ class ReleaseDeploymentManager:
         transaction: Path,
         record: dict[str, Any],
         resolution_summary: Path,
+        allow_legacy_redis_hardening_bridge: bool,
     ) -> dict[str, Any]:
         current = self._resolve_link(self.layout.current, required=True)
         assert current is not None
@@ -1534,6 +1561,8 @@ class ReleaseDeploymentManager:
             or summary.get("terminal_state") != "recovery_reconciled"
             or summary.get("manual_recovery") != manual_evidence
             or summary.get("protected_state_mutated") is not False
+            or summary.get("legacy_redis_hardening_bridge")
+            is not allow_legacy_redis_hardening_bridge
             or summary.get("secret_material_recorded") is not False
             or record.get("manual_recovery_reconcile", {}).get("summary")
             != self._evidence_reference(final_path)
@@ -2649,7 +2678,11 @@ class ReleaseDeploymentManager:
                 ) from exc
 
     def reconcile_recovery(
-        self, transaction_id: str, resolution_summary: Path
+        self,
+        transaction_id: str,
+        resolution_summary: Path,
+        *,
+        allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]:
         if DEPLOYMENT_ID_RE.fullmatch(transaction_id) is None:
             raise LifecycleError("recovery transaction ID is invalid")
@@ -2666,7 +2699,10 @@ class ReleaseDeploymentManager:
                 )
                 if requested_record.get("status") == "recovery_reconciled":
                     return self._resume_completed_recovery_reconcile(
-                        requested_transaction, requested_record, resolution_summary
+                        requested_transaction,
+                        requested_record,
+                        resolution_summary,
+                        allow_legacy_redis_hardening_bridge,
                     )
             blocking = self._blocking_recovery_transactions()
             if len(blocking) != 1:
@@ -2719,6 +2755,7 @@ class ReleaseDeploymentManager:
                     record_sha256_before,
                     manual_evidence,
                     final_path,
+                    allow_legacy_redis_hardening_bridge,
                 )
                 return self._complete_recovery_reconcile(
                     transaction,
@@ -2765,11 +2802,14 @@ class ReleaseDeploymentManager:
                 self._deployment_dir(current),
                 verification_path,
                 ROLLBACK_DEADLINE_SECONDS,
+                allow_legacy_redis_hardening_bridge=allow_legacy_redis_hardening_bridge,
             )
             if (
                 verification.get("overall_pass") is not True
                 or verification.get("read_only_verification") is not True
                 or verification.get("protected_state_mutated") is not False
+                or verification.get("legacy_redis_hardening_bridge")
+                is not allow_legacy_redis_hardening_bridge
             ):
                 raise LifecycleError(
                     "recovered current read-only verification did not pass"
@@ -2802,6 +2842,7 @@ class ReleaseDeploymentManager:
                 "deployment_verification": self._evidence_reference(verification_path),
                 "record_update_authorized": True,
                 "protected_state_mutated": False,
+                "legacy_redis_hardening_bridge": allow_legacy_redis_hardening_bridge,
                 "secret_material_recorded": False,
             }
             atomic_write_new_json(final_path, reconcile_summary)
@@ -2926,6 +2967,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reconcile.add_argument("--transaction-id", required=True)
     reconcile.add_argument("--resolution-summary", type=Path, required=True)
+    reconcile.add_argument(
+        "--allow-legacy-redis-hardening-bridge",
+        action="store_true",
+        help="accept only the exact pre-hardening RDB Redis contract for this reconciliation",
+    )
     subparsers.add_parser("rollback")
     subparsers.add_parser("status")
     subparsers.add_parser("verify")
@@ -2954,7 +3000,11 @@ def main() -> int:
             result = manager.rollback()
         elif args.command == "reconcile-recovery":
             result = manager.reconcile_recovery(
-                args.transaction_id, args.resolution_summary
+                args.transaction_id,
+                args.resolution_summary,
+                allow_legacy_redis_hardening_bridge=(
+                    args.allow_legacy_redis_hardening_bridge
+                ),
             )
         elif args.command == "verify":
             result = manager.verify_current()

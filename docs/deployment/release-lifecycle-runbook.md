@@ -123,6 +123,13 @@ sudo python3 scripts/manage_release_deployment.py reconcile-recovery \
   --resolution-summary <protected-state-recovery-summary.json>
 ```
 
+若 recovered current 是 Redis hardening 前的 RDB-only immutable release，而新 checker 仅报告
+`redis: image redis user is required` 与 `redis: added Linux capabilities are forbidden`，可在已审查的
+incident 中显式追加 `--allow-legacy-redis-hardening-bridge`。该 bridge 还要求镜像、三项旧 capability、
+`cap_drop: ALL` 和 RDB-only mode 精确匹配，并写入 reconcile evidence；任何额外 Compose drift 都会
+失败。bridge 只解除 lifecycle blocker，下一步必须 upgrade 到通过普通 precheck 的非 root Redis
+release，不能把旧 current 当作合规终态。
+
 该命令持有 lifecycle lock，并要求指定事务是唯一的 `recovery_failed` blocker，`current` 与原
 `from_current` 完全一致。它只读取事务目录内 create-only 的
 `manual-recovery-summary.json`，并复算其对 manual runtime status、完整 deployment verification、
