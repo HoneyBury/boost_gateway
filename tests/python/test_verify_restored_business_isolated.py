@@ -447,6 +447,38 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self.assertTrue(result["leaderboard_submit"])
         self.assertTrue(result["leaderboard_top"])
         self.assertTrue(result["leaderboard_rank"])
+        self.assertTrue(result["submitted_users_all_in_top_20"])
+
+    def test_valid_submitted_users_need_not_be_in_accumulated_top_20(self) -> None:
+        top = [f"existing_{index}" for index in range(20)]
+        responses: dict[tuple[str, ...], object] = {
+            ("ZREVRANGE", "lb:global", "0", "19"): top,
+            ("ZSCORE", "lb:global", "alice_123"): "9000000000001",
+            ("ZREVRANK", "lb:global", "alice_123"): 24,
+            ("HGET", "lb:global:names", "alice_123"): "Alice",
+            ("ZSCORE", "lb:global", "bob_123"): "9000000000101",
+            ("ZREVRANK", "lb:global", "bob_123"): 23,
+            ("HGET", "lb:global:names", "bob_123"): "Bob",
+        }
+        with mock.patch.object(
+            business.restore,
+            "redis_json",
+            side_effect=lambda runner, docker, container, *args: responses[args],
+        ):
+            result = business.verify_leaderboard_effects(
+                CommandRunner(),
+                "docker-test",
+                "business-redis",
+                "alice_123",
+                "bob_123",
+            )
+
+        self.assertEqual(top, result["top_20"])
+        self.assertEqual([], result["submitted_users_in_top_20"])
+        self.assertFalse(result["submitted_users_all_in_top_20"])
+        self.assertTrue(result["leaderboard_submit"])
+        self.assertTrue(result["leaderboard_top"])
+        self.assertTrue(result["leaderboard_rank"])
 
     def test_orchestrator_preserves_retained_seed_and_cleans_disposable_topology(
         self,

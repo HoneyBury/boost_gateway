@@ -404,7 +404,8 @@ sudo python3 \
 自带的可执行 `bin/sdk_full_flow_client`，并要求 `source_build_performed=false`。SDK stdout 必须包含
 manual leaderboard submit、rank 和 `ALL TESTS PASSED`；top 请求是该 release 客户端成功路径中的
 强制调用。控制器再从 work Redis 复核 Alice/Bob 的 `ZSCORE`、`ZREVRANK`、display name 和 top 20，
-分别记录 submit/top/rank pass。
+分别记录 submit/top/rank pass。历史演练用户可能已占满 top 20，因此本轮用户必须有有效 rank，但不要求
+rank 小于等于 20；summary 仍显式记录本轮用户是否出现在 top 20。
 
 业务写入后，所有隔离容器、internal network 和 work volume 都必须删除。控制器随后第二次只读挂载
 retained volume；前后 canonical keyspace SHA-256、key count、key set 和 volume identity 必须一致，
