@@ -345,6 +345,15 @@ def _validate_alertmanager(service: dict[str, Any], failures: list[str]) -> None
         )
 
 
+def _validate_redis(service: dict[str, Any], failures: list[str]) -> None:
+    if service.get("user") != "redis":
+        failures.append("redis: image redis user is required")
+    if service.get("cap_add"):
+        failures.append("redis: added Linux capabilities are forbidden")
+    if service.get("cap_drop") != ["ALL"]:
+        failures.append("redis: all Linux capabilities must be dropped")
+
+
 def validate_compose_document(document: object) -> list[str]:
     failures: list[str] = []
     if not isinstance(document, dict):
@@ -414,6 +423,8 @@ def validate_compose_document(document: object) -> list[str]:
             _validate_grafana(service, failures)
         elif name == "alertmanager":
             _validate_alertmanager(service, failures)
+        elif name == "redis":
+            _validate_redis(service, failures)
 
         raw_ports = service.get("ports", [])
         if not isinstance(raw_ports, list):

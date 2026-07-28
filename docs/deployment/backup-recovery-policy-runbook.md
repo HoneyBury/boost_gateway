@@ -106,7 +106,8 @@ AOF 激活后的旧 deployment 不是天然的数据兼容回滚点。旧 Compos
 忽略只存在于 AOF 的已确认写入。任何 AOF→RDB 回退必须先隔离写入、成功执行新鲜 BGSAVE、确认
 `changes_since_last_save=0`、离线校验目标 RDB 并记录 checkpoint identity。候选 Redis 无法完成
 checkpoint 时必须 fail closed，转入隔离 AOF/异机备份恢复；禁止直接在 active volume 上启动旧
-RDB-only Compose。通用 release 自动回滚在补齐该 transition hook 前不得承担首次 AOF 激活。
+RDB-only Compose。release transition hook 同时负责 RDB→AOF 的显式 AOF seed 和 AOF→RDB 的
+checkpoint bridge；两条路径都保留旧持久化文件，不得用删除 `appendonlydir` 作为恢复手段。
 
 ## Backup Contract
 

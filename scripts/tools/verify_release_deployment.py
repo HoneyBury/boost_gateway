@@ -556,6 +556,8 @@ def validate_redis_aof_runtime(compose_command: list[str]) -> tuple[bool, str]:
             *compose_command,
             "exec",
             "-T",
+            "--user",
+            "redis",
             "redis",
             "sh",
             "-eu",
@@ -568,6 +570,11 @@ def validate_redis_aof_runtime(compose_command: list[str]) -> tuple[bool, str]:
             "config_drift": drift,
             "info_drift": info_drift,
             "aof_manifest_present": manifest.returncode == 0,
+            "aof_manifest_check": {
+                "exit_code": manifest.returncode,
+                "stdout_tail": manifest.stdout.strip()[-1000:],
+                "stderr_tail": manifest.stderr.strip()[-1000:],
+            },
         },
         sort_keys=True,
     )
@@ -757,19 +764,21 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
             persistence_passed,
             persistence_detail,
         )
-    client = staging / "bin/sdk_full_flow_client"
-    full_flow = run(
-        [str(client), args.host, str(args.port)], timeout=args.full_flow_timeout_seconds
-    )
-    add_check(
-        checks,
-        "release-sdk-full-flow",
-        full_flow.returncode == 0,
-        f"exit_code={full_flow.returncode}",
-        stdout_tail=full_flow.stdout[-4000:],
-        stderr_tail=full_flow.stderr[-4000:],
-        source_build_performed=False,
-    )
+    if not args.read_only:
+        client = staging / "bin/sdk_full_flow_client"
+        full_flow = run(
+            [str(client), args.host, str(args.port)],
+            timeout=args.full_flow_timeout_seconds,
+        )
+        add_check(
+            checks,
+            "release-sdk-full-flow",
+            full_flow.returncode == 0,
+            f"exit_code={full_flow.returncode}",
+            stdout_tail=full_flow.stdout[-4000:],
+            stderr_tail=full_flow.stderr[-4000:],
+            source_build_performed=False,
+        )
     failures = [check for check in checks if not check["passed"]]
     return {
         "summary_version": 2,
@@ -779,6 +788,8 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "failed_step": failures[0]["name"] if failures else "",
         "source_build_performed": False,
         "public_conan_access_performed": False,
+        "read_only_verification": args.read_only,
+        "protected_state_mutated": False if args.read_only else True,
         "staging_manifest": str(staging / "manifest.json"),
         "compose_file": str(compose),
         "expected_redis_persistence": expected_redis_persistence,
@@ -800,6 +811,11 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=9201)
     parser.add_argument("--ready-timeout-seconds", type=float, default=60)
     parser.add_argument("--full-flow-timeout-seconds", type=int, default=120)
+    parser.add_argument(
+        "--read-only",
+        action="store_true",
+        help="skip the state-mutating SDK full flow for post-backup reconciliation",
+    )
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()
     try:

@@ -20,6 +20,8 @@ class RedisPersistenceTransitionTest(unittest.TestCase):
         )
 
     @mock.patch.object(transition, "checkpoint")
+    @mock.patch.object(transition, "seed_aof_from_rdb")
+    @mock.patch.object(transition, "prepare_aof_directory")
     @mock.patch.object(transition, "freeze_writes")
     @mock.patch.object(transition, "active_volume")
     @mock.patch.object(transition, "actual_mode")
@@ -28,6 +30,8 @@ class RedisPersistenceTransitionTest(unittest.TestCase):
         actual_mode: mock.Mock,
         active_volume: mock.Mock,
         freeze_writes: mock.Mock,
+        prepare_aof_directory: mock.Mock,
+        seed_aof_from_rdb: mock.Mock,
         checkpoint: mock.Mock,
     ) -> None:
         volume = {
@@ -45,6 +49,15 @@ class RedisPersistenceTransitionTest(unittest.TestCase):
             "rdb_sha256": "b" * 64,
             "redis_check_rdb": True,
         }
+        prepare_aof_directory.return_value = {
+            "action": "absent",
+            "files_deleted": False,
+        }
+        seed_aof_from_rdb.return_value = {
+            "method": "runtime-config-set-and-rewrite",
+            "key_count_before": 5,
+            "key_count_after": 5,
+        }
 
         result = transition.execute(self.arguments())
 
@@ -55,34 +68,150 @@ class RedisPersistenceTransitionTest(unittest.TestCase):
         self.assertEqual(result["active_volume"], volume)
         freeze_writes.assert_called_once()
         checkpoint.assert_called_once()
+        prepare_aof_directory.assert_called_once_with(
+            "rdb_only", "aof_everysec_rdb", "evidence", mock.ANY
+        )
+        seed_aof_from_rdb.assert_called_once_with(mock.ANY)
         self.assertGreater(checkpoint.call_args.args[0], 0)
         self.assertLessEqual(checkpoint.call_args.args[0], 180.0)
 
     @mock.patch.object(transition, "checkpoint")
+    @mock.patch.object(transition, "seed_aof_from_rdb")
+    @mock.patch.object(transition, "prepare_aof_directory")
     @mock.patch.object(transition, "freeze_writes")
     @mock.patch.object(transition, "active_volume")
     @mock.patch.object(transition, "actual_mode")
-    def test_runtime_already_at_target_does_not_stop_services(
+    def test_runtime_already_at_target_is_frozen_and_revalidated(
         self,
         actual_mode: mock.Mock,
         active_volume: mock.Mock,
         freeze_writes: mock.Mock,
+        prepare_aof_directory: mock.Mock,
+        seed_aof_from_rdb: mock.Mock,
         checkpoint: mock.Mock,
     ) -> None:
         actual_mode.return_value = (
             "aof_everysec_rdb",
             {"appendonly": "yes", "appendfsync": "everysec"},
         )
-        active_volume.return_value = {"identity_sha256": "a" * 64}
+        volume = {"identity_sha256": "a" * 64}
+        active_volume.side_effect = [volume, volume]
+        checkpoint.return_value = {"redis_check_rdb": True}
 
-        result = transition.execute(self.arguments())
+        with mock.patch.object(
+            transition,
+            "validate_existing_aof",
+            return_value={
+                "method": "runtime-already-target-validated",
+                "manifest_sha256": "b" * 64,
+                "files_deleted": False,
+            },
+        ) as validate_existing:
+            result = transition.execute(self.arguments())
 
         self.assertTrue(result["overall_pass"])
         self.assertTrue(result["runtime_already_target"])
-        self.assertFalse(result["writes_frozen"])
-        self.assertFalse(result["checkpoint_verified"])
-        freeze_writes.assert_not_called()
-        checkpoint.assert_not_called()
+        self.assertTrue(result["writes_frozen"])
+        self.assertTrue(result["checkpoint_verified"])
+        freeze_writes.assert_called_once()
+        prepare_aof_directory.assert_not_called()
+        seed_aof_from_rdb.assert_not_called()
+        checkpoint.assert_called_once()
+        validate_existing.assert_called_once()
+
+    @mock.patch.object(transition, "run")
+    def test_aof_to_rdb_makes_directory_traversable_without_deleting_files(
+        self, run: mock.Mock
+    ) -> None:
+        run.return_value = mock.Mock(
+            returncode=0,
+            stdout=f"{'d' * 64}  /data/appendonlydir/appendonly.aof.manifest\n",
+            stderr="",
+        )
+
+        result = transition.prepare_aof_directory(
+            "aof_everysec_rdb", "rdb_only", "transaction-1", 60.0
+        )
+
+        self.assertEqual(result["action"], "entrypoint-readable")
+        self.assertEqual(result["mode"], "0755")
+        self.assertFalse(result["files_deleted"])
+        command = run.call_args.args[0]
+        self.assertEqual(
+            command[:5], ["docker", "exec", "--user", "redis", "boost-redis"]
+        )
+        self.assertIn("chmod 0755 /data/appendonlydir", command[-1])
+
+    @mock.patch.object(transition, "run")
+    def test_rdb_to_aof_rejects_unbound_existing_aof(self, run: mock.Mock) -> None:
+        run.return_value = mock.Mock(
+            returncode=0,
+            stdout=f"{'e' * 64}  /data/appendonlydir/appendonly.aof.manifest\n",
+            stderr="",
+        )
+
+        with self.assertRaisesRegex(transition.TransitionError, "existing AOF"):
+            transition.prepare_aof_directory(
+                "rdb_only", "aof_everysec_rdb", "transaction-2", 60.0
+            )
+        command = run.call_args.args[0]
+        self.assertNotIn("mv /data/appendonlydir", " ".join(command))
+
+    @mock.patch.object(transition, "run")
+    def test_rdb_to_aof_accepts_absent_directory(self, run: mock.Mock) -> None:
+        run.return_value = mock.Mock(returncode=0, stdout="absent\n", stderr="")
+
+        result = transition.prepare_aof_directory(
+            "rdb_only", "aof_everysec_rdb", "transaction-3", 60.0
+        )
+
+        self.assertEqual(result["action"], "absent")
+        self.assertFalse(result["files_deleted"])
+
+    @mock.patch.object(transition, "actual_mode")
+    @mock.patch.object(transition, "run")
+    @mock.patch.object(transition, "redis")
+    def test_seeds_aof_from_complete_active_rdb_keyspace(
+        self, redis: mock.Mock, run: mock.Mock, actual_mode: mock.Mock
+    ) -> None:
+        redis.side_effect = [
+            "5\n",
+            "OK\n",
+            "OK\n",
+            "OK\n",
+            (
+                "aof_enabled:1\n"
+                "aof_rewrite_in_progress:0\n"
+                "aof_last_bgrewrite_status:ok\n"
+                "aof_rewrites:1\n"
+                "aof_current_size:1024\n"
+                "aof_base_size:900\n"
+            ),
+            "5\n",
+        ]
+        run.return_value = mock.Mock(
+            returncode=0,
+            stdout=f"{'f' * 64}  /data/appendonlydir/appendonly.aof.manifest\n",
+            stderr="",
+        )
+        actual_mode.return_value = (
+            "aof_everysec_rdb",
+            {"appendonly": "yes", "appendfsync": "everysec"},
+        )
+
+        result = transition.seed_aof_from_rdb(60.0)
+
+        self.assertEqual(result["key_count_before"], 5)
+        self.assertEqual(result["key_count_after"], 5)
+        self.assertEqual(result["method"], "runtime-config-set-and-rewrite")
+        self.assertEqual(
+            redis.call_args_list[3].args[0],
+            ["CONFIG", "SET", "appendonly", "yes"],
+        )
+        self.assertEqual(
+            run.call_args.args[0][:5],
+            ["docker", "exec", "--user", "redis", "boost-redis"],
+        )
 
     @mock.patch.object(transition, "active_volume")
     @mock.patch.object(transition, "actual_mode")

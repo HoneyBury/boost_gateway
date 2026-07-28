@@ -18,6 +18,7 @@ class FakeExecutor:
         self.calls: list[tuple[str, str]] = []
         self.fail_verification_for: set[str] = set()
         self.blocked_transitions: set[tuple[str, str]] = set()
+        self.runtime_failures_for: dict[str, list[str]] = {}
 
     def precheck(self, deployment_path: Path, timeout_seconds: float) -> None:
         self.calls.append(("precheck", deployment_path.name))
@@ -71,9 +72,27 @@ class FakeExecutor:
         summary_path.write_text('{"overall_pass": true}\n', encoding="utf-8")
         return {"overall_pass": True}
 
+    def verify_read_only(
+        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+    ) -> dict[str, Any]:
+        self.calls.append(
+            (f"verify-read-only:{summary_path.name}", deployment_path.name)
+        )
+        if deployment_path.name in self.fail_verification_for:
+            self.fail_verification_for.remove(deployment_path.name)
+            summary_path.write_text('{"overall_pass": false}\n', encoding="utf-8")
+            raise module.LifecycleError("injected verification failure")
+        result = {
+            "overall_pass": True,
+            "read_only_verification": True,
+            "protected_state_mutated": False,
+        }
+        summary_path.write_text(json.dumps(result) + "\n", encoding="utf-8")
+        return result
+
     def runtime_status(self, deployment_path: Path) -> list[str]:
         self.calls.append(("status", deployment_path.name))
-        return []
+        return list(self.runtime_failures_for.get(deployment_path.name, []))
 
     def inactive_status(self) -> list[str]:
         return []
@@ -122,6 +141,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             "deploy/operations",
             "env/monitoring",
             "env/redis",
+            "scripts/lib",
             "scripts/tools",
         ):
             (source / name).mkdir(parents=True, exist_ok=True)
@@ -144,6 +164,9 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         (source / "scripts/tools/check_release_compose.py").write_text(
             "pass\n", encoding="utf-8"
         )
+        (source / "scripts/lib/operations_identity.py").write_text(
+            marker, encoding="utf-8"
+        )
         (source / "bin/sdk_full_flow_client").write_text(marker, encoding="utf-8")
         config_digest = module.sha256_tree(source / "config")
         manifest = {
@@ -165,6 +188,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                 "verification_tools_sha256": module.sha256_tree(
                     source / "scripts/tools"
                 ),
+                "verification_runtime_sha256": module.sha256_tree(source / "scripts"),
             },
             "binaries": [
                 {
@@ -238,6 +262,280 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             )["deployment_id"]
         )
 
+    def make_blocking_manual_recovery(
+        self, current: str
+    ) -> tuple[Path, dict[str, Any]]:
+        candidate = self.install("v1.0.1", "b")
+        transaction, record = self.manager._transaction(
+            "upgrade",
+            candidate=candidate,
+            from_current=current,
+            from_previous=None,
+        )
+        record.update(
+            {
+                "status": "recovery_failed",
+                "completed_at": "2026-07-28T06:45:00Z",
+                "failure": "candidate activation failed",
+                "recovery_failure": "previous recovery failed",
+            }
+        )
+        self.manager._write_transaction_record(transaction, record)
+
+        active_volume = "boost-gateway-production-redis-data"
+        status_path = transaction / module.MANUAL_RECOVERY_STATUS
+        verification_path = transaction / module.MANUAL_RECOVERY_VERIFICATION
+        equivalence_path = transaction / module.MANUAL_RECOVERY_EQUIVALENCE
+        transition_path = transaction / module.MANUAL_RECOVERY_TRANSITION
+        module.atomic_write_json(
+            status_path,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "current": current,
+                "failures": [],
+                "lifecycle_blocker_preserved": True,
+                "secret_material_recorded": False,
+            },
+        )
+        module.atomic_write_json(
+            verification_path,
+            {
+                "summary_version": 2,
+                "overall_pass": True,
+                "source_build_performed": False,
+                "public_conan_access_performed": False,
+                "staging_manifest": str(
+                    self.layout.deployments / current / "manifest.json"
+                ),
+                "compose_file": str(
+                    self.layout.deployments
+                    / current
+                    / "deploy/operations/docker-compose.production.yml"
+                ),
+                "checks": [
+                    {"name": name, "passed": True}
+                    for name in (
+                        "compose-service-state",
+                        "container-image-identities",
+                        "redis-ping",
+                        "release-sdk-full-flow",
+                    )
+                ],
+                "failed": [],
+            },
+        )
+        canonical = "d" * 64
+        module.atomic_write_json(
+            equivalence_path,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "transaction_id": transaction.name,
+                "source_volume": active_volume,
+                "source_volume_mounted_readonly": True,
+                "redis_image": "sha256:" + "e" * 64,
+                "rdb_canonical_sha256": canonical,
+                "aof_canonical_sha256": canonical,
+                "rdb_key_count": 5,
+                "aof_key_count": 5,
+                "key_sets_equal": True,
+                "required_keys_present": True,
+                "production_switched": False,
+                "production_volume_mutated": False,
+                "secret_material_recorded": False,
+                "formal_todo0012_claim": False,
+            },
+        )
+        module.atomic_write_json(
+            transition_path,
+            {
+                "overall_pass": True,
+                "source_mode": "aof_everysec_rdb",
+                "target_mode": "rdb_only",
+                "checkpoint_required": True,
+                "checkpoint_verified": True,
+                "writes_frozen": True,
+                "checkpoint": {
+                    "rdb_changes_since_last_save": 0,
+                    "rdb_last_bgsave_status": "ok",
+                    "redis_check_rdb": True,
+                    "rdb_sha256": "c" * 64,
+                },
+                "active_volume": {
+                    "name": active_volume,
+                    "destination": "/data",
+                    "read_write": True,
+                },
+                "secret_material_recorded": False,
+            },
+        )
+
+        def backup_summary(path: Path, backup_id: str) -> None:
+            module.atomic_write_json(
+                path,
+                {
+                    "manifest": {
+                        "backup_id": backup_id,
+                        "consistent_redis_snapshot": True,
+                        "encrypted_before_transfer": True,
+                        "secret_material_recorded": False,
+                    },
+                    "remote_receipt": {
+                        "backup_id": backup_id,
+                        "create_only": True,
+                        "remote_readback_sha256": True,
+                        "stored_at": "2026-07-28T08:00:00Z",
+                        "secret_material_recorded": False,
+                    },
+                },
+            )
+
+        pre_backup = Path(self.temporary.name) / "pre-merge-backup-summary.json"
+        post_backup = Path(self.temporary.name) / "post-merge-backup-summary.json"
+        backup_summary(pre_backup, "todo0012-linkfree-pre")
+        backup_summary(post_backup, "todo0012-linkfree-post")
+        payload = {"scores": {"alice": "100"}, "next_seq": 96}
+        payload_sha256 = module.hashlib.sha256(
+            (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+        ).hexdigest()
+        plan = Path(self.temporary.name) / "todo0012-pre-aof-merge-plan.json"
+        application = (
+            Path(self.temporary.name) / "todo0012-pre-aof-merge-application.json"
+        )
+        merge_verification = (
+            Path(self.temporary.name)
+            / "todo0012-pre-aof-merge-deployment-verification.json"
+        )
+        pre_canonical = "4" * 64
+        merged_canonical = "8" * 64
+        module.atomic_write_json(
+            plan,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "operation": "prepare-pre-aof-state-merge",
+                "payload": payload,
+                "payload_sha256": payload_sha256,
+                "current_canonical_sha256": pre_canonical,
+                "merged_canonical_sha256": merged_canonical,
+                "production_mutated": False,
+                "production_volume_deleted": False,
+                "secret_material_recorded": False,
+                "formal_todo0012_claim": False,
+            },
+        )
+        pre_backup_reference = {
+            "backup_id": "todo0012-linkfree-pre",
+            "summary_path": str(pre_backup),
+            "summary_sha256": module.sha256_file(pre_backup),
+        }
+        post_backup_reference = {
+            "backup_id": "todo0012-linkfree-post",
+            "summary_path": str(post_backup),
+            "summary_sha256": module.sha256_file(post_backup),
+        }
+        module.atomic_write_json(
+            application,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "operation": "apply-pre-aof-state-merge",
+                "plan_sha256": module.sha256_file(plan),
+                "payload_sha256": payload_sha256,
+                "pre_merge_canonical_sha256": pre_canonical,
+                "merged_canonical_sha256": merged_canonical,
+                "pre_merge_backup": pre_backup_reference,
+                "checkpoint": {
+                    "rdb_changes_since_last_save": 0,
+                    "redis_check_rdb": True,
+                    "rdb_sha256": "3" * 64,
+                },
+                "production_volume_deleted": False,
+                "secret_material_recorded": False,
+                "formal_todo0012_claim": False,
+            },
+        )
+        module.atomic_write_json(
+            merge_verification,
+            {
+                "overall_pass": True,
+                "source_build_performed": False,
+                "public_conan_access_performed": False,
+                "staging_manifest": str(
+                    self.layout.deployments / current / "manifest.json"
+                ),
+                "checks": [{"name": "release-sdk-full-flow", "passed": True}],
+                "failed": [],
+            },
+        )
+        resolution = Path(self.temporary.name) / "todo0012-pre-aof-merge-recovery.json"
+        module.atomic_write_json(
+            resolution,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "operation": "recover-pre-aof-state-with-post-activation-writes",
+                "recorded_at": "2026-07-28T08:16:58Z",
+                "current": current,
+                "active_volume": active_volume,
+                "lifecycle_blocker_preserved": True,
+                "production_volume_deleted": False,
+                "aof_quarantine_deleted": False,
+                "pre_merge_canonical_sha256": pre_canonical,
+                "merged_canonical_sha256": merged_canonical,
+                "payload_sha256": payload_sha256,
+                "plan_sha256": module.sha256_file(plan),
+                "application_sha256": module.sha256_file(application),
+                "verification_sha256": module.sha256_file(merge_verification),
+                "preservation": {
+                    "passed": True,
+                    "missing_names": [],
+                    "missing_scores": [],
+                    "changed_names": [],
+                    "changed_scores": [],
+                    "missing_events": {
+                        "events_by_type": 0,
+                        "events_global": 0,
+                    },
+                    "next_seq": 102,
+                },
+                "pre_merge_backup": pre_backup_reference,
+                "post_merge_backup": post_backup_reference,
+                "secret_material_recorded": False,
+                "formal_todo0012_claim": False,
+            },
+        )
+        self.recovery_resolution = resolution
+        manual = {
+            "schema_version": 1,
+            "overall_pass": True,
+            "operation": "manual-recovery-after-aof-activation-recovery-failure",
+            "transaction_id": transaction.name,
+            "current": current,
+            "active_volume": active_volume,
+            "active_volume_preserved": True,
+            "rdb_sha256": "f" * 64,
+            "rdb_aof_canonical_equivalence_verified": True,
+            "rdb_aof_equivalence_sha256": module.sha256_file(equivalence_path),
+            "redis_image": "sha256:" + "e" * 64,
+            "appendonly": "no",
+            "aof_quarantine": f"appendonlydir.recovery-failed-{transaction.name}",
+            "aof_manifest_sha256": "9" * 64,
+            "aof_files_deleted": False,
+            "rdb_files_deleted": False,
+            "production_volume_deleted": False,
+            "lifecycle_blocker_preserved": True,
+            "transaction_record_mutated": False,
+            "status_sha256": module.sha256_file(status_path),
+            "verification_sha256": module.sha256_file(verification_path),
+            "secret_material_recorded": False,
+            "formal_todo0012_claim": False,
+        }
+        module.atomic_write_json(transaction / module.MANUAL_RECOVERY_SUMMARY, manual)
+        self.manager._write_transaction_record(transaction, record)
+        return transaction, record
+
     def test_install_is_idempotent_and_keeps_versioned_inputs(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(
             "v1.0.0", "a"
@@ -261,6 +559,53 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertEqual(first["operator"], self.identity["operator"])
         self.assertEqual(first["result"]["status"], "installed")
         self.assertTrue(first["result"]["overall_pass"])
+
+    def test_install_rejects_verification_runtime_digest_drift(self) -> None:
+        source, image_env, release_summary, image_summary = self.make_release(
+            "v1.0.0", "a"
+        )
+        manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+        manifest["deployment_controller"]["verification_runtime_sha256"] = "0" * 64
+        (source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        summary = json.loads(release_summary.read_text(encoding="utf-8"))
+        summary["release"]["manifest_sha256"] = module.sha256_file(
+            source / "manifest.json"
+        )
+        release_summary.write_text(json.dumps(summary), encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            module.LifecycleError, "verification_runtime_sha256"
+        ):
+            self.manager.install(
+                source, image_env, release_summary, image_summary, None
+            )
+
+    def test_deployment_id_binds_complete_verification_runtime(self) -> None:
+        source, image_env, release_summary, image_summary = self.make_release(
+            "v1.0.0", "a"
+        )
+        first = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+        (source / "scripts/lib/operations_identity.py").write_text(
+            "changed", encoding="utf-8"
+        )
+        manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+        manifest["deployment_controller"]["verification_runtime_sha256"] = (
+            module.sha256_tree(source / "scripts")
+        )
+        (source / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+        summary = json.loads(release_summary.read_text(encoding="utf-8"))
+        summary["release"]["manifest_sha256"] = module.sha256_file(
+            source / "manifest.json"
+        )
+        release_summary.write_text(json.dumps(summary), encoding="utf-8")
+
+        second = self.manager.install(
+            source, image_env, release_summary, image_summary, None
+        )
+
+        self.assertNotEqual(first["deployment_id"], second["deployment_id"])
 
     def test_idempotent_install_backfills_only_missing_identity(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(
@@ -423,16 +768,43 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                     self.assertIn("prepare_redis_persistence_transition.py", command[1])
                     self.assertIn(source_mode, command)
                     self.assertIn(target_mode, command)
+                    payload: dict[str, Any] = {
+                        "overall_pass": True,
+                        "source_mode": source_mode,
+                        "target_mode": target_mode,
+                        "checkpoint_verified": True,
+                        "runtime_already_target": False,
+                        "aof_directory_transition": {
+                            "action": (
+                                "absent"
+                                if source_mode == "rdb_only"
+                                else "entrypoint-readable"
+                            ),
+                            "mode": "0755" if source_mode != "rdb_only" else None,
+                            "files_deleted": False,
+                        },
+                        "aof_seed": None,
+                        "secret_material_recorded": False,
+                    }
+                    if source_mode == "rdb_only":
+                        payload["aof_seed"] = {
+                            "method": "runtime-config-set-and-rewrite",
+                            "source": "active-rdb-keyspace",
+                            "key_count_before": 5,
+                            "key_count_after": 5,
+                            "manifest_sha256": "8" * 64,
+                            "effective_config": {
+                                "appendonly": "yes",
+                                "appendfsync": "everysec",
+                            },
+                            "files_deleted": False,
+                        }
+                    else:
+                        payload["aof_directory_transition"]["manifest_sha256"] = (
+                            "9" * 64
+                        )
                     summary.write_text(
-                        json.dumps(
-                            {
-                                "overall_pass": True,
-                                "source_mode": source_mode,
-                                "target_mode": target_mode,
-                                "checkpoint_verified": True,
-                                "secret_material_recorded": False,
-                            }
-                        ),
+                        json.dumps(payload),
                         encoding="utf-8",
                     )
                     return mock.Mock(returncode=0, stdout="", stderr="")
@@ -450,6 +822,94 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
 
                 self.assertTrue(result["overall_pass"])
                 self.assertTrue(result["checkpoint_verified"])
+
+    def test_system_executor_rejects_missing_rdb_to_aof_seed_evidence(self) -> None:
+        source = Path(self.temporary.name) / "source-rdb"
+        target = Path(self.temporary.name) / "target-aof"
+        summary = Path(self.temporary.name) / "missing-seed.json"
+        executor = module.SystemLifecycleExecutor(self.layout)
+        documents = [
+            {
+                "services": {
+                    "redis": {"command": ["redis-server", "--appendonly", "no"]}
+                }
+            },
+            {
+                "services": {
+                    "redis": {
+                        "command": [
+                            "redis-server",
+                            "--appendonly",
+                            "yes",
+                            "--appendfsync",
+                            "everysec",
+                        ]
+                    }
+                }
+            },
+        ]
+
+        def run_checkpoint(*args: Any, **kwargs: Any) -> mock.Mock:
+            summary.write_text(
+                json.dumps(
+                    {
+                        "overall_pass": True,
+                        "source_mode": "rdb_only",
+                        "target_mode": "aof_everysec_rdb",
+                        "checkpoint_verified": True,
+                        "runtime_already_target": False,
+                        "aof_directory_transition": {
+                            "action": "absent",
+                            "files_deleted": False,
+                        },
+                        "aof_seed": None,
+                        "secret_material_recorded": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with (
+            mock.patch.object(executor, "_environment", return_value={}),
+            mock.patch.object(executor, "_run", side_effect=run_checkpoint),
+            mock.patch.object(module, "load_compose_document", side_effect=documents),
+            self.assertRaisesRegex(module.LifecycleError, "seed evidence"),
+        ):
+            executor.prepare_transition(source, target, summary, 60.0)
+
+    def test_system_executor_read_only_verification_is_explicit(self) -> None:
+        deployment = Path(self.temporary.name) / "read-only-deployment"
+        summary = Path(self.temporary.name) / "read-only-verification.json"
+        executor = module.SystemLifecycleExecutor(self.layout)
+
+        def run_verifier(
+            command: list[str],
+            timeout_seconds: float,
+            *,
+            environment: dict[str, str] | None = None,
+        ) -> mock.Mock:
+            self.assertIn("--read-only", command)
+            summary.write_text(
+                json.dumps(
+                    {
+                        "overall_pass": True,
+                        "read_only_verification": True,
+                        "protected_state_mutated": False,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with (
+            mock.patch.object(executor, "_environment", return_value={}),
+            mock.patch.object(executor, "_run", side_effect=run_verifier),
+        ):
+            result = executor.verify_read_only(deployment, summary, 60.0)
+
+        self.assertTrue(result["read_only_verification"])
+        self.assertFalse(result["protected_state_mutated"])
 
     def test_upgrade_rejects_release_that_changes_host_unit(self) -> None:
         first = self.install("v1.0.0", "a")
@@ -609,6 +1069,243 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
 
         with self.assertRaisesRegex(module.LifecycleError, "blocks lifecycle"):
             self.manager.status()
+
+    def test_reconcile_recovery_closes_unique_blocker_after_fresh_verification(
+        self,
+    ) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, original = self.make_blocking_manual_recovery(current)
+
+        result = self.manager.reconcile_recovery(
+            transaction.name, self.recovery_resolution
+        )
+
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertTrue(result["overall_pass"])
+        self.assertEqual("recovery_reconciled", record["status"])
+        self.assertEqual("recovery_failed", record["reconciled_from_status"])
+        self.assertEqual(current, record["current"])
+        self.assertEqual(original["failure"], record["failure"])
+        self.assertEqual(original["recovery_failure"], record["recovery_failure"])
+        self.assertFalse(record["manual_recovery_transaction_record_mutated"])
+        self.assertFalse(record["result"]["overall_pass"])
+        self.assertEqual(
+            {"manual_recovery", "manual_recovery_reconcile"},
+            {
+                item["kind"]
+                for item in record["result"]["summaries"]
+                if item["kind"].startswith("manual_recovery")
+            },
+        )
+        self.assertTrue(
+            (transaction / module.MANUAL_RECOVERY_RECONCILE_SUMMARY).is_file()
+        )
+        self.assertTrue(
+            any(
+                call[0] == "status" and call[1] == current
+                for call in self.executor.calls
+            )
+        )
+        self.assertTrue(
+            any(
+                call[0].startswith(
+                    "verify-read-only:deployment-verification-summary.json"
+                )
+                and call[1] == current
+                for call in self.executor.calls
+            )
+        )
+        self.assertTrue(self.manager.status()["overall_pass"])
+
+        repeated = self.manager.reconcile_recovery(
+            transaction.name, self.recovery_resolution
+        )
+        self.assertTrue(repeated["idempotent"])
+        self.assertEqual(result["reconcile_summary"], repeated["reconcile_summary"])
+
+    def test_reconcile_recovery_rejects_unbound_transition_digest(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        transition = transaction / module.MANUAL_RECOVERY_TRANSITION
+        document = json.loads(transition.read_text(encoding="utf-8"))
+        document["checkpoint"]["rdb_sha256"] = "1" * 64
+        module.atomic_write_json(transition, document)
+
+        with self.assertRaisesRegex(module.LifecycleError, "blocking record"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+    def test_reconcile_recovery_rejects_tampered_merge_plan(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        plan = self.recovery_resolution.parent / "todo0012-pre-aof-merge-plan.json"
+        document = json.loads(plan.read_text(encoding="utf-8"))
+        document["payload"]["scores"]["alice"] = "999"
+        module.atomic_write_json(plan, document)
+
+        with self.assertRaisesRegex(module.LifecycleError, "plan binding"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+    def test_reconcile_recovery_rejects_resolution_symlink(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        link = Path(self.temporary.name) / "resolution-link.json"
+        link.symlink_to(self.recovery_resolution)
+
+        with self.assertRaisesRegex(module.LifecycleError, "regular file"):
+            self.manager.reconcile_recovery(transaction.name, link)
+
+    def test_reconcile_recovery_rejects_tampered_manual_evidence(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        module.atomic_write_json(
+            transaction / module.MANUAL_RECOVERY_STATUS,
+            {
+                "schema_version": 1,
+                "overall_pass": True,
+                "current": current,
+                "failures": [],
+                "lifecycle_blocker_preserved": False,
+                "secret_material_recorded": False,
+            },
+        )
+
+        with self.assertRaisesRegex(module.LifecycleError, "digest binding"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_failed", record["status"])
+        self.assertFalse(
+            (transaction / module.MANUAL_RECOVERY_RECONCILE_SUMMARY).exists()
+        )
+
+    def test_reconcile_recovery_requires_the_unique_blocking_transaction(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        other, record = self.manager._transaction(
+            "upgrade", candidate="candidate-two", from_current=current
+        )
+        record["status"] = "recovery_failed"
+        self.manager._write_transaction_record(other, record)
+
+        with self.assertRaisesRegex(module.LifecycleError, "exactly one"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+        for path in (transaction, other):
+            blocked = json.loads((path / "record.json").read_text(encoding="utf-8"))
+            self.assertEqual("recovery_failed", blocked["status"])
+
+    def test_reconcile_recovery_rejects_current_source_drift(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        record["from_current"] = "different-deployment"
+        self.manager._write_transaction_record(transaction, record)
+
+        with self.assertRaisesRegex(module.LifecycleError, "current deployment differ"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+        blocked = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_failed", blocked["status"])
+
+    def test_reconcile_recovery_runtime_failure_preserves_blocker(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        self.executor.runtime_failures_for[current] = ["redis is not healthy"]
+
+        with self.assertRaisesRegex(module.LifecycleError, "runtime status"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_failed", record["status"])
+        attempts = list((transaction / "reconcile-attempts").iterdir())
+        self.assertEqual(1, len(attempts))
+        runtime = json.loads(
+            (attempts[0] / "runtime-status-summary.json").read_text(encoding="utf-8")
+        )
+        self.assertFalse(runtime["overall_pass"])
+        self.assertFalse(
+            (transaction / module.MANUAL_RECOVERY_RECONCILE_SUMMARY).exists()
+        )
+
+    def test_reconcile_recovery_verification_failure_preserves_blocker(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+        self.executor.fail_verification_for.add(current)
+
+        with self.assertRaisesRegex(module.LifecycleError, "verification failure"):
+            self.manager.reconcile_recovery(transaction.name, self.recovery_resolution)
+
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_failed", record["status"])
+        attempts = list((transaction / "reconcile-attempts").iterdir())
+        self.assertEqual(1, len(attempts))
+        verification = json.loads(
+            (attempts[0] / "deployment-verification-summary.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertFalse(verification["overall_pass"])
+        self.assertFalse(
+            (transaction / module.MANUAL_RECOVERY_RECONCILE_SUMMARY).exists()
+        )
+
+    def test_reconcile_recovery_resumes_after_final_summary_before_record_update(
+        self,
+    ) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, _ = self.make_blocking_manual_recovery(current)
+
+        with mock.patch.object(
+            self.manager,
+            "_write_transaction_record",
+            side_effect=OSError("injected record write interruption"),
+        ):
+            with self.assertRaisesRegex(OSError, "record write interruption"):
+                self.manager.reconcile_recovery(
+                    transaction.name, self.recovery_resolution
+                )
+
+        blocked = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_failed", blocked["status"])
+        self.assertTrue(
+            (transaction / module.MANUAL_RECOVERY_RECONCILE_SUMMARY).is_file()
+        )
+        attempts_before = list((transaction / "reconcile-attempts").iterdir())
+
+        result = self.manager.reconcile_recovery(
+            transaction.name, self.recovery_resolution
+        )
+
+        self.assertTrue(result["overall_pass"])
+        self.assertEqual(
+            attempts_before, list((transaction / "reconcile-attempts").iterdir())
+        )
+        record = json.loads((transaction / "record.json").read_text(encoding="utf-8"))
+        self.assertEqual("recovery_reconciled", record["status"])
+
+    def test_reconcile_recovery_cli_requires_transaction_id(self) -> None:
+        args = module.build_parser().parse_args(
+            [
+                "reconcile-recovery",
+                "--transaction-id",
+                "tx-123",
+                "--resolution-summary",
+                "/tmp/recovery.json",
+            ]
+        )
+        self.assertEqual("reconcile-recovery", args.command)
+        self.assertEqual("tx-123", args.transaction_id)
+        self.assertEqual(Path("/tmp/recovery.json"), args.resolution_summary)
 
     def test_deploy_adopts_legacy_release_pointer_once(self) -> None:
         source, image_env, release_summary, image_summary = self.make_release(

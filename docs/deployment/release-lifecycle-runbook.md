@@ -115,6 +115,36 @@ record 必须保留 tag、commit、runtime asset digest、六个 image IDs、配
 若候选激活和 previous 恢复都失败，必须保持 fail closed、保留 `recovery_failed` 记录并进入
 incident 处理；不得把候选标记 verified 或人工改写 record。
 
+incident 完成受控人工恢复后，只能使用 manager 的专用入口解除阻断：
+
+```bash
+sudo python3 scripts/manage_release_deployment.py reconcile-recovery \
+  --transaction-id <blocking-recovery-failed-transaction-id> \
+  --resolution-summary <protected-state-recovery-summary.json>
+```
+
+该命令持有 lifecycle lock，并要求指定事务是唯一的 `recovery_failed` blocker，`current` 与原
+`from_current` 完全一致。它只读取事务目录内 create-only 的
+`manual-recovery-summary.json`，并复算其对 manual runtime status、完整 deployment verification、
+persistence recovery checkpoint 和 RDB/AOF canonical equivalence summary 的 SHA-256 绑定。
+`--resolution-summary` 还必须证明故障前数据与故障后新增写入均已保留，并绑定 merge 前后两份
+异机备份；manual summary 还必须明确记录
+`transaction_record_mutated=false`、`lifecycle_blocker_preserved=true`、持久 volume 保留且没有删除
+RDB/AOF 数据。
+
+resolution 必须与同目录 create-only 的 merge plan、merge application、完整 deployment verification
+逐一复算 SHA-256，并解析两份 backup summary 内的加密、create-only remote receipt 与异机 readback
+语义；其时间必须晚于 blocking transaction，不能跨事故重放。
+
+证据通过后，manager 仍会在新的 attempt 目录重新执行 current runtime status 和只读 release
+verification。业务 SDK full-flow 已由 merge verification 证明并在其后形成 post-merge 异机备份；
+reconcile 不得在最终备份后再次写入 leaderboard。只有两项都通过，才生成 create-only
+`manual-recovery-reconcile-summary.json`，并用
+原有原子 record writer 把原事务更新为非阻断终态 `recovery_reconciled`；原始 operation 仍保持
+`overall_pass=false`，failure/recovery_failure 保留，
+新 summary 和 verification digest 写入 record。manual 证据篡改、存在多个 blocker、current 漂移、
+runtime status 或 verification 失败都保持 `recovery_failed`，不得删除事务或手工改写其 JSON。
+
 固定测试机使用仓库脚本制造真实的 post-activation Prometheus outage。脚本会等待 transaction
 进入 `candidate_activated` 并核对候选 gateway 镜像后，再暂停当前 Prometheus 120 秒，以 trap
 保证解除暂停；它要求候选 verification summary
@@ -148,8 +178,10 @@ PING 和 SDK full-flow。数据卷 RPO 为 0，release rollback 不得回滚 Red
 相同 volume 不代表不同 Redis persistence mode 之间天然兼容。release manager 会从 source/target
 deployment 的 resolved Compose 识别 Redis mode，并为发生变化的事务生成
 `candidate-persistence-transition-summary.json`。RDB-only→AOF everysec 需要先冻结写入并形成
-fresh BGSAVE，AOF→RDB 还属于数据格式降级；在具备 `changes_since_last_save=0`、离线 RDB 校验和
-checkpoint identity 的专用 transition hook 前，两种 mode change 一律 fail closed。失败候选的自动 previous 恢复和
+fresh BGSAVE，再在仍运行的 RDB Redis 上通过 `CONFIG SET appendonly yes` 生成包含完整活动 keyspace
+的 multi-part AOF；仅用 AOF 配置重启不会自动导入已有 `dump.rdb`。AOF→RDB 属于数据格式降级。
+两种变化都必须具备 `changes_since_last_save=0`、离线 RDB 校验、checkpoint identity 和不删除文件的
+目录转换证据。失败候选的自动 previous 恢复和
 显式 rollback 都受同一门禁约束；不得为了恢复可用性让旧 RDB-only Compose 忽略 active volume
 中只存在于 AOF 的已确认写入。拒绝记录为
 `recovery-persistence-transition-summary.json` 并保留现场进入恢复 incident。
@@ -162,8 +194,8 @@ gateway 与五个 backend 以冻结外部写入，强制 BGSAVE 并要求 `LASTS
 `cap_drop: ALL`；因此两项文件读取都显式使用容器内 `redis` 用户，不依赖无 `DAC_OVERRIDE` 的
 exec root。volume identity 前后漂移、任一 write-capable container
 仍运行、配置 mode 不符、BGSAVE/离线校验失败或 180 秒超时都会阻止 target Compose 启动。若中断
-事务恢复时 runtime 已处于 target mode，hook 记录 `runtime_already_target=true`，避免把已经兼容的
-runtime 再误判成一次降级；其余情况不得跳过 checkpoint。
+事务恢复时 runtime 已处于 target mode，hook 仍会冻结写入、重做 checkpoint，并以 `redis` 用户验证
+AOF manifest、有效配置和 key count 后记录 `runtime_already_target=true`；该状态不得绕过 checkpoint。
 
 ## 关闭证据
 
