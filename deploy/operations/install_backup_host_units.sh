@@ -43,6 +43,8 @@ done
   || fail 'backup SSH private key must be root-owned mode 0600'
 
 install -d -o root -g boost-gateway -m 0750 \
+  /usr/local/libexec/boost-gateway/backup/scripts \
+  /usr/local/libexec/boost-gateway/backup/scripts/lib \
   /usr/local/libexec/boost-gateway/backup/scripts/tools \
   /usr/local/libexec/boost-gateway/backup/deploy/operations \
   /usr/local/libexec/boost-gateway/backup/env/redis \
@@ -54,6 +56,16 @@ install -o root -g root -m 0755 \
   "${ROOT}/scripts/tools/manage_backup_recovery.py" \
   "${ROOT}/scripts/tools/run_scheduled_backup.py" \
   /usr/local/libexec/boost-gateway/backup/scripts/tools/
+install -o root -g root -m 0644 \
+  "${ROOT}/scripts/__init__.py" \
+  /usr/local/libexec/boost-gateway/backup/scripts/__init__.py
+install -o root -g root -m 0644 \
+  "${ROOT}/scripts/lib/__init__.py" \
+  "${ROOT}/scripts/lib/operations_identity.py" \
+  /usr/local/libexec/boost-gateway/backup/scripts/lib/
+install -o root -g root -m 0644 \
+  "${ROOT}/scripts/tools/__init__.py" \
+  /usr/local/libexec/boost-gateway/backup/scripts/tools/__init__.py
 install -o root -g root -m 0644 \
   "${ROOT}/deploy/operations/backup-recovery-policy.example.json" \
   /usr/local/libexec/boost-gateway/backup/deploy/operations/
