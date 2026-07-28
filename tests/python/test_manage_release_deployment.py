@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from scripts.tools import manage_release_deployment as module
 
@@ -16,6 +17,7 @@ class FakeExecutor:
         self.layout = layout
         self.calls: list[tuple[str, str]] = []
         self.fail_verification_for: set[str] = set()
+        self.blocked_transitions: set[tuple[str, str]] = set()
 
     def precheck(self, deployment_path: Path, timeout_seconds: float) -> None:
         self.calls.append(("precheck", deployment_path.name))
@@ -34,6 +36,29 @@ class FakeExecutor:
 
     def deactivate(self, deployment_path: Path, timeout_seconds: float) -> None:
         self.calls.append(("deactivate", deployment_path.name))
+
+    def prepare_transition(
+        self,
+        source_path: Path,
+        target_path: Path,
+        summary_path: Path,
+        timeout_seconds: float,
+    ) -> dict[str, Any] | None:
+        self.calls.append(
+            (
+                f"transition:{summary_path.name}",
+                f"{source_path.name}->{target_path.name}",
+            )
+        )
+        if (source_path.name, target_path.name) in self.blocked_transitions:
+            summary_path.write_text(
+                '{"overall_pass": false, "aof_to_rdb_downgrade": true}\n',
+                encoding="utf-8",
+            )
+            raise module.LifecycleError(
+                "AOF-to-RDB transition requires a verified fresh checkpoint"
+            )
+        return None
 
     def verify(
         self, deployment_path: Path, summary_path: Path, timeout_seconds: float
@@ -324,6 +349,13 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             ),
             upgrade_calls.index(("commit", second)),
         )
+        self.assertIn(
+            (
+                "transition:candidate-persistence-transition-summary.json",
+                f"{first}->{second}",
+            ),
+            upgrade_calls,
+        )
 
         result = self.manager.rollback()
         self.assertEqual(result["status"], "passed")
@@ -336,6 +368,98 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertLessEqual(result["elapsed_seconds"], 600)
         self.assertEqual(self.layout.current.resolve().name, first)
         self.assertEqual(self.layout.previous.resolve().name, second)
+        self.assertIn(
+            (
+                "transition:candidate-persistence-transition-summary.json",
+                f"{second}->{first}",
+            ),
+            self.executor.calls,
+        )
+
+    def test_system_executor_allows_rdb_to_aof_and_records_transition(self) -> None:
+        source = Path(self.temporary.name) / "rdb-deployment"
+        target = Path(self.temporary.name) / "aof-deployment"
+        profile = Path(self.temporary.name) / "redis.conf"
+        profile.write_text("appendonly yes\nappendfsync everysec\n", encoding="ascii")
+        summary = Path(self.temporary.name) / "transition.json"
+        rdb_document = {
+            "services": {"redis": {"command": ["redis-server", "--appendonly", "no"]}}
+        }
+        aof_document = {
+            "services": {
+                "redis": {
+                    "command": ["redis-server", "/etc/redis/redis.conf"],
+                    "volumes": [
+                        {
+                            "type": "bind",
+                            "source": str(profile),
+                            "target": "/etc/redis/redis.conf",
+                            "read_only": True,
+                        }
+                    ],
+                }
+            }
+        }
+        executor = module.SystemLifecycleExecutor(self.layout)
+
+        with (
+            mock.patch.object(executor, "_environment", return_value={}),
+            mock.patch.object(
+                module,
+                "load_compose_document",
+                side_effect=[rdb_document, aof_document],
+            ),
+        ):
+            result = executor.prepare_transition(source, target, summary, 60.0)
+
+        self.assertIsNotNone(result)
+        self.assertTrue(result["overall_pass"])
+        self.assertEqual(result["target_redis_persistence"]["mode"], "aof_everysec_rdb")
+        self.assertFalse(result["aof_to_rdb_downgrade"])
+
+    def test_system_executor_blocks_blind_aof_to_rdb_transition(self) -> None:
+        source = Path(self.temporary.name) / "aof-deployment"
+        target = Path(self.temporary.name) / "rdb-deployment"
+        profile = Path(self.temporary.name) / "redis.conf"
+        profile.write_text("appendonly yes\nappendfsync everysec\n", encoding="ascii")
+        summary = Path(self.temporary.name) / "transition.json"
+        aof_document = {
+            "services": {
+                "redis": {
+                    "command": ["redis-server", "/etc/redis/redis.conf"],
+                    "volumes": [
+                        {
+                            "type": "bind",
+                            "source": str(profile),
+                            "target": "/etc/redis/redis.conf",
+                            "read_only": True,
+                        }
+                    ],
+                }
+            }
+        }
+        rdb_document = {
+            "services": {"redis": {"command": ["redis-server", "--appendonly", "no"]}}
+        }
+        executor = module.SystemLifecycleExecutor(self.layout)
+
+        with (
+            mock.patch.object(executor, "_environment", return_value={}),
+            mock.patch.object(
+                module,
+                "load_compose_document",
+                side_effect=[aof_document, rdb_document],
+            ),
+            self.assertRaisesRegex(module.LifecycleError, "verified fresh checkpoint"),
+        ):
+            executor.prepare_transition(source, target, summary, 60.0)
+
+        evidence = json.loads(summary.read_text(encoding="utf-8"))
+        self.assertFalse(evidence["overall_pass"])
+        self.assertTrue(evidence["aof_to_rdb_downgrade"])
+        self.assertTrue(evidence["checkpoint_required"])
+        self.assertFalse(evidence["checkpoint_verified"])
+        self.assertTrue(evidence["active_volume_preserved"])
 
     def test_upgrade_rejects_release_that_changes_host_unit(self) -> None:
         first = self.install("v1.0.0", "a")
@@ -390,14 +514,42 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertEqual(record["result"]["status"], "rolled_back")
         self.assertTrue(record["result"]["completed"])
         self.assertFalse(record["result"]["overall_pass"])
-        references = {
-            item["kind"]: item for item in record["result"]["summaries"]
-        }
+        references = {item["kind"]: item for item in record["result"]["summaries"]}
         self.assertEqual(set(references), {"deployment", "recovery"})
         for item in references.values():
             path = Path(item["path"])
             self.assertEqual(item["sha256"], module.sha256_file(path))
             self.assertEqual(item["size_bytes"], path.stat().st_size)
+        self.assertIn(
+            (
+                "transition:recovery-persistence-transition-summary.json",
+                f"{second}->{first}",
+            ),
+            self.executor.calls,
+        )
+
+    def test_failed_upgrade_does_not_blindly_restore_rdb_after_aof_activation(
+        self,
+    ) -> None:
+        first = self.install("v1.0.0", "a")
+        second = self.install("v1.0.1", "b")
+        self.manager.deploy(first)
+        self.executor.fail_verification_for.add(second)
+        self.executor.blocked_transitions.add((second, first))
+
+        with self.assertRaisesRegex(
+            module.LifecycleError, "previous recovery failed.*verified fresh checkpoint"
+        ):
+            self.manager.upgrade(second)
+
+        records = sorted(self.layout.transaction_root.glob("*/record.json"))
+        record = json.loads(records[-1].read_text(encoding="utf-8"))
+        transition = records[-1].parent / "recovery-persistence-transition-summary.json"
+        self.assertEqual(record["status"], "recovery_failed")
+        self.assertTrue(transition.is_file())
+        self.assertIn("verified fresh checkpoint", record["recovery_failure"])
+        self.assertEqual(self.layout.current.resolve().name, first)
+        self.assertNotIn(("activate", first), self.executor.calls[-3:])
 
     def test_next_command_reconciles_interrupted_candidate_activation(self) -> None:
         first = self.install("v1.0.0", "a")
