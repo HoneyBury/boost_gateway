@@ -33,6 +33,7 @@ WRITE_CONTAINERS = (
 )
 MODES = {"rdb_only", "aof_everysec_rdb"}
 SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+SAFE_COMPONENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}\Z")
 
 
 class TransitionError(RuntimeError):
@@ -226,6 +227,213 @@ def checkpoint(timeout_seconds: float) -> dict[str, Any]:
     }
 
 
+def prepare_aof_directory(
+    source_mode: str,
+    target_mode: str,
+    transaction_id: str,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    if SAFE_COMPONENT_RE.fullmatch(transaction_id) is None:
+        raise TransitionError("persistence transaction identity is invalid")
+    if source_mode == "aof_everysec_rdb" and target_mode == "rdb_only":
+        completed = run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "redis",
+                "boost-redis",
+                "sh",
+                "-eu",
+                "-c",
+                (
+                    "test -d /data/appendonlydir; "
+                    "test -s /data/appendonlydir/appendonly.aof.manifest; "
+                    "sha256sum /data/appendonlydir/appendonly.aof.manifest; "
+                    "chmod 0755 /data/appendonlydir; "
+                    'test "$(stat -c %a /data/appendonlydir)" = 755'
+                ),
+            ],
+            timeout_seconds,
+        )
+        digest = completed.stdout.split()
+        if not digest or SHA256_RE.fullmatch(digest[0]) is None:
+            raise TransitionError("AOF manifest SHA-256 is missing or invalid")
+        return {
+            "action": "entrypoint-readable",
+            "path": "/data/appendonlydir",
+            "mode": "0755",
+            "manifest_sha256": digest[0],
+            "files_deleted": False,
+        }
+
+    if source_mode == "rdb_only" and target_mode == "aof_everysec_rdb":
+        completed = run(
+            [
+                "docker",
+                "exec",
+                "--user",
+                "redis",
+                "boost-redis",
+                "sh",
+                "-eu",
+                "-c",
+                (
+                    "if [ ! -e /data/appendonlydir ]; then "
+                    "printf 'absent\\n'; exit 0; fi; "
+                    "test -d /data/appendonlydir; "
+                    "test -s /data/appendonlydir/appendonly.aof.manifest; "
+                    "sha256sum /data/appendonlydir/appendonly.aof.manifest"
+                ),
+            ],
+            timeout_seconds,
+        )
+        fields = completed.stdout.split()
+        if fields == ["absent"]:
+            return {
+                "action": "absent",
+                "path": "/data/appendonlydir",
+                "files_deleted": False,
+            }
+        if not fields or SHA256_RE.fullmatch(fields[0]) is None:
+            raise TransitionError("stale AOF manifest SHA-256 is missing or invalid")
+        raise TransitionError(
+            "RDB-to-AOF transition found an existing AOF manifest; "
+            f"manual equivalence or merge recovery is required: {fields[0]}"
+        )
+    raise TransitionError("unsupported AOF directory transition")
+
+
+def seed_aof_from_rdb(timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise TransitionError("AOF seed deadline expired")
+        return value
+
+    before_key_count = int(redis(["DBSIZE"], remaining()).strip())
+    for directive, value in (
+        ("appendfsync", "everysec"),
+        ("aof-use-rdb-preamble", "yes"),
+    ):
+        response = redis(["CONFIG", "SET", directive, value], remaining()).strip()
+        if response != "OK":
+            raise TransitionError(f"Redis rejected AOF seed directive: {directive}")
+    response = redis(["CONFIG", "SET", "appendonly", "yes"], remaining()).strip()
+    if response != "OK":
+        raise TransitionError("Redis rejected appendonly activation")
+
+    persistence: dict[str, str] = {}
+    while time.monotonic() < deadline:
+        persistence = parse_info(redis(["INFO", "persistence"], remaining()))
+        if (
+            persistence.get("aof_enabled") == "1"
+            and persistence.get("aof_rewrite_in_progress") == "0"
+            and persistence.get("aof_last_bgrewrite_status") == "ok"
+            and int(persistence.get("aof_rewrites", "0")) >= 1
+            and int(persistence.get("aof_current_size", "0")) > 0
+            and int(persistence.get("aof_base_size", "0")) > 0
+        ):
+            break
+        time.sleep(0.1)
+    else:
+        raise TransitionError("Redis did not complete the AOF seed rewrite")
+
+    after_key_count = int(redis(["DBSIZE"], remaining()).strip())
+    if after_key_count != before_key_count:
+        raise TransitionError("Redis key count changed while seeding AOF")
+    completed = run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "redis",
+            "boost-redis",
+            "sh",
+            "-eu",
+            "-c",
+            (
+                "test -s /data/appendonlydir/appendonly.aof.manifest; "
+                "sha256sum /data/appendonlydir/appendonly.aof.manifest"
+            ),
+        ],
+        remaining(),
+    )
+    digest = completed.stdout.split()
+    if not digest or SHA256_RE.fullmatch(digest[0]) is None:
+        raise TransitionError("seeded AOF manifest SHA-256 is missing or invalid")
+    observed_mode, config = actual_mode(remaining())
+    if observed_mode != "aof_everysec_rdb":
+        raise TransitionError("seeded Redis runtime did not enter the target AOF mode")
+    return {
+        "method": "runtime-config-set-and-rewrite",
+        "source": "active-rdb-keyspace",
+        "key_count_before": before_key_count,
+        "key_count_after": after_key_count,
+        "manifest_sha256": digest[0],
+        "aof_current_size": int(persistence["aof_current_size"]),
+        "aof_base_size": int(persistence["aof_base_size"]),
+        "aof_rewrites": int(persistence["aof_rewrites"]),
+        "effective_config": config,
+        "files_deleted": False,
+    }
+
+
+def validate_existing_aof(timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + timeout_seconds
+
+    def remaining() -> float:
+        value = deadline - time.monotonic()
+        if value <= 0:
+            raise TransitionError("existing AOF validation deadline expired")
+        return value
+
+    before_key_count = int(redis(["DBSIZE"], remaining()).strip())
+    persistence = parse_info(redis(["INFO", "persistence"], remaining()))
+    observed_mode, config = actual_mode(remaining())
+    completed = run(
+        [
+            "docker",
+            "exec",
+            "--user",
+            "redis",
+            "boost-redis",
+            "sh",
+            "-eu",
+            "-c",
+            (
+                "test -s /data/appendonlydir/appendonly.aof.manifest; "
+                "sha256sum /data/appendonlydir/appendonly.aof.manifest"
+            ),
+        ],
+        remaining(),
+    )
+    digest = completed.stdout.split()
+    after_key_count = int(redis(["DBSIZE"], remaining()).strip())
+    if (
+        observed_mode != "aof_everysec_rdb"
+        or persistence.get("aof_enabled") != "1"
+        or persistence.get("aof_last_write_status") != "ok"
+        or int(persistence.get("aof_current_size", "0")) <= 0
+        or not digest
+        or SHA256_RE.fullmatch(digest[0]) is None
+        or after_key_count != before_key_count
+    ):
+        raise TransitionError("existing target AOF runtime is incomplete")
+    return {
+        "method": "runtime-already-target-validated",
+        "source": "active-aof-keyspace",
+        "key_count_before": before_key_count,
+        "key_count_after": after_key_count,
+        "manifest_sha256": digest[0],
+        "aof_current_size": int(persistence["aof_current_size"]),
+        "effective_config": config,
+        "files_deleted": False,
+    }
+
+
 def atomic_write_json(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists() or path.is_symlink():
@@ -263,6 +471,29 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
     observed_mode, config = actual_mode(remaining())
     volume_before = active_volume(remaining())
     if observed_mode == args.target_mode:
+        freeze_writes(args.compose_file.resolve(), remaining())
+        checkpoint_result = checkpoint(remaining())
+        if args.target_mode == "aof_everysec_rdb":
+            aof_seed = validate_existing_aof(remaining())
+            directory_result = {
+                "action": "target-runtime-validated",
+                "path": "/data/appendonlydir",
+                "manifest_sha256": aof_seed["manifest_sha256"],
+                "files_deleted": False,
+            }
+        else:
+            aof_seed = None
+            directory_result = prepare_aof_directory(
+                args.source_mode,
+                args.target_mode,
+                args.summary_path.parent.name,
+                remaining(),
+            )
+        volume_after = active_volume(remaining())
+        if volume_after != volume_before:
+            raise TransitionError(
+                "active Redis volume identity changed during checkpoint"
+            )
         return {
             "schema_version": 1,
             "generated_at": now(),
@@ -273,10 +504,14 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
             "runtime_already_target": True,
             "aof_to_rdb_downgrade": args.source_mode == "aof_everysec_rdb",
             "checkpoint_required": True,
-            "writes_frozen": False,
-            "checkpoint_verified": False,
-            "active_volume": volume_before,
+            "writes_frozen": True,
+            "checkpoint_verified": True,
+            "checkpoint": checkpoint_result,
+            "aof_directory_transition": directory_result,
+            "aof_seed": aof_seed,
+            "active_volume": volume_after,
             "elapsed_seconds": round(time.monotonic() - started, 3),
+            "production_switched": False,
             "secret_material_recorded": False,
         }
     if observed_mode != args.source_mode:
@@ -285,6 +520,15 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         )
     freeze_writes(args.compose_file.resolve(), remaining())
     checkpoint_result = checkpoint(remaining())
+    directory_result = prepare_aof_directory(
+        args.source_mode,
+        args.target_mode,
+        args.summary_path.parent.name,
+        remaining(),
+    )
+    aof_seed = None
+    if args.source_mode == "rdb_only" and args.target_mode == "aof_everysec_rdb":
+        aof_seed = seed_aof_from_rdb(remaining())
     volume_after = active_volume(remaining())
     if volume_after != volume_before:
         raise TransitionError("active Redis volume identity changed during checkpoint")
@@ -303,6 +547,8 @@ def execute(args: argparse.Namespace) -> dict[str, Any]:
         "write_services": list(WRITE_SERVICES),
         "checkpoint_verified": True,
         "checkpoint": checkpoint_result,
+        "aof_directory_transition": directory_result,
+        "aof_seed": aof_seed,
         "active_volume": volume_after,
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "production_switched": False,
@@ -324,7 +570,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         summary = execute(args)
-    except (OSError, TransitionError, ValueError) as exc:
+    except (OSError, TransitionError, ValueError, subprocess.TimeoutExpired) as exc:
         summary = {
             "schema_version": 1,
             "generated_at": now(),

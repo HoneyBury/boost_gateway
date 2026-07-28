@@ -225,6 +225,7 @@ services:
     <<: *service-defaults
     image: redis:7-alpine
     container_name: boost-redis
+    user: redis
     networks:
       - boost-net
     ports:
@@ -232,10 +233,6 @@ services:
     volumes:
       - redis-data:/data
       - ../../env/redis/redis.production-validation.conf:/etc/redis/redis.conf:ro
-    cap_add:
-      - CHOWN
-      - SETGID
-      - SETUID
     pids_limit: 256
     mem_limit: 512m
     cpus: 1.0

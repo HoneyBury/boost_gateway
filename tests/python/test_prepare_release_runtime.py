@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import subprocess
+import sys
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -34,7 +37,9 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "SHA256SUMS.txt"
             path.write_text(f"{SHA}  asset.tar.gz\n", encoding="utf-8")
-            self.assertEqual(MODULE.parse_checksum_manifest(path), {"asset.tar.gz": SHA})
+            self.assertEqual(
+                MODULE.parse_checksum_manifest(path), {"asset.tar.gz": SHA}
+            )
 
     def test_checksum_manifest_rejects_malformed_and_duplicate_entries(self) -> None:
         cases = (
@@ -97,7 +102,9 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
         ]
         MODULE.verify_attestation_subject(results, SHA, MODULE.SPDX_PREDICATE_TYPE)
         with self.assertRaisesRegex(RuntimeError, "does not bind"):
-            MODULE.verify_attestation_subject(results, "d" * 64, MODULE.SPDX_PREDICATE_TYPE)
+            MODULE.verify_attestation_subject(
+                results, "d" * 64, MODULE.SPDX_PREDICATE_TYPE
+            )
         with self.assertRaisesRegex(RuntimeError, "predicate"):
             MODULE.verify_attestation_subject(results, SHA, "wrong")
 
@@ -125,6 +132,78 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
             self.assertEqual(first, MODULE.sha256_tree(root))
             (root / "a/value.json").rename(root / "value.json")
             self.assertNotEqual(first, MODULE.sha256_tree(root))
+
+    @mock.patch.object(MODULE, "inspect_elf")
+    def test_stage_runtime_packages_compose_preflight_import_closure(
+        self, inspect_elf: mock.Mock
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            expected_root = "boost-gateway-v3.6.2-linux-x64"
+            package = root / "extracted" / expected_root
+            (package / "share/boost_gateway/config").mkdir(parents=True)
+            (package / "share/boost_gateway/config/settings.json").write_text(
+                "{}\n", encoding="utf-8"
+            )
+            (package / "bin").mkdir()
+            for name in MODULE.REQUIRED_RUNTIME_BINARIES:
+                (package / "bin" / name).write_bytes(b"binary")
+            inspect_elf.side_effect = lambda path: {
+                "name": path.name,
+                "sha256": MODULE.sha256_file(path),
+            }
+            evidence = root / "evidence"
+            evidence.mkdir()
+            (evidence / "attestation.json").write_text("{}\n", encoding="utf-8")
+            destination = root / "staging"
+
+            manifest = MODULE.stage_runtime(
+                root / "extracted",
+                expected_root,
+                destination,
+                evidence,
+                {},
+                {},
+                "HoneyBury/boost_gateway",
+                "v3.6.2",
+                COMMIT,
+                {"boost-gateway-v3.6.2-linux-x64.tar.gz": SHA},
+                {},
+            )
+
+            required = (
+                "scripts/__init__.py",
+                "scripts/tools/__init__.py",
+                "scripts/tools/check_release_compose.py",
+                "scripts/tools/check_observability_preflight.py",
+                "scripts/lib/__init__.py",
+                "scripts/lib/operations_identity.py",
+            )
+            for relative in required:
+                self.assertTrue((destination / relative).is_file(), relative)
+            controller = manifest["deployment_controller"]
+            self.assertEqual(
+                controller["verification_runtime_sha256"],
+                MODULE.sha256_tree(destination / "scripts"),
+            )
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-c",
+                    (
+                        "from scripts.tools.check_observability_preflight "
+                        "import validate_preflight; "
+                        "from scripts.lib.operations_identity "
+                        "import collect_operations_identity"
+                    ),
+                ],
+                cwd=destination,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(completed.returncode, 0, completed.stderr)
 
 
 if __name__ == "__main__":

@@ -178,6 +178,61 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
 
         self.assertTrue(passed, detail)
         self.assertIn('"aof_manifest_present": true', detail)
+        manifest_command = run.call_args_list[2].args[0]
+        self.assertEqual(
+            manifest_command[
+                manifest_command.index("exec") : manifest_command.index("sh")
+            ],
+            ["exec", "-T", "--user", "redis", "redis"],
+        )
+
+    @mock.patch.object(module, "run")
+    def test_aof_runtime_preserves_manifest_check_failure_detail(
+        self, run: mock.Mock
+    ) -> None:
+        expected = {
+            "appendonly": "yes",
+            "appendfsync": "everysec",
+            "no-appendfsync-on-rewrite": "no",
+            "aof-load-truncated": "no",
+            "aof-use-rdb-preamble": "yes",
+            "maxmemory-policy": "noeviction",
+            "dir": "/data",
+            "save": "300 100 60 10000",
+            "stop-writes-on-bgsave-error": "yes",
+        }
+        run.side_effect = [
+            mock.Mock(
+                returncode=0,
+                stdout="\n".join(item for pair in expected.items() for item in pair)
+                + "\n",
+                stderr="",
+            ),
+            mock.Mock(
+                returncode=0,
+                stdout=(
+                    "aof_enabled:1\n"
+                    "aof_delayed_fsync:0\n"
+                    "aof_last_write_status:ok\n"
+                    "aof_last_bgrewrite_status:ok\n"
+                    "rdb_last_bgsave_status:ok\n"
+                ),
+                stderr="",
+            ),
+            mock.Mock(
+                returncode=1,
+                stdout="",
+                stderr="test: appendonly.aof.manifest: Permission denied\n",
+            ),
+        ]
+
+        passed, detail = module.validate_redis_aof_runtime(["docker", "compose"])
+
+        self.assertFalse(passed)
+        parsed = json.loads(detail)
+        self.assertFalse(parsed["aof_manifest_present"])
+        self.assertEqual(parsed["aof_manifest_check"]["exit_code"], 1)
+        self.assertIn("Permission denied", parsed["aof_manifest_check"]["stderr_tail"])
 
     @mock.patch.object(module, "run")
     def test_aof_runtime_rejects_delayed_fsync(self, run: mock.Mock) -> None:

@@ -28,7 +28,6 @@ from scripts.tools.prepare_docker_runtime_context import validate_runtime_depend
 from scripts.tools.verify_release_archive import verify_archive
 from scripts.tools.verify_release_package_consumer import extract_archive
 
-
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
@@ -136,7 +135,9 @@ def download_asset(url: str, destination: Path) -> None:
         temporary.replace(destination)
     except (OSError, urllib.error.URLError) as exc:
         temporary.unlink(missing_ok=True)
-        raise RuntimeError(f"cannot download release asset {destination.name}: {exc}") from exc
+        raise RuntimeError(
+            f"cannot download release asset {destination.name}: {exc}"
+        ) from exc
 
 
 def validate_inputs(repository: str, tag: str, expected_commit: str) -> None:
@@ -165,7 +166,10 @@ def resolve_tag_commit(repository: str, tag: str) -> tuple[str, dict[str, Any]]:
         if not isinstance(tag_object, dict) or tag_object.get("tag") != tag:
             raise RuntimeError("annotated tag object does not match the requested tag")
         annotated_target = tag_object.get("object")
-        if not isinstance(annotated_target, dict) or annotated_target.get("type") != "commit":
+        if (
+            not isinstance(annotated_target, dict)
+            or annotated_target.get("type") != "commit"
+        ):
             raise RuntimeError("annotated tag does not point directly to a commit")
         commit = str(annotated_target.get("sha", ""))
         evidence = {"reference": reference, "annotated_tag": tag_object}
@@ -177,7 +181,9 @@ def resolve_tag_commit(repository: str, tag: str) -> tuple[str, dict[str, Any]]:
 
 
 def release_metadata(repository: str, tag: str) -> dict[str, Any]:
-    metadata = github_api_json(f"repos/{repository}/releases/tags/{tag}", "release metadata")
+    metadata = github_api_json(
+        f"repos/{repository}/releases/tags/{tag}", "release metadata"
+    )
     if not isinstance(metadata, dict) or metadata.get("tag_name") != tag:
         raise RuntimeError("release metadata does not match the requested tag")
     if metadata.get("draft") or metadata.get("prerelease"):
@@ -187,7 +193,9 @@ def release_metadata(repository: str, tag: str) -> dict[str, Any]:
     return metadata
 
 
-def release_asset_digests(metadata: dict[str, Any], required: set[str]) -> dict[str, str]:
+def release_asset_digests(
+    metadata: dict[str, Any], required: set[str]
+) -> dict[str, str]:
     digests: dict[str, str] = {}
     for item in metadata["assets"]:
         if not isinstance(item, dict) or item.get("name") not in required:
@@ -197,7 +205,9 @@ def release_asset_digests(metadata: dict[str, Any], required: set[str]) -> dict[
         if name in digests:
             raise RuntimeError(f"release contains a duplicate required asset: {name}")
         if not value.startswith("sha256:") or SHA256_RE.fullmatch(value[7:]) is None:
-            raise RuntimeError(f"release asset has no valid GitHub SHA-256 digest: {name}")
+            raise RuntimeError(
+                f"release asset has no valid GitHub SHA-256 digest: {name}"
+            )
         digests[name] = value[7:]
     missing = required - set(digests)
     if missing:
@@ -222,7 +232,9 @@ def release_asset_urls(metadata: dict[str, Any], required: set[str]) -> dict[str
 
 def parse_checksum_manifest(path: Path) -> dict[str, str]:
     entries: dict[str, str] = {}
-    for line_number, raw_line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for line_number, raw_line in enumerate(
+        path.read_text(encoding="utf-8").splitlines(), 1
+    ):
         match = re.fullmatch(r"([0-9a-f]{64})  ([A-Za-z0-9][A-Za-z0-9_.+-]*)", raw_line)
         if match is None:
             raise RuntimeError(f"malformed checksum manifest line {line_number}")
@@ -250,14 +262,18 @@ def verify_downloaded_assets(
     checksums = parse_checksum_manifest(asset_dir / "SHA256SUMS.txt")
     missing = required_subjects - set(checksums)
     if missing:
-        raise RuntimeError(f"checksum manifest is missing required subjects: {sorted(missing)}")
+        raise RuntimeError(
+            f"checksum manifest is missing required subjects: {sorted(missing)}"
+        )
     for name in required_subjects:
         if checksums[name] != actual[name]:
             raise RuntimeError(f"checksum manifest digest mismatch: {name}")
     return actual
 
 
-def verify_attestation_subject(results: object, expected_sha256: str, predicate: str | None) -> None:
+def verify_attestation_subject(
+    results: object, expected_sha256: str, predicate: str | None
+) -> None:
     if not isinstance(results, list) or not results:
         raise RuntimeError("attestation verification returned no results")
     for index, result in enumerate(results):
@@ -277,9 +293,13 @@ def verify_attestation_subject(results: object, expected_sha256: str, predicate:
             if isinstance(item, dict) and isinstance(item.get("digest"), dict)
         }
         if expected_sha256 not in subject_digests:
-            raise RuntimeError(f"attestation result {index} does not bind the runtime SHA-256")
+            raise RuntimeError(
+                f"attestation result {index} does not bind the runtime SHA-256"
+            )
         if predicate is not None and statement.get("predicateType") != predicate:
-            raise RuntimeError(f"attestation result {index} has an unexpected predicate type")
+            raise RuntimeError(
+                f"attestation result {index} has an unexpected predicate type"
+            )
 
 
 def download_attestation_bundles(
@@ -307,7 +327,9 @@ def download_attestation_bundles(
             statement = json.loads(base64.b64decode(payload, validate=True))
         except (ValueError, json.JSONDecodeError):
             continue
-        predicate = statement.get("predicateType") if isinstance(statement, dict) else None
+        predicate = (
+            statement.get("predicateType") if isinstance(statement, dict) else None
+        )
         if predicate not in wanted:
             continue
         if predicate in bundles:
@@ -317,7 +339,9 @@ def download_attestation_bundles(
         bundles[predicate] = path
     missing = set(wanted) - set(bundles)
     if missing:
-        raise RuntimeError(f"GitHub API is missing required attestation bundles: {sorted(missing)}")
+        raise RuntimeError(
+            f"GitHub API is missing required attestation bundles: {sorted(missing)}"
+        )
     return bundles
 
 
@@ -381,7 +405,9 @@ def verify_attestations(
         raise RuntimeError("standalone SBOM must be a JSON object")
     binding = verify_attested_sbom_predicate(standalone, sbom_attestation)
     if not binding["passed"]:
-        raise RuntimeError("published SBOM does not match the verified SPDX attestation")
+        raise RuntimeError(
+            "published SBOM does not match the verified SPDX attestation"
+        )
     write_json(evidence_dir / "runtime-provenance-verification.json", provenance)
     write_json(evidence_dir / "runtime-sbom-verification.json", sbom_attestation)
     write_json(evidence_dir / "runtime-sbom-binding-summary.json", binding)
@@ -443,8 +469,12 @@ def stage_runtime(
     package_root = extraction_root / expected_root
     config_source = package_root / "share/boost_gateway/config"
     if not config_source.is_dir():
-        raise RuntimeError("release archive does not contain the installed configuration tree")
-    temporary = Path(tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent))
+        raise RuntimeError(
+            "release archive does not contain the installed configuration tree"
+        )
+    temporary = Path(
+        tempfile.mkdtemp(prefix=f".{destination.name}.", dir=destination.parent)
+    )
     try:
         bin_dir = temporary / "bin"
         config_dir = temporary / "config"
@@ -476,16 +506,28 @@ def stage_runtime(
         )
         shutil.copytree(ROOT / "env/monitoring", temporary / "env/monitoring")
         shutil.copytree(ROOT / "env/redis", temporary / "env/redis")
+        (temporary / "scripts/lib").mkdir(parents=True)
         (temporary / "scripts/tools").mkdir(parents=True)
+        for relative in (
+            "scripts/__init__.py",
+            "scripts/lib/__init__.py",
+            "scripts/lib/operations_identity.py",
+            "scripts/tools/__init__.py",
+        ):
+            source = ROOT / relative
+            shutil.copy2(source, temporary / relative)
         for name in (
             "build_release_images.py",
             "check_release_compose.py",
+            "check_observability_preflight.py",
             "collect_container_restart_metrics.py",
             "collect_redis_persistence_metrics.py",
             "prepare_redis_persistence_transition.py",
             "verify_release_deployment.py",
         ):
-            shutil.copy2(ROOT / "scripts/tools" / name, temporary / "scripts/tools" / name)
+            shutil.copy2(
+                ROOT / "scripts/tools" / name, temporary / "scripts/tools" / name
+            )
         binaries: list[dict[str, Any]] = []
         for name in REQUIRED_RUNTIME_BINARIES:
             source = package_root / "bin" / name
@@ -520,12 +562,15 @@ def stage_runtime(
                 "monitoring_sha256": sha256_tree(temporary / "env/monitoring"),
                 "redis_sha256": sha256_tree(temporary / "env/redis"),
                 "verification_tools_sha256": sha256_tree(temporary / "scripts/tools"),
+                "verification_runtime_sha256": sha256_tree(temporary / "scripts"),
             },
             "binaries": binaries,
         }
         write_json(temporary / "manifest.json", manifest)
         if destination.exists():
-            raise RuntimeError(f"refusing to replace existing release staging: {destination}")
+            raise RuntimeError(
+                f"refusing to replace existing release staging: {destination}"
+            )
         temporary.replace(destination)
         return manifest
     except Exception:
@@ -537,7 +582,9 @@ def prepare(args: argparse.Namespace) -> dict[str, Any]:
     validate_inputs(args.repository, args.tag, args.expected_commit)
     ensure_linux_x64_host()
     if shutil.which(args.gh_command) is None:
-        raise RuntimeError("GitHub CLI is required for release and attestation verification")
+        raise RuntimeError(
+            "GitHub CLI is required for release and attestation verification"
+        )
     destination = args.output_dir.resolve()
     destination.parent.mkdir(parents=True, exist_ok=True)
     commit, tag_evidence = resolve_tag_commit(args.repository, args.tag)
@@ -627,7 +674,9 @@ def main() -> int:
                 "tag": args.tag,
                 "commit": args.expected_commit,
                 "staging_path": str(args.output_dir.resolve()),
-                "manifest_sha256": sha256_file(args.output_dir.resolve() / "manifest.json"),
+                "manifest_sha256": sha256_file(
+                    args.output_dir.resolve() / "manifest.json"
+                ),
             },
             "checks": {
                 "tag_commit": True,

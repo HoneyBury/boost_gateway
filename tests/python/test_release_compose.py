@@ -47,6 +47,7 @@ def valid_document() -> dict[str, object]:
             {"host_ip": "127.0.0.1", "published": "9080", "target": 9080},
         ]
     )
+    services["redis"].update({"user": "redis", "cap_drop": ["ALL"]})
     services["node-exporter"].update(
         {
             "image": check_release_compose.NODE_EXPORTER_IMAGE,
@@ -351,7 +352,9 @@ class ReleaseComposeContractTest(unittest.TestCase):
             "aof_everysec_rdb",
         )
 
-    def test_redis_has_only_the_volume_initialization_capabilities(self) -> None:
+    def test_redis_runs_as_unprivileged_image_user_without_added_capabilities(
+        self,
+    ) -> None:
         environment = os.environ.copy()
         for variable in (
             "GATEWAY_IMAGE_ID",
@@ -369,8 +372,20 @@ class ReleaseComposeContractTest(unittest.TestCase):
             COMPOSE, environment=environment
         )
         redis = document["services"]["redis"]
-        self.assertEqual(set(redis.get("cap_add", [])), {"CHOWN", "SETGID", "SETUID"})
+        self.assertEqual(redis.get("user"), "redis")
+        self.assertNotIn("cap_add", redis)
         self.assertEqual(redis.get("cap_drop"), ["ALL"])
+
+    def test_rejects_redis_root_entrypoint_and_added_capabilities(self) -> None:
+        document = valid_document()
+        redis = document["services"]["redis"]
+        redis.pop("user", None)
+        redis["cap_add"] = ["CHOWN", "SETGID", "SETUID"]
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertIn("redis: image redis user is required", failures)
+        self.assertIn("redis: added Linux capabilities are forbidden", failures)
 
     def test_real_compose_resolution_satisfies_contract(self) -> None:
         if shutil.which("docker") is None:
