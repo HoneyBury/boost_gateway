@@ -893,6 +893,450 @@ def upload_remote(
     return receipt
 
 
+def positive_number(value: object) -> bool:
+    return (
+        isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
+    )
+
+
+def valid_utc_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not value.endswith("Z"):
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return parsed.tzinfo == UTC
+
+
+def evidence_record(path: Path, relative_path: str) -> dict[str, Any]:
+    source = require_regular(path, relative_path)
+    return {
+        "path": relative_path,
+        "sha256": sha256_file(source),
+        "size_bytes": source.stat().st_size,
+    }
+
+
+def require_passed_rto(summary: dict[str, Any], label: str, maximum: float) -> None:
+    elapsed = summary.get("elapsed_seconds")
+    budget = summary.get("rto_budget_seconds")
+    if (
+        summary.get("overall_pass") is not True
+        or summary.get("status") != "passed"
+        or summary.get("rto_pass") is not True
+        or not positive_number(elapsed)
+        or not positive_number(budget)
+        or budget <= 0
+        or budget > maximum
+        or elapsed > budget
+    ):
+        raise BackupError(f"{label} is not an eligible RTO pass")
+
+
+def validate_known_good_sources(
+    vault_root: Path,
+    backup_id: str,
+    vault_validation_path: Path,
+    restore_summary_path: Path,
+    business_summary_path: Path,
+) -> dict[str, Any]:
+    root = require_directory(vault_root, "vault root")
+    identifier = validate_backup_id(backup_id)
+    vault_identity = require_regular(root / ".vault-identity", "vault identity")
+    backup_directory = require_directory(
+        root / "backups" / identifier, "known-good backup"
+    )
+    archive = require_regular(backup_directory / "payload.tar.age", "encrypted archive")
+    manifest_path = require_regular(
+        backup_directory / "manifest.json", "backup manifest"
+    )
+    receipt_path = require_regular(backup_directory / "receipt.json", "remote receipt")
+    validation_path = require_regular(vault_validation_path, "vault validation summary")
+    restore_path = require_regular(restore_summary_path, "restore summary")
+    business_path = require_regular(business_summary_path, "business summary")
+    manifest = load_json_object(manifest_path, "backup manifest")
+    receipt = load_json_object(receipt_path, "remote receipt")
+    validation = load_json_object(validation_path, "vault validation summary")
+    restore = load_json_object(restore_path, "restore summary")
+    business = load_json_object(business_path, "business summary")
+
+    header = {
+        "backup_id": identifier,
+        "archive_sha256": sha256_file(archive),
+        "archive_size": archive.stat().st_size,
+        "manifest_sha256": sha256_file(manifest_path),
+        "manifest_size": manifest_path.stat().st_size,
+    }
+    validate_manifest_binding(manifest_path, header)
+    source_host = manifest.get("source_host")
+    deployment = manifest.get("deployment")
+    deployment_host = deployment.get("host") if isinstance(deployment, dict) else None
+    archive_binding = manifest.get("archive")
+    if (
+        manifest.get("formal_todo0012_claim") is not False
+        or manifest.get("secret_material_recorded") is not False
+        or manifest.get("consistent_redis_snapshot") is not True
+        or manifest.get("encrypted_before_transfer") is not True
+        or not isinstance(source_host, dict)
+        or not isinstance(deployment, dict)
+        or not isinstance(deployment_host, dict)
+        or not isinstance(archive_binding, dict)
+    ):
+        raise BackupError("backup manifest is not eligible for known-good attestation")
+    source_host_id = validate_sha256(
+        source_host.get("host_id_sha256"), "source host ID"
+    )
+    vault_host_id = sha256_file(vault_identity)
+    if deployment_host.get("host_id_sha256") != source_host_id:
+        raise BackupError("deployment and source host identities differ")
+    if source_host_id == vault_host_id:
+        raise BackupError("vault and source host identities are not distinct")
+    required_receipt = {
+        "schema_version": 1,
+        **header,
+        "vault_host_id_sha256": vault_host_id,
+        "remote_readback_sha256": True,
+        "create_only": True,
+        "secret_material_recorded": False,
+    }
+    if any(
+        receipt.get(field) != value for field, value in required_receipt.items()
+    ) or not valid_utc_timestamp(receipt.get("stored_at")):
+        raise BackupError("remote receipt is not eligible for known-good attestation")
+
+    validation_checks = validation.get("checks")
+    validation_artifacts = validation.get("artifacts")
+    required_validation_checks = {
+        "metadata_binding",
+        "distinct_host_identity",
+        "age_decryption",
+        "safe_archive_members",
+        "redis_manifest_binding",
+        "redis_check_rdb",
+    }
+    if (
+        validation.get("schema_version") != 1
+        or validation.get("backup_id") != identifier
+        or validation.get("overall_pass") is not True
+        or validation.get("restore_known_good") is not False
+        or validation.get("formal_todo0012_claim") is not False
+        or validation.get("secret_material_recorded") is not False
+        or not isinstance(validation_checks, dict)
+        or any(
+            validation_checks.get(check) is not True
+            for check in required_validation_checks
+        )
+        or not isinstance(validation_artifacts, dict)
+    ):
+        raise BackupError("vault validation is not eligible for known-good attestation")
+    redis_sources = [
+        source
+        for source in manifest.get("sources", [])
+        if isinstance(source, dict) and source.get("id") == "redis_snapshot"
+    ]
+    if len(redis_sources) != 1:
+        raise BackupError("backup manifest Redis source binding is invalid")
+    redis_source = redis_sources[0]
+    plaintext_sha256 = validate_sha256(
+        archive_binding.get("plaintext_sha256"), "plaintext archive digest"
+    )
+    redis_sha256 = validate_sha256(redis_source.get("sha256"), "Redis snapshot digest")
+    redis_size = redis_source.get("size_bytes")
+    if (
+        not isinstance(redis_size, int)
+        or isinstance(redis_size, bool)
+        or redis_size < 9
+        or not isinstance(validation_artifacts.get("plaintext_size_bytes"), int)
+        or isinstance(validation_artifacts.get("plaintext_size_bytes"), bool)
+        or validation_artifacts["plaintext_size_bytes"] <= 0
+        or not isinstance(validation_artifacts.get("member_count"), int)
+        or isinstance(validation_artifacts.get("member_count"), bool)
+        or validation_artifacts["member_count"] <= 0
+    ):
+        raise BackupError("vault validation size binding is invalid")
+    validation_bindings = {
+        "archive_sha256": header["archive_sha256"],
+        "manifest_sha256": header["manifest_sha256"],
+        "receipt_sha256": sha256_file(receipt_path),
+        "vault_host_id_sha256": vault_host_id,
+        "plaintext_sha256": plaintext_sha256,
+        "redis_sha256": redis_sha256,
+        "redis_size_bytes": redis_size,
+    }
+    if any(
+        validation_artifacts.get(field) != value
+        for field, value in validation_bindings.items()
+    ):
+        raise BackupError("vault validation artifact binding differs")
+
+    require_passed_rto(restore, "restore summary", 600.0)
+    expected_deployment = {
+        field: deployment.get(field)
+        for field in ("deployment_id", "tag", "commit", "runtime_asset_sha256")
+    }
+    for field in ("deployment_id", "tag"):
+        value = expected_deployment[field]
+        if (
+            not isinstance(value, str)
+            or not value
+            or any(ord(char) < 32 for char in value)
+        ):
+            raise BackupError(f"deployment identity is invalid: {field}")
+    commit = expected_deployment["commit"]
+    if not isinstance(commit, str) or re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise BackupError("deployment identity is invalid: commit")
+    validate_sha256(expected_deployment["runtime_asset_sha256"], "runtime asset digest")
+    validate_sha256(
+        restore.get("transport_receipt_sha256"), "restore transport receipt digest"
+    )
+    if (
+        restore.get("schema_version") != 1
+        or restore.get("backup_id") != identifier
+        or restore.get("deployment") != expected_deployment
+        or restore.get("backup_manifest_sha256") != header["manifest_sha256"]
+        or restore.get("remote_receipt_sha256") != sha256_file(receipt_path)
+        or restore.get("vault_validation_sha256") != sha256_file(validation_path)
+        or restore.get("backup_policy_sha256") != manifest.get("backup_policy_sha256")
+        or restore.get("redis_profile_sha256") != manifest.get("redis_profile_sha256")
+        or restore.get("source_host_id_sha256") != source_host_id
+        or restore.get("vault_host_id_sha256") != vault_host_id
+        or restore.get("redis_snapshot_sha256") != redis_sha256
+        or restore.get("leaderboard_seed_exact") is not True
+        or restore.get("redis_ping") is not True
+        or restore.get("transport_remote_readback_bound") is not True
+        or restore.get("offline_redis_check_rdb") is not True
+        or restore.get("restore_payload_copy_verified") is not True
+        or restore.get("vault_link_free_validation_bound") is not True
+        or restore.get("active_volume_preserved") is not True
+        or restore.get("target_volume_retained") is not True
+        or restore.get("production_switched") is not False
+        or restore.get("active_volume_mounted_by_drill") is not False
+        or restore.get("restore_known_good") is not False
+        or restore.get("formal_todo0012_claim") is not False
+        or restore.get("secret_material_recorded") is not False
+        or restore.get("cleanup_failures") != []
+    ):
+        raise BackupError("restore summary is not eligible for known-good attestation")
+    restore_id = validate_backup_id(str(restore.get("restore_id", "")))
+    target_volume = validate_backup_id(str(restore.get("target_volume", "")))
+    restore_target_identity = validate_sha256(
+        restore.get("target_volume_identity_sha256"), "restore target volume identity"
+    )
+    restored_seed = validate_sha256(
+        restore.get("canonical_seed_restored_sha256"), "restored seed digest"
+    )
+
+    require_passed_rto(business, "business summary", 300.0)
+    business_id = validate_backup_id(str(business.get("business_validation_id", "")))
+    for field in (
+        "deployment_record_sha256",
+        "release_manifest_sha256",
+        "release_sdk_full_flow_sha256",
+        "work_volume_snapshot_sha256",
+    ):
+        validate_sha256(business.get(field), f"business {field}")
+    if (
+        business.get("schema_version") != 1
+        or business.get("backup_id") != identifier
+        or business.get("restore_id") != restore_id
+        or business.get("deployment") != expected_deployment
+        or business.get("restore_summary_sha256") != sha256_file(restore_path)
+        or business.get("retained_volume") != target_volume
+        or business.get("retained_volume_identity_sha256") != restore_target_identity
+        or business.get("retained_volume_identity_after_sha256")
+        != restore_target_identity
+        or business.get("active_volume") != restore.get("active_volume")
+        or business.get("active_volume_identity_after_sha256")
+        != restore.get("active_volume_identity_sha256")
+        or business.get("active_volume_unchanged") is not True
+        or business.get("redis_image") != restore.get("redis_image")
+        or business.get("restore_volume_identity_binding_verified") is not True
+        or business.get("restore_snapshot_binding_verified") is not True
+        or business.get("restore_redis_image_binding_verified") is not True
+        or business.get("gateway_runtime_binding_verified") is not True
+        or business.get("retained_seed_before_sha256") != restored_seed
+        or business.get("retained_seed_after_sha256") != restored_seed
+        or business.get("retained_seed_unchanged") is not True
+        or business.get("leaderboard_submit") is not True
+        or business.get("leaderboard_top") is not True
+        or business.get("leaderboard_rank") is not True
+        or business.get("sdk_full_flow_checked") is not True
+        or business.get("source_build_performed") is not False
+        or business.get("public_conan_access_performed") is not False
+        or business.get("retained_volume_mounted_readonly") is not True
+        or business.get("work_seed_mutated_by_business_checks") is not True
+        or business.get("work_volume_created") is not True
+        or business.get("work_volume_removed") is not True
+        or business.get("isolated_network_created") is not True
+        or business.get("isolated_network_internal") is not True
+        or business.get("isolated_network_removed") is not True
+        or business.get("production_switched") is not False
+        or business.get("restore_known_good") is not False
+        or business.get("formal_todo0012_claim") is not False
+        or business.get("secret_material_recorded") is not False
+        or business.get("cleanup_failures") != []
+        or business.get("active_volume_identity_sha256")
+        != restore.get("active_volume_identity_sha256")
+    ):
+        raise BackupError("business summary is not eligible for known-good attestation")
+
+    return {
+        "backup_id": identifier,
+        "restore_id": restore_id,
+        "business_validation_id": business_id,
+        "identities": {
+            "source_host_id_sha256": source_host_id,
+            "vault_host_id_sha256": vault_host_id,
+            "deployment": expected_deployment,
+            "target_volume": target_volume,
+            "target_volume_identity_sha256": restore_target_identity,
+        },
+        "evidence": {
+            "backup_manifest": evidence_record(
+                manifest_path, f"backups/{identifier}/manifest.json"
+            ),
+            "remote_receipt": evidence_record(
+                receipt_path, f"backups/{identifier}/receipt.json"
+            ),
+            "vault_validation": evidence_record(
+                validation_path, "vault-validation.json"
+            ),
+            "restore_summary": evidence_record(restore_path, "restore-summary.json"),
+            "recovery_aggregate": evidence_record(
+                business_path, "business-summary.json"
+            ),
+        },
+        "formal_flags": {
+            "backup_manifest": False,
+            "vault_validation": False,
+            "restore_summary": False,
+            "recovery_aggregate": False,
+            "attestation": False,
+        },
+    }
+
+
+def copy_regular_new(source: Path, destination: Path, label: str) -> None:
+    path = require_regular(source, label)
+    write_new(destination, path.read_bytes(), 0o600)
+    os.chmod(destination, 0o600)
+
+
+def create_known_good_attestation(
+    vault_root: Path,
+    *,
+    backup_id: str,
+    vault_validation_summary: Path,
+    restore_summary: Path,
+    business_summary: Path,
+    attested_at: str | None = None,
+) -> dict[str, Any]:
+    root = require_directory(vault_root, "vault root")
+    initial = validate_known_good_sources(
+        root,
+        backup_id,
+        vault_validation_summary,
+        restore_summary,
+        business_summary,
+    )
+    known_good_root = ensure_directory(root / "known-good", "known-good root")
+    target = known_good_root / validate_backup_id(backup_id)
+    try:
+        target.mkdir(mode=0o700)
+    except FileExistsError as exc:
+        raise BackupError(
+            f"create-only known-good attestation already exists: {backup_id}"
+        ) from exc
+    marker = target / ".incomplete"
+    try:
+        os.chmod(target, 0o700)
+        write_new(marker, b"known-good attestation in progress\n", 0o600)
+        copy_regular_new(
+            vault_validation_summary,
+            target / "vault-validation.json",
+            "vault validation summary",
+        )
+        copy_regular_new(
+            restore_summary, target / "restore-summary.json", "restore summary"
+        )
+        copy_regular_new(
+            business_summary, target / "business-summary.json", "business summary"
+        )
+        copied = validate_known_good_sources(
+            root,
+            backup_id,
+            target / "vault-validation.json",
+            target / "restore-summary.json",
+            target / "business-summary.json",
+        )
+        if copied != initial:
+            raise BackupError("known-good evidence changed while being copied")
+        timestamp = attested_at or now()
+        if not valid_utc_timestamp(timestamp):
+            raise BackupError("known-good attestation timestamp is invalid")
+        attestation = {
+            "schema_version": 1,
+            "attested_at": timestamp,
+            **copied,
+            "overall_pass": True,
+            "restore_known_good": True,
+            "formal_todo0012_claim": False,
+            "secret_material_recorded": False,
+        }
+        write_new(target / "attestation.json", canonical_json(attestation), 0o600)
+        marker.unlink()
+        return attestation
+    except Exception:
+        shutil.rmtree(target, ignore_errors=True)
+        raise
+
+
+def load_known_good_attestation(vault_root: Path, backup_id: str) -> dict[str, Any]:
+    root = require_directory(vault_root, "vault root")
+    identifier = validate_backup_id(backup_id)
+    directory = require_directory(
+        root / "known-good" / identifier, "known-good attestation"
+    )
+    expected_names = {
+        "attestation.json",
+        "vault-validation.json",
+        "restore-summary.json",
+        "business-summary.json",
+    }
+    if {entry.name for entry in directory.iterdir()} != expected_names:
+        raise BackupError("known-good attestation inventory is invalid")
+    attestation_path = require_regular(
+        directory / "attestation.json", "known-good attestation"
+    )
+    attestation = load_json_object(attestation_path, "known-good attestation")
+    binding = validate_known_good_sources(
+        root,
+        identifier,
+        directory / "vault-validation.json",
+        directory / "restore-summary.json",
+        directory / "business-summary.json",
+    )
+    expected = {
+        "schema_version": 1,
+        "attested_at": attestation.get("attested_at"),
+        **binding,
+        "overall_pass": True,
+        "restore_known_good": True,
+        "formal_todo0012_claim": False,
+        "secret_material_recorded": False,
+    }
+    if (
+        not valid_utc_timestamp(attestation.get("attested_at"))
+        or attestation != expected
+    ):
+        raise BackupError("known-good attestation binding is invalid")
+    return {
+        **attestation,
+        "attestation_sha256": sha256_file(attestation_path),
+    }
+
+
 def verified_vault_records(vault_root: Path) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     root = require_directory(vault_root, "vault root")
@@ -963,7 +1407,32 @@ def prune_remote(
         key=lambda item: (str(item["created_at"]), item["backup_id"]),
         reverse=True,
     )
-    keep = {item["backup_id"] for item in newest[:minimum_known_good]}
+    known_good: list[dict[str, Any]] = []
+    seen_restore_ids: set[str] = set()
+    seen_target_identities: set[str] = set()
+    for record in newest:
+        try:
+            attestation = load_known_good_attestation(root, record["backup_id"])
+        except (BackupError, OSError, KeyError, TypeError):
+            continue
+        restore_id = attestation["restore_id"]
+        target_identity = attestation["identities"]["target_volume_identity_sha256"]
+        if restore_id in seen_restore_ids or target_identity in seen_target_identities:
+            continue
+        seen_restore_ids.add(restore_id)
+        seen_target_identities.add(target_identity)
+        known_good.append({**record, "attestation": attestation})
+    if len(known_good) < minimum_known_good:
+        raise BackupError(
+            "retention requires at least "
+            f"{minimum_known_good} valid known-good attestations"
+        )
+    retained_known_good = known_good[:minimum_known_good]
+    keep = {item["backup_id"] for item in retained_known_good}
+    known_good_attestations = {
+        item["backup_id"]: item["attestation"]["attestation_sha256"]
+        for item in retained_known_good
+    }
     for retention_class, count in (("daily", daily_copies), ("weekly", weekly_copies)):
         keep.update(
             item["backup_id"]
@@ -997,6 +1466,8 @@ def prune_remote(
             "daily_copies": daily_copies,
             "weekly_copies": weekly_copies,
             "minimum_known_good_copies": minimum_known_good,
+            "retained_known_good_backup_ids": sorted(known_good_attestations),
+            "known_good_attestation_sha256s": known_good_attestations,
             "delete_only_after_verified_remote_copy": True,
             "secret_material_recorded": False,
         }
@@ -1028,6 +1499,8 @@ def prune_remote(
         "retained_backup_ids": sorted(keep),
         "anchor_backup_id": anchor_backup_id,
         "anchor_receipt_sha256": anchor_receipt_sha256,
+        "retained_known_good_backup_ids": sorted(known_good_attestations),
+        "known_good_attestation_sha256s": known_good_attestations,
         "delete_only_after_verified_remote_copy": True,
         "secret_material_recorded": False,
     }
@@ -1097,6 +1570,16 @@ def build_parser() -> argparse.ArgumentParser:
     receipt.add_argument("--vault-root", type=Path, required=True)
     receipt.add_argument("--backup-id", required=True)
 
+    attest = subparsers.add_parser(
+        "attest-known-good",
+        help="create an evidence-bound known-good attestation on the vault",
+    )
+    attest.add_argument("--vault-root", type=Path, required=True)
+    attest.add_argument("--backup-id", required=True)
+    attest.add_argument("--vault-validation-summary", type=Path, required=True)
+    attest.add_argument("--restore-summary", type=Path, required=True)
+    attest.add_argument("--business-summary", type=Path, required=True)
+
     prune = subparsers.add_parser(
         "remote-prune", help="apply guarded retention on the vault"
     )
@@ -1118,6 +1601,14 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "remote-receipt":
             result = remote_receipt(args.vault_root, args.backup_id)
+        elif args.command == "attest-known-good":
+            result = create_known_good_attestation(
+                args.vault_root,
+                backup_id=args.backup_id,
+                vault_validation_summary=args.vault_validation_summary,
+                restore_summary=args.restore_summary,
+                business_summary=args.business_summary,
+            )
         elif args.command == "remote-prune":
             result = prune_remote(
                 args.vault_root,
