@@ -167,15 +167,28 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 minimum_known_good=2,
             )
 
-        record = backup.prune_remote(
-            self.vault,
-            anchor_backup_id="backup-09",
-            anchor_receipt_sha256=backup.sha256_file(anchor),
-            daily_copies=3,
-            weekly_copies=2,
-            minimum_known_good=2,
-            deletion_id="prune-test",
-        )
+        with mock.patch.object(
+            backup,
+            "load_known_good_attestation",
+            side_effect=lambda _root, backup_id: {
+                "attestation_sha256": digest(backup_id.encode("ascii")),
+                "restore_id": f"restore-{backup_id}",
+                "identities": {
+                    "target_volume_identity_sha256": digest(
+                        f"target-{backup_id}".encode("ascii")
+                    )
+                },
+            },
+        ):
+            record = backup.prune_remote(
+                self.vault,
+                anchor_backup_id="backup-09",
+                anchor_receipt_sha256=backup.sha256_file(anchor),
+                daily_copies=3,
+                weekly_copies=2,
+                minimum_known_good=2,
+                deletion_id="prune-test",
+            )
         self.assertEqual(
             {"backup-09", "backup-08", "backup-07", "backup-06"},
             set(record["retained_backup_ids"]),
@@ -202,7 +215,22 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 raise OSError("injected removal failure")
             original_rmtree(path, *args, **kwargs)
 
-        with mock.patch.object(shutil, "rmtree", side_effect=fail_trash):
+        with (
+            mock.patch.object(shutil, "rmtree", side_effect=fail_trash),
+            mock.patch.object(
+                backup,
+                "load_known_good_attestation",
+                side_effect=lambda _root, backup_id: {
+                    "attestation_sha256": digest(backup_id.encode("ascii")),
+                    "restore_id": f"restore-{backup_id}",
+                    "identities": {
+                        "target_volume_identity_sha256": digest(
+                            f"target-{backup_id}".encode("ascii")
+                        )
+                    },
+                },
+            ),
+        ):
             with self.assertRaisesRegex(backup.BackupError, "quarantine remains"):
                 backup.prune_remote(
                     self.vault,
