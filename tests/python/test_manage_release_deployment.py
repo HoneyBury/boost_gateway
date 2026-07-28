@@ -381,55 +381,11 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             self.executor.calls,
         )
 
-    def test_system_executor_blocks_rdb_to_aof_without_fresh_checkpoint(self) -> None:
-        source = Path(self.temporary.name) / "rdb-deployment"
-        target = Path(self.temporary.name) / "aof-deployment"
+    def test_system_executor_requires_checkpoint_tool_for_both_mode_changes(
+        self,
+    ) -> None:
         profile = Path(self.temporary.name) / "redis.conf"
         profile.write_text("appendonly yes\nappendfsync everysec\n", encoding="ascii")
-        summary = Path(self.temporary.name) / "transition.json"
-        rdb_document = {
-            "services": {"redis": {"command": ["redis-server", "--appendonly", "no"]}}
-        }
-        aof_document = {
-            "services": {
-                "redis": {
-                    "command": ["redis-server", "/etc/redis/redis.conf"],
-                    "volumes": [
-                        {
-                            "type": "bind",
-                            "source": str(profile),
-                            "target": "/etc/redis/redis.conf",
-                            "read_only": True,
-                        }
-                    ],
-                }
-            }
-        }
-        executor = module.SystemLifecycleExecutor(self.layout)
-
-        with (
-            mock.patch.object(executor, "_environment", return_value={}),
-            mock.patch.object(
-                module,
-                "load_compose_document",
-                side_effect=[rdb_document, aof_document],
-            ),
-            self.assertRaisesRegex(module.LifecycleError, "verified fresh checkpoint"),
-        ):
-            executor.prepare_transition(source, target, summary, 60.0)
-
-        result = json.loads(summary.read_text(encoding="utf-8"))
-        self.assertFalse(result["overall_pass"])
-        self.assertEqual(result["target_redis_persistence"]["mode"], "aof_everysec_rdb")
-        self.assertFalse(result["aof_to_rdb_downgrade"])
-        self.assertTrue(result["checkpoint_required"])
-
-    def test_system_executor_blocks_blind_aof_to_rdb_transition(self) -> None:
-        source = Path(self.temporary.name) / "aof-deployment"
-        target = Path(self.temporary.name) / "rdb-deployment"
-        profile = Path(self.temporary.name) / "redis.conf"
-        profile.write_text("appendonly yes\nappendfsync everysec\n", encoding="ascii")
-        summary = Path(self.temporary.name) / "transition.json"
         aof_document = {
             "services": {
                 "redis": {
@@ -448,25 +404,52 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         rdb_document = {
             "services": {"redis": {"command": ["redis-server", "--appendonly", "no"]}}
         }
-        executor = module.SystemLifecycleExecutor(self.layout)
-
-        with (
-            mock.patch.object(executor, "_environment", return_value={}),
-            mock.patch.object(
-                module,
-                "load_compose_document",
-                side_effect=[aof_document, rdb_document],
-            ),
-            self.assertRaisesRegex(module.LifecycleError, "verified fresh checkpoint"),
+        for source_mode, target_mode, source_document, target_document in (
+            ("rdb_only", "aof_everysec_rdb", rdb_document, aof_document),
+            ("aof_everysec_rdb", "rdb_only", aof_document, rdb_document),
         ):
-            executor.prepare_transition(source, target, summary, 60.0)
+            with self.subTest(source=source_mode, target=target_mode):
+                source = Path(self.temporary.name) / f"source-{source_mode}"
+                target = Path(self.temporary.name) / f"target-{target_mode}"
+                summary = Path(self.temporary.name) / f"{source_mode}-transition.json"
+                executor = module.SystemLifecycleExecutor(self.layout)
 
-        evidence = json.loads(summary.read_text(encoding="utf-8"))
-        self.assertFalse(evidence["overall_pass"])
-        self.assertTrue(evidence["aof_to_rdb_downgrade"])
-        self.assertTrue(evidence["checkpoint_required"])
-        self.assertFalse(evidence["checkpoint_verified"])
-        self.assertTrue(evidence["active_volume_preserved"])
+                def run_checkpoint(
+                    command: list[str],
+                    timeout_seconds: float,
+                    *,
+                    environment: dict[str, str] | None = None,
+                ) -> mock.Mock:
+                    self.assertIn("prepare_redis_persistence_transition.py", command[1])
+                    self.assertIn(source_mode, command)
+                    self.assertIn(target_mode, command)
+                    summary.write_text(
+                        json.dumps(
+                            {
+                                "overall_pass": True,
+                                "source_mode": source_mode,
+                                "target_mode": target_mode,
+                                "checkpoint_verified": True,
+                                "secret_material_recorded": False,
+                            }
+                        ),
+                        encoding="utf-8",
+                    )
+                    return mock.Mock(returncode=0, stdout="", stderr="")
+
+                with (
+                    mock.patch.object(executor, "_environment", return_value={}),
+                    mock.patch.object(executor, "_run", side_effect=run_checkpoint),
+                    mock.patch.object(
+                        module,
+                        "load_compose_document",
+                        side_effect=[source_document, target_document],
+                    ),
+                ):
+                    result = executor.prepare_transition(source, target, summary, 60.0)
+
+                self.assertTrue(result["overall_pass"])
+                self.assertTrue(result["checkpoint_verified"])
 
     def test_upgrade_rejects_release_that_changes_host_unit(self) -> None:
         first = self.install("v1.0.0", "a")

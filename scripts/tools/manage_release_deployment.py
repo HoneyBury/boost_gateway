@@ -511,30 +511,39 @@ class SystemLifecycleExecutor:
         target = self._redis_persistence_contract(target_path)
         if source["mode"] == target["mode"]:
             return None
-        downgrade = source["mode"].startswith("aof_") and not target["mode"].startswith(
-            "aof_"
+        tool = (
+            Path(__file__).resolve().parent / "prepare_redis_persistence_transition.py"
         )
-        checkpoint_required = source["mode"] != target["mode"]
-        summary = {
-            "schema_version": 1,
-            "generated_at": now(),
-            "overall_pass": not checkpoint_required,
-            "source_deployment": source_path.name,
-            "target_deployment": target_path.name,
-            "source_redis_persistence": source,
-            "target_redis_persistence": target,
-            "aof_to_rdb_downgrade": downgrade,
-            "checkpoint_required": checkpoint_required,
-            "checkpoint_verified": False,
-            "active_volume_preserved": True,
-            "secret_material_recorded": False,
-        }
-        atomic_write_json(summary_path, summary)
-        if checkpoint_required:
-            raise LifecycleError(
-                "Redis persistence mode transition requires a verified fresh "
-                "checkpoint; blind Redis restart is prohibited"
+        self._run(
+            [
+                sys.executable,
+                str(tool),
+                "--compose-file",
+                str(source_path / "deploy/operations/docker-compose.production.yml"),
+                "--source-mode",
+                str(source["mode"]),
+                "--target-mode",
+                str(target["mode"]),
+                "--timeout-seconds",
+                str(min(timeout_seconds, 180.0)),
+                "--summary-path",
+                str(summary_path),
+            ],
+            timeout_seconds,
+            environment=self._environment(source_path),
+        )
+        summary = load_json_object(summary_path, "persistence transition summary")
+        if (
+            summary.get("overall_pass") is not True
+            or summary.get("source_mode") != source["mode"]
+            or summary.get("target_mode") != target["mode"]
+            or summary.get("secret_material_recorded") is not False
+            or (
+                summary.get("checkpoint_verified") is not True
+                and summary.get("runtime_already_target") is not True
             )
+        ):
+            raise LifecycleError("persistence transition summary is not passing")
         return summary
 
     def _install_unit(self, deployment_path: Path) -> bool:

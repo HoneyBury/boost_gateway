@@ -54,6 +54,8 @@ Use these stable public entrypoints first:
 - `verify_release_deployment.py` for resolved production Compose, health, Redis, and release SDK full-flow verification.
 - `collect_redis_persistence_metrics.py` for fail-closed effective AOF/RDB state and delayed-fsync
   textfile metrics consumed by node-exporter.
+- `prepare_redis_persistence_transition.py` for write-frozen BGSAVE, active-volume binding and offline
+  RDB validation before any release changes the Redis persistence mode.
 - `benchmark_redis_persistence.py` for lifecycle-locked RDB-only versus AOF-everysec Redis workload and
   explicit-checkpoint measurements on disposable server/client topologies without changing production.
 - `review_redis_persistence_benchmark.py` for binding those measurements to the governed TODO-0012
