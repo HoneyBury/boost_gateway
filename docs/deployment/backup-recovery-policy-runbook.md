@@ -413,6 +413,49 @@ cleanup 失败或 retained seed 漂移都会生成 `overall_pass=false` 的 crea
 summary 仍固定 `restore_known_good=false` 和 `formal_todo0012_claim=false`；第二份独立 backup/target、
 完整 host link reconstruction 和最终聚合尚未完成。
 
+### Known-Good Attestation
+
+单轮 restore 或 business summary 不能自行声明 `known-good`。每轮隔离恢复和业务验证全部通过后，
+先通过受控 Tailscale/SSH 通道把 Ubuntu 上对应的 create-only summary 复制到 Mac。传输前后必须分别
+计算 SHA-256；不得复制 Redis volume、credential 或 age identity：
+
+```bash
+# Run on the Mac. Repeat with a different backup ID, restore ID and target volume.
+BACKUP_ID='<verified-backup-id>'
+RESTORE_ID='<successful-restore-id>'
+BUSINESS_ID='<successful-business-validation-id>'
+INPUT_ROOT="/Users/honeybury/Backups/boost-gateway-vault/known-good-inputs/$BACKUP_ID"
+
+install -d -m 0700 "$INPUT_ROOT"
+scp "miniserver:/var/lib/boost-gateway-evidence/recovery/$RESTORE_ID.json" \
+  "$INPUT_ROOT/restore-summary.json"
+scp "miniserver:/var/lib/boost-gateway-evidence/recovery/$BUSINESS_ID.json" \
+  "$INPUT_ROOT/business-summary.json"
+shasum -a 256 "$INPUT_ROOT/restore-summary.json" "$INPUT_ROOT/business-summary.json"
+```
+
+然后仅在 **Mac vault 主机**创建 create-only attestation：
+
+```bash
+python3 scripts/tools/manage_backup_recovery.py attest-known-good \
+  --vault-root /Users/honeybury/Backups/boost-gateway-vault \
+  --backup-id "$BACKUP_ID" \
+  --vault-validation-summary \
+    "/Users/honeybury/Backups/boost-gateway-vault/validations/$BACKUP_ID.json" \
+  --restore-summary "$INPUT_ROOT/restore-summary.json" \
+  --business-summary "$INPUT_ROOT/business-summary.json"
+```
+
+attestation 会复制并重新验证 vault validation、restore 和 business 三份原始证据，绑定 encrypted
+archive、manifest、remote receipt、source/vault host identity、deployment、Redis profile、RTO、
+retained target volume identity、leaderboard submit/top/rank 和 release SDK full-flow。原始 summary
+继续保持 `restore_known_good=false`；只有
+`known-good/<backup-id>/attestation.json` 可记录 `restore_known_good=true`，且仍固定
+`formal_todo0012_claim=false`。
+
+两份 attestation 必须来自不同 backup ID、不同 restore ID 和不同 target volume identity。同一恢复
+目标重复运行、证据 SHA 漂移、任一 formal flag 被篡改或只完成 upload/receipt 都不计入最小保留数。
+
 ### Local-Only Retention
 
 Ubuntu source key 无权删除异机备份。14 daily、8 weekly 和至少 2 known-good 的 retention 只能在
@@ -431,7 +474,9 @@ python3 scripts/tools/manage_backup_recovery.py remote-prune \
 prune 先把候选原子移动到 `.trash/<deletion-id>`，再写 create-only intent；物理删除成功后才写
 completion record。删除失败时保留 quarantine 和 intent，不能生成虚假的 completion。只有已完成
 解密、离线 Redis 校验、隔离恢复和业务 full-flow 的 backup 才能在后续 evidence 中称为
-`known-good`；成功上传和 receipt 本身不满足这个定义。
+`known-good`；成功上传和 receipt 本身不满足这个定义。少于两份有效且 restore target 独立的
+attestation 时，`remote-prune` 必须在移动任何 backup 前 fail closed。intent 和 completion 都必须
+绑定 retained known-good backup ID 与 attestation SHA-256。
 
 本工具仍未安装 timer，也未改变 production Compose、systemd 或 Redis profile。生成的 manifest
 固定记录 `formal_todo0012_claim=false` 以及 policy activation state；在两轮独立恢复演练通过前，
