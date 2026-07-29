@@ -1,0 +1,11 @@
+# Install this file as root-owned mode 0600; the installer copies it without printing values.
+BOOST_GATEWAY_CANARY_HOST=gateway.example.net
+BOOST_GATEWAY_CANARY_PORT=9201
+BOOST_GATEWAY_CANARY_USER_A=synthetic_canary_a
+BOOST_GATEWAY_CANARY_USER_B=synthetic_canary_b
+BOOST_GATEWAY_CANARY_TOKEN_A=replace-with-dedicated-low-privilege-token
+BOOST_GATEWAY_CANARY_TOKEN_B=replace-with-dedicated-low-privilege-token
+# A separately governed SSH forward or restricted relay maps this loopback port
+# to the production host's loopback-only Alertmanager 127.0.0.1:9093.
+BOOST_GATEWAY_CANARY_ALERTMANAGER_URL=http://127.0.0.1:19093
+BOOST_GATEWAY_CANARY_TIMEOUT_MS=5000
