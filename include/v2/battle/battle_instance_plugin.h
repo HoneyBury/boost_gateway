@@ -15,6 +15,7 @@ public:
     ~BattleInstancePlugin() override = default;
 
     void on_instance_created(v2::realtime::InstanceContext& instance_ctx) override;
+    void on_instance_destroyed(v2::realtime::InstanceContext& instance_ctx) noexcept override;
     void on_player_join(v2::realtime::InstanceContext& instance_ctx,
                         const v2::realtime::PlayerContext& player) override;
     void on_player_leave(v2::realtime::InstanceContext& instance_ctx,
