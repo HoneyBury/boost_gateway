@@ -73,7 +73,10 @@ jobs:
         run: |
           set -euo pipefail
           cmake --build build/security-sanitizers --parallel 2 --target project_v2_unit_tests
-          ctest --test-dir build/security-sanitizers -L unit --output-on-failure --timeout 120
+          # The FetchContent profile omits Raft protobuf; the Conan mainline job covers it.
+          ctest --test-dir build/security-sanitizers -L unit \
+            -E '^(RaftCommandCodecTest|RaftWireCodecTest)\.' \
+            --output-on-failure --timeout 120
 
   fuzz:
     runs-on: ubuntu-latest
