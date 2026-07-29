@@ -192,6 +192,34 @@ sudo systemctl status --no-pager boost-gateway-observability-evidence@weekly.ser
 sudo journalctl -u 'boost-gateway-observability-evidence@*' --since '8 days ago'
 ```
 
+## TODO-0011 closure sequence
+
+Do not close TODO-0011 from an isolated successful day. Use this fail-closed
+sequence after the production subject and monitoring configuration are frozen:
+
+1. Keep the daily and weekly timers active through one complete ISO week. Every
+   daily report referenced by the weekly report must have
+   `coverage_complete=true`, `gap_count=0` and a successful unit result.
+2. Require the scheduled report for that full ISO week to pass. Historical
+   bootstrap, deployment and outage reports remain immutable evidence but do
+   not satisfy the clean-week requirement.
+3. Re-run the firing/resolved receiver drill late enough that the delivery
+   attestation is still within its seven-day validity window when the final
+   record and off-host package are created.
+4. Re-run the production lifecycle verifier and confirm all services, all five
+   Prometheus targets, retention, alert rules and required metric series pass.
+5. Create a `final` ledger record that references the passing daily/weekly
+   reports, current deployment verification, current observability preflight,
+   receiver attestation and any incident dispositions used in the conclusion.
+6. Build a fresh manifest/package, copy it off-host, verify every `SHA256SUMS`
+   entry there and record the remote receipt. Only then synchronize the TODO
+   and GitHub Issue as completed.
+
+A oneshot unit in `failed` state is not automatically a scheduler defect. The
+scheduler deliberately creates an immutable report and exits non-zero when it
+finds gaps. Judge closure from the report content and the next natural period;
+never reset a failed unit or delete a report to make the ledger appear clean.
+
 ## Off-host package
 
 Build a create-only manifest and package after records exist:

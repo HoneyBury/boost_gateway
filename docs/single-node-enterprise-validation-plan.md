@@ -1,6 +1,6 @@
 # Enterprise Single-Node Operations And 30-Day Validation Plan
 
-更新时间：2026-07-24
+更新时间：2026-07-29
 
 ## 目标
 
@@ -48,6 +48,24 @@
 | D 预演 | `TODO-0016` | `TODO-0008` 至 `TODO-0015` 的正式环境阻断项全部完成 | 严格串行，72 小时内允许修复后重跑 |
 | E 长期验证 | `TODO-0017` | `TODO-0016` 成功并冻结 tag/SHA/digest | 严格串行；runtime 变更重置 Day 0 |
 | F 最终评审 | `TODO-0018` | `TODO-0017` 完整结束 | 独立复算证据后才能关闭整个计划 |
+
+### 72 小时与 30 天 Day 0 准入
+
+诊断性 canary 窗口用于关闭 `TODO-0013`，但不会自动启动 `TODO-0016`。正式预演只能在
+以下条件同时满足后声明 Day 0：
+
+1. `TODO-0011`、`TODO-0012`、`TODO-0013` 和治理阻断项已经关闭，原始证据可复算。
+2. 目标 runtime 是已发布且线上独立复验通过的不可变 Release，不是 workflow artifact；
+   生产 deployment record 与外部 canary candidate record 绑定同一 tag/SHA/digest。
+3. 不存在影响目标平台的未处置 P0 缺陷；所有已知失败都有 Issue、RCA 和明确 disposition。
+4. daily/weekly、Alertmanager、异机备份和 canary scheduler 在 Day 0 前自然运行通过，且
+   不需要在窗口中途更换凭据、候选或调度方式。
+5. 在 Issue 中记录精确 UTC 半开区间、主机身份、候选和维护计划。预演所需故障演练必须
+   预先安排并形成 incident/drill 记录，不能事后把缺口标记为维护。
+
+`TODO-0016` 通过后再次审核 tag/SHA/digest 和所有缺陷 disposition，再声明
+`TODO-0017` Day 0。30 天期间任何 runtime hotfix、候选漂移或不可解释中断都保留旧证据，
+但新候选必须从 Day 0 重新计时。
 
 ## 单节点部署契约
 
