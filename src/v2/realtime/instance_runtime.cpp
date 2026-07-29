@@ -34,6 +34,13 @@ struct InternalInstance {
         std::uint32_t last_acked_frame = 0;
     };
     std::unordered_map<std::string, PlayerInputState> player_input_state;
+
+    ~InternalInstance() {
+        if (plugin != nullptr) {
+            plugin->on_instance_destroyed(ctx);
+        }
+        ctx.plugin_state = nullptr;
+    }
 };
 
 // ─── Runtime implementation ─────────────────────────────────────────

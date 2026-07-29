@@ -70,8 +70,8 @@ TEST(V2BattleAuthoritativeTest, InstancePluginPreservesScoreAndSubmittedFrame) {
     const auto duplicate_snapshot = v2::battle::battle_world_snapshot(*state.world);
     EXPECT_EQ(duplicate_snapshot.participants.front().score, 42);
 
-    delete &v2::battle::BattleInstancePlugin::get_state(context);
-    context.plugin_state = nullptr;
+    plugin.on_instance_destroyed(context);
+    EXPECT_EQ(context.plugin_state, nullptr);
 }
 
 TEST(V2BattleAuthoritativeTest, FrameLimitTriggersBattleFinish) {

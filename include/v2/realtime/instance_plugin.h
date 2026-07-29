@@ -68,6 +68,14 @@ public:
     //   - AUDIT_LOG records the failure.
     virtual void on_instance_created(InstanceContext& instance_ctx) = 0;
 
+    // Called immediately before the runtime releases the instance. Plugins
+    // that allocate instance_ctx.plugin_state must destroy that state here
+    // and set the pointer to nullptr. This hook is also called when
+    // on_instance_created() throws after allocating state.
+    virtual void on_instance_destroyed(InstanceContext& instance_ctx) noexcept {
+        instance_ctx.plugin_state = nullptr;
+    }
+
     // Called when a player joins an existing instance (e.g. after
     // matchmaking places the player into the instance, or during
     // late-join).

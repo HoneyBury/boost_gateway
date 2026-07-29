@@ -34,6 +34,11 @@ public:
         ctx.plugin_state = world;
     }
 
+    void on_instance_destroyed(v2::realtime::InstanceContext& ctx) noexcept override {
+        delete static_cast<tank::TankWorld*>(ctx.plugin_state);
+        ctx.plugin_state = nullptr;
+    }
+
     void on_player_join(v2::realtime::InstanceContext& /*ctx*/,
                         const v2::realtime::PlayerContext& /*player*/) override {}
 

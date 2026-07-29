@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -133,6 +134,56 @@ std::unique_ptr<v2::realtime::InstancePlugin> create_concurrent_tick_plugin() {
     return std::make_unique<ConcurrentTickPlugin>(concurrent_tick_state);
 }
 
+std::atomic<int> owning_plugin_allocations{0};
+std::atomic<int> owning_plugin_destructions{0};
+std::atomic<bool> owning_plugin_throw_on_create{false};
+
+class OwningPlugin final : public v2::realtime::InstancePlugin {
+public:
+    void on_instance_created(v2::realtime::InstanceContext& ctx) override {
+        ctx.plugin_state = new int(42);
+        owning_plugin_allocations.fetch_add(1, std::memory_order_relaxed);
+        if (owning_plugin_throw_on_create.load(std::memory_order_relaxed)) {
+            throw std::runtime_error("creation failed after state allocation");
+        }
+    }
+
+    void on_instance_destroyed(v2::realtime::InstanceContext& ctx) noexcept override {
+        delete static_cast<int*>(ctx.plugin_state);
+        ctx.plugin_state = nullptr;
+        owning_plugin_destructions.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void on_player_join(v2::realtime::InstanceContext&,
+                        const v2::realtime::PlayerContext&) override {}
+    void on_player_leave(v2::realtime::InstanceContext&,
+                         const v2::realtime::PlayerContext&) override {}
+    v2::realtime::InputResult on_input(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::InputEnvelope&) override { return {.accepted = true}; }
+    v2::realtime::TickStats on_tick(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::FrameContext&) noexcept override { return {}; }
+    v2::realtime::Snapshot build_snapshot(
+        v2::realtime::InstanceContext&, bool) noexcept override { return {}; }
+    std::string build_settlement(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::SettlementContext&) noexcept override { return "{}"; }
+    v2::realtime::Snapshot build_resume_snapshot(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::PlayerContext&) noexcept override { return {}; }
+};
+
+std::unique_ptr<v2::realtime::InstancePlugin> create_owning_plugin() {
+    return std::make_unique<OwningPlugin>();
+}
+
+void reset_owning_plugin_counters(bool throw_on_create = false) {
+    owning_plugin_allocations.store(0, std::memory_order_relaxed);
+    owning_plugin_destructions.store(0, std::memory_order_relaxed);
+    owning_plugin_throw_on_create.store(throw_on_create, std::memory_order_relaxed);
+}
+
 }  // namespace
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -152,6 +203,41 @@ TEST(InstanceRuntimeTest, CreateAndDestroyInstance) {
 
     runtime.destroy_instance("inst_001");
     EXPECT_EQ(runtime.instance_count(), 0);
+}
+
+TEST(InstanceRuntimeTest, DestroyInstanceReleasesPluginOwnedState) {
+    reset_owning_plugin_counters();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("owning", &create_owning_plugin);
+
+    ASSERT_EQ(runtime.create_instance("owned", "room", "owning", {}), "owned");
+    EXPECT_EQ(owning_plugin_allocations.load(std::memory_order_relaxed), 1);
+    runtime.destroy_instance("owned");
+    EXPECT_EQ(owning_plugin_destructions.load(std::memory_order_relaxed), 1);
+}
+
+TEST(InstanceRuntimeTest, RuntimeDestructionReleasesAllPluginOwnedState) {
+    reset_owning_plugin_counters();
+    {
+        v2::realtime::InstanceRuntime runtime;
+        runtime.register_plugin("owning", &create_owning_plugin);
+        ASSERT_EQ(runtime.create_instance("one", "room", "owning", {}), "one");
+        ASSERT_EQ(runtime.create_instance("two", "room", "owning", {}), "two");
+    }
+    EXPECT_EQ(owning_plugin_allocations.load(std::memory_order_relaxed), 2);
+    EXPECT_EQ(owning_plugin_destructions.load(std::memory_order_relaxed), 2);
+}
+
+TEST(InstanceRuntimeTest, FailedCreationReleasesPluginOwnedState) {
+    reset_owning_plugin_counters(true);
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("owning", &create_owning_plugin);
+
+    EXPECT_TRUE(runtime.create_instance("failed", "room", "owning", {}).empty());
+    EXPECT_EQ(runtime.instance_count(), 0);
+    EXPECT_EQ(owning_plugin_allocations.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(owning_plugin_destructions.load(std::memory_order_relaxed), 1);
+    owning_plugin_throw_on_create.store(false, std::memory_order_relaxed);
 }
 
 TEST(InstanceRuntimeTest, CreateDuplicateInstanceFails) {

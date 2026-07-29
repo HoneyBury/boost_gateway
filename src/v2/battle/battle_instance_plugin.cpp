@@ -97,6 +97,12 @@ void BattleInstancePlugin::on_instance_created(
     instance_ctx.plugin_state = state.release();
 }
 
+void BattleInstancePlugin::on_instance_destroyed(
+    v2::realtime::InstanceContext& instance_ctx) noexcept {
+    delete static_cast<State*>(instance_ctx.plugin_state);
+    instance_ctx.plugin_state = nullptr;
+}
+
 void BattleInstancePlugin::on_player_join(
     v2::realtime::InstanceContext& instance_ctx,
     const v2::realtime::PlayerContext& player) {
