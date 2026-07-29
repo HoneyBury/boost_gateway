@@ -172,6 +172,9 @@
     "scripts/gates/governance/check_repository_governance.py": {
       "category": "aggregate_gate"
     },
+    "scripts/gates/governance/verify_release_source_authorization.py": {
+      "category": "aggregate_gate"
+    },
     "scripts/gates/governance/check_script_inventory.py": {
       "category": "aggregate_gate"
     },
@@ -380,6 +383,9 @@
       "category": "tool"
     },
     "scripts/tools/ensure_conan_venv.py": {
+      "category": "tool"
+    },
+    "scripts/tools/external_business_canary.py": {
       "category": "tool"
     },
     "scripts/tools/gen_certs.py": {

@@ -10,6 +10,16 @@
       "capabilities": { "github_hosted_fallback": true },
       "vars_hint": "CI_RUNNER"
     },
+    "security-maintenance": {
+      "enabled": true,
+      "runner": "\"ubuntu-latest\"",
+      "labels": { "os": "linux", "arch": "x64", "mode": "github-hosted-security-maintenance" },
+      "capabilities": {
+        "github_hosted_only": true,
+        "scheduled": true,
+        "production_validation_access": false
+      }
+    },
     "release": {
       "enabled": true,
       "runner": "[\"self-hosted\",\"Linux\",\"X64\"]",

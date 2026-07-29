@@ -1,11 +1,15 @@
 # Backup And Recovery Candidate Policy
 
-更新时间：2026-07-26
+更新时间：2026-07-29
 
-本文档对应 `TODO-0012` 的 Redis production-validation 受治理激活候选、备份/恢复目标和
-fail-closed 校验规则。仓库 Compose、host collector unit 和 policy 已进入
-`approved_candidate_pending_host_activation`，但目标 Ubuntu 尚未安装或部署该候选；这不构成
-主机 AOF 激活、RPO、RTO 或正式恢复证据。
+本文档对应 `TODO-0012` 的 Redis production-validation 受治理激活、备份/恢复目标和
+fail-closed 校验规则。`TODO-0012` 已于 2026-07-28 在目标 Ubuntu 完成：AOF `everysec` + RDB、
+不高于 60 秒 RPO、异机加密备份和两次独立恢复均通过聚合验收。
+
+仓库同时保留激活前的 example policy、初始 decision 和单轮证据格式。它们继续记录
+`approved_candidate_pending_host_activation`、`activation_ready=false` 或
+`formal_todo0012_claim=false`，因为静态候选和任一单轮产物都无权自行声明正式完成。这些字段是
+产物权限边界，不是当前 live host 状态；当前任务状态以 `docs/todos/tasks.json` 为事实源。
 
 ## Repository Contract
 
@@ -22,7 +26,7 @@ python3 scripts/tools/check_backup_recovery_policy.py \
   --summary-path runtime/validation/backup-recovery-policy-summary.json
 ```
 
-通过结果只表示候选配置与策略一致。summary 必须继续报告：
+对 example policy 运行静态校验只表示候选配置与策略一致。该静态 summary 必须继续报告：
 
 - `candidate_contract_valid=true`
 - `governed_candidate_ready=true`
@@ -84,16 +88,17 @@ main+children CPU、cgroup v2 I/O、`aof_delayed_fsync` 和 effective config。�
 冒充真实 SDK 或服务延迟。证据同时绑定干净的 controller `main` commit、runner SHA-256、candidate
 policy/profile SHA-256 和 active production Redis image/volume。AOF 无可观测写入、BGSAVE 未完整落盘、
 delayed fsync、workload 超时、临时资源残留或 active production binding 漂移均 fail closed。即使
-measurement PASS，summary 仍固定
-`activation_ready=false`；还需人工 performance review、governed change record、rollback plan、
-effective-config 激活验证、release SDK full-flow 和 crash RPO 演练，禁止直接修改生产 Compose。
+measurement PASS，该 benchmark summary 仍固定 `activation_ready=false`；它只允许后续人工
+performance review、governed change record、rollback plan、effective-config 激活验证、release SDK
+full-flow 和 crash RPO 演练，禁止用 benchmark 单独修改生产 Compose。上述后续步骤现已完成，但不会
+回写或抬高这份 pre-activation summary 的权限。
 
 首份六轮对照证据 `todo0012-aof-20260727T131127Z` 已通过并由
 `docs/decisions/todo0012-redis-aof-activation.json` 绑定。人工评审接受 throughput `-4.76%`、
 P50 `+0.048ms`、P99 `-0.072ms`、Redis CPU `+8.51%`、RSS `+1.18%`，以及候选 workload
 约 `399 bytes/request` 的新增写入；三轮候选 delayed fsync 均为 0，BGSAVE 均成功。该结果只批准
-进入受治理 candidate，实现仍必须保持 `activation_ready=false`，且 synthetic Lua 数据不能替代
-release SDK、长时磁盘观察或 crash RPO 证据。评审校验入口为：
+进入受治理 candidate，因此初始 decision 仍保持 `activation_ready=false`；synthetic Lua 数据不能替代
+后来形成的 release SDK、长时磁盘观察或 crash RPO 证据。评审校验入口为：
 
 ```bash
 python3 scripts/tools/review_redis_persistence_benchmark.py \
@@ -356,9 +361,10 @@ volume，写入进程固定为无新增 capability 的 `redis` 用户，且写�
 不得为了写入 `redis:redis 0755` 的 `/data` 给 root 加回 `DAC_OVERRIDE`。失败时只删除本次创建的 target container/volume；
 成功时停止隔离容器并保留 target volume 作为演练证据。
 
-该切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录
-`restore_known_good=false` 和 `formal_todo0012_claim=false`。完整 host link reconstruction、
-隔离业务验证、第二份不同 backup/target 演练和最终受控切换仍是后续边界。
+该单轮切片只证明 Redis PING、离线 RDB 和 exact canonical seed。summary 必须继续记录
+`restore_known_good=false` 和 `formal_todo0012_claim=false`；完整 host link reconstruction、
+隔离业务验证、第二份不同 backup/target 演练和最终聚合只能由后续独立证据提供。当前任务已经完成
+这些聚合验收，不改变本 summary 的单轮边界。
 
 ### Isolated Restored Business Verification
 
@@ -411,8 +417,9 @@ rank 小于等于 20；summary 仍显式记录本轮用户是否出现在 top 20
 retained volume；前后 canonical keyspace SHA-256、key count、key set 和 volume identity 必须一致，
 active production volume identity 也必须保持一致。internal bridge host-direct 不可达、SDK 失败、
 cleanup 失败或 retained seed 漂移都会生成 `overall_pass=false` 的 create-only summary。即使本阶段通过，
-summary 仍固定 `restore_known_good=false` 和 `formal_todo0012_claim=false`；第二份独立 backup/target、
-完整 host link reconstruction 和最终聚合尚未完成。
+该 summary 仍固定 `restore_known_good=false` 和 `formal_todo0012_claim=false`；它不包含第二份独立
+backup/target、完整 host link reconstruction 或最终聚合。当前 TODO 完成结论来自这些独立证据的
+聚合验收，而不是修改任一单轮 summary。
 
 ### Known-Good Attestation
 

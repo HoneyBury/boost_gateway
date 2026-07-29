@@ -70,7 +70,7 @@ REQUIRED_TEXT = {
         "scripts/gates/production/verify_production_evidence_gate.py",
         "scripts/gates/production/verify_production_resilience_gate.py",
         "scripts/tools/render_validation_summary.py",
-        "actions/upload-artifact@v4",
+        "actions/upload-artifact@",
         "runtime/validation/production-evidence-summary.json",
         "runtime/validation/production-resilience-summary.json",
         "runtime/validation/p6-candidate-audit-summary.json",

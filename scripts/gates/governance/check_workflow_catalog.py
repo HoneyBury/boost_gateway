@@ -29,11 +29,39 @@ EXPECTED_NAMES = {
     "production-readiness": "Production / Readiness Decision",
     "release": "Release / Package & Publish",
     "release-asset-verification": "Release / Published Asset Verification",
+    "security-maintenance": "Security / Dependency, Sanitizer & Fuzz Maintenance",
     "sdk-distribution": "SDK / Wheel & NuGet Candidate",
     "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
 }
 TAG_WORKFLOWS = {"release"}
 PULL_REQUEST_WORKFLOWS = {"ci"}
+SCHEDULED_WORKFLOWS = {"security-maintenance"}
+REVIEWED_ACTIONS = {
+    "actions/attest": ("f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6", "v4.2.0"),
+    "actions/cache/restore": ("0057852bfaa89a56745cba8c7296529d2fc39830", "v4.3.0"),
+    "actions/cache/save": ("0057852bfaa89a56745cba8c7296529d2fc39830", "v4.3.0"),
+    "actions/checkout": ("11d5960a326750d5838078e36cf38b85af677262", "v4.4.0"),
+    "actions/download-artifact": ("d3f86a106a0bac45b974a628896c90dbdf5c8093", "v4.3.0"),
+    "actions/setup-dotnet": ("67a3573c9a986a3f9c594539f4ab511d57bb3ce9", "v4.3.1"),
+    "actions/setup-go": ("40f1582b2485089dde7abd97c1529aa768e1baff", "v5.6.0"),
+    "actions/setup-python": ("a26af69be951a213d495a4c3e4e4022e16d87065", "v5.6.0"),
+    "actions/upload-artifact": ("ea165f8d65b6e75b540449e92b4886f43607fa02", "v4.6.2"),
+    "anchore/sbom-action": ("e22c389904149dbc22b58101806040fa8d37a610", "v0.24.0"),
+    "docker/setup-compose-action": ("2fe291b7677a45ee1269ec56a42604c143505e7e", "v1.3.0"),
+    "google/osv-scanner-action/osv-scanner-action": (
+        "9a498708959aeaef5ef730655706c5a1df1edbc2",
+        "v2.3.8",
+    ),
+    "jwlawson/actions-setup-cmake": ("0d6a7d60b009d01c9e7523be22153ff8f19460d3", "v2.2.0"),
+    "seanmiddleditch/gha-setup-ninja": ("96bed6edff20d1dd61ecff9b75cc519d516e6401", "v5"),
+    "softprops/action-gh-release": ("3bb12739c298aeb8a4eeaf626c5b8d85266b0e65", "v2.6.2"),
+}
+WORKFLOW_PERMISSIONS = {
+    "perf-regression": {"actions": "read", "contents": "read"},
+    "production-readiness": {"actions": "read", "contents": "read"},
+    "release": {"attestations": "write", "contents": "write", "id-token": "write"},
+    "release-asset-verification": {"attestations": "read", "contents": "read"},
+}
 STRICT_OFFLINE_CONAN_WORKFLOWS = {
     "grpc-experimental",
     "jwks-rotation",
@@ -89,6 +117,67 @@ def workflow_dispatch_inputs(text: str) -> list[str]:
     return names
 
 
+def top_level_permissions(text: str) -> dict[str, str]:
+    permissions: dict[str, str] = {}
+    in_permissions = False
+    for line in text.splitlines():
+        if line == "permissions:":
+            in_permissions = True
+            continue
+        if not in_permissions:
+            continue
+        match = re.fullmatch(r"  ([a-z-]+): (read|write|none)", line)
+        if match:
+            permissions[match.group(1)] = match.group(2)
+        elif line and not line.startswith("  "):
+            break
+    return permissions
+
+
+def action_reference_checks(paths: list[Path]) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    pattern = re.compile(r"^\s*(?:-\s+)?uses:\s+(.+?)\s*$")
+    for path in paths:
+        for line_number, line in enumerate(read(path).splitlines(), start=1):
+            match = pattern.fullmatch(line)
+            if not match:
+                continue
+            value = match.group(1)
+            reference, separator, comment = value.partition(" # ")
+            if reference.startswith("./") or reference.startswith("docker://"):
+                continue
+            has_revision = "@" in reference
+            action, revision = reference.rsplit("@", 1) if has_revision else (reference, "")
+            release_tag = comment.strip() if separator else None
+            expected = REVIEWED_ACTIONS.get(action)
+            location = f"{path}:{line_number}"
+            add(
+                checks,
+                f"action-reference:{path.name}:{line_number}",
+                has_revision,
+                f"{location} reference={reference}",
+            )
+            add(
+                checks,
+                f"action-allowlist:{path.name}:{line_number}",
+                expected is not None,
+                f"{location} action={action}",
+            )
+            add(
+                checks,
+                f"action-pin:{path.name}:{line_number}",
+                expected is not None and revision == expected[0],
+                f"{location} revision={revision}",
+            )
+            add(
+                checks,
+                f"action-release-comment:{path.name}:{line_number}",
+                expected is not None and release_tag == expected[1],
+                f"{location} release_tag={release_tag!r}",
+            )
+    return checks
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -100,7 +189,9 @@ def main() -> int:
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     checks: list[dict[str, Any]] = []
-    workflow_paths = sorted(WORKFLOWS_ROOT.glob("*.yml"))
+    workflow_paths = sorted(
+        [*WORKFLOWS_ROOT.glob("*.yml"), *WORKFLOWS_ROOT.glob("*.yaml")]
+    )
     actual = {path.stem for path in workflow_paths}
     expected = set(EXPECTED_NAMES)
 
@@ -174,6 +265,12 @@ def main() -> int:
         ".github/README.md does not shadow the repository root README on GitHub",
     )
 
+    actions_root = ROOT / ".github" / "actions"
+    action_paths = workflow_paths + sorted(
+        [*actions_root.glob("*/action.yml"), *actions_root.glob("*/action.yaml")]
+    )
+    checks.extend(action_reference_checks(action_paths))
+
     for path in workflow_paths:
         stem = path.stem
         text = read(path)
@@ -188,7 +285,21 @@ def main() -> int:
         )
         has_tag_push = "push:" in text and "tags:" in text and "v*" in text
         add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
-        add(checks, f"trigger:{stem}:no-schedule", "schedule:" not in text and "cron:" not in text, f"{path.name} has no scheduled trigger")
+        has_schedule = "schedule:" in text or "cron:" in text
+        add(
+            checks,
+            f"trigger:{stem}:schedule-policy",
+            has_schedule == (stem in SCHEDULED_WORKFLOWS),
+            f"{path.name} scheduled={has_schedule}",
+        )
+        expected_permissions = WORKFLOW_PERMISSIONS.get(stem, {"contents": "read"})
+        actual_permissions = top_level_permissions(text)
+        add(
+            checks,
+            f"permissions:{stem}:least-privilege",
+            actual_permissions == expected_permissions,
+            f"{path.name} permissions={actual_permissions} expected={expected_permissions}",
+        )
         has_pull_request = "pull_request:" in text
         add(
             checks,
@@ -226,6 +337,7 @@ def main() -> int:
                 )
 
     release_workflow = read(WORKFLOWS_ROOT / "release.yml")
+    security_maintenance_workflow = read(WORKFLOWS_ROOT / "security-maintenance.yml")
     ci_workflow = read(WORKFLOWS_ROOT / "ci.yml")
     release_asset_verification = read(WORKFLOWS_ROOT / "release-asset-verification.yml")
     specialized_workflow = read(WORKFLOWS_ROOT / "specialized-e2e.yml")
@@ -239,6 +351,28 @@ def main() -> int:
     production_readiness_workflow = read(WORKFLOWS_ROOT / "production-readiness.yml")
     preprod_workflow = read(WORKFLOWS_ROOT / "preprod-evidence.yml")
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
+    add(
+        checks,
+        "security-maintenance:hosted-bounded-isolation",
+        security_maintenance_workflow.count("runs-on: ubuntu-latest") == 3
+        and security_maintenance_workflow.count("timeout-minutes:") == 3
+        and "self-hosted" not in security_maintenance_workflow
+        and "node-aoi-omen-gaming-laptop" not in security_maintenance_workflow
+        and "node-honeybury" not in security_maintenance_workflow
+        and "macos-arm64-candidate" not in security_maintenance_workflow
+        and "runner:" not in security_maintenance_workflow,
+        "scheduled security work is bounded to three GitHub-hosted jobs without a production runner override",
+    )
+    add(
+        checks,
+        "security-maintenance:dependency-sanitizer-fuzz",
+        "google/osv-scanner-action/osv-scanner-action@" in security_maintenance_workflow
+        and "dependency-vulnerability:" in security_maintenance_workflow
+        and "-fsanitize=address,undefined" in security_maintenance_workflow
+        and "BOOST_BUILD_FUZZ=ON" in security_maintenance_workflow
+        and security_maintenance_workflow.count("-max_total_time=60") == 2,
+        "maintenance runs dependency vulnerability, ASan/UBSan and bounded libFuzzer checks",
+    )
     add(
         checks,
         "ci:pull-request-main",
@@ -269,8 +403,16 @@ def main() -> int:
         checks,
         "ci:repository-governance-gate",
         "python3 -m unittest tests.python.test_repository_governance" in ci_workflow
+        and "python3 -m unittest tests.python.test_workflow_supply_chain_governance"
+        in ci_workflow
         and "python3 scripts/gates/governance/check_repository_governance.py" in ci_workflow,
         "mainline CI runs repository governance regression tests and the live-tree gate",
+    )
+    add(
+        checks,
+        "ci:current-documentation-contract-gate",
+        "python3 scripts/gates/governance/check_current_docs_install.py" in ci_workflow,
+        "mainline CI blocks current-document and installed-document contract drift",
     )
     add(
         checks,
@@ -612,11 +754,11 @@ def main() -> int:
     add(
         checks,
         "release:sbom-and-attestations",
-        "uses: anchore/sbom-action@v0" in release_workflow
+        "uses: anchore/sbom-action@" in release_workflow
         and "scripts/tools/harden_release_sbom.py enrich" in release_workflow
         and release_workflow.index("scripts/tools/harden_release_sbom.py enrich")
         < release_workflow.index("Attest release archive SBOM")
-        and release_workflow.count("uses: actions/attest@v4") >= 8
+        and release_workflow.count("uses: actions/attest@") >= 8
         and "Attest symbol archive SBOM" in release_workflow
         and "Attest wheel SBOM" in release_workflow
         and "Attest NuGet SBOM" in release_workflow
@@ -639,6 +781,9 @@ def main() -> int:
         "release resolves the single wheel SBOM before passing an exact path to actions/attest",
     )
     raft_release_gate = "scripts/gates/release/verify_raft_release_evidence.py"
+    release_source_gate = (
+        "scripts/gates/governance/verify_release_source_authorization.py"
+    )
     add(
         checks,
         "release:raft-phase-b-same-run-evidence",
@@ -652,6 +797,19 @@ def main() -> int:
         < release_workflow.index("Attest release archive provenance")
         and "runtime/validation/raft-release-evidence-summary.json" in release_workflow,
         "release binds Raft mixed-version, recovery, offline Conan, package and SBOM evidence before attestation",
+    )
+    add(
+        checks,
+        "release:governed-source-authorization",
+        "fetch-depth: 0" in release_workflow
+        and release_source_gate in release_workflow
+        and release_workflow.index(raft_release_gate)
+        < release_workflow.index(release_source_gate)
+        < release_workflow.index("Attest release archive provenance")
+        and release_workflow.count("--evidence-summary") == 6
+        and "runtime/validation/release-source-authorization-summary.json"
+        in release_workflow,
+        "release proves governed main/tag ancestry and same-revision evidence before attestation",
     )
     add(
         checks,

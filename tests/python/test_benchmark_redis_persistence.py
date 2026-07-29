@@ -325,7 +325,8 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
         repository = Path(__file__).resolve().parents[2]
         self.profile = repository / "env/redis/redis.production-validation.conf"
         self.policy = (
-            repository / "deploy/operations/backup-recovery-policy.example.json"
+            repository
+            / "deploy/operations/backup-recovery-policy.candidate-v1.json"
         )
         self.summary = self.root / "evidence" / "benchmark.json"
         self.lock = self.root / "lifecycle.lock"
@@ -357,6 +358,7 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
             sample_interval_seconds=0.01,
             workload_timeout_seconds=1.0,
             active_volume="boost-gateway-production-redis-data",
+            policy_path=self.policy,
             lock_path=self.lock,
             docker="docker-test",
             runner=docker,

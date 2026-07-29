@@ -1,0 +1,11 @@
+[Unit]
+Description=Detect silent external BoostGateway canary failure
+
+[Timer]
+OnCalendar=*-*-* *:*:45 UTC
+Persistent=true
+AccuracySec=1s
+Unit=boost-gateway-external-canary@watchdog.service
+
+[Install]
+WantedBy=timers.target

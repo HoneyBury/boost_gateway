@@ -370,8 +370,10 @@ def main() -> int:
         )
         and "backup-recovery-policy-runbook.md" in docs_index
         and "install(DIRECTORY docs/deployment/" in cmake
-        and "install(DIRECTORY deploy/operations/" in cmake,
-        "the candidate Redis, backup and restore contract is documented, indexed and installed without activation",
+        and "install(DIRECTORY deploy/operations/" in cmake
+        and "TODO-0012` 已于 2026-07-28" in recovery_policy_runbook
+        and "产物权限边界，不是当前 live host 状态" in recovery_policy_runbook,
+        "the live TODO-0012 result and the fail-closed example/per-artifact boundary are both documented and installed",
     )
 
     failed = [check for check in checks if not check["passed"]]

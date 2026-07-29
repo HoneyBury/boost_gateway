@@ -48,6 +48,12 @@ workflow, tag ruleset, platform evidence, and online asset verification are one 
 manual asset replacement or tag movement is prohibited. The detailed release evidence
 contract remains in [`docs/release-governance.md`](docs/release-governance.md).
 
+Before any attestation or publication step, the release workflow must run
+`scripts/gates/governance/verify_release_source_authorization.py`. This gate fails closed
+unless the checkout, tag or manual-dispatch ref, governed `origin/main`, and every declared
+passing evidence summary resolve to the same candidate commit. Repository-side checks do
+not replace independent API verification of the immutable tag ruleset.
+
 ## External GitHub settings
 
 Branch protection, rulesets, required checks, review requirements, conversation resolution,

@@ -36,19 +36,19 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           clean: false
           fetch-depth: 0
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
 
       - name: Restore sccache cache
         id: restore-sccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}
@@ -59,7 +59,7 @@ jobs:
 
       - name: Restore Conan cache
         id: restore-conan
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-home-${{ runner.os }}-conan-2.8.1-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py', 'scripts/tools/ensure_conan_venv.py') }}
@@ -167,10 +167,16 @@ jobs:
         shell: bash
         run: python3 scripts/gates/governance/check_workflow_catalog.py
 
+      - name: Current documentation contract gate
+        shell: bash
+        run: python3 scripts/gates/governance/check_current_docs_install.py
+
       - name: Repository governance gate
         shell: bash
         run: |
           python3 -m unittest tests.python.test_repository_governance
+          python3 -m unittest tests.python.test_release_source_authorization
+          python3 -m unittest tests.python.test_workflow_supply_chain_governance
           python3 scripts/gates/governance/check_repository_governance.py
 
       - name: Next minor decision gate
@@ -222,7 +228,7 @@ jobs:
 
       - name: Upload build metrics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: build-metrics
           path: runtime/perf/build-times/**
@@ -230,14 +236,14 @@ jobs:
 
       - name: Save Conan cache
         if: always() && steps.restore-conan.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.CONAN_HOME }}
           key: conan-home-${{ runner.os }}-conan-2.8.1-release-${{ hashFiles('conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock', 'scripts/bootstrap_conan.py', 'scripts/tools/ensure_conan_venv.py') }}
 
       - name: Save sccache cache
         if: always() && steps.restore-sccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-${{ runner.os }}-release-${{ hashFiles('CMakeLists.txt', 'CMakePresets.json', 'cmake/**', 'sdk/CMakeLists.txt', 'proto/CMakeLists.txt', 'conanfile.py', 'conan/profiles/**', 'conan/remotes*.json', 'conan/locks/*.lock') }}-${{ github.sha }}

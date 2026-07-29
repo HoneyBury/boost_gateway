@@ -1,0 +1,129 @@
+name: Security / Dependency, Sanitizer & Fuzz Maintenance
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  LANG: C.UTF-8
+  LC_ALL: C.UTF-8
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-maintenance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-vulnerability:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Scan dependency manifests against OSV
+        uses: google/osv-scanner-action/osv-scanner-action@9a498708959aeaef5ef730655706c5a1df1edbc2 # v2.3.8
+        with:
+          scan-args: |-
+            --recursive
+            ./
+
+  sanitizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1:strict_string_checks=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+
+      - name: Configure ASan and UBSan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/security-sanitizers -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=fetchcontent \
+            -DBOOST_BUILD_GRPC=OFF \
+            -DBOOST_BUILD_RAFT_PROTOBUF=OFF \
+            -DBOOST_BUILD_SQLITE=OFF \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+
+      - name: Build and run unit tests under sanitizers
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/security-sanitizers --parallel 2 --target project_v2_unit_tests
+          ctest --test-dir build/security-sanitizers -L unit --output-on-failure --timeout 120
+
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+
+      - name: Configure and build fuzz targets
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/security-fuzz -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=fetchcontent \
+            -DBOOST_BUILD_GRPC=OFF \
+            -DBOOST_BUILD_RAFT_PROTOBUF=OFF \
+            -DBOOST_BUILD_SQLITE=OFF \
+            -DBOOST_BUILD_FUZZ=ON \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++
+          cmake --build build/security-fuzz --parallel 2 \
+            --target fuzz_protocol_codec fuzz_fragment_assembler
+
+      - name: Run bounded fuzz smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime/security-fuzz/crashes
+          build/security-fuzz/tests/fuzz/fuzz_protocol_codec \
+            -max_total_time=60 \
+            -timeout=10 \
+            -artifact_prefix=runtime/security-fuzz/crashes/
+          build/security-fuzz/tests/fuzz/fuzz_fragment_assembler \
+            -max_total_time=60 \
+            -timeout=10 \
+            -artifact_prefix=runtime/security-fuzz/crashes/
+
+      - name: Upload fuzz crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: security-fuzz-crashes-${{ github.run_id }}
+          path: runtime/security-fuzz/crashes/**
+          if-no-files-found: ignore
+          retention-days: 14

@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "windows": [
+    {
+      "approved_by": "change-reviewer",
+      "end": "2026-08-04T03:30:00Z",
+      "id": "CHG-2026-08-04-001",
+      "start": "2026-08-04T03:00:00Z"
+    }
+  ]
+}
+

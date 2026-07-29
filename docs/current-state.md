@@ -46,12 +46,20 @@ summary 随后 PASS 并自动恢复 v3.6.0；最终 transaction
 `/var/lib/boost-gateway/deployment-transactions/`。主线下一项为 `TODO-0011` 的长期观测与
 evidence ledger，不把本次短时部署证据扩张为长期留存结论。
 
-`TODO-0011` 的仓库实现正在推进：生产 Compose 已形成 45 天 Prometheus、node-exporter、
-cAdvisor、Redis persistence 和 Docker restart-count 指标契约；生产预检会拒绝默认 Grafana
-凭据、占位 Alertmanager receiver、过期或未同时证明 firing/resolved 的投递声明。deployment
-与 transaction record 已绑定主机、操作者、结果和原始 summary 摘要，evidence ledger 可
-生成 create-only daily/weekly/incident/final record 及带 `SHA256SUMS` 的异机包。上述内容尚未
-在目标机形成真实 receiver、完整指标样本、定时记录和异机复验，因此 `TODO-0011` 保持 open。
+`TODO-0012` 已于 2026-07-28 完成：production-validation Redis 已实际启用 AOF `everysec` +
+RDB，声明并验证不高于 60 秒的 RPO；加密 daily backup 已复制到异机 vault，至少两份独立
+backup/restore/target volume 通过 leaderboard submit/top/rank 和 release SDK full-flow。仓库的
+example policy、初始 activation decision 和单轮恢复 summary 仍故意保留
+`formal_todo0012_claim=false`，用于阻止单个候选或单轮产物越权声明完成；它们不是当前目标机
+是否已激活的事实源，最终任务状态以 `docs/todos/tasks.json` 的聚合验收为准。
+
+`TODO-0011` 的仓库实现和目标机激活均已推进：生产 Compose 形成 45 天 Prometheus、
+node-exporter、cAdvisor、Redis persistence 和 Docker restart-count 指标契约；目标机已经形成
+真实 Alertmanager receiver 的 firing/resolved 投递证据、完整 host/container/application/Redis
+指标样本和异机 bootstrap 包复验。生产预检继续拒绝默认 Grafana 凭据、占位 receiver、过期或
+单边投递声明；ledger 可生成 create-only daily/weekly/incident/final record 及带 `SHA256SUMS` 的
+异机包。`TODO-0011` 仍保持 open，剩余边界是自然 daily/完整 ISO weekly 周期与最终报告覆盖，
+不能把已激活的采集和 receiver 错写成整段长期观测已经完成。
 
 ## 默认生产链路
 
@@ -125,10 +133,10 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 
 当前两个月工作由 `TODO-0007` 至 `TODO-0018` 管理，目标是：
 
-1. 在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
-2. 建立 host preflight、45 天 metrics、外部 SDK canary 和 deployment/evidence ledger。
-3. 完成异机备份、Redis/host/runtime 恢复演练，并满足 5/10 分钟 RTO 边界。
-4. 完成 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
+1. 已在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
+2. 继续积累已激活的 45 天 metrics/ledger 自然周期，并建立外部 SDK canary。
+3. 已完成异机备份、Redis/host/runtime 恢复演练，并满足 5/10 分钟 RTO 边界。
+4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
 5. 通过 72 小时上线预演后冻结单一 tag/SHA/digest，连续运行至少 30 天。
 
 30 天验证要求连续时长不少于 `2,592,000s`，availability/canary success 与证据覆盖率

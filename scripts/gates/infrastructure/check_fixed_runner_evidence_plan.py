@@ -31,7 +31,7 @@ WORKFLOW_REQUIREMENTS = {
             "--lockfile",
             "BOOST_DEPENDENCY_PROVIDER=conan",
             "--target \"$target\"",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (),
     },
@@ -59,7 +59,7 @@ WORKFLOW_REQUIREMENTS = {
             "BOOST_BUILD_GRPC=ON",
             "scripts/gates/sdk/verify_sdk_package_consumer.py",
             "scripts/gates/governance/check_v3_grpc_poc_decision.py",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/grpc-fixed-runner-preflight-summary.json",
@@ -79,7 +79,7 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/perf/fixed-runner-capacity/**",
             "runtime/perf/fixed-runner-business-capacity/**",
             "runtime/perf/fixed-runner-saturation/**",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/long-soak-capacity-summary.json",
@@ -96,7 +96,7 @@ WORKFLOW_REQUIREMENTS = {
             "build/conan-production-gates-cmake",
             "runtime/validation/production-evidence-summary.json",
             "runtime/validation/production-resilience-summary.json",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/production-evidence-summary.json",
@@ -112,7 +112,7 @@ WORKFLOW_REQUIREMENTS = {
             "cmake --build",
             "scripts/verify_production_candidate_evidence.py",
             "runtime/validation/r0-production-candidate-evidence-summary.json",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/r0-production-candidate-evidence-summary.json",
@@ -133,7 +133,7 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/monitoring-operability-summary.json",
             "runtime/validation/tls-preprod-multi-run-summary.json",
             "preprod-evidence-${{ inputs.platform }}-${{ github.run_id }}",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/preprod-recovery-drill-summary.json",
@@ -154,7 +154,7 @@ WORKFLOW_REQUIREMENTS = {
             "runtime/validation/r2-production-evidence-manifest-summary.json",
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
             "runtime/validation/r3-production-readiness-report-summary.json",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@",
         ),
         "summaries": (
             "runtime/validation/r2-production-evidence-manifest-fixed-runner-summary.json",
@@ -457,7 +457,7 @@ def main() -> int:
                     "Normalize stale Go cache permissions",
                     'cache="$GITHUB_WORKSPACE/runtime/go-cache"',
                     "ubuntu:24.04 chmod -R a+rwX /cache",
-                    "uses: actions/checkout@v4",
+                    "uses: actions/checkout@",
                 )
             ),
             f"{workflow_path} repairs immutable Go cache output before a strict checkout clean",
