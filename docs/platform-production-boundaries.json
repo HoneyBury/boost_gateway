@@ -46,6 +46,7 @@
     "production-readiness": {"linux-x64": "implemented", "linux-arm64": "implemented-platform-isolation-evidence-required", "macos-arm64": "implemented-platform-isolation-evidence-required"},
     "release": {"linux-x64": "v3.6.2-full-asset-matrix", "linux-arm64": "v3.6.2-full-asset-matrix", "macos-arm64": "v3.6.2-full-asset-matrix"},
     "release-asset-verification": {"linux-x64": "v3.6.2-full-asset-verifier", "linux-arm64": "v3.6.2-full-asset-verifier", "macos-arm64": "v3.6.2-full-asset-verifier"},
+    "security-maintenance": {"linux-x64": "not-applicable-github-hosted", "linux-arm64": "not-applicable-github-hosted", "macos-arm64": "not-applicable-github-hosted"},
     "sdk-distribution": {"linux-x64": "v3.6.2-github-release", "linux-arm64": "v3.6.2-github-release", "macos-arm64": "v3.6.2-github-release"},
     "specialized-e2e": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-native-subset"}
   }

@@ -118,7 +118,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "include_operator_kind",
         "include_capacity_baseline",
         "include_observability_runtime",
-        "actions/upload-artifact@v4",
+        "actions/upload-artifact@",
         "scripts/tools/render_validation_summary.py",
     ):
         add(checks, f"p2:workflow:{token}", token in workflow, f"production gates workflow includes {token}")

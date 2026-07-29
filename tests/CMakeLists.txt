@@ -6,3 +6,5 @@ option(BOOST_BUILD_PERF_TESTS "Build performance benchmark tests" OFF)
 if(BOOST_BUILD_PERF_TESTS)
     add_subdirectory(perf)
 endif()
+
+add_subdirectory(fuzz)

@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-07-24
+更新时间：2026-07-29
 
 `docs/` 顶层只保留当前仍维护的事实源、规范、计划和操作手册。已经结束的版本计划、
 交付记录和旧 runbook 进入 [`docs/archive/`](archive/README.md)，不作为当前事实源，
@@ -56,8 +56,8 @@
 | [Runner Gate Standard](runner-gate-standard.md) | 命名、标签、准入生命周期和缓存隔离规则 |
 | [固定 Runner 手册](fixed-runner-playbook.md) | Conan/Docker 预热、R4/R5/R6 和专项证据操作 |
 | [生产证据](production/) | 当前 manifest 和恢复演练模板 |
-| [备份恢复候选策略](deployment/backup-recovery-policy-runbook.md) | TODO-0012 Redis AOF/RDB、异机备份和恢复安全边界；仓库候选已批准，目标主机未激活 |
-| [Redis AOF 激活决策](decisions/todo0012-redis-aof-activation.json) | 绑定性能基准、容量评审和禁止盲目 AOF→RDB 回退的机器可读变更决策；目标主机仍未激活 |
+| [备份恢复策略](deployment/backup-recovery-policy-runbook.md) | TODO-0012 Redis AOF/RDB、异机备份和恢复安全边界；目标机已激活并完成验收，example/单轮产物仍保持 fail-closed formal flag |
+| [Redis AOF 初始激活决策](decisions/todo0012-redis-aof-activation.json) | 绑定激活前性能基准、容量评审和禁止盲目 AOF→RDB 回退；文件中的 pre-activation flag 是历史决策边界，不代表当前目标机状态 |
 
 ## 决策与配置
 

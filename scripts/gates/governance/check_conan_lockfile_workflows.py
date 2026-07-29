@@ -151,10 +151,10 @@ def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content:
     add(
         checks,
         f"workflow:{name}:artifact-upload",
-        "actions/upload-artifact@v4" in content,
+        "actions/upload-artifact@" in content,
         f"{path} uploads Conan/fixed-runner validation artifacts",
     )
-    if "actions/cache@v4" in content:
+    if "uses: actions/cache/" in content:
         add(
             checks,
             f"workflow:{name}:cache-key-includes-conan-inputs",
@@ -413,7 +413,7 @@ def main() -> int:
     add(
         checks,
         "workflow:ci:pinned-python-and-stale-venv-recovery",
-        "uses: actions/setup-python@v5" in ci
+        "uses: actions/setup-python@" in ci
         and 'python-version: "3.12"' in ci
         and "--recreate-if-python-mismatch" in ci,
         "ci pins Python 3.12 and can replace a stale checkout-local Conan virtual environment",

@@ -1,6 +1,6 @@
 # 发布治理
 
-更新时间：2026-07-21
+更新时间：2026-07-29
 
 本文档收敛了历史上的可靠性矩阵与发布检查清单内容，作为发布门禁和可靠性要求的唯一入口。
 
@@ -103,15 +103,22 @@ resolution 和管理员保护是 GitHub 外部状态，必须单独回读验证�
 4. **稳定性 smoke**: `python3.12 scripts/gates/release/verify_stability_soak.py --soak-profile smoke`
 5. **目标平台证据**: release、R0、R4/R5/R6、SDK、symbols 和 readiness 按目标版本的
    platform matrix 完成并保持同一候选 provenance
+6. **发布来源授权**: 在任何 attestation 或 publish 之前运行
+   `scripts/gates/governance/verify_release_source_authorization.py`；至少传入一份
+   `--evidence-summary`，并确保 checkout、annotated `v*` tag、`origin/main` 与所有
+   passing provenance 均绑定同一完整 candidate SHA
 
 ### 发布流程
 
 1. 冻结 candidate SHA，并完成三个目标平台 required evidence。
 2. 确认版本、CHANGELOG、asset manifest、SDK 和 symbol 版本一致。
-3. 创建不可移动的 annotated `v*` tag，触发 `release.yml`。
-4. `release.yml` 完成构建、测试、门禁、打包、SBOM/provenance 和发布。
-5. 在三个原生平台运行 `release-asset-verification.yml`，独立下载并消费线上资产。
-6. 发布 readiness 结论时只汇聚同 tag/SHA、匹配平台和 provenance 的 artifact。
+3. 创建不可移动的 annotated `v*` tag，触发 `release.yml`；checkout 必须抓取完整 tag
+   和 `origin/main` 历史，不能用缺少 governed ref 的浅克隆绕过来源校验。
+4. `release.yml` 在生成 required candidate evidence 后、attestation 前运行发布来源授权
+   gate；任一 ref、tag、evidence 或 provenance 缺失即阻断。
+5. `release.yml` 完成构建、测试、门禁、打包、SBOM/provenance 和发布。
+6. 在三个原生平台运行 `release-asset-verification.yml`，独立下载并消费线上资产。
+7. 发布 readiness 结论时只汇聚同 tag/SHA、匹配平台和 provenance 的 artifact。
 
 ### 版本号规则
 
@@ -153,3 +160,4 @@ Linux debug-symbol 或 macOS dSYM、三个 SDK 4.2.0 wheel、一个三 RID NuGet
 - 性能 smoke gate 未通过
 - 任一目标平台 archive、SDK、symbol、SBOM、checksum 或 provenance 缺失/不匹配
 - 发布后原生资产消费失败，或 artifact 与 tag/SHA 不一致
+- 发布来源授权 gate 未通过，或 workflow checkout 无法解析 governed `origin/main`

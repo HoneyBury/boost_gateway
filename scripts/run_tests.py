@@ -67,10 +67,10 @@ LAYERS = {
         "label": None,
         "description": "Fuzz tests (protocol codec fuzzing)",
         "optional": True,
-        "requires_build_flag": "BOOST_BUILD_FUZZ_TESTS=ON",
+        "requires_build_flag": "BOOST_BUILD_FUZZ=ON",
         "hint": (
             "Fuzz tests require:\n"
-            "  1. cmake -DBOOST_BUILD_FUZZ_TESTS=ON <other args>\n"
+            "  1. cmake -DBOOST_BUILD_FUZZ=ON <other args>\n"
             "  2. cmake --build <dir> --parallel\n"
             "  3. ctest -R fuzz --preset default"
         ),

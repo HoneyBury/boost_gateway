@@ -1,0 +1,74 @@
+from __future__ import annotations
+
+import tempfile
+import unittest
+from pathlib import Path
+
+from scripts.gates.governance import check_workflow_catalog as catalog
+
+
+class WorkflowSupplyChainGovernanceTest(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+
+    def write_action(self, reference: str) -> Path:
+        path = self.root / "workflow.yml"
+        path.write_text(
+            "steps:\n  - uses: " + reference + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    def failures(self, path: Path) -> set[str]:
+        return {
+            str(check["name"])
+            for check in catalog.action_reference_checks([path])
+            if not check["passed"]
+        }
+
+    def test_reviewed_sha_and_release_comment_pass(self) -> None:
+        sha, tag = catalog.REVIEWED_ACTIONS["actions/checkout"]
+        path = self.write_action(f"actions/checkout@{sha} # {tag}")
+
+        self.assertEqual(set(), self.failures(path))
+
+    def test_floating_tag_fails_pin_check(self) -> None:
+        path = self.write_action("actions/checkout@v4 # v4.4.0")
+
+        self.assertIn("action-pin:workflow.yml:2", self.failures(path))
+
+    def test_unknown_action_fails_allowlist(self) -> None:
+        path = self.write_action(
+            "unreviewed/example@0123456789abcdef0123456789abcdef01234567 # v1.0.0"
+        )
+
+        self.assertIn("action-allowlist:workflow.yml:2", self.failures(path))
+
+    def test_external_action_without_revision_fails(self) -> None:
+        path = self.write_action("actions/checkout")
+
+        self.assertIn("action-reference:workflow.yml:2", self.failures(path))
+
+    def test_missing_release_comment_fails(self) -> None:
+        sha, _ = catalog.REVIEWED_ACTIONS["actions/checkout"]
+        path = self.write_action(f"actions/checkout@{sha}")
+
+        self.assertIn("action-release-comment:workflow.yml:2", self.failures(path))
+
+    def test_top_level_permissions_are_parsed_without_job_permissions(self) -> None:
+        text = """permissions:
+  contents: read
+
+jobs:
+  test:
+    permissions:
+      contents: write
+"""
+
+        self.assertEqual({"contents": "read"}, catalog.top_level_permissions(text))
+
+
+if __name__ == "__main__":
+    unittest.main()

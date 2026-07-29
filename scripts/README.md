@@ -64,6 +64,11 @@ Use these stable public entrypoints first:
   age-encrypted off-host backups, restricted SSH receipt handling, and link-free vault/RDB verification.
 - `run_scheduled_backup.py` for fail-closed daily/weekly classification, forced-command upload, independent
   archive/manifest/receipt readback, and create-only systemd evidence summaries.
+- `external_business_canary.py` for the external released-Python-SDK login/room/battle/settlement/
+  leaderboard/reconnect sample, direct Alertmanager incident input, stale-stream watchdog, and create-only
+  72-hour/30-day availability, latency and gap aggregation.
+- `gates/governance/verify_release_source_authorization.py` for blocking release publication unless the
+  annotated tag or manual rehearsal is bound to governed `main` and passing same-revision evidence.
 - `export_backup_restore_bundle.py`, `send_restore_bundle.py`, `restore_bundle_ssh_receiver.py`,
   `restore_backup_isolated.py`, and `verify_restored_business_isolated.py` for Mac-only secret-bearing archive
   decryption, pinned forced-command transfer, fresh-volume Redis restore, and isolated release SDK business

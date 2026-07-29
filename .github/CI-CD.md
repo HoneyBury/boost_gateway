@@ -3,6 +3,7 @@
 BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和 fixed-runner 证据是两个不同场景：
 
 - `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
+- `security-maintenance.yml` 固定在 GitHub-hosted `ubuntu-latest`，定期执行依赖漏洞、sanitizer 和 fuzz 检查；不能接受 runner 覆盖，也不接触 production-validation 主机。
 - `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
 - Linux release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为事实源；macOS ARM64 构建、R5、JWKS 和平台基线只使用原生 Apple Silicon runner。
 
@@ -24,6 +25,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | 三平台 runtime/symbol/wheel、三 RID NuGet、测试与门禁；手动 `platform=all` 预演，tag 才发布/attest |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收 runtime/symbol、wheel/NuGet、checksum、consumer 和 attestations |
+| `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan 与两个 60 秒 libFuzzer target；三个 job 均有硬超时 |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 | `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、UUID-bound dSYM、SDK consumer 与候选资产 |
@@ -31,6 +33,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 ## Runner 要求
 
 - **PR 必需回归**: GitHub-hosted `ubuntu-latest`，固定 45 分钟 job 上限；新提交取消同一 PR 的旧运行
+- **安全维护**: GitHub-hosted `ubuntu-latest`；不允许 workflow input 或 repository variable 改写到 self-hosted/production-validation runner
 - **固定 runner 证据**: Linux (Ubuntu 22.04+) + `["self-hosted", "Linux", "X64"]`
 - **macOS ARM64 候选**: 原生 Apple Silicon + `["self-hosted", "macOS", "ARM64"]`；有界 smoke/baseline 不声明容量或生产长稳
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
@@ -77,12 +80,13 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - **普通 branch push**: 不自动触发 CI
 - **v* tag**: 自动触发 `release.yml`；`ci.yml` 保留为手动主线回归，避免 tag 发布重复构建
 - **手动 dispatch**: 所有 workflow 支持 `workflow_dispatch`
-- **定时任务**: 当前没有 `schedule` / `cron` workflow；固定 runner 长任务由人工选择候选 SHA 后启动
+- **定时任务**: 只有 `security-maintenance.yml` 允许每周日 `03:17 UTC` 的 schedule；所有 fixed-runner 长任务仍由人工选择候选 SHA 后启动
 
 ## 配置源
 
 - Runner 标签和默认值: `.github/runner-matrix.json`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
+- 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA 和同行 release tag 注释；catalog gate 会阻断浮动 tag、未知 Action 和权限扩大
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
 - 推荐策略: `ci.yml` 的 PR 路径强制使用 GitHub-hosted `ubuntu-latest`，手动 dispatch
   仍可显式选择 runner；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux
