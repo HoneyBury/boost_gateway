@@ -99,6 +99,36 @@ journalctl -u boost-gateway-external-canary@run.service --since -10min
 sudo find /var/lib/boost-gateway-canary/samples -type f -mmin -2
 ```
 
+On an external host without systemd, use the same repository entrypoint with a
+host scheduler. Pass `--environment-file` instead of exporting credentials into
+the scheduler definition. The file must be a regular non-symlink owned by root
+or the runner account with no group or other permissions; keys are allowlisted
+and values are read literally without shell expansion. Pass a stable regular
+host identity file to `--machine-id-path` during validation when the platform
+does not provide `/etc/machine-id`.
+
+Schedule `run` at least every 60 seconds. Schedule `watchdog` every 60 seconds
+with `--initial-delay-seconds 30` so it checks after the corresponding business
+sample finishes. The scheduler must retain non-zero exits, logs and the
+create-only evidence root. Keep credentials and candidate records outside the
+repository and command-line arguments.
+
+```bash
+python external_business_canary.py \
+  --environment-file /protected/canary/environment \
+  --deployment-record /protected/canary/deployment-record.json \
+  --machine-id-path /protected/canary/host-id validate
+
+python external_business_canary.py \
+  --environment-file /protected/canary/environment \
+  --deployment-record /protected/canary/deployment-record.json run
+
+python external_business_canary.py \
+  --environment-file /protected/canary/environment \
+  --deployment-record /protected/canary/deployment-record.json \
+  watchdog --initial-delay-seconds 30
+```
+
 When deployment changes, atomically provision the new exported record before
 starting its validation window. Aggregation rejects a window containing more
 than one candidate or endpoint; never splice timelines across deployments.

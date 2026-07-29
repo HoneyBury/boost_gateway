@@ -62,13 +62,4 @@ if(BOOST_BUILD_FUZZ)
     message(STATUS "  fuzz_protocol_codec     — protocol codec decode/encode round-trip")
     message(STATUS "  fuzz_fragment_assembler — FragmentAssembler feed() with arbitrary sequences")
 
-else()
-    # 如果 fuzz 未启用，创建一个空目标避免 "missing source" 警告
-    add_executable(fuzz_stub EXCLUDE_FROM_ALL
-        "${CMAKE_CURRENT_SOURCE_DIR}/../unit/hello_test.cpp"
-    )
-    target_link_libraries(fuzz_stub
-        PRIVATE
-            GTest::gtest_main
-    )
 endif()

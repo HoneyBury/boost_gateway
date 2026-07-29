@@ -25,6 +25,18 @@ from typing import Any, Callable, Iterable
 DEFAULT_EVIDENCE_ROOT = Path("/var/lib/boost-gateway-canary")
 DEFAULT_DEPLOYMENT_RECORD = Path("/etc/boost-gateway-canary/deployment-record.json")
 DEFAULT_TIMEOUT_MS = 5000
+ENVIRONMENT_KEYS = frozenset(
+    {
+        "BOOST_GATEWAY_CANARY_HOST",
+        "BOOST_GATEWAY_CANARY_PORT",
+        "BOOST_GATEWAY_CANARY_USER_A",
+        "BOOST_GATEWAY_CANARY_USER_B",
+        "BOOST_GATEWAY_CANARY_TOKEN_A",
+        "BOOST_GATEWAY_CANARY_TOKEN_B",
+        "BOOST_GATEWAY_CANARY_ALERTMANAGER_URL",
+        "BOOST_GATEWAY_CANARY_TIMEOUT_MS",
+    }
+)
 REQUIRED_STEPS = ("login", "room", "battle", "settlement", "leaderboard", "reconnect")
 ERROR_TYPES = {
     "none",
@@ -178,7 +190,7 @@ def validate_config(config: CanaryConfig) -> CanaryConfig:
     return config
 
 
-def config_from_environment() -> CanaryConfig:
+def config_from_mapping(environment: dict[str, str]) -> CanaryConfig:
     required = (
         "BOOST_GATEWAY_CANARY_HOST",
         "BOOST_GATEWAY_CANARY_USER_A",
@@ -187,28 +199,63 @@ def config_from_environment() -> CanaryConfig:
         "BOOST_GATEWAY_CANARY_TOKEN_B",
         "BOOST_GATEWAY_CANARY_ALERTMANAGER_URL",
     )
-    missing = [name for name in required if not os.environ.get(name)]
+    missing = [name for name in required if not environment.get(name)]
     if missing:
         raise CanaryError("missing canary environment variables: " + ", ".join(missing))
     try:
-        port = int(os.environ.get("BOOST_GATEWAY_CANARY_PORT", "9201"))
+        port = int(environment.get("BOOST_GATEWAY_CANARY_PORT", "9201"))
         timeout_ms = int(
-            os.environ.get("BOOST_GATEWAY_CANARY_TIMEOUT_MS", str(DEFAULT_TIMEOUT_MS))
+            environment.get("BOOST_GATEWAY_CANARY_TIMEOUT_MS", str(DEFAULT_TIMEOUT_MS))
         )
     except ValueError as exc:
         raise CanaryError("canary port and timeout must be integers") from exc
     return validate_config(
         CanaryConfig(
-            host=os.environ["BOOST_GATEWAY_CANARY_HOST"],
+            host=environment["BOOST_GATEWAY_CANARY_HOST"],
             port=port,
-            user_a=os.environ["BOOST_GATEWAY_CANARY_USER_A"],
-            user_b=os.environ["BOOST_GATEWAY_CANARY_USER_B"],
-            token_a=os.environ["BOOST_GATEWAY_CANARY_TOKEN_A"],
-            token_b=os.environ["BOOST_GATEWAY_CANARY_TOKEN_B"],
-            alertmanager_url=os.environ["BOOST_GATEWAY_CANARY_ALERTMANAGER_URL"],
+            user_a=environment["BOOST_GATEWAY_CANARY_USER_A"],
+            user_b=environment["BOOST_GATEWAY_CANARY_USER_B"],
+            token_a=environment["BOOST_GATEWAY_CANARY_TOKEN_A"],
+            token_b=environment["BOOST_GATEWAY_CANARY_TOKEN_B"],
+            alertmanager_url=environment["BOOST_GATEWAY_CANARY_ALERTMANAGER_URL"],
             timeout_ms=timeout_ms,
         )
     )
+
+
+def config_from_environment() -> CanaryConfig:
+    return config_from_mapping(dict(os.environ))
+
+
+def load_environment_file(path: Path) -> dict[str, str]:
+    if not path.is_file() or path.is_symlink():
+        raise CanaryError(f"environment file must be a regular non-symlink: {path}")
+    metadata = path.stat()
+    if metadata.st_uid not in {0, os.geteuid()} or metadata.st_mode & 0o077:
+        raise CanaryError("environment file must be owner-controlled and mode 0600")
+    if metadata.st_size > 16_384:
+        raise CanaryError("environment file exceeds the 16 KiB limit")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise CanaryError(
+            f"cannot read environment file: {type(exc).__name__}"
+        ) from exc
+    environment: dict[str, str] = {}
+    for line_number, raw_line in enumerate(lines, start=1):
+        if not raw_line or raw_line.lstrip().startswith("#"):
+            continue
+        if "=" not in raw_line:
+            raise CanaryError(f"invalid environment entry on line {line_number}")
+        name, value = raw_line.split("=", 1)
+        if name not in ENVIRONMENT_KEYS:
+            raise CanaryError(f"unknown environment key on line {line_number}")
+        if name in environment:
+            raise CanaryError(f"duplicate environment key on line {line_number}")
+        if "\x00" in value:
+            raise CanaryError(f"invalid environment value on line {line_number}")
+        environment[name] = value
+    return environment
 
 
 def candidate_from_record(path: Path) -> dict[str, str]:
@@ -351,7 +398,14 @@ def execute_business_flow(
         )
 
     def leaderboard() -> None:
-        alice = state["alice"]
+        alice, bob = state["alice"], state["bob"]
+        top = _result_ok(
+            alice.leaderboard_top(20, config.timeout_ms), "leaderboard top"
+        )
+        if "entries" not in str(top.get("body", "")):
+            raise StepFailure(
+                "protocol_error", "leaderboard top omitted the entries collection"
+            )
         _result_ok(
             alice.leaderboard_submit(
                 config.user_a, "Canary A", 8_000_000_001, config.timeout_ms
@@ -359,7 +413,7 @@ def execute_business_flow(
             "leaderboard submit primary",
         )
         _result_ok(
-            alice.leaderboard_submit(
+            bob.leaderboard_submit(
                 config.user_b, "Canary B", 8_000_000_000, config.timeout_ms
             ),
             "leaderboard submit secondary",
@@ -1024,6 +1078,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--deployment-record", type=Path, default=DEFAULT_DEPLOYMENT_RECORD
     )
+    parser.add_argument("--environment-file", type=Path)
+    parser.add_argument("--machine-id-path", type=Path, default=Path("/etc/machine-id"))
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser(
         "validate", help="validate configuration, candidate binding and released SDK"
@@ -1033,6 +1089,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "watchdog", help="alert when samples become stale"
     )
     watchdog_parser.add_argument("--max-age-seconds", type=int, default=130)
+    watchdog_parser.add_argument("--initial-delay-seconds", type=int, default=0)
     aggregate_parser = subparsers.add_parser(
         "aggregate", help="create a 72-hour or 30-day report"
     )
@@ -1058,13 +1115,20 @@ def main(argv: list[str] | None = None) -> int:
                 args.output,
             )
         else:
-            config = config_from_environment()
+            environment = (
+                load_environment_file(args.environment_file)
+                if args.environment_file
+                else dict(os.environ)
+            )
+            config = config_from_mapping(environment)
             if args.command == "validate":
                 _, sdk_version = load_sdk()
                 result = {
                     "overall_pass": True,
                     "candidate": candidate_from_record(args.deployment_record),
-                    "host_boundary": validate_external_host(args.deployment_record),
+                    "host_boundary": validate_external_host(
+                        args.deployment_record, args.machine_id_path
+                    ),
                     "endpoint": config.endpoint,
                     "sdk_version": sdk_version,
                     "secret_material_recorded": False,
@@ -1074,6 +1138,11 @@ def main(argv: list[str] | None = None) -> int:
                     raise CanaryError(
                         "watchdog max age must be between 60 and 600 seconds"
                     )
+                if not 0 <= args.initial_delay_seconds <= 50:
+                    raise CanaryError(
+                        "watchdog initial delay must be between 0 and 50 seconds"
+                    )
+                time.sleep(args.initial_delay_seconds)
                 result = watchdog(
                     config,
                     args.deployment_record,

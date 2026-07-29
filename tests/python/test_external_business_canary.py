@@ -13,6 +13,7 @@ from scripts.tools import external_business_canary as canary
 class FakeClient:
     def __init__(self, state: dict[str, Any]) -> None:
         self.state = state
+        self.logged_in_user: str | None = None
 
     def connect(self, host: str, port: int, timeout: int) -> bool:
         self.state["connects"] = self.state.get("connects", 0) + 1
@@ -25,6 +26,7 @@ class FakeClient:
         self.state.setdefault("credentials", []).append((user, token))
         if self.state.get("login_failure"):
             return {"ok": False, "error_code": 401}
+        self.logged_in_user = user
         return {"ok": True, "user_id": user, "error_code": 0}
 
     def create_room(self, room: str, timeout: int) -> dict[str, Any]:
@@ -53,8 +55,13 @@ class FakeClient:
     def leaderboard_submit(
         self, user: str, display_name: str, score: int, timeout: int
     ) -> dict[str, Any]:
+        if user != self.logged_in_user:
+            return {"ok": False, "error_code": 1001, "body": "{}"}
         self.state.setdefault("leaderboard_users", set()).add(user)
         return {"ok": True, "error_code": 0, "body": "{}"}
+
+    def leaderboard_top(self, k: int, timeout: int) -> dict[str, Any]:
+        return {"ok": True, "error_code": 0, "body": '{"entries":[]}'}
 
     def leaderboard_rank(self, user: str, timeout: int) -> dict[str, Any]:
         return {"ok": True, "error_code": 0, "body": json.dumps({"user_id": user})}
@@ -158,6 +165,49 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
         )
         with self.assertRaises(canary.CanaryError):
             canary.validate_config(invalid)
+
+    def test_environment_file_is_literal_private_and_allowlisted(self) -> None:
+        environment_file = self.root / "environment"
+        values = {
+            "BOOST_GATEWAY_CANARY_HOST": self.config.host,
+            "BOOST_GATEWAY_CANARY_USER_A": self.config.user_a,
+            "BOOST_GATEWAY_CANARY_USER_B": self.config.user_b,
+            "BOOST_GATEWAY_CANARY_TOKEN_A": "$TOKEN_A_IS_LITERAL",
+            "BOOST_GATEWAY_CANARY_TOKEN_B": self.config.token_b,
+            "BOOST_GATEWAY_CANARY_ALERTMANAGER_URL": self.config.alertmanager_url,
+        }
+        environment_file.write_text(
+            "\n".join(f"{name}={value}" for name, value in values.items()) + "\n",
+            encoding="utf-8",
+        )
+        environment_file.chmod(0o600)
+
+        loaded = canary.load_environment_file(environment_file)
+        config = canary.config_from_mapping(loaded)
+
+        self.assertEqual("$TOKEN_A_IS_LITERAL", config.token_a)
+        environment_file.chmod(0o644)
+        with self.assertRaisesRegex(canary.CanaryError, "0600"):
+            canary.load_environment_file(environment_file)
+
+    def test_environment_file_rejects_unknown_duplicate_and_symlink(self) -> None:
+        environment_file = self.root / "environment"
+        environment_file.write_text("UNEXPECTED=value\n", encoding="utf-8")
+        environment_file.chmod(0o600)
+        with self.assertRaisesRegex(canary.CanaryError, "unknown"):
+            canary.load_environment_file(environment_file)
+
+        environment_file.write_text(
+            "BOOST_GATEWAY_CANARY_HOST=one\nBOOST_GATEWAY_CANARY_HOST=two\n",
+            encoding="utf-8",
+        )
+        with self.assertRaisesRegex(canary.CanaryError, "duplicate"):
+            canary.load_environment_file(environment_file)
+
+        link = self.root / "environment-link"
+        link.symlink_to(environment_file)
+        with self.assertRaisesRegex(canary.CanaryError, "non-symlink"):
+            canary.load_environment_file(link)
 
     def test_success_sample_binds_candidate_without_tokens_and_is_create_only(
         self,
