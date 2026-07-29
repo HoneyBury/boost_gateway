@@ -242,7 +242,7 @@
     {
       "id": "TODO-0013",
       "title": "Run an external synthetic business canary",
-      "status": "open",
+      "status": "completed",
       "priority": "P1",
       "category": "long-run-canary",
       "description": "Run a low-impact client outside the service host so availability and business latency reflect the real network path without contaminating service CPU and memory evidence.",
@@ -253,7 +253,7 @@
         "The 72-hour and 30-day aggregators compute success rate, latency percentiles, gaps and maintenance-window-inclusive availability from the raw samples."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-07-29T02:47:59Z",
       "github": {
         "issue_number": 27,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27"
@@ -262,7 +262,7 @@
     {
       "id": "TODO-0014",
       "title": "Enforce pull request and main branch governance",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "repository-governance",
       "description": "Convert existing build, test and governance capability into organization-level controls so an enterprise release cannot depend only on an operator remembering to run manual workflows.",
@@ -273,7 +273,7 @@
         "Release creation requires the governed main commit and cannot bypass the immutable tag ruleset or required candidate evidence."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-07-29T02:47:59Z",
       "github": {
         "issue_number": 28,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/28"
@@ -282,7 +282,7 @@
     {
       "id": "TODO-0015",
       "title": "Harden workflow supply chain and documentation governance",
-      "status": "open",
+      "status": "completed",
       "priority": "P1",
       "category": "platform-governance",
       "description": "Close workflow dependency and documentation drift risks in parallel with deployment work so supply-chain attestations are produced by a governed pipeline and current documents remain a reliable operating surface.",
@@ -293,7 +293,7 @@
         "Every planned platform or governance gap maps to an open TODO/Issue, and documentation/TODO drift is blocked by CI."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-07-29T02:47:59Z",
       "github": {
         "issue_number": 29,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/29"
