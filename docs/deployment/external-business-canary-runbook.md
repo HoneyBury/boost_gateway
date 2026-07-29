@@ -59,12 +59,18 @@ delivery succeeds.
 
 ## Install
 
-Install the published Linux wheel for the runner architecture into the system
-Python environment. Do not import the SDK from a repository checkout. Verify
-that the native library bundled in the wheel reports 4.2.0:
+Install the published Linux wheel for the runner architecture into a dedicated
+root-owned virtual environment. Do not modify the Ubuntu system Python and do
+not import the SDK from a repository checkout. Verify the downloaded wheel
+against `SHA256SUMS.txt` before installation, then confirm that its bundled
+native library reports 4.2.0:
 
 ```bash
-python3 -c 'import boost_gateway_sdk as sdk; print(sdk.assert_compatible_version())'
+sudo python3 -m venv /opt/boost-gateway-canary/venv
+sudo /opt/boost-gateway-canary/venv/bin/pip install \
+  /path/to/boost_gateway_sdk-4.2.0-py3-none-manylinux_2_39_aarch64.whl
+sudo /opt/boost-gateway-canary/venv/bin/python -c \
+  'import boost_gateway_sdk as sdk; print(sdk.assert_compatible_version())'
 ```
 
 Export the active immutable `/opt/boost-gateway/current/record.json` from the
@@ -104,12 +110,12 @@ UTC half-open interval. Do not add a window retrospectively to hide an outage.
 Use the checked-in example as the schema.
 
 ```bash
-sudo -u boost-gateway-canary python3 \
+sudo -u boost-gateway-canary /opt/boost-gateway-canary/venv/bin/python \
   /usr/local/libexec/boost-gateway-canary/external_business_canary.py \
   aggregate --window 72h --end 2026-08-07T00:00:00Z \
   --maintenance-windows /etc/boost-gateway-canary/maintenance-windows.json
 
-sudo -u boost-gateway-canary python3 \
+sudo -u boost-gateway-canary /opt/boost-gateway-canary/venv/bin/python \
   /usr/local/libexec/boost-gateway-canary/external_business_canary.py \
   aggregate --window 30d --end 2026-09-06T00:00:00Z \
   --maintenance-windows /etc/boost-gateway-canary/maintenance-windows.json

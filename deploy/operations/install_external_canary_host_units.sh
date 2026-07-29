@@ -2,6 +2,7 @@
 set -Eeuo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+PYTHON_BIN=/opt/boost-gateway-canary/venv/bin/python
 ENVIRONMENT_FILE=""
 DEPLOYMENT_RECORD=""
 RUN_NOW=false
@@ -38,6 +39,8 @@ done
   || fail '--deployment-record must name the exported immutable deployment record'
 [[ $(stat -c '%u:%a' "${ENVIRONMENT_FILE}") == 0:600 ]] \
   || fail 'environment file must be root-owned mode 0600'
+[[ -x ${PYTHON_BIN} ]] \
+  || fail 'released SDK venv is missing: /opt/boost-gateway-canary/venv/bin/python'
 
 if ! getent group boost-gateway-canary >/dev/null; then
   groupadd --system boost-gateway-canary
@@ -68,7 +71,7 @@ install -o root -g root -m 0644 \
   "${ROOT}/deploy/systemd/boost-gateway-external-canary-watchdog.timer" \
   /etc/systemd/system/
 
-runuser -u boost-gateway-canary -- /usr/bin/python3 -c \
+runuser -u boost-gateway-canary -- "${PYTHON_BIN}" -c \
   'import boost_gateway_sdk as sdk; sdk.assert_compatible_version()' \
   || fail 'released BoostGateway Python SDK 4.2.0 is not importable by the canary user'
 systemctl daemon-reload

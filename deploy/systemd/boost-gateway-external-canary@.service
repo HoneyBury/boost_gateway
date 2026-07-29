@@ -9,7 +9,7 @@ ConditionPathExists=/etc/boost-gateway-canary/deployment-record.json
 Type=oneshot
 Environment=PYTHONDONTWRITEBYTECODE=1
 EnvironmentFile=/etc/boost-gateway-canary/environment
-ExecStart=/usr/bin/python3 /usr/local/libexec/boost-gateway-canary/external_business_canary.py %i
+ExecStart=/opt/boost-gateway-canary/venv/bin/python /usr/local/libexec/boost-gateway-canary/external_business_canary.py %i
 User=boost-gateway-canary
 Group=boost-gateway-canary
 UMask=0027
@@ -38,4 +38,3 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 ReadWritePaths=/var/lib/boost-gateway-canary
 TimeoutStartSec=50s
-
