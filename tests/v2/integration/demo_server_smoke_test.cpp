@@ -648,11 +648,19 @@ TEST(V2DemoServerSmokeTest, MetricsExposeBackendRouteLatencyHistogram) {
     metrics->record_latency(v2::service::ServiceId::kLogin, 1'500);
     metrics->record_latency(v2::service::ServiceId::kLogin, 40'000);
     metrics->record_latency(v2::service::ServiceId::kLogin, 700'000);
+    metrics->record_transport_read_failure(v2::service::ServiceId::kLogin);
+    metrics->record_transport_retry_recovered(v2::service::ServiceId::kLogin);
 
     const auto snapshot = server.metrics_snapshot();
     EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_login_avg_latency_us"),
               std::string::npos);
     EXPECT_NE(snapshot.prometheus_text.find("gateway_backend_login_p99_latency_us 1000000"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find(
+                  "gateway_backend_login_transport_read_failures_total 1"),
+              std::string::npos);
+    EXPECT_NE(snapshot.prometheus_text.find(
+                  "gateway_backend_login_transport_retry_recovered_total 1"),
               std::string::npos);
     EXPECT_NE(snapshot.prometheus_text.find(
                   "gateway_backend_route_latency_us_bucket{service=\"login\",le=\"1000000\"} 3"),
@@ -666,5 +674,7 @@ TEST(V2DemoServerSmokeTest, MetricsExposeBackendRouteLatencyHistogram) {
     const auto& login = diagnostics["backend_metrics"]["login"];
     EXPECT_EQ(login["p50_latency_us"], 50'000);
     EXPECT_EQ(login["p99_latency_us"], 1'000'000);
+    EXPECT_EQ(login["transport_read_failures"], 1);
+    EXPECT_EQ(login["transport_retry_recovered"], 1);
     ASSERT_TRUE(login["latency_buckets"].is_array());
 }

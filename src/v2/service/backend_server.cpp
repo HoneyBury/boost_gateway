@@ -1,5 +1,6 @@
 #include "v2/service/backend_server.h"
 
+#include "app/logging.h"
 #include "v2/service/backend_frame_codec.h"
 
 #include <boost/asio/bind_executor.hpp>
@@ -114,23 +115,27 @@ void BackendServer::start() {
 void BackendServer::stop() {
     std::scoped_lock stop_lock(stop_mutex_);
     running_.store(false, std::memory_order_release);
-    if (acceptor_) {
-        boost::system::error_code ec;
-        acceptor_->close(ec);
-    }
-    io_context_.stop();
     if (thread_.joinable()) {
+        // The acceptor is otherwise used exclusively by the io_context thread.
+        // Closing it there avoids racing a synchronous stop with async_accept.
+        asio::post(io_context_, [this] {
+            if (acceptor_) {
+                boost::system::error_code ec;
+                acceptor_->close(ec);
+            }
+        });
         thread_.join();
     }
+    io_context_.stop();
 
-    std::vector<std::thread> session_threads;
+    std::vector<SessionThread> session_threads;
     {
         std::scoped_lock lock(session_mutex_);
         session_threads.swap(session_threads_);
     }
-    for (auto& session_thread : session_threads) {
-        if (session_thread.joinable()) {
-            session_thread.join();
+    for (auto& session : session_threads) {
+        if (session.thread.joinable()) {
+            session.thread.join();
         }
     }
 
@@ -152,6 +157,36 @@ void BackendServer::stop() {
 std::uint16_t BackendServer::local_port() const {
     if (!acceptor_ || !acceptor_->is_open()) return 0;
     return acceptor_->local_endpoint().port();
+}
+
+std::size_t BackendServer::tracked_session_thread_count() const {
+    std::scoped_lock lock(session_mutex_);
+    return session_threads_.size();
+}
+
+void BackendServer::reap_completed_session_threads_locked() {
+    auto session = session_threads_.begin();
+    while (session != session_threads_.end()) {
+        if (!session->completed ||
+            !session->completed->load(std::memory_order_acquire)) {
+            ++session;
+            continue;
+        }
+        // Completion is published only after the worker's socket cleanup has
+        // released session_mutex_, so joining here cannot wait on this lock.
+        if (session->thread.joinable()) {
+            session->thread.join();
+        }
+        session = session_threads_.erase(session);
+    }
+}
+
+void BackendServer::remove_session_socket(
+    const std::shared_ptr<tcp::socket>& socket) {
+    std::scoped_lock lock(session_mutex_);
+    session_sockets_.erase(
+        std::remove(session_sockets_.begin(), session_sockets_.end(), socket),
+        session_sockets_.end());
 }
 
 bool BackendServer::setup_tls_context() {
@@ -221,9 +256,30 @@ void BackendServer::do_accept() {
             if (!running_) {
                 return;
             }
-            session_threads_.emplace_back([this, socket] {
-                handle_session(socket);
-            });
+            reap_completed_session_threads_locked();
+
+            auto completed = std::make_shared<std::atomic<bool>>(false);
+            session_threads_.emplace_back();
+            auto& session = session_threads_.back();
+            session.completed = completed;
+            try {
+                session.thread = std::thread([this, socket, completed] {
+                    try {
+                        handle_session(socket);
+                    } catch (...) {
+                        boost::system::error_code close_ec;
+                        socket->close(close_ec);
+                        remove_session_socket(socket);
+                        LOG_ERROR("BackendServer session terminated with an exception");
+                    }
+                    completed->store(true, std::memory_order_release);
+                });
+            } catch (...) {
+                session_threads_.pop_back();
+                boost::system::error_code close_ec;
+                socket->close(close_ec);
+                LOG_ERROR("BackendServer failed to start a session thread");
+            }
         }
         do_accept();
     });
@@ -288,12 +344,7 @@ void BackendServer::handle_plain_session(std::shared_ptr<tcp::socket> socket) {
             break;
         }
     }
-    {
-        std::scoped_lock lock(session_mutex_);
-        session_sockets_.erase(
-            std::remove(session_sockets_.begin(), session_sockets_.end(), socket),
-            session_sockets_.end());
-    }
+    remove_session_socket(socket);
 }
 
 void BackendServer::handle_tls_session(std::shared_ptr<tcp::socket> socket) {
@@ -326,12 +377,7 @@ void BackendServer::handle_tls_session(std::shared_ptr<tcp::socket> socket) {
         boost::system::error_code ec;
         socket->close(ec);
     }
-    {
-        std::scoped_lock lock(session_mutex_);
-        session_sockets_.erase(
-            std::remove(session_sockets_.begin(), session_sockets_.end(), socket),
-            session_sockets_.end());
-    }
+    remove_session_socket(socket);
 }
 
 }  // namespace v2::service

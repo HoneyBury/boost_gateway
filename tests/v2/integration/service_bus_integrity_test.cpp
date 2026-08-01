@@ -296,6 +296,99 @@ TEST(ServiceBusIntegrity, BackendServerStopCancelsWriteToNonReadingPeer) {
     client.close(ec);
 }
 
+TEST(ServiceBusIntegrity, BackendServerReapsCompletedSessionThreadsWhileRunning) {
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["echo"] = [](const v2::service::BackendEnvelope& request) {
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload = request.payload;
+        return response;
+    };
+
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_enabled = false,
+            .session_idle_timeout = std::chrono::milliseconds(10),
+        },
+        std::move(handlers));
+    server.start();
+
+    for (int index = 0; index < 32; ++index) {
+        v2::service::BackendConnection connection(
+            v2::service::BackendConnectionOptions{
+                .host = "127.0.0.1",
+                .port = server.local_port(),
+            });
+        ASSERT_TRUE(connection.connect());
+        auto request = payload_envelope("reap-" + std::to_string(index));
+        request.message_type = "echo";
+        ASSERT_TRUE(connection.send_request(request).has_value());
+        connection.close();
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+
+    v2::service::BackendConnection active(
+        v2::service::BackendConnectionOptions{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+        });
+    ASSERT_TRUE(active.connect());
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_LE(server.tracked_session_thread_count(), 2U);
+
+    active.close();
+    server.stop();
+    EXPECT_EQ(server.tracked_session_thread_count(), 0U);
+}
+
+TEST(ServiceBusIntegrity, BackendServerDefaultIdleWindowCoversDefaultPoolCycle) {
+    const v2::service::BackendServerOptions options;
+    EXPECT_GT(options.session_idle_timeout, std::chrono::minutes(8));
+}
+
+TEST(ServiceBusIntegrity, BackendServerStopIsSafeDuringSessionThreadReaping) {
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["echo"] = [](const v2::service::BackendEnvelope& request) {
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload = request.payload;
+        return response;
+    };
+
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_enabled = false,
+            .session_idle_timeout = std::chrono::milliseconds(10),
+        },
+        std::move(handlers));
+    server.start();
+    const auto port = server.local_port();
+    std::atomic<bool> keep_connecting{true};
+    std::thread connector([&] {
+        while (keep_connecting.load(std::memory_order_acquire)) {
+            asio::io_context io;
+            tcp::socket socket(io);
+            boost::system::error_code ec;
+            socket.connect(
+                tcp::endpoint(asio::ip::make_address("127.0.0.1"), port), ec);
+            socket.close(ec);
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const auto started_at = std::chrono::steady_clock::now();
+    server.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - started_at;
+    keep_connecting.store(false, std::memory_order_release);
+    connector.join();
+
+    EXPECT_LT(elapsed, std::chrono::seconds(1));
+    EXPECT_EQ(server.tracked_session_thread_count(), 0U);
+}
+
 TEST(ServiceBusIntegrity, LoginBackendErrorPropagation) {
     v2::service::BackendServer::HandlerMap handlers;
     handlers["login_request"] = [](const v2::service::BackendEnvelope&) {
@@ -888,6 +981,7 @@ TEST(ServiceBusIntegrity, GatewayBridgeRecoversAfterBackendConfigUpdate) {
 TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) {
     std::atomic<int> stale_requests{0};
     std::atomic<int> recovered_requests{0};
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
 
     v2::service::BackendServer::HandlerMap stale_handlers;
     stale_handlers["login_request"] = [&](const v2::service::BackendEnvelope& req) {
@@ -907,7 +1001,8 @@ TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) 
             .port = stale_server.local_port(),
             .timeout = std::chrono::milliseconds(20),
             .connect_timeout = std::chrono::milliseconds(100),
-        });
+        },
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
 
     const auto timed_out = bridge.route(
         v2::service::ServiceId::kLogin,
@@ -916,6 +1011,10 @@ TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) 
     EXPECT_FALSE(timed_out.success);
     EXPECT_EQ(timed_out.error, v2::service::ServiceErrorCode::kTimeout);
     EXPECT_EQ(stale_requests.load(), 2);
+    const auto timeout_metrics = metrics->snapshot(v2::service::ServiceId::kLogin);
+    EXPECT_EQ(timeout_metrics.transport_read_failures, 2U);
+    EXPECT_EQ(timeout_metrics.transport_retry_recovered, 0U);
+    EXPECT_EQ(timeout_metrics.transport_retry_exhausted, 1U);
 
     v2::service::BackendServer::HandlerMap recovered_handlers;
     recovered_handlers["login_request"] = [&](const v2::service::BackendEnvelope&) {
@@ -949,6 +1048,59 @@ TEST(ServiceBusIntegrity, GatewayBridgeTimeoutClosesStaleConnectionAndRecovers) 
     EXPECT_TRUE(recovered.success);
     EXPECT_EQ(recovered.response_payload, R"({"status":"ok","user_id":"alice"})");
     EXPECT_EQ(recovered_requests.load(), 1);
+}
+
+TEST(ServiceBusIntegrity, GatewayBridgeRecoversAfterServerClosesIdlePool) {
+    std::atomic<int> handled_requests{0};
+    v2::service::BackendServer::HandlerMap handlers;
+    handlers["login_request"] = [&](const v2::service::BackendEnvelope& request) {
+        ++handled_requests;
+        v2::service::BackendEnvelope response;
+        response.kind = v2::service::MessageKind::kResponse;
+        response.payload = request.payload;
+        return response;
+    };
+    v2::service::BackendServer server(
+        v2::service::BackendServerOptions{
+            .port = 0,
+            .tls_enabled = false,
+            .session_idle_timeout = std::chrono::milliseconds(30),
+        },
+        std::move(handlers));
+    server.start();
+
+    auto metrics = std::make_shared<v2::gateway::BackendMetrics>();
+    v2::gateway::GatewayServiceBridge bridge(
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = server.local_port(),
+            .timeout = std::chrono::milliseconds(100),
+            .connect_timeout = std::chrono::milliseconds(100),
+        },
+        std::nullopt, std::nullopt, std::nullopt, std::nullopt, metrics);
+
+    for (int request = 0; request < 8; ++request) {
+        const auto result = bridge.route(
+            v2::service::ServiceId::kLogin,
+            "login_request",
+            "warm-" + std::to_string(request));
+        ASSERT_TRUE(result.success) << "request=" << request;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(80));
+
+    const auto recovered = bridge.route(
+        v2::service::ServiceId::kLogin, "login_request", "after-idle");
+    const auto snapshot = metrics->snapshot(v2::service::ServiceId::kLogin);
+
+    bridge.shutdown();
+    server.stop();
+
+    EXPECT_TRUE(recovered.success);
+    EXPECT_EQ(recovered.response_payload, "after-idle");
+    EXPECT_EQ(handled_requests.load(), 9);
+    EXPECT_EQ(snapshot.transport_retry_recovered, 1U);
+    EXPECT_EQ(snapshot.transport_retry_exhausted, 0U);
+    EXPECT_GE(snapshot.transport_write_failures + snapshot.transport_read_failures, 1U);
 }
 
 TEST(ServiceBusIntegrity, GatewayBridgeCircuitBreakerHalfOpenProbeRecovers) {
