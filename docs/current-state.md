@@ -7,11 +7,11 @@
 
 ## 当前结论
 
-- 仓库发布线是 v3.6.4 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
-  `miniserver` 在 v3.6.4 发布并完成受控 upgrade 前继续运行已验证的 v3.6.2。
+- 仓库发布线是 v3.6.5 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
+  `miniserver` 在 v3.6.5 发布并完成受控 upgrade 前继续运行已验证的 v3.6.2。
 - v3.6.2 三平台 runtime、SDK 4.2.0、symbols/dSYM 和供应链资产保持不可变历史事实；
-  Linux ARM64 与 macOS ARM64 不进入 v3.6.4 新资产集合。
-- Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.4 服务端；
+  Linux ARM64 与 macOS ARM64 不进入 v3.6.5 新资产集合。
+- Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.5 服务端；
   canary deployment identity 必须记录实际 SDK 版本，不得伪装为 4.2.1。
 - 当前主线不是继续增加 demo 或协议表面积，而是执行 Ubuntu 24.04 x64 单节点自动
   部署、观测、追溯、备份恢复、72 小时预演和 30 天不可变运行计划。

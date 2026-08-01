@@ -1,10 +1,10 @@
-# v3.6.4 Linux x64 发布后企业运营主线
+# v3.6.5 Linux x64 发布后企业运营主线
 
 更新时间：2026-08-01
 
 ## 目标
 
-当前两个月不扩大业务或默认协议面，而是把 v3.6.4 Linux x64 不可变资产交付为可重复运营的
+当前两个月不扩大业务或默认协议面，而是把 v3.6.5 Linux x64 不可变资产交付为可重复运营的
 Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢复、回滚和仓库强制
 治理完成后，执行 72 小时预演，并让同一 tag/SHA/runtime digest 连续运行至少 30 天。
 
@@ -26,7 +26,7 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 执行顺序
 
-1. **冻结部署输入**：只接受 v3.6.4 Linux x64 release archive、checksum、SBOM、provenance 和明确
+1. **冻结部署输入**：只接受 v3.6.5 Linux x64 release archive、checksum、SBOM、provenance 和明确
    的配置版本，不在服务器上构建源码。
 2. **实现 host preflight**：校验 OS、磁盘、端口、Docker/Compose、时钟、ulimit、目录
    权限、secret/config 和备份目标。

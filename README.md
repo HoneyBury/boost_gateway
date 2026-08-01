@@ -4,7 +4,7 @@ BoostGateway 是一个面向实时业务的企业级 C++20 服务框架。默认
 Login、Room、Battle、Matchmaking、Leaderboard 和多语言 SDK 组成，并提供 Redis/Raft、
 TLS、观测、容器部署和生产证据门禁。
 
-最新发布版本是 [v3.6.4](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.4)，
+最新发布版本是 [v3.6.5](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.5)，
 包含 Linux x64 runtime、SDK 4.2.1，以及对应的符号、SBOM、checksum 和 provenance。
 ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsioDemo`，部分兼容路径仍保留旧名称。
 
@@ -15,7 +15,7 @@ ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsio
 | 默认传输 | SDK + TCP Gateway + `BackendEnvelope`；gRPC 仍为实验能力 |
 | 默认依赖 | Conan 2.8.1、仓库 profile/lockfile、CMake `conan` provider |
 | 支持平台 | Linux x64、Linux ARM64、macOS ARM64；平台证据不可互换 |
-| 发布状态 | v3.6.4 Linux x64 runtime、SDK 4.2.1 和符号资产；ARM 保留 v3.6.2 历史资产 |
+| 发布状态 | v3.6.5 Linux x64 runtime、SDK 4.2.1 和符号资产；ARM 保留 v3.6.2 历史资产 |
 | 当前主线 | Ubuntu 24.04 x64 单节点自动部署、观测、备份恢复和 30 天不可变验证 |
 
 权威事实和当前边界见 [当前项目事实源](docs/current-state.md)，当前执行顺序见

@@ -11,7 +11,7 @@
 | `v3.3.2` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 校验 native 主版本 `4.x` | 校验 native 主版本 `4.x` | stable |
 | `v3.5.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | stable |
 | `v3.6.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.2` GitHub Release 三平台 wheel | `v3.6.2` GitHub Release 三 RID NuGet | compatible historical package |
-| `v3.6.4+` | `v4.2.1` | `find_package(boost_gateway_sdk 4.2.1 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.4` GitHub Release Linux x64 wheel | `v3.6.4` GitHub Release Linux x64 RID NuGet | supported on linux-x64 |
+| `v3.6.5+` | `v4.2.1` | `find_package(boost_gateway_sdk 4.2.1 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.5` GitHub Release Linux x64 wheel | `v3.6.5` GitHub Release Linux x64 RID NuGet | supported on linux-x64 |
 
 ## 客户端兼容矩阵
 
@@ -53,7 +53,7 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。
 - 兼容升级默认策略：Gateway patch/minor 版本保持 SDK `4.x` 主版本兼容；破坏性协议变化必须提升 SDK 主版本并更新本矩阵。
-- Python/C# 继续是轻量 wrapper；`v3.6.4` 只承诺 Linux x64 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
+- Python/C# 继续是轻量 wrapper；`v3.6.5` 只承诺 Linux x64 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
 
 ## 示例入口
 
