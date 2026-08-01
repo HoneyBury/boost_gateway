@@ -15,7 +15,7 @@ class FakeNativeFunction:
 
     def __call__(self, *_args):
         if self.name == "gsdk_version":
-            return b"4.2.0"
+            return b"4.2.1"
         if self.name == "gsdk_create":
             return 1
         return None

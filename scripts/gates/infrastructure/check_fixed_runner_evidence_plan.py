@@ -400,17 +400,15 @@ def main() -> int:
     )
     add(
         checks,
-        "workflow:release:three-platform-runner-matrix",
+        "workflow:release:linux-x64-runner",
         all(
             token in release_workflow
             for token in (
                 "node-aoi-omen-gaming-laptop-16-am0xxx",
-                "node-honeybury-m4-linux-arm64",
-                "macos-arm64-candidate",
-                "format('[\"{0}\"]', inputs.platform)",
+                "platform: [linux-x64]",
             )
         ),
-        ".github/workflows/release.yml routes tag and manual candidates to native platform runners",
+        ".github/workflows/release.yml routes tag and manual candidates to the governed Linux x64 runner",
     )
 
     conan_validate_workflow = read(".github/workflows/conan-validate.yml")

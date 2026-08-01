@@ -16,7 +16,7 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 
 
 def sha256_bytes(data: bytes) -> str:

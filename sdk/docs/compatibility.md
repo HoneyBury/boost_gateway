@@ -1,6 +1,6 @@
 # SDK 与 Gateway 兼容矩阵
 
-更新时间：2026-07-24
+更新时间：2026-08-01
 
 本文档记录当前客户端 SDK 与 BoostGateway 服务端的生产接入口径。默认事实源以 SDK native 版本、C ABI、语言封装和真实 gateway full-flow gate 为准。
 
@@ -10,7 +10,8 @@
 | --- | --- | --- | --- | --- | --- | --- |
 | `v3.3.2` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 校验 native 主版本 `4.x` | 校验 native 主版本 `4.x` | stable |
 | `v3.5.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | 包元数据和 native 主版本均为 `4.2.0` / `4.x` | stable |
-| `v3.6.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.2` GitHub Release 原生 wheel | `v3.6.2` GitHub Release 三 RID NuGet | stable on listed RIDs |
+| `v3.6.x` | `v4.2.0` | `find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.2` GitHub Release 三平台 wheel | `v3.6.2` GitHub Release 三 RID NuGet | compatible historical package |
+| `v3.6.3+` | `v4.2.1` | `find_package(boost_gateway_sdk 4.2.1 CONFIG REQUIRED)` | `gsdk_version()` 主版本 `4.x` | `v3.6.3` GitHub Release Linux x64 wheel | `v3.6.3` GitHub Release Linux x64 RID NuGet | supported on linux-x64 |
 
 ## 客户端兼容矩阵
 
@@ -18,8 +19,8 @@
 | --- | --- | --- | --- | --- |
 | C++ | CMake install 后 `boost_gateway::sdk` | 编译期 `BOOST_GATEWAY_SDK_VERSION` | `sdk/examples/full_flow_client/main.cpp` | 默认同步 TCP API，调用方负责线程归属和对象生命周期 |
 | C ABI | `boost_gateway_sdk_dll` 动态库 | `gsdk_version()` | 由 Python/C# wrapper 与 C ABI 单测覆盖 | ABI 边界捕获异常，错误通过返回值和 response text 传递 |
-| Python | GitHub Release 平台 wheel，或 `BOOST_GATEWAY_SDK_LIBRARY` | `assert_compatible_version()` 要求 native `4.x` | `sdk/examples/python_full_flow.py` | 支持 `linux-x64`、`linux-arm64`、`osx-arm64`；PyPI 未启用 |
-| C# | GitHub Release `BoostGateway.Sdk.4.2.0.nupkg` | `AssertCompatibleNativeVersion()` 要求 native `4.x` | `sdk/examples/csharp_full_flow/Program.cs` | 一个包包含三个支持 RID；NuGet.org 未启用 |
+| Python | GitHub Release 平台 wheel，或 `BOOST_GATEWAY_SDK_LIBRARY` | `assert_compatible_version()` 要求精确 native package 版本 | `sdk/examples/python_full_flow.py` | 4.2.1 发布支持 `linux-x64`；PyPI 未启用 |
+| C# | GitHub Release `BoostGateway.Sdk.4.2.1.nupkg` | `AssertCompatibleNativeVersion()` 要求精确 native package 版本 | `sdk/examples/csharp_full_flow/Program.cs` | 4.2.1 包含 `linux-x64` RID；NuGet.org 未启用 |
 
 ## 运行时校验
 
@@ -52,7 +53,7 @@ python3 scripts/verify_sdk_enterprise_delivery.py --build-dir build/default --sk
 - `on_disconnect` 当前由 heartbeat failure 触发；主动 `disconnect()` 不触发该回调。
 - `on_push` 回调在同步请求或 heartbeat 读到 push 时触发，回调内不应阻塞或递归调用同一个 client 的同步 API。
 - 兼容升级默认策略：Gateway patch/minor 版本保持 SDK `4.x` 主版本兼容；破坏性协议变化必须提升 SDK 主版本并更新本矩阵。
-- Python/C# 继续是轻量 wrapper；`v3.6.2` 只承诺 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
+- Python/C# 继续是轻量 wrapper；`v3.6.3` 只承诺 Linux x64 GitHub Release 的 checksum、SBOM、attestation 和线上 clean-consumer 分发，不承诺 PyPI/NuGet.org registry 可用。
 
 ## 示例入口
 

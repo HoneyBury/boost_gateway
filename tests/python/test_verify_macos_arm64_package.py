@@ -28,7 +28,7 @@ class VerifyMacosArm64PackageTests(unittest.TestCase):
             (install_root / "lib" / "libboost_gateway_sdk.dylib").write_bytes(b"library")
 
             library = mock.Mock()
-            library.gsdk_version.return_value = b"4.2.0"
+            library.gsdk_version.return_value = b"4.2.1"
 
             def run(command: list[str], **_: object) -> str:
                 if command[0] == "file":

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "gateway_compatibility": "v3.5.x-v3.6.x",
-  "sdk_version": "4.2.0",
+  "sdk_version": "4.2.1",
   "native_abi_major": 4,
   "packages": [
     {
@@ -9,22 +9,13 @@
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "manylinux_2_35_x86_64",
-      "status": "supported_github_release_v3.6.1"
-    },
-    {
-      "rid": "linux-arm64",
-      "python": ">=3.8",
-      "dotnet": "8.0",
-      "wheel_platform": "manylinux_2_39_aarch64",
-      "status": "supported_github_release_v3.6.1"
-    },
-    {
-      "rid": "osx-arm64",
-      "python": ">=3.8",
-      "dotnet": "8.0",
-      "wheel_platform": "macosx_26_0_arm64",
-      "status": "supported_github_release_v3.6.1"
+      "status": "release_target_v3.6.3"
     }
+  ],
+  "historical_packages": [
+    {"sdk_version": "4.2.0", "rid": "linux-x64", "last_release": "v3.6.2"},
+    {"sdk_version": "4.2.0", "rid": "linux-arm64", "last_release": "v3.6.2"},
+    {"sdk_version": "4.2.0", "rid": "osx-arm64", "last_release": "v3.6.2"}
   ],
   "public_registries": {
     "pypi": "not_enabled",

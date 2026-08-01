@@ -26,9 +26,7 @@
       "labels": { "os": "linux", "arch": "x64" },
       "capabilities": {},
       "platforms": {
-        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
-        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
-        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]"
       },
       "vars_hint": "RELEASE_RUNNER"
     },
@@ -38,9 +36,7 @@
       "labels": { "os": "linux", "arch": "x64", "mode": "published-asset-verification" },
       "capabilities": { "docker": true },
       "platforms": {
-        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]",
-        "linux-arm64": "[\"self-hosted\",\"Linux\",\"ARM64\",\"node-honeybury-m4-linux-arm64\"]",
-        "macos-arm64": "[\"self-hosted\",\"macOS\",\"ARM64\",\"macos-arm64-candidate\"]"
+        "linux-x64": "[\"self-hosted\",\"Linux\",\"X64\",\"node-aoi-omen-gaming-laptop-16-am0xxx\"]"
       },
       "vars_hint": "RELEASE_ASSET_VERIFICATION_RUNNER"
     },

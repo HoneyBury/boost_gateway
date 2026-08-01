@@ -37,7 +37,7 @@ def test_docker_command_supports_linux_arm64(tmp_path: Path) -> None:
 def test_consumer_project_uses_installed_cmake_package(tmp_path: Path) -> None:
     write_consumer_project(tmp_path)
     cmake = (tmp_path / "CMakeLists.txt").read_text(encoding="utf-8")
-    assert "find_package(boost_gateway_sdk 4.2.0 CONFIG REQUIRED)" in cmake
+    assert "find_package(boost_gateway_sdk 4.2.1 CONFIG REQUIRED)" in cmake
     assert "boost_gateway::sdk" in cmake
 
 

@@ -23,7 +23,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-candidate-evidence.yml` | Production / Candidate Evidence | 手动 | 独立 R0 production candidate 聚合 |
 | `production-gates.yml` | Production / Gate Diagnostics | 手动 | P5 resilience 与 P6 production evidence 诊断入口 |
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
-| `release.yml` | Release / Package & Publish | v* tag / 手动 | 三平台 runtime/symbol/wheel、三 RID NuGet、测试与门禁；手动 `platform=all` 预演，tag 才发布/attest |
+| `release.yml` | Release / Package & Publish | v* tag / 手动 | Linux x64 runtime/symbol/wheel、x64 RID NuGet、测试与门禁；tag 才发布/attest |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收 runtime/symbol、wheel/NuGet、checksum、consumer 和 attestations |
 | `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan 与两个 60 秒 libFuzzer target；三个 job 均有硬超时 |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
@@ -52,12 +52,11 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
-生产 workflow 的 `platform` 必须显式选择 `linux-x64`、`linux-arm64` 或
-`macos-arm64`。Release、R0、performance、long-soak/capacity、P5/P6、readiness 和
-published-asset verification 使用同一原生平台契约；profile、lockfile、build directory、
-Docker target 与 artifact suffix 不接受独立覆盖。tag Release 只有三平台 package 与
-多 RID NuGet job 全部成功后，才发布 runtime/symbol、三个 wheel、一个 NuGet、逐资产
-SPDX/provenance metadata 和统一 checksum manifest。
+生产证据 workflow 的 `platform` 必须显式选择其准入平台；profile、lockfile、build
+directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.3 的 Release 与
+published-asset verification 按独立 release manifest 只接受 `linux-x64`。tag Release
+只有 x64 package 与 NuGet job 全部成功后，才发布 runtime/symbol、一个 wheel、一个
+NuGet、逐资产 SPDX/provenance metadata 和统一 checksum manifest。
 
 `preprod-evidence.yml` 的 R5 默认使用 `docker_pull_policy=never`；完整
 Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 仅用于
@@ -67,7 +66,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 - Release 包: `boost-gateway-{version}-linux-x64.tar.gz`
 - macOS ARM64 候选包: `boost-gateway-{version}-macos-arm64.tar.gz`
-- SDK 发布包: 三个 `boost_gateway_sdk-4.2.0-*.whl`、一个多 RID `BoostGateway.Sdk.4.2.0.nupkg`
+- SDK 发布包: `boost_gateway_sdk-4.2.1-py3-none-manylinux_2_35_x86_64.whl`、Linux x64 RID `BoostGateway.Sdk.4.2.1.nupkg`
 - Linux symbols: `boost-gateway-{version}-linux-x64-debug-symbols.tar.gz`
 - macOS symbols: `boost-gateway-{version}-macos-arm64-dsym.tar.gz`
 - JWKS 轮换证据: `jwks-rotation-{platform}-{candidate-sha}`

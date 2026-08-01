@@ -15,12 +15,10 @@ on:
         type: choice
         options:
           - linux-x64
-          - linux-arm64
-          - macos-arm64
       tag:
         description: "Published release tag"
         required: true
-        default: "v3.5.2"
+        default: "v3.6.3"
       expected_commit:
         description: "Full commit SHA referenced by the tag"
         required: true
@@ -35,7 +33,7 @@ permissions:
 
 jobs:
   verify-published-assets:
-    runs-on: ${{ fromJSON(inputs.runner || (inputs.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || inputs.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]') }}
     timeout-minutes: 30
 
     steps:
@@ -47,7 +45,6 @@ jobs:
           [[ "$EXPECTED_COMMIT" =~ ^[0-9a-f]{40}$ ]]
 
       - name: Normalize stale Go cache permissions
-        if: inputs.platform != 'macos-arm64'
         shell: bash
         run: |
           set -euo pipefail
@@ -73,30 +70,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          case "$PRODUCTION_PLATFORM" in
-            linux-x64)
-              rid=linux-x64
-              wheel=boost_gateway_sdk-4.2.0-py3-none-manylinux_2_35_x86_64.whl
-              symbol=boost-gateway-${RELEASE_TAG}-linux-x64-debug-symbols.tar.gz
-              ;;
-            linux-arm64)
-              rid=linux-arm64
-              wheel=boost_gateway_sdk-4.2.0-py3-none-manylinux_2_39_aarch64.whl
-              symbol=boost-gateway-${RELEASE_TAG}-linux-arm64-debug-symbols.tar.gz
-              ;;
-            macos-arm64)
-              rid=osx-arm64
-              wheel=boost_gateway_sdk-4.2.0-py3-none-macosx_26_0_arm64.whl
-              symbol=boost-gateway-${RELEASE_TAG}-macos-arm64-dsym.tar.gz
-              ;;
-          esac
+          test "$PRODUCTION_PLATFORM" = linux-x64
+          rid=linux-x64
+          wheel=boost_gateway_sdk-4.2.1-py3-none-manylinux_2_35_x86_64.whl
+          symbol=boost-gateway-${RELEASE_TAG}-linux-x64-debug-symbols.tar.gz
           {
             echo "SDK_RID=$rid"
             echo "SDK_WHEEL_ASSET=$wheel"
             echo "SYMBOL_ASSET=$symbol"
-            echo "NUGET_ASSET=BoostGateway.Sdk.4.2.0.nupkg"
+            echo "NUGET_ASSET=BoostGateway.Sdk.4.2.1.nupkg"
             echo "SDK_PROVENANCE_ASSET=sdk-package-provenance-${rid}.json"
-            echo "NUGET_PROVENANCE_ASSET=sdk-package-provenance-multi-rid.json"
+            echo "NUGET_PROVENANCE_ASSET=sdk-package-provenance-nuget-linux-x64.json"
           } >> "$GITHUB_ENV"
 
       - name: Setup Python

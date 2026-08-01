@@ -34,7 +34,7 @@ if not native_candidates:
 
 setup(
     name="boost-gateway-sdk",
-    version="4.2.0",
+    version="4.2.1",
     description="Boost Gateway Game Server SDK - Python bindings",
     long_description="Python bindings for the Boost Gateway game server framework SDK",
     author="BoostGateway Team",

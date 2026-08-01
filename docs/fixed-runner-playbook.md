@@ -297,8 +297,8 @@ build directory 或 artifact suffix。action 会把选择与 `uname` 结果绑�
 - macOS ARM64 使用 Apple Clang ARM64 profile、Release lockfile 和原生 Mach-O；当前
   没有 Mac Debug lockfile，因此选择 Debug 会 fail closed。
 
-`release.yml` 手动触发只运行所选平台；tag 触发运行三平台矩阵，发布 job 只有在三份
-archive 和三份 SPDX 全部存在时才生成 `SHA256SUMS.txt`。Release mixed-binary gate
+`release.yml` 从 v3.6.3 起手动和 tag 触发都只运行 Linux x64；发布 job 只有在 x64
+runtime/symbol、wheel/NuGet 及四份 SPDX 全部存在时才生成 `SHA256SUMS.txt`。Release mixed-binary gate
 分别读取 `LEGACY_RAFT_SHA256_LINUX_X64`、`LEGACY_RAFT_SHA256_LINUX_ARM64` 和
 `LEGACY_RAFT_SHA256_MACOS_ARM64`；原生 v3.5.3 binary 默认位于对应平台持久 cache root
 的 `releases/v3.5.3/bin/v2_leaderboard_backend`。最终发布前必须分别预置和验收，禁止

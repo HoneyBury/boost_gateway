@@ -37,18 +37,18 @@ REQUIRED_FILES = {
 
 REQUIRED_TEXT = {
     "docs/current-state.md": [
-        "v3.6.2",
+        "v3.6.3 / SDK 4.2.1",
         "默认生产主链仍是 SDK + TCP gateway",
         "mainline-execution-plan.md",
     ],
     "docs/mainline-execution-plan.md": [
-        "v3.6.2 release archive",
+        "v3.6.3 Linux x64 release archive",
         "30 天不可变验证",
         "完成恢复演练",
     ],
     "sdk/docs/compatibility.md": [
         "v3.6.x",
-        "v4.2.0",
+        "v4.2.1",
         "BOOST_GATEWAY_SDK_LIBRARY",
         "disconnect callback",
     ],
@@ -80,6 +80,7 @@ REQUIRED_TEXT = {
         "linux-arm64",
         "macos-arm64",
         "v3.6.2",
+        "v3.6.3-release-target",
     ],
 }
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
