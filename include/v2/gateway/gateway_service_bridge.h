@@ -157,6 +157,9 @@ private:
 
     void record_route_result(v2::service::ServiceId target,
                              const BackendRoutingResult& result);
+    void record_transport_failure(
+        v2::service::ServiceId target,
+        v2::service::BackendConnection::FailureStage stage);
 
     BackendSlot login_slot_;
     BackendSlot room_slot_;

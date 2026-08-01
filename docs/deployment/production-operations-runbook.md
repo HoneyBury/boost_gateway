@@ -12,6 +12,7 @@
 | --- | --- | --- |
 | gateway 可用性 | `up{job="gateway"}`、`/ready` | 最基础的 scrape 与 readiness |
 | backend 错误率 | `gateway_backend_*_errors_total`、`gateway_backend_*_timeouts_total` | 当前后端 RED 指标事实源 |
+| backend transport 恢复 | `gateway_backend_*_transport_{not_connected,write_failures,read_failures,retry_recovered,retry_exhausted}_total` | 区分连接、读写和单次重试结果；`retry_exhausted` 必须关联业务失败调查 |
 | backend route latency | `gateway_backend_*_p99_latency_us`、`gateway_backend_route_latency_us_bucket`、`gateway_backend_*_avg_latency_us` | P99 gauge 和 histogram bucket 是告警主口径，avg 保留作趋势辅助 |
 | backend 成功响应 | `gateway_backend_*_successes_total` | gateway 观测到的后端成功响应；不是端到端业务 SLI |
 | 业务闭环 | release SDK full-flow | 当前 `/metrics` 不导出独立 login/room/battle 闭环成功计数，不能用空指标代替业务证据 |
@@ -113,6 +114,9 @@ sum by (__name__) (rate({__name__=~"gateway_backend_.*_errors_total"}[5m]))
 
 # 后端超时速率
 sum by (__name__) (rate({__name__=~"gateway_backend_.*_timeouts_total"}[5m]))
+
+# 后端 transport failure stage 与重试结果
+sum by (__name__) (increase({__name__=~"gateway_backend_.*_transport_.*_total"}[5m]))
 
 # leaderboard / Redis 相关错误
 rate(gateway_backend_leaderboard_errors_total[5m]) + rate(gateway_backend_leaderboard_timeouts_total[5m])
@@ -299,6 +303,9 @@ P5-P8 的详细边界以当前主线文档和归档计划文档为准；历史�
 
 - `BoostGatewayBackendTimeouts` 或 `BoostGatewayBackendErrors` 触发。
 - `/metrics` 中 `gateway_backend_<service>_timeouts_total` 或 `gateway_backend_<service>_errors_total` 增长。
+- `transport_read_failures_total` / `transport_write_failures_total` 说明首个失败阶段；
+  `transport_retry_recovered_total` 增长表示业务请求已由有界重试恢复，
+  `transport_retry_exhausted_total` 增长表示重试后仍失败。
 - SDK full-flow 在对应业务步骤失败。
 
 Docker Compose 排查：

@@ -60,6 +60,11 @@ TEST(V2BackendHealthTest, MetricsCountersAfterSuccessfulRoute) {
     EXPECT_EQ(snap.total_timeouts, 0U);
     EXPECT_EQ(snap.total_unavailable, 0U);
     EXPECT_EQ(snap.total_errors, 0U);
+    EXPECT_EQ(snap.transport_not_connected, 0U);
+    EXPECT_EQ(snap.transport_write_failures, 0U);
+    EXPECT_EQ(snap.transport_read_failures, 0U);
+    EXPECT_EQ(snap.transport_retry_recovered, 0U);
+    EXPECT_EQ(snap.transport_retry_exhausted, 0U);
 
     backend->stop();
 }

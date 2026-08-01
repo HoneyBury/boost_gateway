@@ -1,9 +1,9 @@
-# SDK v4.2.0: Thin Python wrapper via C API (ctypes, zero deps).
+# SDK v4.2.1: Thin Python wrapper via C API (ctypes, zero deps).
 import ctypes, os
 from pathlib import Path
 from ctypes import c_int32, c_uint16, c_uint64, c_char, c_char_p, c_int, c_void_p, CFUNCTYPE
 
-EXPECTED_VERSION = "4.2.0"
+EXPECTED_VERSION = "4.2.1"
 
 _dll = None
 _load_errors = []

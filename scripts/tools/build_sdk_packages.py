@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 EXPECTED_NATIVE_PLATFORMS = {
     "linux-x64": {("Linux", "x86_64"), ("Linux", "amd64")},
     "linux-arm64": {("Linux", "aarch64"), ("Linux", "arm64")},
@@ -80,9 +80,9 @@ def main() -> int:
 
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    for old in output.glob("boost_gateway_sdk-4.2.0-*.whl"):
+    for old in output.glob("boost_gateway_sdk-4.2.1-*.whl"):
         old.unlink()
-    for old in output.glob("BoostGateway.Sdk.4.2.0*.nupkg"):
+    for old in output.glob("BoostGateway.Sdk.4.2.1*.nupkg"):
         old.unlink()
 
     native_meta = native_manifest(native, args.rid)
@@ -101,7 +101,7 @@ def main() -> int:
             if args.wheel_platform_tag:
                 wheel_command.extend(["--plat-name", args.wheel_platform_tag])
             run(wheel_command, python_stage)
-            produced.extend(sorted(output.glob("boost_gateway_sdk-4.2.0-*.whl")))
+            produced.extend(sorted(output.glob("boost_gateway_sdk-4.2.1-*.whl")))
 
         if not args.skip_nuget:
             dotnet = shutil.which("dotnet")
@@ -131,7 +131,7 @@ def main() -> int:
                     ],
                     ROOT,
                 )
-                produced.extend(sorted(output.glob("BoostGateway.Sdk.4.2.0*.nupkg")))
+                produced.extend(sorted(output.glob("BoostGateway.Sdk.4.2.1*.nupkg")))
 
     if not produced:
         raise RuntimeError("no SDK packages were produced")

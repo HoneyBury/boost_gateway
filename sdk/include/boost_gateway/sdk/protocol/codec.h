@@ -1,5 +1,5 @@
 #pragma once
-// SDK v4.2.0: Standalone packet codec — zero server dependencies.
+// SDK v4.2.1: Standalone packet codec — zero server dependencies.
 // Encodes/decodes the BoostGateway binary protocol:
 // [4B total(BE)][1B version][2B msg_id(BE)][4B req_id(BE)]
 // [4B seq_num(BE)][4B err_code(BE)][1B flags][NB body]

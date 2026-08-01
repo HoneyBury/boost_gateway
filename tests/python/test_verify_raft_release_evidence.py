@@ -173,8 +173,8 @@ class VerifyRaftReleaseEvidenceTest(unittest.TestCase):
             "passed": True,
             "production_platform": "macos-arm64",
             "platform": {"system": "Darwin", "machine": "arm64"},
-            "c_abi": {"loaded": True, "version": "4.2.0"},
-            "cpp_consumer": {"cmake_find_package": True, "sdk_version": "4.2.0"},
+            "c_abi": {"loaded": True, "version": "4.2.1"},
+            "cpp_consumer": {"cmake_find_package": True, "sdk_version": "4.2.1"},
             "provenance": provenance(),
         }
 

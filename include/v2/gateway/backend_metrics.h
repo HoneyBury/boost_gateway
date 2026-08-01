@@ -36,6 +36,11 @@ struct BackendMetricsSnapshot {
     std::uint64_t total_unavailable = 0;
     std::uint64_t total_errors = 0;
     std::uint64_t total_degraded = 0;
+    std::uint64_t transport_not_connected = 0;
+    std::uint64_t transport_write_failures = 0;
+    std::uint64_t transport_read_failures = 0;
+    std::uint64_t transport_retry_recovered = 0;
+    std::uint64_t transport_retry_exhausted = 0;
     std::uint64_t total_latency_us = 0;
     std::uint64_t latency_sample_count = 0;
     std::array<std::uint64_t, kBackendLatencyBucketUpperBoundsUs.size()> latency_bucket_counts{};
@@ -97,6 +102,31 @@ public:
     void record_degraded(v2::service::ServiceId service) {
         std::scoped_lock lock(mutex_);
         counters_[service].total_degraded++;
+    }
+
+    void record_transport_not_connected(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].transport_not_connected++;
+    }
+
+    void record_transport_write_failure(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].transport_write_failures++;
+    }
+
+    void record_transport_read_failure(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].transport_read_failures++;
+    }
+
+    void record_transport_retry_recovered(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].transport_retry_recovered++;
+    }
+
+    void record_transport_retry_exhausted(v2::service::ServiceId service) {
+        std::scoped_lock lock(mutex_);
+        counters_[service].transport_retry_exhausted++;
     }
 
     void record_latency(v2::service::ServiceId service, std::uint64_t latency_us) {

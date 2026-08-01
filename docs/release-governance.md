@@ -126,11 +126,10 @@ resolution 和管理员保护是 GitHub 外部状态，必须单独回读验证�
 Linux x64 候选 artifact 和门禁证据。该模式不运行 `publish`，也不生成 tag 事件才有的
 attestation、总 checksum 或 GitHub Release，因此不能直接交给生产部署脚本消费。
 
-当前发布 manifest 承诺三平台 runtime、SDK 和 symbols/dSYM。暂停 ARM 主机工作意味着
-可以继续验证 Linux x64 candidate，但不能把单平台 workflow artifact 解释为正式补丁
-Release，也不能绕过不可变 Release 契约复制到生产机。若要改为 x64-only 发布，必须先用
-独立 ADR/PR 修改 supported platform manifest、NuGet/asset completeness、发布后复验和
-回滚口径；不得在 tag 时临时跳过矩阵。
+从 v3.6.3 开始，正式发布 manifest 按
+[`v3.6.3-linux-x64-release.md`](decisions/v3.6.3-linux-x64-release.md) 收敛到 Linux x64。
+该变更只影响新 tag 的必需资产，不改写 v3.6.2 的三平台历史事实，也不允许把手动 workflow
+artifact 复制到生产机。ARM candidate 能力可以保留，但不得被解释为 v3.6.3 发布支持。
 
 生产主机在该决策完成前保持当前已验证 Release。任何新 Release 部署都会改变 runtime
 subject，并重置正在进行的 canary、72 小时预演或 30 天窗口。
@@ -153,9 +152,9 @@ subject，并重置正在进行的 canary、72 小时预演或 30 天窗口。
 | **文档** | README.md, CHANGELOG.md, docs/ 目录下当前维护的文档 |
 | **部署** | deploy/systemd/*.service, deploy/README.md |
 
-`v3.6.1` 起，GitHub Release manifest 还必须包含三平台 stripped runtime、对应
-Linux debug-symbol 或 macOS dSYM、三个 SDK 4.2.0 wheel、一个三 RID NuGet、每个
-二进制/package subject 的 SPDX SBOM、SDK provenance metadata 和总
+`v3.6.3` GitHub Release manifest 必须包含 Linux x64 stripped runtime、对应
+debug-symbol archive、一个 SDK 4.2.1 wheel、一个 Linux x64 RID NuGet、每个
+二进制/package subject 的 SPDX SBOM、两份 SDK provenance metadata 和总
 `SHA256SUMS.txt`。PyPI/NuGet.org 不属于该发布事务；未配置 trusted publishing 时
 必须保持关闭。
 
@@ -173,6 +172,6 @@ Linux debug-symbol 或 macOS dSYM、三个 SDK 4.2.0 wheel、一个三 RID NuGet
 - 稳定性 soak 未通过
 - 任何 public entrypoint 脚本报错
 - 性能 smoke gate 未通过
-- 任一目标平台 archive、SDK、symbol、SBOM、checksum 或 provenance 缺失/不匹配
+- Linux x64 archive、SDK、symbol、SBOM、checksum 或 provenance 缺失/不匹配
 - 发布后原生资产消费失败，或 artifact 与 tag/SHA 不一致
 - 发布来源授权 gate 未通过，或 workflow checkout 无法解析 governed `origin/main`

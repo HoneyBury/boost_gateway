@@ -453,7 +453,7 @@ CPU 隔离仅支持 Linux：`--cpu-set` 只约束 Gateway 和后端服务，`--l
 
 ## SDK 扩展指南
 
-SDK 版本独立管理（当前 `4.2.0`），支持 C++ / C ABI / Python / C#。
+SDK 版本独立管理（当前 `4.2.1`），支持 C++ / C ABI / Python / C#。
 
 ### 新增 API 的路径
 

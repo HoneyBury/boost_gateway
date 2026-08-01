@@ -39,7 +39,7 @@ SDK 当前并不是一个完全独立于服务端演进的最终产品，但已�
 
 ### 3.0 P3 分发与 ABI 收束
 
-- 统一 SDK CMake/package/C API/Python/C# 版本为 `v4.2.0`
+- 统一 SDK CMake/package/C API/Python/C# 版本为 `v4.2.1`
 - 安装 C API 动态库，供 Python `ctypes` 与 C# `DllImport` 使用
 - 增加 SDK 分发门禁，校验版本、导出符号、安装目标、语言封装覆盖面和可选构建产物
 

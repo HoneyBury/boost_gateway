@@ -26,9 +26,10 @@ struct BackendServerOptions {
     std::uint16_t port = 0;
     bool tls_enabled = true;   // Batch B: TLS default on, set BOOST_DISABLE_TLS=1 to disable
     std::optional<v3::cluster::TlsSessionConfig> tls_config;
-    // BackendConnection instances are intentionally long lived. Keep their
-    // server-side idle window longer than a normal capacity measurement.
-    std::chrono::milliseconds session_idle_timeout = std::chrono::minutes(2);
+    // The default gateway pool has eight round-robin connections. Keep the
+    // server idle window above an eight-minute one-request-per-minute cycle so
+    // low-volume routes do not select sockets the peer has already closed.
+    std::chrono::milliseconds session_idle_timeout = std::chrono::minutes(10);
 };
 
 class BackendServer {
@@ -48,10 +49,19 @@ public:
     void stop();
 
     [[nodiscard]] std::uint16_t local_port() const;
+    [[nodiscard]] std::size_t tracked_session_thread_count() const;
 
 private:
+    struct SessionThread {
+        std::thread thread;
+        std::shared_ptr<std::atomic<bool>> completed;
+    };
+
     void do_accept();
+    void reap_completed_session_threads_locked();
     void handle_session(std::shared_ptr<boost::asio::ip::tcp::socket> socket);
+    void remove_session_socket(
+        const std::shared_ptr<boost::asio::ip::tcp::socket>& socket);
     bool setup_tls_context();
     void handle_plain_session(std::shared_ptr<boost::asio::ip::tcp::socket> socket);
     void handle_tls_session(std::shared_ptr<boost::asio::ip::tcp::socket> socket);
@@ -62,11 +72,11 @@ private:
     boost::asio::io_context io_context_;
     std::unique_ptr<boost::asio::ip::tcp::acceptor> acceptor_;
     std::unique_ptr<boost::asio::ssl::context> ssl_context_;
-    std::mutex session_mutex_;
+    mutable std::mutex session_mutex_;
     std::mutex stop_mutex_;
     std::vector<std::shared_ptr<boost::asio::ip::tcp::socket>> session_sockets_;
     std::thread thread_;
-    std::vector<std::thread> session_threads_;
+    std::vector<SessionThread> session_threads_;
     std::atomic<bool> running_{false};
 };
 

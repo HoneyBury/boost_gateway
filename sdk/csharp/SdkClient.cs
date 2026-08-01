@@ -1,4 +1,4 @@
-// SDK v4.2.0: Thin C# wrapper via C API (DllImport, zero deps).
+// SDK v4.2.1: Thin C# wrapper via C API (DllImport, zero deps).
 using System;
 using System.Runtime.InteropServices;
 
@@ -33,7 +33,7 @@ namespace BoostGateway.Sdk
 
     public class SdkClient : IDisposable
     {
-        public const string ExpectedVersion = "4.2.0";
+        public const string ExpectedVersion = "4.2.1";
         IntPtr _h;
         [DllImport("boost_gateway_sdk")] static extern IntPtr gsdk_version();
         [DllImport("boost_gateway_sdk")] static extern IntPtr gsdk_create();

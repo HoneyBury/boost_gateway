@@ -513,6 +513,11 @@ std::string DemoServer::diagnostics_json() const {
             {"total_unavailable", snap.total_unavailable},
             {"total_errors", snap.total_errors},
             {"total_degraded", snap.total_degraded},
+            {"transport_not_connected", snap.transport_not_connected},
+            {"transport_write_failures", snap.transport_write_failures},
+            {"transport_read_failures", snap.transport_read_failures},
+            {"transport_retry_recovered", snap.transport_retry_recovered},
+            {"transport_retry_exhausted", snap.transport_retry_exhausted},
             {"total_latency_us", snap.total_latency_us},
             {"latency_sample_count", snap.latency_sample_count},
             {"avg_latency_us", avg_latency_us},
@@ -631,6 +636,21 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
         add_counter((prefix + "successes_total").c_str(), "Backend successes", metrics.total_successes);
         add_counter((prefix + "errors_total").c_str(), "Backend errors", metrics.total_errors);
         add_counter((prefix + "timeouts_total").c_str(), "Backend timeouts", metrics.total_timeouts);
+        add_counter((prefix + "transport_not_connected_total").c_str(),
+                    "Backend routes without a connected transport",
+                    metrics.transport_not_connected);
+        add_counter((prefix + "transport_write_failures_total").c_str(),
+                    "Backend transport write failures",
+                    metrics.transport_write_failures);
+        add_counter((prefix + "transport_read_failures_total").c_str(),
+                    "Backend transport read failures",
+                    metrics.transport_read_failures);
+        add_counter((prefix + "transport_retry_recovered_total").c_str(),
+                    "Backend routes recovered by one transport retry",
+                    metrics.transport_retry_recovered);
+        add_counter((prefix + "transport_retry_exhausted_total").c_str(),
+                    "Backend routes whose transport retry was exhausted",
+                    metrics.transport_retry_exhausted);
         add_gauge((prefix + "avg_latency_us").c_str(),
                   "Backend average route latency in microseconds",
                   metrics.latency_sample_count > 0

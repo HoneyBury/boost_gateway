@@ -207,11 +207,18 @@ def main() -> int:
     boundary = json.loads(read(boundary_path)) if boundary_path.exists() else {}
     boundary_workflows = set(boundary.get("workflows", {}))
     production_platforms = boundary.get("policy", {}).get("production_platforms", [])
+    release_platforms = boundary.get("policy", {}).get("release_platforms", [])
     add(
         checks,
         "platform-boundary:production-platforms",
         production_platforms == ["linux-x64", "linux-arm64", "macos-arm64"],
         f"production_platforms={production_platforms}",
+    )
+    add(
+        checks,
+        "platform-boundary:release-platforms",
+        release_platforms == ["linux-x64"],
+        f"release_platforms={release_platforms}",
     )
     add(
         checks,
@@ -229,10 +236,15 @@ def main() -> int:
         "preprod-evidence",
     ):
         platform_runners = matrix.get("workflows", {}).get(stem, {}).get("platforms", {})
+        expected_platforms = (
+            release_platforms
+            if stem in {"release", "release-asset-verification"}
+            else production_platforms
+        )
         add(
             checks,
             f"runner-matrix:{stem}:production-platforms",
-            set(platform_runners) == set(production_platforms),
+            set(platform_runners) == set(expected_platforms),
             f"{stem} platform runners={sorted(platform_runners)}",
         )
     readiness_targets = (
@@ -676,11 +688,11 @@ def main() -> int:
     )
     add(
         checks,
-        "release:checksum-only-published-archive",
+        "release:checksum-only-published-x64-archives",
         "find \"$RELEASE_ASSET_DIR\" -type f -name '*.tar.gz'" in release_workflow
-        and "test \"${#archives[@]}\" -eq 6" in release_workflow
-        and "for platform in linux-x64 linux-arm64 macos-arm64" in release_workflow,
-        "release checksums one runtime and one symbol tarball for every production platform",
+        and "test \"${#archives[@]}\" -eq 2" in release_workflow
+        and "for platform in linux-x64" in release_workflow,
+        "release checksums the Linux x64 runtime and symbol tarballs required by the release manifest",
     )
     add(
         checks,
@@ -847,15 +859,15 @@ def main() -> int:
         "release:sbom-published-and-checksummed",
         "*.spdx.json" in release_workflow
         and '"${nugets[@]}" "${sboms[@]}" "${provenance[@]}"' in release_workflow
-        and "test \"${#sboms[@]}\" -eq 10" in release_workflow,
+        and "test \"${#sboms[@]}\" -eq 4" in release_workflow,
         "release publishes and checksums runtime, symbol, wheel and NuGet SPDX SBOMs",
     )
     add(
         checks,
-        "release-asset-verification:macos-gh-archive-layout",
-        'executable="gh_${gh_version}_macOS_arm64/bin/gh"'
+        "release-asset-verification:linux-x64-gh-archive-layout",
+        'executable="gh_${gh_version}_linux_amd64/bin/gh"'
         in release_asset_verification,
-        "published asset verification resolves the versioned macOS GitHub CLI archive layout",
+        "published asset verification resolves the versioned Linux x64 GitHub CLI archive layout",
     )
     production_platform_workflows = {
         "release": release_workflow,
@@ -867,11 +879,16 @@ def main() -> int:
         "release-asset-verification": release_asset_verification,
     }
     for stem, workflow in production_platform_workflows.items():
+        expected_platforms = (
+            release_platforms
+            if stem in {"release", "release-asset-verification"}
+            else production_platforms
+        )
         add(
             checks,
             f"production-platform:{stem}:explicit-platform-input",
-            all(token in workflow for token in ("platform:", "linux-x64", "linux-arm64", "macos-arm64")),
-            f"{stem} exposes all production platforms explicitly",
+            "platform:" in workflow and all(token in workflow for token in expected_platforms),
+            f"{stem} exposes its governed platforms explicitly",
         )
     for stem in (
         "release",
@@ -881,6 +898,15 @@ def main() -> int:
         "production-gates",
         "release-asset-verification",
     ):
+        expected_runner_tokens = (
+            ("node-aoi-omen-gaming-laptop-16-am0xxx",)
+            if stem in {"release", "release-asset-verification"}
+            else (
+                "node-aoi-omen-gaming-laptop-16-am0xxx",
+                "node-honeybury-m4-linux-arm64",
+                "macos-arm64-candidate",
+            )
+        )
         add(
             checks,
             f"production-platform:{stem}:native-resolution",
@@ -893,11 +919,7 @@ def main() -> int:
             f"production-platform:{stem}:native-runner-defaults",
             all(
                 token in production_platform_workflows[stem]
-                for token in (
-                    "node-aoi-omen-gaming-laptop-16-am0xxx",
-                    "node-honeybury-m4-linux-arm64",
-                    "macos-arm64-candidate",
-                )
+                for token in expected_runner_tokens
             ),
             f"{stem} selects a native runner when no explicit runner override is supplied",
         )

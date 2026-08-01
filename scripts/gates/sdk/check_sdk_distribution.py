@@ -14,7 +14,7 @@ from typing import Any
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 
 REQUIRED_C_API_SYMBOLS = {
     "gsdk_version",
@@ -71,7 +71,7 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     csharp_project = read_text("sdk/csharp/SdkClient.csproj")
     compatibility = read_text("sdk/docs/compatibility.md")
 
-    add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.2.0")
+    add_check(checks, "sdk-version:cmake", f'"{SDK_VERSION}"' in cmake, "CMake SDK version is 4.2.1")
     add_check(
         checks,
         "sdk-version:minor",
@@ -80,12 +80,18 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "sdk-version:patch",
+        "set(BOOST_GATEWAY_SDK_VERSION_PATCH 1)" in cmake,
+        "CMake SDK patch version is 1",
+    )
+    add_check(
+        checks,
         "sdk-version:generated-header",
         "BOOST_GATEWAY_SDK_VERSION" in version_header,
         "generated version header exposes SDK version macros",
     )
-    add_check(checks, "sdk-version:c-api-doc", "SDK v4.2.0" in c_api, "C API header version is current")
-    add_check(checks, "sdk-version:docs", "v4.2.0" in docs, "SDK docs mention current version")
+    add_check(checks, "sdk-version:c-api-doc", "SDK v4.2.1" in c_api, "C API header version is current")
+    add_check(checks, "sdk-version:docs", "v4.2.1" in docs, "SDK docs mention current version")
     add_check(
         checks,
         "sdk-version:python-package",
@@ -113,8 +119,8 @@ def validate_versions(checks: list[dict[str, Any]]) -> None:
     add_check(
         checks,
         "sdk-version:gateway-v35-compatibility",
-        "`v3.5.x`" in compatibility and "`v4.2.0`" in compatibility,
-        "compatibility matrix records Gateway v3.5.x with SDK v4.2.0",
+        "`v3.5.x`" in compatibility and "`v4.2.1`" in compatibility,
+        "compatibility matrix records Gateway v3.5.x with SDK v4.2.1",
     )
 
 
@@ -257,6 +263,7 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
     docs = read_text("sdk/docs/README.md")
     compatibility = read_text("sdk/docs/compatibility.md")
     roadmap = read_text("sdk/docs/roadmap.md")
+    distribution = json.loads(read_text("sdk/docs/distribution-matrix.json"))
     add_check(
         checks,
         "sdk-docs:distribution",
@@ -286,6 +293,39 @@ def validate_docs(checks: list[dict[str, Any]]) -> None:
         "sdk-roadmap:p3",
         "P3" in roadmap or "分发" in roadmap,
         "SDK roadmap names current distribution priority",
+    )
+    add_check(
+        checks,
+        "sdk-docs:distribution-version",
+        distribution.get("sdk_version") == SDK_VERSION,
+        "distribution matrix matches the current SDK package version",
+    )
+    current_rids = {
+        package.get("rid")
+        for package in distribution.get("packages", [])
+        if isinstance(package, dict)
+    }
+    add_check(
+        checks,
+        "sdk-docs:release-rids",
+        current_rids == {"linux-x64"},
+        f"current release RIDs are {sorted(current_rids)}",
+    )
+    historical = {
+        (package.get("sdk_version"), package.get("rid"), package.get("last_release"))
+        for package in distribution.get("historical_packages", [])
+        if isinstance(package, dict)
+    }
+    add_check(
+        checks,
+        "sdk-docs:historical-v3.6.2-rids",
+        historical
+        == {
+            ("4.2.0", "linux-x64", "v3.6.2"),
+            ("4.2.0", "linux-arm64", "v3.6.2"),
+            ("4.2.0", "osx-arm64", "v3.6.2"),
+        },
+        "distribution matrix preserves all immutable v3.6.2 SDK assets as history",
     )
 
 

@@ -564,6 +564,26 @@ void GatewayServiceBridge::record_route_result(
     }
 }
 
+void GatewayServiceBridge::record_transport_failure(
+    v2::service::ServiceId target,
+    v2::service::BackendConnection::FailureStage stage) {
+    if (!metrics_) return;
+    using FailureStage = v2::service::BackendConnection::FailureStage;
+    switch (stage) {
+        case FailureStage::kNotConnected:
+            metrics_->record_transport_not_connected(target);
+            break;
+        case FailureStage::kWrite:
+            metrics_->record_transport_write_failure(target);
+            break;
+        case FailureStage::kRead:
+            metrics_->record_transport_read_failure(target);
+            break;
+        case FailureStage::kNone:
+            break;
+    }
+}
+
 GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
     v2::service::ServiceId target,
     const std::string& message_type,
@@ -600,6 +620,7 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
 
     auto* conn = ensure_connection(target, shard_key);
     if (!conn) {
+        if (metrics_) metrics_->record_transport_not_connected(target);
         slot.breaker.on_failure();
         result.error = v2::service::ServiceErrorCode::kUnavailable;
         record_route_result(target, result);
@@ -616,11 +637,19 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
 
     const auto send_start = std::chrono::steady_clock::now();
     auto response = conn->send_request(request);
+    bool retry_attempted = false;
     if (!response) {
+        retry_attempted = true;
+        record_transport_failure(target, conn->last_failure_stage());
         conn->close();
         conn = ensure_connection(target, shard_key);
         if (conn) {
             response = conn->send_request(request);
+            if (!response) {
+                record_transport_failure(target, conn->last_failure_stage());
+            }
+        } else if (metrics_) {
+            metrics_->record_transport_not_connected(target);
         }
     }
     const auto latency_us = static_cast<std::uint64_t>(
@@ -629,10 +658,17 @@ GatewayServiceBridge::BackendRoutingResult GatewayServiceBridge::route(
             .count());
 
     if (!response) {
+        if (metrics_ && retry_attempted) {
+            metrics_->record_transport_retry_exhausted(target);
+        }
         slot.breaker.on_failure();
         result.error = v2::service::ServiceErrorCode::kTimeout;
         record_route_result(target, result);
         return result;
+    }
+
+    if (metrics_ && retry_attempted) {
+        metrics_->record_transport_retry_recovered(target);
     }
 
     result.correlation_id = response->correlation_id;
