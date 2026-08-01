@@ -171,6 +171,10 @@ jobs:
         shell: bash
         run: python3 scripts/gates/governance/check_current_docs_install.py
 
+      - name: Reliability matrix evidence gate
+        shell: bash
+        run: python3 scripts/gates/governance/check_reliability_matrix.py
+
       - name: Repository governance gate
         shell: bash
         run: |
