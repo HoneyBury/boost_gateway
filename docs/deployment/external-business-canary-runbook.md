@@ -129,6 +129,54 @@ python external_business_canary.py \
   watchdog --initial-delay-seconds 30
 ```
 
+### macOS launchd scheduling
+
+On macOS, keep the canary in a logged-in external user session with the host on
+AC power, Tailscale connected and system idle sleep disabled. Display sleep and
+screen locking are allowed; lid sleep, logout, reboot and network changes break
+the sampling window. Verify the power boundary before declaring a formal start:
+
+```bash
+pmset -g batt
+pmset -g custom
+pmset -g assertions
+```
+
+Use `StartCalendarInterval` with an empty dictionary in both LaunchAgents. All
+missing calendar fields are wildcards, so launchd starts the jobs on every
+natural minute. The run job starts immediately; the watchdog job passes
+`--initial-delay-seconds 30` and therefore checks the same minute after the
+business sample. Do not use `StartInterval=60`: launchd may count the interval
+after a oneshot exits, so a 10-15 second business flow drifts to 70-75 second
+spacing and eventually skips required minutes.
+
+```xml
+<key>StartCalendarInterval</key>
+<dict/>
+```
+
+Bootstrap the two jobs only after validation and the Alertmanager forward pass.
+Do not invoke `run` manually while the scheduled job is loaded because two
+samples in one UTC minute make the aggregate fail as a duplicate.
+
+```bash
+launchctl bootstrap "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/io.boostgateway.external-canary-run.plist"
+launchctl bootstrap "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/io.boostgateway.external-canary-watchdog.plist"
+```
+
+Observe at least three consecutive natural-minute samples and their freshness
+checks before recording the half-open formal window. If either job is unloaded,
+the host sleeps, the candidate changes or a non-maintenance gap exceeds two
+minutes, retain the evidence, supersede the declared window and start a new full
+window. Stop the jobs without deleting historical samples:
+
+```bash
+launchctl bootout "gui/$(id -u)/io.boostgateway.external-canary-run"
+launchctl bootout "gui/$(id -u)/io.boostgateway.external-canary-watchdog"
+```
+
 When deployment changes, atomically provision the new exported record before
 starting its validation window. Aggregation rejects a window containing more
 than one candidate or endpoint; never splice timelines across deployments.

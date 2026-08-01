@@ -120,6 +120,21 @@ resolution 和管理员保护是 GitHub 外部状态，必须单独回读验证�
 6. 在三个原生平台运行 `release-asset-verification.yml`，独立下载并消费线上资产。
 7. 发布 readiness 结论时只汇聚同 tag/SHA、匹配平台和 provenance 的 artifact。
 
+### Linux x64 候选与正式发布边界
+
+在 `main` 上手动执行 `release.yml` 且选择 `platform=linux-x64`，只生成绑定该 SHA 的
+Linux x64 候选 artifact 和门禁证据。该模式不运行 `publish`，也不生成 tag 事件才有的
+attestation、总 checksum 或 GitHub Release，因此不能直接交给生产部署脚本消费。
+
+当前发布 manifest 承诺三平台 runtime、SDK 和 symbols/dSYM。暂停 ARM 主机工作意味着
+可以继续验证 Linux x64 candidate，但不能把单平台 workflow artifact 解释为正式补丁
+Release，也不能绕过不可变 Release 契约复制到生产机。若要改为 x64-only 发布，必须先用
+独立 ADR/PR 修改 supported platform manifest、NuGet/asset completeness、发布后复验和
+回滚口径；不得在 tag 时临时跳过矩阵。
+
+生产主机在该决策完成前保持当前已验证 Release。任何新 Release 部署都会改变 runtime
+subject，并重置正在进行的 canary、72 小时预演或 30 天窗口。
+
 ### 版本号规则
 
 - 主版本号 (X.0.0): 不兼容的 API 变更
