@@ -110,17 +110,31 @@ class SdkClient:
         r = _lo(self._h, u.encode(), t.encode(), ms)
         return {"ok":bool(r.ok),"user_id":r.user_id.decode(),"error_code":r.error_code}
     def create_room(self, r, ms=5000):
-        v = _crm(self._h, r.encode(), ms); return {"ok":bool(v.ok),"room_id":v.room_id.decode()}
+        v = _crm(self._h, r.encode(), ms)
+        return {
+            "ok": bool(v.ok),
+            "room_id": v.room_id.decode(),
+            "error_code": v.error_code,
+        }
     def join_room(self, r, ms=5000):
-        v = _jrm(self._h, r.encode(), ms); return {"ok":bool(v.ok)}
+        v = _jrm(self._h, r.encode(), ms)
+        return {"ok": bool(v.ok), "error_code": v.error_code}
     def leave_room(self, r, ms=5000):
-        v = _lrm(self._h, r.encode(), ms); return {"ok":bool(v.ok)}
+        v = _lrm(self._h, r.encode(), ms)
+        return {"ok": bool(v.ok), "error_code": v.error_code}
     def set_ready(self, r=True, ms=5000):
-        v = _sr(self._h, 1 if r else 0, ms); return {"ok":bool(v.ok)}
+        v = _sr(self._h, 1 if r else 0, ms)
+        return {"ok": bool(v.ok), "error_code": v.error_code}
     def start_battle(self, r, ms=5000):
-        v = _sb(self._h, r.encode(), ms); return {"ok":bool(v.ok),"battle_id":v.battle_id.decode()}
+        v = _sb(self._h, r.encode(), ms)
+        return {
+            "ok": bool(v.ok),
+            "battle_id": v.battle_id.decode(),
+            "error_code": v.error_code,
+        }
     def send_battle_input(self, d, ms=5000):
-        v = _si(self._h, d.encode(), ms); return {"ok":bool(v.ok)}
+        v = _si(self._h, d.encode(), ms)
+        return {"ok": bool(v.ok), "error_code": v.error_code}
     def match_join(self, user_id, mmr=1000, mode="1v1", ms=5000):
         v = _mj(self._h, user_id.encode(), mmr, mode.encode(), ms)
         return {"ok":bool(v.ok),"error_code":v.error_code,"body":v.response_body.decode()}
