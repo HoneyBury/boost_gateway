@@ -1,6 +1,6 @@
 # v3.6 决策索引
 
-更新时间：2026-07-21
+更新时间：2026-08-01
 
 本目录保存当前有效的下一次 minor 决策。历史 ADR 位于
 `docs/archive/process/`，仅用于追溯，不代表当前默认行为。
@@ -28,6 +28,9 @@
 | 3 | [macOS ARM64 支持](v3.6-macos-arm64.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | Conan ARM64 图、原生 R5 与独立生产证据 |
 | 4 | [Python wheel / NuGet 分发](v3.6-sdk-distribution.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | 平台/RID 矩阵、clean install 与 full-flow |
 | 5 | [独立调试符号资产](v3.6-debug-symbols.md) | `accepted_for_implementation` | `blocked_until_gates_pass` | Release 资产、SBOM/attestation 与栈回溯验证 |
+
+补丁发布边界由 [v3.6.3 Linux x64-only release](v3.6.3-linux-x64-release.md) 单独记录；
+它不修改上述 v3.6.0 能力 ADR 的历史状态。
 
 Raft 排在首位是因为当前磁盘状态、state-machine command 和内部 RPC 是三套
 不同的隐式 JSON 契约；损坏或未来版本数据不能再被当作空状态继续启动。身份

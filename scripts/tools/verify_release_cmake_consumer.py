@@ -32,7 +32,7 @@ if str(ROOT) not in sys.path:
 from scripts.tools.verify_release_archive import verify_archive  # noqa: E402
 from scripts.tools.verify_release_package_consumer import extract_archive  # noqa: E402
 
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 DEFAULT_IMAGE = "boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13"
 TARGET_ARCHITECTURES = {"linux/amd64": "amd64", "linux/arm64": "arm64"}
 

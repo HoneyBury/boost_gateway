@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## v3.6.3 - Linux x64 lifecycle patch (2026-08-01)
+
+### Runtime
+
+- Bound backend session thread lifetime and reap completed workers during normal operation and
+  shutdown, preventing connection churn from accumulating thread state.
+- Align backend connection idle expiry with the default pool rotation interval and expose
+  transport failure, retry recovery and retry exhaustion counters in diagnostics and Prometheus.
+
+### Release engineering
+
+- Adopt the reviewed Linux x64-only patch manifest. The v3.6.3 tag publishes one runtime,
+  debug-symbol pair, SDK wheel and Linux x64 NuGet payload plus subject-specific SPDX,
+  provenance and checksums; ARM v3.6.2 assets remain immutable historical releases.
+- Advance SDK package identity to 4.2.1 so the Python error-code and packaging changes do not
+  overwrite the already-published 4.2.0 asset identity.
+
 ## v3.6.2 — SDK SBOM 证明路径修复（2026-07-24）
 
 ### 发布工程

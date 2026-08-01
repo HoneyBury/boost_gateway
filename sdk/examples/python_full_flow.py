@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""SDK v4.2.0: Python package full business flow test."""
+"""SDK v4.2.1: Python package full business flow test."""
 import sys, time
 
 import boost_gateway_sdk as sdk

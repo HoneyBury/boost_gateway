@@ -144,7 +144,7 @@ def main() -> int:
                 "v2_gateway_demo --script",
                 "## CLion 配置",
                 "--allow-dirty",
-                "当前 `4.2.0`",
+                "当前 `4.2.1`",
             )
         ),
         "onboarding preserves the pinned Conan, build, test, smoke, IDE, Docker and SDK contracts",
@@ -153,18 +153,19 @@ def main() -> int:
         checks,
         "release:readme-current-release",
         f"releases/tag/v{version}" in readme
-        and "SDK 4.2.0" in readme
+        and "SDK 4.2.1" in readme
         and "docs/current-state.md" in readme,
         "README points to the current release, SDK and maintained fact source",
     )
     add(
         checks,
         "release:platform-boundaries-current",
-        platform_boundaries.get("platforms", {}).get("linux-arm64", {}).get("status")
-        == f"supported-v{version}"
+        platform_boundaries.get("policy", {}).get("release_platforms") == ["linux-x64"]
+        and platform_boundaries.get("platforms", {}).get("linux-arm64", {}).get("status")
+        == "supported-v3.6.2"
         and platform_boundaries.get("platforms", {}).get("macos-arm64", {}).get("status")
-        == f"supported-v{version}",
-        "ARM production platform statuses match the current project release",
+        == "supported-v3.6.2",
+        "release manifest is Linux x64-only and preserves ARM v3.6.2 history",
     )
     macos_capabilities = runner_matrix.get("workflows", {}).get("macos-arm64", {}).get(
         "capabilities", {}

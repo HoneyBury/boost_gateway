@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build one immutable NuGet package containing every supported native RID."""
+"""Build one immutable NuGet package containing every release-supported RID."""
 
 from __future__ import annotations
 
@@ -13,11 +13,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 RID_PROPERTIES = {
     "linux-x64": ("NativeLibraryLinuxX64", "NativeManifestLinuxX64", b"\x7fELF"),
-    "linux-arm64": ("NativeLibraryLinuxArm64", "NativeManifestLinuxArm64", b"\x7fELF"),
-    "osx-arm64": ("NativeLibraryOsxArm64", "NativeManifestOsxArm64", b"\xcf\xfa\xed\xfe"),
 }
 
 
@@ -65,7 +63,7 @@ def main() -> int:
         parser.error(str(exc))
     dotnet = shutil.which("dotnet")
     if dotnet is None:
-        raise RuntimeError("dotnet is required to build the multi-RID NuGet package")
+        raise RuntimeError("dotnet is required to build the governed NuGet package")
 
     output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
@@ -73,7 +71,7 @@ def main() -> int:
         old.unlink()
 
     records: list[dict[str, str]] = []
-    with tempfile.TemporaryDirectory(prefix="boost-sdk-multi-rid-") as temp_text:
+    with tempfile.TemporaryDirectory(prefix="boost-sdk-release-rids-") as temp_text:
         temp = Path(temp_text)
         properties: list[str] = []
         for rid, path in sorted(native.items()):
@@ -124,9 +122,9 @@ def main() -> int:
             "size": package.stat().st_size,
         },
     }
-    provenance_path = output / "sdk-package-provenance-multi-rid.json"
+    provenance_path = output / "sdk-package-provenance-nuget-linux-x64.json"
     provenance_path.write_text(json.dumps(provenance, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    (output / "SHA256SUMS-sdk-multi-rid.txt").write_text(
+    (output / "SHA256SUMS-sdk-nuget-linux-x64.txt").write_text(
         f"{sha256(package)}  {package.name}\n{sha256(provenance_path)}  {provenance_path.name}\n",
         encoding="utf-8",
     )

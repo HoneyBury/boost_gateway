@@ -1,19 +1,18 @@
 # 当前项目事实源
 
-更新时间：2026-07-26
+更新时间：2026-08-01
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
 
 ## 当前结论
 
-- 当前发布版本是
-  [v3.6.2](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.2)，tag 固定在
-  `ac99ae353a2a6e846f934c8d81c78a07f420f683`。
-- v3.6.2 已发布 Linux x64、Linux ARM64、macOS ARM64 runtime，SDK 4.2.0 wheel/
-  NuGet、Linux debug symbols、macOS dSYM、逐 subject SPDX/attestation 和总 checksum。
-- 三个平台均完成线上资产的独立下载、checksum、架构、运行时消费、SDK、符号绑定和
-  attestation 复验；平台证据不可互换。
+- 仓库发布线是 v3.6.3 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
+  `miniserver` 在 v3.6.3 发布并完成受控 upgrade 前继续运行已验证的 v3.6.2。
+- v3.6.2 三平台 runtime、SDK 4.2.0、symbols/dSYM 和供应链资产保持不可变历史事实；
+  Linux ARM64 与 macOS ARM64 不进入 v3.6.3 新资产集合。
+- Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.3 服务端；
+  canary deployment identity 必须记录实际 SDK 版本，不得伪装为 4.2.1。
 - 当前主线不是继续增加 demo 或协议表面积，而是执行 Ubuntu 24.04 x64 单节点自动
   部署、观测、追溯、备份恢复、72 小时预演和 30 天不可变运行计划。
 
@@ -93,7 +92,7 @@ Gateway :9201 ---- management HTTP :9080
 
 - Gateway session、Actor runtime、后端路由、熔断、限流、HTTP health/metrics 和配置治理。
 - Login、Room、Battle、Matchmaking、Leaderboard 六服务闭环及 SDK full-flow。
-- C++ SDK、稳定 C ABI、Python ctypes wrapper、C# P/Invoke wrapper 和 4.2.0 分发资产。
+- C++ SDK、稳定 C ABI、Python ctypes wrapper、C# P/Invoke wrapper 和 4.2.1 Linux x64 分发资产。
 - schema-backed typed contract；五个业务域的 handler 已纳入 typed envelope 治理。
 - Redis leaderboard/event store、Raft state/command/wire codec、恢复和 mixed-binary 门禁。
 - TLS/mTLS profile、JWT/JWKS 轮换验证、OTel exporter/collector 对账。

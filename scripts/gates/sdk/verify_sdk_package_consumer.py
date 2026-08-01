@@ -27,7 +27,7 @@ from typing import Any
 from scripts.lib.subprocess_utils import run_step
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SDK_VERSION = "4.2.0"
+SDK_VERSION = "4.2.1"
 
 
 def read_cache_path(build_dir: Path, key: str) -> str:

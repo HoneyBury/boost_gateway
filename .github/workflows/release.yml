@@ -16,10 +16,7 @@ on:
         default: linux-x64
         type: choice
         options:
-          - all
           - linux-x64
-          - linux-arm64
-          - macos-arm64
       runner:
         description: 'Runner JSON string or array, for example "ubuntu-latest" or ["self-hosted","Linux","X64"]'
         required: false
@@ -65,8 +62,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.platform != 'all' && format('["{0}"]', inputs.platform) || '["linux-x64","linux-arm64","macos-arm64"]') }}
-    runs-on: ${{ fromJSON(inputs.runner || (matrix.platform == 'linux-x64' && '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]' || matrix.platform == 'linux-arm64' && '["self-hosted","Linux","ARM64","node-honeybury-m4-linux-arm64"]' || '["self-hosted","macOS","ARM64","macos-arm64-candidate"]')) }}
+        platform: [linux-x64]
+    runs-on: ${{ fromJSON(inputs.runner || '["self-hosted","Linux","X64","node-aoi-omen-gaming-laptop-16-am0xxx"]') }}
 
     steps:
       - name: Normalize stale Go cache permissions
@@ -725,7 +722,7 @@ jobs:
           EOF
 
   nuget:
-    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || (github.event_name == 'workflow_dispatch' && inputs.platform == 'all')
+    if: (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     needs: package
 
@@ -758,12 +755,10 @@ jobs:
           output.mkdir(parents=True, exist_ok=True)
           expected = {
               "linux-x64": "manylinux_2_35_x86_64",
-              "linux-arm64": "manylinux_2_39_aarch64",
-              "osx-arm64": "macosx_26_0_arm64",
           }
           wheels = list(root.rglob("*.whl"))
           if len(wheels) != len(expected):
-              raise SystemExit(f"expected three platform wheels, found {len(wheels)}")
+              raise SystemExit(f"expected one linux-x64 wheel, found {len(wheels)}")
           observed = set()
           for wheel in wheels:
               with zipfile.ZipFile(wheel) as archive:
@@ -789,20 +784,18 @@ jobs:
               raise SystemExit(f"wheel RID set mismatch: {sorted(observed)}")
           PY
 
-      - name: Build and verify multi-RID NuGet package
+      - name: Build and verify Linux x64 NuGet package
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/tools/build_multi_rid_nuget.py \
             --native linux-x64=runtime/nuget-native/linux-x64/libboost_gateway_sdk.so \
-            --native linux-arm64=runtime/nuget-native/linux-arm64/libboost_gateway_sdk.so \
-            --native osx-arm64=runtime/nuget-native/osx-arm64/libboost_gateway_sdk.dylib \
             --output-dir runtime/release-nuget-assets \
             --candidate-revision "$GITHUB_SHA"
           wheel=$(find runtime/platform-assets -name '*manylinux_2_35_x86_64.whl' -print -quit)
           python3 scripts/tools/verify_sdk_distribution_packages.py \
             --wheel "$wheel" \
-            --nuget runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg \
+            --nuget runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg \
             --rid linux-x64 \
             --require-nuget \
             --summary-path runtime/validation/release-nuget-summary.json
@@ -815,7 +808,7 @@ jobs:
           import zipfile
           from pathlib import Path, PurePosixPath
 
-          package = Path("runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg")
+          package = Path("runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg")
           output = Path("runtime/nuget-sbom-root")
           output.mkdir(parents=True, exist_ok=True)
           with zipfile.ZipFile(package) as archive:
@@ -830,7 +823,7 @@ jobs:
         with:
           path: runtime/nuget-sbom-root
           format: spdx-json
-          output-file: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
+          output-file: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg.spdx.json
           upload-artifact: false
           upload-release-assets: false
 
@@ -838,23 +831,23 @@ jobs:
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
-          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
+          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg
 
       - name: Attest NuGet SBOM
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
         with:
-          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
-          sbom-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
+          subject-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg
+          sbom-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg.spdx.json
 
       - name: Upload NuGet release artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: boost-gateway-nuget-${{ github.sha }}
           path: |
-            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg
-            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.0.nupkg.spdx.json
-            runtime/release-nuget-assets/sdk-package-provenance-multi-rid.json
+            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg
+            runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg.spdx.json
+            runtime/release-nuget-assets/sdk-package-provenance-nuget-linux-x64.json
             runtime/validation/release-nuget-summary.json
 
   publish:
@@ -883,16 +876,16 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -d '' archives < <(find "$RELEASE_ASSET_DIR" -type f -name '*.tar.gz' -print0)
-          test "${#archives[@]}" -eq 6
+          test "${#archives[@]}" -eq 2
           mapfile -d '' wheels < <(find "$RELEASE_ASSET_DIR" -type f -name '*.whl' -print0)
-          test "${#wheels[@]}" -eq 3
+          test "${#wheels[@]}" -eq 1
           mapfile -d '' nugets < <(find "$RELEASE_ASSET_DIR" -type f -name '*.nupkg' -print0)
           test "${#nugets[@]}" -eq 1
           mapfile -d '' sboms < <(find "$RELEASE_ASSET_DIR" -type f -name '*.spdx.json' -print0)
-          test "${#sboms[@]}" -eq 10
+          test "${#sboms[@]}" -eq 4
           mapfile -d '' provenance < <(find "$RELEASE_ASSET_DIR" -type f -name 'sdk-package-provenance-*.json' -print0)
-          test "${#provenance[@]}" -eq 4
-          for platform in linux-x64 linux-arm64 macos-arm64; do
+          test "${#provenance[@]}" -eq 2
+          for platform in linux-x64; do
             find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}.tar.gz" -print -quit | grep -q .
             find "$RELEASE_ASSET_DIR" -type f -name "boost-gateway-${GITHUB_REF_NAME}-${platform}-sbom.spdx.json" -print -quit | grep -q .
           done
@@ -903,7 +896,7 @@ jobs:
           done
           sort -k2,2 -o "$RELEASE_ASSET_DIR/SHA256SUMS.txt" "$RELEASE_ASSET_DIR/SHA256SUMS.txt"
           mapfile -d '' notes < <(find "$RELEASE_ASSET_DIR" -type f -name RELEASE_NOTES.md -print0)
-          test "${#notes[@]}" -eq 3
+          test "${#notes[@]}" -eq 1
           cp "${notes[0]}" "$RELEASE_ASSET_DIR/RELEASE_NOTES.md"
 
       - name: Publish GitHub release
