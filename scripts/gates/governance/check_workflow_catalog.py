@@ -814,7 +814,13 @@ def main() -> int:
         checks,
         "release:governed-source-authorization",
         "fetch-depth: 0" in release_workflow
+        and "Materialize canonical annotated release tag" in release_workflow
+        and 'git fetch --force --no-tags origin' in release_workflow
+        and 'git cat-file -t "refs/tags/${GITHUB_REF_NAME}"' in release_workflow
+        and 'git rev-parse "refs/tags/${GITHUB_REF_NAME}^{}"' in release_workflow
         and release_source_gate in release_workflow
+        and release_workflow.index("Materialize canonical annotated release tag")
+        < release_workflow.index("Authorize governed release source")
         and release_workflow.index(raft_release_gate)
         < release_workflow.index(release_source_gate)
         < release_workflow.index("Attest release archive provenance")

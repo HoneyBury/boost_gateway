@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-## v3.6.4 - Linux x64 lifecycle patch (2026-08-01)
+## v3.6.5 - Linux x64 lifecycle patch (2026-08-01)
 
 ### Runtime
 
@@ -13,7 +13,7 @@
 
 ### Release engineering
 
-- Adopt the reviewed Linux x64-only patch manifest. The v3.6.4 tag publishes one runtime,
+- Adopt the reviewed Linux x64-only patch manifest. The v3.6.5 tag publishes one runtime,
   debug-symbol pair, SDK wheel and Linux x64 NuGet payload plus subject-specific SPDX,
   provenance and checksums; ARM v3.6.2 assets remain immutable historical releases.
 - Advance SDK package identity to 4.2.1 so the Python error-code and packaging changes do not
@@ -22,12 +22,23 @@
   before packaging because the reliability matrix interpreted an ADR link label as a root path.
   The corrected governance reference uses the full repository-relative path; no v3.6.3 GitHub
   Release or package asset was created.
+- Preserve the immutable v3.6.4 tag as an unpublished candidate: run `30706653822` passed package
+  creation and SBOM semantics but failed before attestation because `actions/checkout` materialized
+  the annotated tag as a commit ref. The workflow now fetches the canonical tag object from origin
+  and verifies its type and peeled SHA immediately after checkout.
+
+## v3.6.4 - Unpublished Linux x64 candidate (2026-08-01)
+
+> The immutable tag points to `f962101291361673e0c91b7498683f2bad2338cb`. Release run
+> `30706653822` failed source authorization before attestation, NuGet or publish, so this version
+> has no GitHub Release. Canonical annotated-tag materialization and publication move to v3.6.5.
 
 ## v3.6.3 - Unpublished Linux x64 candidate (2026-08-01)
 
 > The immutable tag points to `8f271318bb556237bb0d7ec87adacbe9592f9d1d`. Release run
 > `30705624732` failed at the bounded candidate gate before package, NuGet or publish, so this
-> version has no GitHub Release. The path-only correction and publication move to v3.6.4.
+> version has no GitHub Release. The path-only correction moved to v3.6.4; publication moves to
+> v3.6.5 after the separate annotated-tag checkout correction.
 
 ## v3.6.2 — SDK SBOM 证明路径修复（2026-07-24）
 
