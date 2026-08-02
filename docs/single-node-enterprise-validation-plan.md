@@ -67,6 +67,13 @@
 `TODO-0017` Day 0。30 天期间任何 runtime hotfix、候选漂移或不可解释中断都保留旧证据，
 但新候选必须从 Day 0 重新计时。
 
+`TODO-0016` 的 maintained 执行入口是
+[72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)。计划内 gateway、
+backend、network、Redis、rollback 和 host reboot 演练在运营闭环任务关闭后、正式 72 小时
+Day 0 前使用同一 candidate/config 执行并形成不可变记录；全部恢复并重新 verify 后才声明稳定
+窗口。不得把这些计划停机塞入窗口后再用 maintenance exclusion 隐藏，因为 inclusive
+availability 始终保留其失败影响。
+
 ## 单节点部署契约
 
 当前目标路径为 Docker Compose。单节点 Kubernetes 不增加故障域，且会消耗额外资源，

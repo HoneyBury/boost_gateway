@@ -1,6 +1,6 @@
 # 生产运维 Runbook
 
-更新时间：2026-07-26（TODO-0011）
+更新时间：2026-08-02（v3.6.5 / TODO-0011）
 
 本文档用于 P3 监控、告警与运维流程收束。当前生产监控只 scrape gateway `/metrics`；后端服务是自定义 TCP 协议，不暴露 HTTP `/metrics`。因此后端异常通过 gateway backend RED counters、Docker/systemd/Kubernetes 健康检查和业务 full-flow 共同判断。
 
@@ -37,7 +37,7 @@ N2 起，gateway `/metrics` 默认导出 `gateway_backend_route_latency_us_bucke
 | `http://127.0.0.1:9080` | Gateway 只读管理 API | 给 curl、Prometheus、脚本读取健康与指标 | 访问根路径 `/` 返回 `Not Found` 是正常的；必须访问具体 path |
 | `http://127.0.0.1:9090` | Prometheus Web UI | 查看 scrape target、PromQL、告警规则 | 打开后使用顶部菜单 `Status`、`Alerts`、`Graph` |
 | `http://127.0.0.1:9093` | Alertmanager Web UI | 查看告警路由、silence、通知链 | 开发模板是占位 receiver；生产预检会拒绝 |
-| `http://127.0.0.1:3000` | Grafana Web UI | 查看仪表盘 | 默认账号来自 Compose：`admin` / `admin` |
+| `http://127.0.0.1:3000` | Grafana Web UI | 查看仪表盘 | 开发 Compose 可使用本地默认值；生产必须使用非 `admin` 的显式凭据 |
 | `127.0.0.1:9201` | Gateway TCP 业务入口 | SDK / 客户端连接，不是浏览器页面 | 浏览器访问无意义；用 SDK full-flow 或业务客户端验证 |
 
 ### Gateway 管理 API（9080）

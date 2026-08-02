@@ -38,8 +38,10 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
    和 rollback，记录 RTO/RPO。
 6. **收紧仓库治理**：PR、review、required checks、安全披露和第三方 Action pinning 全部
    进入可验证门禁。
-7. **执行 72 小时预演**：在拟生产配置上运行重启、网络、Redis、恢复和回滚场景；所有
-   缺陷必须有 Issue/RCA。
+7. **执行 72 小时预演**：按
+   [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)先在同一
+   candidate/config 上完成计划内重启、网络、Redis、恢复和回滚演练，恢复验证通过后再声明
+   稳定 72 小时半开窗口；所有缺陷必须有 Issue/RCA。
 8. **冻结 Day 0**：确认唯一 tag/SHA/digest/config，开始 30 天连续验证。runtime 或关键
    配置变化必须重新开始 Day 0。
 9. **形成运营结论**：输出 readiness report、未证明边界和下一版本计划，不以降低门槛
@@ -47,13 +49,22 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 已完成基线
 
-- v3.6.2 tag 固定在 `ac99ae353a2a6e846f934c8d81c78a07f420f683`。
-- Release run `30063021104` 发布三平台 runtime、SDK 4.2.0、symbols/dSYM、SPDX、
-  provenance 和 checksum。
-- Linux x64、Linux ARM64、macOS ARM64 线上复验 runs `30063950242`、`30063441646`、
-  `30063444082` 全部通过。
-- 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据已形成；Linux 历史 8h 和隔离
-  性能矩阵仍按其候选 SHA 和 runner 边界使用。
+- v3.6.5 annotated tag 固定到 governed main commit
+  `94f0c5d12d29839bed1598c17f661550c28d84f0`；Release run `30708242109` 和独立
+  Linux x64 published-asset verification run `30708591962` 全部通过。
+- v3.6.5 按 Linux x64-only patch manifest 发布 runtime、SDK 4.2.1、symbols、SPDX、
+  provenance、attestation 和 checksum。v3.6.2 的 Linux ARM64/macOS ARM64 资产保持历史
+  支持边界，不进入 v3.6.5 manifest。
+- `miniserver` 未编译源码；受控 upgrade transaction
+  `20260801T193531-upgrade-242675750f37` PASS，current 为
+  `v3.6.5-b6d0c8554223-8a1afcfd58dd`，previous 为已验证 v3.6.2 deployment。
+- Mac 外部 canary 已绑定相同 v3.6.5 tag/SHA/runtime digest，当前诊断窗口是
+  `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`；固定结束聚合通过前不关闭
+  `TODO-0013`。
+- `TODO-0011` 的最早干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
+  final ledger 和异机 package 复验完成前不得声明 `TODO-0016` Day 0。
+- v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
+  runner 边界使用，不能替代 v3.6.5 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、
   SDK clean consumer 和 published-asset verifier 已进入治理链。
 - 五项 v3.6 ADR 已接受，P0-P6 仓库内实现完成。仓库内实现不代表默认激活或发布资产已经交付；

@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "template": true,
+  "formal_todo0016_claim": false,
+  "todo_id": "TODO-0016",
+  "issue_number": 30,
+  "candidate": {
+    "tag": "v3.6.5",
+    "commit": "94f0c5d12d29839bed1598c17f661550c28d84f0",
+    "runtime_asset_sha256": "b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487",
+    "deployment_id": "v3.6.5-b6d0c8554223-8a1afcfd58dd",
+    "configuration_sha256": "8f37450fb260a3c0db823d578d1b36570e9ff6e9fecf81a4165e15e6f939fb9b"
+  },
+  "production_host": {
+    "hostname": "miniserver",
+    "architecture": "x86_64",
+    "host_id_sha256": "8600b239b110e1e5afc69a8705a366d006563e4d7293a45d9c5e3fbbbfdd3a23"
+  },
+  "external_canary": {
+    "endpoint": "tcp://100.65.71.117:9201",
+    "sdk_version": "4.2.0",
+    "runner_host_id_sha256": "replace-with-mac-host-identity"
+  },
+  "prerequisites": [
+    {"todo_id": "TODO-0011", "required_status": "completed", "evidence": null},
+    {"todo_id": "TODO-0012", "required_status": "completed", "evidence": null},
+    {"todo_id": "TODO-0013", "required_status": "completed", "evidence": null},
+    {"todo_id": "TODO-0014", "required_status": "completed", "evidence": null},
+    {"todo_id": "TODO-0015", "required_status": "completed", "evidence": null}
+  ],
+  "pre_day0_drills": [
+    {"sequence": 1, "scenario": "gateway_restart", "rto_seconds": 300, "rpo_seconds": 0, "planned_window": null, "approved_by": null, "record": null},
+    {"sequence": 2, "scenario": "single_backend_restart", "rto_seconds": 300, "rpo_seconds": null, "planned_window": null, "approved_by": null, "record": null},
+    {"sequence": 3, "scenario": "network_backend_outage", "rto_seconds": 600, "rpo_seconds": 0, "planned_window": null, "approved_by": null, "record": null},
+    {"sequence": 4, "scenario": "redis_restart_restore", "rto_seconds": 600, "rpo_seconds": 60, "planned_window": null, "approved_by": null, "record": null},
+    {"sequence": 5, "scenario": "release_rollback_upgrade_back", "rto_seconds": 600, "rpo_seconds": 0, "planned_window": null, "approved_by": null, "record": null},
+    {"sequence": 6, "scenario": "host_reboot", "rto_seconds": 600, "rpo_seconds": 60, "planned_window": null, "approved_by": null, "record": null}
+  ],
+  "formal_window": {
+    "start": null,
+    "end": null,
+    "duration_seconds": 259200,
+    "expected_samples": 4320,
+    "declared_in_issue": false,
+    "maintenance_windows": []
+  },
+  "hard_gates": {
+    "minimum_coverage": 0.999,
+    "minimum_availability_including_approved_maintenance": 0.999,
+    "maximum_nonmaintenance_gap_minutes": 2,
+    "unknown_restarts": 0,
+    "oom_events": 0,
+    "candidate_count": 1,
+    "endpoint_count": 1,
+    "invalid_samples": 0,
+    "duplicate_samples": 0
+  },
+  "evidence": {
+    "release_workflow_run": 30708242109,
+    "published_asset_verification_run": 30708591962,
+    "upgrade_transaction_id": "20260801T193531-upgrade-242675750f37",
+    "todo0011_final_record": null,
+    "todo0011_off_host_receipt": null,
+    "todo0013_72h_aggregate": null,
+    "pre_day0_recovery_summary": null,
+    "formal_72h_aggregate": null,
+    "final_shakedown_record": null
+  },
+  "operator": null,
+  "approved_by": null,
+  "recorded_at": null,
+  "secret_material_recorded": false
+}
