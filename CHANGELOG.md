@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Runtime
+
+- Reap Battle backend runtime instances and all per-battle frame, snapshot, item,
+  replay, and synchronous callback state on explicit, plugin-driven, and frame-limit
+  completion paths. Persist the complete replay before cleanup and retain only a
+  bounded 100-entry in-memory fallback so minute-aligned synthetic battles cannot
+  produce linear resident-memory growth.
+
 ## v3.6.5 - Linux x64 lifecycle patch (2026-08-01)
 
 ### Runtime

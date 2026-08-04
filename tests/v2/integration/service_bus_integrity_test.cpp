@@ -30,6 +30,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <filesystem>
 #include <memory>
 #include <mutex>
 #include <stdexcept>
@@ -49,6 +50,26 @@ struct LoggingBootstrap {
 };
 
 const LoggingBootstrap kLoggingBootstrap{};
+
+class ScopedTempDirectory {
+public:
+    explicit ScopedTempDirectory(std::string prefix)
+        : path_(std::filesystem::temp_directory_path() /
+                (std::move(prefix) + std::to_string(
+                    std::chrono::steady_clock::now().time_since_epoch().count()))) {
+        std::filesystem::create_directories(path_);
+    }
+
+    ~ScopedTempDirectory() {
+        std::error_code error;
+        std::filesystem::remove_all(path_, error);
+    }
+
+    [[nodiscard]] const std::filesystem::path& path() const { return path_; }
+
+private:
+    std::filesystem::path path_;
+};
 
 constexpr const char* kRs256PrivateKey = R"(-----BEGIN PRIVATE KEY-----
 MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDdKPKcv8FJB88T
@@ -1733,9 +1754,221 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughBattleCreateAndFinish) {
     EXPECT_EQ(finish_decoded->message_kind, v3::proto::EnvelopeMessageKind::kBattleFinishResponse);
     EXPECT_EQ(finish_decoded->payload.value("battle_id", ""), "battle_typed_1");
 
+    const auto released = service.resource_stats();
+    EXPECT_EQ(released.runtime_instances, 0U);
+    EXPECT_EQ(released.frame_states, 0U);
+    EXPECT_EQ(released.last_tick_states, 0U);
+    EXPECT_EQ(released.snapshot_states, 0U);
+    EXPECT_EQ(released.active_replays, 0U);
+    EXPECT_EQ(released.item_states, 0U);
+    EXPECT_EQ(released.pending_snapshots, 0U);
+    EXPECT_EQ(released.pending_settlements, 0U);
+
     auto recreate_resp = conn.send_request(create_req);
     ASSERT_TRUE(recreate_resp.has_value());
     EXPECT_EQ(recreate_resp->kind, v2::service::MessageKind::kResponse);
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, BattleBackendReapsInputFinishedResourcesAndBoundsReplayFallback) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    // More than one day of minute-aligned canary battles must leave only the
+    // fixed completed-replay fallback, never per-battle active state.
+    constexpr int kBattleCount = 2048;
+    for (int i = 0; i < kBattleCount; ++i) {
+        const auto battle_id = "reap_battle_" + std::to_string(i);
+        auto create = payload_envelope(nlohmann::json{
+            {"battle_id", battle_id},
+            {"room_id", "reap_room_" + std::to_string(i)},
+            {"player_ids", {"alice", "bob"}},
+            {"max_frames", 64},
+        }.dump());
+        create.message_type = "battle_create";
+        auto created = conn.send_request(create);
+        ASSERT_TRUE(created.has_value()) << battle_id;
+        ASSERT_EQ(created->kind, v2::service::MessageKind::kResponse) << battle_id;
+
+        auto finish = payload_envelope(nlohmann::json{
+            {"user_id", "alice"},
+            {"battle_id", battle_id},
+            {"input_data", "move:1,2"},
+            {"submitted_frame", 1},
+        }.dump());
+        finish.message_type = "battle_input";
+        auto input = conn.send_request(finish);
+        ASSERT_TRUE(input.has_value()) << battle_id;
+        ASSERT_EQ(input->kind, v2::service::MessageKind::kResponse) << battle_id;
+
+        auto finish_request = payload_envelope(nlohmann::json{
+            {"user_id", "alice"},
+            {"battle_id", battle_id},
+            {"reason", "surrender"},
+        }.dump());
+        finish_request.message_type = "battle_finish";
+        auto finished = conn.send_request(finish_request);
+        ASSERT_TRUE(finished.has_value()) << battle_id;
+        ASSERT_EQ(finished->kind, v2::service::MessageKind::kResponse) << battle_id;
+    }
+
+    const auto stats = service.resource_stats();
+    EXPECT_EQ(stats.runtime_instances, 0U);
+    EXPECT_EQ(stats.frame_states, 0U);
+    EXPECT_EQ(stats.last_tick_states, 0U);
+    EXPECT_EQ(stats.snapshot_states, 0U);
+    EXPECT_EQ(stats.active_replays, 0U);
+    EXPECT_EQ(stats.item_states, 0U);
+    EXPECT_EQ(stats.pending_snapshots, 0U);
+    EXPECT_EQ(stats.pending_settlements, 0U);
+    EXPECT_EQ(stats.completed_replays, 100U);
+
+    auto latest_replay = payload_envelope(
+        R"({"battle_id":"reap_battle_2047"})");
+    latest_replay.message_type = "replay_load";
+    auto latest = conn.send_request(latest_replay);
+    ASSERT_TRUE(latest.has_value());
+    ASSERT_EQ(latest->kind, v2::service::MessageKind::kResponse);
+    const auto latest_body = nlohmann::json::parse(latest->payload);
+    EXPECT_EQ(latest_body["replay"].value("battle_id", ""), "reap_battle_2047");
+    EXPECT_EQ(latest_body["replay"].value("frame_count", 0), 1);
+
+    auto evicted_replay = payload_envelope(
+        R"({"battle_id":"reap_battle_0"})");
+    evicted_replay.message_type = "replay_load";
+    auto evicted = conn.send_request(evicted_replay);
+    ASSERT_TRUE(evicted.has_value());
+    EXPECT_EQ(evicted->kind, v2::service::MessageKind::kError);
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, BattleBackendReapsFrameLimitFinishedResources) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto create = payload_envelope(R"({"battle_id":"frame_limit_reap","room_id":"frame_limit_room","player_ids":["alice","bob"],"max_frames":1})");
+    create.message_type = "battle_create";
+    auto created = conn.send_request(create);
+    ASSERT_TRUE(created.has_value());
+    ASSERT_EQ(created->kind, v2::service::MessageKind::kResponse);
+
+    auto input = payload_envelope(R"({"user_id":"alice","battle_id":"frame_limit_reap","input_data":"move:1,2","submitted_frame":1})");
+    input.message_type = "battle_input";
+    auto finished = conn.send_request(input);
+    ASSERT_TRUE(finished.has_value());
+    ASSERT_EQ(finished->kind, v2::service::MessageKind::kResponse);
+    EXPECT_TRUE(nlohmann::json::parse(finished->payload)
+                    .value("should_finish", false));
+
+    const auto stats = service.resource_stats();
+    EXPECT_EQ(stats.runtime_instances, 0U);
+    EXPECT_EQ(stats.frame_states, 0U);
+    EXPECT_EQ(stats.last_tick_states, 0U);
+    EXPECT_EQ(stats.snapshot_states, 0U);
+    EXPECT_EQ(stats.active_replays, 0U);
+    EXPECT_EQ(stats.completed_replays, 1U);
+    EXPECT_EQ(stats.item_states, 0U);
+    EXPECT_EQ(stats.pending_snapshots, 0U);
+    EXPECT_EQ(stats.pending_settlements, 0U);
+
+    auto state_create = payload_envelope(R"({"battle_id":"state_limit_reap","room_id":"state_limit_room","player_ids":["alice","bob"],"max_frames":1})");
+    state_create.message_type = "battle_create";
+    auto state_created = conn.send_request(state_create);
+    ASSERT_TRUE(state_created.has_value());
+    ASSERT_EQ(state_created->kind, v2::service::MessageKind::kResponse);
+
+    auto state = payload_envelope(R"({"battle_id":"state_limit_reap"})");
+    state.message_type = "battle_state";
+    auto state_finished = conn.send_request(state);
+    ASSERT_TRUE(state_finished.has_value());
+    ASSERT_EQ(state_finished->kind, v2::service::MessageKind::kResponse);
+
+    const auto state_stats = service.resource_stats();
+    EXPECT_EQ(state_stats.runtime_instances, 0U);
+    EXPECT_EQ(state_stats.frame_states, 0U);
+    EXPECT_EQ(state_stats.last_tick_states, 0U);
+    EXPECT_EQ(state_stats.snapshot_states, 0U);
+    EXPECT_EQ(state_stats.active_replays, 0U);
+    EXPECT_EQ(state_stats.completed_replays, 1U);
+    EXPECT_EQ(state_stats.item_states, 0U);
+    EXPECT_EQ(state_stats.pending_snapshots, 0U);
+    EXPECT_EQ(state_stats.pending_settlements, 0U);
+
+    service.stop();
+}
+
+TEST(ServiceBusIntegrity, BattleBackendPersistsReplayBeforeReapingMemory) {
+    ScopedTempDirectory temp_dir("boost_battle_replay_reaping_");
+
+    v2::battle::BattleBackendService service(0);
+    service.set_replay_storage_dir(temp_dir.path().string());
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    constexpr int kBattleCount = 110;
+    for (int i = 0; i < kBattleCount; ++i) {
+        const auto battle_id = "persisted_reap_battle_" + std::to_string(i);
+        auto create = payload_envelope(nlohmann::json{
+            {"battle_id", battle_id},
+            {"room_id", "persisted_reap_room_" + std::to_string(i)},
+            {"player_ids", {"alice", "bob"}},
+            {"max_frames", 64},
+        }.dump());
+        create.message_type = "battle_create";
+        auto created = conn.send_request(create);
+        ASSERT_TRUE(created.has_value()) << battle_id;
+        ASSERT_EQ(created->kind, v2::service::MessageKind::kResponse) << battle_id;
+
+        auto finish = payload_envelope(nlohmann::json{
+            {"user_id", "alice"},
+            {"battle_id", battle_id},
+            {"input_data", "move:1,2"},
+            {"submitted_frame", 1},
+        }.dump());
+        finish.message_type = "battle_input";
+        auto input = conn.send_request(finish);
+        ASSERT_TRUE(input.has_value()) << battle_id;
+        ASSERT_EQ(input->kind, v2::service::MessageKind::kResponse) << battle_id;
+
+        auto finish_request = payload_envelope(nlohmann::json{
+            {"user_id", "alice"},
+            {"battle_id", battle_id},
+            {"reason", "surrender"},
+        }.dump());
+        finish_request.message_type = "battle_finish";
+        auto finished = conn.send_request(finish_request);
+        ASSERT_TRUE(finished.has_value()) << battle_id;
+        ASSERT_EQ(finished->kind, v2::service::MessageKind::kResponse) << battle_id;
+    }
+
+    const auto stats = service.resource_stats();
+    EXPECT_EQ(stats.runtime_instances, 0U);
+    EXPECT_EQ(stats.active_replays, 0U);
+    EXPECT_EQ(stats.completed_replays, 100U);
+
+    auto persisted_replay = payload_envelope(
+        R"({"battle_id":"persisted_reap_battle_0"})");
+    persisted_replay.message_type = "replay_load";
+    auto persisted = conn.send_request(persisted_replay);
+    ASSERT_TRUE(persisted.has_value());
+    ASSERT_EQ(persisted->kind, v2::service::MessageKind::kResponse);
+    const auto persisted_body = nlohmann::json::parse(persisted->payload);
+    EXPECT_EQ(persisted_body["replay"].value("battle_id", ""),
+              "persisted_reap_battle_0");
+    EXPECT_EQ(persisted_body["replay"].value("frame_count", 0), 1);
 
     service.stop();
 }

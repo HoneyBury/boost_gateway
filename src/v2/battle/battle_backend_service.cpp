@@ -13,8 +13,10 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
+#include <deque>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -86,8 +88,19 @@ public:
         return s;
     }
 
+    void erase(const std::string& instance_id) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        snapshots_.erase(instance_id);
+        settlements_.erase(instance_id);
+    }
+
+    std::pair<std::size_t, std::size_t> resource_counts() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return {snapshots_.size(), settlements_.size()};
+    }
+
 private:
-    std::mutex mutex_;
+    mutable std::mutex mutex_;
     std::unordered_map<std::string, v2::realtime::Snapshot> snapshots_;
     std::unordered_map<std::string, std::string> settlements_;
 };
@@ -225,6 +238,24 @@ public:
         return server_ ? server_->local_port() : port_;
     }
 
+    BattleBackendResourceStats resource_stats() const {
+        BattleBackendResourceStats stats;
+        stats.runtime_instances = runtime_.instance_count();
+        const auto [pending_snapshots, pending_settlements] =
+            sync_capture_.resource_counts();
+        stats.pending_snapshots = pending_snapshots;
+        stats.pending_settlements = pending_settlements;
+
+        std::lock_guard<std::mutex> lock(frames_mutex_);
+        stats.frame_states = instance_frames_.size();
+        stats.last_tick_states = instance_last_tick_ms_.size();
+        stats.snapshot_states = latest_snapshots_.size();
+        stats.active_replays = replay_frames_.size();
+        stats.completed_replays = completed_replays_.size();
+        stats.item_states = battle_items_.size();
+        return stats;
+    }
+
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config) {
         tls_config_ = std::move(tls_config);
     }
@@ -266,8 +297,11 @@ private:
     std::unordered_map<std::string, std::int64_t> instance_last_tick_ms_;
     std::unordered_map<std::string, CachedBattleSnapshot> latest_snapshots_;
     std::unordered_map<std::string, std::vector<ReplayFrameCacheEntry>> replay_frames_;
+    static constexpr std::size_t kCompletedReplayCacheLimit = 100;
+    std::unordered_map<std::string, nlohmann::json> completed_replays_;
+    std::deque<std::string> completed_replay_order_;
     std::unordered_map<std::string, BattleItemState> battle_items_;
-    std::mutex frames_mutex_;
+    mutable std::mutex frames_mutex_;
 
     std::uint32_t get_instance_frame(const std::string& battle_id) {
         std::lock_guard<std::mutex> lock(frames_mutex_);
@@ -320,8 +354,8 @@ private:
         });
     }
 
-    std::optional<nlohmann::json> replay_doc(const std::string& battle_id) {
-        std::lock_guard<std::mutex> lock(frames_mutex_);
+    std::optional<nlohmann::json> active_replay_doc_locked(
+        const std::string& battle_id) const {
         auto it = replay_frames_.find(battle_id);
         if (it == replay_frames_.end()) {
             return std::nullopt;
@@ -337,12 +371,65 @@ private:
         };
     }
 
-    void erase_instance_frame(const std::string& battle_id) {
+    std::optional<nlohmann::json> replay_doc(const std::string& battle_id) const {
         std::lock_guard<std::mutex> lock(frames_mutex_);
-        instance_frames_.erase(battle_id);
-        instance_last_tick_ms_.erase(battle_id);
-        latest_snapshots_.erase(battle_id);
-        battle_items_.erase(battle_id);
+        if (auto active = active_replay_doc_locked(battle_id)) {
+            return active;
+        }
+        auto completed = completed_replays_.find(battle_id);
+        if (completed == completed_replays_.end()) {
+            return std::nullopt;
+        }
+        return completed->second;
+    }
+
+    std::optional<nlohmann::json> release_instance_resources(
+        const std::string& battle_id) {
+        runtime_.destroy_instance(battle_id);
+        sync_capture_.erase(battle_id);
+
+        std::optional<nlohmann::json> replay;
+        {
+            std::lock_guard<std::mutex> lock(frames_mutex_);
+            replay = active_replay_doc_locked(battle_id);
+            if (replay.has_value()) {
+                auto existing = completed_replays_.find(battle_id);
+                if (existing != completed_replays_.end()) {
+                    auto order = std::find(completed_replay_order_.begin(),
+                                           completed_replay_order_.end(),
+                                           battle_id);
+                    if (order != completed_replay_order_.end()) {
+                        completed_replay_order_.erase(order);
+                    }
+                }
+                completed_replays_[battle_id] = *replay;
+                completed_replay_order_.push_back(battle_id);
+                while (completed_replay_order_.size() >
+                       kCompletedReplayCacheLimit) {
+                    completed_replays_.erase(completed_replay_order_.front());
+                    completed_replay_order_.pop_front();
+                }
+            }
+
+            replay_frames_.erase(battle_id);
+            instance_frames_.erase(battle_id);
+            instance_last_tick_ms_.erase(battle_id);
+            latest_snapshots_.erase(battle_id);
+            battle_items_.erase(battle_id);
+        }
+
+        if (replay.has_value() && replay_storage_) {
+            try {
+                if (!replay_storage_->store_replay(battle_id, *replay)) {
+                    std::cout << "v2_battle_backend: replay persistence queue rejected battle "
+                              << battle_id << std::endl;
+                }
+            } catch (const std::exception& e) {
+                std::cout << "v2_battle_backend: failed to persist replay for "
+                          << battle_id << ": " << e.what() << std::endl;
+            }
+        }
+        return replay;
     }
 
     nlohmann::json item_id_for(const std::string& battle_id) const {
@@ -659,16 +746,7 @@ private:
                 }
             }
 
-            // Store replay frame if replay storage is configured
-            if (replay_storage_) {
-                try {
-                    replay_storage_->store_replay(battle_id, replay_entry);
-                } catch (const std::exception& e) {
-                    std::cout << "v2_battle_backend: failed to store replay for "
-                              << battle_id << ": " << e.what() << std::endl;
-                }
-            }
-
+            release_instance_resources(battle_id);
         }
 
         auto resp = make_ok({
@@ -700,16 +778,24 @@ private:
             return make_error(-1004, "empty_battle_id");
         }
 
+        auto& input_mutex = battle_input_mutexes_[
+            std::hash<std::string>{}(battle_id) % battle_input_mutexes_.size()];
+        std::scoped_lock input_lock(input_mutex);
+
         auto* instance_ctx = runtime_.find_instance(battle_id);
+        const bool instance_found = instance_ctx != nullptr;
         auto frame_number = get_instance_frame(battle_id);
         std::optional<CachedBattleSnapshot> cached;
-        if (instance_ctx != nullptr) {
+        bool should_release = false;
+        std::string settlement_str;
+        if (instance_found) {
             const auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::system_clock::now().time_since_epoch()).count();
             if (should_tick_instance(battle_id, now_ms)) {
                 const auto next_frame = frame_number + 1;
                 const auto tick_stats = runtime_.tick_instance(battle_id, next_frame, now_ms);
                 frame_number = tick_stats.frame_number;
+                should_release = tick_stats.should_finish;
                 set_instance_frame(battle_id, frame_number);
 
                 auto snapshot = sync_capture_.consume_snapshot(battle_id);
@@ -725,7 +811,22 @@ private:
             }
         }
         cached = latest_snapshot(battle_id);
-        if (instance_ctx == nullptr && !cached.has_value()) {
+        if (should_release) {
+            settlement_str = sync_capture_.consume_settlement(battle_id);
+            if (archive_store_ && cached.has_value()) {
+                try {
+                    archive_store_->save_snapshot(battle_id, cached->payload);
+                    if (!settlement_str.empty()) {
+                        archive_store_->save_result(battle_id, settlement_str);
+                    }
+                } catch (const std::exception& e) {
+                    std::cout << "v2_battle_backend: failed to archive finished battle "
+                              << battle_id << ": " << e.what() << std::endl;
+                }
+            }
+            release_instance_resources(battle_id);
+        }
+        if (!instance_found && !cached.has_value()) {
             return make_error(-2003, "battle_not_found");
         }
 
@@ -739,7 +840,6 @@ private:
         if (cached.has_value() && !cached->payload.empty()) {
             auto payload = nlohmann::json::parse(cached->payload, nullptr, false);
             if (!payload.is_discarded()) {
-                enrich_snapshot_with_items(payload, battle_id);
                 apply_speed_buff_if_present(payload);
                 state["snapshot"] = std::move(payload);
             }
@@ -776,6 +876,10 @@ private:
         std::string battle_id = doc["battle_id"].get<std::string>();
         bool has_reason = doc.contains("reason");
 
+        auto& input_mutex = battle_input_mutexes_[
+            std::hash<std::string>{}(battle_id) % battle_input_mutexes_.size()];
+        std::scoped_lock input_lock(input_mutex);
+
         // Request the runtime to finish the instance
         // finish_instance() calls build_settlement() and emits the
         // kInstanceFinished event synchronously, so the settlement
@@ -786,10 +890,8 @@ private:
 
         // Consume the settlement captured by the event callback
         auto settlement_str = sync_capture_.consume_settlement(battle_id);
-        runtime_.destroy_instance(battle_id);
-
         auto total_frames = get_instance_frame(battle_id);
-        erase_instance_frame(battle_id);
+        release_instance_resources(battle_id);
 
         // Archive final state if archive store is configured
         if (archive_store_) {
@@ -893,6 +995,9 @@ BattleBackendService::~BattleBackendService() = default;
 void BattleBackendService::start() { impl_->start(); }
 void BattleBackendService::stop() { impl_->stop(); }
 std::uint16_t BattleBackendService::local_port() const { return impl_->local_port(); }
+BattleBackendResourceStats BattleBackendService::resource_stats() const {
+    return impl_->resource_stats();
+}
 
 void BattleBackendService::set_tls_config(
     std::optional<v3::cluster::TlsSessionConfig> tls_config) {
