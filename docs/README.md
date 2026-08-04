@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-07-29
+更新时间：2026-08-02
 
 `docs/` 顶层只保留当前仍维护的事实源、规范、计划和操作手册。已经结束的版本计划、
 交付记录和旧 runbook 进入 [`docs/archive/`](archive/README.md)，不作为当前事实源，
@@ -19,6 +19,7 @@
 | 不可变 Release 单节点部署 | [不可变 Release 部署手册](deployment/immutable-release-deployment-runbook.md) |
 | 长期观测与证据 ledger | [长期观测与证据手册](deployment/long-run-observability-runbook.md) |
 | Release 生命周期 | [安装、升级和回滚手册](deployment/release-lifecycle-runbook.md) |
+| 72 小时生产预演 | [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md) |
 
 ## 当前事实与规划
 
@@ -27,7 +28,7 @@
 | [当前状态](current-state.md) | 已发布版本、已实现能力、默认链路、当前阻断和主任务 |
 | [架构总览](architecture-overview.md) | 组件、端口、数据流、代码边界和部署模型 |
 | [项目蓝图](project-blueprint.md) | 六个月以上的方向、取舍原则和长期门禁 |
-| [主线执行计划](mainline-execution-plan.md) | v3.6.2 发布后两个月的具体执行顺序 |
+| [主线执行计划](mainline-execution-plan.md) | v3.6.5 生产升级后两个月的具体执行顺序 |
 | [单节点运营与 30 天验证](single-node-enterprise-validation-plan.md) | 自动部署、SLI/SLO、备份恢复、72 小时预演和 30 天运行契约 |
 | [平台生产边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的不可互换证据边界 |
 | [平台边界清单](platform-production-boundaries.json) | 平台契约的机器可读事实源 |
@@ -56,6 +57,7 @@
 | [Runner Gate Standard](runner-gate-standard.md) | 命名、标签、准入生命周期和缓存隔离规则 |
 | [固定 Runner 手册](fixed-runner-playbook.md) | Conan/Docker 预热、R4/R5/R6 和专项证据操作 |
 | [生产证据](production/) | 当前 manifest 和恢复演练模板 |
+| [生产预演计划模板](production/production-shakedown-plan-template.json) | TODO-0016 candidate、前置任务、演练、窗口和硬门槛的 fail-closed 预声明 |
 | [备份恢复策略](deployment/backup-recovery-policy-runbook.md) | TODO-0012 Redis AOF/RDB、异机备份和恢复安全边界；目标机已激活并完成验收，example/单轮产物仍保持 fail-closed formal flag |
 | [Redis AOF 初始激活决策](decisions/todo0012-redis-aof-activation.json) | 绑定激活前性能基准、容量评审和禁止盲目 AOF→RDB 回退；文件中的 pre-activation flag 是历史决策边界，不代表当前目标机状态 |
 

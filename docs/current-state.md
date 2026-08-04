@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-08-01
+更新时间：2026-08-02
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
@@ -8,7 +8,7 @@
 ## 当前结论
 
 - 仓库发布线是 v3.6.5 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
-  `miniserver` 在 v3.6.5 发布并完成受控 upgrade 前继续运行已验证的 v3.6.2。
+  `miniserver` 已通过受控生命周期从 v3.6.2 upgrade 到不可变 v3.6.5 deployment。
 - v3.6.2 三平台 runtime、SDK 4.2.0、symbols/dSYM 和供应链资产保持不可变历史事实；
   Linux ARM64 与 macOS ARM64 不进入 v3.6.5 新资产集合。
 - Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.5 服务端；
@@ -32,18 +32,19 @@
 和 release SDK full-flow 均通过，全程没有源码构建或公共 Conan 访问。目标机证据位于
 `/var/lib/boost-gateway-evidence/release/`。
 
-`TODO-0010` 已在同一目标机真实完成。受控生命周期当前保留
-`v3.6.2-faf2d03ff1b9-6b89c8919d28` 和 `v3.6.0-a9c0465ee821-1a02fa0ae6c2`
-两个完整 deployment；最终 `current` 为 v3.6.2、`previous` 为 v3.6.0，systemd、六个运行
-image ID 和运行状态检查通过。同 release 重复 install/deploy 返回相同 identity 和
+`TODO-0010` 已在同一目标机真实完成。历史 v3.6.2/v3.6.0 演练中，同 release 重复
+install/deploy 返回相同 identity 和
 `idempotent=true`，`todo0010-20260725T152655Z` data/backup/evidence 哨兵、Redis key 和
 Compose volume 清单均保留。前向 upgrade 和真实 rollback 分别在约 55–57 秒内完成，rollback
 记录恢复了 runtime asset、image environment 和 configuration digest。受控 Prometheus pause
 使 transaction `20260725T161238-upgrade-257dce6b1f94` 的候选验证真实失败，独立 recovery
-summary 随后 PASS 并自动恢复 v3.6.0；最终 transaction
-`20260725T163615-upgrade-db4ab2d7639d` 已将运行版本恢复到 v3.6.2。目标机证据位于
-`/var/lib/boost-gateway/deployment-transactions/`。主线下一项为 `TODO-0011` 的长期观测与
-evidence ledger，不把本次短时部署证据扩张为长期留存结论。
+summary 随后 PASS 并自动恢复 v3.6.0；transaction
+`20260725T163615-upgrade-db4ab2d7639d` 将运行版本恢复到 v3.6.2。2026-08-01 的正式
+v3.6.5 Release 随后通过同一治理入口完成 install 和 upgrade：transaction
+`20260801T193531-upgrade-242675750f37` 在 65.254 秒内 PASS，当前 `current` 是
+`v3.6.5-b6d0c8554223-8a1afcfd58dd`，`previous` 是
+`v3.6.2-faf2d03ff1b9-8a1afcfd58dd`，受保护状态未改变。目标机证据位于
+`/var/lib/boost-gateway/deployment-transactions/`。
 
 `TODO-0012` 已于 2026-07-28 完成：production-validation Redis 已实际启用 AOF `everysec` +
 RDB，声明并验证不高于 60 秒的 RPO；加密 daily backup 已复制到异机 vault，至少两份独立
@@ -58,7 +59,18 @@ node-exporter、cAdvisor、Redis persistence 和 Docker restart-count 指标契�
 指标样本和异机 bootstrap 包复验。生产预检继续拒绝默认 Grafana 凭据、占位 receiver、过期或
 单边投递声明；ledger 可生成 create-only daily/weekly/incident/final record 及带 `SHA256SUMS` 的
 异机包。`TODO-0011` 仍保持 open，剩余边界是自然 daily/完整 ISO weekly 周期与最终报告覆盖，
-不能把已激活的采集和 receiver 错写成整段长期观测已经完成。
+不能把已激活的采集和 receiver 错写成整段长期观测已经完成。W31 的历史 gap 已被不可变保留；
+最早可用于关闭任务的完整干净周期是 W32（`2026-08-03T00:00:00Z` 至
+`2026-08-10T00:00:00Z`），周报在 `2026-08-10T00:45:00Z` 自然运行。之后仍须更新
+firing/resolved 回执、生成 final ledger，并在异机验证新 evidence package。
+
+`TODO-0013` 的 v3.6.2 诊断窗口完整记录 4,320 个分钟，但五次真实 gateway-to-backend
+timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复已进入 v3.6.5，Mac 外部主机现以
+Tailscale 真实路径运行新的权威窗口
+`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`。该窗口绑定 v3.6.5 deployment、
+commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime digest
+`b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`；它用于关闭
+`TODO-0013`，不是 `TODO-0016` Day 0。
 
 ## 默认生产链路
 
@@ -133,10 +145,11 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 当前两个月工作由 `TODO-0007` 至 `TODO-0018` 管理，目标是：
 
 1. 已在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
-2. 继续积累已激活的 45 天 metrics/ledger 自然周期，并建立外部 SDK canary。
+2. 完成 W32 自然 metrics/ledger 周期和 v3.6.5 外部 SDK canary 诊断窗口。
 3. 已完成异机备份、Redis/host/runtime 恢复演练，并满足 5/10 分钟 RTO 边界。
 4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
-5. 通过 72 小时上线预演后冻结单一 tag/SHA/digest，连续运行至少 30 天。
+5. 关闭 `TODO-0011`/`TODO-0013` 后执行独立的 72 小时上线预演，再冻结单一
+   tag/SHA/digest 连续运行至少 30 天。
 
 30 天验证要求连续时长不少于 `2,592,000s`，availability/canary success 与证据覆盖率
 均不低于 99.9%；runtime 变化会重置 Day 0。完整口径见

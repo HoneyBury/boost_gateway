@@ -36,12 +36,14 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/immutable-release-deployment-runbook.md",
     "docs/deployment/release-lifecycle-runbook.md",
     "docs/deployment/backup-recovery-policy-runbook.md",
+    "docs/deployment/72-hour-production-shakedown-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/release-governance.md",
     "docs/tls-mtls-runbook.md",
     "docs/decisions/v3.6-decision-manifest.json",
     "docs/production/production-candidate-evidence-manifest.json",
     "docs/production/production-recovery-drill-record-template.json",
+    "docs/production/production-shakedown-plan-template.json",
 ]
 
 ARCHIVED_RELEASE_DOCS = [
@@ -375,6 +377,51 @@ def main() -> int:
         and "TODO-0012` 已于 2026-07-28" in recovery_policy_runbook
         and "产物权限边界，不是当前 live host 状态" in recovery_policy_runbook,
         "the live TODO-0012 result and the fail-closed example/per-artifact boundary are both documented and installed",
+    )
+    shakedown_runbook = (
+        ROOT / "docs/deployment/72-hour-production-shakedown-runbook.md"
+    ).read_text(encoding="utf-8")
+    shakedown_plan = json.loads(
+        (ROOT / "docs/production/production-shakedown-plan-template.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    drill_scenarios = {
+        item.get("scenario") for item in shakedown_plan.get("pre_day0_drills", [])
+    }
+    add(
+        checks,
+        "docs:production-shakedown-contract",
+        all(
+            token in shakedown_runbook
+            for token in (
+                "TODO-0011",
+                "TODO-0013",
+                "TODO-0016",
+                "Issue #30",
+                "4,320",
+                "99.9%",
+                "inclusive availability",
+                "host reboot",
+                "release rollback",
+                "TODO-0017",
+            )
+        )
+        and "72-hour-production-shakedown-runbook.md" in docs_index
+        and shakedown_plan.get("template") is True
+        and shakedown_plan.get("formal_todo0016_claim") is False
+        and shakedown_plan.get("formal_window", {}).get("duration_seconds") == 259200
+        and shakedown_plan.get("formal_window", {}).get("expected_samples") == 4320
+        and {
+            "gateway_restart",
+            "single_backend_restart",
+            "network_backend_outage",
+            "redis_restart_restore",
+            "release_rollback_upgrade_back",
+            "host_reboot",
+        }
+        == drill_scenarios,
+        "the fail-closed TODO-0016 admission, drill, fixed-window and TODO-0017 handoff contract is indexed and installed",
     )
 
     failed = [check for check in checks if not check["passed"]]
