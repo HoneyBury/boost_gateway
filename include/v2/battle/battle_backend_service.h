@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -10,6 +11,18 @@
 
 namespace v2::battle {
 
+struct BattleBackendResourceStats {
+    std::size_t runtime_instances = 0;
+    std::size_t frame_states = 0;
+    std::size_t last_tick_states = 0;
+    std::size_t snapshot_states = 0;
+    std::size_t active_replays = 0;
+    std::size_t completed_replays = 0;
+    std::size_t item_states = 0;
+    std::size_t pending_snapshots = 0;
+    std::size_t pending_settlements = 0;
+};
+
 class BattleBackendService {
 public:
     explicit BattleBackendService(std::uint16_t port);
@@ -18,6 +31,9 @@ public:
     void start();
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
+
+    /// Snapshot active and bounded fallback state for lifecycle verification.
+    [[nodiscard]] BattleBackendResourceStats resource_stats() const;
     void set_tls_config(std::optional<v3::cluster::TlsSessionConfig> tls_config);
 
     /// Select the instance plugin type used for all battle instances.
