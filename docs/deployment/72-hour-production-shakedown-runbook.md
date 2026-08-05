@@ -1,6 +1,6 @@
 # 72 小时生产预演 Runbook
 
-更新时间：2026-08-02
+更新时间：2026-08-05
 
 本文档是 `TODO-0016` 在 Ubuntu 24.04 x64 单节点生产主机上的 maintained 执行入口。
 它不负责关闭 `TODO-0011` 或 `TODO-0013`，也不把诊断性 canary 时间自动升级为正式
@@ -9,7 +9,7 @@ Day 0。机器可读的预声明模板位于
 
 ## 当前候选和边界
 
-拟进入预演的不可变候选是：
+当前没有已准入的不可变候选。v3.6.5 生产身份是：
 
 - tag：`v3.6.5`
 - commit：`94f0c5d12d29839bed1598c17f661550c28d84f0`
@@ -18,11 +18,14 @@ Day 0。机器可读的预声明模板位于
 - production host identity：`8600b239b110e1e5afc69a8705a366d006563e4d7293a45d9c5e3fbbbfdd3a23`
 - external endpoint：`tcp://100.65.71.117:9201`
 
-上述身份只是预演候选，不是提前完成声明。任何 runtime、关键配置、host 或 canary endpoint
-变化都必须创建新计划并重新执行准入。
+该身份完成 `TODO-0013` 的 4,320/4,320 外部 canary 窗口，但 Battle working set 约以
+0.48–0.50 MiB/h 线性增长，因此已拒绝作为 `TODO-0016` Day 0。替代候选是 v3.6.6；其
+commit、Release run、published-asset verification run、runtime digest、configuration digest
+和 deployment ID 必须在发布、独立复验和受控 upgrade 后按真实证据回填。任何 runtime、
+关键配置、host 或 canary endpoint 变化都必须创建新计划并重新执行准入。
 
-Mac 上当前
-`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)` 是 `TODO-0013` 的权威诊断
+Mac 上
+`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)` 是已通过的 `TODO-0013` 权威诊断
 窗口，不是本任务 Day 0。W32
 `[2026-08-03T00:00:00Z, 2026-08-10T00:00:00Z)` 是 `TODO-0011` 所需的自然干净
 ISO 周。在这两个窗口结束前禁止注入计划故障、重启主机、rollback 或修改生产配置。
@@ -33,8 +36,8 @@ ISO 周。在这两个窗口结束前禁止注入计划故障、重启主机、r
 
 1. `TODO-0011`、`TODO-0012`、`TODO-0013`、`TODO-0014`、`TODO-0015` 在
    `docs/todos/tasks.json` 和对应 GitHub Issue 中均为 completed/closed。
-2. v3.6.5 Release workflow `30708242109` 与 published-asset verification
-   `30708591962` 的结果仍可访问，tag 仍是 annotated tag 并 peel 到上述 commit。
+2. v3.6.6 Release workflow 与 published-asset verification 均 PASS，run ID 已写入计划，
+   tag 仍是 annotated tag 并 peel 到计划中的 commit。
 3. lifecycle `status` 和 `verify` PASS，current/previous、六个 image ID、配置摘要、数据卷和
    受保护状态没有未解释漂移。
 4. 五个 Prometheus targets 为 up，规则 health 全部为 ok，45 天 retention 生效；最近 daily
@@ -170,6 +173,6 @@ Issue comment 成功写入后才允许把第一个自然分钟称为 Day 0。run
 - 所有 pre-Day0 drill、窗口 incident、daily/weekly、Alertmanager、backup 和 off-host evidence
   可由摘要 digest 复算。
 
-创建 final shakedown record，明确选择或拒绝 v3.6.5 作为 `TODO-0017` Day 0 candidate。
+创建 final shakedown record，明确选择或拒绝 v3.6.6 作为 `TODO-0017` Day 0 candidate。
 随后才可完成 `TODO-0016`、关闭 Issue #30，并为 30 天窗口写入新的独立声明。72h 时间不能
 直接累计到 30 天窗口。

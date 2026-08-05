@@ -1,10 +1,10 @@
-# v3.6.5 Linux x64 发布后企业运营主线
+# v3.6.6 Linux x64 企业运营主线
 
-更新时间：2026-08-01
+更新时间：2026-08-05
 
 ## 目标
 
-当前两个月不扩大业务或默认协议面，而是把 v3.6.5 Linux x64 不可变资产交付为可重复运营的
+当前两个月不扩大业务或默认协议面，而是把 v3.6.6 Linux x64 不可变资产交付为可重复运营的
 Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢复、回滚和仓库强制
 治理完成后，执行 72 小时预演，并让同一 tag/SHA/runtime digest 连续运行至少 30 天。
 
@@ -26,7 +26,7 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 执行顺序
 
-1. **冻结部署输入**：只接受 v3.6.5 Linux x64 release archive、checksum、SBOM、provenance 和明确
+1. **冻结部署输入**：只接受 v3.6.6 Linux x64 release archive、checksum、SBOM、provenance 和明确
    的配置版本，不在服务器上构建源码。
 2. **实现 host preflight**：校验 OS、磁盘、端口、Docker/Compose、时钟、ulimit、目录
    权限、secret/config 和备份目标。
@@ -58,13 +58,16 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 - `miniserver` 未编译源码；受控 upgrade transaction
   `20260801T193531-upgrade-242675750f37` PASS，current 为
   `v3.6.5-b6d0c8554223-8a1afcfd58dd`，previous 为已验证 v3.6.2 deployment。
-- Mac 外部 canary 已绑定相同 v3.6.5 tag/SHA/runtime digest，当前诊断窗口是
-  `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`；固定结束聚合通过前不关闭
-  `TODO-0013`。
+- Mac 外部 canary 已绑定相同 v3.6.5 tag/SHA/runtime digest，诊断窗口是
+  `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`；固定结束聚合以 4,320/4,320
+  成功、100% coverage 和 inclusive availability 通过，作为 `TODO-0013` 收口证据。
+- 同一窗口确认 v3.6.5 Battle RSS 约以 0.48–0.50 MiB/h 增长，因此拒绝其作为
+  `TODO-0016` Day 0。PR #79 的资源释放修复已在 aoi 通过完整 CI 和 sanitizer 专项，
+  v3.6.6 是待发布、复验并受控部署的替代候选。
 - `TODO-0011` 的最早干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
   final ledger 和异机 package 复验完成前不得声明 `TODO-0016` Day 0。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
-  runner 边界使用，不能替代 v3.6.5 Linux x64 生产证据。
+  runner 边界使用，不能替代 v3.6.6 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、
   SDK clean consumer 和 published-asset verifier 已进入治理链。
 - 五项 v3.6 ADR 已接受，P0-P6 仓库内实现完成。仓库内实现不代表默认激活或发布资产已经交付；

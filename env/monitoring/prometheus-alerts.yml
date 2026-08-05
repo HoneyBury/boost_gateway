@@ -324,11 +324,11 @@ groups:
           description: "redis_exporter reports that the most recent Redis RDB background save did not succeed."
 
       - alert: BoostGatewayRedisRdbSaveStale
-        expr: redis_rdb_changes_since_last_save > 0 and time() - redis_rdb_last_save_timestamp_seconds > 1800
+        expr: (redis_rdb_changes_since_last_save >= 100 and time() - redis_rdb_last_save_timestamp_seconds > 600) or (redis_rdb_changes_since_last_save >= 10000 and time() - redis_rdb_last_save_timestamp_seconds > 120)
         for: 5m
         labels:
           severity: warning
           component: redis-persistence
         annotations:
-          summary: "Redis has unsaved changes"
-          description: "Redis reports pending changes and no successful RDB save timestamp within 30 minutes. This observes the current policy without changing it."
+          summary: "Redis RDB checkpoint is stale for the configured write volume"
+          description: "Redis exceeded a governed save 300 100 or save 60 10000 checkpoint threshold without advancing the last successful RDB save after its completion grace period."

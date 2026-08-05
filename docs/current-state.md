@@ -1,16 +1,16 @@
 # 当前项目事实源
 
-更新时间：2026-08-02
+更新时间：2026-08-05
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
 
 ## 当前结论
 
-- 仓库发布线是 v3.6.5 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
-  `miniserver` 已通过受控生命周期从 v3.6.2 upgrade 到不可变 v3.6.5 deployment。
+- 仓库发布线是 v3.6.6 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
+  `miniserver` 在 W32 自然观测周期结束前继续运行不可变 v3.6.5 deployment。
 - v3.6.2 三平台 runtime、SDK 4.2.0、symbols/dSYM 和供应链资产保持不可变历史事实；
-  Linux ARM64 与 macOS ARM64 不进入 v3.6.5 新资产集合。
+  Linux ARM64 与 macOS ARM64 不进入 v3.6.6 新资产集合。
 - Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.5 服务端；
   canary deployment identity 必须记录实际 SDK 版本，不得伪装为 4.2.1。
 - 当前主线不是继续增加 demo 或协议表面积，而是执行 Ubuntu 24.04 x64 单节点自动
@@ -76,6 +76,12 @@ deployment、commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime diges
 `b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`。该证据关闭
 `TODO-0013` 的外部 canary 能力任务，但不是 `TODO-0016` Day 0；v3.6.5 Battle RSS
 线性增长仍要求新的不可变 runtime 候选和独立正式窗口。
+
+该 v3.6.5 诊断窗口同时确认 Battle backend working set 约以 0.48–0.50 MiB/h 线性增长。
+Issue #78 的 RCA 定位到完成 battle 的 runtime/per-battle/replay 状态没有完整释放；修复已由
+PR #79 合入主线，并在 aoi Linux x64 runner 通过完整 CI 与 ASan/UBSan/LSan 资源专项。
+v3.6.5 因此不得成为 `TODO-0016` Day 0。替代候选是 v3.6.6；在 Release、独立资产复验、
+W32 收口和受控生产 upgrade 完成前，不预填 commit、runtime digest 或 deployment identity。
 
 ## 默认生产链路
 
