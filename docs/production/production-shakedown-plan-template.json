@@ -4,12 +4,20 @@
   "formal_todo0016_claim": false,
   "todo_id": "TODO-0016",
   "issue_number": 30,
+  "candidate_status": "pending_v3.6.6_release_verification_and_deployment",
   "candidate": {
+    "tag": "v3.6.6",
+    "commit": null,
+    "runtime_asset_sha256": null,
+    "deployment_id": null,
+    "configuration_sha256": null
+  },
+  "rejected_candidate": {
     "tag": "v3.6.5",
     "commit": "94f0c5d12d29839bed1598c17f661550c28d84f0",
     "runtime_asset_sha256": "b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487",
     "deployment_id": "v3.6.5-b6d0c8554223-8a1afcfd58dd",
-    "configuration_sha256": "8f37450fb260a3c0db823d578d1b36570e9ff6e9fecf81a4165e15e6f939fb9b"
+    "reason": "Battle backend working set grew linearly during the diagnostic window"
   },
   "production_host": {
     "hostname": "miniserver",
@@ -56,9 +64,9 @@
     "duplicate_samples": 0
   },
   "evidence": {
-    "release_workflow_run": 30708242109,
-    "published_asset_verification_run": 30708591962,
-    "upgrade_transaction_id": "20260801T193531-upgrade-242675750f37",
+    "release_workflow_run": null,
+    "published_asset_verification_run": null,
+    "upgrade_transaction_id": null,
     "todo0011_final_record": null,
     "todo0011_off_host_receipt": null,
     "todo0013_72h_aggregate": null,

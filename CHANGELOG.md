@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## v3.6.6 - Battle resource lifecycle patch (2026-08-05)
+
 ### Runtime
 
 - Reap Battle backend runtime instances and all per-battle frame, snapshot, item,
@@ -9,6 +11,14 @@
   completion paths. Persist the complete replay before cleanup and retain only a
   bounded 100-entry in-memory fallback so minute-aligned synthetic battles cannot
   produce linear resident-memory growth.
+
+### Validation
+
+- Add lifecycle coverage for explicit, plugin/input-driven, frame-limit, and
+  state-driven Battle completion, persistent replay fallback, and 2,048 unique
+  battle create/input/finish cycles.
+- Verify the focused resource suite on the aoi Linux x64 runner under ASan,
+  UBSan, and LSan in addition to the normal release CI and governance gates.
 
 ## v3.6.5 - Linux x64 lifecycle patch (2026-08-01)
 

@@ -53,7 +53,7 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
 生产证据 workflow 的 `platform` 必须显式选择其准入平台；profile、lockfile、build
-directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.5 的 Release 与
+directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.6 的 Release 与
 published-asset verification 按独立 release manifest 只接受 `linux-x64`。tag Release
 只有 x64 package 与 NuGet job 全部成功后，才发布 runtime/symbol、一个 wheel、一个
 NuGet、逐资产 SPDX/provenance metadata 和统一 checksum manifest。
