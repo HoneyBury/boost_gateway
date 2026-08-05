@@ -65,12 +65,17 @@ node-exporter、cAdvisor、Redis persistence 和 Docker restart-count 指标契�
 firing/resolved 回执、生成 final ledger，并在异机验证新 evidence package。
 
 `TODO-0013` 的 v3.6.2 诊断窗口完整记录 4,320 个分钟，但五次真实 gateway-to-backend
-timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复已进入 v3.6.5，Mac 外部主机现以
-Tailscale 真实路径运行新的权威窗口
-`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`。该窗口绑定 v3.6.5 deployment、
-commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime digest
-`b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`；它用于关闭
-`TODO-0013`，不是 `TODO-0016` Day 0。
+timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复进入 v3.6.5 后，Mac 外部主机
+通过 Tailscale 真实路径完成权威窗口
+`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`：4,320 个预期分钟全部记录且全部
+成功，coverage、recorded success、inclusive availability 均为 100%，没有 gap、duplicate、
+invalid sample 或 candidate/endpoint 漂移。固定结束聚合
+`72h-20260804T1938Z.json` 的 SHA-256 是
+`89071385fba47501ada771a2e02109b30f1228fdb036151ae70fd1fae17ff63f`，绑定 v3.6.5
+deployment、commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime digest
+`b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`。该证据关闭
+`TODO-0013` 的外部 canary 能力任务，但不是 `TODO-0016` Day 0；v3.6.5 Battle RSS
+线性增长仍要求新的不可变 runtime 候选和独立正式窗口。
 
 ## 默认生产链路
 
@@ -145,7 +150,7 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 当前两个月工作由 `TODO-0007` 至 `TODO-0018` 管理，目标是：
 
 1. 已在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
-2. 完成 W32 自然 metrics/ledger 周期和 v3.6.5 外部 SDK canary 诊断窗口。
+2. 完成 W32 自然 metrics/ledger 周期；v3.6.5 外部 SDK canary 诊断窗口已完成并通过。
 3. 已完成异机备份、Redis/host/runtime 恢复演练，并满足 5/10 分钟 RTO 边界。
 4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
 5. 关闭 `TODO-0011`/`TODO-0013` 后执行独立的 72 小时上线预演，再冻结单一

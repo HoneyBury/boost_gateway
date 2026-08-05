@@ -242,7 +242,7 @@
     {
       "id": "TODO-0013",
       "title": "Run an external synthetic business canary",
-      "status": "open",
+      "status": "completed",
       "priority": "P1",
       "category": "long-run-canary",
       "description": "Run a low-impact client outside the service host so availability and business latency reflect the real network path without contaminating service CPU and memory evidence.",
@@ -253,7 +253,7 @@
         "The 72-hour and 30-day aggregators compute success rate, latency percentiles, gaps and maintenance-window-inclusive availability from the raw samples."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-08-05T05:13:36Z",
       "github": {
         "issue_number": 27,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27"
