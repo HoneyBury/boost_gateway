@@ -20,6 +20,13 @@
 - Verify the focused resource suite on the aoi Linux x64 runner under ASan,
   UBSan, and LSan in addition to the normal release CI and governance gates.
 
+### Monitoring
+
+- Align the Redis stale-RDB warning with the governed `save 300 100` and
+  `save 60 10000` thresholds. Low-churn changes below the first checkpoint
+  threshold remain protected by AOF everysec and no longer produce a permanent
+  false warning after external traffic stops.
+
 ## v3.6.5 - Linux x64 lifecycle patch (2026-08-01)
 
 ### Runtime

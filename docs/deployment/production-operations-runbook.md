@@ -26,6 +26,13 @@
 - `BoostGatewayHighRouteLatency`：backend route P99 latency 超 200ms
 - `BoostGatewayHighActiveSessions`：活跃连接逼近当前容量线
 
+`BoostGatewayRedisRdbSaveStale` 必须与 production-validation Redis 的
+`save 300 100` / `save 60 10000` 一致：达到 100 次变更后 10 分钟仍未推进 successful
+RDB checkpoint，或达到 10,000 次变更后 2 分钟仍未推进时才进入 5 分钟 warning 等待。
+低于 100 次的低 churn pending changes 由 AOF `everysec` 保护，不单独表示 RDB scheduler
+失败；AOF write/rewrite、delayed fsync 和 `redis_rdb_last_bgsave_status` 仍由独立 critical
+规则覆盖。不得为了清除 warning 制造业务写入、删除 evidence 或事后 silence。
+
 N2 起，gateway `/metrics` 默认导出 `gateway_backend_route_latency_us_bucket/_sum/_count` 和 `gateway_backend_<service>_p50/p90/p99_latency_us`。Prometheus 告警使用 P99 gauge；Grafana 同时展示 P99 gauge 和 `histogram_quantile()` 趋势。性能基线脚本仍是容量和长稳结论的事实源。
 
 ## 入口

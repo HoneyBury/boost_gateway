@@ -277,6 +277,16 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
         and "on (id)" in alerts,
         "host and container runtime alerts use the governed production exporters",
     )
+    add_check(
+        checks,
+        "alerts:redis-rdb-stale-policy-aligned",
+        "redis_rdb_changes_since_last_save >= 100" in alerts
+        and "redis_rdb_changes_since_last_save >= 10000" in alerts
+        and "redis_rdb_last_save_timestamp_seconds > 600" in alerts
+        and "redis_rdb_last_save_timestamp_seconds > 120" in alerts
+        and "redis_rdb_changes_since_last_save > 0 and" not in alerts,
+        "RDB stale warning follows save 300 100 and save 60 10000 instead of flagging expected low-churn AOF-protected changes",
+    )
 
 
 def validate_dashboard(checks: list[dict[str, Any]]) -> None:
