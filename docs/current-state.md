@@ -65,12 +65,17 @@ node-exporter、cAdvisor、Redis persistence 和 Docker restart-count 指标契�
 firing/resolved 回执、生成 final ledger，并在异机验证新 evidence package。
 
 `TODO-0013` 的 v3.6.2 诊断窗口完整记录 4,320 个分钟，但五次真实 gateway-to-backend
-timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复已进入 v3.6.5，Mac 外部主机现以
-Tailscale 真实路径运行新的权威窗口
-`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`。该窗口绑定 v3.6.5 deployment、
-commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime digest
-`b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`；它用于关闭
-`TODO-0013`，不是 `TODO-0016` Day 0。
+timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复进入 v3.6.5 后，Mac 外部主机
+通过 Tailscale 真实路径完成权威窗口
+`[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`：4,320 个预期分钟全部记录且全部
+成功，coverage、recorded success、inclusive availability 均为 100%，没有 gap、duplicate、
+invalid sample 或 candidate/endpoint 漂移。固定结束聚合
+`72h-20260804T1938Z.json` 的 SHA-256 是
+`89071385fba47501ada771a2e02109b30f1228fdb036151ae70fd1fae17ff63f`，绑定 v3.6.5
+deployment、commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime digest
+`b6d0c8554223e78d81c9da314256d31883b91fe7aacd8a7f9504840db524c487`。该证据关闭
+`TODO-0013` 的外部 canary 能力任务，但不是 `TODO-0016` Day 0；v3.6.5 Battle RSS
+线性增长仍要求新的不可变 runtime 候选和独立正式窗口。
 
 该 v3.6.5 诊断窗口同时确认 Battle backend working set 约以 0.48–0.50 MiB/h 线性增长。
 Issue #78 的 RCA 定位到完成 battle 的 runtime/per-battle/replay 状态没有完整释放；修复已由
