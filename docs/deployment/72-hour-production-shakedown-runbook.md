@@ -9,7 +9,16 @@ Day 0。机器可读的预声明模板位于
 
 ## 当前候选和边界
 
-当前没有已准入的不可变候选。v3.6.5 生产身份是：
+当前没有完成生产准入的不可变候选。已发布并独立复验的替代候选是：
+
+- tag：`v3.6.6`
+- commit：`d0db2cfd2efaffca55522a58402a48015b39d091`
+- runtime archive SHA-256：`17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`
+- Release run：`31020678952`
+- published-asset verification run：`31021854876`
+- deployment/configuration identity：等待 W32 后受控 upgrade
+
+当前 v3.6.5 生产身份是：
 
 - tag：`v3.6.5`
 - commit：`94f0c5d12d29839bed1598c17f661550c28d84f0`
@@ -19,10 +28,10 @@ Day 0。机器可读的预声明模板位于
 - external endpoint：`tcp://100.65.71.117:9201`
 
 该身份完成 `TODO-0013` 的 4,320/4,320 外部 canary 窗口，但 Battle working set 约以
-0.48–0.50 MiB/h 线性增长，因此已拒绝作为 `TODO-0016` Day 0。替代候选是 v3.6.6；其
-commit、Release run、published-asset verification run、runtime digest、configuration digest
-和 deployment ID 必须在发布、独立复验和受控 upgrade 后按真实证据回填。任何 runtime、
-关键配置、host 或 canary endpoint 变化都必须创建新计划并重新执行准入。
+0.48–0.50 MiB/h 线性增长，因此已拒绝作为 `TODO-0016` Day 0。v3.6.6 的发布身份已按
+真实证据回填；runtime asset 只有在安装时验证并形成 runtime tree/deployment digest 后才可写入
+deployment identity。任何 runtime、关键配置、host 或 canary endpoint 变化都必须创建新计划并
+重新执行准入。
 
 Mac 上
 `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)` 是已通过的 `TODO-0013` 权威诊断
@@ -36,8 +45,8 @@ ISO 周。在这两个窗口结束前禁止注入计划故障、重启主机、r
 
 1. `TODO-0011`、`TODO-0012`、`TODO-0013`、`TODO-0014`、`TODO-0015` 在
    `docs/todos/tasks.json` 和对应 GitHub Issue 中均为 completed/closed。
-2. v3.6.6 Release workflow 与 published-asset verification 均 PASS，run ID 已写入计划，
-   tag 仍是 annotated tag 并 peel 到计划中的 commit。
+2. v3.6.6 Release workflow `31020678952` 与 published-asset verification
+   `31021854876` 均 PASS，tag 仍是 annotated tag 并 peel 到计划中的 commit。
 3. lifecycle `status` 和 `verify` PASS，current/previous、六个 image ID、配置摘要、数据卷和
    受保护状态没有未解释漂移。
 4. 五个 Prometheus targets 为 up，规则 health 全部为 ok，45 天 retention 生效；最近 daily

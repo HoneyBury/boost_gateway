@@ -46,6 +46,14 @@ v3.6.5 Release 随后通过同一治理入口完成 install 和 upgrade：transa
 `v3.6.2-faf2d03ff1b9-8a1afcfd58dd`，受保护状态未改变。目标机证据位于
 `/var/lib/boost-gateway/deployment-transactions/`。
 
+v3.6.6 annotated tag 已固定到
+`d0db2cfd2efaffca55522a58402a48015b39d091`。受治理 main 演练 `31019859848`、正式
+Release `31020678952` 和独立 aoi Linux x64 published-asset verification
+`31021854876` 均 PASS；发布包含 11 个 Linux x64-only 治理资产，runtime archive
+SHA-256 是 `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`。
+该事实只关闭发布和异机复验，不代表 `miniserver` 已升级；W32 收口前 current 仍是上述
+v3.6.5 deployment。
+
 `TODO-0012` 已于 2026-07-28 完成：production-validation Redis 已实际启用 AOF `everysec` +
 RDB，声明并验证不高于 60 秒的 RPO；加密 daily backup 已复制到异机 vault，至少两份独立
 backup/restore/target volume 通过 leaderboard submit/top/rank 和 release SDK full-flow。仓库的
@@ -80,8 +88,9 @@ deployment、commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime diges
 该 v3.6.5 诊断窗口同时确认 Battle backend working set 约以 0.48–0.50 MiB/h 线性增长。
 Issue #78 的 RCA 定位到完成 battle 的 runtime/per-battle/replay 状态没有完整释放；修复已由
 PR #79 合入主线，并在 aoi Linux x64 runner 通过完整 CI 与 ASan/UBSan/LSan 资源专项。
-v3.6.5 因此不得成为 `TODO-0016` Day 0。替代候选是 v3.6.6；在 Release、独立资产复验、
-W32 收口和受控生产 upgrade 完成前，不预填 commit、runtime digest 或 deployment identity。
+v3.6.5 因此不得成为 `TODO-0016` Day 0。替代候选 v3.6.6 已完成 Release 和独立资产
+复验；W32 收口和受控生产 upgrade 完成前，deployment/configuration identity 继续留空，
+不得把发布完成写成生产已激活。
 
 ## 默认生产链路
 

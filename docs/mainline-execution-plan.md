@@ -49,6 +49,12 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 已完成基线
 
+- v3.6.6 annotated tag 固定到
+  `d0db2cfd2efaffca55522a58402a48015b39d091`；main 演练 `31019859848`、正式
+  Release `31020678952` 和独立 aoi Linux x64 published-asset verification
+  `31021854876` 全部通过。runtime archive SHA-256 是
+  `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`；生产仍保持
+  v3.6.5，等待 W32 收口后受控 upgrade。
 - v3.6.5 annotated tag 固定到 governed main commit
   `94f0c5d12d29839bed1598c17f661550c28d84f0`；Release run `30708242109` 和独立
   Linux x64 published-asset verification run `30708591962` 全部通过。
@@ -63,7 +69,7 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   成功、100% coverage 和 inclusive availability 通过，作为 `TODO-0013` 收口证据。
 - 同一窗口确认 v3.6.5 Battle RSS 约以 0.48–0.50 MiB/h 增长，因此拒绝其作为
   `TODO-0016` Day 0。PR #79 的资源释放修复已在 aoi 通过完整 CI 和 sanitizer 专项，
-  v3.6.6 是待发布、复验并受控部署的替代候选。
+  v3.6.6 是已发布、已复验但尚未受控部署的替代候选。
 - `TODO-0011` 的最早干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
   final ledger 和异机 package 复验完成前不得声明 `TODO-0016` Day 0。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
