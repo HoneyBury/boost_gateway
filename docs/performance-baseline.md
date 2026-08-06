@@ -133,7 +133,7 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
   --otel-comparison
 ```
 
-固定 runner 的 2h/8h 与容量应通过 `long-soak-capacity.yml` 运行。8h 使用 `run_8h_soak=true`；业务专项使用 `run_business_operation_perf=true`；Redis 对照同时使用 `leaderboard_redis_comparison=true`，workflow 会创建 run 独占的临时 Redis 7 容器并在结束时清理；OTel 对照使用 `otel_comparison=true`。CPU 专项使用 `cpu_set=0`、`cpu_set=0-1` 和 `cpu_set=0-3` 分别 dispatch，同时三档都显式固定相同的 `loadgen_cpu_set=4-7` 和 `loadgen_io_threads=4`。service/loadgen CPU 集合必须不重叠；采集器会在进程启动后回读两侧 affinity，并按每轮相邻快照计算资源差值。CPU 编号必须属于 runner 当前允许集合。
+固定 runner 的 2h/8h 与容量应通过 `long-soak-capacity.yml` 运行。8h 使用 `run_8h_soak=true`；业务专项使用 `run_business_operation_perf=true`；`run_resource_stability_gate=true`（默认）在同一组真实进程上连续运行 Matchmaking 与 Leaderboard 高密度业务窗口，每窗静默后采集 Gateway 和五个 backend 的 RSS、fd 与线程数。它丢弃两个预热窗，并以固定的尾窗净增长和线性斜率阈值 fail closed，用于在 72h/30d 前加速发现生命周期对象或进程资源的无界增长；dispatch 不能放宽阈值。Redis 对照同时使用 `leaderboard_redis_comparison=true`，workflow 会创建 run 独占的临时 Redis 7 容器并在结束时清理；OTel 对照使用 `otel_comparison=true`。CPU 专项使用 `cpu_set=0`、`cpu_set=0-1` 和 `cpu_set=0-3` 分别 dispatch，同时三档都显式固定相同的 `loadgen_cpu_set=4-7` 和 `loadgen_io_threads=4`。service/loadgen CPU 集合必须不重叠；采集器会在进程启动后回读两侧 affinity，并按每轮相邻快照计算资源差值。CPU 编号必须属于 runner 当前允许集合。
 
 Redis 对照的两个准确模式名是 `in_memory_only` 与 `redis_primary_with_memory_shadow`。后者的写入同时保留内存影子、查询优先 Redis，不能表述为 Redis-only。每种模式至少执行三轮；证据必须包含双方完整 runs、启动日志证明、Redis 前后 PING、隔离 key 的 ZCARD 下限以及 submit/top/rank 的吞吐和 P50/P99 median delta。R4 在 opt-in 时对这些真实性字段设硬门禁，但在形成历史基线前不设置任意性能回退百分比。
 

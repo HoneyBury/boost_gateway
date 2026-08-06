@@ -474,6 +474,19 @@ def main() -> int:
         in long_soak_workflow,
         "long-soak capacity runs and archives saturation independently without widening the R4 condition",
     )
+    add(
+        checks,
+        "long-soak-capacity:accelerated-resource-stability-gate",
+        "run_resource_stability_gate:" in long_soak_workflow
+        and 'default: true' in long_soak_workflow
+        and 'if [ "${{ inputs.run_resource_stability_gate }}" = "true" ] && [ "${{ inputs.run_business_capacity }}" = "true" ]'
+        in long_soak_workflow
+        and "--run-resource-stability-gate" in long_soak_workflow
+        and "--resource-stability-windows" in long_soak_workflow
+        and "--resource-stability-warmup-windows 2" in long_soak_workflow
+        and "--resource-stability-iterations" in long_soak_workflow,
+        "aoi fixed-runner capacity defaults to the fail-closed accelerated resource stability gate",
+    )
     pid_marker = 'pid_marker="runtime/validation/long-soak-capacity.pid"'
     background_launch = 'python3 "${args[@]}" &'
     pid_capture = "long_soak_pid=$!"

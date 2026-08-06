@@ -747,6 +747,40 @@ class LongSoakEvidenceTest(unittest.TestCase):
             parse_args()
         self.assertEqual(raised.exception.code, 2)
 
+    def test_resource_stability_gate_requires_business_capacity(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                ["run_long_soak_capacity.py", "--run-resource-stability-gate"],
+            ),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
+    def test_resource_stability_gate_rejects_too_few_measurement_windows(self):
+        with (
+            patch.object(
+                sys,
+                "argv",
+                [
+                    "run_long_soak_capacity.py",
+                    "--run-business-capacity",
+                    "--run-resource-stability-gate",
+                    "--resource-stability-windows",
+                    "5",
+                    "--resource-stability-warmup-windows",
+                    "3",
+                ],
+            ),
+            patch("sys.stderr", new=io.StringIO()),
+            self.assertRaises(SystemExit) as raised,
+        ):
+            parse_args()
+        self.assertEqual(raised.exception.code, 2)
+
     def test_redis_comparison_requires_business_capacity_and_three_repetitions(self):
         invalid_argv = [
             ["run_long_soak_capacity.py", "--leaderboard-redis-comparison"],

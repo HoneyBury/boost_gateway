@@ -1592,6 +1592,7 @@ def run_business_operation_perf(
     timeout_seconds: float,
     repetitions: int = 1,
     leaderboard_persistence_mode: str = "in_memory_only",
+    resource_sample_callback: Callable[[int], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     selected_scenarios = list(dict.fromkeys(scenarios))
     if clients <= 0 or iterations <= 0 or repetitions <= 0 or timeout_seconds <= 0:
@@ -1617,11 +1618,14 @@ def run_business_operation_perf(
                     run_id,
                     leaderboard_persistence_mode,
                 ))
-        runs.append({
+        run = {
             "run": repetition + 1,
             "passed": all(scenario["passed"] for scenario in scenario_summaries),
             "scenarios": scenario_summaries,
-        })
+        }
+        if resource_sample_callback is not None:
+            run["resource_sample"] = resource_sample_callback(repetition + 1)
+        runs.append(run)
     scenario_aggregates = aggregate_business_operation_runs(selected_scenarios, runs)
     overall_pass = len(runs) == repetitions and all(run["passed"] for run in runs)
     return {
@@ -1641,6 +1645,155 @@ def run_business_operation_perf(
             "source": "explicit collector backend configuration",
             "redis_comparison": False,
         } if "leaderboard" in selected_scenarios else None,
+    }
+
+
+def linear_slope(values: list[float]) -> float:
+    if len(values) < 2:
+        return 0.0
+    mean_x = (len(values) - 1) / 2.0
+    mean_y = statistics.mean(values)
+    denominator = sum((index - mean_x) ** 2 for index in range(len(values)))
+    if denominator == 0:
+        return 0.0
+    numerator = sum(
+        (index - mean_x) * (value - mean_y)
+        for index, value in enumerate(values)
+    )
+    return numerator / denominator
+
+
+def evaluate_resource_stability_gate(
+    samples: list[dict[str, Any]],
+    *,
+    warmup_windows: int,
+    required_services: list[str] | None = None,
+    require_full_flow: bool = False,
+    max_rss_tail_growth_mb: float = 4.0,
+    max_rss_slope_mb_per_window: float = 0.5,
+    max_handle_growth: int = 4,
+    max_thread_growth: int = 2,
+) -> dict[str, Any]:
+    measured = samples[warmup_windows:]
+    observed_service_names = {
+        str(snapshot.get("service_name", ""))
+        for sample in measured
+        for snapshot in sample.get("services", [])
+        if snapshot.get("service_name")
+    }
+    expected_service_names = set(required_services or observed_service_names)
+    service_names = sorted(expected_service_names | observed_service_names)
+    checks: list[dict[str, Any]] = []
+    minimum_samples = 3
+    checks.append({
+        "name": "measurement-window-count",
+        "passed": len(measured) >= minimum_samples,
+        "observed": len(measured),
+        "limit": minimum_samples,
+    })
+    checks.append({
+        "name": "service-set-present",
+        "passed": bool(observed_service_names)
+        and expected_service_names <= observed_service_names,
+        "observed": sorted(observed_service_names),
+        "limit": sorted(expected_service_names),
+    })
+    complete_lifecycle_windows = sum(
+        1
+        for sample in measured
+        if isinstance(sample.get("full_flow"), dict)
+        and sample["full_flow"].get("passed") is True
+    )
+    checks.append({
+        "name": "complete-business-lifecycle-windows",
+        "passed": not require_full_flow
+        or complete_lifecycle_windows == len(measured),
+        "observed": complete_lifecycle_windows,
+        "limit": len(measured) if require_full_flow else "not required",
+    })
+
+    service_results: dict[str, Any] = {}
+    for service_name in service_names:
+        snapshots = []
+        for sample in measured:
+            snapshot = next(
+                (
+                    item
+                    for item in sample.get("services", [])
+                    if item.get("service_name") == service_name
+                ),
+                None,
+            )
+            if isinstance(snapshot, dict):
+                snapshots.append(snapshot)
+
+        complete = len(snapshots) == len(measured)
+        rss_values = [float(item["working_set_mb"]) for item in snapshots]
+        handle_values = [
+            int(item["handles"])
+            for item in snapshots
+            if item.get("handles") is not None
+        ]
+        thread_values = [
+            int(item["threads"])
+            for item in snapshots
+            if item.get("threads") is not None
+        ]
+        rss_growth = max(0.0, rss_values[-1] - rss_values[0]) if rss_values else 0.0
+        rss_slope = max(0.0, linear_slope(rss_values))
+        handle_growth = (
+            max(0, max(handle_values) - handle_values[0]) if handle_values else None
+        )
+        thread_growth = (
+            max(0, max(thread_values) - thread_values[0]) if thread_values else None
+        )
+        service_passed = (
+            complete
+            and len(rss_values) == len(measured)
+            and len(handle_values) == len(measured)
+            and len(thread_values) == len(measured)
+            and rss_growth <= max_rss_tail_growth_mb
+            and rss_slope <= max_rss_slope_mb_per_window
+            and handle_growth is not None
+            and handle_growth <= max_handle_growth
+            and thread_growth is not None
+            and thread_growth <= max_thread_growth
+        )
+        service_results[service_name] = {
+            "passed": service_passed,
+            "samples": len(snapshots),
+            "rss_mb": rss_values,
+            "rss_tail_growth_mb": round(rss_growth, 3),
+            "rss_slope_mb_per_window": round(rss_slope, 6),
+            "handle_growth": handle_growth,
+            "thread_growth": thread_growth,
+        }
+        checks.append({
+            "name": f"service-resource-stability:{service_name}",
+            "passed": service_passed,
+            "observed": service_results[service_name],
+            "limit": {
+                "rss_tail_growth_mb": max_rss_tail_growth_mb,
+                "rss_slope_mb_per_window": max_rss_slope_mb_per_window,
+                "handle_growth": max_handle_growth,
+                "thread_growth": max_thread_growth,
+            },
+        })
+
+    return {
+        "summary_version": 1,
+        "passed": all(check["passed"] for check in checks),
+        "warmup_windows": warmup_windows,
+        "measurement_windows": len(measured),
+        "thresholds": {
+            "max_rss_tail_growth_mb": max_rss_tail_growth_mb,
+            "max_rss_slope_mb_per_window": max_rss_slope_mb_per_window,
+            "max_handle_growth": max_handle_growth,
+            "max_thread_growth": max_thread_growth,
+        },
+        "services": service_results,
+        "checks": checks,
+        "samples": samples,
     }
 
 
@@ -3281,6 +3434,15 @@ def main() -> int:
     parser.add_argument("--business-operation-iterations", type=int, default=10)
     parser.add_argument("--business-operation-timeout-seconds", type=float, default=5.0)
     parser.add_argument(
+        "--resource-stability-gate",
+        action="store_true",
+        help="Run accelerated repeated business windows and fail on sustained process resource growth.",
+    )
+    parser.add_argument("--resource-stability-windows", type=int, default=8)
+    parser.add_argument("--resource-stability-warmup-windows", type=int, default=2)
+    parser.add_argument("--resource-stability-clients", type=int, default=16)
+    parser.add_argument("--resource-stability-iterations", type=int, default=100)
+    parser.add_argument(
         "--leaderboard-redis-comparison",
         action="store_true",
         help="Run three-or-more leaderboard repetitions in explicit in-memory and Redis-backed modes.",
@@ -3355,6 +3517,18 @@ def main() -> int:
         parser.error("business operation clients, iterations, and timeout must be positive")
     if "matchmaking" in args.business_operation_scenario and args.business_operation_clients % 2 != 0:
         parser.error("--business-operation-clients must be even for the 1v1 matchmaking profile")
+    if args.resource_stability_gate and (
+        args.resource_stability_windows < 5
+        or args.resource_stability_warmup_windows < 1
+        or args.resource_stability_windows - args.resource_stability_warmup_windows < 3
+        or args.resource_stability_clients <= 0
+        or args.resource_stability_clients % 2 != 0
+        or args.resource_stability_iterations <= 0
+    ):
+        parser.error(
+            "resource stability requires at least five windows, one warmup, three measurement windows, "
+            "positive iterations, and a positive even client count"
+        )
     if args.leaderboard_redis_comparison:
         if "leaderboard" not in args.business_operation_scenario:
             parser.error("--leaderboard-redis-comparison requires --business-operation-scenario leaderboard")
@@ -3545,6 +3719,7 @@ def main() -> int:
             "process_snapshots": {},
             "business_flow": None,
             "business_operation_perf": None,
+            "resource_stability_gate": None,
             "leaderboard_persistence_comparison": None,
             "otel_comparison": None,
             "saturation_analysis": None,
@@ -4016,6 +4191,98 @@ def main() -> int:
             if not business_operation_passed:
                 summary["release_gates"]["overall_pass"] = False
             summary["process_snapshots"]["business-operation-perf"] = snapshot_processes(managed)
+        if args.resource_stability_gate:
+            log_step("Running accelerated resource stability gate")
+            diagnostics_url = (
+                f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+            )
+
+            def capture_resource_window(window: int) -> dict[str, Any]:
+                full_flow = run_business_flow_case(
+                    root,
+                    build_dir,
+                    output_root,
+                    gateway_host="127.0.0.1",
+                    gateway_port=args.gateway_port,
+                    concurrent_clients=1,
+                )
+                quiescence = wait_for_service_quiescence(managed, diagnostics_url)
+                return {
+                    "window": window,
+                    "full_flow": full_flow,
+                    "quiescence": quiescence,
+                    "services": snapshot_processes(managed),
+                }
+
+            resource_workload = run_business_operation_perf(
+                "127.0.0.1",
+                args.gateway_port,
+                ["matchmaking", "leaderboard"],
+                args.resource_stability_clients,
+                args.resource_stability_iterations,
+                args.business_operation_timeout_seconds,
+                args.resource_stability_windows,
+                (
+                    "redis_primary_with_memory_shadow"
+                    if args.leaderboard_redis_comparison
+                    else "in_memory_only"
+                ),
+                resource_sample_callback=capture_resource_window,
+            )
+            resource_samples = [
+                run["resource_sample"]
+                for run in resource_workload["runs"]
+                if isinstance(run.get("resource_sample"), dict)
+            ]
+            resource_gate = evaluate_resource_stability_gate(
+                resource_samples,
+                warmup_windows=args.resource_stability_warmup_windows,
+                required_services=[process.name for process in managed],
+                require_full_flow=True,
+            )
+            full_flow_windows_passed = all(
+                isinstance(sample.get("full_flow"), dict)
+                and sample["full_flow"].get("passed") is True
+                for sample in resource_samples
+            )
+            resource_gate["workload"] = {
+                "passed": resource_workload["passed"],
+                "clients": args.resource_stability_clients,
+                "iterations_per_client": args.resource_stability_iterations,
+                "windows": args.resource_stability_windows,
+                "scenarios": ["matchmaking", "leaderboard"],
+                "full_flow_windows_passed": full_flow_windows_passed,
+                "summary": resource_workload,
+            }
+            resource_gate["passed"] = (
+                bool(resource_gate["passed"])
+                and bool(resource_workload["passed"])
+                and full_flow_windows_passed
+            )
+            summary["resource_stability_gate"] = resource_gate
+            resource_gate_path = result_dir / "resource-stability-gate.json"
+            resource_gate_path.write_text(
+                json.dumps(resource_gate, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            summary["release_gates"].setdefault("checks", []).append({
+                "case": "accelerated-resource-stability",
+                "passed": resource_gate["passed"],
+                "criteria": (
+                    "all matchmaking/leaderboard windows pass and post-warmup Gateway/backend "
+                    "RSS slope, RSS tail growth, file descriptors, and threads remain bounded"
+                ),
+                "observed": {
+                    "windows": args.resource_stability_windows,
+                    "warmup_windows": args.resource_stability_warmup_windows,
+                    "clients": args.resource_stability_clients,
+                    "iterations_per_client": args.resource_stability_iterations,
+                    "thresholds": resource_gate["thresholds"],
+                    "services": resource_gate["services"],
+                },
+            })
+            if not resource_gate["passed"]:
+                summary["release_gates"]["overall_pass"] = False
         summary["resource_analysis"] = analyze_resources(summary)
         resource_isolation_check = evaluate_resource_isolation_evidence(summary)
         summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
@@ -4072,7 +4339,11 @@ def main() -> int:
             log_step("Saturation evidence collection is invalid")
             return 2
         if (
-            (args.run_preset == "smoke" and not args.business_operation_scenario)
+            (
+                args.run_preset == "smoke"
+                and not args.business_operation_scenario
+                and not args.resource_stability_gate
+            )
             or summary["release_gates"].get("overall_pass")
         ):
             return 0

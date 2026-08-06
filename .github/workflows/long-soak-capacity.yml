@@ -95,6 +95,19 @@ on:
         description: "Operation cycles per client in each business profile"
         required: true
         default: "10"
+      run_resource_stability_gate:
+        description: "Run the fail-closed accelerated lifecycle resource gate"
+        required: true
+        default: true
+        type: boolean
+      resource_stability_windows:
+        description: "Accelerated resource measurement windows including warmup"
+        required: true
+        default: "8"
+      resource_stability_iterations:
+        description: "Operation cycles per client in each resource window"
+        required: true
+        default: "100"
       min_capacity_repetitions:
         description: "Minimum repetitions required by R4 fixed-runner capacity gate"
         required: true
@@ -285,6 +298,15 @@ jobs:
               --run-business-operation-perf
               --business-operation-clients "${{ inputs.business_operation_clients || '16' }}"
               --business-operation-iterations "${{ inputs.business_operation_iterations || '10' }}"
+            )
+          fi
+          if [ "${{ inputs.run_resource_stability_gate }}" = "true" ] && [ "${{ inputs.run_business_capacity }}" = "true" ]; then
+            args+=(
+              --run-resource-stability-gate
+              --resource-stability-windows "${{ inputs.resource_stability_windows || '8' }}"
+              --resource-stability-warmup-windows 2
+              --resource-stability-clients "${{ inputs.business_operation_clients || '16' }}"
+              --resource-stability-iterations "${{ inputs.resource_stability_iterations || '100' }}"
             )
           fi
           if [ "${{ inputs.leaderboard_redis_comparison }}" = "true" ]; then

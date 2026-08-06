@@ -6,6 +6,7 @@ import unittest
 from scripts.producers.collect_v2_perf_baseline import (
     build_leaderboard_persistence_comparison,
     encode_business_packet,
+    evaluate_resource_stability_gate,
     recv_business_packet,
     BusinessOperationClient,
     run_business_operation_perf,
@@ -103,6 +104,97 @@ class FakeGateway:
 
 
 class BusinessOperationPerfTest(unittest.TestCase):
+    @staticmethod
+    def resource_sample(
+        window: int,
+        rss_mb: float,
+        *,
+        handles: int = 10,
+        threads: int = 4,
+    ) -> dict[str, object]:
+        return {
+            "window": window,
+            "quiescence": {"quiesced": True},
+            "services": [
+                {
+                    "service_name": "v2_gateway_demo",
+                    "working_set_mb": rss_mb,
+                    "handles": handles,
+                    "threads": threads,
+                }
+            ],
+        }
+
+    def test_resource_stability_gate_accepts_flat_post_warmup_tail(self) -> None:
+        samples = [
+            self.resource_sample(1, 10.0),
+            self.resource_sample(2, 18.0),
+            self.resource_sample(3, 20.0),
+            self.resource_sample(4, 20.2),
+            self.resource_sample(5, 20.1),
+        ]
+
+        result = evaluate_resource_stability_gate(samples, warmup_windows=2)
+
+        self.assertTrue(result["passed"])
+        gateway = result["services"]["v2_gateway_demo"]
+        self.assertLessEqual(gateway["rss_slope_mb_per_window"], 0.5)
+        self.assertEqual(result["measurement_windows"], 3)
+
+    def test_resource_stability_gate_rejects_monotonic_rss_growth(self) -> None:
+        samples = [
+            self.resource_sample(1, 10.0),
+            self.resource_sample(2, 15.0),
+            self.resource_sample(3, 20.0),
+            self.resource_sample(4, 21.0),
+            self.resource_sample(5, 22.0),
+            self.resource_sample(6, 23.0),
+        ]
+
+        result = evaluate_resource_stability_gate(samples, warmup_windows=2)
+
+        self.assertFalse(result["passed"])
+        gateway = result["services"]["v2_gateway_demo"]
+        self.assertGreater(gateway["rss_slope_mb_per_window"], 0.5)
+
+    def test_resource_stability_gate_rejects_fd_growth_and_missing_samples(self) -> None:
+        samples = [
+            self.resource_sample(1, 10.0),
+            self.resource_sample(2, 10.0),
+            self.resource_sample(3, 10.0, handles=10),
+            self.resource_sample(4, 10.0, handles=12),
+            self.resource_sample(5, 10.0, handles=16),
+            {"window": 6, "services": []},
+        ]
+
+        result = evaluate_resource_stability_gate(samples, warmup_windows=2)
+
+        self.assertFalse(result["passed"])
+        gateway = result["services"]["v2_gateway_demo"]
+        self.assertEqual(gateway["handle_growth"], 6)
+        self.assertEqual(gateway["samples"], 3)
+
+    def test_resource_stability_gate_requires_full_flow_and_expected_services(self) -> None:
+        samples = [
+            {
+                **self.resource_sample(window, 10.0),
+                "full_flow": {"passed": window != 4},
+            }
+            for window in range(1, 6)
+        ]
+
+        result = evaluate_resource_stability_gate(
+            samples,
+            warmup_windows=2,
+            required_services=["v2_gateway_demo", "v2_battle_backend"],
+            require_full_flow=True,
+        )
+
+        self.assertFalse(result["passed"])
+        failed = {check["name"] for check in result["checks"] if not check["passed"]}
+        self.assertIn("service-set-present", failed)
+        self.assertIn("complete-business-lifecycle-windows", failed)
+
     def test_concurrent_matchmaking_and_leaderboard_use_real_protocol(self) -> None:
         gateway = FakeGateway()
         self.addCleanup(gateway.close)
@@ -135,6 +227,33 @@ class BusinessOperationPerfTest(unittest.TestCase):
         self.assertIsNotNone(matchmaking["time_to_match_p99_ms"])
         self.assertEqual(summary["leaderboard_persistence"]["mode"], "in_memory_only")
         self.assertFalse(summary["leaderboard_persistence"]["redis_comparison"])
+
+    def test_business_operation_records_each_resource_window(self) -> None:
+        gateway = FakeGateway()
+        self.addCleanup(gateway.close)
+        sampled_windows: list[int] = []
+
+        def sample(window: int) -> dict[str, int]:
+            sampled_windows.append(window)
+            return {"window": window}
+
+        summary = run_business_operation_perf(
+            gateway.host,
+            gateway.port,
+            ["leaderboard"],
+            clients=2,
+            iterations=1,
+            timeout_seconds=1.0,
+            repetitions=3,
+            resource_sample_callback=sample,
+        )
+
+        self.assertTrue(summary["passed"])
+        self.assertEqual(sampled_windows, [1, 2, 3])
+        self.assertEqual(
+            [run["resource_sample"]["window"] for run in summary["runs"]],
+            [1, 2, 3],
+        )
 
     def test_persistence_comparison_requires_both_modes_and_redis_data_proof(self) -> None:
         gateway = FakeGateway()
