@@ -1474,6 +1474,39 @@ TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughLoginBackend) {
     service.stop();
 }
 
+TEST(ServiceBusIntegrity, LoginBackendReleasesSessionAndTokenOnClose) {
+    v2::login::LoginBackendService service(0);
+    service.start();
+
+    v2::service::BackendConnection conn(v2::service::BackendConnectionOptions{
+        .host = "127.0.0.1", .port = service.local_port()});
+    ASSERT_TRUE(conn.connect());
+
+    auto send = [&conn](const std::string& message_type, nlohmann::json payload) {
+        auto request = payload_envelope(payload.dump());
+        request.message_type = message_type;
+        request.target_service = v2::service::ServiceId::kLogin;
+        auto response = conn.send_request(request);
+        EXPECT_TRUE(response.has_value());
+        if (response.has_value()) {
+            EXPECT_EQ(response->kind, v2::service::MessageKind::kResponse);
+        }
+    };
+
+    send("login_request",
+         {{"user_id", "resource_user"}, {"token", "token:resource_user"}});
+    auto bound = service.resource_stats();
+    EXPECT_EQ(bound.active_session_count, 1U);
+    EXPECT_EQ(bound.retained_token_count, 1U);
+
+    send("session_close", {{"user_id", "resource_user"}, {"session_id", 101}});
+    auto released = service.resource_stats();
+    EXPECT_EQ(released.active_session_count, 0U);
+    EXPECT_EQ(released.retained_token_count, 0U);
+
+    service.stop();
+}
+
 TEST(ServiceBusIntegrity, ProtoEnvelopeRoundTripsThroughGuestLoginBackend) {
     v2::login::LoginBackendService service(0);
     service.start();

@@ -260,6 +260,21 @@ void Runtime::on_session_closed(SessionId session_id) {
         }
     }
 
+    if (!user_id.empty() && bridge_ != nullptr) {
+        nlohmann::json close_payload{
+            {"user_id", user_id},
+            {"session_id", session_id},
+        };
+        const auto close_result = bridge_->route(v2::service::ServiceId::kLogin,
+                                                 "session_close",
+                                                 close_payload.dump());
+        if (!close_result.success) {
+            SPDLOG_WARN("Runtime: failed to close login backend session user_id={} session_id={}",
+                        user_id,
+                        session_id);
+        }
+    }
+
     // Notify room service that the player disconnected (leave room).
     if (!user_id.empty() && !room_id.empty()) {
         if (bridge_ != nullptr) {

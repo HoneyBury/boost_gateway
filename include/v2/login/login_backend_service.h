@@ -1,7 +1,8 @@
 #pragma once
 
-#include <cstdint>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -12,6 +13,12 @@
 #include "v3/cluster/tls_config.h"
 
 namespace v2::login {
+
+struct LoginBackendResourceStats {
+    std::size_t account_count = 0;
+    std::size_t active_session_count = 0;
+    std::size_t retained_token_count = 0;
+};
 
 struct LoginBackendOptions {
     std::uint16_t port = 9202;
@@ -47,6 +54,7 @@ public:
     void stop();
     [[nodiscard]] std::uint16_t local_port() const;
     [[nodiscard]] v2::auth::JwtKeyResolverMetrics identity_key_metrics() const;
+    [[nodiscard]] LoginBackendResourceStats resource_stats() const;
 
 private:
     class Impl;
