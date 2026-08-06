@@ -130,6 +130,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--business-operation-clients", type=int, default=16)
     parser.add_argument("--business-operation-iterations", type=int, default=10)
     parser.add_argument("--business-operation-timeout-seconds", type=float, default=5.0)
+    parser.add_argument("--resource-stability-gate", action="store_true")
+    parser.add_argument("--resource-stability-windows", type=int, default=8)
+    parser.add_argument("--resource-stability-warmup-windows", type=int, default=2)
+    parser.add_argument("--resource-stability-clients", type=int, default=16)
+    parser.add_argument("--resource-stability-iterations", type=int, default=100)
     parser.add_argument("--leaderboard-redis-comparison", action="store_true")
     parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
     parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
@@ -311,6 +316,18 @@ def main() -> int:
                 str(args.business_operation_iterations),
                 "--business-operation-timeout-seconds",
                 str(args.business_operation_timeout_seconds),
+            ])
+        if args.resource_stability_gate:
+            perf_cmd.extend([
+                "--resource-stability-gate",
+                "--resource-stability-windows",
+                str(args.resource_stability_windows),
+                "--resource-stability-warmup-windows",
+                str(args.resource_stability_warmup_windows),
+                "--resource-stability-clients",
+                str(args.resource_stability_clients),
+                "--resource-stability-iterations",
+                str(args.resource_stability_iterations),
             ])
         if args.leaderboard_redis_comparison:
             perf_cmd.extend([

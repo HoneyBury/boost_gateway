@@ -136,6 +136,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-business-operation-perf", action="store_true")
     parser.add_argument("--business-operation-clients", type=int, default=16)
     parser.add_argument("--business-operation-iterations", type=int, default=10)
+    parser.add_argument("--run-resource-stability-gate", action="store_true")
+    parser.add_argument("--resource-stability-windows", type=int, default=8)
+    parser.add_argument("--resource-stability-warmup-windows", type=int, default=2)
+    parser.add_argument("--resource-stability-clients", type=int, default=16)
+    parser.add_argument("--resource-stability-iterations", type=int, default=100)
     parser.add_argument("--leaderboard-redis-comparison", action="store_true")
     parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
     parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
@@ -145,6 +150,20 @@ def parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.run_business_operation_perf and not (args.run_capacity or args.run_business_capacity):
         parser.error("--run-business-operation-perf requires --run-capacity or --run-business-capacity")
+    if args.run_resource_stability_gate and not args.run_business_capacity:
+        parser.error("--run-resource-stability-gate requires --run-business-capacity")
+    if args.run_resource_stability_gate and (
+        args.resource_stability_windows < 5
+        or args.resource_stability_warmup_windows < 1
+        or args.resource_stability_windows - args.resource_stability_warmup_windows < 3
+        or args.resource_stability_clients <= 0
+        or args.resource_stability_clients % 2 != 0
+        or args.resource_stability_iterations <= 0
+    ):
+        parser.error(
+            "resource stability requires at least five windows, one warmup, three measurement windows, "
+            "positive iterations, and a positive even client count"
+        )
     if args.leaderboard_redis_comparison and not (
         args.run_business_operation_perf and args.run_business_capacity
     ):
@@ -342,6 +361,11 @@ def main() -> int:
         "run_business_operation_perf": args.run_business_operation_perf,
         "business_operation_clients": args.business_operation_clients,
         "business_operation_iterations": args.business_operation_iterations,
+        "run_resource_stability_gate": args.run_resource_stability_gate,
+        "resource_stability_windows": args.resource_stability_windows,
+        "resource_stability_warmup_windows": args.resource_stability_warmup_windows,
+        "resource_stability_clients": args.resource_stability_clients,
+        "resource_stability_iterations": args.resource_stability_iterations,
         "leaderboard_redis_comparison": args.leaderboard_redis_comparison,
         "leaderboard_redis_host": args.leaderboard_redis_host if args.leaderboard_redis_comparison else "",
         "leaderboard_redis_port": args.leaderboard_redis_port if args.leaderboard_redis_comparison else 0,
@@ -510,6 +534,14 @@ def main() -> int:
                         "--business-operation-scenario", "leaderboard",
                         "--business-operation-clients", str(args.business_operation_clients),
                         "--business-operation-iterations", str(args.business_operation_iterations),
+                    ])
+                if args.run_resource_stability_gate:
+                    cmd.extend([
+                        "--resource-stability-gate",
+                        "--resource-stability-windows", str(args.resource_stability_windows),
+                        "--resource-stability-warmup-windows", str(args.resource_stability_warmup_windows),
+                        "--resource-stability-clients", str(args.resource_stability_clients),
+                        "--resource-stability-iterations", str(args.resource_stability_iterations),
                     ])
                 if args.leaderboard_redis_comparison:
                     cmd.extend([
