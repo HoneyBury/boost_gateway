@@ -264,6 +264,20 @@ public:
         };
     }
 
+    LoginBackendResourceStats resource_stats() {
+        LoginBackendResourceStats stats;
+        {
+            std::lock_guard<std::mutex> lock(account_store_.mutex_);
+            stats.account_count = account_store_.accounts_.size();
+        }
+        {
+            std::lock_guard<std::mutex> lock(state_.mutex_);
+            stats.active_session_count = state_.active_sessions_.size();
+            stats.retained_token_count = state_.user_tokens_.size();
+        }
+        return stats;
+    }
+
 private:
     std::uint16_t port_;
     std::unique_ptr<v2::service::BackendServer> server_;
@@ -545,9 +559,9 @@ private:
         const auto& doc = decoded->payload;
 
         std::string user_id = doc["user_id"].get<std::string>();
-
         std::lock_guard<std::mutex> lock(state_.mutex_);
         state_.active_sessions_.erase(user_id);
+        state_.user_tokens_.erase(user_id);
 
         v2::service::BackendEnvelope response;
         response.kind = v2::service::MessageKind::kResponse;
@@ -733,6 +747,9 @@ void LoginBackendService::stop() { impl_->stop(); }
 std::uint16_t LoginBackendService::local_port() const { return impl_->local_port(); }
 v2::auth::JwtKeyResolverMetrics LoginBackendService::identity_key_metrics() const {
     return impl_->identity_key_metrics();
+}
+LoginBackendResourceStats LoginBackendService::resource_stats() const {
+    return impl_->resource_stats();
 }
 
 }  // namespace v2::login
