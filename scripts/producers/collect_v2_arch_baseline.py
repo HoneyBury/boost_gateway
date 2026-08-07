@@ -57,6 +57,7 @@ DEFAULT_CHECKS = {
     "bump_arena_alloc": {"metric": "p99_us", "threshold": 10.0, "direction": "max"},
     "object_pool_acquire_release": {"metric": "p99_us", "threshold": 50.0, "direction": "max"},
     "spsc_queue_enqueue_dequeue": {"metric": "p99_us", "threshold": 10.0, "direction": "max"},
+    "mpsc_mailbox_four_producer_fan_in": {"metric": "throughput_ops_per_sec", "threshold": 50_000.0, "direction": "min"},
     "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 300_000.0, "direction": "min"},
     "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},

@@ -10,8 +10,10 @@
 
 #include <boost/asio.hpp>
 
-#include <chrono>
+#include <algorithm>
 #include <atomic>
+#include <barrier>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <mutex>
@@ -575,6 +577,85 @@ TEST(V2SpscQueueTest, SingleProducerSingleConsumerThreadSafety) {
     EXPECT_TRUE(queue.empty());
 }
 
+// ─── MPSC Queue Tests ──────────────────────────────────────────
+
+TEST(V2MpscQueueTest, MultiProducerFanInIsExactlyOnceAndPreservesProducerFifo) {
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kItemsPerProducer = 5000;
+    constexpr std::size_t kTotalItems = kProducers * kItemsPerProducer;
+    v2::io::MpscQueue<std::uint64_t> queue(1024);
+    std::barrier start(static_cast<std::ptrdiff_t>(kProducers + 1));
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+
+    for (std::size_t producer = 0; producer < kProducers; ++producer) {
+        producers.emplace_back([&, producer]() {
+            start.arrive_and_wait();
+            for (std::size_t sequence = 0; sequence < kItemsPerProducer; ++sequence) {
+                const auto value = (static_cast<std::uint64_t>(producer) << 32U) |
+                                   static_cast<std::uint64_t>(sequence);
+                while (!queue.try_enqueue(value)) {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    std::vector<std::uint64_t> received;
+    received.reserve(kTotalItems);
+    start.arrive_and_wait();
+    while (received.size() < kTotalItems) {
+        if (auto item = queue.try_dequeue()) {
+            received.push_back(*item);
+        } else {
+            std::this_thread::yield();
+        }
+    }
+    for (auto& producer : producers) {
+        producer.join();
+    }
+
+    std::vector<std::size_t> next_sequence(kProducers, 0);
+    std::vector<bool> seen(kTotalItems, false);
+    for (const auto value : received) {
+        const auto producer = static_cast<std::size_t>(value >> 32U);
+        const auto sequence = static_cast<std::size_t>(value & 0xffffffffULL);
+        ASSERT_LT(producer, kProducers);
+        ASSERT_LT(sequence, kItemsPerProducer);
+        EXPECT_EQ(sequence, next_sequence[producer]++);
+        const auto index = producer * kItemsPerProducer + sequence;
+        EXPECT_FALSE(seen[index]);
+        seen[index] = true;
+    }
+    EXPECT_TRUE(std::all_of(seen.begin(), seen.end(), [](bool value) { return value; }));
+    EXPECT_TRUE(queue.empty());
+}
+
+TEST(V2MpscQueueTest, FullQueueDoesNotConsumeRejectedMoveOnlyItem) {
+    v2::io::MpscQueue<std::unique_ptr<int>> queue(2);
+    EXPECT_TRUE(queue.try_enqueue(std::make_unique<int>(1)));
+    EXPECT_TRUE(queue.try_enqueue(std::make_unique<int>(2)));
+
+    auto rejected = std::make_unique<int>(3);
+    EXPECT_EQ(queue.try_enqueue_result(std::move(rejected)), v2::io::EnqueueResult::kFull);
+    ASSERT_NE(rejected, nullptr);
+    EXPECT_EQ(*rejected, 3);
+    EXPECT_EQ(queue.size(), 2U);
+}
+
+TEST(V2MpscQueueTest, CloseRejectsNewItemsAndAllowsPendingDrain) {
+    v2::io::MpscQueue<int> queue(4);
+    EXPECT_TRUE(queue.try_enqueue(1));
+    queue.close();
+
+    int rejected = 2;
+    EXPECT_EQ(queue.try_enqueue_result(std::move(rejected)), v2::io::EnqueueResult::kClosed);
+    const auto drained = queue.drain();
+    ASSERT_EQ(drained.size(), 1U);
+    EXPECT_EQ(drained[0], 1);
+    EXPECT_TRUE(queue.closed());
+}
+
 // ─── Cross-Core Mailbox Tests ──────────────────────────────────
 
 TEST(V2IoEngineTest, PostMailboxDeliversToCorrectCore) {
@@ -632,6 +713,9 @@ TEST(V2IoEngineTest, PostMailboxOutOfBoundsReturnsFalse) {
     msg.payload = std::string("nope");
 
     EXPECT_FALSE(engine.post_mailbox(999, std::move(msg)));
+    ASSERT_TRUE(std::holds_alternative<std::string>(msg.payload));
+    EXPECT_EQ(std::get<std::string>(msg.payload), "nope");
+    EXPECT_EQ(engine.mailbox_metrics().rejected_invalid_core, 1U);
 }
 
 TEST(V2IoEngineTest, MailboxPreservesMessagePayload) {
@@ -703,6 +787,120 @@ TEST(V2IoEngineTest, PostMailboxFromDifferentThread) {
 
     producer.join();
     engine.stop();
+}
+
+TEST(V2IoEngineTest, MailboxMultiProducerFanInIsExactlyOnceAndProducerFifo) {
+    app::logging::init("project_tests");
+
+    constexpr std::size_t kProducers = 4;
+    constexpr std::size_t kItemsPerProducer = 2000;
+    constexpr std::size_t kTotalItems = kProducers * kItemsPerProducer;
+    v2::io::AsioIoEngine engine(2);
+    engine.run();
+
+    std::barrier start(static_cast<std::ptrdiff_t>(kProducers + 1));
+    std::promise<std::vector<std::uint64_t>> drained_promise;
+    auto drained_future = drained_promise.get_future();
+    engine.dispatch_to_core(1, [&]() {
+        std::vector<std::uint64_t> received;
+        received.reserve(kTotalItems);
+        start.arrive_and_wait();
+        while (received.size() < kTotalItems) {
+            auto batch = engine.drain_mailbox(1);
+            for (const auto& message : batch) {
+                received.push_back(message.header.trace_id);
+            }
+            if (batch.empty()) {
+                std::this_thread::yield();
+            }
+        }
+        drained_promise.set_value(std::move(received));
+    });
+
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+    for (std::size_t producer = 0; producer < kProducers; ++producer) {
+        producers.emplace_back([&, producer]() {
+            start.arrive_and_wait();
+            for (std::size_t sequence = 0; sequence < kItemsPerProducer; ++sequence) {
+                v2::actor::Message message;
+                message.header.trace_id = (static_cast<std::uint64_t>(producer) << 32U) |
+                                          static_cast<std::uint64_t>(sequence);
+                message.payload = std::string("fan-in");
+                while (!engine.post_mailbox(1, std::move(message))) {
+                    std::this_thread::yield();
+                }
+            }
+        });
+    }
+
+    const auto received = drained_future.get();
+    for (auto& producer : producers) {
+        producer.join();
+    }
+    engine.stop();
+
+    ASSERT_EQ(received.size(), kTotalItems);
+    std::vector<std::size_t> next_sequence(kProducers, 0);
+    std::vector<bool> seen(kTotalItems, false);
+    for (const auto value : received) {
+        const auto producer = static_cast<std::size_t>(value >> 32U);
+        const auto sequence = static_cast<std::size_t>(value & 0xffffffffULL);
+        ASSERT_LT(producer, kProducers);
+        ASSERT_LT(sequence, kItemsPerProducer);
+        EXPECT_EQ(sequence, next_sequence[producer]++);
+        const auto index = producer * kItemsPerProducer + sequence;
+        EXPECT_FALSE(seen[index]);
+        seen[index] = true;
+    }
+    EXPECT_TRUE(std::all_of(seen.begin(), seen.end(), [](bool value) { return value; }));
+    EXPECT_EQ(engine.mailbox_metrics().accepted, kTotalItems);
+}
+
+TEST(V2IoEngineTest, MailboxOverflowIsAccountedAndDoesNotConsumeMessage) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(1);
+    for (std::size_t i = 0; i < 1024; ++i) {
+        v2::actor::Message message;
+        message.header.trace_id = i;
+        EXPECT_TRUE(engine.post_mailbox(0, std::move(message)));
+    }
+
+    v2::actor::Message rejected;
+    rejected.payload = std::string("retain-on-overflow");
+    EXPECT_FALSE(engine.post_mailbox(0, std::move(rejected)));
+    ASSERT_TRUE(std::holds_alternative<std::string>(rejected.payload));
+    EXPECT_EQ(std::get<std::string>(rejected.payload), "retain-on-overflow");
+
+    const auto metrics = engine.mailbox_metrics();
+    EXPECT_EQ(metrics.accepted, 1024U);
+    EXPECT_EQ(metrics.rejected_full, 1U);
+    EXPECT_EQ(metrics.rejected_closed, 0U);
+    EXPECT_EQ(engine.drain_mailbox(0).size(), 1024U);
+}
+
+TEST(V2IoEngineTest, MailboxStopClosesAndPreservesPreviouslyAcceptedMessages) {
+    app::logging::init("project_tests");
+
+    v2::io::AsioIoEngine engine(1);
+    engine.run();
+    v2::actor::Message accepted;
+    accepted.header.trace_id = 41;
+    EXPECT_TRUE(engine.post_mailbox(0, std::move(accepted)));
+    engine.stop();
+
+    v2::actor::Message rejected;
+    rejected.header.trace_id = 42;
+    EXPECT_FALSE(engine.post_mailbox(0, std::move(rejected)));
+    EXPECT_EQ(rejected.header.trace_id, 42U);
+
+    const auto drained = engine.drain_mailbox(0);
+    ASSERT_EQ(drained.size(), 1U);
+    EXPECT_EQ(drained[0].header.trace_id, 41U);
+    const auto metrics = engine.mailbox_metrics();
+    EXPECT_EQ(metrics.accepted, 1U);
+    EXPECT_EQ(metrics.rejected_closed, 1U);
 }
 
 // ─── SO_REUSEPORT Tests ─────────────────────────────────────────

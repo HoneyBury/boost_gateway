@@ -6,6 +6,8 @@
 #endif
 #include <utility>
 
+#include <spdlog/spdlog.h>
+
 namespace v2::io {
 
 namespace asio = boost::asio;
@@ -434,6 +436,9 @@ void AsioIoEngine::run() {
 
 void AsioIoEngine::stop() {
     std::scoped_lock lock(run_mutex_);
+    for (auto& core : cores_) {
+        core->mailbox.close();
+    }
     if (!running_ && threads_.empty()) {
         return;
     }
@@ -485,11 +490,44 @@ std::uint32_t AsioIoEngine::total_session_count() const noexcept {
     return total;
 }
 
-bool AsioIoEngine::post_mailbox(std::uint32_t core_id, v2::actor::Message message) {
+bool AsioIoEngine::post_mailbox(std::uint32_t core_id, v2::actor::Message&& message) {
     if (core_id >= cores_.size()) {
+        const auto rejected =
+            mailbox_rejected_invalid_core_.fetch_add(1, std::memory_order_relaxed) + 1;
+        if ((rejected & (rejected - 1)) == 0) {
+            SPDLOG_ERROR("Mailbox rejected message for invalid core {} (count={})", core_id, rejected);
+        }
         return false;
     }
-    return cores_[core_id]->mailbox.try_enqueue(std::move(message));
+    const auto result = cores_[core_id]->mailbox.try_enqueue_result(std::move(message));
+    switch (result) {
+    case EnqueueResult::kSuccess:
+        mailbox_accepted_.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    case EnqueueResult::kFull:
+        {
+            const auto rejected = mailbox_rejected_full_.fetch_add(1, std::memory_order_relaxed) + 1;
+            if ((rejected & (rejected - 1)) == 0) {
+                SPDLOG_ERROR(
+                    "Mailbox for core {} is full; cross-core message rejected (count={})",
+                    core_id,
+                    rejected);
+            }
+        }
+        return false;
+    case EnqueueResult::kClosed:
+        {
+            const auto rejected = mailbox_rejected_closed_.fetch_add(1, std::memory_order_relaxed) + 1;
+            if ((rejected & (rejected - 1)) == 0) {
+                SPDLOG_ERROR(
+                    "Mailbox for core {} is closed; cross-core message rejected (count={})",
+                    core_id,
+                    rejected);
+            }
+        }
+        return false;
+    }
+    return false;
 }
 
 std::vector<v2::actor::Message> AsioIoEngine::drain_mailbox(std::uint32_t core_id) {
@@ -497,6 +535,15 @@ std::vector<v2::actor::Message> AsioIoEngine::drain_mailbox(std::uint32_t core_i
         return {};
     }
     return cores_[core_id]->mailbox.drain();
+}
+
+MailboxMetrics AsioIoEngine::mailbox_metrics() const noexcept {
+    return {
+        .accepted = mailbox_accepted_.load(std::memory_order_relaxed),
+        .rejected_full = mailbox_rejected_full_.load(std::memory_order_relaxed),
+        .rejected_closed = mailbox_rejected_closed_.load(std::memory_order_relaxed),
+        .rejected_invalid_core = mailbox_rejected_invalid_core_.load(std::memory_order_relaxed),
+    };
 }
 
 void AsioIoEngine::set_actor_system(v2::runtime::ActorSystem* actor_system) {

@@ -366,14 +366,14 @@ def main() -> int:
     add(
         checks,
         "security-maintenance:hosted-bounded-isolation",
-        security_maintenance_workflow.count("runs-on: ubuntu-latest") == 3
-        and security_maintenance_workflow.count("timeout-minutes:") == 3
+        security_maintenance_workflow.count("runs-on: ubuntu-latest") == 4
+        and security_maintenance_workflow.count("timeout-minutes:") == 4
         and "self-hosted" not in security_maintenance_workflow
         and "node-aoi-omen-gaming-laptop" not in security_maintenance_workflow
         and "node-honeybury" not in security_maintenance_workflow
         and "macos-arm64-candidate" not in security_maintenance_workflow
         and "runner:" not in security_maintenance_workflow,
-        "scheduled security work is bounded to three GitHub-hosted jobs without a production runner override",
+        "scheduled security work is bounded to four GitHub-hosted jobs without a production runner override",
     )
     add(
         checks,
@@ -381,9 +381,12 @@ def main() -> int:
         "google/osv-scanner-action/osv-scanner-action@" in security_maintenance_workflow
         and "dependency-vulnerability:" in security_maintenance_workflow
         and "-fsanitize=address,undefined" in security_maintenance_workflow
+        and "mailbox-thread-sanitizer:" in security_maintenance_workflow
+        and "-fsanitize=thread" in security_maintenance_workflow
+        and "V2MpscQueueTest.*:V2IoEngineTest.Mailbox*" in security_maintenance_workflow
         and "BOOST_BUILD_FUZZ=ON" in security_maintenance_workflow
         and security_maintenance_workflow.count("-max_total_time=60") == 2,
-        "maintenance runs dependency vulnerability, ASan/UBSan and bounded libFuzzer checks",
+        "maintenance runs dependency vulnerability, ASan/UBSan, mailbox TSan and bounded libFuzzer checks",
     )
     add(
         checks,
