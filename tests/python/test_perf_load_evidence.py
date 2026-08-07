@@ -481,6 +481,16 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         self.assertFalse(invalid_schedule["collection_pass"])
         self.assertFalse(invalid_schedule["points"][0]["open_loop_schedule_valid"])
 
+        truncated_window = copy.deepcopy(open_with_errors)
+        truncated_window["case_aggregates"][0]["steady_state_elapsed_seconds"] = {
+            "min": 15.0,
+            "median": 15.0,
+            "max": 15.0,
+        }
+        truncated_analysis = build_saturation_analysis(truncated_window)
+        self.assertFalse(truncated_analysis["collection_pass"])
+        self.assertFalse(truncated_analysis["points"][0]["timed_window_valid"])
+
         post_saturation_collapse = copy.deepcopy(open_with_errors)
         post_saturation_collapse["case_aggregates"][-1][
             "open_loop_scheduled_offers"

@@ -2841,6 +2841,9 @@ def build_saturation_analysis(
         steady_elapsed = float(
             aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
         )
+        steady_target = float(
+            aggregate.get("steady_state_target_seconds", {}).get("max", 0.0)
+        )
         ramp_to_steady_ratio = ramp_up / steady_elapsed if steady_elapsed > 0.0 else 1.0
         configured_ceiling = float(
             aggregate.get("configured_request_rate_ceiling_ops_per_sec", {}).get("median", 0.0)
@@ -2863,6 +2866,10 @@ def build_saturation_analysis(
                 and offer_to_configured_ratio >= 0.90
             )
         )
+        timed_window_valid = (
+            analysis_load_model != "open_loop_fixed_interval_per_client"
+            or (steady_target > 0.0 and steady_elapsed >= steady_target * 0.99)
+        )
         point_valid = (
             aggregate.get("runs") == repetitions
             and aggregate.get("measurement_started") is True
@@ -2878,6 +2885,7 @@ def build_saturation_analysis(
             and message_count_consistent
             and load_models == [analysis_load_model]
             and open_loop_schedule_valid
+            and timed_window_valid
             and isinstance(gateway_cpu, (int, float))
             and not isinstance(gateway_cpu, bool)
             and isinstance(loadgen_cpu, (int, float))
@@ -2929,6 +2937,8 @@ def build_saturation_analysis(
             "message_count_consistent": message_count_consistent,
             "open_loop_scheduled_offers": scheduled_offers,
             "open_loop_schedule_valid": open_loop_schedule_valid,
+            "timed_window_valid": timed_window_valid,
+            "steady_state_target_seconds": round(steady_target, 3),
             "open_loop_average_schedule_lag_us": float(
                 aggregate.get("open_loop_average_schedule_lag_us", {}).get("median", 0.0)
             ),

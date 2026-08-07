@@ -158,6 +158,7 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
 accepted、response 三条速率和调度滞后；实际 scheduled rate 低于配置值 90% 时 fail closed，
 避免把 loadgen 自身失速误判为服务饱和。collector 设置的 Battle `max_frames` 必须覆盖
 ramp timeout 与完整稳态期间所有房间成员的输入，不能让 frame limit 提前结束计时窗口。
+开放流量点还必须满足实际稳态时长至少达到目标值的 99%，否则即使业务自然结束也视为无效证据。
 
 ```bash
 python3 scripts/producers/collect_v2_perf_baseline.py \
