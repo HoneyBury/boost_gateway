@@ -671,7 +671,15 @@ def archive_failed_arch_run(
     archive_dir = output_root / "failures" / f"pass-{pass_number:06d}-{attempt}"
     archive_dir.mkdir(parents=True, exist_ok=True)
     archived_files: list[str] = []
-    for name in ("summary.json", "v2_arch_benchmark.json", "stdout.log", "stderr.log"):
+    for name in (
+        "summary.json",
+        "v2_arch_benchmark.json",
+        "v2_mailbox_benchmark.json",
+        "stdout.log",
+        "stderr.log",
+        "mailbox-stdout.log",
+        "mailbox-stderr.log",
+    ):
         source = output_root / name
         if source.is_file():
             destination = archive_dir / name

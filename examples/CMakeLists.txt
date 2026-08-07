@@ -6,6 +6,7 @@ add_subdirectory(v2_room_backend)
 add_subdirectory(v2_battle_backend)
 add_subdirectory(v2_gateway_pressure)
 add_subdirectory(v2_arch_benchmark)
+add_subdirectory(v2_mailbox_benchmark)
 add_subdirectory(v2_match_backend)
 add_subdirectory(v2_leaderboard_backend)
 

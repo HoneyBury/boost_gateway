@@ -182,9 +182,14 @@ OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用�
 `config/perf/v2_arch_baseline_gates.json` 管理，不能用该微秒级阈值替代端到端 case gate。
 Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile/lockfile，交替执行基线与
 候选至少五轮；`compare_v2_arch_baselines.py` 对中位数 fail-closed 比较并保留每轮原始 JSON。
-当前硬门禁覆盖 actor fan-in、单场/多场 battle tick 和
-`InstanceRuntime::tick_all` 的一输入每实例 workload。缺样本、轮数不对称或超过相对阈值均失败；
+当前硬门禁覆盖四生产者 MPSC mailbox fan-in、actor fan-in、单场/多场 battle tick 和
+`InstanceRuntime::tick_all` 的一输入每实例 workload。MPSC case 必须同时通过真实并发
+exactly-once/FIFO 单测、TSAN 专项和 Release 绝对吞吐门禁；缺样本、轮数不对称或超过相对阈值均失败；
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
+MPSC case 由独立的 `v2_mailbox_benchmark` 采集并在绝对门禁 summary 中合并；Linux x64
+paired comparison 始终只运行未扩展 case 集合的 `v2_arch_benchmark`，避免新增函数改变既有
+微基准的代码布局。paired comparison 的 multi-battle case 固定使用 2000 个样本，不改变
+现有相对门禁阈值。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
 
 ## 发布后矩阵纠偏
 

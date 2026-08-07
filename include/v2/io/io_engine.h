@@ -34,6 +34,13 @@ struct IoListenOptions {
     bool reuse_port = false;
 };
 
+struct MailboxMetrics {
+    std::uint64_t accepted = 0;
+    std::uint64_t rejected_full = 0;
+    std::uint64_t rejected_closed = 0;
+    std::uint64_t rejected_invalid_core = 0;
+};
+
 class IoSession {
 public:
     using PacketMessage = net::Session::PacketMessage;
@@ -101,8 +108,11 @@ public:
     [[nodiscard]] virtual std::uint32_t total_session_count() const noexcept = 0;
 
     // Cross-core actor message mailbox.
-    virtual bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) = 0;
+    // On failure message is not consumed, allowing the caller to retry or
+    // surface backpressure without reconstructing the payload.
+    virtual bool post_mailbox(std::uint32_t core_id, v2::actor::Message&& message) = 0;
     [[nodiscard]] virtual std::vector<v2::actor::Message> drain_mailbox(std::uint32_t core_id) = 0;
+    [[nodiscard]] virtual MailboxMetrics mailbox_metrics() const noexcept { return {}; }
 
     // ActorSystem integration for core-affinity message routing.
     virtual void set_actor_system(v2::runtime::ActorSystem* actor_system) = 0;
@@ -133,8 +143,9 @@ public:
     [[nodiscard]] std::uint32_t total_session_count() const noexcept override;
 
     // Cross-core mailbox.
-    bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override;
+    bool post_mailbox(std::uint32_t core_id, v2::actor::Message&& message) override;
     [[nodiscard]] std::vector<v2::actor::Message> drain_mailbox(std::uint32_t core_id) override;
+    [[nodiscard]] MailboxMetrics mailbox_metrics() const noexcept override;
 
     // ActorSystem integration.
     void set_actor_system(v2::runtime::ActorSystem* actor_system) override;
@@ -144,7 +155,7 @@ private:
         boost::asio::io_context io_context;
         boost::asio::executor_work_guard<boost::asio::io_context::executor_type> work_guard{
             boost::asio::make_work_guard(io_context)};
-        SpscQueue<v2::actor::Message> mailbox;
+        MpscQueue<v2::actor::Message> mailbox;
     };
 
     [[nodiscard]] std::uint32_t pick_core_for_listen(const IoListenOptions& options) noexcept;
@@ -155,6 +166,11 @@ private:
     std::mutex run_mutex_;
     bool running_ = false;
     std::unique_ptr<std::atomic<std::uint32_t>[]> session_counts_;
+
+    std::atomic<std::uint64_t> mailbox_accepted_{0};
+    std::atomic<std::uint64_t> mailbox_rejected_full_{0};
+    std::atomic<std::uint64_t> mailbox_rejected_closed_{0};
+    std::atomic<std::uint64_t> mailbox_rejected_invalid_core_{0};
 
     v2::runtime::ActorSystem* actor_system_ = nullptr;
 };

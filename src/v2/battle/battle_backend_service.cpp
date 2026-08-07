@@ -140,12 +140,7 @@ std::optional<std::string> speed_buff_user_from_snapshot(const nlohmann::json& s
 // Extract participant data from a snapshot payload, handling both
 // BattleInstancePlugin format ("participants") and TankBattlePlugin
 // format ("players").
-nlohmann::json extract_participants_from_snapshot(const std::string& payload) {
-    if (payload.empty()) return nlohmann::json::array();
-
-    auto j = nlohmann::json::parse(payload, nullptr, false);
-    if (j.is_discarded()) return nlohmann::json::array();
-
+nlohmann::json extract_participants_from_snapshot(const nlohmann::json& j) {
     // BattleInstancePlugin format
     if (j.contains("participants")) return j["participants"];
 
@@ -680,7 +675,9 @@ private:
         };
 
         // Enrich with participant state from the snapshot payload
-        auto participants = extract_participants_from_snapshot(snapshot.payload);
+        auto participants = snapshot_json.is_discarded()
+            ? nlohmann::json::array()
+            : extract_participants_from_snapshot(snapshot_json);
         if (!participants.empty()) {
             frame_push["participants"] = std::move(participants);
         }
@@ -839,11 +836,11 @@ private:
             auto payload = nlohmann::json::parse(cached->payload, nullptr, false);
             if (!payload.is_discarded()) {
                 apply_speed_buff_if_present(payload);
+                auto participants = extract_participants_from_snapshot(payload);
+                if (!participants.empty()) {
+                    state["participants"] = std::move(participants);
+                }
                 state["snapshot"] = std::move(payload);
-            }
-            auto participants = extract_participants_from_snapshot(cached->payload);
-            if (!participants.empty()) {
-                state["participants"] = std::move(participants);
             }
         }
 
