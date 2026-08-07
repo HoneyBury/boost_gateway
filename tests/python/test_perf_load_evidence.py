@@ -1,5 +1,6 @@
 import copy
 import unittest
+from pathlib import Path
 
 from scripts.producers.collect_v2_perf_baseline import (
     aggregate_case_runs,
@@ -56,6 +57,14 @@ def pressure_run(clients: int, *, scenario: str = "echo") -> dict:
 
 
 class PerfLoadEvidenceTest(unittest.TestCase):
+    def test_perf_workflow_uses_saturation_verdict_for_saturation_presets(self) -> None:
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/perf-regression.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn('verdict_source = "saturation_analysis.overall_pass"', workflow)
+        self.assertIn('overall_pass = saturation.get("overall_pass") is True', workflow)
+
     def test_gateway_runtime_metrics_use_per_run_counter_deltas(self) -> None:
         before = {
             "gateway_queue": {
@@ -122,7 +131,8 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         cases = build_run_cases("business-open-saturation")
         self.assertEqual(
             [(case["clients"], case["interval_ms"]) for case in cases],
-            [(100, 100), (200, 100), (250, 100), (500, 100), (750, 100), (1000, 100), (1000, 50), (1000, 20)],
+            [(100, 100), (200, 100), (250, 100), (300, 100), (350, 100),
+             (400, 100), (450, 100), (500, 100), (750, 100), (1000, 100)],
         )
         self.assertTrue(all(case["scenario"] == "battle" for case in cases))
         self.assertTrue(all(case["load_model"] == "open-loop" for case in cases))
@@ -138,7 +148,8 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         ))
         self.assertEqual(
             [item["configured_request_rate_ceiling_ops_per_sec"] for item in manifest],
-            [1000.0, 2000.0, 2500.0, 5000.0, 7500.0, 10000.0, 20000.0, 50000.0],
+            [1000.0, 2000.0, 2500.0, 3000.0, 3500.0,
+             4000.0, 4500.0, 5000.0, 7500.0, 10000.0],
         )
 
     def evaluate(self, case_name: str, run: dict) -> dict:
@@ -456,6 +467,20 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         invalid_schedule = build_saturation_analysis(open_summary)
         self.assertFalse(invalid_schedule["collection_pass"])
         self.assertFalse(invalid_schedule["points"][0]["open_loop_schedule_valid"])
+
+        post_saturation_collapse = copy.deepcopy(open_with_errors)
+        post_saturation_collapse["case_aggregates"][-1][
+            "open_loop_scheduled_offers"
+        ]["median"] -= 1
+        collapse_analysis = build_saturation_analysis(post_saturation_collapse)
+        self.assertTrue(collapse_analysis["collection_pass"], collapse_analysis)
+        self.assertTrue(collapse_analysis["saturation_found"])
+        self.assertEqual(
+            collapse_analysis["required_evidence_through_case"], case_names[0]
+        )
+        self.assertEqual(
+            collapse_analysis["post_saturation_invalid_points"], [case_names[-1]]
+        )
 
     def test_resource_cpu_window_excludes_post_run_quiescence(self) -> None:
         before = [{

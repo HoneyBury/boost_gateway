@@ -2948,21 +2948,17 @@ def build_saturation_analysis(
     ceilings = [float(point["configured_request_rate_ceiling_ops_per_sec"]) for point in points]
     if any(current <= previous for previous, current in zip(ceilings, ceilings[1:], strict=False)):
         failures.append("configured request-rate ceilings are not strictly increasing")
-    if any(point.get("message_count_consistent") is not True for point in points):
-        failures.append(
-            "one or more saturation points have inconsistent total/response/push message counts"
-        )
-    if any(point.get("evidence_valid") is not True for point in points):
-        failures.append("one or more saturation points have incomplete lifecycle or resource evidence")
-
     gateway_cpu_threshold_point = next(
-        (point for point in points if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
+        (point for point in points
+         if point.get("evidence_valid") is True
+         and point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
         None,
     )
     cpu_point = next(
         (
             point for point in points
-            if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
+            if point.get("evidence_valid") is True
+            and point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
             and point["loadgen_cpu_quota_percent"] is not None
             and point["loadgen_cpu_quota_percent"] < loadgen_headroom_threshold_percent
         ),
@@ -2971,7 +2967,8 @@ def build_saturation_analysis(
     def load_source_has_headroom(point: dict[str, Any]) -> bool:
         loadgen_quota = point.get("loadgen_cpu_quota_percent")
         return (
-            isinstance(loadgen_quota, (int, float))
+            point.get("evidence_valid") is True
+            and isinstance(loadgen_quota, (int, float))
             and loadgen_quota < loadgen_headroom_threshold_percent
             and point.get("open_loop_schedule_valid") is True
         )
@@ -2996,12 +2993,12 @@ def build_saturation_analysis(
             - 1.0
         )
         response_growth = current_rate / max(previous_rate, 0.000001) - 1.0
-        if (ceiling_growth >= 0.2 and response_growth < 0.1
+        if (previous.get("evidence_valid") is True
+                and ceiling_growth >= 0.2 and response_growth < 0.1
                 and load_source_has_headroom(current)):
             throughput_point = current
             break
 
-    evidence_valid = not failures
     knee_candidates = [
         point for point in (cpu_point, throughput_point, slo_point, error_point)
         if point is not None
@@ -3011,6 +3008,29 @@ def build_saturation_analysis(
         key=lambda point: float(point["configured_request_rate_ceiling_ops_per_sec"]),
         default=None,
     )
+    required_points = points
+    post_saturation_invalid_points: list[str] = []
+    if fixed_case_point is not None:
+        fixed_index = points.index(fixed_case_point)
+        required_points = points[:fixed_index + 1]
+        post_saturation_invalid_points = [
+            str(point["case_id"])
+            for point in points[fixed_index + 1:]
+            if point.get("evidence_valid") is not True
+        ]
+    if any(
+        point.get("message_count_consistent") is not True
+        for point in required_points
+    ):
+        failures.append(
+            "one or more required saturation points have inconsistent total/response/push message counts"
+        )
+    if any(point.get("evidence_valid") is not True for point in required_points):
+        failures.append(
+            "one or more required saturation points have incomplete lifecycle or resource evidence"
+        )
+
+    evidence_valid = not failures
     saturation_found = evidence_valid and curve_complete and fixed_case_point is not None
     if evidence_valid and not curve_complete:
         inconclusive_reason = (
@@ -3051,6 +3071,10 @@ def build_saturation_analysis(
         "service_cpu_count": service_cpu_count,
         "loadgen_cpu_count": loadgen_cpu_count,
         "points": points,
+        "required_evidence_through_case": (
+            fixed_case_point["case_id"] if fixed_case_point else None
+        ),
+        "post_saturation_invalid_points": post_saturation_invalid_points,
         "cpu_saturation_case": cpu_point["case_identity"] if cpu_point else None,
         "gateway_cpu_threshold_case": (
             gateway_cpu_threshold_point["case_identity"]
@@ -3198,6 +3222,15 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"- Load model: `{saturation.get('load_model')}`",
             f"- CPU threshold: {fmt_number(saturation.get('cpu_threshold_percent_of_quota'))}% of quota",
             f"- Loadgen headroom threshold: {fmt_number(saturation.get('loadgen_headroom_threshold_percent_of_quota'))}% of quota",
+            f"- Required evidence through: `{saturation.get('required_evidence_through_case') or 'all selected cases'}`",
+            "- Invalid points beyond confirmed saturation: "
+            + (
+                ", ".join(
+                    f"`{case_id}`"
+                    for case_id in saturation.get("post_saturation_invalid_points", [])
+                )
+                or "none"
+            ),
             f"- Inconclusive reason: {saturation.get('inconclusive_reason') or 'n/a'}",
             "",
             "| Case | Ceiling ops/s | Send ops/s | Response ops/s | Gateway CPU quota % | Loadgen CPU quota % | P99 ms | Errors |",
@@ -3580,11 +3613,13 @@ def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
             {"name": "battle-open-c100-i100-60s", "scenario": "battle", "clients": 100, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_100", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c200-i100-60s", "scenario": "battle", "clients": 200, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_200", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c250-i100-60s", "scenario": "battle", "clients": 250, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_250", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c300-i100-60s", "scenario": "battle", "clients": 300, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_300", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c350-i100-60s", "scenario": "battle", "clients": 350, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_350", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c400-i100-60s", "scenario": "battle", "clients": 400, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_400", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c450-i100-60s", "scenario": "battle", "clients": 450, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_450", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c500-i100-60s", "scenario": "battle", "clients": 500, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_500", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c750-i100-60s", "scenario": "battle", "clients": 750, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_750", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c1000-i100-60s", "scenario": "battle", "clients": 1000, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_1000", "room_group_size": 2, **saturation_ramp},
-            {"name": "battle-open-c1000-i50-60s", "scenario": "battle", "clients": 1000, "duration_seconds": 60, "interval_ms": 50, "load_model": "open-loop", "room": "perf_battle_open_1000_i50", "room_group_size": 2, **saturation_ramp},
-            {"name": "battle-open-c1000-i20-60s", "scenario": "battle", "clients": 1000, "duration_seconds": 60, "interval_ms": 20, "load_model": "open-loop", "room": "perf_battle_open_1000_i20", "room_group_size": 2, **saturation_ramp},
         ]
     if run_preset == "capacity":
         return [
