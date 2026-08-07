@@ -184,6 +184,84 @@ void reset_owning_plugin_counters(bool throw_on_create = false) {
     owning_plugin_throw_on_create.store(throw_on_create, std::memory_order_relaxed);
 }
 
+struct PlayerLifecycleState {
+    std::atomic<int> joins{0};
+    std::atomic<int> leaves{0};
+    std::atomic<bool> join_saw_player_absent{false};
+    std::atomic<bool> leave_saw_player_present{false};
+    std::atomic<bool> throw_on_join{false};
+    std::atomic<bool> throw_on_leave{false};
+};
+
+std::shared_ptr<PlayerLifecycleState> player_lifecycle_state;
+
+class PlayerLifecyclePlugin final : public v2::realtime::InstancePlugin {
+public:
+    explicit PlayerLifecyclePlugin(std::shared_ptr<PlayerLifecycleState> state)
+        : state_(std::move(state)) {}
+
+    void on_instance_created(v2::realtime::InstanceContext&) override {}
+
+    void on_player_join(v2::realtime::InstanceContext& ctx,
+                        const v2::realtime::PlayerContext& player) override {
+        state_->join_saw_player_absent.store(
+            ctx.find_player(player.user_id) == nullptr, std::memory_order_relaxed);
+        state_->joins.fetch_add(1, std::memory_order_relaxed);
+        if (state_->throw_on_join.load(std::memory_order_relaxed)) {
+            throw std::runtime_error("join failure");
+        }
+    }
+
+    void on_player_leave(v2::realtime::InstanceContext& ctx,
+                         const v2::realtime::PlayerContext& player) override {
+        state_->leave_saw_player_present.store(
+            ctx.find_player(player.user_id) != nullptr, std::memory_order_relaxed);
+        state_->leaves.fetch_add(1, std::memory_order_relaxed);
+        if (state_->throw_on_leave.load(std::memory_order_relaxed)) {
+            throw std::runtime_error("leave failure");
+        }
+    }
+
+    v2::realtime::InputResult on_input(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::InputEnvelope& input) override {
+        return {.accepted = true, .ack_seq = input.seq};
+    }
+
+    v2::realtime::TickStats on_tick(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::FrameContext& frame_ctx) noexcept override {
+        return {
+            .frame_number = frame_ctx.frame_number,
+            .inputs_processed = static_cast<std::uint32_t>(frame_ctx.inputs_this_tick.size()),
+        };
+    }
+
+    v2::realtime::Snapshot build_snapshot(
+        v2::realtime::InstanceContext&, bool) noexcept override {
+        return {};
+    }
+
+    std::string build_settlement(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::SettlementContext&) noexcept override {
+        return "{}";
+    }
+
+    v2::realtime::Snapshot build_resume_snapshot(
+        v2::realtime::InstanceContext&,
+        const v2::realtime::PlayerContext& player) noexcept override {
+        return {.payload = player.user_id, .is_resume = true};
+    }
+
+private:
+    std::shared_ptr<PlayerLifecycleState> state_;
+};
+
+std::unique_ptr<v2::realtime::InstancePlugin> create_player_lifecycle_plugin() {
+    return std::make_unique<PlayerLifecyclePlugin>(player_lifecycle_state);
+}
+
 }  // namespace
 
 // ─── Tests ──────────────────────────────────────────────────────────
@@ -269,6 +347,46 @@ TEST(InstanceRuntimeTest, CreateDuplicateInstanceFails) {
     EXPECT_TRUE(id2.empty());  // duplicate
 }
 
+TEST(InstanceRuntimeTest, ConcurrentDuplicateCreationKeepsSingleInstance) {
+    reset_owning_plugin_counters();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("owning", &create_owning_plugin);
+
+    std::barrier start(3);
+    std::string first_result;
+    std::string second_result;
+    std::thread first([&] {
+        start.arrive_and_wait();
+        first_result = runtime.create_instance("same", "room", "owning", {});
+    });
+    std::thread second([&] {
+        start.arrive_and_wait();
+        second_result = runtime.create_instance("same", "room", "owning", {});
+    });
+    start.arrive_and_wait();
+    first.join();
+    second.join();
+
+    EXPECT_EQ(static_cast<int>(!first_result.empty()) +
+                  static_cast<int>(!second_result.empty()),
+              1);
+    EXPECT_EQ(runtime.instance_count(), 1);
+    const auto allocations =
+        owning_plugin_allocations.load(std::memory_order_relaxed);
+    EXPECT_GE(allocations, 1);
+    EXPECT_LE(allocations, 2);
+    EXPECT_EQ(owning_plugin_destructions.load(std::memory_order_relaxed),
+              allocations - 1);
+}
+
+TEST(InstanceRuntimeTest, NullPluginFactoryFailsWithoutCreatingInstance) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("null", nullptr);
+
+    EXPECT_TRUE(runtime.create_instance("inst", "room", "null", {}).empty());
+    EXPECT_EQ(runtime.instance_count(), 0);
+}
+
 TEST(InstanceRuntimeTest, UnknownPluginTypeFails) {
     v2::realtime::InstanceRuntime runtime;
     // Don't register any plugin
@@ -344,6 +462,220 @@ TEST(InstanceRuntimeTest, InstanceLifecycleStateTransitions) {
     runtime.finish_instance("inst_001");
     EXPECT_EQ(runtime.get_instance_state(id),
               v2::realtime::InstanceState::kFinished);
+}
+
+TEST(InstanceRuntimeTest, EventCallbacksMayReenterRuntimeQueries) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("echo", &create_echo_plugin);
+    std::atomic<int> callbacks{0};
+    ASSERT_TRUE(runtime.set_event_callback([&](const v2::realtime::InstanceEvent& event) {
+        EXPECT_TRUE(runtime.contains_instance(event.instance_id));
+        EXPECT_FALSE(runtime.list_instances().empty());
+        (void)runtime.get_instance_state(event.instance_id);
+        callbacks.fetch_add(1, std::memory_order_relaxed);
+    }));
+
+    v2::realtime::PlayerContext player;
+    player.user_id = "alice";
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "echo", {player}).empty());
+    (void)runtime.tick_instance("inst", 1, 1);
+    runtime.finish_instance("inst");
+
+    EXPECT_EQ(callbacks.load(std::memory_order_relaxed), 3);
+}
+
+TEST(InstanceRuntimeTest, EventCallbacksMayMutatePlayerLifecycle) {
+    player_lifecycle_state = std::make_shared<PlayerLifecycleState>();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("lifecycle", &create_player_lifecycle_plugin);
+    v2::realtime::PlayerContext alice;
+    alice.user_id = "alice";
+    v2::realtime::PlayerContext bob;
+    bob.user_id = "bob";
+
+    std::atomic<bool> attached{false};
+    std::atomic<bool> detached{false};
+    ASSERT_TRUE(runtime.set_event_callback([&](const v2::realtime::InstanceEvent& event) {
+        if (event.type == v2::realtime::InstanceEvent::Type::kInstanceCreated) {
+            attached.store(
+                runtime.attach_player(event.instance_id, bob).applied,
+                std::memory_order_relaxed);
+        } else if (event.type ==
+                   v2::realtime::InstanceEvent::Type::kSnapshotAvailable) {
+            detached.store(
+                runtime.detach_player(event.instance_id, "bob").applied,
+                std::memory_order_relaxed);
+        }
+    }));
+
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "lifecycle", {alice}).empty());
+    EXPECT_TRUE(attached.load(std::memory_order_relaxed));
+    EXPECT_EQ(runtime.list_instances().front().player_count, 2U);
+    (void)runtime.tick_instance("inst", 1, 1);
+    EXPECT_TRUE(detached.load(std::memory_order_relaxed));
+    EXPECT_EQ(runtime.list_instances().front().player_count, 1U);
+    player_lifecycle_state.reset();
+}
+
+TEST(InstanceRuntimeTest, ThrowingEventCallbackIsIsolated) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("echo", &create_echo_plugin);
+    ASSERT_TRUE(runtime.set_event_callback([](const v2::realtime::InstanceEvent&) {
+        throw std::runtime_error("callback failure");
+    }));
+
+    v2::realtime::PlayerContext player;
+    player.user_id = "alice";
+    EXPECT_EQ(runtime.create_instance("inst", "room", "echo", {player}), "inst");
+    const auto stats = runtime.tick_instance("inst", 1, 1);
+    EXPECT_EQ(stats.frame_number, 1U);
+    EXPECT_EQ(runtime.get_instance_state("inst"),
+              v2::realtime::InstanceState::kRunning);
+}
+
+TEST(InstanceRuntimeTest, EventCallbackConfigurationFreezesAfterFirstInstance) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("echo", &create_echo_plugin);
+    std::atomic<int> callbacks{0};
+    ASSERT_TRUE(runtime.set_event_callback(
+        [&](const v2::realtime::InstanceEvent&) {
+            callbacks.fetch_add(1, std::memory_order_relaxed);
+        }));
+    v2::realtime::PlayerContext player;
+    player.user_id = "alice";
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "echo", {player}).empty());
+    callbacks.store(0, std::memory_order_relaxed);
+
+    std::atomic<int> rejected_updates{0};
+    std::barrier start(3);
+    std::thread setter([&] {
+        start.arrive_and_wait();
+        for (int i = 0; i < 1000; ++i) {
+            if (!runtime.set_event_callback({})) {
+                rejected_updates.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    });
+    std::thread ticker([&] {
+        start.arrive_and_wait();
+        for (std::uint32_t frame = 1; frame <= 1000; ++frame) {
+            (void)runtime.tick_instance("inst", frame, frame);
+        }
+    });
+    start.arrive_and_wait();
+    setter.join();
+    ticker.join();
+
+    EXPECT_EQ(rejected_updates.load(std::memory_order_relaxed), 1000);
+    EXPECT_EQ(callbacks.load(std::memory_order_relaxed), 1000);
+    EXPECT_EQ(runtime.get_instance_state("inst"),
+              v2::realtime::InstanceState::kRunning);
+}
+
+TEST(InstanceRuntimeTest, AttachAndDetachPlayerRunHooksAndEmitEvents) {
+    player_lifecycle_state = std::make_shared<PlayerLifecycleState>();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("lifecycle", &create_player_lifecycle_plugin);
+    v2::realtime::PlayerContext alice;
+    alice.user_id = "alice";
+
+    std::vector<v2::realtime::InstanceEvent::Type> events;
+    ASSERT_TRUE(runtime.set_event_callback([&](const v2::realtime::InstanceEvent& event) {
+        if (event.type == v2::realtime::InstanceEvent::Type::kPlayerJoined ||
+            event.type == v2::realtime::InstanceEvent::Type::kPlayerLeft) {
+            events.push_back(event.type);
+        }
+        EXPECT_TRUE(runtime.contains_instance(event.instance_id));
+    }));
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "lifecycle", {alice}).empty());
+    v2::realtime::PlayerContext bob;
+    bob.user_id = "bob";
+    bob.display_name = "Bob";
+
+    EXPECT_TRUE(runtime.attach_player("inst", bob).applied);
+    EXPECT_EQ(runtime.list_instances().front().player_count, 2U);
+    EXPECT_EQ(runtime.get_resume_snapshot("inst", "bob").payload, "bob");
+    EXPECT_TRUE(runtime.detach_player("inst", "bob").applied);
+    EXPECT_EQ(runtime.list_instances().front().player_count, 1U);
+    EXPECT_TRUE(runtime.get_resume_snapshot("inst", "bob").payload.empty());
+
+    EXPECT_EQ(player_lifecycle_state->joins.load(std::memory_order_relaxed), 1);
+    EXPECT_EQ(player_lifecycle_state->leaves.load(std::memory_order_relaxed), 1);
+    EXPECT_TRUE(player_lifecycle_state->join_saw_player_absent.load(
+        std::memory_order_relaxed));
+    EXPECT_TRUE(player_lifecycle_state->leave_saw_player_present.load(
+        std::memory_order_relaxed));
+    ASSERT_EQ(events.size(), 2U);
+    EXPECT_EQ(events[0], v2::realtime::InstanceEvent::Type::kPlayerJoined);
+    EXPECT_EQ(events[1], v2::realtime::InstanceEvent::Type::kPlayerLeft);
+    player_lifecycle_state.reset();
+}
+
+TEST(InstanceRuntimeTest, PlayerLifecycleRejectsInvalidTransitions) {
+    player_lifecycle_state = std::make_shared<PlayerLifecycleState>();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("lifecycle", &create_player_lifecycle_plugin);
+    v2::realtime::PlayerContext alice;
+    alice.user_id = "alice";
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "lifecycle", {alice}).empty());
+
+    EXPECT_EQ(runtime.attach_player("missing", alice).reject_reason,
+              "instance_not_found");
+    EXPECT_EQ(runtime.attach_player("inst", {}).reject_reason, "empty_user_id");
+    EXPECT_EQ(runtime.attach_player("inst", alice).reject_reason,
+              "player_already_attached");
+    EXPECT_EQ(runtime.detach_player("inst", "bob").reject_reason,
+              "player_not_attached");
+
+    runtime.finish_instance("inst");
+    v2::realtime::PlayerContext bob;
+    bob.user_id = "bob";
+    EXPECT_EQ(runtime.attach_player("inst", bob).reject_reason,
+              "instance_not_active");
+    EXPECT_EQ(runtime.detach_player("inst", "alice").reject_reason,
+              "instance_not_active");
+    player_lifecycle_state.reset();
+}
+
+TEST(InstanceRuntimeTest, PlayerLifecycleRemainsAppliedWhenPluginHookThrows) {
+    player_lifecycle_state = std::make_shared<PlayerLifecycleState>();
+    player_lifecycle_state->throw_on_join.store(true, std::memory_order_relaxed);
+    player_lifecycle_state->throw_on_leave.store(true, std::memory_order_relaxed);
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("lifecycle", &create_player_lifecycle_plugin);
+    ASSERT_FALSE(runtime.create_instance("inst", "room", "lifecycle", {}).empty());
+
+    v2::realtime::PlayerContext player;
+    player.user_id = "alice";
+    EXPECT_TRUE(runtime.attach_player("inst", player).applied);
+    EXPECT_TRUE(runtime.detach_player("inst", "alice").applied);
+    EXPECT_EQ(runtime.list_instances().front().player_count, 0U);
+    player_lifecycle_state.reset();
+}
+
+TEST(InstanceRuntimeTest, DetachDropsOnlyThatPlayersQueuedInputs) {
+    player_lifecycle_state = std::make_shared<PlayerLifecycleState>();
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("lifecycle", &create_player_lifecycle_plugin);
+    v2::realtime::PlayerContext alice;
+    alice.user_id = "alice";
+    v2::realtime::PlayerContext bob;
+    bob.user_id = "bob";
+    ASSERT_FALSE(runtime.create_instance(
+        "inst", "room", "lifecycle", {alice, bob}).empty());
+
+    v2::realtime::InputEnvelope input;
+    input.instance_id = "inst";
+    input.user_id = "alice";
+    input.seq = 1;
+    ASSERT_TRUE(runtime.submit_input(input).accepted);
+    input.user_id = "bob";
+    ASSERT_TRUE(runtime.submit_input(input).accepted);
+    ASSERT_TRUE(runtime.detach_player("inst", "alice").applied);
+
+    const auto stats = runtime.tick_instance("inst", 1, 1);
+    EXPECT_EQ(stats.inputs_processed, 1U);
+    player_lifecycle_state.reset();
 }
 
 TEST(InstanceRuntimeTest, ResumeSnapshot) {

@@ -193,7 +193,7 @@ public:
         // when BOOST_BUILD_TANK_DEMO=ON. See demo tank_battle_main.cpp.
 
         // Capture events for synchronous consumption
-        runtime_.set_event_callback(
+        (void)runtime_.set_event_callback(
             [this](const v2::realtime::InstanceEvent& event) {
                 switch (event.type) {
                     case v2::realtime::InstanceEvent::Type::kSnapshotAvailable:
@@ -608,8 +608,7 @@ private:
         std::scoped_lock input_lock(input_mutex);
 
         // Find instance first to check existence
-        auto* instance_ctx = runtime_.find_instance(battle_id);
-        if (instance_ctx == nullptr) {
+        if (!runtime_.contains_instance(battle_id)) {
             return make_error(-2003, "battle_not_found");
         }
 
@@ -779,8 +778,7 @@ private:
             std::hash<std::string>{}(battle_id) % battle_input_mutexes_.size()];
         std::scoped_lock input_lock(input_mutex);
 
-        auto* instance_ctx = runtime_.find_instance(battle_id);
-        const bool instance_found = instance_ctx != nullptr;
+        const bool instance_found = runtime_.contains_instance(battle_id);
         auto frame_number = get_instance_frame(battle_id);
         std::optional<CachedBattleSnapshot> cached;
         bool should_release = false;

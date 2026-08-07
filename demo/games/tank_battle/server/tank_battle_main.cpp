@@ -269,7 +269,7 @@ int main(int argc, char* argv[]) {
         runtime.register_plugin("tank_battle", &create_tank_plugin);
 
         // Set up event callback with settlement → leaderboard bridge
-        runtime.set_event_callback([&runtime](const v2::realtime::InstanceEvent& event) {
+        (void)runtime.set_event_callback([&runtime](const v2::realtime::InstanceEvent& event) {
             switch (event.type) {
                 case v2::realtime::InstanceEvent::Type::kInstanceCreated:
                     std::cout << "[runtime] instance created: " << event.instance_id << std::endl;

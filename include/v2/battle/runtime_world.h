@@ -3,6 +3,7 @@
 #include "v2/battle/message_types.h"
 #include "v2/battle/runtime_components.h"
 #include "v2/ecs/world.h"
+#include "v2/perf/hot_path.h"
 
 #include <cstdint>
 #include <memory>
@@ -165,7 +166,7 @@ void battle_world_apply_trigger_to_frame(v2::ecs::World& world,
     std::uint32_t submitted_frame);
 
 // Advance one frame authoritatively: tick systems, check finish.
-[[nodiscard]] BattleWorldFrameResult battle_world_advance_frame(
+[[nodiscard]] BOOST_HOT_PATH BattleWorldFrameResult battle_world_advance_frame(
     v2::ecs::World& world,
     std::uint32_t next_frame,
     const std::string& trigger);
