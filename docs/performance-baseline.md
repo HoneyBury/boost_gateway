@@ -137,6 +137,8 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
 真实业务路由的饱和归因使用独立的 `business-saturation` preset。它固定运行 20/100/250/500
 Battle clients，不得用会在 I/O callback 内直接返回的 echo 流量代替。该 preset 与 transport
 `saturation` 分开保存，必须显式提供互不重叠的 service/loadgen CPU set：
+多 room loadgen 只有在全部客户端正常结束后才能标记全局 natural completion；单个 room 的
+`battle_finished` 只能结束该 room 的客户端，避免跳过其他 Battle instance 的回收。
 
 ```bash
 python3 scripts/producers/collect_v2_perf_baseline.py \

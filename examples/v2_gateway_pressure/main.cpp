@@ -1,6 +1,7 @@
 // windows.h NOMINMAX guard — must precede any include that pulls in windows.h
 #include "v2/platform/highres_timer.h"
 
+#include "completion_policy.h"
 #include "load_evidence.h"
 
 #include "app/logging.h"
@@ -265,11 +266,15 @@ public:
 
 private:
     void try_stop() {
-        const auto done = completed_clients_.load(std::memory_order_relaxed) +
-                          rejected_clients_.load(std::memory_order_relaxed) +
+        const auto completed = completed_clients_.load(std::memory_order_relaxed);
+        const auto done = completed + rejected_clients_.load(std::memory_order_relaxed) +
                           failed_clients_.load(std::memory_order_relaxed) +
                           cancelled_clients_.load(std::memory_order_relaxed);
         if (done >= client_count_) {
+            if (v2::gateway_pressure::should_mark_global_completion(
+                    scenario_ == BenchScenario::kBattle, completed, client_count_)) {
+                mark_global_completion();
+            }
             bool expected = false;
             if (finished_.compare_exchange_strong(expected, true, std::memory_order_relaxed)) {
                 io_context_.stop();
@@ -504,7 +509,6 @@ private:
             if (config_.scenario == BenchScenario::kBattle &&
                 pkt.error_code == static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted)) {
                 battle_finished_ = true;
-                controller_->mark_global_completion();
                 finish();
                 return;
             }
@@ -625,7 +629,6 @@ private:
             throughput_->record();
             controller_->record_push_message();
             if (battle_finished_) {
-                controller_->mark_global_completion();
                 finish();
                 return;
             }
@@ -655,12 +658,10 @@ private:
 
             if (config_.messages_per_client > 0 &&
                 completed_messages_ >= config_.messages_per_client) {
-                controller_->mark_global_completion();
                 finish();
                 return;
             }
             if (battle_finished_ || controller_->global_completion()) {
-                controller_->mark_global_completion();
                 finish();
                 return;
             }
@@ -756,7 +757,6 @@ private:
         }
         if (config_.scenario == BenchScenario::kBattle && in_battle_) {
             if (battle_finished_ || controller_->global_completion()) {
-                controller_->mark_global_completion();
                 finish();
                 return;
             }
@@ -826,7 +826,6 @@ private:
                 const auto& state = std::get<v2::gateway::ParsedBattleStateBody>(*parsed);
                 if (state.kind == "settlement" || state.kind == "finished") {
                     battle_finished_ = true;
-                    controller_->mark_global_completion();
                     return false;
                 }
             }
@@ -861,7 +860,6 @@ private:
 
         if (kind == "battle_finished") {
             battle_finished_ = true;
-            controller_->mark_global_completion();
             finish();
             return true;
         }

@@ -1,3 +1,4 @@
+#include "../../../examples/v2_gateway_pressure/completion_policy.h"
 #include "../../../examples/v2_gateway_pressure/load_evidence.h"
 #include "../../../examples/v2_gateway_pressure/final_message_counts.h"
 #include "../../../examples/v2_gateway_pressure/stall_watchdog_policy.h"
@@ -106,6 +107,13 @@ TEST(GatewayPressureEvidenceTest, BattleErrorsAfterGlobalCompletionAreTeardown) 
     EXPECT_FALSE(v2::gateway_pressure::is_expected_shutdown_error(false, true));
     EXPECT_LT(v2::gateway_pressure::kBattleCleanupTimeout,
               v2::gateway_pressure::kBattleStopGrace);
+}
+
+TEST(GatewayPressureEvidenceTest, MultiRoomCompletionWaitsForEveryClient) {
+    EXPECT_FALSE(v2::gateway_pressure::should_mark_global_completion(true, 2, 100));
+    EXPECT_FALSE(v2::gateway_pressure::should_mark_global_completion(true, 99, 100));
+    EXPECT_TRUE(v2::gateway_pressure::should_mark_global_completion(true, 100, 100));
+    EXPECT_FALSE(v2::gateway_pressure::should_mark_global_completion(false, 100, 100));
 }
 
 }  // namespace
