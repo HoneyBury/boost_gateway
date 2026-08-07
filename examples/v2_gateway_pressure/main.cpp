@@ -496,6 +496,12 @@ private:
         if (pkt.message_id == net::protocol::kErrorResponse) {
             LOG_WARN("pressure client {} received error: code={} body={}",
                      user_id_, pkt.error_code, pkt.body);
+            if (config_.scenario == BenchScenario::kBattle && in_battle_ &&
+                pkt.body == "battle_not_found") {
+                battle_finished_ = true;
+                finish();
+                return;
+            }
             if (v2::gateway_pressure::is_expected_shutdown_error(
                     config_.scenario == BenchScenario::kBattle,
                     controller_->global_completion())) {

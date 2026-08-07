@@ -32,8 +32,16 @@ namespace {
 v2::service::BackendEnvelope make_error(int code, const std::string& reason) {
     v2::service::BackendEnvelope resp;
     resp.kind = v2::service::MessageKind::kError;
-    resp.error_code = code;
-    nlohmann::json body{{"status", "error"}, {"reason", reason}};
+    const auto service_error = code == static_cast<int>(
+                                          v2::service::ServiceErrorCode::kInvalidRequest)
+        ? v2::service::ServiceErrorCode::kInvalidRequest
+        : v2::service::ServiceErrorCode::kRejected;
+    resp.error_code = static_cast<std::int32_t>(service_error);
+    nlohmann::json body{
+        {"status", "error"},
+        {"reason", reason},
+        {"detail_code", code},
+    };
     resp.payload = body.dump();
     return resp;
 }
