@@ -188,7 +188,8 @@ exactly-once/FIFO 单测、TSAN 专项和 Release 绝对吞吐门禁；缺样本
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
 MPSC case 由独立的 `v2_mailbox_benchmark` 采集并在绝对门禁 summary 中合并；Linux x64
 paired comparison 始终只运行未扩展 case 集合的 `v2_arch_benchmark`，避免新增函数改变既有
-微基准的代码布局。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
+微基准的代码布局。paired comparison 的 multi-battle case 固定使用 2000 个样本，不改变
+现有相对门禁阈值。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
 
 ## 发布后矩阵纠偏
 

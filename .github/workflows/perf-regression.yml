@@ -228,7 +228,7 @@ jobs:
           mkdir -p "$output_root/baseline" "$output_root/candidate"
           candidate_bin="$PRODUCTION_BUILD_DIR/examples/v2_arch_benchmark/v2_arch_benchmark"
           baseline_bin="$ARCH_REFERENCE_BUILD/examples/v2_arch_benchmark/v2_arch_benchmark"
-          benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 500)
+          benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 2000)
           for repetition in $(seq 1 "$REPETITIONS"); do
             if (( repetition % 2 == 1 )); then
               "$baseline_bin" "${benchmark_args[@]}" \
