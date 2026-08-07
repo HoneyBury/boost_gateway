@@ -97,7 +97,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--baseline-timeout-seconds", type=int, default=60)
     parser.add_argument(
         "--perf-preset",
-        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation", "business-saturation"],
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation", "business-saturation", "business-open-saturation"],
         default="baseline",
     )
     parser.add_argument("--include-business-flow", action="store_true")
@@ -151,12 +151,12 @@ def main() -> int:
     args = parse_args()
     if args.loadgen_io_threads <= 0:
         raise SystemExit("--loadgen-io-threads must be positive")
-    if args.perf_preset in {"capacity", "business-capacity", "saturation", "business-saturation"}:
+    if args.perf_preset in {"capacity", "business-capacity", "saturation", "business-saturation", "business-open-saturation"}:
         if args.backend_pool_size <= 0:
             args.backend_pool_size = 8
         if args.battle_route_workers <= 0:
             args.battle_route_workers = 8
-    if args.perf_preset in {"saturation", "business-saturation"}:
+    if args.perf_preset in {"saturation", "business-saturation", "business-open-saturation"}:
         args.perf_timeout_seconds = max(args.perf_timeout_seconds, 10800)
     root = Path(__file__).resolve().parents[2]
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path

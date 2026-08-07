@@ -31,6 +31,7 @@ on:
           - business-capacity
           - saturation
           - business-saturation
+          - business-open-saturation
       perf_repetitions:
         description: "Number of repetitions per case"
         required: true
@@ -288,7 +289,7 @@ jobs:
           if [ -n "$PERF_CASE" ]; then
             case_args+=(--case "$PERF_CASE")
           fi
-          if [[ "$perf_preset" == saturation || "$perf_preset" == business-saturation ]]; then
+          if [[ "$perf_preset" == saturation || "$perf_preset" == business-saturation || "$perf_preset" == business-open-saturation ]]; then
             if [ "${{ inputs.platform }}" != linux-x64 ]; then
               echo "saturation presets currently require the AOI Linux x64 runner" >&2
               exit 2
