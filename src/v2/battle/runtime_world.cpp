@@ -871,7 +871,7 @@ BattleWorldInputResult battle_world_process_input(
         world, user_id, input_data, score, submitted_frame);
 }
 
-BattleWorldFrameResult battle_world_advance_frame(
+BOOST_HOT_PATH BattleWorldFrameResult battle_world_advance_frame(
     v2::ecs::World& world,
     std::uint32_t next_frame,
     const std::string& trigger) {
