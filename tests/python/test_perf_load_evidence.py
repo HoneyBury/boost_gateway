@@ -437,6 +437,21 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         self.assertTrue(open_analysis["collection_pass"], open_analysis)
         self.assertEqual(open_analysis["load_model"], "open_loop_fixed_interval_per_client")
 
+        open_with_errors = copy.deepcopy(open_summary)
+        open_with_errors["case_aggregates"][0]["business_response_errors"] = {
+            "min": 10,
+            "median": 10,
+            "max": 10,
+        }
+        error_analysis = build_saturation_analysis(open_with_errors)
+        self.assertEqual(error_analysis["points"][0]["client_error_count"], 0)
+        self.assertEqual(error_analysis["points"][0]["business_response_errors"], 10)
+        self.assertGreater(error_analysis["points"][0]["request_error_rate"], 0.0)
+        self.assertEqual(
+            error_analysis["error_knee_case"],
+            open_with_errors["case_aggregates"][0]["case_identity"],
+        )
+
         open_summary["case_aggregates"][0]["open_loop_scheduled_offers"]["median"] -= 1
         invalid_schedule = build_saturation_analysis(open_summary)
         self.assertFalse(invalid_schedule["collection_pass"])

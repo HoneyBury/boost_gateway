@@ -2816,12 +2816,13 @@ def build_saturation_analysis(
         loadgen_values = loadgen_cpu_by_case.get(case_name, [])
         loadgen_cpu = statistics.median(loadgen_values) if loadgen_values else None
         target = int(aggregate.get("target_clients", {}).get("median", 0))
-        errors = (
+        terminal_client_errors = (
             int(aggregate.get("failed_clients", {}).get("max", 0))
             + int(aggregate.get("rejected_clients", {}).get("max", 0))
             + int(aggregate.get("cancelled_clients", {}).get("max", 0))
-            + int(aggregate.get("business_response_errors", {}).get("max", 0))
         )
+        request_errors = int(aggregate.get("business_response_errors", {}).get("max", 0))
+        total_errors = terminal_client_errors + request_errors
         message_count_consistent = aggregate.get("message_count_consistent") is True
         load_models = aggregate.get("load_models", [])
         boundary_evidence = load_end_boundaries.get(case_name, [])
@@ -2910,11 +2911,13 @@ def build_saturation_analysis(
                 aggregate.get("throughput_msg_per_sec", {}).get("median", 0.0)
             ),
             "latency_p99_ms": p99,
-            "client_error_count": errors,
-            "business_response_errors": int(
-                aggregate.get("business_response_errors", {}).get("max", 0)
-            ),
-            "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
+            "client_error_count": terminal_client_errors,
+            "client_error_rate": round(terminal_client_errors / target, 6)
+            if target > 0 else 1.0,
+            "business_response_errors": request_errors,
+            "request_error_rate": round(request_errors / attempted_offers, 6)
+            if attempted_offers > 0 else 0.0,
+            "total_error_count": total_errors,
             "message_count_consistent": message_count_consistent,
             "open_loop_scheduled_offers": scheduled_offers,
             "open_loop_schedule_valid": open_loop_schedule_valid,
@@ -2938,7 +2941,7 @@ def build_saturation_analysis(
             "load_end_boundary_valid": load_end_boundary_valid,
             "slo_met": p99 <= (
                 battle_p99_limit_ms(case_name) if case_name.startswith("battle") else 50.0
-            ) and errors == 0,
+            ) and total_errors == 0,
         })
 
     points.sort(key=lambda item: float(item["configured_request_rate_ceiling_ops_per_sec"]))
@@ -2980,7 +2983,7 @@ def build_saturation_analysis(
     )
     error_point = next(
         (point for point in points
-         if point["client_error_count"] > 0 and load_source_has_headroom(point)),
+         if point["total_error_count"] > 0 and load_source_has_headroom(point)),
         None,
     )
     throughput_point = None
