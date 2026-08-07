@@ -81,17 +81,14 @@ void BattleInstancePlugin::on_instance_created(
         player_ids,
         instance_ctx.max_frames);
 
-    // Find entity handles for each player so we can look them up later
+    // Build the input routing index in one ECS traversal.
     auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(state->world.get());
     if (simple_world != nullptr) {
-        for (const auto& user_id : player_ids) {
-            simple_world->for_each<BattleParticipantComponent>(
-                [&](v2::ecs::EntityHandle handle, BattleParticipantComponent& p) {
-                    if (p.user_id == user_id) {
-                        state->player_entities[user_id] = handle;
-                    }
-                });
-        }
+        state->player_entities.reserve(player_ids.size());
+        simple_world->for_each<BattleParticipantComponent>(
+            [&](v2::ecs::EntityHandle handle, BattleParticipantComponent& p) {
+                state->player_entities.emplace(p.user_id, handle);
+            });
     }
 
     instance_ctx.plugin_state = state.release();
@@ -150,13 +147,13 @@ v2::realtime::InputResult BattleInstancePlugin::on_input(
     const v2::realtime::InputEnvelope& input) {
     auto& state = get_state(instance_ctx);
 
-    auto result = battle_world_process_input(
-        *state.world,
-        input.user_id,
-        input.payload,
-        input.score,
-        input.submitted_frame
-    );
+    const auto entity = state.player_entities.find(input.user_id);
+    auto result = entity != state.player_entities.end()
+        ? battle_world_process_input(*state.world, entity->second, input.user_id,
+                                     input.payload, input.score,
+                                     input.submitted_frame)
+        : battle_world_process_input(*state.world, input.user_id, input.payload,
+                                     input.score, input.submitted_frame);
 
     if (!result.accepted) {
         return v2::realtime::InputResult{

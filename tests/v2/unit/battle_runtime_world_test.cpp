@@ -125,6 +125,120 @@ TEST(V2BattleRuntimeWorldTest, ProcessInputRejectsWhenFinished) {
     EXPECT_EQ(result.reject_reason, "battle_not_running");
 }
 
+TEST(V2BattleRuntimeWorldTest, IndexedInputMatchesCompatibilityPathAndReplay) {
+    auto indexed_world =
+        v2::battle::create_battle_world("indexed", "r_01", {"alice", "bob"}, 10);
+    auto compatibility_world =
+        v2::battle::create_battle_world("compat", "r_01", {"alice", "bob"}, 10);
+
+    v2::ecs::EntityHandle alice{};
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(indexed_world.get());
+    ASSERT_NE(simple_world, nullptr);
+    simple_world->for_each<v2::battle::BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle handle,
+            v2::battle::BattleParticipantComponent& participant) {
+            if (participant.user_id == "alice") {
+                alice = handle;
+            }
+        });
+    ASSERT_TRUE(simple_world->exists(alice));
+
+    const auto indexed = v2::battle::battle_world_process_input(
+        *indexed_world, alice, "alice", "move:1,2", 7, 3);
+    const auto compatibility = v2::battle::battle_world_process_input(
+        *compatibility_world, "alice", "move:1,2", 7, 3);
+
+    EXPECT_EQ(indexed.accepted, compatibility.accepted);
+    EXPECT_EQ(indexed.reject_reason, compatibility.reject_reason);
+    EXPECT_EQ(indexed.input_seq, compatibility.input_seq);
+
+    const auto indexed_snapshot = v2::battle::battle_world_snapshot(*indexed_world);
+    const auto compatibility_snapshot =
+        v2::battle::battle_world_snapshot(*compatibility_world);
+    ASSERT_EQ(indexed_snapshot.participants.size(),
+              compatibility_snapshot.participants.size());
+    for (std::size_t i = 0; i < indexed_snapshot.participants.size(); ++i) {
+        EXPECT_EQ(indexed_snapshot.participants[i].user_id,
+                  compatibility_snapshot.participants[i].user_id);
+        EXPECT_EQ(indexed_snapshot.participants[i].score,
+                  compatibility_snapshot.participants[i].score);
+        EXPECT_EQ(indexed_snapshot.participants[i].last_submitted_frame,
+                  compatibility_snapshot.participants[i].last_submitted_frame);
+    }
+
+    const auto indexed_replay =
+        v2::battle::battle_world_collect_replay_inputs(*indexed_world);
+    const auto compatibility_replay =
+        v2::battle::battle_world_collect_replay_inputs(*compatibility_world);
+    ASSERT_EQ(indexed_replay.size(), 1U);
+    ASSERT_EQ(compatibility_replay.size(), 1U);
+    EXPECT_EQ(indexed_replay.front().user_id,
+              compatibility_replay.front().user_id);
+    EXPECT_EQ(indexed_replay.front().input_data,
+              compatibility_replay.front().input_data);
+    EXPECT_EQ(indexed_replay.front().score,
+              compatibility_replay.front().score);
+
+    const auto indexed_duplicate = v2::battle::battle_world_process_input(
+        *indexed_world, alice, "alice", "move:3,4", 2, 3);
+    const auto compatibility_duplicate = v2::battle::battle_world_process_input(
+        *compatibility_world, "alice", "move:3,4", 2, 3);
+    EXPECT_FALSE(indexed_duplicate.accepted);
+    EXPECT_EQ(indexed_duplicate.reject_reason,
+              compatibility_duplicate.reject_reason);
+    EXPECT_EQ(indexed_duplicate.reject_reason, "duplicate_frame");
+}
+
+TEST(V2BattleRuntimeWorldTest, IndexedInputFallbackPreservesUnknownUserSemantics) {
+    auto world = v2::battle::create_battle_world("b_01", "r_01", {"alice"}, 10);
+
+    const auto result = v2::battle::battle_world_process_input(
+        *world,
+        v2::ecs::EntityHandle{.id = 9999, .generation = 1},
+        "stranger",
+        "move:1,2",
+        9,
+        2);
+
+    EXPECT_TRUE(result.accepted);
+    EXPECT_TRUE(result.reject_reason.empty());
+    const auto snapshot = v2::battle::battle_world_snapshot(*world);
+    ASSERT_EQ(snapshot.participants.size(), 1U);
+    EXPECT_EQ(snapshot.participants.front().score, 0);
+    const auto replay = v2::battle::battle_world_collect_replay_inputs(*world);
+    ASSERT_EQ(replay.size(), 1U);
+    EXPECT_EQ(replay.front().user_id, "stranger");
+    EXPECT_EQ(replay.front().score, 9);
+}
+
+TEST(V2BattleRuntimeWorldTest, IndexedInputPreservesOfflineReconnectState) {
+    auto world = v2::battle::create_battle_world("b_01", "r_01", {"alice"}, 10);
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    ASSERT_NE(simple_world, nullptr);
+    v2::ecs::EntityHandle alice{};
+    simple_world->for_each<v2::battle::BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle handle,
+            v2::battle::BattleParticipantComponent& participant) {
+            if (participant.user_id == "alice") {
+                alice = handle;
+            }
+        });
+
+    ASSERT_TRUE(v2::battle::battle_world_mark_offline(*world, "alice"));
+    const auto accepted_while_offline = v2::battle::battle_world_process_input(
+        *world, alice, "alice", "move:1,2", 4, 1);
+    EXPECT_TRUE(accepted_while_offline.accepted);
+    v2::battle::battle_world_set_online(*world, "alice");
+
+    const auto snapshot = v2::battle::battle_world_snapshot(*world);
+    ASSERT_EQ(snapshot.participants.size(), 1U);
+    EXPECT_TRUE(snapshot.participants.front().online);
+    EXPECT_EQ(snapshot.participants.front().score, 4);
+    const auto replay = v2::battle::battle_world_collect_replay_inputs(*world);
+    ASSERT_EQ(replay.size(), 1U);
+    EXPECT_EQ(replay.front().user_id, "alice");
+}
+
 TEST(V2BattleRuntimeWorldTest, AdvanceFrameReturnsFinishWhenLimitReached) {
     auto world = v2::battle::create_battle_world("b_01", "r_01", {"alice"}, 3);
 

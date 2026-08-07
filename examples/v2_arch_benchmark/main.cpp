@@ -589,6 +589,51 @@ LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations)
     return make_stats(std::move(samples), elapsed, operations);
 }
 
+LatencyStats run_battle_indexed_input_latency(std::size_t iterations) {
+    std::vector<std::string> player_ids;
+    player_ids.reserve(100);
+    for (std::size_t i = 0; i < 100; ++i) {
+        player_ids.push_back("player_" + std::to_string(i));
+    }
+
+    auto world = v2::battle::create_battle_world(
+        "bench_input", "bench_room", player_ids, 0);
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    if (simple_world == nullptr) {
+        throw std::runtime_error("battle input benchmark requires SimpleWorld");
+    }
+    std::vector<v2::ecs::EntityHandle> player_entities(player_ids.size());
+    simple_world->for_each<v2::battle::BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle handle,
+            v2::battle::BattleParticipantComponent& participant) {
+            const auto suffix = participant.user_id.substr(
+                participant.user_id.find_last_of('_') + 1);
+            const auto index = static_cast<std::size_t>(std::stoull(suffix));
+            player_entities.at(index) = handle;
+        });
+
+    std::vector<double> samples;
+    samples.reserve(iterations);
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto player_index = i % player_ids.size();
+        const auto op_begin = now_ns();
+        const auto result = v2::battle::battle_world_process_input(
+            *world,
+            player_entities[player_index],
+            player_ids[player_index],
+            "move:1,1",
+            0,
+            0);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!result.accepted) {
+            throw std::runtime_error("indexed battle input benchmark rejected input");
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -643,6 +688,7 @@ std::string build_json(const Options& options,
                        const LatencyStats& object_pool_cycle,
                        const LatencyStats& spsc_queue_roundtrip,
                        const LatencyStats& battle_world_tick,
+                       const LatencyStats& battle_indexed_input,
                        const LatencyStats& actor_fan_in,
                        const LatencyStats& actor_limit_smoke,
                        const LatencyStats& multi_battle_tick,
@@ -666,6 +712,7 @@ std::string build_json(const Options& options,
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
     append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
     append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
+    append_stats_json(out, "battle_indexed_input_100_entities", battle_indexed_input, false);
     append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
     append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
     append_stats_json(out, "multi_battle_tick_100_entities", multi_battle_tick, false);
@@ -702,6 +749,8 @@ int main(int argc, char** argv) {
             run_typed_envelope_json_roundtrip_latency(options.iterations);
         const auto backend_typed_adapter_roundtrip =
             run_backend_typed_adapter_roundtrip_latency(options.iterations);
+        const auto battle_indexed_input =
+            run_battle_indexed_input_latency(options.iterations);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
@@ -711,6 +760,7 @@ int main(int argc, char** argv) {
                                      object_pool_cycle,
                                      spsc_queue_roundtrip,
                                      battle_world_tick,
+                                     battle_indexed_input,
                                      actor_fan_in,
                                      actor_limit_smoke,
                                      multi_battle_tick,
