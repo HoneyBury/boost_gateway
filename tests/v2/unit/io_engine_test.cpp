@@ -27,6 +27,33 @@ namespace {
 namespace asio = boost::asio;
 using tcp = asio::ip::tcp;
 
+struct BlockingMoveGate {
+    std::atomic<bool> move_started{false};
+    std::atomic<bool> allow_move{false};
+};
+
+struct BlockingMovePayload {
+    BlockingMovePayload(std::shared_ptr<BlockingMoveGate> move_gate, int payload_value)
+        : gate(std::move(move_gate)), value(payload_value) {}
+
+    BlockingMovePayload(BlockingMovePayload&& other) noexcept
+        : gate(std::move(other.gate)), value(other.value) {
+        if (gate) {
+            gate->move_started.store(true, std::memory_order_release);
+            while (!gate->allow_move.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        }
+    }
+
+    BlockingMovePayload(const BlockingMovePayload&) = delete;
+    BlockingMovePayload& operator=(const BlockingMovePayload&) = delete;
+    BlockingMovePayload& operator=(BlockingMovePayload&&) = delete;
+
+    std::shared_ptr<BlockingMoveGate> gate;
+    int value = 0;
+};
+
 }  // namespace
 
 TEST(V2IoEngineTest, DispatchesTasksToRequestedCore) {
@@ -654,6 +681,50 @@ TEST(V2MpscQueueTest, CloseRejectsNewItemsAndAllowsPendingDrain) {
     ASSERT_EQ(drained.size(), 1U);
     EXPECT_EQ(drained[0], 1);
     EXPECT_TRUE(queue.closed());
+}
+
+TEST(V2MpscQueueTest, CloseWaitsForReservedProducerBeforeReturning) {
+    v2::io::MpscQueue<BlockingMovePayload> queue(4);
+    auto gate = std::make_shared<BlockingMoveGate>();
+    BlockingMovePayload payload(gate, 7);
+    std::atomic<v2::io::EnqueueResult> enqueue_result{v2::io::EnqueueResult::kClosed};
+    std::atomic<bool> close_returned{false};
+
+    std::thread producer([&]() {
+        enqueue_result.store(
+            queue.try_enqueue_result(std::move(payload)),
+            std::memory_order_release);
+    });
+    while (!gate->move_started.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    std::thread closer([&]() {
+        queue.close();
+        close_returned.store(true, std::memory_order_release);
+    });
+    while (!queue.closed()) {
+        std::this_thread::yield();
+    }
+
+    EXPECT_FALSE(close_returned.load(std::memory_order_acquire));
+    BlockingMovePayload late_payload(nullptr, 8);
+    EXPECT_EQ(
+        queue.try_enqueue_result(std::move(late_payload)),
+        v2::io::EnqueueResult::kClosed);
+    EXPECT_EQ(late_payload.value, 8);
+
+    gate->allow_move.store(true, std::memory_order_release);
+    producer.join();
+    closer.join();
+
+    EXPECT_EQ(
+        enqueue_result.load(std::memory_order_acquire),
+        v2::io::EnqueueResult::kSuccess);
+    EXPECT_TRUE(close_returned.load(std::memory_order_acquire));
+    auto drained = queue.drain();
+    ASSERT_EQ(drained.size(), 1U);
+    EXPECT_EQ(drained[0].value, 7);
 }
 
 // ─── Cross-Core Mailbox Tests ──────────────────────────────────

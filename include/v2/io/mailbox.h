@@ -3,8 +3,10 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -103,6 +105,9 @@ class MpscQueue {
         "MpscQueue payloads must be nothrow move constructible");
 
     static constexpr std::size_t kDefaultCapacity = 1024;
+    static constexpr std::size_t kClosedBit =
+        std::size_t{1} << (std::numeric_limits<std::size_t>::digits - 1);
+    static constexpr std::size_t kPositionMask = kClosedBit - 1;
 
     static constexpr std::size_t next_power_of_two(std::size_t n) noexcept {
         if (n <= 1) return 1;
@@ -137,19 +142,19 @@ public:
     MpscQueue& operator=(const MpscQueue&) = delete;
 
     EnqueueResult try_enqueue_result(T&& item) {
-        if (closed_.load(std::memory_order_acquire)) {
-            return EnqueueResult::kClosed;
-        }
-
-        auto position = enqueue_pos_.load(std::memory_order_relaxed);
+        auto state = enqueue_state_.load(std::memory_order_relaxed);
         for (;;) {
+            if ((state & kClosedBit) != 0) {
+                return EnqueueResult::kClosed;
+            }
+            const auto position = state & kPositionMask;
             auto& cell = buffer_[position & mask_];
             const auto sequence = cell.sequence.load(std::memory_order_acquire);
             const auto difference = static_cast<std::intptr_t>(sequence) -
                                     static_cast<std::intptr_t>(position);
             if (difference == 0) {
-                if (enqueue_pos_.compare_exchange_weak(
-                        position, position + 1,
+                if (enqueue_state_.compare_exchange_weak(
+                        state, state + 1,
                         std::memory_order_relaxed,
                         std::memory_order_relaxed)) {
                     cell.item.emplace(std::move(item));
@@ -157,11 +162,11 @@ public:
                     return EnqueueResult::kSuccess;
                 }
             } else if (difference < 0) {
-                return closed_.load(std::memory_order_acquire)
+                return (enqueue_state_.load(std::memory_order_acquire) & kClosedBit) != 0
                     ? EnqueueResult::kClosed
                     : EnqueueResult::kFull;
             } else {
-                position = enqueue_pos_.load(std::memory_order_relaxed);
+                state = enqueue_state_.load(std::memory_order_relaxed);
             }
         }
     }
@@ -203,16 +208,32 @@ public:
         return items;
     }
 
-    void close() noexcept { closed_.store(true, std::memory_order_release); }
+    void close() noexcept {
+        const auto previous = enqueue_state_.fetch_or(kClosedBit, std::memory_order_acq_rel);
+        const auto reserved_end = previous & kPositionMask;
+
+        // Reservations linearized before the closed bit may still be moving
+        // their payload. Wait until each such slot is published (or consumed)
+        // so a drain immediately after close cannot miss an accepted item.
+        auto position = dequeue_pos_.load(std::memory_order_acquire);
+        while (position != reserved_end) {
+            auto& cell = buffer_[position & mask_];
+            if (cell.sequence.load(std::memory_order_acquire) == position) {
+                std::this_thread::yield();
+                continue;
+            }
+            ++position;
+        }
+    }
 
     [[nodiscard]] bool closed() const noexcept {
-        return closed_.load(std::memory_order_acquire);
+        return (enqueue_state_.load(std::memory_order_acquire) & kClosedBit) != 0;
     }
 
     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
     [[nodiscard]] std::size_t capacity() const noexcept { return capacity_; }
     [[nodiscard]] std::size_t size() const noexcept {
-        const auto write = enqueue_pos_.load(std::memory_order_acquire);
+        const auto write = enqueue_state_.load(std::memory_order_acquire) & kPositionMask;
         const auto read = dequeue_pos_.load(std::memory_order_acquire);
         return write - read;
     }
@@ -222,9 +243,8 @@ private:
     const std::size_t mask_;
     std::unique_ptr<Cell[]> buffer_;
 
-    alignas(64) std::atomic<std::size_t> enqueue_pos_{0};
+    alignas(64) std::atomic<std::size_t> enqueue_state_{0};
     alignas(64) std::atomic<std::size_t> dequeue_pos_{0};
-    alignas(64) std::atomic<bool> closed_{false};
 };
 
 }  // namespace v2::io
