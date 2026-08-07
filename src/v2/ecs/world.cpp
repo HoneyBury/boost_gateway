@@ -53,7 +53,7 @@ void SimpleWorld::destroy_entity(EntityHandle entity) {
     }
     for (auto& [type_id, store] : component_stores_) {
         (void)type_id;
-        store.components.erase(entity.id);
+        store.components.erase(component_entity_key(entity));
     }
 
     // Free entity storage
@@ -116,7 +116,7 @@ Component* SimpleWorld::add_component_erased(EntityHandle entity,
     if (!exists(entity) || component == nullptr) {
         return nullptr;
     }
-    auto& slot = component_stores_[type_id].components[entity.id];
+    auto& slot = component_stores_[type_id].components[component_entity_key(entity)];
     slot = std::move(component);
     return slot.get();
 }
@@ -130,7 +130,7 @@ Component* SimpleWorld::get_component_erased(EntityHandle entity,
     if (store == nullptr) {
         return nullptr;
     }
-    auto it = store->components.find(entity.id);
+    auto it = store->components.find(component_entity_key(entity));
     return it == store->components.end() ? nullptr : it->second.get();
 }
 
@@ -142,7 +142,7 @@ bool SimpleWorld::remove_component_erased(EntityHandle entity, ComponentTypeId t
     if (store == nullptr) {
         return false;
     }
-    return store->components.erase(entity.id) > 0;
+    return store->components.erase(component_entity_key(entity)) > 0;
 }
 
 SimpleWorld::ComponentStore* SimpleWorld::find_store(ComponentTypeId type_id) {

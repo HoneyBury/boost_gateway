@@ -132,3 +132,48 @@ TEST(V2EcsWorldTest, DestroyInvalidEntityIsNoOp) {
     EXPECT_NO_THROW(world.destroy_entity(invalid));
     EXPECT_FALSE(world.exists(invalid));
 }
+
+TEST(V2EcsWorldTest, ForEachPreservesHandleAfterComponentReadd) {
+    v2::ecs::SimpleWorld world;
+    const auto entity = world.create_entity();
+    world.add_component<PositionComponent>(entity).x = 1;
+    ASSERT_TRUE(world.remove_component<PositionComponent>(entity));
+    world.add_component<PositionComponent>(entity).x = 2;
+
+    std::size_t visited = 0;
+    world.for_each<PositionComponent>(
+        [&](v2::ecs::EntityHandle handle, PositionComponent& position) {
+            ++visited;
+            EXPECT_EQ(handle.id, entity.id);
+            EXPECT_EQ(handle.generation, entity.generation);
+            EXPECT_TRUE(world.exists(handle));
+            EXPECT_EQ(position.x, 2);
+        });
+    EXPECT_EQ(visited, 1U);
+}
+
+TEST(V2EcsWorldTest, RepeatedWorldLifecycleNeverVisitsDestroyedEntities) {
+    for (std::size_t round = 0; round < 100; ++round) {
+        v2::ecs::SimpleWorld world;
+        std::vector<v2::ecs::EntityHandle> entities;
+        entities.reserve(128);
+        for (std::size_t i = 0; i < 128; ++i) {
+            const auto entity = world.create_entity();
+            entities.push_back(entity);
+            world.add_component<PositionComponent>(entity).x = static_cast<int>(i);
+        }
+        for (std::size_t i = 0; i < entities.size(); i += 2) {
+            world.destroy_entity(entities[i]);
+        }
+
+        std::size_t visited = 0;
+        world.for_each<PositionComponent>(
+            [&](v2::ecs::EntityHandle handle, PositionComponent&) {
+                ++visited;
+                EXPECT_TRUE(world.exists(handle));
+                EXPECT_EQ(handle.id % 2U, 0U);
+                EXPECT_EQ(handle.generation, 1U);
+            });
+        EXPECT_EQ(visited, 64U);
+    }
+}

@@ -89,23 +89,27 @@ public:
         if (store == nullptr) {
             return;
         }
-        for (auto& [entity_id, component] : store->components) {
-            const auto storage_it = entity_storage_.find(entity_id);
-            const std::uint32_t gen = (storage_it != entity_storage_.end())
-                                          ? storage_it->second->generation
-                                          : 0U;
+        for (auto& [entity_key, component] : store->components) {
             const EntityHandle handle{
-                .id = entity_id,
-                .generation = gen,
+                .id = static_cast<EntityId>(entity_key),
+                .generation = static_cast<std::uint32_t>(entity_key >> 32U),
             };
             fn(handle, static_cast<T&>(*component));
         }
     }
 
 private:
+    using ComponentEntityKey = std::uint64_t;
+
     struct ComponentStore {
-        std::unordered_map<EntityId, std::unique_ptr<Component>> components;
+        std::unordered_map<ComponentEntityKey, std::unique_ptr<Component>> components;
     };
+
+    [[nodiscard]] static constexpr ComponentEntityKey component_entity_key(
+        EntityHandle entity) noexcept {
+        return (static_cast<ComponentEntityKey>(entity.generation) << 32U) |
+               static_cast<ComponentEntityKey>(entity.id);
+    }
 
     Component* add_component_erased(EntityHandle entity,
                                     ComponentTypeId type_id,

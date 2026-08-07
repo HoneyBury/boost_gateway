@@ -187,9 +187,16 @@ Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile
 exactly-once/FIFO 单测、TSAN 专项和 Release 绝对吞吐门禁；缺样本、轮数不对称或超过相对阈值均失败；
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
 MPSC case 由独立的 `v2_mailbox_benchmark` 采集并在绝对门禁 summary 中合并；Linux x64
-paired comparison 始终只运行未扩展 case 集合的 `v2_arch_benchmark`，避免新增函数改变既有
-微基准的代码布局。paired comparison 的 multi-battle case 固定使用 2000 个样本，不改变
-现有相对门禁阈值。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
+paired comparison 始终使用不含 MPSC case 的 `v2_arch_benchmark`。Battle indexed input 和
+ECS/scheduler 扩展均在全部既有 workload 完成后运行，避免在既有 relative-gated case 前引入
+额外预热。paired comparison 的 multi-battle case 固定使用 2000 个样本，不改变现有相对门禁
+阈值。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
+
+ECS 专项绝对门禁覆盖 100/1K/10K component scan，以及两个独立系统组成的轻、重
+`ParallelSystemExecutor` stage。scan 吞吐按实际访问的 component 数计算，采样延迟为一次完整
+scan；调度 case 保留每帧 `std::async` 创建成本和有计算负载时的收益边界。当前 metadata 没有
+稳定的系统成本提示，因此不能仅按 stage 大小把双系统 stage 改为内联，也不能为每个 battle
+创建线程池。新 case 进入主线并形成同 runner 历史样本后，才能加入相对回退检查。
 
 ## 发布后矩阵纠偏
 
