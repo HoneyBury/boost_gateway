@@ -178,30 +178,6 @@ struct PoolItem {
     std::uint64_t b = 0;
 };
 
-struct BenchmarkScanComponent final : v2::ecs::Component {
-    std::uint64_t value = 1;
-};
-
-class BenchmarkStageSystem final : public v2::ecs::System {
-public:
-    BenchmarkStageSystem(std::size_t work_units, std::atomic<std::uint64_t>& sink)
-        : work_units_(work_units), sink_(sink) {}
-
-    void run(v2::ecs::World&, const v2::ecs::FrameContext&) override {
-        std::uint64_t value = 0x9e3779b97f4a7c15ULL;
-        for (std::size_t i = 0; i < work_units_; ++i) {
-            value ^= value << 7U;
-            value ^= value >> 9U;
-            value += static_cast<std::uint64_t>(i);
-        }
-        sink_.fetch_xor(value, std::memory_order_relaxed);
-    }
-
-private:
-    std::size_t work_units_;
-    std::atomic<std::uint64_t>& sink_;
-};
-
 LatencyStats make_stats(std::vector<double> samples, double elapsed_seconds, std::size_t operations) {
     LatencyStats stats;
     stats.samples = samples.size();
@@ -391,68 +367,6 @@ LatencyStats run_spsc_queue_roundtrip_latency(std::size_t iterations) {
     }
     const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
     return make_stats(std::move(samples), elapsed, iterations);
-}
-
-LatencyStats run_ecs_scan_latency(std::size_t entity_count,
-                                  std::size_t target_iterations) {
-    v2::ecs::SimpleWorld world;
-    for (std::size_t i = 0; i < entity_count; ++i) {
-        const auto entity = world.create_entity();
-        world.add_component<BenchmarkScanComponent>(entity).value = i * 3 + 1;
-    }
-
-    constexpr std::size_t kTargetEntityVisits = 10'000'000;
-    const auto repetitions = std::max<std::size_t>(
-        100,
-        std::min(target_iterations, kTargetEntityVisits / entity_count));
-    std::vector<double> samples;
-    samples.reserve(repetitions);
-    std::uint64_t checksum = 0;
-    const auto begin = Clock::now();
-    for (std::size_t i = 0; i < repetitions; ++i) {
-        const auto op_begin = now_ns();
-        world.for_each<BenchmarkScanComponent>(
-            [&checksum](v2::ecs::EntityHandle entity, BenchmarkScanComponent& component) {
-                checksum += entity.id ^ component.value;
-            });
-        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
-    }
-    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
-    if (checksum == 0) {
-        throw std::runtime_error("ECS scan benchmark checksum mismatch");
-    }
-    return make_stats(
-        std::move(samples), elapsed, repetitions * entity_count);
-}
-
-LatencyStats run_parallel_stage_latency(std::size_t target_iterations,
-                                        std::size_t work_units) {
-    const auto repetitions = work_units == 0
-        ? std::min<std::size_t>(target_iterations, 500)
-        : std::min<std::size_t>(target_iterations, 20);
-    std::atomic<std::uint64_t> sink{0};
-    v2::ecs::ParallelSystemExecutor executor;
-    executor.add_system(
-        std::make_unique<BenchmarkStageSystem>(work_units, sink),
-        v2::ecs::SystemMetadata{.name = "stage_a"});
-    executor.add_system(
-        std::make_unique<BenchmarkStageSystem>(work_units, sink),
-        v2::ecs::SystemMetadata{.name = "stage_b"});
-    executor.rebuild_stages();
-    v2::ecs::SimpleWorld world;
-    v2::ecs::FrameContext ctx;
-    std::vector<double> samples;
-    samples.reserve(repetitions);
-    const auto begin = Clock::now();
-    for (std::size_t i = 0; i < repetitions; ++i) {
-        const auto op_begin = now_ns();
-        if (executor.execute_all(world, ctx) != 2U) {
-            throw std::runtime_error("parallel stage benchmark execution mismatch");
-        }
-        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
-    }
-    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
-    return make_stats(std::move(samples), elapsed, repetitions);
 }
 
 LatencyStats run_battle_world_tick_latency(std::size_t iterations) {
@@ -678,6 +592,92 @@ LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations)
     return make_stats(std::move(samples), elapsed, operations);
 }
 
+struct BenchmarkScanComponent final : v2::ecs::Component {
+    std::uint64_t value = 1;
+};
+
+class BenchmarkStageSystem final : public v2::ecs::System {
+public:
+    BenchmarkStageSystem(std::size_t work_units, std::atomic<std::uint64_t>& sink)
+        : work_units_(work_units), sink_(sink) {}
+
+    void run(v2::ecs::World&, const v2::ecs::FrameContext&) override {
+        std::uint64_t value = 0x9e3779b97f4a7c15ULL;
+        for (std::size_t i = 0; i < work_units_; ++i) {
+            value ^= value << 7U;
+            value ^= value >> 9U;
+            value += static_cast<std::uint64_t>(i);
+        }
+        sink_.fetch_xor(value, std::memory_order_relaxed);
+    }
+
+private:
+    std::size_t work_units_;
+    std::atomic<std::uint64_t>& sink_;
+};
+
+LatencyStats run_ecs_scan_latency(std::size_t entity_count,
+                                  std::size_t target_iterations) {
+    v2::ecs::SimpleWorld world;
+    for (std::size_t i = 0; i < entity_count; ++i) {
+        const auto entity = world.create_entity();
+        world.add_component<BenchmarkScanComponent>(entity).value = i * 3 + 1;
+    }
+
+    constexpr std::size_t kTargetEntityVisits = 10'000'000;
+    const auto repetitions = std::max<std::size_t>(
+        100,
+        std::min(target_iterations, kTargetEntityVisits / entity_count));
+    std::vector<double> samples;
+    samples.reserve(repetitions);
+    std::uint64_t checksum = 0;
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < repetitions; ++i) {
+        const auto op_begin = now_ns();
+        world.for_each<BenchmarkScanComponent>(
+            [&checksum](v2::ecs::EntityHandle entity, BenchmarkScanComponent& component) {
+                checksum += entity.id ^ component.value;
+            });
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    if (checksum == 0) {
+        throw std::runtime_error("ECS scan benchmark checksum mismatch");
+    }
+    return make_stats(
+        std::move(samples), elapsed, repetitions * entity_count);
+}
+
+LatencyStats run_parallel_stage_latency(std::size_t target_iterations,
+                                        std::size_t work_units) {
+    const auto repetitions = work_units == 0
+        ? std::min<std::size_t>(target_iterations, 500)
+        : std::min<std::size_t>(target_iterations, 20);
+    std::atomic<std::uint64_t> sink{0};
+    v2::ecs::ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<BenchmarkStageSystem>(work_units, sink),
+        v2::ecs::SystemMetadata{.name = "stage_a"});
+    executor.add_system(
+        std::make_unique<BenchmarkStageSystem>(work_units, sink),
+        v2::ecs::SystemMetadata{.name = "stage_b"});
+    executor.rebuild_stages();
+    v2::ecs::SimpleWorld world;
+    v2::ecs::FrameContext ctx;
+    std::vector<double> samples;
+    samples.reserve(repetitions);
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < repetitions; ++i) {
+        const auto op_begin = now_ns();
+        if (executor.execute_all(world, ctx) != 2U) {
+            throw std::runtime_error("parallel stage benchmark execution mismatch");
+        }
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, repetitions);
+}
+
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -789,11 +789,6 @@ int main(int argc, char** argv) {
         const auto bump_arena_alloc = run_bump_arena_alloc_latency(options.iterations);
         const auto object_pool_cycle = run_object_pool_cycle_latency(options.iterations);
         const auto spsc_queue_roundtrip = run_spsc_queue_roundtrip_latency(options.iterations);
-        const auto ecs_scan_100 = run_ecs_scan_latency(100, options.iterations);
-        const auto ecs_scan_1k = run_ecs_scan_latency(1'000, options.iterations);
-        const auto ecs_scan_10k = run_ecs_scan_latency(10'000, options.iterations);
-        const auto scheduler_light_stage = run_parallel_stage_latency(options.iterations, 0);
-        const auto scheduler_heavy_stage = run_parallel_stage_latency(options.iterations, 2'000'000);
         const auto battle_world_tick = run_battle_world_tick_latency(options.iterations);
         const auto actor_fan_in = run_actor_fan_in_throughput(options.iterations);
         const auto actor_limit_smoke = run_actor_limit_smoke(options.actor_limit);
@@ -806,6 +801,11 @@ int main(int argc, char** argv) {
             run_typed_envelope_json_roundtrip_latency(options.iterations);
         const auto backend_typed_adapter_roundtrip =
             run_backend_typed_adapter_roundtrip_latency(options.iterations);
+        const auto ecs_scan_100 = run_ecs_scan_latency(100, options.iterations);
+        const auto ecs_scan_1k = run_ecs_scan_latency(1'000, options.iterations);
+        const auto ecs_scan_10k = run_ecs_scan_latency(10'000, options.iterations);
+        const auto scheduler_light_stage = run_parallel_stage_latency(options.iterations, 0);
+        const auto scheduler_heavy_stage = run_parallel_stage_latency(options.iterations, 2'000'000);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
