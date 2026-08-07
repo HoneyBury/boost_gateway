@@ -1,6 +1,6 @@
 # BoostGateway 性能基线
 
-更新时间：2026-07-24
+更新时间：2026-08-07
 
 ## 当前口径
 
@@ -10,7 +10,7 @@
 
 | 入口 | 用途 | 触发方式 |
 |---|---|---|
-| `.github/workflows/perf-regression.yml` | smoke / baseline / capacity | `workflow_dispatch` |
+| `.github/workflows/perf-regression.yml` | smoke / baseline / capacity；Linux x64 架构基线对照 | `workflow_dispatch` |
 | `.github/workflows/long-soak-capacity.yml` | 2h/8h soak、capacity、business-capacity | `workflow_dispatch`，Linux fixed runner |
 | `.github/workflows/release.yml` | 发布构建及所选 baseline | `v*` tag 或 `workflow_dispatch` |
 | `.github/workflows/nightly-stability.yml` | bounded smoke/short/medium soak | `workflow_dispatch`；名称为历史沿用，不是定时 nightly |
@@ -77,7 +77,8 @@ v2_gateway_pressure --TCP--> v2_gateway_demo (:9201)
 | `collect_v2_perf_baseline.py` | `scripts/producers/`（兼容入口位于 `scripts/`） | 启动拓扑、重复执行、聚合结果和资源快照 |
 | `collect_release_baseline.py` | `scripts/producers/`（兼容入口位于 `scripts/`） | 发布基线聚合 |
 | `run_long_soak_capacity.py` | `scripts/gates/production/` | fixed-runner 2h/8h 和容量编排 |
-| `v2_arch_baseline_gates.json` | `config/perf/` | 架构 microbenchmark 阈值 |
+| `v2_arch_baseline_gates.json` | `config/perf/` | 架构 microbenchmark 绝对与相对阈值 |
+| `compare_v2_arch_baselines.py` | `scripts/gates/release/` | 同一 fixed runner 上比较基线与候选的多轮中位数 |
 
 ## 标准命令
 
@@ -177,7 +178,13 @@ OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用�
 | battle-100 | rejected=0、failed=0、消息数 >= 5000、P99 <= 250ms |
 | battle-500 capacity | rejected=0、failed=0、P99 <= 500ms |
 
-架构 microbenchmark 的 warning/critical 阈值由 `config/perf/v2_arch_baseline_gates.json` 管理，不能用该微秒级阈值替代端到端 case gate。
+架构 microbenchmark 的绝对与相对阈值由
+`config/perf/v2_arch_baseline_gates.json` 管理，不能用该微秒级阈值替代端到端 case gate。
+Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile/lockfile，交替执行基线与
+候选至少五轮；`compare_v2_arch_baselines.py` 对中位数 fail-closed 比较并保留每轮原始 JSON。
+当前硬门禁覆盖 actor fan-in、单场/多场 battle tick 和
+`InstanceRuntime::tick_all` 的一输入每实例 workload。缺样本、轮数不对称或超过相对阈值均失败；
+小于配置绝对噪声下限的微秒级波动不单独判定为回退。
 
 ## 发布后矩阵纠偏
 

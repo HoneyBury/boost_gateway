@@ -11,6 +11,7 @@
       "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
       "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 300000.0, "direction": "min"},
       "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
+      "instance_runtime_tick_all_one_input": {"metric": "p99_us", "threshold": 20.0, "direction": "max"},
       "backend_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
       "typed_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
       "backend_typed_adapter_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"}
@@ -26,6 +27,7 @@
       "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
       "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 1000000.0, "direction": "min"},
       "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
+      "instance_runtime_tick_all_one_input": {"metric": "p99_us", "threshold": 2.0, "direction": "max"},
       "backend_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 100.0, "direction": "max"},
       "typed_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 100.0, "direction": "max"},
       "backend_typed_adapter_roundtrip": {"metric": "p99_us", "threshold": 100.0, "direction": "max"}
@@ -46,6 +48,16 @@
     "p99_regression_pct": {"warning": 15.0, "critical": 20.0},
     "throughput_regression_pct": {"warning": 10.0, "critical": 15.0},
     "error_rate_absolute_pct": {"warning": 0.05, "critical": 0.1}
+  },
+  "architecture_regression_gates": {
+    "minimum_repetitions": 5,
+    "checks": [
+      {"name": "battle-world-tick-p99", "case": "battle_world_tick_100_entities", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 10.0},
+      {"name": "multi-battle-tick-p99", "case": "multi_battle_tick_100_entities", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 10.0},
+      {"name": "actor-fan-in-throughput", "case": "actor_fan_in_throughput", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0},
+      {"name": "instance-runtime-tick-all-p99", "case": "instance_runtime_tick_all_one_input", "metric": "p99_us", "direction": "max", "max_regression_pct": 10.0, "min_absolute_delta": 0.02},
+      {"name": "instance-runtime-tick-all-throughput", "case": "instance_runtime_tick_all_one_input", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0}
+    ]
   },
   "soak_gates": {
     "fd_leak_max_growth": {"metric": "fd_count", "threshold": 100, "direction": "max"},
