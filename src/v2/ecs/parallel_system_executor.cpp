@@ -1,13 +1,101 @@
 #include "v2/ecs/parallel_system_executor.h"
 
+#include <atomic>
+#include <condition_variable>
 #include <deque>
+#include <exception>
+#include <functional>
 #include <iterator>
+#include <mutex>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
 #include <spdlog/spdlog.h>
 
 namespace v2::ecs {
+
+namespace {
+
+thread_local bool g_ecs_worker_thread = false;
+
+class SharedWorkerPool final {
+public:
+    SharedWorkerPool() {
+        const auto hardware_threads = std::max(1U, std::thread::hardware_concurrency());
+        const auto worker_count = std::min(4U, std::max(1U, hardware_threads - 1U));
+        workers_.reserve(worker_count);
+        for (std::uint32_t i = 0; i < worker_count; ++i) {
+            workers_.emplace_back([this]() { worker_loop(); });
+        }
+    }
+
+    ~SharedWorkerPool() {
+        {
+            std::lock_guard lock(mutex_);
+            stopping_ = true;
+        }
+        cv_.notify_all();
+        for (auto& worker : workers_) {
+            if (worker.joinable()) {
+                worker.join();
+            }
+        }
+    }
+
+    void submit(std::function<void()> task) {
+        {
+            std::lock_guard lock(mutex_);
+            tasks_.push_back(std::move(task));
+        }
+        cv_.notify_one();
+    }
+
+    [[nodiscard]] bool is_worker_thread() const noexcept {
+        return g_ecs_worker_thread;
+    }
+
+private:
+    void worker_loop() {
+        g_ecs_worker_thread = true;
+        for (;;) {
+            std::function<void()> task;
+            {
+                std::unique_lock lock(mutex_);
+                cv_.wait(lock, [this]() { return stopping_ || !tasks_.empty(); });
+                if (stopping_ && tasks_.empty()) {
+                    return;
+                }
+                task = std::move(tasks_.front());
+                tasks_.pop_front();
+            }
+            task();
+        }
+    }
+
+    std::mutex mutex_;
+    std::condition_variable cv_;
+    std::deque<std::function<void()>> tasks_;
+    std::vector<std::thread> workers_;
+    bool stopping_ = false;
+};
+
+struct StageCompletion {
+    explicit StageCompletion(std::size_t task_count)
+        : remaining(task_count), errors(task_count + 1) {}
+
+    std::atomic<std::size_t> remaining;
+    std::vector<std::exception_ptr> errors;
+    std::mutex mutex;
+    std::condition_variable cv;
+};
+
+SharedWorkerPool& shared_worker_pool() {
+    static SharedWorkerPool pool;
+    return pool;
+}
+
+}  // namespace
 
 // ============================================================================
 // SequentialSystemExecutor
@@ -90,20 +178,64 @@ std::size_t ParallelSystemExecutor::execute_all(World& world,
             entries_[idx].system->run(world, ctx);
             ++executed;
         } else {
-            // Multiple independent systems — launch in parallel.
-            std::vector<std::future<void>> futures;
-            futures.reserve(stage.size());
-
-            for (const auto idx : stage) {
-                futures.push_back(std::async(std::launch::async, [this, &world, &ctx, idx]() {
-                    entries_[idx].system->run(world, ctx);
-                }));
+            auto& pool = shared_worker_pool();
+            if (pool.is_worker_thread()) {
+                for (const auto idx : stage) {
+                    try {
+                        entries_[idx].system->run(world, ctx);
+                    } catch (const std::exception& e) {
+                        SPDLOG_ERROR("[ParallelSystemExecutor] System '{}' threw: {}",
+                                     entries_[idx].metadata.name,
+                                     e.what());
+                    } catch (...) {
+                        SPDLOG_ERROR(
+                            "[ParallelSystemExecutor] System '{}' threw a non-standard exception",
+                            entries_[idx].metadata.name);
+                    }
+                }
+                executed += stage.size();
+                continue;
             }
 
-            // Wait for all systems in this stage to complete.
-            for (std::size_t i = 0; i < futures.size(); ++i) {
+            auto completion = std::make_shared<StageCompletion>(stage.size() - 1);
+            for (std::size_t i = 1; i < stage.size(); ++i) {
+                const auto idx = stage[i];
+                pool.submit([this, &world, &ctx, completion, idx, i]() {
+                    try {
+                        entries_[idx].system->run(world, ctx);
+                    } catch (...) {
+                        completion->errors[i] = std::current_exception();
+                    }
+                    bool completed = false;
+                    {
+                        std::lock_guard lock(completion->mutex);
+                        completed = completion->remaining.fetch_sub(
+                            1, std::memory_order_release) == 1;
+                    }
+                    if (completed) {
+                        completion->cv.notify_one();
+                    }
+                });
+            }
+
+            try {
+                entries_[stage.front()].system->run(world, ctx);
+            } catch (...) {
+                completion->errors[0] = std::current_exception();
+            }
+            {
+                std::unique_lock lock(completion->mutex);
+                completion->cv.wait(lock, [&completion]() {
+                    return completion->remaining.load(std::memory_order_acquire) == 0;
+                });
+            }
+
+            for (std::size_t i = 0; i < completion->errors.size(); ++i) {
+                if (!completion->errors[i]) {
+                    continue;
+                }
                 try {
-                    futures[i].get();
+                    std::rethrow_exception(completion->errors[i]);
                 } catch (const std::exception& e) {
                     SPDLOG_ERROR("[ParallelSystemExecutor] System '{}' threw: {}",
                                  entries_[stage[i]].metadata.name,

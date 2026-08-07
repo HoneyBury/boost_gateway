@@ -68,6 +68,25 @@ private:
     bool standard_exception_;
 };
 
+class NestedParallelSystem final : public System {
+public:
+    void run(World& world, const FrameContext& ctx) override {
+        ParallelSystemExecutor nested;
+        nested.add_system(
+            std::make_unique<TestSystem>("nested_a"),
+            SystemMetadata{.name = "nested_a"});
+        nested.add_system(
+            std::make_unique<TestSystem>("nested_b"),
+            SystemMetadata{.name = "nested_b"});
+        executed_ = nested.execute_all(world, ctx);
+    }
+
+    [[nodiscard]] std::size_t executed() const noexcept { return executed_; }
+
+private:
+    std::size_t executed_ = 0;
+};
+
 std::vector<std::string> TestSystem::run_order_;
 std::mutex TestSystem::run_order_mutex_;
 
@@ -259,6 +278,37 @@ TEST(ParallelSystemExecutorTest, DependencyOrderIsStableAcrossFrames) {
         EXPECT_EQ(executor.execute_all(world, ctx), 3U);
         EXPECT_EQ(TestSystem::run_order_, (std::vector<std::string>{"a", "b", "c"}));
     }
+}
+
+TEST(ParallelSystemExecutorTest, PersistentPoolDoesNotLoseCompletionWakeups) {
+    ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<TestSystem>("first"),
+        SystemMetadata{.name = "first"});
+    executor.add_system(
+        std::make_unique<TestSystem>("second"),
+        SystemMetadata{.name = "second"});
+    executor.rebuild_stages();
+
+    SimpleWorld world;
+    FrameContext ctx;
+    for (std::size_t frame = 0; frame < 10'000; ++frame) {
+        ASSERT_EQ(executor.execute_all(world, ctx), 2U);
+    }
+}
+
+TEST(ParallelSystemExecutorTest, NestedExecutionFromWorkerCannotExhaustPool) {
+    ParallelSystemExecutor executor;
+    auto nested = std::make_unique<NestedParallelSystem>();
+    auto* nested_ptr = nested.get();
+    executor.add_system(std::make_unique<TestSystem>("caller"),
+                        SystemMetadata{.name = "caller"});
+    executor.add_system(std::move(nested), SystemMetadata{.name = "nested"});
+
+    SimpleWorld world;
+    FrameContext ctx;
+    EXPECT_EQ(executor.execute_all(world, ctx), 2U);
+    EXPECT_EQ(nested_ptr->executed(), 2U);
 }
 
 TEST(ParallelSystemExecutorTest, ExceptionsDoNotSkipFollowingStages) {

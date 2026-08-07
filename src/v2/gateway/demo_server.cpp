@@ -46,6 +46,15 @@ bool is_push_message(std::uint16_t message_id) {
     }
 }
 
+void update_max(std::atomic<std::uint64_t>& target,
+                std::uint64_t candidate) noexcept {
+    auto current = target.load(std::memory_order_relaxed);
+    while (current < candidate &&
+           !target.compare_exchange_weak(
+               current, candidate, std::memory_order_relaxed)) {
+    }
+}
+
 }  // namespace
 
 DemoServer::DemoServer(std::uint16_t port,
@@ -412,6 +421,18 @@ DemoServerDiagnostics DemoServer::diagnostics() const {
         result.total_accepted_sessions += snapshot.accepted_sessions;
         result.total_outbound_dispatches += snapshot.outbound_dispatches;
     }
+    result.gateway_queue = {
+        .queued_items = gateway_queue_depth_.load(std::memory_order_relaxed),
+        .peak_queued_items = gateway_queue_peak_depth_.load(std::memory_order_relaxed),
+        .enqueued_items = gateway_queue_enqueued_.load(std::memory_order_relaxed),
+        .processed_items = gateway_queue_processed_.load(std::memory_order_relaxed),
+        .processed_batches = gateway_queue_batches_.load(std::memory_order_relaxed),
+        .max_batch_size = gateway_queue_max_batch_.load(std::memory_order_relaxed),
+        .total_queue_wait_ns = gateway_queue_total_wait_ns_.load(std::memory_order_relaxed),
+        .max_queue_wait_ns = gateway_queue_max_wait_ns_.load(std::memory_order_relaxed),
+        .total_handle_ns = gateway_queue_total_handle_ns_.load(std::memory_order_relaxed),
+        .max_handle_ns = gateway_queue_max_handle_ns_.load(std::memory_order_relaxed),
+    };
     result.battle_route = runtime_.battle_route_diagnostics();
     if (const auto* bridge = runtime_.service_bridge()) {
         result.otel_exporter_metrics = bridge->otel_exporter_metrics();
@@ -442,6 +463,32 @@ std::string DemoServer::diagnostics_json() const {
     doc["total_active_sessions"] = snapshot.total_active_sessions;
     doc["total_accepted_sessions"] = snapshot.total_accepted_sessions;
     doc["total_outbound_dispatches"] = snapshot.total_outbound_dispatches;
+    const auto processed_gateway_items = snapshot.gateway_queue.processed_items;
+    const auto processed_gateway_batches = snapshot.gateway_queue.processed_batches;
+    doc["gateway_queue"] = {
+        {"queued_items", snapshot.gateway_queue.queued_items},
+        {"peak_queued_items", snapshot.gateway_queue.peak_queued_items},
+        {"enqueued_items", snapshot.gateway_queue.enqueued_items},
+        {"processed_items", processed_gateway_items},
+        {"processed_batches", processed_gateway_batches},
+        {"average_batch_size", processed_gateway_batches == 0
+                                   ? 0.0
+                                   : static_cast<double>(processed_gateway_items) /
+                                         static_cast<double>(processed_gateway_batches)},
+        {"max_batch_size", snapshot.gateway_queue.max_batch_size},
+        {"average_queue_wait_us", processed_gateway_items == 0
+                                      ? 0
+                                      : snapshot.gateway_queue.total_queue_wait_ns /
+                                            processed_gateway_items / 1000},
+        {"max_queue_wait_us", snapshot.gateway_queue.max_queue_wait_ns / 1000},
+        {"total_queue_wait_ns", snapshot.gateway_queue.total_queue_wait_ns},
+        {"average_handle_us", processed_gateway_items == 0
+                                  ? 0
+                                  : snapshot.gateway_queue.total_handle_ns /
+                                        processed_gateway_items / 1000},
+        {"max_handle_us", snapshot.gateway_queue.max_handle_ns / 1000},
+        {"total_handle_ns", snapshot.gateway_queue.total_handle_ns},
+    };
     const auto completed_battle_routes = snapshot.battle_route.completed_tasks;
     doc["battle_route"] = {
         {"completed_tasks", completed_battle_routes},
@@ -454,11 +501,13 @@ std::string DemoServer::diagnostics_json() const {
                                         : snapshot.battle_route.total_queue_wait_us /
                                               completed_battle_routes},
         {"max_queue_wait_us", snapshot.battle_route.max_queue_wait_us},
+        {"total_queue_wait_us", snapshot.battle_route.total_queue_wait_us},
         {"average_task_execution_us", completed_battle_routes == 0
                                             ? 0
                                             : snapshot.battle_route.total_task_execution_us /
                                                   completed_battle_routes},
         {"max_task_execution_us", snapshot.battle_route.max_task_execution_us},
+        {"total_task_execution_us", snapshot.battle_route.total_task_execution_us},
         {"average_backend_route_us", completed_battle_routes == 0
                                          ? 0
                                          : snapshot.battle_route.total_backend_route_us /
@@ -617,6 +666,18 @@ net::HttpMetricsSnapshot DemoServer::metrics_snapshot() const {
     add_gauge("gateway_active_sessions", "Active sessions", diag.total_active_sessions);
     add_counter("gateway_accepted_sessions_total", "Total accepted sessions", diag.total_accepted_sessions);
     add_counter("gateway_outbound_dispatches_total", "Total outbound dispatches", diag.total_outbound_dispatches);
+    add_gauge("gateway_runtime_queue_depth",
+              "Gateway runtime work items waiting for the owner thread",
+              diag.gateway_queue.queued_items);
+    add_gauge("gateway_runtime_queue_peak_depth",
+              "Peak Gateway runtime queue depth since process start",
+              diag.gateway_queue.peak_queued_items);
+    add_counter("gateway_runtime_queue_processed_total",
+                "Gateway runtime work items processed by the owner thread",
+                diag.gateway_queue.processed_items);
+    add_gauge("gateway_runtime_queue_max_wait_us",
+              "Maximum Gateway runtime queue wait in microseconds",
+              diag.gateway_queue.max_queue_wait_ns / 1000);
     add_gauge("gateway_battle_route_queued_tasks",
               "Battle backend route tasks waiting for a worker",
               diag.battle_route.queued_tasks);
@@ -902,6 +963,10 @@ void DemoServer::enqueue_packet(SessionId session_id,
             .session_id = session_id,
             .message = std::move(message),
         });
+        const auto depth = gateway_queue_.size();
+        gateway_queue_depth_.store(depth, std::memory_order_relaxed);
+        update_max(gateway_queue_peak_depth_, depth);
+        gateway_queue_enqueued_.fetch_add(1, std::memory_order_relaxed);
     }
     gateway_queue_cv_.notify_one();
 }
@@ -913,6 +978,10 @@ void DemoServer::enqueue_session_closed(SessionId session_id) {
     {
         std::scoped_lock lock(gateway_queue_mutex_);
         gateway_queue_.push_back(GatewayQueueItem{.session_id = session_id});
+        const auto depth = gateway_queue_.size();
+        gateway_queue_depth_.store(depth, std::memory_order_relaxed);
+        update_max(gateway_queue_peak_depth_, depth);
+        gateway_queue_enqueued_.fetch_add(1, std::memory_order_relaxed);
     }
     gateway_queue_cv_.notify_one();
 }
@@ -927,6 +996,10 @@ bool DemoServer::enqueue_runtime_task(std::function<void()> task) {
             return false;
         }
         gateway_queue_.push_back(GatewayQueueItem{.runtime_task = std::move(task)});
+        const auto depth = gateway_queue_.size();
+        gateway_queue_depth_.store(depth, std::memory_order_relaxed);
+        update_max(gateway_queue_peak_depth_, depth);
+        gateway_queue_enqueued_.fetch_add(1, std::memory_order_relaxed);
     }
     gateway_queue_cv_.notify_one();
     return true;
@@ -938,47 +1011,69 @@ void DemoServer::start_gateway_worker() {
         gateway_worker_stopping_ = false;
     }
     gateway_worker_ = std::make_unique<std::thread>([this]() {
+        constexpr std::size_t kMaxBatchSize = 64;
+        std::vector<GatewayQueueItem> batch;
+        batch.reserve(kMaxBatchSize);
         for (;;) {
-            try {
-                GatewayQueueItem item;
-                {
-                    std::unique_lock lock(gateway_queue_mutex_);
-                    gateway_queue_cv_.wait(lock, [this]() {
-                        return gateway_worker_stopping_ || !gateway_queue_.empty();
-                    });
-                    if (gateway_queue_.empty()) {
-                        if (gateway_worker_stopping_) {
-                            return;
-                        }
-                        continue;
+            batch.clear();
+            {
+                std::unique_lock lock(gateway_queue_mutex_);
+                gateway_queue_cv_.wait(lock, [this]() {
+                    return gateway_worker_stopping_ || !gateway_queue_.empty();
+                });
+                if (gateway_queue_.empty()) {
+                    if (gateway_worker_stopping_) {
+                        return;
                     }
-                    item = std::move(gateway_queue_.front());
+                    continue;
+                }
+                const auto batch_size =
+                    std::min(kMaxBatchSize, gateway_queue_.size());
+                for (std::size_t i = 0; i < batch_size; ++i) {
+                    batch.push_back(std::move(gateway_queue_.front()));
                     gateway_queue_.pop_front();
                 }
+                gateway_queue_depth_.store(
+                    gateway_queue_.size(), std::memory_order_relaxed);
+            }
+            gateway_queue_batches_.fetch_add(1, std::memory_order_relaxed);
+            update_max(gateway_queue_max_batch_, batch.size());
 
-                std::scoped_lock handle_lock(gateway_handle_mutex_);
-                if (item.runtime_task) {
-                    item.runtime_task();
-                    continue;
+            for (auto& item : batch) {
+                const auto started_at = std::chrono::steady_clock::now();
+                const auto wait_ns = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        started_at - item.enqueued_at).count());
+                gateway_queue_total_wait_ns_.fetch_add(wait_ns, std::memory_order_relaxed);
+                update_max(gateway_queue_max_wait_ns_, wait_ns);
+                try {
+                    if (item.runtime_task) {
+                        item.runtime_task();
+                    } else if (!item.message.has_value()) {
+                        runtime_.on_session_closed(item.session_id);
+                    } else {
+                        auto& message = *item.message;
+                        (void)adapter_.handle_incoming(ClientEnvelope{
+                            .session_id = item.session_id,
+                            .protocol_message_id = message.message_id,
+                            .request_id = message.request_id,
+                            .error_code = message.error_code,
+                            .flags = message.flags,
+                            .body = std::move(message.body),
+                        });
+                    }
+                } catch (const std::exception& ex) {
+                    LOG_WARN("DemoServer: gateway worker recovered from exception: {}", ex.what());
+                } catch (...) {
+                    LOG_WARN("DemoServer: gateway worker recovered from unknown exception");
                 }
-                if (!item.message.has_value()) {
-                    runtime_.on_session_closed(item.session_id);
-                    continue;
-                }
-
-                auto& message = *item.message;
-                (void)adapter_.handle_incoming(ClientEnvelope{
-                    .session_id = item.session_id,
-                    .protocol_message_id = message.message_id,
-                    .request_id = message.request_id,
-                    .error_code = message.error_code,
-                    .flags = message.flags,
-                    .body = std::move(message.body),
-                });
-            } catch (const std::exception& ex) {
-                LOG_WARN("DemoServer: gateway worker recovered from exception: {}", ex.what());
-            } catch (...) {
-                LOG_WARN("DemoServer: gateway worker recovered from unknown exception");
+                const auto handle_ns = static_cast<std::uint64_t>(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - started_at).count());
+                gateway_queue_total_handle_ns_.fetch_add(
+                    handle_ns, std::memory_order_relaxed);
+                update_max(gateway_queue_max_handle_ns_, handle_ns);
+                gateway_queue_processed_.fetch_add(1, std::memory_order_relaxed);
             }
         }
     });
@@ -997,6 +1092,7 @@ void DemoServer::stop_gateway_worker() {
     {
         std::scoped_lock lock(gateway_queue_mutex_);
         gateway_queue_.clear();
+        gateway_queue_depth_.store(0, std::memory_order_relaxed);
     }
 }
 

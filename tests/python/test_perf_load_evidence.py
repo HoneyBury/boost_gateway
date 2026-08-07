@@ -10,6 +10,7 @@ from scripts.producers.collect_v2_perf_baseline import (
     build_run_cases,
     build_saturation_analysis,
     evaluate_release_gates,
+    gateway_runtime_metric_delta,
 )
 
 
@@ -55,6 +56,68 @@ def pressure_run(clients: int, *, scenario: str = "echo") -> dict:
 
 
 class PerfLoadEvidenceTest(unittest.TestCase):
+    def test_gateway_runtime_metrics_use_per_run_counter_deltas(self) -> None:
+        before = {
+            "gateway_queue": {
+                "processed_items": 10,
+                "processed_batches": 4,
+                "total_queue_wait_ns": 1000,
+                "total_handle_ns": 2000,
+            },
+            "battle_route": {
+                "completed_tasks": 2,
+                "total_queue_wait_us": 20,
+                "total_task_execution_us": 200,
+            },
+            "backend_metrics": {
+                "battle": {
+                    "total_requests": 2,
+                    "total_latency_us": 200,
+                    "latency_sample_count": 2,
+                }
+            },
+        }
+        after = {
+            "gateway_queue": {
+                "processed_items": 18,
+                "processed_batches": 6,
+                "total_queue_wait_ns": 17000,
+                "total_handle_ns": 26000,
+                "max_queue_wait_us": 9,
+                "max_handle_us": 12,
+                "peak_queued_items": 7,
+            },
+            "battle_route": {
+                "completed_tasks": 6,
+                "total_queue_wait_us": 60,
+                "total_task_execution_us": 1000,
+            },
+            "backend_metrics": {
+                "battle": {
+                    "total_requests": 6,
+                    "total_latency_us": 1000,
+                    "latency_sample_count": 6,
+                }
+            },
+        }
+
+        metrics = gateway_runtime_metric_delta(before, after)
+        self.assertEqual(metrics["gateway_queue_processed_items"], 8)
+        self.assertEqual(metrics["gateway_queue_average_batch_size"], 4.0)
+        self.assertEqual(metrics["gateway_queue_average_wait_us"], 2.0)
+        self.assertEqual(metrics["gateway_queue_average_handle_us"], 3.0)
+        self.assertEqual(metrics["gateway_queue_lifetime_max_wait_us"], 9)
+        self.assertEqual(metrics["gateway_queue_lifetime_max_handle_us"], 12)
+        self.assertEqual(metrics["gateway_queue_lifetime_peak_depth"], 7)
+        self.assertEqual(metrics["battle_route_average_queue_wait_us"], 10.0)
+        self.assertEqual(metrics["backend_average_latency_us"], 200.0)
+
+    def test_business_saturation_uses_real_battle_routes(self) -> None:
+        cases = build_run_cases("business-saturation")
+        self.assertEqual([case["clients"] for case in cases], [20, 100, 250, 500])
+        self.assertTrue(all(case["scenario"] == "battle" for case in cases))
+        self.assertTrue(all(case["room_group_size"] == 2 for case in cases))
+
     def evaluate(self, case_name: str, run: dict) -> dict:
         aggregate = aggregate_case_runs(case_name, [run])
         return evaluate_release_gates([aggregate])["checks"][0]

@@ -1239,6 +1239,43 @@ TEST(ServiceBusIntegrity, GatewayBridgeBusinessRejectDoesNotOpenCircuit) {
     EXPECT_EQ(handled_requests.load(), 5);
 }
 
+TEST(ServiceBusIntegrity, BattleBusinessRejectDoesNotOpenCircuit) {
+    v2::battle::BattleBackendService service(0);
+    service.start();
+
+    v2::gateway::GatewayServiceBridge bridge(
+        std::nullopt,
+        std::nullopt,
+        v2::gateway::GatewayServiceBridge::BackendConfig{
+            .host = "127.0.0.1",
+            .port = service.local_port(),
+            .timeout = std::chrono::milliseconds(50),
+            .connect_timeout = std::chrono::milliseconds(100),
+        });
+    bridge.configure_circuit_breaker(
+        v2::service::ServiceId::kBattle,
+        v2::service::CircuitBreakerOptions{
+            .failure_threshold = 2,
+            .timeout = std::chrono::milliseconds(30),
+            .half_open_max_requests = 1,
+        });
+
+    for (int i = 0; i < 5; ++i) {
+        const auto result = bridge.route(
+            v2::service::ServiceId::kBattle,
+            "battle_input",
+            R"({"user_id":"alice","battle_id":"missing","input_data":"move:1,2"})");
+        EXPECT_FALSE(result.success);
+        EXPECT_EQ(result.error, v2::service::ServiceErrorCode::kRejected);
+        const auto payload = nlohmann::json::parse(result.response_payload);
+        EXPECT_EQ(payload.at("reason"), "battle_not_found");
+        EXPECT_EQ(payload.at("detail_code"), -2003);
+    }
+
+    bridge.shutdown();
+    service.stop();
+}
+
 TEST(ServiceBusIntegrity, ServiceErrorCodeClientMapping) {
     using v2::service::ServiceErrorCode;
     // Verify all service error codes have defined to_client_error mappings

@@ -134,6 +134,7 @@ public:
     [[nodiscard]] InstanceState get_instance_state(const std::string& instance_id) const;
     [[nodiscard]] std::vector<InstanceSnapshot> list_instances() const;
     [[nodiscard]] std::size_t instance_count() const;
+    [[nodiscard]] std::size_t instance_capacity() const;
 
 private:
     class Impl;

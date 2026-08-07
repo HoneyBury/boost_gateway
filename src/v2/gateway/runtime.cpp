@@ -1177,7 +1177,8 @@ bool Runtime::handle(const GatewayCommand& command) {
                              command.session_id,
                              command.request_id,
                              static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleNotStarted),
-                             "battle_create_failed");
+                             backend_error_reason(
+                                 battle_result, "battle_create_failed"));
                         return true;
                     }
                 }
@@ -2499,7 +2500,7 @@ void Runtime::complete_bridge_battle_input(
              session_id,
              request_id,
              static_cast<std::int32_t>(net::protocol::ErrorCode::kBattleBackendUnavailable),
-             "backend_error");
+             backend_error_reason(result, "backend_error"));
         return;
     }
 

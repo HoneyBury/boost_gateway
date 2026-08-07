@@ -7,7 +7,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <future>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -75,14 +74,14 @@ private:
 // ============================================================================
 // ParallelSystemExecutor
 //
-// Executes independent systems in parallel using std::async.
+// Executes independent systems on a process-wide bounded worker pool.
 //
 // Algorithm:
 //   1. Topological sort the system list by their declared dependencies.
 //   2. Group into "stages" — within a stage, every system has no dependency
 //      on another system in the same stage (they can run concurrently).
 //   3. Execute each stage sequentially, running all systems inside a stage
-//      via std::async (one std::future per system).
+//      on persistent workers while the caller executes one system inline.
 //   4. Systems with no metadata entry are assumed to depend on nothing and
 //      are placed in the first stage.
 // ============================================================================

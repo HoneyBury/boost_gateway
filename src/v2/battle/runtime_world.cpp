@@ -6,9 +6,10 @@
 #include "v2/ecs/parallel_system_executor.h"
 
 #include <algorithm>
-#include <cstdlib>
+#include <charconv>
 #include <memory>
 #include <random>
+#include <string_view>
 #include <unordered_map>
 #include <utility>
 
@@ -47,6 +48,12 @@ std::pair<std::int32_t, std::int32_t> normalize_direction(std::int32_t dx,
     return {1, 0};
 }
 
+std::int32_t parse_int32(std::string_view value) noexcept {
+    std::int32_t parsed = 0;
+    const auto result = std::from_chars(value.data(), value.data() + value.size(), parsed);
+    return result.ptr == value.data() ? 0 : parsed;
+}
+
 }  // namespace
 
 void BattleClockSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& ctx) {
@@ -75,41 +82,29 @@ void BattleInputSystem::run(v2::ecs::World& world, const v2::ecs::FrameContext& 
         [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
             if (!participant.online || participant.pending_input_data.empty()) return;
 
-            const auto& input = participant.pending_input_data;
-
-            // Parse "attack:<target>" → store target for CombatSystem
+            const std::string_view input = participant.pending_input_data;
             if (input.starts_with("attack:")) {
-                participant.pending_target_user_id = std::string(input.substr(7));
+                participant.pending_target_user_id.assign(input.substr(7));
             }
-
-            // Parse "move:<x>,<y>" → store intent for MovementSystem
             if (input.starts_with("move:")) {
-                auto comma = input.find(',', 5);
-                if (comma != std::string::npos) {
-                    auto x_str = std::string(input.substr(5, comma - 5));
-                    auto y_str = std::string(input.substr(comma + 1));
-                    participant.pending_move_x = static_cast<std::int32_t>(
-                        std::strtol(x_str.c_str(), nullptr, 10));
-                    participant.pending_move_y = static_cast<std::int32_t>(
-                        std::strtol(y_str.c_str(), nullptr, 10));
+                const auto comma = input.find(',', 5);
+                if (comma != std::string_view::npos) {
+                    participant.pending_move_x = parse_int32(input.substr(5, comma - 5));
+                    participant.pending_move_y = parse_int32(input.substr(comma + 1));
                     participant.has_pending_move = true;
                 }
             }
-
             if (input.starts_with("fire:")) {
-                auto comma = input.find(',', 5);
-                if (comma != std::string::npos) {
-                    auto dx_str = std::string(input.substr(5, comma - 5));
-                    auto dy_str = std::string(input.substr(comma + 1));
-                    auto [dx, dy] = normalize_direction(
-                        static_cast<std::int32_t>(std::strtol(dx_str.c_str(), nullptr, 10)),
-                        static_cast<std::int32_t>(std::strtol(dy_str.c_str(), nullptr, 10)));
+                const auto comma = input.find(',', 5);
+                if (comma != std::string_view::npos) {
+                    const auto [dx, dy] = normalize_direction(
+                        parse_int32(input.substr(5, comma - 5)),
+                        parse_int32(input.substr(comma + 1)));
                     participant.pending_fire_dx = dx;
                     participant.pending_fire_dy = dy;
                     participant.has_pending_fire = true;
                 }
             }
-
             participant.pending_input_data.clear();
         });
 }

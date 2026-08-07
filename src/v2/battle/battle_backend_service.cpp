@@ -32,8 +32,16 @@ namespace {
 v2::service::BackendEnvelope make_error(int code, const std::string& reason) {
     v2::service::BackendEnvelope resp;
     resp.kind = v2::service::MessageKind::kError;
-    resp.error_code = code;
-    nlohmann::json body{{"status", "error"}, {"reason", reason}};
+    const auto service_error = code == static_cast<int>(
+                                          v2::service::ServiceErrorCode::kInvalidRequest)
+        ? v2::service::ServiceErrorCode::kInvalidRequest
+        : v2::service::ServiceErrorCode::kRejected;
+    resp.error_code = static_cast<std::int32_t>(service_error);
+    nlohmann::json body{
+        {"status", "error"},
+        {"reason", reason},
+        {"detail_code", code},
+    };
     resp.payload = body.dump();
     return resp;
 }
@@ -535,6 +543,8 @@ private:
             players.push_back(std::move(player));
         }
 
+        const bool duplicate_before_create = runtime_.contains_instance(battle_id);
+
         // Create the instance via InstanceRuntime
         auto instance_id = runtime_.create_instance(
             battle_id, room_id, instance_type_, players,
@@ -543,7 +553,20 @@ private:
             30000);           // resume_window_ms
 
         if (instance_id.empty()) {
-            return make_error(-2004, "battle_already_exists");
+            const auto active_instances = runtime_.instance_count();
+            const auto instance_capacity = runtime_.instance_capacity();
+            const bool duplicate = duplicate_before_create ||
+                                   runtime_.contains_instance(battle_id);
+            const std::string reason = duplicate
+                ? "battle_already_exists"
+                : active_instances >= instance_capacity
+                    ? "battle_capacity_reached"
+                    : "battle_create_failed";
+            std::cout << "v2_battle_backend: create failed battle_id="
+                      << battle_id << " reason=" << reason
+                      << " active_instances=" << active_instances
+                      << " capacity=" << instance_capacity << std::endl;
+            return make_error(-2004, reason);
         }
 
         set_instance_frame(battle_id, 0);
