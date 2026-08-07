@@ -58,11 +58,15 @@ public:
         plugin_factories_[instance_type] = factory;
     }
 
-    void set_event_callback(InstanceEventCallback callback) {
+    BOOST_COLD_PATH
+    bool set_event_callback(InstanceEventCallback callback) {
         std::lock_guard<std::mutex> lock(mutex_);
+        if (callback_frozen_) return false;
         event_callback_ = std::move(callback);
+        return true;
     }
 
+    BOOST_COLD_PATH
     std::string create_instance(
         const std::string& instance_id,
         const std::string& room_id,
@@ -71,34 +75,39 @@ public:
         std::uint32_t tick_interval_ms,
         std::uint32_t max_frames,
         std::uint32_t resume_window_ms) {
-
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        if (instances_.find(instance_id) != instances_.end()) {
-            AUDIT_LOG("instance_create_failure",
-                      "instance_id=" + instance_id + " reason=already_exists");
-            return {};
+        InstancePluginFactory factory = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (instances_.find(instance_id) != instances_.end()) {
+                AUDIT_LOG("instance_create_failure",
+                          "instance_id=" + instance_id + " reason=already_exists");
+                return {};
+            }
+            if (instances_.size() >= config_.max_instances) {
+                AUDIT_LOG("instance_create_failure",
+                          "reason=max_instances_reached count=" +
+                          std::to_string(instances_.size()));
+                return {};
+            }
+            const auto factory_it = plugin_factories_.find(instance_type);
+            if (factory_it == plugin_factories_.end()) {
+                AUDIT_LOG("instance_create_failure",
+                          "instance_id=" + instance_id +
+                          " reason=unknown_plugin_type type=" + instance_type);
+                return {};
+            }
+            factory = factory_it->second;
         }
-
-        if (instances_.size() >= config_.max_instances) {
+        if (factory == nullptr) {
             AUDIT_LOG("instance_create_failure",
-                      "reason=max_instances_reached count=" +
-                      std::to_string(instances_.size()));
-            return {};
-        }
-
-        auto factory_it = plugin_factories_.find(instance_type);
-        if (factory_it == plugin_factories_.end()) {
-            AUDIT_LOG("instance_create_failure",
-                      "instance_id=" + instance_id +
-                      " reason=unknown_plugin_type type=" + instance_type);
+                      "instance_id=" + instance_id + " reason=null_plugin_factory");
             return {};
         }
 
         auto now_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
 
-        auto inst = std::make_unique<InternalInstance>();
+        auto inst = std::make_shared<InternalInstance>();
         inst->ctx.instance_id = instance_id;
         inst->ctx.room_id = room_id;
         inst->ctx.instance_type = instance_type;
@@ -108,7 +117,12 @@ public:
         inst->ctx.input_queue_limit = 64;
         inst->ctx.resume_window_ms = resume_window_ms;
         inst->ctx.created_at_ms = now_ms;
-        inst->plugin = factory_it->second();
+        inst->plugin = factory();
+        if (inst->plugin == nullptr) {
+            AUDIT_LOG("instance_create_failure",
+                      "instance_id=" + instance_id + " reason=null_plugin");
+            return {};
+        }
         inst->state = InstanceState::kWaitingPlayers;
 
         // Let the plugin initialise its state
@@ -128,7 +142,22 @@ public:
             return {};
         }
 
-        instances_[instance_id] = std::move(inst);
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (instances_.find(instance_id) != instances_.end()) {
+                AUDIT_LOG("instance_create_failure",
+                          "instance_id=" + instance_id + " reason=already_exists");
+                return {};
+            }
+            if (instances_.size() >= config_.max_instances) {
+                AUDIT_LOG("instance_create_failure",
+                          "reason=max_instances_reached count=" +
+                          std::to_string(instances_.size()));
+                return {};
+            }
+            instances_.emplace(instance_id, inst);
+            callback_frozen_ = true;
+        }
 
         AUDIT_LOG("instance_created",
                   "instance_id=" + instance_id + " type=" + instance_type +
@@ -142,13 +171,123 @@ public:
         return instance_id;
     }
 
+    BOOST_COLD_PATH
     void destroy_instance(const std::string& instance_id) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        auto it = instances_.find(instance_id);
-        if (it == instances_.end()) return;
-        it->second->registered.store(false, std::memory_order_release);
-        instances_.erase(it);
+        std::shared_ptr<InternalInstance> removed;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = instances_.find(instance_id);
+            if (it == instances_.end()) return;
+            removed = it->second;
+            removed->registered.store(false, std::memory_order_release);
+            instances_.erase(it);
+        }
         AUDIT_LOG("instance_destroyed", "instance_id=" + instance_id);
+    }
+
+    BOOST_COLD_PATH
+    PlayerLifecycleResult attach_player(const std::string& instance_id,
+                                        const PlayerContext& player) {
+        if (player.user_id.empty()) {
+            return {.applied = false, .reject_reason = "empty_user_id"};
+        }
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) {
+            return {.applied = false, .reject_reason = "instance_not_found"};
+        }
+        {
+            std::lock_guard<std::mutex> lock(inst->mutex);
+            if (!inst->registered.load(std::memory_order_acquire)) {
+                return {.applied = false, .reject_reason = "instance_not_found"};
+            }
+            if (inst->state != InstanceState::kRunning &&
+                inst->state != InstanceState::kWaitingPlayers) {
+                return {.applied = false, .reject_reason = "instance_not_active"};
+            }
+            if (inst->ctx.find_player(player.user_id) != nullptr) {
+                return {.applied = false, .reject_reason = "player_already_attached"};
+            }
+            try {
+                inst->plugin->on_player_join(inst->ctx, player);
+            } catch (const std::exception& e) {
+                AUDIT_LOG("plugin_on_player_join_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + player.user_id +
+                          " what=" + std::string(e.what()));
+            } catch (...) {
+                AUDIT_LOG("plugin_on_player_join_unknown_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + player.user_id);
+            }
+            inst->ctx.players.push_back(player);
+            inst->player_input_state.try_emplace(player.user_id);
+        }
+
+        InstanceEvent event;
+        event.type = InstanceEvent::Type::kPlayerJoined;
+        event.instance_id = instance_id;
+        event.user_id = player.user_id;
+        emit_event(std::move(event));
+        return {.applied = true};
+    }
+
+    BOOST_COLD_PATH
+    PlayerLifecycleResult detach_player(const std::string& instance_id,
+                                        const std::string& user_id) {
+        const auto inst = find_instance_shared(instance_id);
+        if (!inst) {
+            return {.applied = false, .reject_reason = "instance_not_found"};
+        }
+        {
+            std::lock_guard<std::mutex> lock(inst->mutex);
+            if (!inst->registered.load(std::memory_order_acquire)) {
+                return {.applied = false, .reject_reason = "instance_not_found"};
+            }
+            if (inst->state != InstanceState::kRunning &&
+                inst->state != InstanceState::kWaitingPlayers) {
+                return {.applied = false, .reject_reason = "instance_not_active"};
+            }
+            const auto player_it = std::find_if(
+                inst->ctx.players.begin(), inst->ctx.players.end(),
+                [&user_id](const PlayerContext& player) {
+                    return player.user_id == user_id;
+                });
+            if (player_it == inst->ctx.players.end()) {
+                return {.applied = false, .reject_reason = "player_not_attached"};
+            }
+            const auto player = *player_it;
+            try {
+                inst->plugin->on_player_leave(inst->ctx, player);
+            } catch (const std::exception& e) {
+                AUDIT_LOG("plugin_on_player_leave_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + user_id +
+                          " what=" + std::string(e.what()));
+            } catch (...) {
+                AUDIT_LOG("plugin_on_player_leave_unknown_exception",
+                          "instance_id=" + instance_id +
+                          " user_id=" + user_id);
+            }
+            inst->ctx.players.erase(player_it);
+            inst->player_input_state.erase(user_id);
+
+            std::queue<InputEnvelope> retained_inputs;
+            while (!inst->input_queue.empty()) {
+                auto input = std::move(inst->input_queue.front());
+                inst->input_queue.pop();
+                if (input.user_id != user_id) {
+                    retained_inputs.push(std::move(input));
+                }
+            }
+            inst->input_queue.swap(retained_inputs);
+        }
+
+        InstanceEvent event;
+        event.type = InstanceEvent::Type::kPlayerLeft;
+        event.instance_id = instance_id;
+        event.user_id = user_id;
+        emit_event(std::move(event));
+        return {.applied = true};
     }
 
     InputResult submit_input(const InputEnvelope& input) {
@@ -157,6 +296,10 @@ public:
             return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
         }
         std::lock_guard<std::mutex> lock(inst->mutex);
+
+        if (!inst->registered.load(std::memory_order_acquire)) {
+            return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
+        }
 
         if (inst->state != InstanceState::kRunning &&
             inst->state != InstanceState::kWaitingPlayers) {
@@ -192,6 +335,9 @@ public:
             return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
         }
         std::lock_guard<std::mutex> lock(inst->mutex);
+        if (!inst->registered.load(std::memory_order_acquire)) {
+            return InputResult{.accepted = false, .reject_reason = "instance_not_found"};
+        }
         if (inst->state != InstanceState::kRunning &&
             inst->state != InstanceState::kWaitingPlayers) {
             return InputResult{.accepted = false, .reject_reason = "instance_not_active"};
@@ -211,60 +357,61 @@ public:
         return InputResult{.accepted = false, .reject_reason = "input_processing_failed"};
     }
 
+    BOOST_COLD_PATH
     void finish_instance(const std::string& instance_id,
                          FinishReason reason) {
         const auto inst = find_instance_shared(instance_id);
         if (!inst) return;
-        std::lock_guard<std::mutex> lock(inst->mutex);
-        if (inst->state == InstanceState::kFinished ||
-            inst->state == InstanceState::kClosed) return;
-
-        inst->state = InstanceState::kFinishing;
-
         SettlementContext settlement_ctx;
-        settlement_ctx.instance_id = instance_id;
-        settlement_ctx.room_id = inst->ctx.room_id;
-        settlement_ctx.reason = reason;
-        settlement_ctx.total_frames = inst->current_frame;
+        {
+            std::lock_guard<std::mutex> lock(inst->mutex);
+            if (!inst->registered.load(std::memory_order_acquire)) return;
+            if (inst->state == InstanceState::kFinished ||
+                inst->state == InstanceState::kClosed) return;
 
-        // Build settlement with error isolation
-        // Note: build_settlement is noexcept by contract, but we wrap
-        // it for defence-in-depth.
-        try {
-            settlement_ctx.result_payload = inst->plugin->build_settlement(
-                inst->ctx, settlement_ctx);
-        } catch (const std::exception& e) {
-            AUDIT_LOG("instance_settlement_failure",
+            inst->state = InstanceState::kFinishing;
+            settlement_ctx.instance_id = instance_id;
+            settlement_ctx.room_id = inst->ctx.room_id;
+            settlement_ctx.reason = reason;
+            settlement_ctx.total_frames = inst->current_frame;
+
+            try {
+                settlement_ctx.result_payload = inst->plugin->build_settlement(
+                    inst->ctx, settlement_ctx);
+            } catch (const std::exception& e) {
+                AUDIT_LOG("instance_settlement_failure",
+                          "instance_id=" + instance_id +
+                          " reason=plugin_build_settlement_exception what=" +
+                          std::string(e.what()));
+                settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
+            } catch (...) {
+                AUDIT_LOG("instance_settlement_failure",
+                          "instance_id=" + instance_id +
+                          " reason=plugin_build_settlement_unknown_exception");
+                settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
+            }
+
+            inst->state = InstanceState::kFinished;
+            AUDIT_LOG("instance_finished",
                       "instance_id=" + instance_id +
-                      " reason=plugin_build_settlement_exception what=" +
-                      std::string(e.what()));
-            settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
-        } catch (...) {
-            AUDIT_LOG("instance_settlement_failure",
-                      "instance_id=" + instance_id +
-                      " reason=plugin_build_settlement_unknown_exception");
-            settlement_ctx.result_payload = R"({"error":"settlement_failed"})";
+                      " reason=" + to_string(reason) +
+                      " frames=" + std::to_string(inst->current_frame));
         }
-
-        inst->state = InstanceState::kFinished;
-
-        AUDIT_LOG("instance_finished",
-                  "instance_id=" + instance_id +
-                  " reason=" + to_string(reason) +
-                  " frames=" + std::to_string(inst->current_frame));
 
         InstanceEvent finished_event;
         finished_event.type = InstanceEvent::Type::kInstanceFinished;
         finished_event.instance_id = instance_id;
         finished_event.settlement = std::move(settlement_ctx);
-        emit_event(finished_event);
+        emit_event(std::move(finished_event));
     }
 
+    BOOST_COLD_PATH
     Snapshot get_resume_snapshot(const std::string& instance_id,
-                                  const std::string& user_id) {
+                                 const std::string& user_id) {
         const auto inst = find_instance_shared(instance_id);
         if (!inst) return {};
         std::lock_guard<std::mutex> lock(inst->mutex);
+        if (!inst->registered.load(std::memory_order_acquire)) return {};
 
         auto* player = inst->ctx.find_player(user_id);
         if (player == nullptr) return {};
@@ -306,11 +453,11 @@ public:
     TickStats tick_instance(const std::shared_ptr<InternalInstance>& inst,
                             std::uint32_t frame_number,
                             std::int64_t tick_start_ms) {
+        std::unique_lock<std::mutex> lock(inst->mutex);
         if (!inst->registered.load(std::memory_order_acquire)) {
             return TickStats{.frame_number = frame_number, .should_finish = true,
                             .finish_reason = FinishReason::kError};
         }
-        std::unique_lock<std::mutex> lock(inst->mutex);
         const auto& instance_id = inst->ctx.instance_id;
 
         if (inst->state != InstanceState::kRunning &&
@@ -428,13 +575,11 @@ public:
         snapshot_event.type = InstanceEvent::Type::kSnapshotAvailable;
         snapshot_event.instance_id = instance_id;
         snapshot_event.snapshot = std::move(snapshot);
-        emit_event(snapshot_event);
+        lock.unlock();
+        emit_event(std::move(snapshot_event));
 
-        // Handle finish request from plugin — release lock to avoid re-entrancy
         if (tick_result.should_finish) {
-            lock.unlock();
             finish_instance(instance_id, tick_result.finish_reason);
-            lock.lock();
         }
 
         return tick_result;
@@ -446,22 +591,29 @@ public:
         // Hold table references briefly, then inspect/tick instances under
         // their own locks so separate battles can run concurrently.
         std::vector<std::pair<std::shared_ptr<InternalInstance>, std::uint32_t>> to_tick;
-        std::vector<std::shared_ptr<InternalInstance>> instances;
         {
             std::lock_guard<std::mutex> lock(mutex_);
-            instances.reserve(instances_.size());
+            to_tick.reserve(instances_.size());
             for (const auto& [_, inst] : instances_) {
-                instances.push_back(inst);
+                to_tick.emplace_back(inst, 0U);
             }
         }
-        to_tick.reserve(instances.size());
-        for (const auto& inst : instances) {
+        std::size_t active_count = 0;
+        for (std::size_t i = 0; i < to_tick.size(); ++i) {
+            const auto& inst = to_tick[i].first;
             std::lock_guard<std::mutex> lock(inst->mutex);
-            if (inst->state == InstanceState::kRunning ||
-                inst->state == InstanceState::kWaitingPlayers) {
-                to_tick.emplace_back(inst, inst->current_frame + 1);
+            if (!inst->registered.load(std::memory_order_acquire) ||
+                (inst->state != InstanceState::kRunning &&
+                 inst->state != InstanceState::kWaitingPlayers)) {
+                continue;
             }
+            to_tick[i].second = inst->current_frame + 1;
+            if (active_count != i) {
+                to_tick[active_count] = std::move(to_tick[i]);
+            }
+            ++active_count;
         }
+        to_tick.resize(active_count);
 
         results.reserve(to_tick.size());
         for (const auto& [inst, frame] : to_tick) {
@@ -472,15 +624,17 @@ public:
         return results;
     }
 
-    InstanceContext* find_instance(const std::string& instance_id) {
-        const auto inst = find_instance_shared(instance_id);
-        return inst ? &inst->ctx : nullptr;
+    bool contains_instance(const std::string& instance_id) const {
+        return static_cast<bool>(find_instance_shared(instance_id));
     }
 
     InstanceState get_instance_state(const std::string& instance_id) const {
         const auto inst = find_instance_shared(instance_id);
         if (!inst) return InstanceState::kClosed;
         std::lock_guard<std::mutex> lock(inst->mutex);
+        if (!inst->registered.load(std::memory_order_acquire)) {
+            return InstanceState::kClosed;
+        }
         return inst->state;
     }
 
@@ -497,6 +651,7 @@ public:
         result.reserve(instances.size());
         for (const auto& inst : instances) {
             std::lock_guard<std::mutex> lock(inst->mutex);
+            if (!inst->registered.load(std::memory_order_acquire)) continue;
             InstanceSnapshot snap;
             snap.instance_id = inst->ctx.instance_id;
             snap.instance_type = inst->ctx.instance_type;
@@ -522,6 +677,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<InternalInstance>> instances_;
     std::unordered_map<std::string, InstancePluginFactory> plugin_factories_;
     InstanceEventCallback event_callback_;
+    bool callback_frozen_ = false;
 
     std::shared_ptr<InternalInstance> find_instance_shared(const std::string& id) const {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -530,8 +686,16 @@ private:
     }
 
     void emit_event(InstanceEvent event) {
-        if (event_callback_) {
-            event_callback_(std::move(event));
+        if (!event_callback_) return;
+        try {
+            event_callback_(event);
+        } catch (const std::exception& e) {
+            AUDIT_LOG("instance_event_callback_exception",
+                      "instance_id=" + event.instance_id +
+                      " what=" + std::string(e.what()));
+        } catch (...) {
+            AUDIT_LOG("instance_event_callback_unknown_exception",
+                      "instance_id=" + event.instance_id);
         }
     }
 };
@@ -548,8 +712,8 @@ void InstanceRuntime::register_plugin(const std::string& instance_type,
     impl_->register_plugin(instance_type, factory);
 }
 
-void InstanceRuntime::set_event_callback(InstanceEventCallback callback) {
-    impl_->set_event_callback(std::move(callback));
+bool InstanceRuntime::set_event_callback(InstanceEventCallback callback) {
+    return impl_->set_event_callback(std::move(callback));
 }
 
 std::string InstanceRuntime::create_instance(
@@ -567,6 +731,16 @@ std::string InstanceRuntime::create_instance(
 
 void InstanceRuntime::destroy_instance(const std::string& instance_id) {
     impl_->destroy_instance(instance_id);
+}
+
+PlayerLifecycleResult InstanceRuntime::attach_player(
+    const std::string& instance_id, const PlayerContext& player) {
+    return impl_->attach_player(instance_id, player);
+}
+
+PlayerLifecycleResult InstanceRuntime::detach_player(
+    const std::string& instance_id, const std::string& user_id) {
+    return impl_->detach_player(instance_id, user_id);
 }
 
 InputResult InstanceRuntime::submit_input(const InputEnvelope& input) {
@@ -598,8 +772,8 @@ std::vector<TickStats> InstanceRuntime::tick_all(std::int64_t tick_start_ms) {
     return impl_->tick_all(tick_start_ms);
 }
 
-InstanceContext* InstanceRuntime::find_instance(const std::string& instance_id) {
-    return impl_->find_instance(instance_id);
+bool InstanceRuntime::contains_instance(const std::string& instance_id) const {
+    return impl_->contains_instance(instance_id);
 }
 
 InstanceState InstanceRuntime::get_instance_state(const std::string& instance_id) const {
