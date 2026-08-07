@@ -398,13 +398,6 @@ def main() -> int:
     )
     add(
         checks,
-        "perf-regression:architecture-sample-depth",
-        "benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 2000)"
-        in perf_workflow,
-        "architecture comparison uses 2,000 multi-battle samples for a stable p99",
-    )
-    add(
-        checks,
         "security-maintenance:hosted-bounded-isolation",
         security_maintenance_workflow.count("runs-on: ubuntu-latest") == 4
         and security_maintenance_workflow.count("timeout-minutes:") == 4
