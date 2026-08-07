@@ -1888,11 +1888,19 @@ def estimate_battle_max_frames(cases: list[dict[str, Any]]) -> int:
     for case in cases:
         if case.get("scenario") != "battle":
             continue
-        duration_ms = int(case.get("duration_seconds", 0)) * 1000
+        duration_ms = (
+            int(case.get("duration_seconds", 0))
+            + int(case.get("ramp_timeout_seconds", 0))
+        ) * 1000
         interval_ms = int(case.get("interval_ms") or 100)
         if duration_ms <= 0 or interval_ms <= 0:
             continue
-        max_frames = max(max_frames, max(3, duration_ms // interval_ms))
+        room_group_size = max(2, int(case.get("room_group_size", 2)))
+        offers_per_client = (duration_ms + interval_ms - 1) // interval_ms + 1
+        max_frames = max(
+            max_frames,
+            max(3, offers_per_client * room_group_size),
+        )
     return max_frames
 
 

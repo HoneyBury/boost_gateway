@@ -156,7 +156,8 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
 100/200/250/300/350/400/450/500/750/1000 客户端的 100ms 节拍，对应
 `1000/2000/2500/3000/3500/4000/4500/5000/7500/10000 offered ops/s`。证据同时记录 scheduled、socket write
 accepted、response 三条速率和调度滞后；实际 scheduled rate 低于配置值 90% 时 fail closed，
-避免把 loadgen 自身失速误判为服务饱和。
+避免把 loadgen 自身失速误判为服务饱和。collector 设置的 Battle `max_frames` 必须覆盖
+ramp timeout 与完整稳态期间所有房间成员的输入，不能让 frame limit 提前结束计时窗口。
 
 ```bash
 python3 scripts/producers/collect_v2_perf_baseline.py \

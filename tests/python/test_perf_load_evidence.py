@@ -10,6 +10,7 @@ from scripts.producers.collect_v2_perf_baseline import (
     build_case_manifest,
     build_run_cases,
     build_saturation_analysis,
+    estimate_battle_max_frames,
     evaluate_release_gates,
     gateway_runtime_metric_delta,
 )
@@ -64,6 +65,18 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         ).read_text(encoding="utf-8")
         self.assertIn('verdict_source = "saturation_analysis.overall_pass"', workflow)
         self.assertIn('overall_pass = saturation.get("overall_pass") is True', workflow)
+
+    def test_battle_frame_limit_covers_ramp_and_all_room_members(self) -> None:
+        self.assertEqual(
+            estimate_battle_max_frames([{
+                "scenario": "battle",
+                "duration_seconds": 60,
+                "ramp_timeout_seconds": 120,
+                "interval_ms": 100,
+                "room_group_size": 2,
+            }]),
+            3602,
+        )
 
     def test_gateway_runtime_metrics_use_per_run_counter_deltas(self) -> None:
         before = {
