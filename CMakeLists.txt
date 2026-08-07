@@ -63,6 +63,7 @@ install(TARGETS
     v2_leaderboard_backend
     v2_gateway_pressure
     v2_arch_benchmark
+    v2_mailbox_benchmark
     sdk_echo_client
     sdk_full_flow_client
     example_hello_world

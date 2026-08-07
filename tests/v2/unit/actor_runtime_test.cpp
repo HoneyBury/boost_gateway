@@ -140,7 +140,7 @@ public:
     void unregister_session(std::uint32_t) override {}
     [[nodiscard]] std::uint32_t session_count(std::uint32_t) const noexcept override { return 0; }
     [[nodiscard]] std::uint32_t total_session_count() const noexcept override { return 0; }
-    bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override {
+    bool post_mailbox(std::uint32_t core_id, v2::actor::Message&& message) override {
         if (core_id >= mailboxes_.size()) {
             return false;
         }

@@ -49,6 +49,39 @@ def result_by_name(report: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return {str(item.get("name")): item for item in report.get("results", [])}
 
 
+MAILBOX_CASE = "mpsc_mailbox_four_producer_fan_in"
+
+
+def merge_benchmark_results(
+    architecture_report: dict[str, Any],
+    mailbox_report: dict[str, Any],
+) -> list[dict[str, Any]]:
+    architecture_results = architecture_report.get("results")
+    mailbox_results = mailbox_report.get("results")
+    if not isinstance(architecture_results, list) or not isinstance(mailbox_results, list):
+        raise ValueError("benchmark reports must contain results arrays")
+
+    def validated_names(results: list[Any], label: str) -> set[str]:
+        names: list[str] = []
+        for item in results:
+            if not isinstance(item, dict) or not isinstance(item.get("name"), str):
+                raise ValueError(f"{label} contains an invalid result")
+            names.append(item["name"])
+        if len(names) != len(set(names)):
+            raise ValueError(f"{label} contains duplicate result names")
+        return set(names)
+
+    architecture_names = validated_names(architecture_results, "v2_arch_benchmark")
+    mailbox_names = validated_names(mailbox_results, "v2_mailbox_benchmark")
+    if MAILBOX_CASE in architecture_names:
+        raise ValueError("v2_arch_benchmark must not contain the isolated mailbox case")
+    if mailbox_names != {MAILBOX_CASE} or len(mailbox_results) != 1:
+        raise ValueError("v2_mailbox_benchmark must contain only the mailbox case")
+    if architecture_names & mailbox_names:
+        raise ValueError("benchmark reports contain duplicate result names")
+    return [*architecture_results, *mailbox_results]
+
+
 DEFAULT_CHECKS = {
     "actor_local_tell_dispatch": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
     "actor_cross_core_tell_drain_dispatch": {"metric": "p99_us", "threshold": 10000.0, "direction": "max"},
@@ -62,7 +95,9 @@ DEFAULT_CHECKS = {
     "ecs_scan_10k_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "ecs_scheduler_light_parallel_stage": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "ecs_scheduler_heavy_parallel_stage": {"metric": "p99_us", "threshold": 100000.0, "direction": "max"},
+    "mpsc_mailbox_four_producer_fan_in": {"metric": "throughput_ops_per_sec", "threshold": 50_000.0, "direction": "min"},
     "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
+    "battle_indexed_input_100_entities": {"metric": "p99_us", "threshold": 100.0, "direction": "max"},
     "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 300_000.0, "direction": "min"},
     "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "instance_runtime_tick_all_one_input": {"metric": "p99_us", "threshold": 20.0, "direction": "max"},
@@ -157,11 +192,23 @@ def main() -> int:
     gate_checks = load_gate_profile(gate_config, args.gate_profile)
 
     benchmark = resolve_executable(args.build_dir, "v2_arch_benchmark")
+    mailbox_benchmark = resolve_executable(args.build_dir, "v2_mailbox_benchmark")
     raw_path = output_root / "v2_arch_benchmark.json"
+    mailbox_raw_path = output_root / "v2_mailbox_benchmark.json"
     summary_path = output_root / "summary.json"
     stdout_path = output_root / "stdout.log"
     stderr_path = output_root / "stderr.log"
-    for generated_path in (raw_path, summary_path, stdout_path, stderr_path):
+    mailbox_stdout_path = output_root / "mailbox-stdout.log"
+    mailbox_stderr_path = output_root / "mailbox-stderr.log"
+    for generated_path in (
+        raw_path,
+        mailbox_raw_path,
+        summary_path,
+        stdout_path,
+        stderr_path,
+        mailbox_stdout_path,
+        mailbox_stderr_path,
+    ):
         generated_path.unlink(missing_ok=True)
     cmd = [
         str(benchmark),
@@ -185,7 +232,32 @@ def main() -> int:
         print(completed.stderr, file=sys.stderr)
         return completed.returncode
 
+    mailbox_completed = subprocess.run(
+        [
+            str(mailbox_benchmark),
+            "--iterations", str(args.iterations),
+            "--output", str(mailbox_raw_path),
+        ],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=args.timeout_seconds,
+        check=False,
+    )
+    mailbox_stdout_path.write_text(mailbox_completed.stdout, encoding="utf-8")
+    mailbox_stderr_path.write_text(mailbox_completed.stderr, encoding="utf-8")
+    if mailbox_completed.returncode != 0:
+        print(mailbox_completed.stderr, file=sys.stderr)
+        return mailbox_completed.returncode
+
     report = load_json(raw_path)
+    mailbox_report = load_json(mailbox_raw_path)
+    try:
+        merged_results = merge_benchmark_results(report, mailbox_report)
+    except ValueError as exc:
+        print(f"v2 architecture baseline: FAIL: {exc}", file=sys.stderr)
+        return 2
+    merged_report = {**report, "results": merged_results}
     summary = {
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "host": {
@@ -194,6 +266,7 @@ def main() -> int:
         },
         "build_dir": str(args.build_dir),
         "benchmark": str(benchmark),
+        "mailbox_benchmark": str(mailbox_benchmark),
         "iterations": args.iterations,
         "actors": args.actors,
         "actor_limit": args.actor_limit,
@@ -201,8 +274,9 @@ def main() -> int:
         "gate_profile": args.gate_profile,
         "gate_config": str(gate_config),
         "raw_result": str(raw_path),
-        "release_gates": evaluate_gates(report, args.actor_limit, gate_checks),
-        "results": report.get("results", []),
+        "mailbox_raw_result": str(mailbox_raw_path),
+        "release_gates": evaluate_gates(merged_report, args.actor_limit, gate_checks),
+        "results": merged_results,
     }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps({

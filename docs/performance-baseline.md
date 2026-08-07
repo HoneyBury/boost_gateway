@@ -182,9 +182,15 @@ OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用�
 `config/perf/v2_arch_baseline_gates.json` 管理，不能用该微秒级阈值替代端到端 case gate。
 Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile/lockfile，交替执行基线与
 候选至少五轮；`compare_v2_arch_baselines.py` 对中位数 fail-closed 比较并保留每轮原始 JSON。
-当前硬门禁覆盖 actor fan-in、单场/多场 battle tick 和
-`InstanceRuntime::tick_all` 的一输入每实例 workload。缺样本、轮数不对称或超过相对阈值均失败；
+当前硬门禁覆盖四生产者 MPSC mailbox fan-in、actor fan-in、单场/多场 battle tick 和
+`InstanceRuntime::tick_all` 的一输入每实例 workload。MPSC case 必须同时通过真实并发
+exactly-once/FIFO 单测、TSAN 专项和 Release 绝对吞吐门禁；缺样本、轮数不对称或超过相对阈值均失败；
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
+MPSC case 由独立的 `v2_mailbox_benchmark` 采集并在绝对门禁 summary 中合并；Linux x64
+paired comparison 始终使用不含 MPSC case 的 `v2_arch_benchmark`。Battle indexed input 和
+ECS/scheduler 扩展均在全部既有 workload 完成后运行，避免在既有 relative-gated case 前引入
+额外预热。paired comparison 的 multi-battle case 固定使用 2000 个样本，不改变现有相对门禁
+阈值。两份原始 JSON 和各自 stdout/stderr 必须同时归档。
 
 ECS 专项绝对门禁覆盖 100/1K/10K component scan，以及两个独立系统组成的轻、重
 `ParallelSystemExecutor` stage。scan 吞吐按实际访问的 component 数计算，采样延迟为一次完整

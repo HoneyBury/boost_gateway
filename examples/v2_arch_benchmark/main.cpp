@@ -75,7 +75,7 @@ public:
     void unregister_session(std::uint32_t) override {}
     [[nodiscard]] std::uint32_t session_count(std::uint32_t) const noexcept override { return 0; }
     [[nodiscard]] std::uint32_t total_session_count() const noexcept override { return 0; }
-    bool post_mailbox(std::uint32_t core_id, v2::actor::Message message) override {
+    bool post_mailbox(std::uint32_t core_id, v2::actor::Message&& message) override {
         if (core_id >= mailboxes_.size()) {
             return false;
         }
@@ -592,6 +592,51 @@ LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations)
     return make_stats(std::move(samples), elapsed, operations);
 }
 
+LatencyStats run_battle_indexed_input_latency(std::size_t iterations) {
+    std::vector<std::string> player_ids;
+    player_ids.reserve(100);
+    for (std::size_t i = 0; i < 100; ++i) {
+        player_ids.push_back("player_" + std::to_string(i));
+    }
+
+    auto world = v2::battle::create_battle_world(
+        "bench_input", "bench_room", player_ids, 0);
+    auto* simple_world = dynamic_cast<v2::ecs::SimpleWorld*>(world.get());
+    if (simple_world == nullptr) {
+        throw std::runtime_error("battle input benchmark requires SimpleWorld");
+    }
+    std::vector<v2::ecs::EntityHandle> player_entities(player_ids.size());
+    simple_world->for_each<v2::battle::BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle handle,
+            v2::battle::BattleParticipantComponent& participant) {
+            const auto suffix = participant.user_id.substr(
+                participant.user_id.find_last_of('_') + 1);
+            const auto index = static_cast<std::size_t>(std::stoull(suffix));
+            player_entities.at(index) = handle;
+        });
+
+    std::vector<double> samples;
+    samples.reserve(iterations);
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < iterations; ++i) {
+        const auto player_index = i % player_ids.size();
+        const auto op_begin = now_ns();
+        const auto result = v2::battle::battle_world_process_input(
+            *world,
+            player_entities[player_index],
+            player_ids[player_index],
+            "move:1,1",
+            0,
+            0);
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+        if (!result.accepted) {
+            throw std::runtime_error("indexed battle input benchmark rejected input");
+        }
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, iterations);
+}
+
 struct BenchmarkScanComponent final : v2::ecs::Component {
     std::uint64_t value = 1;
 };
@@ -731,19 +776,20 @@ std::string build_json(const Options& options,
                        const LatencyStats& bump_arena_alloc,
                        const LatencyStats& object_pool_cycle,
                        const LatencyStats& spsc_queue_roundtrip,
-                       const LatencyStats& ecs_scan_100,
-                       const LatencyStats& ecs_scan_1k,
-                       const LatencyStats& ecs_scan_10k,
-                       const LatencyStats& scheduler_light_stage,
-                       const LatencyStats& scheduler_heavy_stage,
                        const LatencyStats& battle_world_tick,
+                       const LatencyStats& battle_indexed_input,
                        const LatencyStats& actor_fan_in,
                        const LatencyStats& actor_limit_smoke,
                        const LatencyStats& multi_battle_tick,
                        const LatencyStats& instance_runtime_tick_all,
                        const LatencyStats& backend_envelope_roundtrip,
                        const LatencyStats& typed_envelope_roundtrip,
-                       const LatencyStats& backend_typed_adapter_roundtrip) {
+                       const LatencyStats& backend_typed_adapter_roundtrip,
+                       const LatencyStats& ecs_scan_100,
+                       const LatencyStats& ecs_scan_1k,
+                       const LatencyStats& ecs_scan_10k,
+                       const LatencyStats& scheduler_light_stage,
+                       const LatencyStats& scheduler_heavy_stage) {
     std::ostringstream out;
     out << "{\n"
         << "  \"tool\": \"v2_arch_benchmark\",\n"
@@ -759,19 +805,20 @@ std::string build_json(const Options& options,
     append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
     append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
-    append_stats_json(out, "ecs_scan_100_entities", ecs_scan_100, false);
-    append_stats_json(out, "ecs_scan_1k_entities", ecs_scan_1k, false);
-    append_stats_json(out, "ecs_scan_10k_entities", ecs_scan_10k, false);
-    append_stats_json(out, "ecs_scheduler_light_parallel_stage", scheduler_light_stage, false);
-    append_stats_json(out, "ecs_scheduler_heavy_parallel_stage", scheduler_heavy_stage, false);
     append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
+    append_stats_json(out, "battle_indexed_input_100_entities", battle_indexed_input, false);
     append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
     append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
     append_stats_json(out, "multi_battle_tick_100_entities", multi_battle_tick, false);
     append_stats_json(out, "instance_runtime_tick_all_one_input", instance_runtime_tick_all, false);
     append_stats_json(out, "backend_envelope_json_roundtrip", backend_envelope_roundtrip, false);
     append_stats_json(out, "typed_envelope_json_roundtrip", typed_envelope_roundtrip, false);
-    append_stats_json(out, "backend_typed_adapter_roundtrip", backend_typed_adapter_roundtrip, true);
+    append_stats_json(out, "backend_typed_adapter_roundtrip", backend_typed_adapter_roundtrip, false);
+    append_stats_json(out, "ecs_scan_100_entities", ecs_scan_100, false);
+    append_stats_json(out, "ecs_scan_1k_entities", ecs_scan_1k, false);
+    append_stats_json(out, "ecs_scan_10k_entities", ecs_scan_10k, false);
+    append_stats_json(out, "ecs_scheduler_light_parallel_stage", scheduler_light_stage, false);
+    append_stats_json(out, "ecs_scheduler_heavy_parallel_stage", scheduler_heavy_stage, true);
     out << "  ]\n"
         << "}\n";
     return out.str();
@@ -801,6 +848,8 @@ int main(int argc, char** argv) {
             run_typed_envelope_json_roundtrip_latency(options.iterations);
         const auto backend_typed_adapter_roundtrip =
             run_backend_typed_adapter_roundtrip_latency(options.iterations);
+        const auto battle_indexed_input =
+            run_battle_indexed_input_latency(options.iterations);
         const auto ecs_scan_100 = run_ecs_scan_latency(100, options.iterations);
         const auto ecs_scan_1k = run_ecs_scan_latency(1'000, options.iterations);
         const auto ecs_scan_10k = run_ecs_scan_latency(10'000, options.iterations);
@@ -814,19 +863,20 @@ int main(int argc, char** argv) {
                                      bump_arena_alloc,
                                      object_pool_cycle,
                                      spsc_queue_roundtrip,
-                                     ecs_scan_100,
-                                     ecs_scan_1k,
-                                     ecs_scan_10k,
-                                     scheduler_light_stage,
-                                     scheduler_heavy_stage,
                                      battle_world_tick,
+                                     battle_indexed_input,
                                      actor_fan_in,
                                      actor_limit_smoke,
                                      multi_battle_tick,
                                      instance_runtime_tick_all,
                                      backend_envelope_roundtrip,
                                      typed_envelope_roundtrip,
-                                     backend_typed_adapter_roundtrip);
+                                     backend_typed_adapter_roundtrip,
+                                     ecs_scan_100,
+                                     ecs_scan_1k,
+                                     ecs_scan_10k,
+                                     scheduler_light_stage,
+                                     scheduler_heavy_stage);
 
         if (!options.output_path.empty()) {
             std::ofstream output(options.output_path, std::ios::binary);

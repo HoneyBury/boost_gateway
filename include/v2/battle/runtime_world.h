@@ -153,6 +153,17 @@ void battle_world_apply_trigger_to_frame(v2::ecs::World& world,
     std::int64_t score,
     std::uint32_t submitted_frame);
 
+// Indexed hot path used by instance plugins that already own a stable
+// user_id -> entity mapping. Invalid or mismatched handles fall back to the
+// compatibility lookup performed by the overload above.
+[[nodiscard]] BattleWorldInputResult battle_world_process_input(
+    v2::ecs::World& world,
+    v2::ecs::EntityHandle player_entity,
+    const std::string& user_id,
+    const std::string& input_data,
+    std::int64_t score,
+    std::uint32_t submitted_frame);
+
 // Advance one frame authoritatively: tick systems, check finish.
 [[nodiscard]] BattleWorldFrameResult battle_world_advance_frame(
     v2::ecs::World& world,

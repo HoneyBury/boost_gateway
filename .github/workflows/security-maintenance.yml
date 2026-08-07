@@ -77,6 +77,46 @@ jobs:
             -E '^(RaftCommandCodecTest|RaftWireCodecTest)\.' \
             --output-on-failure --timeout 120
 
+  mailbox-thread-sanitizer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - name: Setup Ninja
+        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+
+      - name: Setup CMake
+        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
+
+      - name: Configure mailbox TSan build
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S . -B build/mailbox-tsan -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=fetchcontent \
+            -DBOOST_BUILD_GRPC=OFF \
+            -DBOOST_BUILD_RAFT_PROTOBUF=OFF \
+            -DBOOST_BUILD_SQLITE=OFF \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-fsanitize=thread -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=thread"
+
+      - name: Run concurrent mailbox tests under TSan
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build build/mailbox-tsan --parallel 2 --target project_v2_unit_tests
+          build/mailbox-tsan/tests/v2/project_v2_unit_tests \
+            --gtest_filter='V2MpscQueueTest.*:V2IoEngineTest.Mailbox*'
+
   fuzz:
     runs-on: ubuntu-latest
     timeout-minutes: 30
