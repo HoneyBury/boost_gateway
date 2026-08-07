@@ -205,6 +205,21 @@ TEST(InstanceRuntimeTest, CreateAndDestroyInstance) {
     EXPECT_EQ(runtime.instance_count(), 0);
 }
 
+TEST(InstanceRuntimeTest, DestroyedInstanceCannotBeTicked) {
+    v2::realtime::InstanceRuntime runtime;
+    runtime.register_plugin("echo", &create_echo_plugin);
+
+    v2::realtime::PlayerContext player;
+    player.user_id = "test_user";
+    ASSERT_FALSE(runtime.create_instance("inst_001", "room_001", "echo", {player}).empty());
+    runtime.destroy_instance("inst_001");
+
+    const auto stats = runtime.tick_instance("inst_001", 1, 1);
+    EXPECT_TRUE(stats.should_finish);
+    EXPECT_EQ(stats.finish_reason, v2::realtime::FinishReason::kError);
+    EXPECT_TRUE(runtime.tick_all(1).empty());
+}
+
 TEST(InstanceRuntimeTest, DestroyInstanceReleasesPluginOwnedState) {
     reset_owning_plugin_counters();
     v2::realtime::InstanceRuntime runtime;

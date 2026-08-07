@@ -41,6 +41,9 @@
     "scripts/gates/__init__.py": {
       "category": "tool"
     },
+    "scripts/gates/release/compare_v2_arch_baselines.py": {
+      "category": "aggregate_gate"
+    },
     "scripts/gates/security/__init__.py": {
       "category": "tool"
     },

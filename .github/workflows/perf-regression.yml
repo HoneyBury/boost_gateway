@@ -36,6 +36,23 @@ on:
         options:
           - "1"
           - "3"
+      run_architecture_comparison:
+        description: "Compare architecture microbenchmarks against a baseline on Linux x64"
+        required: true
+        default: true
+        type: boolean
+      architecture_baseline_ref:
+        description: "Git branch, tag, or commit containing the same benchmark harness"
+        required: true
+        default: "main"
+      architecture_repetitions:
+        description: "Paired architecture benchmark repetitions"
+        required: true
+        default: "5"
+        type: choice
+        options:
+          - "5"
+          - "7"
 
 permissions:
   contents: read
@@ -62,6 +79,8 @@ jobs:
 
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
 
       - name: Resolve native production platform
         uses: ./.github/actions/resolve-production-platform
@@ -144,6 +163,105 @@ jobs:
           mkdir -p runtime/perf/build-times
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
+      - name: Prepare architecture baseline worktree
+        if: inputs.platform == 'linux-x64' && inputs.run_architecture_comparison
+        shell: bash
+        env:
+          BASELINE_REF: ${{ inputs.architecture_baseline_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$BASELINE_REF" =~ ^[0-9A-Za-z][0-9A-Za-z._/-]*$ ]] || [[ "$BASELINE_REF" == *..* ]]; then
+            echo "invalid architecture baseline ref" >&2
+            exit 2
+          fi
+          baseline_sha="$(git rev-parse "${BASELINE_REF}^{commit}" 2>/dev/null || true)"
+          if [ -z "$baseline_sha" ]; then
+            git fetch --no-tags --depth=1 origin "$BASELINE_REF"
+            baseline_sha="$(git rev-parse FETCH_HEAD^{commit})"
+          fi
+          reference_source="$RUNNER_TEMP/boost-gateway-arch-reference-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          reference_build="$reference_source/build/architecture-reference-release"
+          git worktree add --detach "$reference_source" "$baseline_sha"
+          {
+            echo "ARCH_BASELINE_SHA=$baseline_sha"
+            echo "ARCH_CANDIDATE_SHA=$GITHUB_SHA"
+            echo "ARCH_REFERENCE_SOURCE=$reference_source"
+            echo "ARCH_REFERENCE_BUILD=$reference_build"
+          } >> "$GITHUB_ENV"
+
+      - name: Build architecture baseline
+        if: inputs.platform == 'linux-x64' && inputs.run_architecture_comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          profile="$GITHUB_WORKSPACE/$PRODUCTION_CONAN_PROFILE"
+          lockfile="$GITHUB_WORKSPACE/$PRODUCTION_RELEASE_LOCKFILE"
+          conan_output="$ARCH_REFERENCE_SOURCE/build/conan-architecture-reference"
+          conan install "$ARCH_REFERENCE_SOURCE" \
+            --profile:host "$profile" \
+            --profile:build "$profile" \
+            --lockfile "$lockfile" \
+            -o "&:with_grpc=False" \
+            -o "&:with_raft_protobuf=True" \
+            -o "&:with_sqlite=False" \
+            --output-folder="$conan_output" \
+            --build=never \
+            --no-remote \
+            -s build_type=Release
+          cmake -S "$ARCH_REFERENCE_SOURCE" -B "$ARCH_REFERENCE_BUILD" -G Ninja \
+            -DBOOST_DEPENDENCY_PROVIDER=conan \
+            -DCMAKE_TOOLCHAIN_FILE="$conan_output/build/Release/generators/conan_toolchain.cmake" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DENABLE_TESTING=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER="$SCCACHE_BIN" \
+            -DCMAKE_CXX_COMPILER_LAUNCHER="$SCCACHE_BIN"
+          cmake --build "$ARCH_REFERENCE_BUILD" --target v2_arch_benchmark --parallel
+
+      - name: Run paired architecture regression gate
+        if: inputs.platform == 'linux-x64' && inputs.run_architecture_comparison
+        shell: bash
+        env:
+          REPETITIONS: ${{ inputs.architecture_repetitions || '5' }}
+        run: |
+          set -euo pipefail
+          output_root="runtime/perf/architecture-comparison"
+          mkdir -p "$output_root/baseline" "$output_root/candidate"
+          candidate_bin="$PRODUCTION_BUILD_DIR/examples/v2_arch_benchmark/v2_arch_benchmark"
+          baseline_bin="$ARCH_REFERENCE_BUILD/examples/v2_arch_benchmark/v2_arch_benchmark"
+          benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 500)
+          for repetition in $(seq 1 "$REPETITIONS"); do
+            if (( repetition % 2 == 1 )); then
+              "$baseline_bin" "${benchmark_args[@]}" \
+                --output "$output_root/baseline/$repetition.json" >/dev/null
+              "$candidate_bin" "${benchmark_args[@]}" \
+                --output "$output_root/candidate/$repetition.json" >/dev/null
+            else
+              "$candidate_bin" "${benchmark_args[@]}" \
+                --output "$output_root/candidate/$repetition.json" >/dev/null
+              "$baseline_bin" "${benchmark_args[@]}" \
+                --output "$output_root/baseline/$repetition.json" >/dev/null
+            fi
+          done
+
+          compare_args=(
+            --config config/perf/v2_arch_baseline_gates.json
+            --baseline-ref "$ARCH_BASELINE_SHA"
+            --candidate-ref "$ARCH_CANDIDATE_SHA"
+            --output "$output_root/comparison-summary.json"
+          )
+          for repetition in $(seq 1 "$REPETITIONS"); do
+            compare_args+=(
+              --baseline "$output_root/baseline/$repetition.json"
+              --candidate "$output_root/candidate/$repetition.json"
+            )
+          done
+          python3 scripts/gates/release/compare_v2_arch_baselines.py "${compare_args[@]}"
+          python3 scripts/producers/collect_v2_arch_baseline.py \
+            --build-dir "$PRODUCTION_BUILD_DIR" \
+            --output-root "$output_root/candidate-absolute" \
+            --gate-profile release \
+            --timeout-seconds 60
+
       - name: Run performance baseline
         id: perf
         shell: bash
@@ -175,8 +293,8 @@ jobs:
         id: gates
         shell: bash
         run: |
-          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
-          if [ -z "$SUMMARY_PATH" ]; then
+          SUMMARY_PATH="${{ steps.perf.outputs.output_dir }}/summary.json"
+          if [ ! -f "$SUMMARY_PATH" ]; then
             echo "No summary.json found - performance run may have failed."
             exit 1
           fi
@@ -233,8 +351,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
-          if [ -n "$SUMMARY_PATH" ]; then
+          SUMMARY_PATH="${{ steps.perf.outputs.output_dir }}/summary.json"
+          if [ -f "$SUMMARY_PATH" ]; then
             REPORT_DIR="$(dirname "$SUMMARY_PATH")"
             echo "## Performance Regression Summary" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
@@ -288,3 +406,8 @@ jobs:
             "build_duration_seconds": ${duration}
           }
           EOF
+
+      - name: Clean architecture baseline worktree
+        if: always() && env.ARCH_REFERENCE_SOURCE != ''
+        shell: bash
+        run: git worktree remove --force "$ARCH_REFERENCE_SOURCE"

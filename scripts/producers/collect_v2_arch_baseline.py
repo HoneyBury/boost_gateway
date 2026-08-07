@@ -60,6 +60,7 @@ DEFAULT_CHECKS = {
     "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 300_000.0, "direction": "min"},
     "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
+    "instance_runtime_tick_all_one_input": {"metric": "p99_us", "threshold": 20.0, "direction": "max"},
     "backend_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
     "typed_envelope_json_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},
     "backend_typed_adapter_roundtrip": {"metric": "p99_us", "threshold": 1000.0, "direction": "max"},

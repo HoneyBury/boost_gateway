@@ -3,6 +3,7 @@
 #include "app/audit_log.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <exception>
 #include <memory>
@@ -27,6 +28,7 @@ struct InternalInstance {
     std::uint32_t current_frame = 0;
     std::int64_t running_since_ms = 0;
     std::uint32_t ack_seq_counter = 0;
+    std::atomic<bool> registered{true};
 
     // Per-player input tracking
     struct PlayerInputState {
@@ -144,6 +146,7 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = instances_.find(instance_id);
         if (it == instances_.end()) return;
+        it->second->registered.store(false, std::memory_order_release);
         instances_.erase(it);
         AUDIT_LOG("instance_destroyed", "instance_id=" + instance_id);
     }
@@ -296,7 +299,19 @@ public:
             return TickStats{.frame_number = frame_number, .should_finish = true,
                             .finish_reason = FinishReason::kError};
         }
+        return tick_instance(inst, frame_number, tick_start_ms);
+    }
+
+    BOOST_HOT_PATH
+    TickStats tick_instance(const std::shared_ptr<InternalInstance>& inst,
+                            std::uint32_t frame_number,
+                            std::int64_t tick_start_ms) {
+        if (!inst->registered.load(std::memory_order_acquire)) {
+            return TickStats{.frame_number = frame_number, .should_finish = true,
+                            .finish_reason = FinishReason::kError};
+        }
         std::unique_lock<std::mutex> lock(inst->mutex);
+        const auto& instance_id = inst->ctx.instance_id;
 
         if (inst->state != InstanceState::kRunning &&
             inst->state != InstanceState::kWaitingPlayers) {
@@ -315,6 +330,7 @@ public:
         FrameContext frame_ctx;
         frame_ctx.frame_number = frame_number;
         frame_ctx.tick_start_ms = tick_start_ms;
+        frame_ctx.inputs_this_tick.reserve(inst->input_queue.size());
 
         while (!inst->input_queue.empty()) {
             auto& input = inst->input_queue.front();
@@ -323,11 +339,11 @@ public:
             try {
                 auto result = inst->plugin->on_input(inst->ctx, input);
                 if (result.accepted) {
-                    input.seq = result.ack_seq;  // update to ack seq
-                    frame_ctx.inputs_this_tick.push_back(std::move(input));
-
                     auto& ps = inst->player_input_state[input.user_id];
                     ps.last_acked_frame = frame_number;
+
+                    input.seq = result.ack_seq;  // update to ack seq
+                    frame_ctx.inputs_this_tick.push_back(std::move(input));
                 }
             } catch (const std::exception& e) {
                 AUDIT_LOG("plugin_on_input_exception",
@@ -429,7 +445,7 @@ public:
 
         // Hold table references briefly, then inspect/tick instances under
         // their own locks so separate battles can run concurrently.
-        std::vector<std::pair<std::string, std::uint32_t>> to_tick;
+        std::vector<std::pair<std::shared_ptr<InternalInstance>, std::uint32_t>> to_tick;
         std::vector<std::shared_ptr<InternalInstance>> instances;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -438,16 +454,18 @@ public:
                 instances.push_back(inst);
             }
         }
+        to_tick.reserve(instances.size());
         for (const auto& inst : instances) {
             std::lock_guard<std::mutex> lock(inst->mutex);
             if (inst->state == InstanceState::kRunning ||
                 inst->state == InstanceState::kWaitingPlayers) {
-                to_tick.push_back({inst->ctx.instance_id, inst->current_frame + 1});
+                to_tick.emplace_back(inst, inst->current_frame + 1);
             }
         }
 
-        for (const auto& [id, frame] : to_tick) {
-            auto stats = tick_instance(id, frame, tick_start_ms);
+        results.reserve(to_tick.size());
+        for (const auto& [inst, frame] : to_tick) {
+            auto stats = tick_instance(inst, frame, tick_start_ms);
             results.push_back(std::move(stats));
         }
 
