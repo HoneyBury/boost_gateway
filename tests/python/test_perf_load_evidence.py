@@ -122,7 +122,7 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         cases = build_run_cases("business-open-saturation")
         self.assertEqual(
             [(case["clients"], case["interval_ms"]) for case in cases],
-            [(250, 100), (500, 100), (750, 100), (1000, 100), (1000, 50), (1000, 20)],
+            [(100, 100), (200, 100), (250, 100), (500, 100), (750, 100), (1000, 100), (1000, 50), (1000, 20)],
         )
         self.assertTrue(all(case["scenario"] == "battle" for case in cases))
         self.assertTrue(all(case["load_model"] == "open-loop" for case in cases))
@@ -138,7 +138,7 @@ class PerfLoadEvidenceTest(unittest.TestCase):
         ))
         self.assertEqual(
             [item["configured_request_rate_ceiling_ops_per_sec"] for item in manifest],
-            [2500.0, 5000.0, 7500.0, 10000.0, 20000.0, 50000.0],
+            [1000.0, 2000.0, 2500.0, 5000.0, 7500.0, 10000.0, 20000.0, 50000.0],
         )
 
     def evaluate(self, case_name: str, run: dict) -> dict:

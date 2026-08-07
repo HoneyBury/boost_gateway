@@ -2013,6 +2013,10 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     p99 = numeric_series("latency_p99_ms")
     totals = [int(run.get("total_messages", 0)) for run in runs]
     responses = [int(run.get("response_messages", 0)) for run in runs]
+    successful_responses = [
+        int(run.get("successful_response_messages", run.get("response_messages", 0)))
+        for run in runs
+    ]
     pushes = [int(run.get("push_messages", 0)) for run in runs]
     connected = [int(run.get("connected_clients", 0)) for run in runs]
     target = [int(run.get("target_clients", 0)) for run in runs]
@@ -2030,8 +2034,16 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     configured_rate_ceiling = numeric_series("configured_request_rate_ceiling_ops_per_sec")
     achieved_send_rate = numeric_series("achieved_send_rate_ops_per_sec")
     achieved_response_rate = numeric_series("achieved_response_rate_ops_per_sec")
+    achieved_successful_response_rate = [
+        float(run.get(
+            "achieved_successful_response_rate_ops_per_sec",
+            run.get("achieved_response_rate_ops_per_sec", 0.0),
+        ))
+        for run in runs
+    ]
     send_attempts = [int(run.get("business_send_attempts", 0)) for run in runs]
     send_successes = [int(run.get("business_send_successes", 0)) for run in runs]
+    response_errors = [int(run.get("business_response_errors", 0)) for run in runs]
     scheduled_offers = [int(run.get("open_loop_scheduled_offers", 0)) for run in runs]
     schedule_lag_average = numeric_series("open_loop_average_schedule_lag_us")
     schedule_lag_max = [int(run.get("open_loop_max_schedule_lag_us", 0)) for run in runs]
@@ -2125,6 +2137,7 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "max": max(totals),
         },
         "response_messages": integer_distribution(responses),
+        "successful_response_messages": integer_distribution(successful_responses),
         "push_messages": integer_distribution(pushes),
         "message_count_consistent": message_count_consistent,
         "target_clients": integer_distribution(target),
@@ -2154,11 +2167,15 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
         ),
         "business_send_attempts": integer_distribution(send_attempts),
         "business_send_successes": integer_distribution(send_successes),
+        "business_response_errors": integer_distribution(response_errors),
         "open_loop_scheduled_offers": integer_distribution(scheduled_offers),
         "open_loop_average_schedule_lag_us": numeric_distribution(schedule_lag_average),
         "open_loop_max_schedule_lag_us": integer_distribution(schedule_lag_max),
         "achieved_send_rate_ops_per_sec": numeric_distribution(achieved_send_rate),
         "achieved_response_rate_ops_per_sec": numeric_distribution(achieved_response_rate),
+        "achieved_successful_response_rate_ops_per_sec": numeric_distribution(
+            achieved_successful_response_rate
+        ),
         "rejected_clients": {
             "min": min(rejected),
             "median": int(statistics.median(rejected)),
@@ -2803,6 +2820,7 @@ def build_saturation_analysis(
             int(aggregate.get("failed_clients", {}).get("max", 0))
             + int(aggregate.get("rejected_clients", {}).get("max", 0))
             + int(aggregate.get("cancelled_clients", {}).get("max", 0))
+            + int(aggregate.get("business_response_errors", {}).get("max", 0))
         )
         message_count_consistent = aggregate.get("message_count_consistent") is True
         load_models = aggregate.get("load_models", [])
@@ -2861,9 +2879,12 @@ def build_saturation_analysis(
         achieved_send = float(
             aggregate.get("achieved_send_rate_ops_per_sec", {}).get("median", 0.0)
         )
-        achieved_response = float(
-            aggregate.get("achieved_response_rate_ops_per_sec", {}).get("median", 0.0)
+        response_metric = (
+            "achieved_successful_response_rate_ops_per_sec"
+            if analysis_load_model == "open_loop_fixed_interval_per_client"
+            else "achieved_response_rate_ops_per_sec"
         )
+        achieved_response = float(aggregate.get(response_metric, {}).get("median", 0.0))
         p99 = float(aggregate.get("latency_p99_ms", {}).get("median", 0.0))
         gateway_cpu_percent = float(gateway_cpu) if isinstance(gateway_cpu, (int, float)) else 0.0
         quota_utilization = (
@@ -2890,6 +2911,9 @@ def build_saturation_analysis(
             ),
             "latency_p99_ms": p99,
             "client_error_count": errors,
+            "business_response_errors": int(
+                aggregate.get("business_response_errors", {}).get("max", 0)
+            ),
             "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
             "message_count_consistent": message_count_consistent,
             "open_loop_scheduled_offers": scheduled_offers,
@@ -3362,6 +3386,10 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
         bench_exit_code = int(aggregate.get("bench_exit_code", 1))
         total_messages = aggregate["total_messages"]["median"]
         response_messages = aggregate.get("response_messages", {}).get("median", 0)
+        successful_response_messages = aggregate.get(
+            "successful_response_messages", {}
+        ).get("median", response_messages)
+        business_response_errors = aggregate.get("business_response_errors", {}).get("max", 0)
         push_messages = aggregate.get("push_messages", {}).get("median", 0)
         message_count_consistent = aggregate.get("message_count_consistent") is True
         target_min = int(aggregate.get("target_clients", {}).get("min", 0))
@@ -3467,6 +3495,11 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                 },
             })
         elif case_name.startswith("battle"):
+            open_saturation_case = case_name.startswith("battle-open-")
+            overload_criteria = (
+                "request overload responses measured separately, "
+                if open_saturation_case else ""
+            )
             min_messages = minimum_battle_messages(case_name)
             p99_limit = battle_p99_limit_ms(case_name)
             min_observed_messages = aggregate["total_messages"]["min"]
@@ -3489,6 +3522,7 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "battle: all target clients started/TCP-connected/authenticated/active before "
                     "measurement, cancelled=0, bounded steady window complete, "
                     f"total=response+push, rejected=0, failed=0, forced_timeout=false, "
+                    f"{overload_criteria}"
                     f"min_total_messages>={min_messages}, "
                     f"p99<={p99_limit:.0f}ms"
                 ),
@@ -3502,6 +3536,8 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
                     "response_messages": response_messages,
+                    "successful_response_messages": successful_response_messages,
+                    "business_response_errors": business_response_errors,
                     "push_messages": push_messages,
                     "message_count_consistent": message_count_consistent,
                     "min_total_messages": min_observed_messages,
@@ -3538,6 +3574,8 @@ def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
     if run_preset == "business-open-saturation":
         saturation_ramp = {"ramp_clients_per_second": 750, "ramp_timeout_seconds": 120}
         return [
+            {"name": "battle-open-c100-i100-60s", "scenario": "battle", "clients": 100, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_100", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c200-i100-60s", "scenario": "battle", "clients": 200, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_200", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c250-i100-60s", "scenario": "battle", "clients": 250, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_250", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c500-i100-60s", "scenario": "battle", "clients": 500, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_500", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-open-c750-i100-60s", "scenario": "battle", "clients": 750, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_750", "room_group_size": 2, **saturation_ramp},

@@ -141,6 +141,7 @@ struct BenchResult {
     std::size_t cancelled_before_connect = 0;
     std::uint64_t business_send_attempts = 0;
     std::uint64_t business_send_successes = 0;
+    std::uint64_t business_response_errors = 0;
     std::uint64_t open_loop_scheduled_offers = 0;
     double open_loop_average_schedule_lag_us = 0.0;
     std::uint64_t open_loop_max_schedule_lag_us = 0;
@@ -150,6 +151,7 @@ struct BenchResult {
     std::string user_prefix;
     std::uint64_t total_messages = 0;
     std::uint64_t response_messages = 0;
+    std::uint64_t successful_response_messages = 0;
     std::uint64_t push_messages = 0;
     double elapsed_seconds = 0.0;
     double total_elapsed_seconds = 0.0;
@@ -166,6 +168,7 @@ struct BenchResult {
     bool configured_request_rate_is_bounded = false;
     double achieved_send_rate_ops_per_sec = 0.0;
     double achieved_response_rate_ops_per_sec = 0.0;
+    double achieved_successful_response_rate_ops_per_sec = 0.0;
     double throughput_msg_per_sec = 0.0;
     double latency_p50_ms = 0.0;
     double latency_p90_ms = 0.0;
@@ -209,6 +212,10 @@ public:
 
     void record_business_send_success() {
         business_send_successes_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_business_response_error() {
+        business_response_errors_.fetch_add(1, std::memory_order_relaxed);
     }
 
     void record_open_loop_offer(std::chrono::microseconds schedule_lag) {
@@ -275,6 +282,9 @@ public:
     [[nodiscard]] std::uint64_t business_send_successes() const {
         return business_send_successes_.load(std::memory_order_relaxed);
     }
+    [[nodiscard]] std::uint64_t business_response_errors() const {
+        return business_response_errors_.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] std::uint64_t open_loop_scheduled_offers() const {
         return open_loop_scheduled_offers_.load(std::memory_order_relaxed);
     }
@@ -327,6 +337,7 @@ private:
     std::atomic<std::size_t> push_packets_{0};
     std::atomic<std::uint64_t> business_send_attempts_{0};
     std::atomic<std::uint64_t> business_send_successes_{0};
+    std::atomic<std::uint64_t> business_response_errors_{0};
     std::atomic<std::uint64_t> open_loop_scheduled_offers_{0};
     std::atomic<std::uint64_t> open_loop_total_schedule_lag_us_{0};
     std::atomic<std::uint64_t> open_loop_max_schedule_lag_us_{0};
@@ -573,6 +584,15 @@ private:
                 pkt.body == "battle_not_found") {
                 battle_finished_ = true;
                 finish();
+                return;
+            }
+            if (v2::gateway_pressure::is_open_loop_overload_response(
+                    config_.load_model,
+                    config_.scenario == BenchScenario::kBattle,
+                    in_battle_,
+                    pkt.body)) {
+                controller_->record_business_response_error();
+                wait_for_next_message();
                 return;
             }
             if (v2::gateway_pressure::is_expected_shutdown_error(
@@ -1300,6 +1320,7 @@ nlohmann::json to_json(const BenchResult& r) {
         {"cancelled_before_connect", r.cancelled_before_connect},
         {"business_send_attempts", r.business_send_attempts},
         {"business_send_successes", r.business_send_successes},
+        {"business_response_errors", r.business_response_errors},
         {"open_loop_scheduled_offers", r.open_loop_scheduled_offers},
         {"open_loop_average_schedule_lag_us", r.open_loop_average_schedule_lag_us},
         {"open_loop_max_schedule_lag_us", r.open_loop_max_schedule_lag_us},
@@ -1309,6 +1330,7 @@ nlohmann::json to_json(const BenchResult& r) {
         {"user_prefix", r.user_prefix},
         {"total_messages", r.total_messages},
         {"response_messages", r.response_messages},
+        {"successful_response_messages", r.successful_response_messages},
         {"push_messages", r.push_messages},
         {"elapsed_seconds", r.elapsed_seconds},
         {"total_elapsed_seconds", r.total_elapsed_seconds},
@@ -1325,6 +1347,8 @@ nlohmann::json to_json(const BenchResult& r) {
         {"configured_request_rate_is_bounded", r.configured_request_rate_is_bounded},
         {"achieved_send_rate_ops_per_sec", r.achieved_send_rate_ops_per_sec},
         {"achieved_response_rate_ops_per_sec", r.achieved_response_rate_ops_per_sec},
+        {"achieved_successful_response_rate_ops_per_sec",
+         r.achieved_successful_response_rate_ops_per_sec},
         {"throughput_msg_per_sec", r.throughput_msg_per_sec},
         {"latency_p50_ms", r.latency_p50_ms},
         {"latency_p90_ms", r.latency_p90_ms},
@@ -1454,6 +1478,7 @@ int main(int argc, char* argv[]) {
             {"cancelled_before_connect", evidence.cancelled_before_connect},
             {"business_send_attempts", controller->business_send_attempts()},
             {"business_send_successes", controller->business_send_successes()},
+            {"business_response_errors", controller->business_response_errors()},
             {"open_loop_scheduled_offers", controller->open_loop_scheduled_offers()},
             {"open_loop_average_schedule_lag_us",
              controller->open_loop_scheduled_offers() > 0
@@ -1491,6 +1516,12 @@ int main(int argc, char* argv[]) {
                  ? static_cast<double>(controller->completed_packets()) /
                        evidence.steady_state_elapsed_seconds
                  : 0.0},
+            {"achieved_successful_response_rate_ops_per_sec",
+             evidence.steady_state_elapsed_seconds > 0.0
+                 ? static_cast<double>(controller->completed_packets()) /
+                       evidence.steady_state_elapsed_seconds
+                 : 0.0},
+            {"successful_response_messages", controller->completed_packets()},
             {"throughput_msg_per_sec", evidence.steady_state_elapsed_seconds > 0.0
                 ? static_cast<double>(throughput.total_count()) /
                     evidence.steady_state_elapsed_seconds
@@ -1640,6 +1671,7 @@ int main(int argc, char* argv[]) {
     result.cancelled_before_connect = evidence.cancelled_before_connect;
     result.business_send_attempts = controller->business_send_attempts();
     result.business_send_successes = controller->business_send_successes();
+    result.business_response_errors = controller->business_response_errors();
     result.open_loop_scheduled_offers = controller->open_loop_scheduled_offers();
     result.open_loop_average_schedule_lag_us = result.open_loop_scheduled_offers > 0
         ? static_cast<double>(controller->open_loop_total_schedule_lag_us()) /
@@ -1707,6 +1739,7 @@ int main(int argc, char* argv[]) {
     const auto message_counts = v2::gateway_pressure::final_message_counts(
         lat_snap.total_count, controller->push_packets());
     result.response_messages = message_counts.response_messages;
+    result.successful_response_messages = controller->completed_packets();
     result.push_messages = message_counts.push_messages;
     result.total_messages = message_counts.total_messages;
     result.throughput_msg_per_sec = result.steady_state_elapsed_seconds > 0.0
@@ -1716,6 +1749,11 @@ int main(int argc, char* argv[]) {
         ? static_cast<double>(result.response_messages) /
               result.steady_state_elapsed_seconds
         : 0.0;
+    result.achieved_successful_response_rate_ops_per_sec =
+        result.steady_state_elapsed_seconds > 0.0
+            ? static_cast<double>(result.successful_response_messages) /
+                  result.steady_state_elapsed_seconds
+            : 0.0;
 
     const auto result_json = to_json(result).dump();
 

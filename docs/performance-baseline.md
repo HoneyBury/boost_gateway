@@ -152,9 +152,9 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
 
 `business-open-saturation` 用于测量响应变慢后仍保持固定 offered rate 的真实开放流量。
 它不会替代上述 closed-loop 曲线，而是按每客户端绝对时间节拍发送 Battle input，允许多个请求
-在途，并按 request ID 统计从调度入队到响应的延迟。固定曲线覆盖 250/500/750/1000 客户端
+在途，并按 request ID 统计从调度入队到响应的延迟。固定曲线覆盖 100/200/250/500/750/1000 客户端
 的 100ms 节拍，并在 1000 客户端继续运行 50ms 和 20ms 节拍，对应
-`2500/5000/7500/10000/20000/50000 offered ops/s`。证据同时记录 scheduled、socket write
+`1000/2000/2500/5000/7500/10000/20000/50000 offered ops/s`。证据同时记录 scheduled、socket write
 accepted、response 三条速率和调度滞后；实际 scheduled rate 低于配置值 90% 时 fail closed，
 避免把 loadgen 自身失速误判为服务饱和。
 

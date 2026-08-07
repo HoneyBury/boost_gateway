@@ -135,6 +135,15 @@ TEST(GatewayPressureEvidenceTest, OpenLoopModelUsesAbsoluteFixedIntervalDeadline
     const auto second = v2::gateway_pressure::next_open_loop_deadline<Clock>(
         first, std::chrono::milliseconds(20));
     EXPECT_EQ(second - start, std::chrono::milliseconds(40));
+
+    EXPECT_TRUE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, true, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kClosedLoop, true, true, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, false, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, true, "backend_error"));
 }
 
 }  // namespace

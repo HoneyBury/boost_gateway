@@ -27,6 +27,14 @@ constexpr std::optional<LoadModel> parse_load_model(std::string_view value) noex
     return std::nullopt;
 }
 
+constexpr bool is_open_loop_overload_response(LoadModel model,
+                                              bool battle_scenario,
+                                              bool in_battle,
+                                              std::string_view reason) noexcept {
+    return model == LoadModel::kOpenLoop && battle_scenario && in_battle &&
+           reason == "battle_route_overloaded";
+}
+
 template <typename Clock>
 constexpr typename Clock::time_point next_open_loop_deadline(
     typename Clock::time_point previous,
