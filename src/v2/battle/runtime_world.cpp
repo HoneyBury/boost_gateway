@@ -783,8 +783,11 @@ BattleRuntimeState battle_world_runtime_state(v2::ecs::World& world) {
 
 // ─── Authoritative Entry Points ───────────────────────────────
 
-BattleWorldInputResult battle_world_process_input(
+namespace {
+
+BattleWorldInputResult process_input_for_participant(
     v2::ecs::World& world,
+    BattleParticipantComponent* participant,
     const std::string& user_id,
     const std::string& input_data,
     std::int64_t score,
@@ -796,28 +799,20 @@ BattleWorldInputResult battle_world_process_input(
         return result;
     }
 
-    if (!battle_world_should_accept_input(world, user_id, submitted_frame)) {
+    if (participant != nullptr && submitted_frame > 0 &&
+        participant->last_submitted_frame >= submitted_frame) {
         result.reject_reason = "duplicate_frame";
         return result;
     }
 
     result.accepted = true;
 
-    if (submitted_frame > 0) {
-        battle_world_record_submitted_frame(world, user_id, submitted_frame);
-    }
-
-    battle_world_apply_input_score(world, user_id, score);
-
-    // Store pending input on the participant for system processing during tick
-    auto* simple_world = as_simple_world(world);
-    if (simple_world != nullptr) {
-        simple_world->for_each<BattleParticipantComponent>(
-            [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
-                if (participant.user_id == user_id) {
-                    participant.pending_input_data = input_data;
-                }
-            });
+    if (participant != nullptr) {
+        if (submitted_frame > 0) {
+            participant->last_submitted_frame = submitted_frame;
+        }
+        participant->score += score;
+        participant->pending_input_data = input_data;
     }
 
     const auto next_frame_number = battle_world_frame_number(world) + 1;
@@ -825,6 +820,55 @@ BattleWorldInputResult battle_world_process_input(
         world, next_frame_number, user_id, input_data, score);
 
     return result;
+}
+
+BattleParticipantComponent* find_participant(v2::ecs::World& world,
+                                             const std::string& user_id) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return nullptr;
+    }
+    BattleParticipantComponent* found = nullptr;
+    simple_world->for_each<BattleParticipantComponent>(
+        [&](v2::ecs::EntityHandle, BattleParticipantComponent& participant) {
+            if (found == nullptr && participant.user_id == user_id) {
+                found = &participant;
+            }
+        });
+    return found;
+}
+
+}  // namespace
+
+BattleWorldInputResult battle_world_process_input(
+    v2::ecs::World& world,
+    const std::string& user_id,
+    const std::string& input_data,
+    std::int64_t score,
+    std::uint32_t submitted_frame) {
+    return process_input_for_participant(
+        world, find_participant(world, user_id), user_id, input_data, score,
+        submitted_frame);
+}
+
+BattleWorldInputResult battle_world_process_input(
+    v2::ecs::World& world,
+    v2::ecs::EntityHandle player_entity,
+    const std::string& user_id,
+    const std::string& input_data,
+    std::int64_t score,
+    std::uint32_t submitted_frame) {
+    auto* simple_world = as_simple_world(world);
+    if (simple_world != nullptr && simple_world->exists(player_entity)) {
+        auto* participant =
+            simple_world->get_component<BattleParticipantComponent>(player_entity);
+        if (participant != nullptr && participant->user_id == user_id) {
+            return process_input_for_participant(
+                world, participant, user_id, input_data, score, submitted_frame);
+        }
+    }
+    return battle_world_process_input(
+        world, user_id, input_data, score, submitted_frame);
 }
 
 BattleWorldFrameResult battle_world_advance_frame(

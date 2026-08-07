@@ -58,6 +58,7 @@ DEFAULT_CHECKS = {
     "object_pool_acquire_release": {"metric": "p99_us", "threshold": 50.0, "direction": "max"},
     "spsc_queue_enqueue_dequeue": {"metric": "p99_us", "threshold": 10.0, "direction": "max"},
     "battle_world_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
+    "battle_indexed_input_100_entities": {"metric": "p99_us", "threshold": 100.0, "direction": "max"},
     "actor_fan_in_throughput": {"metric": "throughput_ops_per_sec", "threshold": 300_000.0, "direction": "min"},
     "multi_battle_tick_100_entities": {"metric": "p99_us", "threshold": 5000.0, "direction": "max"},
     "instance_runtime_tick_all_one_input": {"metric": "p99_us", "threshold": 20.0, "direction": "max"},
