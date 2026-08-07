@@ -363,6 +363,9 @@ def main() -> int:
     production_readiness_workflow = read(WORKFLOWS_ROOT / "production-readiness.yml")
     preprod_workflow = read(WORKFLOWS_ROOT / "preprod-evidence.yml")
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
+    architecture_collector = read(ROOT / "scripts" / "producers" / "collect_v2_arch_baseline.py")
+    architecture_benchmark_source = read(ROOT / "examples" / "v2_arch_benchmark" / "main.cpp")
+    examples_cmake = read(ROOT / "examples" / "CMakeLists.txt")
     add(
         checks,
         "perf-regression:verified-architecture-baseline-ref",
@@ -371,6 +374,20 @@ def main() -> int:
         and 'if [ -z "$baseline_sha" ]; then' in perf_workflow
         and 'git fetch --no-tags --depth=1 origin "$BASELINE_REF"' in perf_workflow,
         "architecture comparison verifies local refs and fetches unresolved baseline refs fail-closed",
+    )
+    add(
+        checks,
+        "perf-regression:isolated-mailbox-benchmark",
+        "add_subdirectory(v2_mailbox_benchmark)" in examples_cmake
+        and 'resolve_executable(args.build_dir, "v2_mailbox_benchmark")' in architecture_collector
+        and "merge_benchmark_results(report, mailbox_report)" in architecture_collector
+        and '"mailbox_raw_result": str(mailbox_raw_path)' in architecture_collector
+        and "mpsc_mailbox_four_producer_fan_in" not in architecture_benchmark_source
+        and 'candidate_bin="$PRODUCTION_BUILD_DIR/examples/v2_arch_benchmark/v2_arch_benchmark"'
+        in perf_workflow
+        and 'baseline_bin="$ARCH_REFERENCE_BUILD/examples/v2_arch_benchmark/v2_arch_benchmark"'
+        in perf_workflow,
+        "absolute gates merge an isolated mailbox binary while paired comparisons retain the original architecture binary",
     )
     add(
         checks,

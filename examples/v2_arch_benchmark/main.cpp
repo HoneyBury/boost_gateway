@@ -11,7 +11,6 @@
 #include "v3/proto/envelope_codec.h"
 
 #include <algorithm>
-#include <barrier>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -21,7 +20,6 @@
 #include <optional>
 #include <sstream>
 #include <string>
-#include <thread>
 #include <utility>
 #include <vector>
 
@@ -591,56 +589,6 @@ LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations)
     return make_stats(std::move(samples), elapsed, operations);
 }
 
-LatencyStats run_mpsc_mailbox_fan_in(std::size_t iterations) {
-    constexpr std::size_t kProducers = 4;
-    const auto items_per_producer = std::max<std::size_t>(1, iterations / kProducers);
-    const auto total_items = items_per_producer * kProducers;
-    v2::io::MpscQueue<std::uint64_t> queue(1024);
-    std::barrier start(static_cast<std::ptrdiff_t>(kProducers + 1));
-    std::vector<std::vector<double>> producer_samples(kProducers);
-    std::vector<std::thread> producers;
-    producers.reserve(kProducers);
-
-    for (std::size_t producer = 0; producer < kProducers; ++producer) {
-        producer_samples[producer].reserve(items_per_producer);
-        producers.emplace_back([&, producer]() {
-            start.arrive_and_wait();
-            for (std::size_t sequence = 0; sequence < items_per_producer; ++sequence) {
-                const auto value = (static_cast<std::uint64_t>(producer) << 32U) |
-                                   static_cast<std::uint64_t>(sequence);
-                const auto op_begin = now_ns();
-                while (!queue.try_enqueue(value)) {
-                    std::this_thread::yield();
-                }
-                producer_samples[producer].push_back(
-                    static_cast<double>(now_ns() - op_begin) / 1000.0);
-            }
-        });
-    }
-
-    const auto begin = Clock::now();
-    start.arrive_and_wait();
-    std::size_t received = 0;
-    while (received < total_items) {
-        if (queue.try_dequeue().has_value()) {
-            ++received;
-        } else {
-            std::this_thread::yield();
-        }
-    }
-    for (auto& producer : producers) {
-        producer.join();
-    }
-    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
-
-    std::vector<double> samples;
-    samples.reserve(total_items);
-    for (auto& producer : producer_samples) {
-        samples.insert(samples.end(), producer.begin(), producer.end());
-    }
-    return make_stats(std::move(samples), elapsed, received);
-}
-
 Options parse_args(int argc, char** argv) {
     Options options;
     for (int i = 1; i < argc; ++i) {
@@ -694,7 +642,6 @@ std::string build_json(const Options& options,
                        const LatencyStats& bump_arena_alloc,
                        const LatencyStats& object_pool_cycle,
                        const LatencyStats& spsc_queue_roundtrip,
-                       const LatencyStats& mpsc_mailbox_fan_in,
                        const LatencyStats& battle_world_tick,
                        const LatencyStats& actor_fan_in,
                        const LatencyStats& actor_limit_smoke,
@@ -718,7 +665,6 @@ std::string build_json(const Options& options,
     append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
     append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
-    append_stats_json(out, "mpsc_mailbox_four_producer_fan_in", mpsc_mailbox_fan_in, false);
     append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
     append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
     append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
@@ -756,9 +702,6 @@ int main(int argc, char** argv) {
             run_typed_envelope_json_roundtrip_latency(options.iterations);
         const auto backend_typed_adapter_roundtrip =
             run_backend_typed_adapter_roundtrip_latency(options.iterations);
-        // Keep new cases after existing measurements so a baseline binary that
-        // predates the case still observes the same benchmark order and heat.
-        const auto mpsc_mailbox_fan_in = run_mpsc_mailbox_fan_in(options.iterations);
         const auto json = build_json(options,
                                      local_tell,
                                      cross_core_tell,
@@ -767,7 +710,6 @@ int main(int argc, char** argv) {
                                      bump_arena_alloc,
                                      object_pool_cycle,
                                      spsc_queue_roundtrip,
-                                     mpsc_mailbox_fan_in,
                                      battle_world_tick,
                                      actor_fan_in,
                                      actor_limit_smoke,
