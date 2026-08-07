@@ -365,6 +365,13 @@ def main() -> int:
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
     add(
         checks,
+        "perf-regression:architecture-sample-depth",
+        "benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 2000)"
+        in perf_workflow,
+        "architecture comparison uses 2,000 multi-battle samples for a stable p99",
+    )
+    add(
+        checks,
         "security-maintenance:hosted-bounded-isolation",
         security_maintenance_workflow.count("runs-on: ubuntu-latest") == 3
         and security_maintenance_workflow.count("timeout-minutes:") == 3
