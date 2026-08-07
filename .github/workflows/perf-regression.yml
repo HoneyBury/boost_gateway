@@ -174,10 +174,10 @@ jobs:
             echo "invalid architecture baseline ref" >&2
             exit 2
           fi
-          baseline_sha="$(git rev-parse "${BASELINE_REF}^{commit}" 2>/dev/null || true)"
+          baseline_sha="$(git rev-parse --verify --quiet "${BASELINE_REF}^{commit}" || true)"
           if [ -z "$baseline_sha" ]; then
             git fetch --no-tags --depth=1 origin "$BASELINE_REF"
-            baseline_sha="$(git rev-parse FETCH_HEAD^{commit})"
+            baseline_sha="$(git rev-parse --verify "FETCH_HEAD^{commit}")"
           fi
           reference_source="$RUNNER_TEMP/boost-gateway-arch-reference-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           reference_build="$reference_source/build/architecture-reference-release"
@@ -228,7 +228,7 @@ jobs:
           mkdir -p "$output_root/baseline" "$output_root/candidate"
           candidate_bin="$PRODUCTION_BUILD_DIR/examples/v2_arch_benchmark/v2_arch_benchmark"
           baseline_bin="$ARCH_REFERENCE_BUILD/examples/v2_arch_benchmark/v2_arch_benchmark"
-          benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 500)
+          benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 2000)
           for repetition in $(seq 1 "$REPETITIONS"); do
             if (( repetition % 2 == 1 )); then
               "$baseline_bin" "${benchmark_args[@]}" \

@@ -139,7 +139,15 @@ class FailureArchiveTest(unittest.TestCase):
     def test_archives_failed_outputs_and_host_resources(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             output_root = Path(temporary_directory)
-            for name in ("summary.json", "v2_arch_benchmark.json", "stdout.log", "stderr.log"):
+            for name in (
+                "summary.json",
+                "v2_arch_benchmark.json",
+                "v2_mailbox_benchmark.json",
+                "stdout.log",
+                "stderr.log",
+                "mailbox-stdout.log",
+                "mailbox-stderr.log",
+            ):
                 (output_root / name).write_text(name, encoding="utf-8")
 
             event = archive_failed_arch_run(
