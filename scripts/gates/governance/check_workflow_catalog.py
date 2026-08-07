@@ -363,17 +363,50 @@ def main() -> int:
     production_readiness_workflow = read(WORKFLOWS_ROOT / "production-readiness.yml")
     preprod_workflow = read(WORKFLOWS_ROOT / "preprod-evidence.yml")
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
+    architecture_collector = read(ROOT / "scripts" / "producers" / "collect_v2_arch_baseline.py")
+    architecture_benchmark_source = read(ROOT / "examples" / "v2_arch_benchmark" / "main.cpp")
+    examples_cmake = read(ROOT / "examples" / "CMakeLists.txt")
+    add(
+        checks,
+        "perf-regression:verified-architecture-baseline-ref",
+        'git rev-parse --verify --quiet "${BASELINE_REF}^{commit}"' in perf_workflow
+        and 'git rev-parse --verify "FETCH_HEAD^{commit}"' in perf_workflow
+        and 'if [ -z "$baseline_sha" ]; then' in perf_workflow
+        and 'git fetch --no-tags --depth=1 origin "$BASELINE_REF"' in perf_workflow,
+        "architecture comparison verifies local refs and fetches unresolved baseline refs fail-closed",
+    )
+    add(
+        checks,
+        "perf-regression:isolated-mailbox-benchmark",
+        "add_subdirectory(v2_mailbox_benchmark)" in examples_cmake
+        and 'resolve_executable(args.build_dir, "v2_mailbox_benchmark")' in architecture_collector
+        and "merge_benchmark_results(report, mailbox_report)" in architecture_collector
+        and '"mailbox_raw_result": str(mailbox_raw_path)' in architecture_collector
+        and "mpsc_mailbox_four_producer_fan_in" not in architecture_benchmark_source
+        and 'candidate_bin="$PRODUCTION_BUILD_DIR/examples/v2_arch_benchmark/v2_arch_benchmark"'
+        in perf_workflow
+        and 'baseline_bin="$ARCH_REFERENCE_BUILD/examples/v2_arch_benchmark/v2_arch_benchmark"'
+        in perf_workflow,
+        "absolute gates merge an isolated mailbox binary while paired comparisons retain the original architecture binary",
+    )
+    add(
+        checks,
+        "perf-regression:architecture-sample-depth",
+        "benchmark_args=(--iterations 10000 --actors 10000 --actor-limit 100000 --battles 2000)"
+        in perf_workflow,
+        "architecture comparison uses 2,000 multi-battle samples for a stable p99",
+    )
     add(
         checks,
         "security-maintenance:hosted-bounded-isolation",
-        security_maintenance_workflow.count("runs-on: ubuntu-latest") == 3
-        and security_maintenance_workflow.count("timeout-minutes:") == 3
+        security_maintenance_workflow.count("runs-on: ubuntu-latest") == 4
+        and security_maintenance_workflow.count("timeout-minutes:") == 4
         and "self-hosted" not in security_maintenance_workflow
         and "node-aoi-omen-gaming-laptop" not in security_maintenance_workflow
         and "node-honeybury" not in security_maintenance_workflow
         and "macos-arm64-candidate" not in security_maintenance_workflow
         and "runner:" not in security_maintenance_workflow,
-        "scheduled security work is bounded to three GitHub-hosted jobs without a production runner override",
+        "scheduled security work is bounded to four GitHub-hosted jobs without a production runner override",
     )
     add(
         checks,
@@ -381,9 +414,12 @@ def main() -> int:
         "google/osv-scanner-action/osv-scanner-action@" in security_maintenance_workflow
         and "dependency-vulnerability:" in security_maintenance_workflow
         and "-fsanitize=address,undefined" in security_maintenance_workflow
+        and "mailbox-thread-sanitizer:" in security_maintenance_workflow
+        and "-fsanitize=thread" in security_maintenance_workflow
+        and "V2MpscQueueTest.*:V2IoEngineTest.Mailbox*" in security_maintenance_workflow
         and "BOOST_BUILD_FUZZ=ON" in security_maintenance_workflow
         and security_maintenance_workflow.count("-max_total_time=60") == 2,
-        "maintenance runs dependency vulnerability, ASan/UBSan and bounded libFuzzer checks",
+        "maintenance runs dependency vulnerability, ASan/UBSan, mailbox TSan and bounded libFuzzer checks",
     )
     add(
         checks,
