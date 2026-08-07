@@ -101,13 +101,16 @@ std::size_t ParallelSystemExecutor::execute_all(World& world,
             }
 
             // Wait for all systems in this stage to complete.
-            for (auto& f : futures) {
+            for (std::size_t i = 0; i < futures.size(); ++i) {
                 try {
-                    f.get();
+                    futures[i].get();
                 } catch (const std::exception& e) {
                     SPDLOG_ERROR("[ParallelSystemExecutor] System '{}' threw: {}",
-                                 entries_[stage[&f - &futures[0]]].metadata.name,
+                                 entries_[stage[i]].metadata.name,
                                  e.what());
+                } catch (...) {
+                    SPDLOG_ERROR("[ParallelSystemExecutor] System '{}' threw a non-standard exception",
+                                 entries_[stage[i]].metadata.name);
                 }
             }
             executed += stage.size();

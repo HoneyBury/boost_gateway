@@ -1,5 +1,7 @@
 #include "v2/actor/actor.h"
 #include "v2/battle/runtime_world.h"
+#include "v2/ecs/parallel_system_executor.h"
+#include "v2/ecs/world.h"
 #include "v2/io/io_engine.h"
 #include "v2/io/mailbox.h"
 #include "v2/memory/arena.h"
@@ -11,6 +13,7 @@
 #include "v3/proto/envelope_codec.h"
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <fstream>
@@ -173,6 +176,30 @@ std::unique_ptr<v2::realtime::InstancePlugin> create_benchmark_realtime_plugin()
 struct PoolItem {
     std::uint64_t a = 0;
     std::uint64_t b = 0;
+};
+
+struct BenchmarkScanComponent final : v2::ecs::Component {
+    std::uint64_t value = 1;
+};
+
+class BenchmarkStageSystem final : public v2::ecs::System {
+public:
+    BenchmarkStageSystem(std::size_t work_units, std::atomic<std::uint64_t>& sink)
+        : work_units_(work_units), sink_(sink) {}
+
+    void run(v2::ecs::World&, const v2::ecs::FrameContext&) override {
+        std::uint64_t value = 0x9e3779b97f4a7c15ULL;
+        for (std::size_t i = 0; i < work_units_; ++i) {
+            value ^= value << 7U;
+            value ^= value >> 9U;
+            value += static_cast<std::uint64_t>(i);
+        }
+        sink_.fetch_xor(value, std::memory_order_relaxed);
+    }
+
+private:
+    std::size_t work_units_;
+    std::atomic<std::uint64_t>& sink_;
 };
 
 LatencyStats make_stats(std::vector<double> samples, double elapsed_seconds, std::size_t operations) {
@@ -364,6 +391,68 @@ LatencyStats run_spsc_queue_roundtrip_latency(std::size_t iterations) {
     }
     const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
     return make_stats(std::move(samples), elapsed, iterations);
+}
+
+LatencyStats run_ecs_scan_latency(std::size_t entity_count,
+                                  std::size_t target_iterations) {
+    v2::ecs::SimpleWorld world;
+    for (std::size_t i = 0; i < entity_count; ++i) {
+        const auto entity = world.create_entity();
+        world.add_component<BenchmarkScanComponent>(entity).value = i * 3 + 1;
+    }
+
+    constexpr std::size_t kTargetEntityVisits = 10'000'000;
+    const auto repetitions = std::max<std::size_t>(
+        100,
+        std::min(target_iterations, kTargetEntityVisits / entity_count));
+    std::vector<double> samples;
+    samples.reserve(repetitions);
+    std::uint64_t checksum = 0;
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < repetitions; ++i) {
+        const auto op_begin = now_ns();
+        world.for_each<BenchmarkScanComponent>(
+            [&checksum](v2::ecs::EntityHandle entity, BenchmarkScanComponent& component) {
+                checksum += entity.id ^ component.value;
+            });
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    if (checksum == 0) {
+        throw std::runtime_error("ECS scan benchmark checksum mismatch");
+    }
+    return make_stats(
+        std::move(samples), elapsed, repetitions * entity_count);
+}
+
+LatencyStats run_parallel_stage_latency(std::size_t target_iterations,
+                                        std::size_t work_units) {
+    const auto repetitions = work_units == 0
+        ? std::min<std::size_t>(target_iterations, 500)
+        : std::min<std::size_t>(target_iterations, 20);
+    std::atomic<std::uint64_t> sink{0};
+    v2::ecs::ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<BenchmarkStageSystem>(work_units, sink),
+        v2::ecs::SystemMetadata{.name = "stage_a"});
+    executor.add_system(
+        std::make_unique<BenchmarkStageSystem>(work_units, sink),
+        v2::ecs::SystemMetadata{.name = "stage_b"});
+    executor.rebuild_stages();
+    v2::ecs::SimpleWorld world;
+    v2::ecs::FrameContext ctx;
+    std::vector<double> samples;
+    samples.reserve(repetitions);
+    const auto begin = Clock::now();
+    for (std::size_t i = 0; i < repetitions; ++i) {
+        const auto op_begin = now_ns();
+        if (executor.execute_all(world, ctx) != 2U) {
+            throw std::runtime_error("parallel stage benchmark execution mismatch");
+        }
+        samples.push_back(static_cast<double>(now_ns() - op_begin) / 1000.0);
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    return make_stats(std::move(samples), elapsed, repetitions);
 }
 
 LatencyStats run_battle_world_tick_latency(std::size_t iterations) {
@@ -642,6 +731,11 @@ std::string build_json(const Options& options,
                        const LatencyStats& bump_arena_alloc,
                        const LatencyStats& object_pool_cycle,
                        const LatencyStats& spsc_queue_roundtrip,
+                       const LatencyStats& ecs_scan_100,
+                       const LatencyStats& ecs_scan_1k,
+                       const LatencyStats& ecs_scan_10k,
+                       const LatencyStats& scheduler_light_stage,
+                       const LatencyStats& scheduler_heavy_stage,
                        const LatencyStats& battle_world_tick,
                        const LatencyStats& actor_fan_in,
                        const LatencyStats& actor_limit_smoke,
@@ -665,6 +759,11 @@ std::string build_json(const Options& options,
     append_stats_json(out, "bump_arena_alloc", bump_arena_alloc, false);
     append_stats_json(out, "object_pool_acquire_release", object_pool_cycle, false);
     append_stats_json(out, "spsc_queue_enqueue_dequeue", spsc_queue_roundtrip, false);
+    append_stats_json(out, "ecs_scan_100_entities", ecs_scan_100, false);
+    append_stats_json(out, "ecs_scan_1k_entities", ecs_scan_1k, false);
+    append_stats_json(out, "ecs_scan_10k_entities", ecs_scan_10k, false);
+    append_stats_json(out, "ecs_scheduler_light_parallel_stage", scheduler_light_stage, false);
+    append_stats_json(out, "ecs_scheduler_heavy_parallel_stage", scheduler_heavy_stage, false);
     append_stats_json(out, "battle_world_tick_100_entities", battle_world_tick, false);
     append_stats_json(out, "actor_fan_in_throughput", actor_fan_in, false);
     append_stats_json(out, "actor_100k_create_smoke", actor_limit_smoke, false);
@@ -690,6 +789,11 @@ int main(int argc, char** argv) {
         const auto bump_arena_alloc = run_bump_arena_alloc_latency(options.iterations);
         const auto object_pool_cycle = run_object_pool_cycle_latency(options.iterations);
         const auto spsc_queue_roundtrip = run_spsc_queue_roundtrip_latency(options.iterations);
+        const auto ecs_scan_100 = run_ecs_scan_latency(100, options.iterations);
+        const auto ecs_scan_1k = run_ecs_scan_latency(1'000, options.iterations);
+        const auto ecs_scan_10k = run_ecs_scan_latency(10'000, options.iterations);
+        const auto scheduler_light_stage = run_parallel_stage_latency(options.iterations, 0);
+        const auto scheduler_heavy_stage = run_parallel_stage_latency(options.iterations, 2'000'000);
         const auto battle_world_tick = run_battle_world_tick_latency(options.iterations);
         const auto actor_fan_in = run_actor_fan_in_throughput(options.iterations);
         const auto actor_limit_smoke = run_actor_limit_smoke(options.actor_limit);
@@ -710,6 +814,11 @@ int main(int argc, char** argv) {
                                      bump_arena_alloc,
                                      object_pool_cycle,
                                      spsc_queue_roundtrip,
+                                     ecs_scan_100,
+                                     ecs_scan_1k,
+                                     ecs_scan_10k,
+                                     scheduler_light_stage,
+                                     scheduler_heavy_stage,
                                      battle_world_tick,
                                      actor_fan_in,
                                      actor_limit_smoke,

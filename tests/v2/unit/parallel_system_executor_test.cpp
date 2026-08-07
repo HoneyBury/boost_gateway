@@ -4,6 +4,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -49,6 +50,22 @@ private:
     std::string id_;
     std::chrono::milliseconds sleep_duration_;
     bool ran_ = false;
+};
+
+class ThrowingSystem final : public System {
+public:
+    explicit ThrowingSystem(bool standard_exception)
+        : standard_exception_(standard_exception) {}
+
+    void run(World&, const FrameContext&) override {
+        if (standard_exception_) {
+            throw std::runtime_error("injected system failure");
+        }
+        throw 42;
+    }
+
+private:
+    bool standard_exception_;
 };
 
 std::vector<std::string> TestSystem::run_order_;
@@ -221,6 +238,71 @@ TEST(ParallelSystemExecutorTest, CycleDoesNotCrash) {
         // Both systems should still execute (cycle fallback).
         EXPECT_EQ(count, 2U);
     });
+}
+
+TEST(ParallelSystemExecutorTest, DependencyOrderIsStableAcrossFrames) {
+    ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<TestSystem>("a"),
+        SystemMetadata{.name = "a"});
+    executor.add_system(
+        std::make_unique<TestSystem>("b"),
+        SystemMetadata{.name = "b", .dependencies = {"a"}});
+    executor.add_system(
+        std::make_unique<TestSystem>("c"),
+        SystemMetadata{.name = "c", .dependencies = {"b"}});
+
+    SimpleWorld world;
+    FrameContext ctx;
+    for (std::size_t frame = 0; frame < 100; ++frame) {
+        TestSystem::reset_run_order();
+        EXPECT_EQ(executor.execute_all(world, ctx), 3U);
+        EXPECT_EQ(TestSystem::run_order_, (std::vector<std::string>{"a", "b", "c"}));
+    }
+}
+
+TEST(ParallelSystemExecutorTest, ExceptionsDoNotSkipFollowingStages) {
+    ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<ThrowingSystem>(true),
+        SystemMetadata{.name = "standard_failure"});
+    executor.add_system(
+        std::make_unique<ThrowingSystem>(false),
+        SystemMetadata{.name = "unknown_failure"});
+    executor.add_system(
+        std::make_unique<TestSystem>("after_failures"),
+        SystemMetadata{
+            .name = "after_failures",
+            .dependencies = {"standard_failure", "unknown_failure"},
+        });
+
+    TestSystem::reset_run_order();
+    SimpleWorld world;
+    FrameContext ctx;
+    EXPECT_NO_THROW(EXPECT_EQ(executor.execute_all(world, ctx), 3U));
+    EXPECT_EQ(TestSystem::run_order_, (std::vector<std::string>{"after_failures"}));
+}
+
+TEST(ParallelSystemExecutorTest, CycleFallbackIsReusableAcrossFrames) {
+    ParallelSystemExecutor executor;
+    executor.add_system(
+        std::make_unique<TestSystem>("a"),
+        SystemMetadata{.name = "a", .dependencies = {"b"}});
+    executor.add_system(
+        std::make_unique<TestSystem>("b"),
+        SystemMetadata{.name = "b", .dependencies = {"a"}});
+
+    SimpleWorld world;
+    FrameContext ctx;
+    for (std::size_t frame = 0; frame < 20; ++frame) {
+        TestSystem::reset_run_order();
+        EXPECT_EQ(executor.execute_all(world, ctx), 2U);
+        EXPECT_EQ(TestSystem::run_order_.size(), 2U);
+        EXPECT_NE(std::find(TestSystem::run_order_.begin(), TestSystem::run_order_.end(), "a"),
+                  TestSystem::run_order_.end());
+        EXPECT_NE(std::find(TestSystem::run_order_.begin(), TestSystem::run_order_.end(), "b"),
+                  TestSystem::run_order_.end());
+    }
 }
 
 }  // namespace

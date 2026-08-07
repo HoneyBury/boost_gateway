@@ -186,6 +186,12 @@ Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile
 `InstanceRuntime::tick_all` 的一输入每实例 workload。缺样本、轮数不对称或超过相对阈值均失败；
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
 
+ECS 专项绝对门禁覆盖 100/1K/10K component scan，以及两个独立系统组成的轻、重
+`ParallelSystemExecutor` stage。scan 吞吐按实际访问的 component 数计算，采样延迟为一次完整
+scan；调度 case 保留每帧 `std::async` 创建成本和有计算负载时的收益边界。当前 metadata 没有
+稳定的系统成本提示，因此不能仅按 stage 大小把双系统 stage 改为内联，也不能为每个 battle
+创建线程池。新 case 进入主线并形成同 runner 历史样本后，才能加入相对回退检查。
+
 ## 发布后矩阵纠偏
 
 | 专项 | 最低实验设计 | 验收输出 |
