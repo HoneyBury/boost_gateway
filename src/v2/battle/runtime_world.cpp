@@ -876,20 +876,47 @@ BOOST_HOT_PATH BattleWorldFrameResult battle_world_advance_frame(
     std::uint32_t next_frame,
     const std::string& trigger) {
     BattleWorldFrameResult result;
+    result.trigger = trigger;
 
-    const auto frame_number = battle_world_tick(world, v2::ecs::FrameContext{
-        .battle_id = battle_world_battle_id(world),
-        .room_id = battle_world_room_id(world),
+    auto* simple_world = as_simple_world(world);
+    if (simple_world == nullptr) {
+        return result;
+    }
+
+    std::string battle_id;
+    std::string room_id;
+    std::uint32_t max_frames = 0;
+    simple_world->for_each<BattleMetadataComponent>(
+        [&](v2::ecs::EntityHandle, BattleMetadataComponent& metadata) {
+            battle_id = metadata.battle_id;
+            room_id = metadata.room_id;
+            max_frames = metadata.max_frames;
+        });
+
+    world.tick(v2::ecs::FrameContext{
+        .battle_id = std::move(battle_id),
+        .room_id = std::move(room_id),
         .frame_number = next_frame,
         .trigger = trigger,
     });
 
+    std::uint32_t frame_number = 0;
+    simple_world->for_each<BattleClockComponent>(
+        [&](v2::ecs::EntityHandle, BattleClockComponent& clock) {
+            frame_number = clock.frame_number;
+        });
     result.frame_number = frame_number;
-    result.trigger = trigger;
 
-    battle_world_apply_trigger_to_frame(world, frame_number, trigger);
+    simple_world->for_each<BattleReplayLogComponent>(
+        [&](v2::ecs::EntityHandle, BattleReplayLogComponent& replay_log) {
+            for (auto& replay_input : replay_log.replay_inputs) {
+                if (replay_input.frame_number == frame_number) {
+                    replay_input.trigger = trigger;
+                }
+            }
+        });
 
-    if (battle_world_should_finish_for_frame_limit(world, frame_number)) {
+    if (max_frames > 0 && frame_number >= max_frames) {
         result.should_finish = true;
         result.finish_reason = BattleFinishReason::kFrameLimitReached;
     }
