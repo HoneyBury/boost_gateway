@@ -58,6 +58,7 @@ public:
         plugin_factories_[instance_type] = factory;
     }
 
+    BOOST_COLD_PATH
     bool set_event_callback(InstanceEventCallback callback) {
         std::lock_guard<std::mutex> lock(mutex_);
         if (callback_frozen_) return false;
@@ -65,6 +66,7 @@ public:
         return true;
     }
 
+    BOOST_COLD_PATH
     std::string create_instance(
         const std::string& instance_id,
         const std::string& room_id,
@@ -169,6 +171,7 @@ public:
         return instance_id;
     }
 
+    BOOST_COLD_PATH
     void destroy_instance(const std::string& instance_id) {
         std::shared_ptr<InternalInstance> removed;
         {
@@ -182,6 +185,7 @@ public:
         AUDIT_LOG("instance_destroyed", "instance_id=" + instance_id);
     }
 
+    BOOST_COLD_PATH
     PlayerLifecycleResult attach_player(const std::string& instance_id,
                                         const PlayerContext& player) {
         if (player.user_id.empty()) {
@@ -227,6 +231,7 @@ public:
         return {.applied = true};
     }
 
+    BOOST_COLD_PATH
     PlayerLifecycleResult detach_player(const std::string& instance_id,
                                         const std::string& user_id) {
         const auto inst = find_instance_shared(instance_id);
@@ -352,6 +357,7 @@ public:
         return InputResult{.accepted = false, .reject_reason = "input_processing_failed"};
     }
 
+    BOOST_COLD_PATH
     void finish_instance(const std::string& instance_id,
                          FinishReason reason) {
         const auto inst = find_instance_shared(instance_id);
@@ -399,8 +405,9 @@ public:
         emit_event(std::move(finished_event));
     }
 
+    BOOST_COLD_PATH
     Snapshot get_resume_snapshot(const std::string& instance_id,
-                                  const std::string& user_id) {
+                                 const std::string& user_id) {
         const auto inst = find_instance_shared(instance_id);
         if (!inst) return {};
         std::lock_guard<std::mutex> lock(inst->mutex);
