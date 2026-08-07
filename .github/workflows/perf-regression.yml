@@ -174,10 +174,10 @@ jobs:
             echo "invalid architecture baseline ref" >&2
             exit 2
           fi
-          baseline_sha="$(git rev-parse "${BASELINE_REF}^{commit}" 2>/dev/null || true)"
+          baseline_sha="$(git rev-parse --verify --quiet "${BASELINE_REF}^{commit}" || true)"
           if [ -z "$baseline_sha" ]; then
             git fetch --no-tags --depth=1 origin "$BASELINE_REF"
-            baseline_sha="$(git rev-parse FETCH_HEAD^{commit})"
+            baseline_sha="$(git rev-parse --verify "FETCH_HEAD^{commit}")"
           fi
           reference_source="$RUNNER_TEMP/boost-gateway-arch-reference-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           reference_build="$reference_source/build/architecture-reference-release"

@@ -365,6 +365,15 @@ def main() -> int:
     production_platform_action = read(ROOT / ".github" / "actions" / "resolve-production-platform" / "action.yml")
     add(
         checks,
+        "perf-regression:verified-architecture-baseline-ref",
+        'git rev-parse --verify --quiet "${BASELINE_REF}^{commit}"' in perf_workflow
+        and 'git rev-parse --verify "FETCH_HEAD^{commit}"' in perf_workflow
+        and 'if [ -z "$baseline_sha" ]; then' in perf_workflow
+        and 'git fetch --no-tags --depth=1 origin "$BASELINE_REF"' in perf_workflow,
+        "architecture comparison verifies local refs and fetches unresolved baseline refs fail-closed",
+    )
+    add(
+        checks,
         "security-maintenance:hosted-bounded-isolation",
         security_maintenance_workflow.count("runs-on: ubuntu-latest") == 4
         and security_maintenance_workflow.count("timeout-minutes:") == 4
