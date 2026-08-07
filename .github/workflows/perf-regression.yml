@@ -293,8 +293,8 @@ jobs:
         id: gates
         shell: bash
         run: |
-          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
-          if [ -z "$SUMMARY_PATH" ]; then
+          SUMMARY_PATH="${{ steps.perf.outputs.output_dir }}/summary.json"
+          if [ ! -f "$SUMMARY_PATH" ]; then
             echo "No summary.json found - performance run may have failed."
             exit 1
           fi
@@ -351,8 +351,8 @@ jobs:
         if: always()
         shell: bash
         run: |
-          SUMMARY_PATH="$(find runtime/perf -name 'summary.json' -type f | head -1)"
-          if [ -n "$SUMMARY_PATH" ]; then
+          SUMMARY_PATH="${{ steps.perf.outputs.output_dir }}/summary.json"
+          if [ -f "$SUMMARY_PATH" ]; then
             REPORT_DIR="$(dirname "$SUMMARY_PATH")"
             echo "## Performance Regression Summary" >> "$GITHUB_STEP_SUMMARY"
             echo "" >> "$GITHUB_STEP_SUMMARY"
