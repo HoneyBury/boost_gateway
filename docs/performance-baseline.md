@@ -134,6 +134,20 @@ python3 scripts/producers/collect_v2_perf_baseline.py \
   --otel-comparison
 ```
 
+真实业务路由的饱和归因使用独立的 `business-saturation` preset。它固定运行 20/100/250/500
+Battle clients，不得用会在 I/O callback 内直接返回的 echo 流量代替。该 preset 与 transport
+`saturation` 分开保存，必须显式提供互不重叠的 service/loadgen CPU set：
+
+```bash
+python3 scripts/producers/collect_v2_perf_baseline.py \
+  --build-dir build/release \
+  --run-preset business-saturation \
+  --repetitions 3 \
+  --cpu-set 0-1 \
+  --loadgen-cpu-set 4-7 \
+  --loadgen-io-threads 4
+```
+
 固定 runner 的 2h/8h 与容量应通过 `long-soak-capacity.yml` 运行。8h 使用 `run_8h_soak=true`；业务专项使用 `run_business_operation_perf=true`；`run_resource_stability_gate=true`（默认）在同一组真实进程上连续运行 Matchmaking 与 Leaderboard 高密度业务窗口，每窗静默后采集 Gateway 和五个 backend 的 RSS、fd 与线程数。它丢弃两个预热窗，并以固定的尾窗净增长和线性斜率阈值 fail closed，用于在 72h/30d 前加速发现生命周期对象或进程资源的无界增长；dispatch 不能放宽阈值。Redis 对照同时使用 `leaderboard_redis_comparison=true`，workflow 会创建 run 独占的临时 Redis 7 容器并在结束时清理；OTel 对照使用 `otel_comparison=true`。CPU 专项使用 `cpu_set=0`、`cpu_set=0-1` 和 `cpu_set=0-3` 分别 dispatch，同时三档都显式固定相同的 `loadgen_cpu_set=4-7` 和 `loadgen_io_threads=4`。service/loadgen CPU 集合必须不重叠；采集器会在进程启动后回读两侧 affinity，并按每轮相邻快照计算资源差值。CPU 编号必须属于 runner 当前允许集合。
 
 Redis 对照的两个准确模式名是 `in_memory_only` 与 `redis_primary_with_memory_shadow`。后者的写入同时保留内存影子、查询优先 Redis，不能表述为 Redis-only。每种模式至少执行三轮；证据必须包含双方完整 runs、启动日志证明、Redis 前后 PING、隔离 key 的 ZCARD 下限以及 submit/top/rank 的吞吐和 P50/P99 median delta。R4 在 opt-in 时对这些真实性字段设硬门禁，但在形成历史基线前不设置任意性能回退百分比。
@@ -155,6 +169,11 @@ OTel 对照固定使用会经过 backend route 的 `battle-100-30s`，不能用�
 | `results/business-operation-perf.json` | 每轮 Matchmaking/Leaderboard 操作结果、跨轮聚合、time-to-match、吞吐、P50/P99 和错误分布 |
 | `summary.leaderboard_persistence_comparison` | Redis 对照双方原始结果、日志/PING/ZCARD 证明与每操作 median delta |
 | `logs/*.stdout.log` / `logs/*.stderr.log` | Gateway 和 backend 日志 |
+
+每个 case 的 `gateway_runtime_metrics` 使用相邻 diagnostics counter 的差值计算，记录 Gateway
+owner queue 的处理数、batch size、平均等待/处理耗时，以及 battle route queue、task execution
+和 backend latency。进程级 peak/max 使用 `lifetime` 前缀，只作为高水位诊断，不与后续 case
+的区间平均混用。
 
 发布证据还必须包含 workflow/run、实际 checkout SHA、runner 标签、Conan profile/lockfile 摘要。失败运行和确认复测分别归档，不覆盖原产物。
 
@@ -186,6 +205,8 @@ Linux x64 优化候选必须在 AOI fixed runner 上使用相同 Release profile
 `InstanceRuntime::tick_all` 的一输入每实例 workload。MPSC case 必须同时通过真实并发
 exactly-once/FIFO 单测、TSAN 专项和 Release 绝对吞吐门禁；缺样本、轮数不对称或超过相对阈值均失败；
 小于配置绝对噪声下限的微秒级波动不单独判定为回退。
+ECS 10K scan P99、轻量 scheduler stage P99 和重 scheduler stage throughput 同时进入相同的
+fixed-runner relative gate；它们不能只凭宽松的绝对门槛放行。
 MPSC case 由独立的 `v2_mailbox_benchmark` 采集并在绝对门禁 summary 中合并；Linux x64
 paired comparison 始终使用不含 MPSC case 的 `v2_arch_benchmark`。Battle indexed input 和
 ECS/scheduler 扩展均在全部既有 workload 完成后运行，避免在既有 relative-gated case 前引入
@@ -194,9 +215,9 @@ ECS/scheduler 扩展均在全部既有 workload 完成后运行，避免在既�
 
 ECS 专项绝对门禁覆盖 100/1K/10K component scan，以及两个独立系统组成的轻、重
 `ParallelSystemExecutor` stage。scan 吞吐按实际访问的 component 数计算，采样延迟为一次完整
-scan；调度 case 保留每帧 `std::async` 创建成本和有计算负载时的收益边界。当前 metadata 没有
-稳定的系统成本提示，因此不能仅按 stage 大小把双系统 stage 改为内联，也不能为每个 battle
-创建线程池。新 case 进入主线并形成同 runner 历史样本后，才能加入相对回退检查。
+scan；调度 case 同时覆盖持久有界 worker pool 的轻载调度成本和重载收益。当前 metadata 没有
+稳定的系统成本提示，因此单 system stage 固定 inline，多 system stage 由调用线程执行一个 system、
+其余提交到进程级共享 pool；不能为每个 battle 创建线程池。
 
 ## 发布后矩阵纠偏
 

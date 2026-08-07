@@ -19,6 +19,7 @@
 
 #include <condition_variable>
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <optional>
@@ -49,6 +50,19 @@ struct DemoServerIoCoreSnapshot {
     std::uint64_t outbound_dispatches = 0;
 };
 
+struct DemoServerGatewayQueueSnapshot {
+    std::uint64_t queued_items = 0;
+    std::uint64_t peak_queued_items = 0;
+    std::uint64_t enqueued_items = 0;
+    std::uint64_t processed_items = 0;
+    std::uint64_t processed_batches = 0;
+    std::uint64_t max_batch_size = 0;
+    std::uint64_t total_queue_wait_ns = 0;
+    std::uint64_t max_queue_wait_ns = 0;
+    std::uint64_t total_handle_ns = 0;
+    std::uint64_t max_handle_ns = 0;
+};
+
 struct DemoServerDiagnostics {
     std::uint16_t local_port = 0;
     std::uint32_t io_core_count = 0;
@@ -57,6 +71,7 @@ struct DemoServerDiagnostics {
     std::uint64_t total_accepted_sessions = 0;
     std::uint64_t total_outbound_dispatches = 0;
     std::vector<DemoServerIoCoreSnapshot> io_cores;
+    DemoServerGatewayQueueSnapshot gateway_queue;
     Runtime::BattleRouteDiagnostics battle_route;
     std::optional<v3::tracing::OtlpExporter::Metrics> otel_exporter_metrics;
     std::unordered_map<std::string, BackendMetricsSnapshot> backend_metrics;
@@ -97,6 +112,8 @@ private:
         SessionId session_id = 0;
         std::optional<v2::io::IoSession::PacketMessage> message;
         std::function<void()> runtime_task;
+        std::chrono::steady_clock::time_point enqueued_at =
+            std::chrono::steady_clock::now();
     };
 
     void do_accept();
@@ -158,7 +175,16 @@ private:
     std::deque<GatewayQueueItem> gateway_queue_;
     std::unique_ptr<std::thread> gateway_worker_;
     bool gateway_worker_stopping_ = false;
-    std::mutex gateway_handle_mutex_;
+    std::atomic<std::uint64_t> gateway_queue_depth_{0};
+    std::atomic<std::uint64_t> gateway_queue_peak_depth_{0};
+    std::atomic<std::uint64_t> gateway_queue_enqueued_{0};
+    std::atomic<std::uint64_t> gateway_queue_processed_{0};
+    std::atomic<std::uint64_t> gateway_queue_batches_{0};
+    std::atomic<std::uint64_t> gateway_queue_max_batch_{0};
+    std::atomic<std::uint64_t> gateway_queue_total_wait_ns_{0};
+    std::atomic<std::uint64_t> gateway_queue_max_wait_ns_{0};
+    std::atomic<std::uint64_t> gateway_queue_total_handle_ns_{0};
+    std::atomic<std::uint64_t> gateway_queue_max_handle_ns_{0};
     std::atomic<bool> stop_requested_{false};
 };
 

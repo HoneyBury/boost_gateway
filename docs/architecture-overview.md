@@ -89,6 +89,12 @@ Instance event callback 在释放 runtime table 和 instance lock 后执行，�
 ECS 默认执行 movement、combat、AOI、lifecycle 和 replay 等系统。具体地图、碰撞、计分
 或胜负规则必须留在 demo/plugin，不能进入 Gateway、Room、Leaderboard 或公共 SDK。
 
+`SimpleWorld` 的 component store 使用 dense iteration entries 和 entity index，删除时以尾元素
+swap-remove 并修正索引。`ParallelSystemExecutor` 使用进程级有界 worker pool，调用线程执行每个
+并行 stage 的一个 system，其余 system 交给持久 worker；单 system stage 始终 inline，避免逐帧
+创建线程。Gateway Runtime 状态仍由单 owner worker 持有，网络回调只入队；worker 按 FIFO
+有界批量取出消息，不改变同一 session、room 或 battle 的顺序语义。
+
 ## 协议和一致性
 
 客户端 TCP 帧的固定元数据包含 length、version、message ID、request ID、sequence、

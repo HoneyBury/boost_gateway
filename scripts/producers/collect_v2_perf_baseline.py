@@ -2061,6 +2061,36 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "max": max(values),
         }
 
+    runtime_metric_names = (
+        "gateway_queue_processed_items",
+        "gateway_queue_batches",
+        "gateway_queue_average_batch_size",
+        "gateway_queue_average_wait_us",
+        "gateway_queue_lifetime_max_wait_us",
+        "gateway_queue_average_handle_us",
+        "gateway_queue_lifetime_max_handle_us",
+        "gateway_queue_lifetime_peak_depth",
+        "battle_route_completed_tasks",
+        "battle_route_average_queue_wait_us",
+        "battle_route_average_task_execution_us",
+        "backend_requests",
+        "backend_average_latency_us",
+    )
+    runtime_metrics = {
+        metric: numeric_distribution([
+            float(run["gateway_runtime_metrics"][metric])
+            for run in runs
+            if isinstance(run.get("gateway_runtime_metrics"), dict)
+            and run["gateway_runtime_metrics"].get(metric) is not None
+        ])
+        for metric in runtime_metric_names
+        if any(
+            isinstance(run.get("gateway_runtime_metrics"), dict)
+            and run["gateway_runtime_metrics"].get(metric) is not None
+            for run in runs
+        )
+    }
+
     return {
         "case_name": case_name,
         "runs": len(runs),
@@ -2133,6 +2163,88 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
         },
         "forced_timeout": any(forced_timeouts),
         "bench_exit_code": max(bench_exit_codes),
+        "gateway_runtime_metrics": runtime_metrics,
+    }
+
+
+def gateway_runtime_metric_delta(
+    before: dict[str, Any], after: dict[str, Any]
+) -> dict[str, float | int | None]:
+    def section(value: dict[str, Any], name: str) -> dict[str, Any]:
+        raw = value.get(name)
+        return raw if isinstance(raw, dict) else {}
+
+    def counter_delta(lhs: dict[str, Any], rhs: dict[str, Any], name: str) -> int:
+        return max(0, int(rhs.get(name, 0)) - int(lhs.get(name, 0)))
+
+    queue_before = section(before, "gateway_queue")
+    queue_after = section(after, "gateway_queue")
+    queue_processed = counter_delta(queue_before, queue_after, "processed_items")
+    queue_batches = counter_delta(queue_before, queue_after, "processed_batches")
+    wait_total_ns = counter_delta(queue_before, queue_after, "total_queue_wait_ns")
+    handle_total_ns = counter_delta(queue_before, queue_after, "total_handle_ns")
+
+    route_before = section(before, "battle_route")
+    route_after = section(after, "battle_route")
+    route_completed = counter_delta(route_before, route_after, "completed_tasks")
+    route_wait_us = counter_delta(route_before, route_after, "total_queue_wait_us")
+    route_execution_us = counter_delta(
+        route_before, route_after, "total_task_execution_us"
+    )
+
+    backend_before = before.get("backend_metrics")
+    backend_after = after.get("backend_metrics")
+    if not isinstance(backend_before, dict):
+        backend_before = {}
+    if not isinstance(backend_after, dict):
+        backend_after = {}
+    backend_requests = 0
+    backend_latency_us = 0
+    backend_samples = 0
+    for service, current in backend_after.items():
+        if not isinstance(current, dict):
+            continue
+        previous = backend_before.get(service)
+        if not isinstance(previous, dict):
+            previous = {}
+        backend_requests += counter_delta(previous, current, "total_requests")
+        backend_latency_us += counter_delta(previous, current, "total_latency_us")
+        backend_samples += counter_delta(previous, current, "latency_sample_count")
+
+    return {
+        "gateway_queue_processed_items": queue_processed,
+        "gateway_queue_batches": queue_batches,
+        "gateway_queue_average_batch_size": (
+            round(queue_processed / queue_batches, 3) if queue_batches else 0.0
+        ),
+        "gateway_queue_average_wait_us": (
+            round(wait_total_ns / queue_processed / 1000.0, 3)
+            if queue_processed else 0.0
+        ),
+        "gateway_queue_lifetime_max_wait_us": int(
+            queue_after.get("max_queue_wait_us", 0)
+        ),
+        "gateway_queue_average_handle_us": (
+            round(handle_total_ns / queue_processed / 1000.0, 3)
+            if queue_processed else 0.0
+        ),
+        "gateway_queue_lifetime_max_handle_us": int(
+            queue_after.get("max_handle_us", 0)
+        ),
+        "gateway_queue_lifetime_peak_depth": int(
+            queue_after.get("peak_queued_items", 0)
+        ),
+        "battle_route_completed_tasks": route_completed,
+        "battle_route_average_queue_wait_us": (
+            round(route_wait_us / route_completed, 3) if route_completed else 0.0
+        ),
+        "battle_route_average_task_execution_us": (
+            round(route_execution_us / route_completed, 3) if route_completed else 0.0
+        ),
+        "backend_requests": backend_requests,
+        "backend_average_latency_us": (
+            round(backend_latency_us / backend_samples, 3) if backend_samples else 0.0
+        ),
     }
 
 
@@ -2749,7 +2861,9 @@ def build_saturation_analysis(
             "ramp_to_steady_ratio": round(ramp_to_steady_ratio, 6),
             "resource_window_accepted": ramp_to_steady_ratio <= 0.1,
             "load_end_boundary_valid": load_end_boundary_valid,
-            "slo_met": p99 <= 50.0 and errors == 0,
+            "slo_met": p99 <= (
+                battle_p99_limit_ms(case_name) if case_name.startswith("battle") else 50.0
+            ) and errors == 0,
         })
 
     points.sort(key=lambda item: float(item["configured_request_rate_ceiling_ops_per_sec"]))
@@ -3105,6 +3219,30 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
 
     lines.extend([
         "",
+        "## Gateway Runtime Stage Metrics",
+        "",
+        "| Case | Queue batch | Queue wait us | Handle us | Route queue us | Route execution us | Backend latency us |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ])
+    for case in summary.get("case_aggregates", []):
+        metrics = case.get("gateway_runtime_metrics", {})
+
+        def runtime_median(name: str) -> Any:
+            value = metrics.get(name)
+            return value.get("median") if isinstance(value, dict) else None
+
+        lines.append(
+            f"| `{case.get('case_name')}` | "
+            f"{fmt_number(runtime_median('gateway_queue_average_batch_size'), 3)} | "
+            f"{fmt_number(runtime_median('gateway_queue_average_wait_us'), 3)} | "
+            f"{fmt_number(runtime_median('gateway_queue_average_handle_us'), 3)} | "
+            f"{fmt_number(runtime_median('battle_route_average_queue_wait_us'), 3)} | "
+            f"{fmt_number(runtime_median('battle_route_average_task_execution_us'), 3)} | "
+            f"{fmt_number(runtime_median('backend_average_latency_us'), 3)} |"
+        )
+
+    lines.extend([
+        "",
         "## Artifacts",
         "",
         "- Raw summary: `summary.json`",
@@ -3294,6 +3432,14 @@ def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
             {"name": "echo-sat-c1000-i10-60s", "scenario": "echo", "clients": 1000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
             {"name": "echo-sat-c2000-i10-60s", "scenario": "echo", "clients": 2000, "duration_seconds": 60, "interval_ms": 10, **saturation_ramp},
         ]
+    if run_preset == "business-saturation":
+        saturation_ramp = {"ramp_clients_per_second": 500, "ramp_timeout_seconds": 90}
+        return [
+            {"name": "battle-20-sat-60s", "scenario": "battle", "clients": 20, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_20", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-100-sat-60s", "scenario": "battle", "clients": 100, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_100", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-250-sat-60s", "scenario": "battle", "clients": 250, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_250", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-500-sat-60s", "scenario": "battle", "clients": 500, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_500", "room_group_size": 2, **saturation_ramp},
+        ]
     if run_preset == "capacity":
         return [
             {"name": "echo-1000-30s", "scenario": "echo", "clients": 1000, "duration_seconds": 30, "interval_ms": 50, **capacity_ramp},
@@ -3363,7 +3509,7 @@ def main() -> int:
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
     parser.add_argument(
         "--run-preset",
-        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation"],
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation", "business-saturation"],
         default="smoke",
     )
     parser.add_argument("--repetitions", type=int, default=1)
@@ -3498,11 +3644,11 @@ def main() -> int:
         parser.error(str(exc))
     if args.loadgen_io_threads <= 0:
         parser.error("--loadgen-io-threads must be positive")
-    if args.run_preset == "saturation" and (
+    if args.run_preset in {"saturation", "business-saturation"} and (
         not args.cpu_set or not resolved_loadgen_cpu_set
     ):
         parser.error(
-            "--run-preset saturation requires isolated --cpu-set and --loadgen-cpu-set capacity"
+            "saturation presets require isolated --cpu-set and --loadgen-cpu-set capacity"
         )
     if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
         parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
@@ -3732,6 +3878,9 @@ def main() -> int:
             for repetition in range(args.repetitions):
                 run_key = f"{case['name']}.run{repetition + 1}"
                 connection_budget = wait_for_local_connection_budget(int(case["clients"]))
+                diagnostics_before = fetch_json(
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                )
                 service_before = snapshot_processes(managed)
                 resource_started_at = time.monotonic()
                 load_end: dict[str, Any] = {}
@@ -3794,6 +3943,9 @@ def main() -> int:
                         )
 
                 diagnostics = fetch_json(f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json")
+                run_result["gateway_runtime_metrics"] = gateway_runtime_metric_delta(
+                    diagnostics_before, diagnostics
+                )
                 diagnostics_path = result_dir / f"{run_key}.gateway.diagnostics.json"
                 diagnostics_path.write_text(json.dumps(diagnostics, indent=2, ensure_ascii=False), encoding="utf-8")
                 summary["process_snapshots"][run_key] = build_case_resource_evidence(
@@ -4004,6 +4156,9 @@ def main() -> int:
             business_service_before = snapshot_processes(managed)
             business_loadgen_before = process_snapshot(os.getpid())
             business_resource_started_at = time.monotonic()
+            business_diagnostics_before = fetch_json(
+                f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+            )
             summary["business_operation_perf"] = run_business_operation_perf(
                 "127.0.0.1",
                 args.gateway_port,
@@ -4013,6 +4168,14 @@ def main() -> int:
                 args.business_operation_timeout_seconds,
                 args.repetitions,
                 "in_memory_only",
+            )
+            business_diagnostics_after = fetch_json(
+                f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+            )
+            summary["business_operation_perf"]["gateway_runtime_metrics"] = (
+                gateway_runtime_metric_delta(
+                    business_diagnostics_before, business_diagnostics_after
+                )
             )
             business_quiescence = wait_for_service_quiescence(
                 managed,
@@ -4100,6 +4263,9 @@ def main() -> int:
                 redis_service_before = snapshot_processes(managed)
                 redis_loadgen_before = process_snapshot(os.getpid())
                 redis_resource_started_at = time.monotonic()
+                redis_diagnostics_before = fetch_json(
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                )
                 redis_perf = run_business_operation_perf(
                     "127.0.0.1",
                     args.gateway_port,
@@ -4109,6 +4275,12 @@ def main() -> int:
                     args.business_operation_timeout_seconds,
                     args.repetitions,
                     "redis_primary_with_memory_shadow",
+                )
+                redis_diagnostics_after = fetch_json(
+                    f"http://127.0.0.1:{args.http_port}/metrics/diagnostics/json"
+                )
+                redis_perf["gateway_runtime_metrics"] = gateway_runtime_metric_delta(
+                    redis_diagnostics_before, redis_diagnostics_after
                 )
                 redis_quiescence = wait_for_service_quiescence(
                     managed,
@@ -4288,7 +4460,7 @@ def main() -> int:
         summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
         if not resource_isolation_check["passed"]:
             summary["release_gates"]["overall_pass"] = False
-        if args.run_preset == "saturation":
+        if args.run_preset in {"saturation", "business-saturation"}:
             summary["saturation_analysis"] = build_saturation_analysis(
                 summary,
                 cpu_threshold_percent=args.saturation_cpu_threshold_percent,
@@ -4323,7 +4495,7 @@ def main() -> int:
             "business_flow_clients": max(1, args.business_flow_clients),
             "supports_long_soak_followup": True,
             "supports_capacity_followup": args.run_preset in {"capacity", "business-capacity"},
-            "supports_saturation_comparison": args.run_preset == "saturation",
+            "supports_saturation_comparison": args.run_preset in {"saturation", "business-saturation"},
         }
 
         summary_path = output_root / "summary.json"
@@ -4332,7 +4504,7 @@ def main() -> int:
         report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
         log_step(f"Markdown report written: {report_path}")
-        if args.run_preset == "saturation":
+        if args.run_preset in {"saturation", "business-saturation"}:
             analysis = summary.get("saturation_analysis")
             if isinstance(analysis, dict) and analysis.get("collection_pass") is True:
                 return 0

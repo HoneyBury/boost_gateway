@@ -28,6 +28,9 @@ on:
           - smoke
           - baseline
           - capacity
+          - business-capacity
+          - saturation
+          - business-saturation
       perf_repetitions:
         description: "Number of repetitions per case"
         required: true
@@ -274,12 +277,19 @@ jobs:
         run: |
           OUTPUT_DIR="runtime/perf/ci-regression-$(date +%Y%m%d-%H%M%S)"
           isolation_args=()
-          if [ "${{ inputs.platform }}" = linux-arm64 ]; then
+          perf_preset="${{ inputs.perf_preset || 'baseline' }}"
+          if [[ "$perf_preset" == saturation || "$perf_preset" == business-saturation ]]; then
+            if [ "${{ inputs.platform }}" != linux-x64 ]; then
+              echo "saturation presets currently require the AOI Linux x64 runner" >&2
+              exit 2
+            fi
+            isolation_args+=(--cpu-set 0-1 --loadgen-cpu-set 4-7 --loadgen-io-threads 4)
+          elif [ "${{ inputs.platform }}" = linux-arm64 ]; then
             isolation_args+=(--cpu-set 0-7 --loadgen-cpu-set 8-11)
           fi
           python3 scripts/producers/collect_v2_perf_baseline.py \
             --build-dir "$PRODUCTION_BUILD_DIR" \
-            --run-preset ${{ inputs.perf_preset || 'baseline' }} \
+            --run-preset "$perf_preset" \
             --repetitions ${{ inputs.perf_repetitions || '1' }} \
             --backend-pool-size 8 \
             --battle-route-workers 8 \

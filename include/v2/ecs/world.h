@@ -89,12 +89,13 @@ public:
         if (store == nullptr) {
             return;
         }
-        for (auto& [entity_key, component] : store->components) {
+        for (auto& entry : store->dense) {
+            const auto entity_key = entry.entity_key;
             const EntityHandle handle{
                 .id = static_cast<EntityId>(entity_key),
                 .generation = static_cast<std::uint32_t>(entity_key >> 32U),
             };
-            fn(handle, static_cast<T&>(*component));
+            fn(handle, static_cast<T&>(*entry.component));
         }
     }
 
@@ -102,7 +103,19 @@ private:
     using ComponentEntityKey = std::uint64_t;
 
     struct ComponentStore {
-        std::unordered_map<ComponentEntityKey, std::unique_ptr<Component>> components;
+        struct Entry {
+            ComponentEntityKey entity_key = 0;
+            std::unique_ptr<Component> component;
+        };
+
+        Component* insert(ComponentEntityKey key,
+                          std::unique_ptr<Component> component);
+        [[nodiscard]] Component* find(ComponentEntityKey key) noexcept;
+        [[nodiscard]] const Component* find(ComponentEntityKey key) const noexcept;
+        bool erase(ComponentEntityKey key) noexcept;
+
+        std::vector<Entry> dense;
+        std::unordered_map<ComponentEntityKey, std::size_t> index_by_entity;
     };
 
     [[nodiscard]] static constexpr ComponentEntityKey component_entity_key(

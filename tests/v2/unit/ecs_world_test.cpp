@@ -177,3 +177,25 @@ TEST(V2EcsWorldTest, RepeatedWorldLifecycleNeverVisitsDestroyedEntities) {
         EXPECT_EQ(visited, 64U);
     }
 }
+
+TEST(V2EcsWorldTest, DenseStoreSwapRemovalKeepsMovedComponentAddressable) {
+    v2::ecs::SimpleWorld world;
+    const auto first = world.create_entity();
+    const auto middle = world.create_entity();
+    const auto last = world.create_entity();
+    world.add_component<PositionComponent>(first).x = 10;
+    world.add_component<PositionComponent>(middle).x = 20;
+    world.add_component<PositionComponent>(last).x = 30;
+
+    EXPECT_TRUE(world.remove_component<PositionComponent>(middle));
+    ASSERT_NE(world.get_component<PositionComponent>(last), nullptr);
+    EXPECT_EQ(world.get_component<PositionComponent>(last)->x, 30);
+
+    std::size_t visited = 0;
+    world.for_each<PositionComponent>(
+        [&](v2::ecs::EntityHandle entity, PositionComponent&) {
+            ++visited;
+            EXPECT_NE(entity.id, middle.id);
+        });
+    EXPECT_EQ(visited, 2U);
+}

@@ -5,6 +5,54 @@
 
 namespace v2::ecs {
 
+Component* SimpleWorld::ComponentStore::insert(
+    ComponentEntityKey key, std::unique_ptr<Component> component) {
+    const auto existing = index_by_entity.find(key);
+    if (existing != index_by_entity.end()) {
+        dense[existing->second].component = std::move(component);
+        return dense[existing->second].component.get();
+    }
+
+    const auto index = dense.size();
+    auto [_, inserted] = index_by_entity.emplace(key, index);
+    if (!inserted) {
+        return nullptr;
+    }
+    try {
+        dense.push_back(Entry{.entity_key = key, .component = std::move(component)});
+    } catch (...) {
+        index_by_entity.erase(key);
+        throw;
+    }
+    return dense.back().component.get();
+}
+
+Component* SimpleWorld::ComponentStore::find(ComponentEntityKey key) noexcept {
+    const auto it = index_by_entity.find(key);
+    return it == index_by_entity.end() ? nullptr : dense[it->second].component.get();
+}
+
+const Component* SimpleWorld::ComponentStore::find(ComponentEntityKey key) const noexcept {
+    const auto it = index_by_entity.find(key);
+    return it == index_by_entity.end() ? nullptr : dense[it->second].component.get();
+}
+
+bool SimpleWorld::ComponentStore::erase(ComponentEntityKey key) noexcept {
+    const auto it = index_by_entity.find(key);
+    if (it == index_by_entity.end()) {
+        return false;
+    }
+    const auto index = it->second;
+    const auto last = dense.size() - 1;
+    if (index != last) {
+        dense[index] = std::move(dense[last]);
+        index_by_entity[dense[index].entity_key] = index;
+    }
+    dense.pop_back();
+    index_by_entity.erase(it);
+    return true;
+}
+
 SimpleWorld::SimpleWorld() = default;
 
 SimpleWorld::~SimpleWorld() {
@@ -53,7 +101,7 @@ void SimpleWorld::destroy_entity(EntityHandle entity) {
     }
     for (auto& [type_id, store] : component_stores_) {
         (void)type_id;
-        store.components.erase(component_entity_key(entity));
+        store.erase(component_entity_key(entity));
     }
 
     // Free entity storage
@@ -116,9 +164,8 @@ Component* SimpleWorld::add_component_erased(EntityHandle entity,
     if (!exists(entity) || component == nullptr) {
         return nullptr;
     }
-    auto& slot = component_stores_[type_id].components[component_entity_key(entity)];
-    slot = std::move(component);
-    return slot.get();
+    return component_stores_[type_id].insert(
+        component_entity_key(entity), std::move(component));
 }
 
 Component* SimpleWorld::get_component_erased(EntityHandle entity,
@@ -130,8 +177,7 @@ Component* SimpleWorld::get_component_erased(EntityHandle entity,
     if (store == nullptr) {
         return nullptr;
     }
-    auto it = store->components.find(component_entity_key(entity));
-    return it == store->components.end() ? nullptr : it->second.get();
+    return store->find(component_entity_key(entity));
 }
 
 bool SimpleWorld::remove_component_erased(EntityHandle entity, ComponentTypeId type_id) {
@@ -142,7 +188,7 @@ bool SimpleWorld::remove_component_erased(EntityHandle entity, ComponentTypeId t
     if (store == nullptr) {
         return false;
     }
-    return store->components.erase(component_entity_key(entity)) > 0;
+    return store->erase(component_entity_key(entity));
 }
 
 SimpleWorld::ComponentStore* SimpleWorld::find_store(ComponentTypeId type_id) {

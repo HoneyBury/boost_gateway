@@ -67,10 +67,14 @@
     "minimum_repetitions": 5,
     "checks": [
       {"name": "battle-world-tick-p99", "case": "battle_world_tick_100_entities", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 10.0},
+      {"name": "battle-indexed-input-throughput", "case": "battle_indexed_input_100_entities", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0},
       {"name": "multi-battle-tick-p99", "case": "multi_battle_tick_100_entities", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 10.0},
       {"name": "actor-fan-in-throughput", "case": "actor_fan_in_throughput", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0},
       {"name": "instance-runtime-tick-all-p99", "case": "instance_runtime_tick_all_one_input", "metric": "p99_us", "direction": "max", "max_regression_pct": 10.0, "min_absolute_delta": 0.02},
-      {"name": "instance-runtime-tick-all-throughput", "case": "instance_runtime_tick_all_one_input", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0}
+      {"name": "instance-runtime-tick-all-throughput", "case": "instance_runtime_tick_all_one_input", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0},
+      {"name": "ecs-scan-10k-p99", "case": "ecs_scan_10k_entities", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 2.0},
+      {"name": "ecs-scheduler-light-p99", "case": "ecs_scheduler_light_parallel_stage", "metric": "p99_us", "direction": "max", "max_regression_pct": 5.0, "min_absolute_delta": 5.0},
+      {"name": "ecs-scheduler-heavy-throughput", "case": "ecs_scheduler_heavy_parallel_stage", "metric": "throughput_ops_per_sec", "direction": "min", "max_regression_pct": 5.0, "min_absolute_delta": 0.0}
     ]
   },
   "soak_gates": {
