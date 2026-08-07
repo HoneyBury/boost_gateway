@@ -671,6 +671,10 @@ public:
         return instances_.size();
     }
 
+    std::size_t instance_capacity() const noexcept {
+        return config_.max_instances;
+    }
+
 private:
     RuntimeConfig config_;
     mutable std::mutex mutex_;
@@ -786,6 +790,10 @@ std::vector<InstanceSnapshot> InstanceRuntime::list_instances() const {
 
 std::size_t InstanceRuntime::instance_count() const {
     return impl_->instance_count();
+}
+
+std::size_t InstanceRuntime::instance_capacity() const {
+    return impl_->instance_capacity();
 }
 
 }  // namespace v2::realtime

@@ -856,6 +856,7 @@ TEST(InstanceRuntimeTest, MaxInstancesLimit) {
     config.max_instances = 1;
 
     v2::realtime::InstanceRuntime runtime(config);
+    EXPECT_EQ(runtime.instance_capacity(), 1U);
     runtime.register_plugin("echo", &create_echo_plugin);
 
     v2::realtime::PlayerContext player;

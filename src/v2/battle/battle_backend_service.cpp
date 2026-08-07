@@ -535,6 +535,8 @@ private:
             players.push_back(std::move(player));
         }
 
+        const bool duplicate_before_create = runtime_.contains_instance(battle_id);
+
         // Create the instance via InstanceRuntime
         auto instance_id = runtime_.create_instance(
             battle_id, room_id, instance_type_, players,
@@ -543,7 +545,20 @@ private:
             30000);           // resume_window_ms
 
         if (instance_id.empty()) {
-            return make_error(-2004, "battle_already_exists");
+            const auto active_instances = runtime_.instance_count();
+            const auto instance_capacity = runtime_.instance_capacity();
+            const bool duplicate = duplicate_before_create ||
+                                   runtime_.contains_instance(battle_id);
+            const std::string reason = duplicate
+                ? "battle_already_exists"
+                : active_instances >= instance_capacity
+                    ? "battle_capacity_reached"
+                    : "battle_create_failed";
+            std::cout << "v2_battle_backend: create failed battle_id="
+                      << battle_id << " reason=" << reason
+                      << " active_instances=" << active_instances
+                      << " capacity=" << instance_capacity << std::endl;
+            return make_error(-2004, reason);
         }
 
         set_instance_frame(battle_id, 0);
