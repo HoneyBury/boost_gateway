@@ -368,56 +368,6 @@ LatencyStats run_spsc_queue_roundtrip_latency(std::size_t iterations) {
     return make_stats(std::move(samples), elapsed, iterations);
 }
 
-LatencyStats run_mpsc_mailbox_fan_in(std::size_t iterations) {
-    constexpr std::size_t kProducers = 4;
-    const auto items_per_producer = std::max<std::size_t>(1, iterations / kProducers);
-    const auto total_items = items_per_producer * kProducers;
-    v2::io::MpscQueue<std::uint64_t> queue(1024);
-    std::barrier start(static_cast<std::ptrdiff_t>(kProducers + 1));
-    std::vector<std::vector<double>> producer_samples(kProducers);
-    std::vector<std::thread> producers;
-    producers.reserve(kProducers);
-
-    for (std::size_t producer = 0; producer < kProducers; ++producer) {
-        producer_samples[producer].reserve(items_per_producer);
-        producers.emplace_back([&, producer]() {
-            start.arrive_and_wait();
-            for (std::size_t sequence = 0; sequence < items_per_producer; ++sequence) {
-                const auto value = (static_cast<std::uint64_t>(producer) << 32U) |
-                                   static_cast<std::uint64_t>(sequence);
-                const auto op_begin = now_ns();
-                while (!queue.try_enqueue(value)) {
-                    std::this_thread::yield();
-                }
-                producer_samples[producer].push_back(
-                    static_cast<double>(now_ns() - op_begin) / 1000.0);
-            }
-        });
-    }
-
-    const auto begin = Clock::now();
-    start.arrive_and_wait();
-    std::size_t received = 0;
-    while (received < total_items) {
-        if (queue.try_dequeue().has_value()) {
-            ++received;
-        } else {
-            std::this_thread::yield();
-        }
-    }
-    for (auto& producer : producers) {
-        producer.join();
-    }
-    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
-
-    std::vector<double> samples;
-    samples.reserve(total_items);
-    for (auto& producer : producer_samples) {
-        samples.insert(samples.end(), producer.begin(), producer.end());
-    }
-    return make_stats(std::move(samples), elapsed, received);
-}
-
 LatencyStats run_battle_world_tick_latency(std::size_t iterations) {
     std::vector<std::string> player_ids;
     player_ids.reserve(100);
@@ -639,6 +589,56 @@ LatencyStats run_backend_typed_adapter_roundtrip_latency(std::size_t iterations)
     const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
     const auto operations = samples.size();
     return make_stats(std::move(samples), elapsed, operations);
+}
+
+LatencyStats run_mpsc_mailbox_fan_in(std::size_t iterations) {
+    constexpr std::size_t kProducers = 4;
+    const auto items_per_producer = std::max<std::size_t>(1, iterations / kProducers);
+    const auto total_items = items_per_producer * kProducers;
+    v2::io::MpscQueue<std::uint64_t> queue(1024);
+    std::barrier start(static_cast<std::ptrdiff_t>(kProducers + 1));
+    std::vector<std::vector<double>> producer_samples(kProducers);
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+
+    for (std::size_t producer = 0; producer < kProducers; ++producer) {
+        producer_samples[producer].reserve(items_per_producer);
+        producers.emplace_back([&, producer]() {
+            start.arrive_and_wait();
+            for (std::size_t sequence = 0; sequence < items_per_producer; ++sequence) {
+                const auto value = (static_cast<std::uint64_t>(producer) << 32U) |
+                                   static_cast<std::uint64_t>(sequence);
+                const auto op_begin = now_ns();
+                while (!queue.try_enqueue(value)) {
+                    std::this_thread::yield();
+                }
+                producer_samples[producer].push_back(
+                    static_cast<double>(now_ns() - op_begin) / 1000.0);
+            }
+        });
+    }
+
+    const auto begin = Clock::now();
+    start.arrive_and_wait();
+    std::size_t received = 0;
+    while (received < total_items) {
+        if (queue.try_dequeue().has_value()) {
+            ++received;
+        } else {
+            std::this_thread::yield();
+        }
+    }
+    for (auto& producer : producers) {
+        producer.join();
+    }
+    const auto elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+
+    std::vector<double> samples;
+    samples.reserve(total_items);
+    for (auto& producer : producer_samples) {
+        samples.insert(samples.end(), producer.begin(), producer.end());
+    }
+    return make_stats(std::move(samples), elapsed, received);
 }
 
 Options parse_args(int argc, char** argv) {
