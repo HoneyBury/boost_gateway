@@ -6,6 +6,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <chrono>
 #include <string>
 #include <vector>
@@ -91,8 +92,7 @@ TEST(TankBattlePluginTest, MoveInputUpdatesPosition) {
     EXPECT_EQ(stats.inputs_processed, 1);
 
     // Verify snapshot contains updated position
-    auto ctx = runtime.find_instance("battle_001");
-    ASSERT_NE(ctx, nullptr);
+    ASSERT_TRUE(runtime.contains_instance("battle_001"));
 
     // Build snapshot through the plugin via the runtime
     // We can't directly call build_snapshot, but get_resume_snapshot
@@ -209,7 +209,7 @@ TEST(TankBattlePluginTest, SettlementResultPayload) {
 
     // Capture settlement via event callback
     std::string captured_settlement_payload;
-    runtime.set_event_callback(
+    (void)runtime.set_event_callback(
         [&](const v2::realtime::InstanceEvent& event) {
             if (event.type == v2::realtime::InstanceEvent::Type::kInstanceFinished) {
                 captured_settlement_payload = event.settlement.result_payload;
@@ -347,7 +347,7 @@ TEST(TankBattlePluginTest, FinishInputTriggersSettlement) {
 
     // Capture settlement events
     std::string captured_payload;
-    runtime.set_event_callback(
+    (void)runtime.set_event_callback(
         [&](const v2::realtime::InstanceEvent& event) {
             if (event.type == v2::realtime::InstanceEvent::Type::kInstanceFinished) {
                 captured_payload = event.settlement.result_payload;
@@ -391,16 +391,19 @@ TEST(TankBattlePluginTest, PlayerLeaveMarksOffline) {
     // Tick to get into running state
     runtime.tick_instance("battle_001", 1, now_ms());
 
-    // We can't call on_player_leave directly through the runtime API
-    // (there's no public method for it). Instead, verify that the
-    // snapshot correctly reflects initial online state.
-    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
-    ASSERT_FALSE(snap.payload.empty());
+    ASSERT_TRUE(runtime.detach_player("battle_001", "alice").applied);
 
-    auto parsed = json::parse(snap.payload);
-    for (const auto& player : parsed["players"]) {
-        EXPECT_TRUE(player["online"].get<bool>());
-    }
+    auto snap = runtime.get_resume_snapshot("battle_001", "alice");
+    EXPECT_TRUE(snap.payload.empty());
+
+    auto bob_snapshot = runtime.get_resume_snapshot("battle_001", "bob");
+    ASSERT_FALSE(bob_snapshot.payload.empty());
+    auto parsed = json::parse(bob_snapshot.payload);
+    const auto alice = std::find_if(
+        parsed["players"].begin(), parsed["players"].end(),
+        [](const auto& player) { return player["user_id"] == "alice"; });
+    ASSERT_NE(alice, parsed["players"].end());
+    EXPECT_FALSE((*alice)["online"].get<bool>());
 }
 
 TEST(TankBattlePluginTest, UnknownInputActionIsAccepted) {

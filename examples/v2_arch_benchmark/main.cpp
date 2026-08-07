@@ -437,11 +437,13 @@ LatencyStats run_instance_runtime_tick_all_latency(
     v2::realtime::InstanceRuntime runtime(config);
     runtime.register_plugin("benchmark", &create_benchmark_realtime_plugin);
     std::size_t snapshot_events = 0;
-    runtime.set_event_callback([&snapshot_events](const v2::realtime::InstanceEvent& event) {
+    if (!runtime.set_event_callback([&snapshot_events](const v2::realtime::InstanceEvent& event) {
         if (event.type == v2::realtime::InstanceEvent::Type::kSnapshotAvailable) {
             ++snapshot_events;
         }
-    });
+    })) {
+        throw std::runtime_error("failed to configure realtime benchmark callback");
+    }
 
     v2::realtime::PlayerContext player;
     player.user_id = "benchmark_player";

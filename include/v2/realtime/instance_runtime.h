@@ -73,8 +73,9 @@ public:
     void register_plugin(const std::string& instance_type,
                          InstancePluginFactory factory);
 
-    // Set the callback for instance events.
-    void set_event_callback(InstanceEventCallback callback);
+    // Set the callback before the first instance is created. Callback
+    // configuration freezes for the runtime lifetime after that point.
+    [[nodiscard]] bool set_event_callback(InstanceEventCallback callback);
 
     // ─── Instance lifecycle ──────────────────────────────────────
 
@@ -91,6 +92,14 @@ public:
 
     // Destroy an instance and clean up resources.
     void destroy_instance(const std::string& instance_id);
+
+    // Attach or detach a player without exposing mutable instance state.
+    // Plugin hooks run synchronously; events are emitted after releasing the
+    // instance lock so callbacks may safely query the runtime.
+    PlayerLifecycleResult attach_player(const std::string& instance_id,
+                                        const PlayerContext& player);
+    PlayerLifecycleResult detach_player(const std::string& instance_id,
+                                        const std::string& user_id);
 
     // Submit an input to an instance. Returns the input result.
     InputResult submit_input(const InputEnvelope& input);
@@ -121,7 +130,7 @@ public:
 
     // ─── Query ──────────────────────────────────────────────────
 
-    [[nodiscard]] InstanceContext* find_instance(const std::string& instance_id);
+    [[nodiscard]] bool contains_instance(const std::string& instance_id) const;
     [[nodiscard]] InstanceState get_instance_state(const std::string& instance_id) const;
     [[nodiscard]] std::vector<InstanceSnapshot> list_instances() const;
     [[nodiscard]] std::size_t instance_count() const;

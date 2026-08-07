@@ -82,6 +82,11 @@ struct PlayerContext {
     std::int64_t joined_at_ms = 0;
 };
 
+struct PlayerLifecycleResult {
+    bool applied = false;
+    std::string reject_reason;
+};
+
 // ─── Instance context ───────────────────────────────────────────────
 
 struct InstanceContext {

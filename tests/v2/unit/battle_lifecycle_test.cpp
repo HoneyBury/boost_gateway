@@ -437,8 +437,8 @@ TEST(BattleLifecycleExtendedTest, CrossInstanceConcurrency) {
 
     // Remaining instances still tick normally
     runtime.tick_all(ts);
-    EXPECT_EQ(runtime.find_instance("a")->instance_id, "a");
-    EXPECT_EQ(runtime.find_instance("c")->instance_id, "c");
+    EXPECT_TRUE(runtime.contains_instance("a"));
+    EXPECT_TRUE(runtime.contains_instance("c"));
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -457,7 +457,7 @@ TEST(BattleLifecycleExtendedTest, ConcurrentFinish) {
 
     // Capture settlement events to verify exactly one is emitted
     int finish_event_count = 0;
-    runtime.set_event_callback(
+    (void)runtime.set_event_callback(
         [&](const v2::realtime::InstanceEvent& event) {
             if (event.type == v2::realtime::InstanceEvent::Type::kInstanceFinished) {
                 ++finish_event_count;
@@ -501,7 +501,7 @@ TEST(BattleLifecycleExtendedTest, DisconnectDuringFinish) {
     runtime.register_plugin("tank_battle", &create_tank_battle_plugin);
 
     int finish_event_count = 0;
-    runtime.set_event_callback(
+    (void)runtime.set_event_callback(
         [&](const v2::realtime::InstanceEvent& event) {
             if (event.type == v2::realtime::InstanceEvent::Type::kInstanceFinished) {
                 ++finish_event_count;

@@ -75,6 +75,13 @@ MatchJoin -> Matchmaking -> MatchFound push -> Room/ready
 生命周期、输入序列、tick、snapshot、settlement 和 resume。业务实现通过
 `InstancePlugin` SPI 接入，plugin 异常被 runtime 隔离。
 
+玩家动态生命周期只通过 `attach_player` / `detach_player` 修改；只读存在性查询使用
+`contains_instance`，runtime 不向调用方暴露跨锁存活的可变 `InstanceContext` 裸指针。
+Instance event callback 在释放 runtime table 和 instance lock 后执行，可以安全查询 runtime
+或触发另一项玩家生命周期操作；callback 自身异常不会中断 tick 或 settlement。callback
+必须在首个 instance 创建前配置，之后冻结为只读，避免在 tick 热路径引入锁或运行期写竞争。
+不同 instance 的 callback 可能并发执行，因此 callback 所有者仍需保护自身共享状态。
+
 - `BattleInstancePlugin` 是默认 battle backend 实现。
 - `TankBattlePlugin` 和 `demo/games/tank_battle/` 用于验证 SPI，不属于默认生产主链。
 - `examples/realtime_echo_plugin` 是可选最小 plugin 示例，默认不构建。

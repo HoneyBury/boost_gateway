@@ -38,7 +38,7 @@ protected:
         runtime_.register_plugin("tank", []() -> std::unique_ptr<v2::realtime::InstancePlugin> {
             return std::make_unique<tank::TankPlugin>();
         });
-        runtime_.set_event_callback([this](const v2::realtime::InstanceEvent& event) {
+        (void)runtime_.set_event_callback([this](const v2::realtime::InstanceEvent& event) {
             last_event_ = event;
             if (event.type == v2::realtime::InstanceEvent::Type::kInstanceFinished) {
                 captured_settlement_ = event.settlement.result_payload;
