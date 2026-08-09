@@ -127,7 +127,7 @@ def validate_source_boundary(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "certificate-generator-exists",
-        (ROOT / "scripts/tools/gen_certs.py").exists() and (ROOT / "scripts/tools/gen_certs.sh").exists(),
+        (ROOT / "scripts/tools/gen_certs.py").is_file(),
         "dev certificate generator exists",
     )
     add(

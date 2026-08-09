@@ -865,6 +865,8 @@ def invoke_bench_case(
         args.extend(["--messages", str(case["messages"])])
     if case.get("interval_ms") is not None:
         args.extend(["--interval", str(case["interval_ms"])])
+    if case.get("load_model"):
+        args.extend(["--load-model", str(case["load_model"])])
     if case.get("room"):
         room_name = str(case["room"])
         if case.get("scenario") == "battle":
@@ -1886,11 +1888,19 @@ def estimate_battle_max_frames(cases: list[dict[str, Any]]) -> int:
     for case in cases:
         if case.get("scenario") != "battle":
             continue
-        duration_ms = int(case.get("duration_seconds", 0)) * 1000
+        duration_ms = (
+            int(case.get("duration_seconds", 0))
+            + int(case.get("ramp_timeout_seconds", 0))
+        ) * 1000
         interval_ms = int(case.get("interval_ms") or 100)
         if duration_ms <= 0 or interval_ms <= 0:
             continue
-        max_frames = max(max_frames, max(3, duration_ms // interval_ms))
+        room_group_size = max(2, int(case.get("room_group_size", 2)))
+        offers_per_client = (duration_ms + interval_ms - 1) // interval_ms + 1
+        max_frames = max(
+            max_frames,
+            max(3, offers_per_client * room_group_size),
+        )
     return max_frames
 
 
@@ -2011,6 +2021,10 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     p99 = numeric_series("latency_p99_ms")
     totals = [int(run.get("total_messages", 0)) for run in runs]
     responses = [int(run.get("response_messages", 0)) for run in runs]
+    successful_responses = [
+        int(run.get("successful_response_messages", run.get("response_messages", 0)))
+        for run in runs
+    ]
     pushes = [int(run.get("push_messages", 0)) for run in runs]
     connected = [int(run.get("connected_clients", 0)) for run in runs]
     target = [int(run.get("target_clients", 0)) for run in runs]
@@ -2028,8 +2042,19 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
     configured_rate_ceiling = numeric_series("configured_request_rate_ceiling_ops_per_sec")
     achieved_send_rate = numeric_series("achieved_send_rate_ops_per_sec")
     achieved_response_rate = numeric_series("achieved_response_rate_ops_per_sec")
+    achieved_successful_response_rate = [
+        float(run.get(
+            "achieved_successful_response_rate_ops_per_sec",
+            run.get("achieved_response_rate_ops_per_sec", 0.0),
+        ))
+        for run in runs
+    ]
     send_attempts = [int(run.get("business_send_attempts", 0)) for run in runs]
     send_successes = [int(run.get("business_send_successes", 0)) for run in runs]
+    response_errors = [int(run.get("business_response_errors", 0)) for run in runs]
+    scheduled_offers = [int(run.get("open_loop_scheduled_offers", 0)) for run in runs]
+    schedule_lag_average = numeric_series("open_loop_average_schedule_lag_us")
+    schedule_lag_max = [int(run.get("open_loop_max_schedule_lag_us", 0)) for run in runs]
     rejected = [int(run.get("rejected_clients", 0)) for run in runs]
     failed = [int(run.get("failed_clients", 0)) for run in runs]
     forced_timeouts = [bool(run.get("forced_timeout") or run.get("collector_forced_timeout")) for run in runs]
@@ -2120,6 +2145,7 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
             "max": max(totals),
         },
         "response_messages": integer_distribution(responses),
+        "successful_response_messages": integer_distribution(successful_responses),
         "push_messages": integer_distribution(pushes),
         "message_count_consistent": message_count_consistent,
         "target_clients": integer_distribution(target),
@@ -2149,8 +2175,15 @@ def aggregate_case_runs(case_name: str, runs: list[dict[str, Any]]) -> dict[str,
         ),
         "business_send_attempts": integer_distribution(send_attempts),
         "business_send_successes": integer_distribution(send_successes),
+        "business_response_errors": integer_distribution(response_errors),
+        "open_loop_scheduled_offers": integer_distribution(scheduled_offers),
+        "open_loop_average_schedule_lag_us": numeric_distribution(schedule_lag_average),
+        "open_loop_max_schedule_lag_us": integer_distribution(schedule_lag_max),
         "achieved_send_rate_ops_per_sec": numeric_distribution(achieved_send_rate),
         "achieved_response_rate_ops_per_sec": numeric_distribution(achieved_response_rate),
+        "achieved_successful_response_rate_ops_per_sec": numeric_distribution(
+            achieved_successful_response_rate
+        ),
         "rejected_clients": {
             "min": min(rejected),
             "median": int(statistics.median(rejected)),
@@ -2762,6 +2795,19 @@ def build_saturation_analysis(
     curve_complete = len(manifest) >= 3
     if len(aggregates) != len(manifest):
         failures.append("case manifest and aggregate counts differ")
+    curve_load_models = sorted({
+        str(model)
+        for aggregate in aggregates
+        if isinstance(aggregate, dict)
+        for model in aggregate.get("load_models", [])
+    })
+    supported_load_models = {
+        "closed_loop_one_in_flight_per_client",
+        "open_loop_fixed_interval_per_client",
+    }
+    if len(curve_load_models) != 1 or curve_load_models[0] not in supported_load_models:
+        failures.append("saturation curve must use one supported load model")
+    analysis_load_model = curve_load_models[0] if len(curve_load_models) == 1 else "unknown"
 
     points: list[dict[str, Any]] = []
     for aggregate in aggregates:
@@ -2778,11 +2824,13 @@ def build_saturation_analysis(
         loadgen_values = loadgen_cpu_by_case.get(case_name, [])
         loadgen_cpu = statistics.median(loadgen_values) if loadgen_values else None
         target = int(aggregate.get("target_clients", {}).get("median", 0))
-        errors = (
+        terminal_client_errors = (
             int(aggregate.get("failed_clients", {}).get("max", 0))
             + int(aggregate.get("rejected_clients", {}).get("max", 0))
             + int(aggregate.get("cancelled_clients", {}).get("max", 0))
         )
+        request_errors = int(aggregate.get("business_response_errors", {}).get("max", 0))
+        total_errors = terminal_client_errors + request_errors
         message_count_consistent = aggregate.get("message_count_consistent") is True
         load_models = aggregate.get("load_models", [])
         boundary_evidence = load_end_boundaries.get(case_name, [])
@@ -2793,7 +2841,35 @@ def build_saturation_analysis(
         steady_elapsed = float(
             aggregate.get("steady_state_elapsed_seconds", {}).get("min", 0.0)
         )
+        steady_target = float(
+            aggregate.get("steady_state_target_seconds", {}).get("max", 0.0)
+        )
         ramp_to_steady_ratio = ramp_up / steady_elapsed if steady_elapsed > 0.0 else 1.0
+        configured_ceiling = float(
+            aggregate.get("configured_request_rate_ceiling_ops_per_sec", {}).get("median", 0.0)
+        )
+        scheduled_offers = int(
+            aggregate.get("open_loop_scheduled_offers", {}).get("median", 0)
+        )
+        attempted_offers = int(
+            aggregate.get("business_send_attempts", {}).get("median", 0)
+        )
+        achieved_offer = attempted_offers / steady_elapsed if steady_elapsed > 0.0 else 0.0
+        offer_to_configured_ratio = (
+            achieved_offer / configured_ceiling if configured_ceiling > 0.0 else 0.0
+        )
+        open_loop_schedule_valid = (
+            analysis_load_model != "open_loop_fixed_interval_per_client"
+            or (
+                scheduled_offers == attempted_offers
+                and attempted_offers > 0
+                and offer_to_configured_ratio >= 0.90
+            )
+        )
+        timed_window_valid = (
+            analysis_load_model != "open_loop_fixed_interval_per_client"
+            or (steady_target > 0.0 and steady_elapsed >= steady_target * 0.99)
+        )
         point_valid = (
             aggregate.get("runs") == repetitions
             and aggregate.get("measurement_started") is True
@@ -2807,7 +2883,9 @@ def build_saturation_analysis(
             and int(aggregate.get("peak_active_clients", {}).get("min", 0)) == target
             and int(aggregate.get("cancelled_clients", {}).get("max", 1)) == 0
             and message_count_consistent
-            and load_models == ["closed_loop_one_in_flight_per_client"]
+            and load_models == [analysis_load_model]
+            and open_loop_schedule_valid
+            and timed_window_valid
             and isinstance(gateway_cpu, (int, float))
             and not isinstance(gateway_cpu, bool)
             and isinstance(loadgen_cpu, (int, float))
@@ -2815,15 +2893,15 @@ def build_saturation_analysis(
             and ramp_to_steady_ratio <= 0.1
             and load_end_boundary_valid
         )
-        configured_ceiling = float(
-            aggregate.get("configured_request_rate_ceiling_ops_per_sec", {}).get("median", 0.0)
-        )
         achieved_send = float(
             aggregate.get("achieved_send_rate_ops_per_sec", {}).get("median", 0.0)
         )
-        achieved_response = float(
-            aggregate.get("achieved_response_rate_ops_per_sec", {}).get("median", 0.0)
+        response_metric = (
+            "achieved_successful_response_rate_ops_per_sec"
+            if analysis_load_model == "open_loop_fixed_interval_per_client"
+            else "achieved_response_rate_ops_per_sec"
         )
+        achieved_response = float(aggregate.get(response_metric, {}).get("median", 0.0))
         p99 = float(aggregate.get("latency_p99_ms", {}).get("median", 0.0))
         gateway_cpu_percent = float(gateway_cpu) if isinstance(gateway_cpu, (int, float)) else 0.0
         quota_utilization = (
@@ -2835,8 +2913,11 @@ def build_saturation_analysis(
             "case_id": case_name,
             "case_identity": aggregate.get("case_identity", {}),
             "evidence_valid": point_valid,
-            "load_model": "closed_loop_one_in_flight_per_client",
+            "load_model": analysis_load_model,
             "configured_request_rate_ceiling_ops_per_sec": round(configured_ceiling, 3),
+            "configured_offered_rate_ops_per_sec": round(configured_ceiling, 3),
+            "achieved_offer_rate_ops_per_sec": round(achieved_offer, 3),
+            "achieved_offer_to_configured_ratio": round(offer_to_configured_ratio, 6),
             "achieved_send_rate_ops_per_sec": round(achieved_send, 3),
             "achieved_response_rate_ops_per_sec": round(achieved_response, 3),
             "achieved_response_to_ceiling_ratio": round(
@@ -2846,9 +2927,24 @@ def build_saturation_analysis(
                 aggregate.get("throughput_msg_per_sec", {}).get("median", 0.0)
             ),
             "latency_p99_ms": p99,
-            "client_error_count": errors,
-            "client_error_rate": round(errors / target, 6) if target > 0 else 1.0,
+            "client_error_count": terminal_client_errors,
+            "client_error_rate": round(terminal_client_errors / target, 6)
+            if target > 0 else 1.0,
+            "business_response_errors": request_errors,
+            "request_error_rate": round(request_errors / attempted_offers, 6)
+            if attempted_offers > 0 else 0.0,
+            "total_error_count": total_errors,
             "message_count_consistent": message_count_consistent,
+            "open_loop_scheduled_offers": scheduled_offers,
+            "open_loop_schedule_valid": open_loop_schedule_valid,
+            "timed_window_valid": timed_window_valid,
+            "steady_state_target_seconds": round(steady_target, 3),
+            "open_loop_average_schedule_lag_us": float(
+                aggregate.get("open_loop_average_schedule_lag_us", {}).get("median", 0.0)
+            ),
+            "open_loop_max_schedule_lag_us": int(
+                aggregate.get("open_loop_max_schedule_lag_us", {}).get("max", 0)
+            ),
             "gateway_cpu_percent": round(gateway_cpu_percent, 3),
             "gateway_cpu_quota_percent": round(quota_utilization, 3),
             "loadgen_cpu_percent": round(float(loadgen_cpu), 3)
@@ -2863,35 +2959,48 @@ def build_saturation_analysis(
             "load_end_boundary_valid": load_end_boundary_valid,
             "slo_met": p99 <= (
                 battle_p99_limit_ms(case_name) if case_name.startswith("battle") else 50.0
-            ) and errors == 0,
+            ) and total_errors == 0,
         })
 
     points.sort(key=lambda item: float(item["configured_request_rate_ceiling_ops_per_sec"]))
     ceilings = [float(point["configured_request_rate_ceiling_ops_per_sec"]) for point in points]
     if any(current <= previous for previous, current in zip(ceilings, ceilings[1:], strict=False)):
         failures.append("configured request-rate ceilings are not strictly increasing")
-    if any(point.get("message_count_consistent") is not True for point in points):
-        failures.append(
-            "one or more saturation points have inconsistent total/response/push message counts"
-        )
-    if any(point.get("evidence_valid") is not True for point in points):
-        failures.append("one or more saturation points have incomplete lifecycle or resource evidence")
-
     gateway_cpu_threshold_point = next(
-        (point for point in points if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
+        (point for point in points
+         if point.get("evidence_valid") is True
+         and point["gateway_cpu_quota_percent"] >= cpu_threshold_percent),
         None,
     )
     cpu_point = next(
         (
             point for point in points
-            if point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
+            if point.get("evidence_valid") is True
+            and point["gateway_cpu_quota_percent"] >= cpu_threshold_percent
             and point["loadgen_cpu_quota_percent"] is not None
             and point["loadgen_cpu_quota_percent"] < loadgen_headroom_threshold_percent
         ),
         None,
     )
-    slo_point = next((point for point in points if point["latency_p99_ms"] > 50.0), None)
-    error_point = next((point for point in points if point["client_error_count"] > 0), None)
+    def load_source_has_headroom(point: dict[str, Any]) -> bool:
+        loadgen_quota = point.get("loadgen_cpu_quota_percent")
+        return (
+            point.get("evidence_valid") is True
+            and isinstance(loadgen_quota, (int, float))
+            and loadgen_quota < loadgen_headroom_threshold_percent
+            and point.get("open_loop_schedule_valid") is True
+        )
+
+    slo_point = next(
+        (point for point in points
+         if point["latency_p99_ms"] > 50.0 and load_source_has_headroom(point)),
+        None,
+    )
+    error_point = next(
+        (point for point in points
+         if point["total_error_count"] > 0 and load_source_has_headroom(point)),
+        None,
+    )
     throughput_point = None
     for previous, current in zip(points, points[1:], strict=False):
         previous_rate = float(previous["achieved_response_rate_ops_per_sec"])
@@ -2902,12 +3011,45 @@ def build_saturation_analysis(
             - 1.0
         )
         response_growth = current_rate / max(previous_rate, 0.000001) - 1.0
-        if ceiling_growth >= 0.2 and response_growth < 0.1:
+        if (previous.get("evidence_valid") is True
+                and ceiling_growth >= 0.2 and response_growth < 0.1
+                and load_source_has_headroom(current)):
             throughput_point = current
             break
 
+    knee_candidates = [
+        point for point in (cpu_point, throughput_point, slo_point, error_point)
+        if point is not None
+    ]
+    fixed_case_point = min(
+        knee_candidates,
+        key=lambda point: float(point["configured_request_rate_ceiling_ops_per_sec"]),
+        default=None,
+    )
+    required_points = points
+    post_saturation_invalid_points: list[str] = []
+    if fixed_case_point is not None:
+        fixed_index = points.index(fixed_case_point)
+        required_points = points[:fixed_index + 1]
+        post_saturation_invalid_points = [
+            str(point["case_id"])
+            for point in points[fixed_index + 1:]
+            if point.get("evidence_valid") is not True
+        ]
+    if any(
+        point.get("message_count_consistent") is not True
+        for point in required_points
+    ):
+        failures.append(
+            "one or more required saturation points have inconsistent total/response/push message counts"
+        )
+    if any(point.get("evidence_valid") is not True for point in required_points):
+        failures.append(
+            "one or more required saturation points have incomplete lifecycle or resource evidence"
+        )
+
     evidence_valid = not failures
-    saturation_found = evidence_valid and curve_complete and cpu_point is not None
+    saturation_found = evidence_valid and curve_complete and fixed_case_point is not None
     if evidence_valid and not curve_complete:
         inconclusive_reason = (
             "fewer than three cases were selected; evidence is a comparison point, not a saturation curve"
@@ -2932,9 +3074,11 @@ def build_saturation_analysis(
         "curve_complete": curve_complete,
         "conclusion": "knee_found" if saturation_found else "inconclusive",
         "inconclusive_reason": "" if saturation_found else inconclusive_reason,
-        "load_model": "closed_loop_one_in_flight_per_client",
+        "load_model": analysis_load_model,
         "load_model_note": (
-            "Configured rate is a timer ceiling; one in-flight request per client means this is not open-loop offered load."
+            "Each client schedules requests at absolute fixed-interval deadlines independent of responses."
+            if analysis_load_model == "open_loop_fixed_interval_per_client"
+            else "Configured rate is a timer ceiling; one in-flight request per client means this is not open-loop offered load."
         ),
         "cpu_measurement_window": "case start through loadgen process exit (ramp plus steady state; quiescence excluded)",
         "cpu_measurement_window_policy": (
@@ -2945,6 +3089,10 @@ def build_saturation_analysis(
         "service_cpu_count": service_cpu_count,
         "loadgen_cpu_count": loadgen_cpu_count,
         "points": points,
+        "required_evidence_through_case": (
+            fixed_case_point["case_id"] if fixed_case_point else None
+        ),
+        "post_saturation_invalid_points": post_saturation_invalid_points,
         "cpu_saturation_case": cpu_point["case_identity"] if cpu_point else None,
         "gateway_cpu_threshold_case": (
             gateway_cpu_threshold_point["case_identity"]
@@ -2953,13 +3101,27 @@ def build_saturation_analysis(
         "throughput_knee_case": throughput_point["case_identity"] if throughput_point else None,
         "slo_knee_case": slo_point["case_identity"] if slo_point else None,
         "error_knee_case": error_point["case_identity"] if error_point else None,
-        "fixed_case_candidate": cpu_point["case_identity"] if cpu_point else None,
+        "fixed_case_candidate": fixed_case_point["case_identity"] if fixed_case_point else None,
+        "knee_reasons": [
+            reason
+            for reason, point in (
+                ("gateway_cpu", cpu_point),
+                ("throughput_plateau", throughput_point),
+                ("latency_slo", slo_point),
+                ("client_errors", error_point),
+            )
+            if point is not None
+            and fixed_case_point is not None
+            and point["case_identity"] == fixed_case_point["case_identity"]
+        ],
         "comparison_axes": ["service_cpu_count", "io_cores"],
         "failures": failures,
     }
 
 
 def minimum_battle_messages(case_name: str) -> int:
+    if case_name.startswith("battle-open-"):
+        return 1_000
     if case_name.startswith("battle-500"):
         return 20_000
     if case_name.startswith("battle-100"):
@@ -2972,6 +3134,8 @@ def minimum_battle_messages(case_name: str) -> int:
 
 
 def battle_p99_limit_ms(case_name: str) -> float:
+    if case_name.startswith("battle-open-"):
+        return 5_000.0
     if case_name.startswith("battle-100"):
         return 250.0
     if case_name.startswith("battle-500"):
@@ -3076,6 +3240,15 @@ def render_markdown_report(summary: dict[str, Any]) -> str:
             f"- Load model: `{saturation.get('load_model')}`",
             f"- CPU threshold: {fmt_number(saturation.get('cpu_threshold_percent_of_quota'))}% of quota",
             f"- Loadgen headroom threshold: {fmt_number(saturation.get('loadgen_headroom_threshold_percent_of_quota'))}% of quota",
+            f"- Required evidence through: `{saturation.get('required_evidence_through_case') or 'all selected cases'}`",
+            "- Invalid points beyond confirmed saturation: "
+            + (
+                ", ".join(
+                    f"`{case_id}`"
+                    for case_id in saturation.get("post_saturation_invalid_points", [])
+                )
+                or "none"
+            ),
             f"- Inconclusive reason: {saturation.get('inconclusive_reason') or 'n/a'}",
             "",
             "| Case | Ceiling ops/s | Send ops/s | Response ops/s | Gateway CPU quota % | Loadgen CPU quota % | P99 ms | Errors |",
@@ -3267,6 +3440,10 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
         bench_exit_code = int(aggregate.get("bench_exit_code", 1))
         total_messages = aggregate["total_messages"]["median"]
         response_messages = aggregate.get("response_messages", {}).get("median", 0)
+        successful_response_messages = aggregate.get(
+            "successful_response_messages", {}
+        ).get("median", response_messages)
+        business_response_errors = aggregate.get("business_response_errors", {}).get("max", 0)
         push_messages = aggregate.get("push_messages", {}).get("median", 0)
         message_count_consistent = aggregate.get("message_count_consistent") is True
         target_min = int(aggregate.get("target_clients", {}).get("min", 0))
@@ -3372,6 +3549,11 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                 },
             })
         elif case_name.startswith("battle"):
+            open_saturation_case = case_name.startswith("battle-open-")
+            overload_criteria = (
+                "request overload responses measured separately, "
+                if open_saturation_case else ""
+            )
             min_messages = minimum_battle_messages(case_name)
             p99_limit = battle_p99_limit_ms(case_name)
             min_observed_messages = aggregate["total_messages"]["min"]
@@ -3394,6 +3576,7 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "battle: all target clients started/TCP-connected/authenticated/active before "
                     "measurement, cancelled=0, bounded steady window complete, "
                     f"total=response+push, rejected=0, failed=0, forced_timeout=false, "
+                    f"{overload_criteria}"
                     f"min_total_messages>={min_messages}, "
                     f"p99<={p99_limit:.0f}ms"
                 ),
@@ -3407,6 +3590,8 @@ def evaluate_release_gates(aggregates: list[dict[str, Any]]) -> dict[str, Any]:
                     "forced_timeout": forced_timeout,
                     "total_messages": total_messages,
                     "response_messages": response_messages,
+                    "successful_response_messages": successful_response_messages,
+                    "business_response_errors": business_response_errors,
                     "push_messages": push_messages,
                     "message_count_consistent": message_count_consistent,
                     "min_total_messages": min_observed_messages,
@@ -3439,6 +3624,20 @@ def build_run_cases(run_preset: str) -> list[dict[str, Any]]:
             {"name": "battle-100-sat-60s", "scenario": "battle", "clients": 100, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_100", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-250-sat-60s", "scenario": "battle", "clients": 250, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_250", "room_group_size": 2, **saturation_ramp},
             {"name": "battle-500-sat-60s", "scenario": "battle", "clients": 500, "duration_seconds": 60, "interval_ms": 100, "room": "perf_battle_sat_500", "room_group_size": 2, **saturation_ramp},
+        ]
+    if run_preset == "business-open-saturation":
+        saturation_ramp = {"ramp_clients_per_second": 750, "ramp_timeout_seconds": 120}
+        return [
+            {"name": "battle-open-c100-i100-60s", "scenario": "battle", "clients": 100, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_100", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c200-i100-60s", "scenario": "battle", "clients": 200, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_200", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c250-i100-60s", "scenario": "battle", "clients": 250, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_250", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c300-i100-60s", "scenario": "battle", "clients": 300, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_300", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c350-i100-60s", "scenario": "battle", "clients": 350, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_350", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c400-i100-60s", "scenario": "battle", "clients": 400, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_400", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c450-i100-60s", "scenario": "battle", "clients": 450, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_450", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c500-i100-60s", "scenario": "battle", "clients": 500, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_500", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c750-i100-60s", "scenario": "battle", "clients": 750, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_750", "room_group_size": 2, **saturation_ramp},
+            {"name": "battle-open-c1000-i100-60s", "scenario": "battle", "clients": 1000, "duration_seconds": 60, "interval_ms": 100, "load_model": "open-loop", "room": "perf_battle_open_1000", "room_group_size": 2, **saturation_ramp},
         ]
     if run_preset == "capacity":
         return [
@@ -3491,7 +3690,11 @@ def build_case_manifest(
             "duration_seconds": int(case["duration_seconds"]),
             "ramp_clients_per_second": int(case["ramp_clients_per_second"]),
             "ramp_timeout_seconds": int(case["ramp_timeout_seconds"]),
-            "load_model": "closed_loop_one_in_flight_per_client",
+            "load_model": (
+                "open_loop_fixed_interval_per_client"
+                if case.get("load_model") == "open-loop"
+                else "closed_loop_one_in_flight_per_client"
+            ),
             "configured_request_rate_ceiling_ops_per_sec": configured_ceiling,
             "service_cpu_set": service_cpu_set,
             "service_cpu_count": service_cpu_count,
@@ -3509,7 +3712,7 @@ def main() -> int:
     parser.add_argument("--build-dir", default=str(Path("build/release").resolve()))
     parser.add_argument(
         "--run-preset",
-        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation", "business-saturation"],
+        choices=["smoke", "baseline", "capacity", "business-capacity", "saturation", "business-saturation", "business-open-saturation"],
         default="smoke",
     )
     parser.add_argument("--repetitions", type=int, default=1)
@@ -3644,7 +3847,7 @@ def main() -> int:
         parser.error(str(exc))
     if args.loadgen_io_threads <= 0:
         parser.error("--loadgen-io-threads must be positive")
-    if args.run_preset in {"saturation", "business-saturation"} and (
+    if args.run_preset in {"saturation", "business-saturation", "business-open-saturation"} and (
         not args.cpu_set or not resolved_loadgen_cpu_set
     ):
         parser.error(
@@ -4460,7 +4663,7 @@ def main() -> int:
         summary["release_gates"].setdefault("checks", []).append(resource_isolation_check)
         if not resource_isolation_check["passed"]:
             summary["release_gates"]["overall_pass"] = False
-        if args.run_preset in {"saturation", "business-saturation"}:
+        if args.run_preset in {"saturation", "business-saturation", "business-open-saturation"}:
             summary["saturation_analysis"] = build_saturation_analysis(
                 summary,
                 cpu_threshold_percent=args.saturation_cpu_threshold_percent,
@@ -4495,7 +4698,7 @@ def main() -> int:
             "business_flow_clients": max(1, args.business_flow_clients),
             "supports_long_soak_followup": True,
             "supports_capacity_followup": args.run_preset in {"capacity", "business-capacity"},
-            "supports_saturation_comparison": args.run_preset in {"saturation", "business-saturation"},
+            "supports_saturation_comparison": args.run_preset in {"saturation", "business-saturation", "business-open-saturation"},
         }
 
         summary_path = output_root / "summary.json"
@@ -4504,7 +4707,7 @@ def main() -> int:
         report_path.write_text(render_markdown_report(summary), encoding="utf-8")
         log_step(f"Baseline collection completed: {output_root}")
         log_step(f"Markdown report written: {report_path}")
-        if args.run_preset in {"saturation", "business-saturation"}:
+        if args.run_preset in {"saturation", "business-saturation", "business-open-saturation"}:
             analysis = summary.get("saturation_analysis")
             if isinstance(analysis, dict) and analysis.get("collection_pass") is True:
                 return 0

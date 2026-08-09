@@ -31,6 +31,7 @@ on:
           - business-capacity
           - saturation
           - business-saturation
+          - business-open-saturation
       perf_repetitions:
         description: "Number of repetitions per case"
         required: true
@@ -288,7 +289,7 @@ jobs:
           if [ -n "$PERF_CASE" ]; then
             case_args+=(--case "$PERF_CASE")
           fi
-          if [[ "$perf_preset" == saturation || "$perf_preset" == business-saturation ]]; then
+          if [[ "$perf_preset" == saturation || "$perf_preset" == business-saturation || "$perf_preset" == business-open-saturation ]]; then
             if [ "${{ inputs.platform }}" != linux-x64 ]; then
               echo "saturation presets currently require the AOI Linux x64 runner" >&2
               exit 2
@@ -313,6 +314,8 @@ jobs:
       - name: Evaluate performance gates
         id: gates
         shell: bash
+        env:
+          PERF_PRESET: ${{ inputs.perf_preset || 'baseline' }}
         run: |
           SUMMARY_PATH="${{ steps.perf.outputs.output_dir }}/summary.json"
           if [ ! -f "$SUMMARY_PATH" ]; then
@@ -336,8 +339,21 @@ jobs:
           checks = release_gates.get("checks", [])
           warnings = release_gates.get("warnings", [])
           overall_pass = release_gates.get("overall_pass") is True
+          verdict_source = "release_gates.overall_pass"
+          if os.environ["PERF_PRESET"] in {
+              "saturation",
+              "business-saturation",
+              "business-open-saturation",
+          }:
+              saturation = summary.get("saturation_analysis")
+              if not isinstance(saturation, dict):
+                  print("summary.json is missing saturation_analysis")
+                  sys.exit(1)
+              overall_pass = saturation.get("overall_pass") is True
+              verdict_source = "saturation_analysis.overall_pass"
           report_lines = ["## Performance Gate Results", ""]
           report_lines.append(f"- Overall pass: `{overall_pass}`")
+          report_lines.append(f"- Verdict source: `{verdict_source}`")
           report_lines.append("")
           report_lines.append("| Case | Verdict | Observed P99 | Criteria |")
           report_lines.append("| --- | --- | ---: | --- |")

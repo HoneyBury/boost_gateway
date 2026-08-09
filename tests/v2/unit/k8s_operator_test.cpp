@@ -60,7 +60,8 @@ TEST(K8sOperatorTest, RequirementsFileExists) {
     EXPECT_FALSE(req.empty()) << "requirements.txt missing";
     EXPECT_NE(req.find("kopf"), std::string::npos);
     EXPECT_NE(req.find("kubernetes"), std::string::npos);
-    EXPECT_NE(req.find("cryptography"), std::string::npos);
+    EXPECT_NE(req.find("cryptography>=50.0.0"), std::string::npos)
+        << "cryptography must exclude versions affected by CVE-2026-69247";
 }
 
 TEST(K8sOperatorTest, DeployScriptExists) {

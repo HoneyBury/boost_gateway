@@ -3,6 +3,7 @@
 
 #include "completion_policy.h"
 #include "load_evidence.h"
+#include "load_model.h"
 
 #include "app/logging.h"
 #include "net/packet_codec.h"
@@ -23,6 +24,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <deque>
 #include <fstream>
 #include <functional>
 #include <iostream>
@@ -31,6 +33,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace asio = boost::asio;
@@ -74,6 +77,8 @@ struct BenchConfig {
     std::size_t messages_per_client = 0;  // 0 = unlimited (use duration)
     std::chrono::seconds duration{30};
     std::chrono::milliseconds send_interval{0};
+    v2::gateway_pressure::LoadModel load_model =
+        v2::gateway_pressure::LoadModel::kClosedLoop;
     std::string room_name = "bench_room";
     std::string user_prefix = "bench_user";
     std::string output_path;
@@ -98,6 +103,11 @@ BenchConfig parse_args(int argc, char* argv[]) {
         else if (arg == "--duration" && i + 1 < argc) cfg.duration = std::chrono::seconds(std::atoi(argv[++i]));
         else if (arg == "--messages" && i + 1 < argc) cfg.messages_per_client = std::strtoull(argv[++i], nullptr, 10);
         else if (arg == "--interval" && i + 1 < argc) cfg.send_interval = std::chrono::milliseconds(std::atoi(argv[++i]));
+        else if (arg == "--load-model" && i + 1 < argc) {
+            if (const auto model = v2::gateway_pressure::parse_load_model(argv[++i])) {
+                cfg.load_model = *model;
+            }
+        }
         else if (arg == "--room" && i + 1 < argc)     cfg.room_name = argv[++i];
         else if (arg == "--user-prefix" && i + 1 < argc) cfg.user_prefix = argv[++i];
         else if (arg == "--output" && i + 1 < argc)   cfg.output_path = argv[++i];
@@ -131,12 +141,17 @@ struct BenchResult {
     std::size_t cancelled_before_connect = 0;
     std::uint64_t business_send_attempts = 0;
     std::uint64_t business_send_successes = 0;
+    std::uint64_t business_response_errors = 0;
+    std::uint64_t open_loop_scheduled_offers = 0;
+    double open_loop_average_schedule_lag_us = 0.0;
+    std::uint64_t open_loop_max_schedule_lag_us = 0;
     std::size_t connected_clients = 0;
     std::size_t failed_clients = 0;
     std::size_t rejected_clients = 0;
     std::string user_prefix;
     std::uint64_t total_messages = 0;
     std::uint64_t response_messages = 0;
+    std::uint64_t successful_response_messages = 0;
     std::uint64_t push_messages = 0;
     double elapsed_seconds = 0.0;
     double total_elapsed_seconds = 0.0;
@@ -153,6 +168,7 @@ struct BenchResult {
     bool configured_request_rate_is_bounded = false;
     double achieved_send_rate_ops_per_sec = 0.0;
     double achieved_response_rate_ops_per_sec = 0.0;
+    double achieved_successful_response_rate_ops_per_sec = 0.0;
     double throughput_msg_per_sec = 0.0;
     double latency_p50_ms = 0.0;
     double latency_p90_ms = 0.0;
@@ -196,6 +212,22 @@ public:
 
     void record_business_send_success() {
         business_send_successes_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_business_response_error() {
+        business_response_errors_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    void record_open_loop_offer(std::chrono::microseconds schedule_lag) {
+        open_loop_scheduled_offers_.fetch_add(1, std::memory_order_relaxed);
+        const auto lag_us = static_cast<std::uint64_t>(
+            std::max<std::int64_t>(0, schedule_lag.count()));
+        open_loop_total_schedule_lag_us_.fetch_add(lag_us, std::memory_order_relaxed);
+        auto observed = open_loop_max_schedule_lag_us_.load(std::memory_order_relaxed);
+        while (observed < lag_us &&
+               !open_loop_max_schedule_lag_us_.compare_exchange_weak(
+                   observed, lag_us, std::memory_order_relaxed)) {
+        }
     }
 
     void on_client_rejected(bool was_authenticated) {
@@ -250,6 +282,18 @@ public:
     [[nodiscard]] std::uint64_t business_send_successes() const {
         return business_send_successes_.load(std::memory_order_relaxed);
     }
+    [[nodiscard]] std::uint64_t business_response_errors() const {
+        return business_response_errors_.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] std::uint64_t open_loop_scheduled_offers() const {
+        return open_loop_scheduled_offers_.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] std::uint64_t open_loop_total_schedule_lag_us() const {
+        return open_loop_total_schedule_lag_us_.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] std::uint64_t open_loop_max_schedule_lag_us() const {
+        return open_loop_max_schedule_lag_us_.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] std::size_t done_clients() const {
         return completed_clients_.load(std::memory_order_relaxed) +
                rejected_clients_.load(std::memory_order_relaxed) +
@@ -293,6 +337,10 @@ private:
     std::atomic<std::size_t> push_packets_{0};
     std::atomic<std::uint64_t> business_send_attempts_{0};
     std::atomic<std::uint64_t> business_send_successes_{0};
+    std::atomic<std::uint64_t> business_response_errors_{0};
+    std::atomic<std::uint64_t> open_loop_scheduled_offers_{0};
+    std::atomic<std::uint64_t> open_loop_total_schedule_lag_us_{0};
+    std::atomic<std::uint64_t> open_loop_max_schedule_lag_us_{0};
     std::atomic<bool> finished_{false};
     std::atomic<bool> time_expired_{false};
     std::atomic<bool> global_completion_{false};
@@ -364,6 +412,11 @@ public:
     [[nodiscard]] const v2::benchmark::LatencyHistogram& histogram() const { return histogram_; }
 
 private:
+    struct PendingWrite {
+        std::string payload;
+        bool business_message = false;
+    };
+
     void do_connect(const tcp::resolver::results_type& eps) {
         auto self = shared_from_this();
         asio::async_connect(socket_, eps, [self](const error_code& ec, const tcp::endpoint&) {
@@ -417,19 +470,49 @@ private:
                      std::int32_t ec = 0,
                      bool business_message = false) {
         touch_progress();
-        outbound_packet_ = net::packet::encode(msg_id, next_request_id_++, ec, body);
-        if (config_.scenario == BenchScenario::kEcho) {
-            send_timestamp_ = std::chrono::steady_clock::now();
+        const auto request_id = next_request_id_++;
+        if (business_message) {
+            business_request_started_at_[request_id] = std::chrono::steady_clock::now();
         }
+        outbound_packets_.push_back(PendingWrite{
+            .payload = net::packet::encode(msg_id, request_id, ec, body),
+            .business_message = business_message,
+        });
+        start_next_write();
+    }
+
+    void start_next_write() {
+        if (write_pending_ || outbound_packets_.empty()) {
+            return;
+        }
+        write_pending_ = true;
         auto self = shared_from_this();
-        asio::async_write(socket_, asio::buffer(outbound_packet_),
-            [self, business_message](const error_code& ec, std::size_t) {
+        asio::async_write(socket_, asio::buffer(outbound_packets_.front().payload),
+            [self](const error_code& ec, std::size_t) {
                 if (ec) { self->fail("write", ec); return; }
+                const bool business_message = self->outbound_packets_.front().business_message;
+                self->outbound_packets_.pop_front();
+                self->write_pending_ = false;
                 if (business_message) {
                     self->controller_->record_business_send_success();
                 }
                 self->read_header();
+                self->start_next_write();
             });
+    }
+
+    bool complete_business_request(const net::packet::DecodedPacket& pkt) {
+        const auto pending = business_request_started_at_.find(pkt.request_id);
+        if (pending == business_request_started_at_.end()) {
+            return false;
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now() - pending->second);
+        histogram_.record_us(static_cast<std::uint64_t>(
+            std::max<std::int64_t>(0, elapsed.count())));
+        business_request_started_at_.erase(pending);
+        battle_input_in_flight_ = false;
+        return true;
     }
 
     void read_header() {
@@ -494,12 +577,22 @@ private:
         }
         touch_progress();
         if (pkt.message_id == net::protocol::kErrorResponse) {
+            (void)complete_business_request(pkt);
             LOG_WARN("pressure client {} received error: code={} body={}",
                      user_id_, pkt.error_code, pkt.body);
             if (config_.scenario == BenchScenario::kBattle && in_battle_ &&
                 pkt.body == "battle_not_found") {
                 battle_finished_ = true;
                 finish();
+                return;
+            }
+            if (v2::gateway_pressure::is_open_loop_overload_response(
+                    config_.load_model,
+                    config_.scenario == BenchScenario::kBattle,
+                    in_battle_,
+                    pkt.body)) {
+                controller_->record_business_response_error();
+                wait_for_next_message();
                 return;
             }
             if (v2::gateway_pressure::is_expected_shutdown_error(
@@ -546,17 +639,18 @@ private:
         if (pkt.message_id == net::protocol::kEchoResponse) {
             ++completed_messages_;
             throughput_->record();
-
-            auto now = std::chrono::steady_clock::now();
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(now - send_timestamp_).count();
-            histogram_.record_us(static_cast<std::uint64_t>(us));
+            (void)complete_business_request(pkt);
 
             if (config_.messages_per_client > 0 &&
                 completed_messages_ >= config_.messages_per_client) {
                 finish();
                 return;
             }
-            schedule_next();
+            if (config_.load_model == v2::gateway_pressure::LoadModel::kOpenLoop) {
+                wait_for_next_message();
+            } else {
+                schedule_next();
+            }
             return;
         }
 
@@ -651,11 +745,7 @@ private:
             }
             ++completed_messages_;
             throughput_->record();
-            battle_input_in_flight_ = false;
-
-            auto now = std::chrono::steady_clock::now();
-            auto us = std::chrono::duration_cast<std::chrono::microseconds>(now - send_timestamp_).count();
-            histogram_.record_us(static_cast<std::uint64_t>(us));
+            (void)complete_business_request(pkt);
 
             if (graceful_stop_requested_) {
                 request_battle_cleanup();
@@ -671,7 +761,11 @@ private:
                 finish();
                 return;
             }
-            schedule_next();
+            if (config_.load_model == v2::gateway_pressure::LoadModel::kOpenLoop) {
+                wait_for_next_message();
+            } else {
+                schedule_next();
+            }
             return;
         }
 
@@ -743,6 +837,10 @@ private:
             request_battle_cleanup();
             return;
         }
+        if (config_.load_model == v2::gateway_pressure::LoadModel::kOpenLoop) {
+            start_open_loop_schedule();
+            return;
+        }
         if (config_.send_interval.count() > 0) {
             auto self = shared_from_this();
             send_timer_.expires_after(next_send_delay());
@@ -756,6 +854,40 @@ private:
         }
     }
 
+    void start_open_loop_schedule() {
+        if (open_loop_started_ || config_.send_interval.count() <= 0) {
+            return;
+        }
+        open_loop_started_ = true;
+        next_open_loop_offer_ = std::chrono::steady_clock::now() + next_send_delay();
+        arm_open_loop_offer();
+        wait_for_next_message();
+    }
+
+    void arm_open_loop_offer() {
+        if (graceful_stop_requested_ || battle_finished_ ||
+            controller_->global_completion()) {
+            return;
+        }
+        auto self = shared_from_this();
+        const auto scheduled_at = next_open_loop_offer_;
+        send_timer_.expires_at(scheduled_at);
+        send_timer_.async_wait([self, scheduled_at](const error_code& ec) {
+            if (ec || self->graceful_stop_requested_ || self->battle_finished_ ||
+                self->controller_->global_completion()) {
+                return;
+            }
+            const auto now = std::chrono::steady_clock::now();
+            self->controller_->record_open_loop_offer(
+                std::chrono::duration_cast<std::chrono::microseconds>(now - scheduled_at));
+            self->send_next_message();
+            self->next_open_loop_offer_ =
+                v2::gateway_pressure::next_open_loop_deadline<std::chrono::steady_clock>(
+                    scheduled_at, self->config_.send_interval);
+            self->arm_open_loop_offer();
+        });
+    }
+
     void send_next_message() {
         if (graceful_stop_requested_) {
             request_battle_cleanup();
@@ -766,18 +898,18 @@ private:
                 finish();
                 return;
             }
-            if (battle_input_in_flight_) {
+            if (config_.load_model == v2::gateway_pressure::LoadModel::kClosedLoop &&
+                battle_input_in_flight_) {
                 return;
             }
-            battle_input_in_flight_ = true;
+            battle_input_in_flight_ =
+                config_.load_model == v2::gateway_pressure::LoadModel::kClosedLoop;
             controller_->record_business_send_attempt();
-            send_timestamp_ = std::chrono::steady_clock::now();
             send_packet(net::protocol::kBattleInputRequest,
                         "move:" + std::to_string(client_index_) + "," +
                         std::to_string(completed_messages_), 0, true);
         } else {
             controller_->record_business_send_attempt();
-            send_timestamp_ = std::chrono::steady_clock::now();
             send_packet(net::protocol::kEchoRequest,
                         "bench_echo_" + std::to_string(completed_messages_), 0, true);
         }
@@ -1041,7 +1173,7 @@ private:
 
     void request_battle_cleanup() {
         if (!graceful_stop_requested_ || battle_finished_ ||
-            battle_finish_requested_ || battle_input_in_flight_) {
+            battle_finish_requested_ || !business_request_started_at_.empty()) {
             return;
         }
         battle_finish_requested_ = true;
@@ -1129,11 +1261,12 @@ private:
     std::string user_id_;
     std::size_t completed_messages_ = 0;
     std::uint32_t next_request_id_ = 1;
-    std::string outbound_packet_;
+    std::deque<PendingWrite> outbound_packets_;
+    std::unordered_map<std::uint32_t, std::chrono::steady_clock::time_point>
+        business_request_started_at_;
     net::packet::LengthHeader read_header_{};
     std::vector<char> read_body_;
     std::uint32_t expected_body_length_ = 0;
-    std::chrono::steady_clock::time_point send_timestamp_;
     v2::benchmark::LatencyHistogram histogram_;
     v2::benchmark::ThroughputTracker* throughput_;
 
@@ -1143,6 +1276,9 @@ private:
     bool battle_loop_started_ = false;
     bool battle_finished_ = false;
     bool battle_input_in_flight_ = false;
+    bool open_loop_started_ = false;
+    bool write_pending_ = false;
+    std::chrono::steady_clock::time_point next_open_loop_offer_{};
     bool graceful_stop_requested_ = false;
     bool battle_finish_requested_ = false;
     std::size_t battle_start_retry_attempts_ = 0;
@@ -1184,12 +1320,17 @@ nlohmann::json to_json(const BenchResult& r) {
         {"cancelled_before_connect", r.cancelled_before_connect},
         {"business_send_attempts", r.business_send_attempts},
         {"business_send_successes", r.business_send_successes},
+        {"business_response_errors", r.business_response_errors},
+        {"open_loop_scheduled_offers", r.open_loop_scheduled_offers},
+        {"open_loop_average_schedule_lag_us", r.open_loop_average_schedule_lag_us},
+        {"open_loop_max_schedule_lag_us", r.open_loop_max_schedule_lag_us},
         {"connected_clients", r.connected_clients},
         {"failed_clients", r.failed_clients},
         {"rejected_clients", r.rejected_clients},
         {"user_prefix", r.user_prefix},
         {"total_messages", r.total_messages},
         {"response_messages", r.response_messages},
+        {"successful_response_messages", r.successful_response_messages},
         {"push_messages", r.push_messages},
         {"elapsed_seconds", r.elapsed_seconds},
         {"total_elapsed_seconds", r.total_elapsed_seconds},
@@ -1206,6 +1347,8 @@ nlohmann::json to_json(const BenchResult& r) {
         {"configured_request_rate_is_bounded", r.configured_request_rate_is_bounded},
         {"achieved_send_rate_ops_per_sec", r.achieved_send_rate_ops_per_sec},
         {"achieved_response_rate_ops_per_sec", r.achieved_response_rate_ops_per_sec},
+        {"achieved_successful_response_rate_ops_per_sec",
+         r.achieved_successful_response_rate_ops_per_sec},
         {"throughput_msg_per_sec", r.throughput_msg_per_sec},
         {"latency_p50_ms", r.latency_p50_ms},
         {"latency_p90_ms", r.latency_p90_ms},
@@ -1230,8 +1373,9 @@ int main(int argc, char* argv[]) {
     app::logging::init("v2_gateway_pressure");
 
     const auto config = parse_args(argc, argv);
-    LOG_INFO("v2_gateway_pressure: scenario={} host={} port={} clients={} msgs={} duration={}s",
-             to_string(config.scenario), config.host, config.port,
+    LOG_INFO("v2_gateway_pressure: scenario={} load_model={} host={} port={} clients={} msgs={} duration={}s",
+             to_string(config.scenario), v2::gateway_pressure::load_model_name(config.load_model),
+             config.host, config.port,
              config.client_count, config.messages_per_client, config.duration.count());
 
     asio::io_context io;
@@ -1334,6 +1478,14 @@ int main(int argc, char* argv[]) {
             {"cancelled_before_connect", evidence.cancelled_before_connect},
             {"business_send_attempts", controller->business_send_attempts()},
             {"business_send_successes", controller->business_send_successes()},
+            {"business_response_errors", controller->business_response_errors()},
+            {"open_loop_scheduled_offers", controller->open_loop_scheduled_offers()},
+            {"open_loop_average_schedule_lag_us",
+             controller->open_loop_scheduled_offers() > 0
+                 ? static_cast<double>(controller->open_loop_total_schedule_lag_us()) /
+                       static_cast<double>(controller->open_loop_scheduled_offers())
+                 : 0.0},
+            {"open_loop_max_schedule_lag_us", controller->open_loop_max_schedule_lag_us()},
             {"connected_clients", evidence.tcp_connected_clients},
             {"failed_clients", controller->failed_clients()},
             {"rejected_clients", controller->rejected_clients()},
@@ -1349,7 +1501,7 @@ int main(int argc, char* argv[]) {
             {"steady_state_elapsed_seconds", evidence.steady_state_elapsed_seconds},
             {"steady_state_completed", false},
             {"termination_reason", std::string(reason)},
-            {"load_model", "closed_loop_one_in_flight_per_client"},
+            {"load_model", v2::gateway_pressure::load_model_name(config.load_model)},
             {"configured_request_rate_ceiling_ops_per_sec",
              config.send_interval.count() > 0
                  ? static_cast<double>(config.client_count) * 1000.0 /
@@ -1364,6 +1516,12 @@ int main(int argc, char* argv[]) {
                  ? static_cast<double>(controller->completed_packets()) /
                        evidence.steady_state_elapsed_seconds
                  : 0.0},
+            {"achieved_successful_response_rate_ops_per_sec",
+             evidence.steady_state_elapsed_seconds > 0.0
+                 ? static_cast<double>(controller->completed_packets()) /
+                       evidence.steady_state_elapsed_seconds
+                 : 0.0},
+            {"successful_response_messages", controller->completed_packets()},
             {"throughput_msg_per_sec", evidence.steady_state_elapsed_seconds > 0.0
                 ? static_cast<double>(throughput.total_count()) /
                     evidence.steady_state_elapsed_seconds
@@ -1513,6 +1671,13 @@ int main(int argc, char* argv[]) {
     result.cancelled_before_connect = evidence.cancelled_before_connect;
     result.business_send_attempts = controller->business_send_attempts();
     result.business_send_successes = controller->business_send_successes();
+    result.business_response_errors = controller->business_response_errors();
+    result.open_loop_scheduled_offers = controller->open_loop_scheduled_offers();
+    result.open_loop_average_schedule_lag_us = result.open_loop_scheduled_offers > 0
+        ? static_cast<double>(controller->open_loop_total_schedule_lag_us()) /
+              static_cast<double>(result.open_loop_scheduled_offers)
+        : 0.0;
+    result.open_loop_max_schedule_lag_us = controller->open_loop_max_schedule_lag_us();
     result.connected_clients = evidence.tcp_connected_clients;
     result.failed_clients = controller->failed_clients();
     result.rejected_clients = controller->rejected_clients();
@@ -1534,6 +1699,7 @@ int main(int argc, char* argv[]) {
             : termination_reason;
     }
     result.configured_request_rate_is_bounded = config.send_interval.count() > 0;
+    result.load_model = std::string(v2::gateway_pressure::load_model_name(config.load_model));
     result.configured_request_rate_ceiling_ops_per_sec =
         result.configured_request_rate_is_bounded
             ? static_cast<double>(config.client_count) * 1000.0 /
@@ -1573,6 +1739,7 @@ int main(int argc, char* argv[]) {
     const auto message_counts = v2::gateway_pressure::final_message_counts(
         lat_snap.total_count, controller->push_packets());
     result.response_messages = message_counts.response_messages;
+    result.successful_response_messages = controller->completed_packets();
     result.push_messages = message_counts.push_messages;
     result.total_messages = message_counts.total_messages;
     result.throughput_msg_per_sec = result.steady_state_elapsed_seconds > 0.0
@@ -1582,6 +1749,11 @@ int main(int argc, char* argv[]) {
         ? static_cast<double>(result.response_messages) /
               result.steady_state_elapsed_seconds
         : 0.0;
+    result.achieved_successful_response_rate_ops_per_sec =
+        result.steady_state_elapsed_seconds > 0.0
+            ? static_cast<double>(result.successful_response_messages) /
+                  result.steady_state_elapsed_seconds
+            : 0.0;
 
     const auto result_json = to_json(result).dump();
 

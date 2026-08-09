@@ -1,5 +1,6 @@
 #include "../../../examples/v2_gateway_pressure/completion_policy.h"
 #include "../../../examples/v2_gateway_pressure/load_evidence.h"
+#include "../../../examples/v2_gateway_pressure/load_model.h"
 #include "../../../examples/v2_gateway_pressure/final_message_counts.h"
 #include "../../../examples/v2_gateway_pressure/stall_watchdog_policy.h"
 #include "../../../examples/v2_gateway_pressure/termination_policy.h"
@@ -114,6 +115,35 @@ TEST(GatewayPressureEvidenceTest, MultiRoomCompletionWaitsForEveryClient) {
     EXPECT_FALSE(v2::gateway_pressure::should_mark_global_completion(true, 99, 100));
     EXPECT_TRUE(v2::gateway_pressure::should_mark_global_completion(true, 100, 100));
     EXPECT_FALSE(v2::gateway_pressure::should_mark_global_completion(false, 100, 100));
+}
+
+TEST(GatewayPressureEvidenceTest, OpenLoopModelUsesAbsoluteFixedIntervalDeadlines) {
+    using Clock = std::chrono::steady_clock;
+    using v2::gateway_pressure::LoadModel;
+
+    EXPECT_EQ(v2::gateway_pressure::parse_load_model("closed-loop"),
+              LoadModel::kClosedLoop);
+    EXPECT_EQ(v2::gateway_pressure::parse_load_model("open-loop"),
+              LoadModel::kOpenLoop);
+    EXPECT_FALSE(v2::gateway_pressure::parse_load_model("unknown").has_value());
+    EXPECT_EQ(v2::gateway_pressure::load_model_name(LoadModel::kOpenLoop),
+              "open_loop_fixed_interval_per_client");
+
+    const auto start = Clock::time_point{};
+    const auto first = v2::gateway_pressure::next_open_loop_deadline<Clock>(
+        start, std::chrono::milliseconds(20));
+    const auto second = v2::gateway_pressure::next_open_loop_deadline<Clock>(
+        first, std::chrono::milliseconds(20));
+    EXPECT_EQ(second - start, std::chrono::milliseconds(40));
+
+    EXPECT_TRUE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, true, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kClosedLoop, true, true, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, false, "battle_route_overloaded"));
+    EXPECT_FALSE(v2::gateway_pressure::is_open_loop_overload_response(
+        LoadModel::kOpenLoop, true, true, "backend_error"));
 }
 
 }  // namespace
