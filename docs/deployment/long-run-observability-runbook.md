@@ -140,13 +140,14 @@ sudo "$CONTROLLER/deploy/operations/install_smtp_proxy_host_units.sh"
 sudo "$CONTROLLER/deploy/operations/switch_alertmanager_smtp_relay.sh"
 ```
 
-The installer discovers Alertmanager's single private Docker gateway and binds the
-relay only to that address. Each accepted connection uses a transient dynamic user, can
-connect only to the loopback HTTP CONNECT proxy, and is capped at two minutes. The
-activation script preserves the existing root-managed Gmail password, validates the
-candidate config with the pinned `amtool` image, and recreates only Alertmanager so the
-bind-mounted config cannot remain attached to an old inode. It records config digests
-but no email password.
+The installer discovers Alertmanager's single private Docker gateway, bridge and subnet,
+binds the relay only to that address, and adds an idempotent UFW rule limited to that
+interface, source subnet, destination and port. Each accepted connection uses a
+transient dynamic user, can connect only to the loopback HTTP CONNECT proxy, and is
+capped at two minutes. The activation script preserves the existing root-managed Gmail
+password, validates the candidate config with the pinned `amtool` image, and recreates
+only Alertmanager so the bind-mounted config cannot remain attached to an old inode. It
+records config digests but no email password.
 After activation, repeat the real firing/resolved delivery drill and replace the stale
 attestation; relay reachability alone is not delivery evidence.
 
