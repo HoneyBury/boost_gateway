@@ -30,7 +30,7 @@ split_address() {
 }
 
 [[ ${EUID} -eq 0 ]] || fail "run with sudo"
-for command in awk chown chmod date dirname docker getent install mktemp mv nc openssl python3 sha256sum sort systemctl timeout; do
+for command in awk chown chmod date dirname docker getent install ip mktemp mv nc openssl python3 sha256sum sort systemctl timeout ufw; do
   command -v "${command}" >/dev/null 2>&1 || fail "required command is missing: ${command}"
 done
 getent group boost-gateway >/dev/null || fail "boost-gateway group is missing"
@@ -51,12 +51,40 @@ mapfile -t gateways < <(
 )
 [[ ${#gateways[@]} -eq 1 ]] || fail "Alertmanager must have exactly one Docker network gateway"
 RELAY_HOST=${gateways[0]}
-python3 - "${RELAY_HOST}" <<'PY'
+mapfile -t network_ids < <(
+  docker inspect --format '{{range .NetworkSettings.Networks}}{{println .NetworkID}}{{end}}' \
+    "${CONTAINER}" | awk 'NF' | sort -u
+)
+[[ ${#network_ids[@]} -eq 1 && ${network_ids[0]} =~ ^[0-9a-f]{64}$ ]] || \
+  fail "Alertmanager must have exactly one valid Docker network ID"
+NETWORK_ID=${network_ids[0]}
+BRIDGE_NAME=$(docker network inspect \
+  --format '{{index .Options "com.docker.network.bridge.name"}}' "${NETWORK_ID}")
+if [[ -z ${BRIDGE_NAME} || ${BRIDGE_NAME} == '<no value>' ]]; then
+  BRIDGE_NAME="br-${NETWORK_ID:0:12}"
+fi
+[[ ${BRIDGE_NAME} =~ ^[A-Za-z0-9_.-]+$ ]] || fail "Docker bridge name is invalid"
+ip link show "${BRIDGE_NAME}" >/dev/null 2>&1 || fail "Docker bridge interface is missing"
+mapfile -t network_subnets < <(
+  docker network inspect --format '{{range .IPAM.Config}}{{println .Subnet}}{{end}}' \
+    "${NETWORK_ID}" | awk 'NF' | sort -u
+)
+[[ ${#network_subnets[@]} -eq 1 ]] || fail "Alertmanager network must have exactly one subnet"
+NETWORK_SUBNET=${network_subnets[0]}
+python3 - "${RELAY_HOST}" "${NETWORK_SUBNET}" <<'PY'
 import ipaddress
 import sys
 
 value = ipaddress.ip_address(sys.argv[1])
-if value.version != 4 or not value.is_private or value.is_loopback:
+network = ipaddress.ip_network(sys.argv[2])
+if (
+    value.version != 4
+    or not value.is_private
+    or value.is_loopback
+    or network.version != 4
+    or not network.is_private
+    or value not in network
+):
     raise SystemExit("Docker gateway must be a private non-loopback IPv4 address")
 PY
 
@@ -96,6 +124,10 @@ chown root:root "${DROP_IN_TEMP}"
 chmod 0644 "${DROP_IN_TEMP}"
 mv "${DROP_IN_TEMP}" "${DROP_IN_DIR}/10-production-bridge.conf"
 
+systemctl is-active --quiet ufw.service || fail "ufw.service is not active"
+ufw allow in on "${BRIDGE_NAME}" \
+  from "${NETWORK_SUBNET}" to "${RELAY_HOST}" port "${LISTEN_PORT}" proto tcp \
+  comment 'BoostGateway SMTP relay' >/dev/null
 systemctl daemon-reload
 systemctl enable --now "${SOCKET_UNIT}"
 systemctl is-active --quiet "${SOCKET_UNIT}" || fail "relay socket did not become active"
@@ -106,6 +138,7 @@ timeout 30 openssl s_client \
   -brief </dev/null >/dev/null 2>&1 || fail "installed relay cannot reach the SMTP upstream"
 
 export PROXY_HOST PROXY_PORT SMTP_HOST SMTP_PORT RELAY_HOST LISTEN_PORT
+export NETWORK_ID NETWORK_SUBNET BRIDGE_NAME
 export SOCKET_SHA256 SERVICE_SHA256 GENERATED_AT
 SOCKET_SHA256=$(sha256sum "${ROOT}/deploy/systemd/boost-gateway-smtp-proxy.socket" | awk '{print $1}')
 SERVICE_SHA256=$(sha256sum "${ROOT}/deploy/systemd/boost-gateway-smtp-proxy@.service" | awk '{print $1}')
@@ -129,6 +162,14 @@ value = {
         "host": os.environ["RELAY_HOST"],
         "port": int(os.environ["LISTEN_PORT"]),
         "scope": "production-docker-bridge",
+    },
+    "firewall": {
+        "interface": os.environ["BRIDGE_NAME"],
+        "source_subnet": os.environ["NETWORK_SUBNET"],
+        "destination": os.environ["RELAY_HOST"],
+        "port": int(os.environ["LISTEN_PORT"]),
+        "protocol": "tcp",
+        "ufw_active": True,
     },
     "smtp_upstream": {
         "host": os.environ["SMTP_HOST"],

@@ -439,10 +439,14 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
         checks,
         "smtp-relay:production-bridge",
         "docker inspect" in installer
+        and "docker network inspect" in installer
         and "value.is_private" in installer
+        and "value not in network" in installer
         and "printf 'ListenStream=%s:%s" in installer
+        and 'ufw allow in on "${BRIDGE_NAME}"' in installer
+        and 'from "${NETWORK_SUBNET}" to "${RELAY_HOST}"' in installer
         and installer.count("openssl s_client") >= 2,
-        "installer discovers the private production bridge and verifies both proxy hops",
+        "installer limits UFW to the private production bridge and verifies both proxy hops",
     )
     add_check(
         checks,

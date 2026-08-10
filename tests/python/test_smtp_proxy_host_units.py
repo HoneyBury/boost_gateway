@@ -38,8 +38,12 @@ class SmtpProxyHostUnitsTest(unittest.TestCase):
         )
 
         self.assertIn("docker inspect", text)
+        self.assertIn("docker network inspect", text)
         self.assertIn("value.is_private", text)
+        self.assertIn("value not in network", text)
         self.assertIn("printf 'ListenStream=%s:%s", text)
+        self.assertIn('ufw allow in on "${BRIDGE_NAME}"', text)
+        self.assertIn('from "${NETWORK_SUBNET}" to "${RELAY_HOST}"', text)
         self.assertIn("openssl s_client", text)
         self.assertIn('protocol": "http-connect', text)
         self.assertNotIn("set -x", text)
