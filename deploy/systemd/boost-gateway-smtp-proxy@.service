@@ -1,0 +1,42 @@
+[Unit]
+Description=BoostGateway SMTP CONNECT relay connection
+Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/long-run-observability-runbook.md
+After=network-online.target mihomo.service
+Wants=network-online.target
+Requires=mihomo.service
+
+[Service]
+Type=exec
+EnvironmentFile=/etc/boost-gateway/smtp-proxy.env
+ExecStart=/usr/bin/nc -4 -N -w 60 -X connect -x ${PROXY_HOST}:${PROXY_PORT} ${SMTP_HOST} ${SMTP_PORT}
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+DynamicUser=yes
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ProtectProc=invisible
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RuntimeMaxSec=2min

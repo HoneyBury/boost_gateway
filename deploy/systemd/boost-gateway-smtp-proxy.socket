@@ -1,0 +1,13 @@
+[Unit]
+Description=BoostGateway SMTP CONNECT relay socket
+Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/long-run-observability-runbook.md
+
+[Socket]
+ListenStream=127.0.0.1:1587
+Accept=yes
+NoDelay=true
+Backlog=16
+MaxConnections=32
+
+[Install]
+WantedBy=sockets.target

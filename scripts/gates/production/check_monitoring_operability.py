@@ -409,6 +409,62 @@ def validate_evidence_scheduler(checks: list[dict[str, Any]]) -> None:
     )
 
 
+def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
+    socket = read_text("deploy/systemd/boost-gateway-smtp-proxy.socket")
+    service = read_text("deploy/systemd/boost-gateway-smtp-proxy@.service")
+    installer = read_text("deploy/operations/install_smtp_proxy_host_units.sh")
+    activation = read_text("deploy/operations/switch_alertmanager_smtp_relay.sh")
+    runbook = read_text("docs/deployment/long-run-observability-runbook.md")
+    add_check(
+        checks,
+        "smtp-relay:safe-default-listener",
+        "ListenStream=127.0.0.1:1587" in socket
+        and "Accept=yes" in socket
+        and "MaxConnections=32" in socket,
+        "SMTP relay defaults to a bounded loopback socket",
+    )
+    add_check(
+        checks,
+        "smtp-relay:connect-proxy",
+        "-X connect" in service
+        and "StandardInput=socket" in service
+        and "StandardOutput=socket" in service
+        and "IPAddressDeny=any" in service
+        and "IPAddressAllow=localhost" in service
+        and "DynamicUser=yes" in service
+        and "User=nobody" not in service,
+        "each SMTP relay connection is unprivileged and can reach only the loopback CONNECT proxy",
+    )
+    add_check(
+        checks,
+        "smtp-relay:production-bridge",
+        "docker inspect" in installer
+        and "value.is_private" in installer
+        and "printf 'ListenStream=%s:%s" in installer
+        and installer.count("openssl s_client") >= 2,
+        "installer discovers the private production bridge and verifies both proxy hops",
+    )
+    add_check(
+        checks,
+        "smtp-relay:secret-preserving-activation",
+        "--no-deps --force-recreate" in activation
+        and "alertmanager-secrets:/etc/alertmanager/secrets:ro" in activation
+        and "CONFIG_REPLACED" in activation
+        and "rollback" in activation
+        and "gmail-app-password" not in activation,
+        "activation preserves the existing secret, recreates only Alertmanager, and rolls back failures",
+    )
+    add_check(
+        checks,
+        "smtp-relay:documented-boundary",
+        "HTTP CONNECT proxy" in runbook
+        and "install_smtp_proxy_host_units.sh" in runbook
+        and "switch_alertmanager_smtp_relay.sh" in runbook
+        and "relay reachability alone is not delivery evidence" in runbook,
+        "runbook distinguishes proxy reachability from real delivery evidence",
+    )
+
+
 def validate_docs(checks: list[dict[str, Any]]) -> None:
     env_readme = read_text("env/README.md")
     runbook = read_text(OPERATIONS_RUNBOOK)
@@ -487,6 +543,7 @@ def main() -> int:
     validate_alerts(checks)
     validate_dashboard(checks)
     validate_evidence_scheduler(checks)
+    validate_smtp_connect_relay(checks)
     validate_docs(checks)
 
     failed = [check for check in checks if not check["passed"]]
