@@ -26,10 +26,10 @@ class SmtpProxyHostUnitsTest(unittest.TestCase):
         self.assertIn("-X connect", text)
         self.assertIn("StandardInput=socket", text)
         self.assertIn("StandardOutput=socket", text)
-        self.assertIn("IPAddressDeny=any", text)
-        self.assertIn("IPAddressAllow=localhost", text)
         self.assertIn("DynamicUser=yes", text)
         self.assertNotIn("User=nobody", text)
+        self.assertNotIn("IPAddressDeny", text)
+        self.assertNotIn("IPAddressAllow", text)
         self.assertNotIn("EnvironmentFile=-", text)
 
     def test_installer_discovers_and_limits_the_production_bridge(self) -> None:
