@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+from importlib.util import find_spec
 import json
 from pathlib import Path
 import platform
@@ -32,12 +33,9 @@ CHECK_COMMANDS: tuple[tuple[str, ...], ...] = (
 
 PYTHON_TEST_COMMAND: tuple[str, ...] = (
     "-m",
-    "unittest",
-    "discover",
-    "-s",
+    "pytest",
+    "-q",
     "tests/python",
-    "-p",
-    "test_*.py",
 )
 
 
@@ -219,7 +217,16 @@ def run_check() -> int:
     if sys.version_info < MINIMUM_PYTHON:
         print(
             f"Python 3.12+ is required; current interpreter is {platform.python_version()} "
-            f"({sys.executable}). Try: python3.12 scripts/dev.py check",
+            f"({sys.executable}). Create the Python 3.12 development environment from "
+            "docs/ONBOARDING.md, then run: .venv/dev/bin/python scripts/dev.py check",
+            file=sys.stderr,
+        )
+        return 2
+    if find_spec("pytest") is None:
+        print(
+            "pytest is required for the complete script contract suite. Create "
+            ".venv/dev and install requirements-dev.txt, then run: "
+            ".venv/dev/bin/python scripts/dev.py check",
             file=sys.stderr,
         )
         return 2

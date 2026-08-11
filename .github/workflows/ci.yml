@@ -51,6 +51,10 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Python test dependencies
+        shell: bash
+        run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
+
       - name: Restore sccache cache
         id: restore-sccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -213,9 +217,7 @@ jobs:
       - name: Repository governance gate
         shell: bash
         run: |
-          python3 -m unittest tests.python.test_repository_governance
-          python3 -m unittest tests.python.test_release_source_authorization
-          python3 -m unittest tests.python.test_workflow_supply_chain_governance
+          python3 -m pytest -q tests/python
           python3 scripts/gates/governance/check_repository_governance.py
 
       - name: Next minor decision gate

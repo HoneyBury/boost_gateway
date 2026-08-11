@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+from functools import lru_cache
 import hashlib
 import json
 import re
@@ -158,19 +159,44 @@ def explicitly_tested_cli(
         ):
             return False
         test_paths = [declared_path]
-    stem = script_path.stem
     filename = script_path.name
+    relative = script_path.relative_to(root).as_posix()
     dotted = script_path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
     for test_path in test_paths:
-        if stem in test_path.stem:
-            return True
         try:
-            text = test_path.read_text(encoding="utf-8-sig")
+            source = test_path.read_text(encoding="utf-8-sig")
         except (OSError, UnicodeDecodeError):
             continue
-        if filename in text or dotted in text:
+        imports, string_literals, has_test = python_test_references(source)
+        if has_test and (dotted in imports or any(
+            relative in value or dotted in value or filename in value
+            for value in string_literals
+        )):
             return True
     return False
+
+
+@lru_cache(maxsize=1024)
+def python_test_references(
+    source: str,
+) -> tuple[frozenset[str], frozenset[str], bool]:
+    """Return parsed identifiers and whether the source declares an actual test."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return frozenset(), frozenset(), False
+    imports = frozenset(imported_script_modules_from_tree(tree))
+    string_literals = frozenset(
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant) and isinstance(node.value, str)
+    )
+    has_test = any(
+        isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name.startswith("test_")
+        for node in ast.walk(tree)
+    )
+    return imports, string_literals, has_test
 
 
 def line_count(paths: list[Path]) -> int:
@@ -204,11 +230,7 @@ def workflow_script_dependency_edges(root: Path, workflow_paths: list[Path]) -> 
     return sorted(edges)
 
 
-def imported_script_modules(path: Path) -> set[str]:
-    try:
-        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
-    except (OSError, SyntaxError):
-        return set()
+def imported_script_modules_from_tree(tree: ast.AST) -> set[str]:
     modules: set[str] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -221,6 +243,14 @@ def imported_script_modules(path: Path) -> set[str]:
                 if alias.name != "*"
             )
     return modules
+
+
+def imported_script_modules(path: Path) -> set[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    except (OSError, SyntaxError):
+        return set()
+    return imported_script_modules_from_tree(tree)
 
 
 def cross_cli_import_edges(root: Path, cli_paths: list[Path]) -> list[str]:
@@ -312,6 +342,10 @@ def collect_tooling_metrics(
     workflow_dependencies = workflow_script_dependencies(workflow_paths)
     workflow_dependency_edges = workflow_script_dependency_edges(root, workflow_paths)
     import_edges = cross_cli_import_edges(root, cli_paths)
+    governed_role_paths = set(cli_paths) | set(tool_paths) | set(library_paths)
+    other_script_paths = [
+        path for path in script_paths if path not in governed_role_paths
+    ]
     return {
         "public_entrypoints": len(inventory.get("public_entrypoints", [])),
         "workflow_files": len(workflow_paths),
@@ -324,6 +358,10 @@ def collect_tooling_metrics(
         "library_files": len(library_paths),
         "library_file_paths": [
             path.relative_to(root).as_posix() for path in library_paths
+        ],
+        "other_script_files": len(other_script_paths),
+        "other_script_file_paths": [
+            path.relative_to(root).as_posix() for path in other_script_paths
         ],
         "large_scripts_over_500": len(large_over_500),
         "large_scripts_over_500_paths": large_over_500,

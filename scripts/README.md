@@ -8,10 +8,12 @@ documentation, support level, execution environment, typical duration, external
 side effects, and an explicit retirement condition. Update the metadata in the
 same change whenever an entrypoint's operational contract changes.
 
-Before adding a canonical CLI or a file under `scripts/tools/` or `scripts/lib/`,
-prefer extending an existing command. Move implementation to `scripts/lib/` only
-when multiple commands share a directly tested, CLI-free contract. A genuinely new
-surface must add a `script_growth_exceptions` record to the inventory with its
+Before adding any governed script file, prefer extending an existing command.
+CLI, tool, library, and remaining gate/producer/helper/shim files are separate
+frozen partitions, so moving a module or omitting `main()` does not bypass review.
+Move implementation to `scripts/lib/` only when multiple commands share a directly
+tested, CLI-free contract. A genuinely new surface must add a
+`script_growth_exceptions` record to the inventory with its
 domain, consumers, direct test, reason it cannot extend an existing entrypoint,
 replacement, retirement condition, temporary status, and expiry date. The tooling
 metrics gate rejects missing, stale, invalid, or expired records and unreviewed
@@ -22,6 +24,9 @@ an executable import/parser smoke contract in
 `tests/python/test_cli_entrypoint_contracts.py`; changing command behavior still
 requires focused assertions in the owning domain test. The untested-CLI allowlist
 is empty and must not be used as a compatibility escape hatch.
+Test linkage requires a declared `test_*` function and is parsed from Python imports
+and string literals; comments, matching filenames, and reference-only files are not
+coverage.
 
 For day-to-day contributor work, start with the thin task facade instead of
 discovering individual scripts:
@@ -29,7 +34,7 @@ discovering individual scripts:
 ```bash
 python3.12 scripts/dev.py doctor
 python3.12 scripts/dev.py commands --domain contributor
-python3.12 scripts/dev.py check
+.venv/dev/bin/python scripts/dev.py check
 python3.12 scripts/dev.py test unit --build-dir build/contributor-debug --verbose
 python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ```

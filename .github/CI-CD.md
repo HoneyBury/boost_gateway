@@ -2,7 +2,7 @@
 
 BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和 fixed-runner 证据是两个不同场景：
 
-- `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
+- `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build、完整 CTest、完整 Python pytest 和 gate 回归。
 - `security-maintenance.yml` 固定在 GitHub-hosted `ubuntu-latest`，定期执行依赖漏洞、sanitizer 和 fuzz 检查；不能接受 runner 覆盖，也不接触 production-validation 主机。
 - `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
 - Linux release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为事实源；macOS ARM64 构建、R5、JWKS 和平台基线只使用原生 Apple Silicon runner。
@@ -11,7 +11,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 | Workflow | Actions 显示名 | 触发方式 | 用途 |
 |---|---|---|---|
-| `ci.yml` | Mainline / Build, Test & Governance | PR / 手动 | `main` PR 的 hosted 有界构建、测试、Conan 验证和静态治理；保留手动诊断入口 |
+| `ci.yml` | Mainline / Build, Test & Governance | PR / 手动 | `main` PR 的 hosted 有界构建、完整 CTest/Python 测试、Conan 验证和静态治理；保留手动诊断入口 |
 | `conan-validate.yml` | Dependencies / Conan Graph Validation | 手动 | Conan 依赖图验证 |
 | `debug-symbols.yml` | Release / Linux Debug Symbols Candidate | 手动 | RelWithDebInfo runtime/symbol pair、build-id/debuglink、受控崩溃符号化候选证据 |
 | `grpc-experimental.yml` | Experimental / gRPC | 手动 | gRPC 可选依赖图、构建、SDK consumer 与决策边界 |

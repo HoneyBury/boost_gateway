@@ -76,6 +76,16 @@ class DeveloperCliTest(unittest.TestCase):
         self.assertIn(("scripts/gates/governance/check_script_inventory.py",), commands)
         self.assertIn(dev.PYTHON_TEST_COMMAND, commands)
 
+    def test_check_rejects_an_environment_without_pytest(self) -> None:
+        errors = io.StringIO()
+        with mock.patch.object(dev, "find_spec", return_value=None), redirect_stderr(
+            errors
+        ):
+            result = dev.run_check()
+
+        self.assertEqual(2, result)
+        self.assertIn("requirements-dev.txt", errors.getvalue())
+
     def test_command_catalog_filters_maintainer_domain(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             inventory = self.write_command_inventory(Path(temporary))

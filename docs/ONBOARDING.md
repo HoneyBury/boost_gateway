@@ -265,7 +265,7 @@ clang-format -i <changed-files>
 |---|---|---|
 | 本地工具诊断 | `python3.12 scripts/dev.py doctor` | 本地 |
 | 本地构建+测试+业务 smoke | `python3.12 scripts/dev.py smoke --build-dir build/contributor-debug` | 本地 |
-| 脚本/workflow/文档治理 | `python3.12 scripts/dev.py check` | 本地 |
+| 脚本/workflow/文档治理和完整 Python 契约测试 | `.venv/dev/bin/python scripts/dev.py check` | 本地 |
 | PR build/test/governance | `linux-build-and-test` | 目标为 `main` 的 PR 自动触发 |
 | GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref main -f runner='"ubuntu-latest"'` | 手动 |
 | 本地 RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | 本地/手动 |

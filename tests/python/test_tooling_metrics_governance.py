@@ -30,11 +30,13 @@ def prepare_repository(root: Path) -> tuple[Path, Path]:
     auxiliary_relative = Path("scripts") / "tools" / "auxiliary.py"
     (root / covered_relative).write_text(CLI_SOURCE, encoding="utf-8")
     (root / auxiliary_relative).write_text(CLI_SOURCE, encoding="utf-8")
-    (root / "tests/python/test_covered.py").write_text(
-        "# explicit coverage for covered.py\n", encoding="utf-8"
+    (root / "tests/python/test_cli_contract_a.py").write_text(
+        'COMMAND = "covered.py"\n\ndef test_command() -> None:\n    assert COMMAND\n',
+        encoding="utf-8",
     )
-    (root / "tests/python/test_auxiliary.py").write_text(
-        "# explicit coverage for auxiliary.py\n", encoding="utf-8"
+    (root / "tests/python/test_cli_contract_b.py").write_text(
+        'COMMAND = "auxiliary.py"\n\ndef test_command() -> None:\n    assert COMMAND\n',
+        encoding="utf-8",
     )
     inventory = {
         "schema_version": 5,
@@ -82,6 +84,7 @@ jobs:
             "cli_implementations": {"maximum": current["cli_implementations"]},
             "tool_files": {"maximum": current["tool_files"]},
             "library_files": {"maximum": current["library_files"]},
+            "other_script_files": {"maximum": current["other_script_files"]},
             "large_scripts_over_500": {
                 "maximum": current["large_scripts_over_500"]
             },
@@ -100,6 +103,7 @@ jobs:
             "cli_implementations": current["cli_implementation_paths"],
             "tool_files": current["tool_file_paths"],
             "library_files": current["library_file_paths"],
+            "other_script_files": current["other_script_file_paths"],
             "workflow_script_dependencies": current[
                 "workflow_script_dependency_paths"
             ],
@@ -163,12 +167,76 @@ def test_new_untested_cli_fails_without_baseline_review(tmp_path: Path) -> None:
     assert "new-script-growth-exceptions" in failed
 
 
+def test_comment_or_filename_only_does_not_count_as_cli_coverage(tmp_path: Path) -> None:
+    prepare_repository(tmp_path)
+    test_path = tmp_path / "tests/python/test_cli_contract_a.py"
+    test_path.write_text("# covered.py is not executed here\n", encoding="utf-8")
+    (tmp_path / "tests/python/test_covered.py").write_text(
+        "# A matching test filename without Python references is not coverage.\n",
+        encoding="utf-8",
+    )
+
+    metrics = collect_tooling_metrics(tmp_path)
+
+    covered = (Path("scripts") / "tools" / "covered.py").as_posix()
+    assert covered in metrics["untested_cli_paths"]
+
+
+def test_new_unclassified_script_module_requires_review(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    helper = tmp_path / "scripts" / "gates" / "helper.py"
+    helper.parent.mkdir(parents=True)
+    helper.write_text("VALUE = 1\n", encoding="utf-8")
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:other_script_files" in failed
+    assert "new-script-growth-exceptions" in failed
+
+
+def test_reviewed_unclassified_script_module_passes(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    relative = (Path("scripts") / "gates" / "helper.py").as_posix()
+    test_relative = "tests/python/test_helper_contract.py"
+    (tmp_path / relative).parent.mkdir(parents=True)
+    (tmp_path / relative).write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / test_relative).write_text(
+        "import runpy\n\n"
+        "def test_helper_contract() -> None:\n"
+        f'    assert runpy.run_path("{relative}")["VALUE"] == 1\n',
+        encoding="utf-8",
+    )
+    inventory_path = tmp_path / "docs/script-inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory["script_growth_exceptions"][relative] = {
+        "kind": "script-module",
+        "domain": "governance",
+        "consumers": ["governance gates"],
+        "test": test_relative,
+        "why_new_script": "Several governance gates share one reviewed implementation contract.",
+        "replaces": "helpers embedded in gate commands",
+        "retirement_condition": "The consumers move to another governed implementation module.",
+        "temporary": False,
+        "expires_on": "",
+    }
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    assert run_gate(tmp_path, baseline, summary) == 0
+
+
 def test_reviewed_new_cli_with_complete_exception_passes(tmp_path: Path) -> None:
     baseline, summary = prepare_repository(tmp_path)
     new_relative = (Path("scripts") / "tools" / "new_cli.py").as_posix()
     test_relative = "tests/python/test_new_cli.py"
     (tmp_path / new_relative).write_text(CLI_SOURCE, encoding="utf-8")
-    (tmp_path / test_relative).write_text("# governed CLI test\n", encoding="utf-8")
+    (tmp_path / test_relative).write_text(
+        "import subprocess\nimport sys\n\n"
+        "def test_new_cli_help() -> None:\n"
+        f'    result = subprocess.run([sys.executable, "{new_relative}", "--help"])\n'
+        "    assert result.returncode == 0\n",
+        encoding="utf-8",
+    )
     inventory_path = tmp_path / "docs/script-inventory.json"
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
     inventory["script_growth_exceptions"][new_relative] = {
@@ -194,7 +262,10 @@ def test_reviewed_library_module_with_complete_exception_passes(tmp_path: Path) 
     (tmp_path / library_relative).parent.mkdir(parents=True)
     (tmp_path / library_relative).write_text("VALUE = 1\n", encoding="utf-8")
     (tmp_path / test_relative).write_text(
-        "from scripts.lib.shared_release import VALUE\n", encoding="utf-8"
+        "from scripts.lib.shared_release import VALUE\n\n"
+        "def test_shared_release_value() -> None:\n"
+        "    assert VALUE == 1\n",
+        encoding="utf-8",
     )
     inventory_path = tmp_path / "docs/script-inventory.json"
     inventory = json.loads(inventory_path.read_text(encoding="utf-8"))

@@ -1,10 +1,10 @@
 {
   "schema_version": 1,
-  "description": "Reviewed local tooling-governance baseline. Existing internal surface may shrink; any new CLI, tool, or library file requires a complete script_growth_exceptions record, while workflow fan-out and cross-CLI imports may not grow without baseline review.",
+  "description": "Reviewed local tooling-governance baseline. Existing internal surface may shrink; every new CLI, tool, library, or other governed script file requires a complete script_growth_exceptions record, while workflow fan-out and cross-CLI imports may not grow without baseline review.",
   "policy": {
     "fragment_lines": 3,
     "minimum_workflows": 3,
-    "cli_test_heuristic": "A canonical CLI is explicitly tested when a Python test name contains its stem or test source references its filename or dotted module."
+    "cli_test_heuristic": "A canonical CLI is explicitly tested when a Python file declares a test function and parsed syntax imports its dotted module or contains its path/name as a string literal; comments, matching test filenames, and reference-only files do not count."
   },
   "limits": {
     "public_entrypoints": {
@@ -26,6 +26,10 @@
     "library_files": {
       "baseline": 10,
       "maximum": 10
+    },
+    "other_script_files": {
+      "baseline": 25,
+      "maximum": 25
     },
     "large_scripts_over_500": {
       "baseline": 31,
@@ -252,6 +256,33 @@
         "scripts/lib/summary_utils.py",
         "scripts/lib/tooling_metrics.py"
       ],
+      "other_script_files": [
+        "scripts/__init__.py",
+        "scripts/apply_operations_host_baseline.py",
+        "scripts/bootstrap_conan.py",
+        "scripts/build_release_images.py",
+        "scripts/check_mainline_readiness.py",
+        "scripts/check_operations_host.py",
+        "scripts/check_production_evidence_manifest.py",
+        "scripts/gates/__init__.py",
+        "scripts/gates/security/__init__.py",
+        "scripts/generate_conan_lock.py",
+        "scripts/manage_release_deployment.py",
+        "scripts/manage_todos.py",
+        "scripts/prepare_release_runtime.py",
+        "scripts/producers/__init__.py",
+        "scripts/render_production_readiness_report.py",
+        "scripts/run_long_soak_capacity.py",
+        "scripts/verify_jwks_rotation.py",
+        "scripts/verify_macos_arm64_package.py",
+        "scripts/verify_preprod_recovery_drill.py",
+        "scripts/verify_production_candidate_evidence.py",
+        "scripts/verify_prometheus_alert_states.py",
+        "scripts/verify_release_candidate.py",
+        "scripts/verify_release_deployment.py",
+        "scripts/verify_sdk_enterprise_delivery.py",
+        "scripts/verify_tls_preprod_multi_run.py"
+      ],
       "workflow_script_dependencies": [
         "scripts/bootstrap_conan.py",
         "scripts/check_production_evidence_manifest.py",
@@ -458,8 +489,8 @@
     "workflow_files": 18,
     "cli_implementations": 127,
     "script_files": 164,
-    "script_lines": 58839,
-    "workflow_lines": 5597
+    "script_lines": 58889,
+    "workflow_lines": 5599
   },
   "external_metrics": {
     "automation_change_failure_rate": {

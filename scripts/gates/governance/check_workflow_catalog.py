@@ -527,11 +527,11 @@ def main() -> int:
     add(
         checks,
         "ci:repository-governance-gate",
-        "python3 -m unittest tests.python.test_repository_governance" in ci_workflow
-        and "python3 -m unittest tests.python.test_workflow_supply_chain_governance"
+        "python3 -m pip install --disable-pip-version-check -r requirements-dev.txt"
         in ci_workflow
+        and "python3 -m pytest -q tests/python" in ci_workflow
         and "python3 scripts/gates/governance/check_repository_governance.py" in ci_workflow,
-        "mainline CI runs repository governance regression tests and the live-tree gate",
+        "mainline CI runs the complete Python contract suite and the live-tree gate",
     )
     add(
         checks,

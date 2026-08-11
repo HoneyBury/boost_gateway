@@ -70,8 +70,8 @@ python3.12 scripts/dev.py commands --domain recovery
 # 检查 Python 3.12、Git/CMake/Ninja 和现有 build tree 的工具配对
 python3.12 scripts/dev.py doctor --build-dir build/contributor-debug
 
-# 运行有界的文档、脚本、workflow、仓库和 TODO 治理及其契约单测
-python3.12 scripts/dev.py check
+# 使用 requirements-dev 环境运行治理和完整 Python 契约测试
+.venv/dev/bin/python scripts/dev.py check
 
 # 按 CTest label 运行；会使用 build tree 中记录的 CTest，避免 IDE/PATH 版本错配
 python3.12 scripts/dev.py test unit --build-dir build/contributor-debug --verbose
@@ -79,7 +79,7 @@ python3.12 scripts/dev.py test unit --build-dir build/contributor-debug --verbos
 # 增量构建 unit/demo，运行 unit 和进程内业务闭环
 python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
-# 完整 Python 脚本测试（首次按 ONBOARDING 创建 .venv/dev）
+# 只重跑完整 Python 脚本测试
 .venv/dev/bin/python -m pytest -q tests/python
 ```
 
@@ -105,10 +105,11 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
    放 `lib/`。对外入口才放 `scripts/` 根目录。
 2. 在 `docs/script-inventory.json` 精确登记一次。移动现有入口时保留薄 shim，并填写
    `canonical`；所有活动引用清零并跨过兼容周期后才能删除。
-3. 新增 canonical CLI、`scripts/tools/` 或 `scripts/lib/` 文件时，在 `script_growth_exceptions`
-   登记领域、消费方、独立测试、不能扩展现有入口的原因、替代对象、退役条件和临时项到期日。
-   没有完整记录的新增文件会被 tooling metrics gate 拒绝；优先扩展现有入口。只有两个以上 CLI
-   确实共享且已有直接测试的无 CLI 实现才下沉到 `lib/`。
+3. 新增任何受治理脚本文件时，在 `script_growth_exceptions` 登记领域、消费方、独立测试、不能
+   扩展现有入口的原因、替代对象、退役条件和临时项到期日。CLI、`tools/`、`lib/` 以及剩余
+   gate/producer/helper/shim 分区都被冻结，没有完整记录的新增文件会被 tooling metrics gate
+   拒绝；优先扩展现有入口。只有两个以上 CLI 确实共享且已有直接测试的无 CLI 实现才下沉到
+   `lib/`。
 4. CLI 使用 `argparse`，有界超时，失败返回非零；证据 summary 使用 `summary_version: 2`、
    `overall_pass`、`passed`、`failed_category`、`failed_step` 和 `artifacts`。
 5. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
@@ -132,7 +133,7 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
 | 变更 | 最低本地验证 | 仍需外部验证 |
 |---|---|---|
-| 文档、清单、治理脚本 | `dev.py check` + `.venv/dev/bin/python -m pytest -q tests/python` | GitHub ruleset/secret 等外部状态 |
+| 文档、清单、治理脚本 | `.venv/dev/bin/python scripts/dev.py check` | GitHub ruleset/secret 等外部状态 |
 | C++ 纯逻辑 | `dev.py test unit` | 无，除非平台相关 |
 | Gateway/backend/协议 | unit + integration；公共链路再加 e2e/sdk | 协议兼容或目标平台证据 |
 | 脚本测试入口 | Python 单测 + `dev.py check` + 至少一次真实子命令 | fixed-runner 参数需目标 runner |
@@ -144,16 +145,20 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ## 工具治理指标
 
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
-canonical CLI、`scripts/tools/`/`scripts/lib/` 文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
+canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
-片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11、31/15、58、122、
-15、11 和 0；11 个 library 中有 10 个冻结基线和 1 个带直接测试的 reviewed exception。
+片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11/25、31/15、58、
+122、15、11 和 0；11 个 library 中有 10 个冻结基线和 1 个带直接测试的 reviewed exception。
+“其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
+`main()` 绕过增长审查。
 
 原有 59 个缺少直接测试引用的 canonical CLI 已转为
 `tests/python/test_cli_entrypoint_contracts.py` 中实际执行的 Python 3.12 `--help` 契约，至少验证
 入口可导入、参数解析器可启动且不会在帮助路径触发外部操作。该 smoke 契约不能替代参数行为、
 失败路径或证据内容测试；修改业务语义时仍必须在对应领域测试中增加断言。无测试 allowlist 已
 清空并冻结为 0，不能通过重新加入静态豁免来接纳新命令。
+直接测试文件必须声明 `test_*` 函数，并通过 Python 语法中的 import 或字符串字面量识别目标；
+注释、仅匹配的测试文件名或没有测试函数的引用清单不再被当作覆盖。
 
 依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
 变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
@@ -165,7 +170,7 @@ workflow 的初始化收敛后为 122 条，实际减少 9 条。不能把修正
 15 条，消除了 7 条发布 CLI 耦合。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续
 兼容，避免一次性迁移调用方。
 
-评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增 CLI/工具/库文件
+评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增任何脚本文件
 只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
 依赖或依赖边、CLI 导入边、超大脚本或提高其他 maximum 则必须在同一变更解释架构理由并接受
 维护者评审，不能只为让 CI 变绿而刷新基线。summary 会列出具体的新路径或导入边，便于定位。

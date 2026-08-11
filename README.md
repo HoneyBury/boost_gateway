@@ -56,7 +56,7 @@ backend。完整六服务环境见
 ## 常用验证
 
 ```bash
-python3.12 scripts/dev.py check
+.venv/dev/bin/python scripts/dev.py check
 python3.12 scripts/verify_release_candidate.py \
   --skip-release-baseline --soak-profile smoke
 ```

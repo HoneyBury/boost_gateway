@@ -26,7 +26,8 @@ commands and results in the pull request template.
 
 For a normal local change, begin with `python3.12 scripts/dev.py doctor`, use
 `python3.12 scripts/dev.py test <layer> --build-dir <dir>` during development, and run
-`python3.12 scripts/dev.py check` before pushing. The facade is intentionally local-only;
+`.venv/dev/bin/python scripts/dev.py check` before pushing after creating the development
+environment documented in `docs/ONBOARDING.md`. The facade is intentionally local-only;
 release and fixed-runner workflows continue to call explicit governed entrypoints.
 Use `python3.12 scripts/dev.py commands --domain <domain>` to find the supported command
 and its authoritative runbook before invoking an internal gate or tool directly.
