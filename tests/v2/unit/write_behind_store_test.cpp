@@ -206,6 +206,16 @@ TEST(V2WriteBehindStoreTest, WriteBehindDestructorFlushesRemaining) {
     EXPECT_EQ(delegate->snapshots["battle_020"], R"({"destructed":"snapshot"})");
 }
 
+TEST(V2WriteBehindStoreTest, EmptyDestructorCannotMissWorkerShutdown) {
+    auto delegate = std::make_shared<InMemoryStore>();
+
+    // Repeated construction makes it likely that destruction races worker
+    // startup; every instance must still join without a lost notification.
+    for (int i = 0; i < 200; ++i) {
+        v2::data::WriteBehindDataStore store(delegate);
+    }
+}
+
 TEST(V2WriteBehindStoreTest, WriteBehindFlushReportsDelegateFailures) {
     auto delegate = std::make_shared<FailingStore>();
     v2::data::WriteBehindDataStore store(std::move(delegate));

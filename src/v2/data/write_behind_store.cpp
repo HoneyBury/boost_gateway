@@ -13,9 +13,15 @@ WriteBehindDataStore::WriteBehindDataStore(
 }
 
 WriteBehindDataStore::~WriteBehindDataStore() {
-    running_ = false;
-    cv_.notify_all();
     flush();
+    {
+        // Update the condition-variable predicate while holding its mutex.
+        // Otherwise a worker can observe running_ before the store, miss the
+        // notification, and sleep forever while the destructor joins it.
+        std::lock_guard lock(mutex_);
+        running_ = false;
+    }
+    cv_.notify_all();
     if (worker_.joinable()) {
         worker_.join();
     }
