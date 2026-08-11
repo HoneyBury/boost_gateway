@@ -45,7 +45,10 @@ def prepare_repository(root: Path) -> tuple[Path, Path]:
     (root / "docs/script-inventory.json").write_text(
         json.dumps(inventory), encoding="utf-8"
     )
-    shared = """\
+    existing_dependency = (
+        Path("scripts") / "tools" / "existing_dependency.py"
+    ).as_posix()
+    shared = f"""\
 name: fixture
 jobs:
   check:
@@ -55,6 +58,8 @@ jobs:
           prepare toolchain
           execute validation
           upload evidence
+      - name: existing dependency
+        run: python3 {existing_dependency}
 """
     for index in range(3):
         (root / f".github/workflows/check-{index}.yml").write_text(
@@ -85,6 +90,9 @@ jobs:
             "workflow_script_dependencies": {
                 "maximum": current["workflow_script_dependencies"]
             },
+            "workflow_script_dependency_edges": {
+                "maximum": current["workflow_script_dependency_edges"]
+            },
             "cross_cli_imports": {"maximum": current["cross_cli_imports"]},
         },
         "known_surfaces": {
@@ -92,6 +100,9 @@ jobs:
             "tool_files": current["tool_file_paths"],
             "workflow_script_dependencies": current[
                 "workflow_script_dependency_paths"
+            ],
+            "workflow_script_dependency_edges": current[
+                "workflow_script_dependency_edge_paths"
             ],
             "cross_cli_import_edges": current["cross_cli_import_edges"],
         },
@@ -192,6 +203,30 @@ def test_new_workflow_script_dependency_fails_exact_surface_check(
     failed = {item["name"] for item in document["checks"] if not item["passed"]}
     assert "limit:workflow_script_dependencies" in failed
     assert "known-surface:workflow_script_dependencies" in failed
+    assert "limit:workflow_script_dependency_edges" in failed
+    assert "known-surface:workflow_script_dependency_edges" in failed
+
+
+def test_reusing_dependency_in_new_workflow_fails_edge_check(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    dependency = (Path("scripts") / "tools" / "existing_dependency.py").as_posix()
+    (tmp_path / ".github/workflows/check-3.yml").write_text(
+        f"""name: fourth fixture
+jobs:
+  check:
+    steps:
+      - name: reused dependency
+        run: python3 {dependency}
+""",
+        encoding="utf-8",
+    )
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:workflow_script_dependencies" not in failed
+    assert "limit:workflow_script_dependency_edges" in failed
+    assert "known-surface:workflow_script_dependency_edges" in failed
 
 
 def test_new_cross_cli_import_fails_exact_edge_check(tmp_path: Path) -> None:
@@ -209,3 +244,22 @@ def test_new_cross_cli_import_fails_exact_edge_check(tmp_path: Path) -> None:
     failed = {item["name"] for item in document["checks"] if not item["passed"]}
     assert "limit:cross_cli_imports" in failed
     assert "known-surface:cross_cli_import_edges" in failed
+
+
+def test_versioned_and_environment_python_commands_are_discovered(
+    tmp_path: Path,
+) -> None:
+    prepare_repository(tmp_path)
+    workflow = tmp_path / ".github/workflows/check-0.yml"
+    versioned = (Path("scripts") / "tools" / "versioned.py").as_posix()
+    environment = (Path("scripts") / "tools" / "environment.py").as_posix()
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8")
+        + f"\n      - name: versioned Python\n        run: python3.12 {versioned}\n"
+        + f'      - name: environment Python\n        run: "$EVIDENCE_PYTHON" {environment}\n',
+        encoding="utf-8",
+    )
+
+    metrics = collect_tooling_metrics(tmp_path)
+    assert versioned in metrics["workflow_script_dependency_paths"]
+    assert environment in metrics["workflow_script_dependency_paths"]

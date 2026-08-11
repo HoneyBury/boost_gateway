@@ -623,6 +623,14 @@ def main() -> int:
         "R5 generates the monitoring summary required by its recovery drill record",
     )
     preprod_workflow = read(".github/workflows/preprod-evidence.yml")
+    preprod_uses_offline_venv = (
+        "scripts/tools/ensure_conan_venv.py" in preprod_workflow
+        and "--offline" in preprod_workflow
+    ) or (
+        uses_composite_conan_action(preprod_workflow)
+        and 'conan-venv-offline: "true"' in preprod_workflow
+        and composite_uses_pinned_venv(composite_action)
+    )
     add(
         checks,
         "workflow:preprod:r5-record-artifacts",
@@ -636,8 +644,7 @@ def main() -> int:
         'default: "never"' in preprod_workflow
         and 'scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote' in preprod_workflow
         and "--build=never" in preprod_workflow
-        and "scripts/tools/ensure_conan_venv.py" in preprod_workflow
-        and "--offline" in preprod_workflow
+        and preprod_uses_offline_venv
         and "inputs.docker_pull_policy || 'never'" in preprod_workflow,
         "R5 workflow defaults to offline Docker and a pre-warmed local Conan cache",
     )

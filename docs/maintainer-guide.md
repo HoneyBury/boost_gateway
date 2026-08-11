@@ -28,7 +28,7 @@ Leaderboard。主要维护边界如下：
 ## 为什么工具面会膨胀
 
 截至本页更新时，仓库有 163 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
-58,500 行、workflow 约 5,700 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
+58,700 行、workflow 约 5,600 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
 增长主要来自四类真实需求：多平台证据不可互换；发布、恢复、TLS、性能和长稳需要独立
@@ -143,14 +143,20 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ## 工具治理指标
 
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
-canonical CLI、`scripts/tools/` 文件、超过 500/800 行的脚本、workflow 直接依赖的脚本、CLI
-之间的导入边、跨三个以上 workflow 的重复三行 shell 片段，以及没有显式 Python 单测引用的
-CLI。当前冻结值分别是 23、127、55、31/15、53、14、11 和 60 个历史无测试 allowlist 项。
+canonical CLI、`scripts/tools/` 文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
+每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
+片段，以及没有显式 Python 单测引用的 CLI。当前冻结值分别是 23、127、55、31/15、58、122、
+14、11 和 60 个历史无测试 allowlist 项。
+
+依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
+变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
+workflow 的初始化收敛后为 122 条，实际减少 9 条。不能把修正后的 122 与旧提取器遗漏调用时
+记录的 89 直接比较。
 
 评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增 CLI/工具文件
 只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
-依赖、CLI 导入边、超大脚本或提高其他 maximum 则必须在同一变更解释架构理由并接受维护者
-评审，不能只为让 CI 变绿而刷新基线。summary 会列出具体的新路径或导入边，便于定位。
+依赖或依赖边、CLI 导入边、超大脚本或提高其他 maximum 则必须在同一变更解释架构理由并接受
+维护者评审，不能只为让 CI 变绿而刷新基线。summary 会列出具体的新路径或导入边，便于定位。
 
 脚本文件数、workflow 数和行数作为观察值写入 summary，不以“文件少”或“行数少”代替低耦合。
 脚本/workflow 变更失败率不能从 checkout 静态推导：维护者每月从 GitHub Actions 取最近 90 天
@@ -168,7 +174,9 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 1. 已将 workflow 名称、触发类型、权限、runner 类别和生命周期提取到
    `docs/workflow-catalog.json`；检查代码消费清单并保留安全关键的语义断言。
 2. 已把六个 workflow 重复的 summary path 解析、去重和 Step Summary 渲染迁入
-   `.github/actions/render-validation-summary`；后续 setup/build/artifact 片段继续遵守三处提取规则。
+   `.github/actions/render-validation-summary`；并把 release、long soak、nightly、preprod 和
+   production candidate 重复的 CMake/Python/Conan/cache 初始化迁入既有 `setup-cpp-conan`。
+   后续 build/artifact 片段继续遵守三处提取规则。
 3. 已从三个优先超大脚本按子域拆出 `perf_statistics`、`release_lifecycle_io` 和
    `recovery_evidence`，保留原 CLI 与可导入符号，并用独立单测覆盖统计、持久化和证据结构。
    后续继续采用“一个职责、原入口兼容、先有回归测试”的小步拆分，不做一次性重写。

@@ -52,6 +52,11 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
+Release、long soak、nightly、preprod 和 production-candidate workflow 统一通过
+`.github/actions/setup-cpp-conan` 安装 CMake/Python、验证离线 Conan venv 并解析持久 cache
+identity。它们保留各自的 `--no-remote` bootstrap 和 build/preflight 步骤，以维持原有执行顺序、
+失败定位和 artifact 边界；不要把这段初始化重新复制回 job。
+
 生产证据 workflow 的 `platform` 必须显式选择其准入平台；profile、lockfile、build
 directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.6 的 Release 与
 published-asset verification 按独立 release manifest 只接受 `linux-x64`。tag Release
@@ -86,6 +91,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - Workflow 生命周期、触发、权限和 runner 类别: `docs/workflow-catalog.json`
 - Runner 标签和默认值: `.github/runner-matrix.json`
 - Summary path 展开、去重和 Step Summary 渲染: `.github/actions/render-validation-summary/action.yml`
+- Fixed-runner CMake/Python/Conan/cache 初始化: `.github/actions/setup-cpp-conan/action.yml`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
 - 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA 和同行 release tag 注释；catalog gate 会阻断浮动 tag、未知 Action 和权限扩大
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）

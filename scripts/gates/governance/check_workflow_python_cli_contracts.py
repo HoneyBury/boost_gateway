@@ -18,7 +18,10 @@ WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
 ACTIONS_ROOT = ROOT / ".github" / "actions"
 INVENTORY_PATH = ROOT / "docs" / "script-inventory.json"
 RUN_PATTERN = re.compile(r"^(?P<indent>\s*)run:\s*(?P<body>.*)$")
-PYTHON_INVOCATION_PATTERN = re.compile(r"\bpython(?:3)?\b\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?")
+PYTHON_INVOCATION_PATTERN = re.compile(
+    r"(?:\bpython(?:3(?:\.\d+)?)?\b|['\"]?\$[A-Z][A-Z0-9_]*PYTHON['\"]?)"
+    r"\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
+)
 LONG_OPTION_PATTERN = re.compile(r"(?<![\w-])(--[A-Za-z0-9][A-Za-z0-9-]*)(?:(?:=|\s)|$)")
 
 

@@ -69,6 +69,18 @@ def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> N
     checks.append({"name": name, "passed": passed, "detail": detail})
 
 
+def offline_composite_action_is_safe(text: str) -> bool:
+    if 'conan-venv-offline: "true"' not in text:
+        return False
+    if 'bootstrap-args: "--no-remote"' in text:
+        return True
+    return (
+        'run-bootstrap: "false"' in text
+        and "scripts/bootstrap_conan.py --conan-home \"$CONAN_HOME\" --no-remote"
+        in text
+    )
+
+
 def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
@@ -406,11 +418,10 @@ def main() -> int:
                 f"{path.name} does not build missing Conan dependencies",
             )
             if "uses: ./.github/actions/setup-cpp-conan" in text:
-                offline_action = 'bootstrap-args: "--no-remote"' in text and 'conan-venv-offline: "true"' in text
                 add(
                     checks,
                     f"conan:{stem}:offline-composite-action",
-                    offline_action,
+                    offline_composite_action_is_safe(text),
                     f"{path.name} configures setup-cpp-conan for runner-local offline use",
                 )
 

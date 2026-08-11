@@ -158,6 +158,7 @@ def main() -> int:
         "large_scripts_over_500",
         "large_scripts_over_800",
         "workflow_script_dependencies",
+        "workflow_script_dependency_edges",
         "cross_cli_imports",
     ):
         limit = limits.get(metric, {}).get("maximum") if isinstance(limits, dict) else None
@@ -224,6 +225,7 @@ def main() -> int:
 
     for name, current_key in (
         ("workflow_script_dependencies", "workflow_script_dependency_paths"),
+        ("workflow_script_dependency_edges", "workflow_script_dependency_edge_paths"),
         ("cross_cli_import_edges", "cross_cli_import_edges"),
     ):
         allowed_items = known.get(name, [])
@@ -302,6 +304,7 @@ def main() -> int:
         f"tools={current['tool_files']}, "
         f"large-500={current['large_scripts_over_500']}, "
         f"workflow-deps={current['workflow_script_dependencies']}, "
+        f"workflow-edges={current['workflow_script_dependency_edges']}, "
         f"cross-cli-imports={current['cross_cli_imports']}"
     )
     print(f"summary: {summary_path}")

@@ -13,7 +13,8 @@ from typing import Any
 
 RUN_PATTERN = re.compile(r"^(?P<indent>\s*)run:\s*(?P<body>.*)$")
 PYTHON_SCRIPT_PATTERN = re.compile(
-    r"\bpython(?:3)?\b\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
+    r"(?:\bpython(?:3(?:\.\d+)?)?\b|['\"]?\$[A-Z][A-Z0-9_]*PYTHON['\"]?)"
+    r"\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
 )
 
 
@@ -190,6 +191,19 @@ def workflow_script_dependencies(workflow_paths: list[Path]) -> list[str]:
     return sorted(dependencies)
 
 
+def workflow_script_dependency_edges(root: Path, workflow_paths: list[Path]) -> list[str]:
+    edges: set[str] = set()
+    for path in workflow_paths:
+        workflow = path.relative_to(root).as_posix()
+        dependencies = {
+            dependency
+            for block in extract_run_blocks(path)
+            for dependency in PYTHON_SCRIPT_PATTERN.findall(block)
+        }
+        edges.update(f"{workflow} -> {dependency}" for dependency in dependencies)
+    return sorted(edges)
+
+
 def imported_script_modules(path: Path) -> set[str]:
     try:
         tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
@@ -286,6 +300,7 @@ def collect_tooling_metrics(
         if script_sizes[path] > 800
     ]
     workflow_dependencies = workflow_script_dependencies(workflow_paths)
+    workflow_dependency_edges = workflow_script_dependency_edges(root, workflow_paths)
     import_edges = cross_cli_import_edges(root, cli_paths)
     return {
         "public_entrypoints": len(inventory.get("public_entrypoints", [])),
@@ -302,6 +317,8 @@ def collect_tooling_metrics(
         "large_scripts_over_800_paths": large_over_800,
         "workflow_script_dependencies": len(workflow_dependencies),
         "workflow_script_dependency_paths": workflow_dependencies,
+        "workflow_script_dependency_edges": len(workflow_dependency_edges),
+        "workflow_script_dependency_edge_paths": workflow_dependency_edges,
         "cross_cli_imports": len(import_edges),
         "cross_cli_import_edges": import_edges,
         "untested_cli": len(untested),
