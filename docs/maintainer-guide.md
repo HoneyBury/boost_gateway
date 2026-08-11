@@ -27,8 +27,8 @@ Leaderboard。主要维护边界如下：
 
 ## 为什么工具面会膨胀
 
-截至本页更新时，仓库有 163 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
-58,700 行、workflow 约 5,600 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
+截至本页更新时，仓库有 164 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
+58,800 行、workflow 约 5,600 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
 增长主要来自四类真实需求：多平台证据不可互换；发布、恢复、TLS、性能和长稳需要独立
@@ -105,9 +105,10 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
    放 `lib/`。对外入口才放 `scripts/` 根目录。
 2. 在 `docs/script-inventory.json` 精确登记一次。移动现有入口时保留薄 shim，并填写
    `canonical`；所有活动引用清零并跨过兼容周期后才能删除。
-3. 新增 canonical CLI 或 `scripts/tools/` 文件时，在 `script_growth_exceptions` 登记领域、消费方、
-   独立测试、不能扩展现有入口的原因、替代对象、退役条件和临时项到期日。没有完整记录的新增
-   文件会被 tooling metrics gate 拒绝；优先扩展现有入口或把无 CLI 的复用实现下沉到 `lib/`。
+3. 新增 canonical CLI、`scripts/tools/` 或 `scripts/lib/` 文件时，在 `script_growth_exceptions`
+   登记领域、消费方、独立测试、不能扩展现有入口的原因、替代对象、退役条件和临时项到期日。
+   没有完整记录的新增文件会被 tooling metrics gate 拒绝；优先扩展现有入口。只有两个以上 CLI
+   确实共享且已有直接测试的无 CLI 实现才下沉到 `lib/`。
 4. CLI 使用 `argparse`，有界超时，失败返回非零；证据 summary 使用 `summary_version: 2`、
    `overall_pass`、`passed`、`failed_category`、`failed_step` 和 `artifacts`。
 5. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
@@ -143,17 +144,23 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ## 工具治理指标
 
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
-canonical CLI、`scripts/tools/` 文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
+canonical CLI、`scripts/tools/`/`scripts/lib/` 文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
-片段，以及没有显式 Python 单测引用的 CLI。当前冻结值分别是 23、127、55、31/15、58、122、
-14、11 和 60 个历史无测试 allowlist 项。
+片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11、31/15、58、122、
+15、11 和 60 个历史无测试 allowlist 项；11 个 library 中有 10 个冻结基线和 1 个带直接测试的
+reviewed exception。
 
 依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
 变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
 workflow 的初始化收敛后为 122 条，实际减少 9 条。不能把修正后的 122 与旧提取器遗漏调用时
 记录的 89 直接比较。
 
-评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增 CLI/工具文件
+跨 CLI 导入提取也识别 `from scripts.tools import module` 形式。修正该盲区后，发布包解耦前的
+真实图为 22 条边；`release_package` 共享库承接归档布局、安全解包和运行时动态库契约后为
+15 条，消除了 7 条发布 CLI 耦合。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续
+兼容，避免一次性迁移调用方。
+
+评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增 CLI/工具/库文件
 只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
 依赖或依赖边、CLI 导入边、超大脚本或提高其他 maximum 则必须在同一变更解释架构理由并接受
 维护者评审，不能只为让 CI 变绿而刷新基线。summary 会列出具体的新路径或导入边，便于定位。
@@ -178,8 +185,9 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    production candidate 重复的 CMake/Python/Conan/cache 初始化迁入既有 `setup-cpp-conan`。
    后续 build/artifact 片段继续遵守三处提取规则。
 3. 已从三个优先超大脚本按子域拆出 `perf_statistics`、`release_lifecycle_io` 和
-   `recovery_evidence`，保留原 CLI 与可导入符号，并用独立单测覆盖统计、持久化和证据结构。
-   后续继续采用“一个职责、原入口兼容、先有回归测试”的小步拆分，不做一次性重写。
+   `recovery_evidence`，并从发布 CLI 下沉 `release_package` 的归档布局、安全解包和运行时依赖
+   原语，保留原 CLI 与可导入符号，并用独立单测覆盖。后续继续采用“一个职责、原入口兼容、
+   先有回归测试”的小步拆分，不做一次性重写。
 4. 已为全部 public entrypoint 增加 owner、领域、用途、权威文档、支持级别、运行环境、典型
    时长、外部副作用和退役条件，并由 `dev.py commands` 提供任务发现、由 script inventory
    gate 校验完整性和文档存在性。每个版本继续评审未引用 shim、废弃 workflow input 和重复

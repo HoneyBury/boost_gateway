@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "description": "Reviewed local tooling-governance baseline. Existing internal surface may shrink; any new CLI or tool file requires a complete script_growth_exceptions record, while workflow fan-out and cross-CLI imports may not grow without baseline review.",
+  "description": "Reviewed local tooling-governance baseline. Existing internal surface may shrink; any new CLI, tool, or library file requires a complete script_growth_exceptions record, while workflow fan-out and cross-CLI imports may not grow without baseline review.",
   "policy": {
     "fragment_lines": 3,
     "minimum_workflows": 3,
@@ -23,6 +23,10 @@
       "baseline": 55,
       "maximum": 55
     },
+    "library_files": {
+      "baseline": 10,
+      "maximum": 10
+    },
     "large_scripts_over_500": {
       "baseline": 31,
       "maximum": 31
@@ -40,8 +44,8 @@
       "maximum": 122
     },
     "cross_cli_imports": {
-      "baseline": 14,
-      "maximum": 14
+      "baseline": 15,
+      "maximum": 15
     },
     "untested_cli": {
       "baseline": 60,
@@ -297,6 +301,18 @@
         "scripts/tools/verify_restored_business_isolated.py",
         "scripts/tools/verify_sdk_distribution_packages.py"
       ],
+      "library_files": [
+        "scripts/lib/__init__.py",
+        "scripts/lib/cancellable_process.py",
+        "scripts/lib/evidence_provenance.py",
+        "scripts/lib/operations_identity.py",
+        "scripts/lib/perf_statistics.py",
+        "scripts/lib/recovery_evidence.py",
+        "scripts/lib/release_lifecycle_io.py",
+        "scripts/lib/subprocess_utils.py",
+        "scripts/lib/summary_utils.py",
+        "scripts/lib/tooling_metrics.py"
+      ],
       "workflow_script_dependencies": [
         "scripts/bootstrap_conan.py",
         "scripts/check_production_evidence_manifest.py",
@@ -485,24 +501,25 @@
         "scripts/gates/production/check_production_recovery_gate.py -> scripts.tools.check_backup_recovery_policy",
         "scripts/gates/release/aggregate_saturation_axis_evidence.py -> scripts.gates.release.aggregate_cpu_capacity_evidence",
         "scripts/tools/backup_vault_ssh_receiver.py -> scripts.tools.manage_backup_recovery",
+        "scripts/tools/benchmark_redis_persistence.py -> scripts.tools.manage_backup_recovery",
         "scripts/tools/check_release_compose.py -> scripts.tools.check_observability_preflight",
+        "scripts/tools/export_backup_restore_bundle.py -> scripts.tools.manage_backup_recovery",
+        "scripts/tools/export_backup_restore_bundle.py -> scripts.tools.verify_backup_vault",
         "scripts/tools/manage_release_deployment.py -> scripts.tools.check_release_compose",
         "scripts/tools/prepare_release_runtime.py -> scripts.tools.harden_release_sbom",
-        "scripts/tools/prepare_release_runtime.py -> scripts.tools.prepare_docker_runtime_context",
-        "scripts/tools/prepare_release_runtime.py -> scripts.tools.verify_release_archive",
-        "scripts/tools/prepare_release_runtime.py -> scripts.tools.verify_release_package_consumer",
+        "scripts/tools/restore_backup_isolated.py -> scripts.tools.manage_backup_recovery",
+        "scripts/tools/schedule_observability_evidence.py -> scripts.tools.manage_observability_evidence",
+        "scripts/tools/send_restore_bundle.py -> scripts.tools.restore_bundle_ssh_receiver",
         "scripts/tools/verify_backup_vault.py -> scripts.tools.manage_backup_recovery",
-        "scripts/tools/verify_release_cmake_consumer.py -> scripts.tools.verify_release_archive",
-        "scripts/tools/verify_release_cmake_consumer.py -> scripts.tools.verify_release_package_consumer",
-        "scripts/tools/verify_release_package_consumer.py -> scripts.tools.prepare_docker_runtime_context",
-        "scripts/tools/verify_release_package_consumer.py -> scripts.tools.verify_release_archive"
+        "scripts/tools/verify_restored_business_isolated.py -> scripts.tools.manage_backup_recovery",
+        "scripts/tools/verify_restored_business_isolated.py -> scripts.tools.restore_backup_isolated"
       ]
     },
   "observations": {
     "workflow_files": 18,
     "cli_implementations": 127,
-    "script_files": 163,
-    "script_lines": 58754,
+    "script_files": 164,
+    "script_lines": 58835,
     "workflow_lines": 5597
   },
   "external_metrics": {

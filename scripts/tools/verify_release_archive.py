@@ -3,40 +3,22 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
-import tarfile
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 
+from scripts.lib.release_package import verify_archive
 
-REQUIRED_ROOT_FILES = {"README.md", "CHANGELOG.md", "LICENSE"}
-
-
-def verify_archive(archive: Path, expected_root: str) -> list[str]:
-    if not expected_root or "/" in expected_root or expected_root in {".", ".."}:
-        return [f"unsafe expected root: {expected_root!r}"]
-
-    failures: list[str] = []
-    try:
-        with tarfile.open(archive, "r:gz") as bundle:
-            paths = [PurePosixPath(member.name) for member in bundle.getmembers() if member.name]
-    except (OSError, tarfile.TarError) as exc:
-        return [f"archive is not a readable gzip-compressed tarball: {exc}"]
-
-    if not paths:
-        return ["archive is empty"]
-
-    roots = {path.parts[0] for path in paths if path.parts}
-    if roots != {expected_root}:
-        failures.append(f"expected one top-level directory {expected_root!r}, found {sorted(roots)!r}")
-    if "dist" in roots:
-        failures.append("archive must not expose the build workspace dist directory")
-
-    names = {path.as_posix().rstrip("/") for path in paths}
-    for filename in sorted(REQUIRED_ROOT_FILES):
-        expected = f"{expected_root}/{filename}"
-        if expected not in names:
-            failures.append(f"missing required release metadata: {expected}")
-    return failures
 
 
 def main() -> int:

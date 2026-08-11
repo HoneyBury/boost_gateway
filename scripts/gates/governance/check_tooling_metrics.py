@@ -36,7 +36,7 @@ GROWTH_EXCEPTION_FIELDS = {
     "temporary",
     "expires_on",
 }
-VALID_GROWTH_KINDS = {"cli", "tool-module"}
+VALID_GROWTH_KINDS = {"cli", "tool-module", "library-module"}
 VALID_GROWTH_DOMAINS = {
     "contributor",
     "dependencies",
@@ -76,14 +76,25 @@ def valid_growth_exception(path_text: str, metadata: Any) -> tuple[bool, str]:
         problems.append("consumers must be a non-empty unique string list")
     test_text = metadata.get("test")
     test_path = ROOT / str(test_text)
-    if not (
+    test_is_valid = (
         isinstance(test_text, str)
         and test_text.startswith("tests/")
         and test_path.is_file()
         and test_path.suffix == ".py"
         and test_path.resolve().is_relative_to((ROOT / "tests").resolve())
-    ):
+    )
+    if not test_is_valid:
         problems.append("test must reference an existing Python test under tests/")
+    else:
+        target = Path(path_text)
+        dotted = target.with_suffix("").as_posix().replace("/", ".")
+        test_source = test_path.read_text(encoding="utf-8-sig")
+        if not (
+            target.stem in test_path.stem
+            or target.name in test_source
+            or dotted in test_source
+        ):
+            problems.append("test must directly identify the governed script")
     if not (
         isinstance(metadata.get("why_new_script"), str)
         and len(metadata["why_new_script"].strip()) >= 30
@@ -189,11 +200,14 @@ def main() -> int:
     known = known if isinstance(known, dict) else {}
     known_cli = set(known.get("cli_implementations", []))
     known_tools = set(known.get("tool_files", []))
+    known_libraries = set(known.get("library_files", []))
     current_cli = set(current["cli_implementation_paths"])
     current_tools = set(current["tool_file_paths"])
+    current_libraries = set(current["library_file_paths"])
     new_cli = current_cli - known_cli
     new_tools = current_tools - known_tools
-    required_exceptions = new_cli | new_tools
+    new_libraries = current_libraries - known_libraries
+    required_exceptions = new_cli | new_tools | new_libraries
     add(
         checks,
         "new-script-growth-exceptions",
@@ -202,7 +216,13 @@ def main() -> int:
         f"stale_or_invalid={sorted(set(exception_map) - required_exceptions)}",
     )
     for path_text in sorted(required_exceptions & valid_exceptions):
-        expected_kind = "cli" if path_text in new_cli else "tool-module"
+        expected_kind = (
+            "cli"
+            if path_text in new_cli
+            else "tool-module"
+            if path_text in new_tools
+            else "library-module"
+        )
         actual_kind = exception_map[path_text].get("kind")
         add(
             checks,
@@ -213,6 +233,7 @@ def main() -> int:
     for metric, additions in (
         ("cli_implementations", new_cli & valid_exceptions),
         ("tool_files", new_tools & valid_exceptions),
+        ("library_files", new_libraries & valid_exceptions),
     ):
         limit = limits.get(metric, {}).get("maximum") if isinstance(limits, dict) else None
         permitted = limit + len(additions) if isinstance(limit, int) else None
@@ -302,6 +323,7 @@ def main() -> int:
         f"untested-cli={current['untested_cli']}, "
         f"cli={current['cli_implementations']}, "
         f"tools={current['tool_files']}, "
+        f"libraries={current['library_files']}, "
         f"large-500={current['large_scripts_over_500']}, "
         f"workflow-deps={current['workflow_script_dependencies']}, "
         f"workflow-edges={current['workflow_script_dependency_edges']}, "

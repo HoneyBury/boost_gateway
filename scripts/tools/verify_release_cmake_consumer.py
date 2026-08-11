@@ -29,8 +29,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.tools.verify_release_archive import verify_archive  # noqa: E402
-from scripts.tools.verify_release_package_consumer import extract_archive  # noqa: E402
+from scripts.lib.release_package import extract_archive, verify_archive  # noqa: E402
 
 SDK_VERSION = "4.2.1"
 DEFAULT_IMAGE = "boost-gateway/release-cmake-consumer:ubuntu24.04-gcc13"

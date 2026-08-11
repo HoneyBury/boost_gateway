@@ -215,6 +215,11 @@ def imported_script_modules(path: Path) -> set[str]:
             modules.update(alias.name for alias in node.names)
         elif isinstance(node, ast.ImportFrom) and node.module:
             modules.add(node.module)
+            modules.update(
+                f"{node.module}.{alias.name}"
+                for alias in node.names
+                if alias.name != "*"
+            )
     return modules
 
 
@@ -288,6 +293,11 @@ def collect_tooling_metrics(
         for path in script_paths
         if path.is_relative_to(root / "scripts/tools")
     ]
+    library_paths = [
+        path
+        for path in script_paths
+        if path.is_relative_to(root / "scripts/lib")
+    ]
     script_sizes = {path: line_count([path]) for path in script_paths}
     large_over_500 = [
         path.relative_to(root).as_posix()
@@ -311,6 +321,10 @@ def collect_tooling_metrics(
         "cli_implementation_paths": cli_relative,
         "tool_files": len(tool_paths),
         "tool_file_paths": [path.relative_to(root).as_posix() for path in tool_paths],
+        "library_files": len(library_paths),
+        "library_file_paths": [
+            path.relative_to(root).as_posix() for path in library_paths
+        ],
         "large_scripts_over_500": len(large_over_500),
         "large_scripts_over_500_paths": large_over_500,
         "large_scripts_over_800": len(large_over_800),

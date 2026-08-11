@@ -24,9 +24,11 @@ if str(ROOT) not in os.sys.path:
     os.sys.path.insert(0, str(ROOT))
 
 from scripts.tools.harden_release_sbom import verify_attested_sbom_predicate
-from scripts.tools.prepare_docker_runtime_context import validate_runtime_dependencies
-from scripts.tools.verify_release_archive import verify_archive
-from scripts.tools.verify_release_package_consumer import extract_archive
+from scripts.lib.release_package import (
+    extract_archive,
+    validate_runtime_dependencies,
+    verify_archive,
+)
 
 REPOSITORY_RE = re.compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
 TAG_RE = re.compile(r"v[0-9]+\.[0-9]+\.[0-9]+")

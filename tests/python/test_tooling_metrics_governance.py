@@ -81,6 +81,7 @@ jobs:
             },
             "cli_implementations": {"maximum": current["cli_implementations"]},
             "tool_files": {"maximum": current["tool_files"]},
+            "library_files": {"maximum": current["library_files"]},
             "large_scripts_over_500": {
                 "maximum": current["large_scripts_over_500"]
             },
@@ -98,6 +99,7 @@ jobs:
         "known_surfaces": {
             "cli_implementations": current["cli_implementation_paths"],
             "tool_files": current["tool_file_paths"],
+            "library_files": current["library_file_paths"],
             "workflow_script_dependencies": current[
                 "workflow_script_dependency_paths"
             ],
@@ -185,6 +187,33 @@ def test_reviewed_new_cli_with_complete_exception_passes(tmp_path: Path) -> None
     assert run_gate(tmp_path, baseline, summary) == 0
 
 
+def test_reviewed_library_module_with_complete_exception_passes(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    library_relative = (Path("scripts") / "lib" / "shared_release.py").as_posix()
+    test_relative = "tests/python/test_shared_release.py"
+    (tmp_path / library_relative).parent.mkdir(parents=True)
+    (tmp_path / library_relative).write_text("VALUE = 1\n", encoding="utf-8")
+    (tmp_path / test_relative).write_text(
+        "from scripts.lib.shared_release import VALUE\n", encoding="utf-8"
+    )
+    inventory_path = tmp_path / "docs/script-inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory["script_growth_exceptions"][library_relative] = {
+        "kind": "library-module",
+        "domain": "release",
+        "consumers": ["release commands"],
+        "test": test_relative,
+        "why_new_script": "Several release commands require one import-safe shared implementation.",
+        "replaces": "helpers embedded in CLI modules",
+        "retirement_condition": "The consumers move to another governed shared implementation.",
+        "temporary": False,
+        "expires_on": "",
+    }
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    assert run_gate(tmp_path, baseline, summary) == 0
+
+
 def test_new_workflow_script_dependency_fails_exact_surface_check(
     tmp_path: Path,
 ) -> None:
@@ -236,6 +265,21 @@ def test_new_cross_cli_import_fails_exact_edge_check(tmp_path: Path) -> None:
         "from scripts.tools."
         + "auxiliary import main as auxiliary_main\n"
         + CLI_SOURCE,
+        encoding="utf-8",
+    )
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:cross_cli_imports" in failed
+    assert "known-surface:cross_cli_import_edges" in failed
+
+
+def test_package_style_cross_cli_import_is_not_hidden(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    covered = tmp_path / "scripts" / "tools" / "covered.py"
+    covered.write_text(
+        "from scripts.tools import auxiliary\n" + CLI_SOURCE,
         encoding="utf-8",
     )
 

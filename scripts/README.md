@@ -8,9 +8,10 @@ documentation, support level, execution environment, typical duration, external
 side effects, and an explicit retirement condition. Update the metadata in the
 same change whenever an entrypoint's operational contract changes.
 
-Before adding a canonical CLI or a file under `scripts/tools/`, prefer extending an
-existing command or placing non-CLI shared code under `scripts/lib/`. A genuinely
-new surface must add a `script_growth_exceptions` record to the inventory with its
+Before adding a canonical CLI or a file under `scripts/tools/` or `scripts/lib/`,
+prefer extending an existing command. Move implementation to `scripts/lib/` only
+when multiple commands share a directly tested, CLI-free contract. A genuinely new
+surface must add a `script_growth_exceptions` record to the inventory with its
 domain, consumers, direct test, reason it cannot extend an existing entrypoint,
 replacement, retirement condition, temporary status, and expiry date. The tooling
 metrics gate rejects missing, stale, invalid, or expired records and unreviewed
