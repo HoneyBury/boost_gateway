@@ -90,6 +90,17 @@ jobs:
             catalog.expected_runner_class('["self-hosted","Linux","X64"]'),
         )
 
+    def test_shared_summary_action_is_local_and_reused(self) -> None:
+        action = catalog.ROOT / ".github/actions/render-validation-summary/action.yml"
+        self.assertTrue(action.is_file())
+        self.assertIn("compgen -G", action.read_text(encoding="utf-8"))
+        references = sum(
+            "uses: ./.github/actions/render-validation-summary"
+            in path.read_text(encoding="utf-8")
+            for path in catalog.WORKFLOWS_ROOT.glob("*.yml")
+        )
+        self.assertGreaterEqual(references, 6)
+
 
 if __name__ == "__main__":
     unittest.main()

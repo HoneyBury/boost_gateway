@@ -254,15 +254,11 @@ jobs:
 
       - name: Render candidate summary
         if: always()
-        shell: bash
-        run: |
-          summaries=()
-          for path in runtime/validation/r0-*-summary.json runtime/validation/n5-*-summary.json; do
-            if [ -f "$path" ]; then summaries+=("$path"); fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/r0-*-summary.json
+            runtime/validation/n5-*-summary.json
 
       - name: Upload production candidate evidence
         if: always()

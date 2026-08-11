@@ -85,6 +85,7 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 - Workflow 生命周期、触发、权限和 runner 类别: `docs/workflow-catalog.json`
 - Runner 标签和默认值: `.github/runner-matrix.json`
+- Summary path 展开、去重和 Step Summary 渲染: `.github/actions/render-validation-summary/action.yml`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
 - 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA 和同行 release tag 注释；catalog gate 会阻断浮动 tag、未知 Action 和权限扩大
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）

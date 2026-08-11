@@ -69,7 +69,7 @@ REQUIRED_TEXT = {
     ".github/workflows/production-gates.yml": [
         "scripts/gates/production/verify_production_evidence_gate.py",
         "scripts/gates/production/verify_production_resilience_gate.py",
-        "scripts/tools/render_validation_summary.py",
+        "uses: ./.github/actions/render-validation-summary",
         "actions/upload-artifact@",
         "runtime/validation/production-evidence-summary.json",
         "runtime/validation/production-resilience-summary.json",

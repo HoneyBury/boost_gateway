@@ -329,34 +329,26 @@ jobs:
 
       - name: Render production gate summary
         if: always()
-        shell: bash
-        run: |
-          summaries=()
-          for path in \
-            runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/production-resilience-summary.json \
-            runtime/validation/production-evidence-summary.json \
-            runtime/validation/p5-long-soak-summary.json \
-            runtime/validation/p5-fault-data-recovery-summary.json \
-            runtime/validation/p5-specialized-failure-summary.json \
-            runtime/validation/p5-runtime-observability-summary.json \
-            runtime/validation/p5-control-plane-kind-summary.json \
-            runtime/validation/p5-release-baseline-summary.json \
-            runtime/validation/p6-stability-soak-summary.json \
-            runtime/validation/p6-data-recovery-summary.json \
-            runtime/validation/p6-specialized-e2e-summary.json \
-            runtime/validation/p6-candidate-audit-summary.json \
-            runtime/validation/p6-release-baseline-summary.json \
-            runtime/validation/p2-observability-runtime-summary.json \
-            runtime/validation/gateway-observability-runtime-summary.json \
-            runtime/perf/release-baseline/summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/fixed-runner-preflight-summary.json
+            runtime/validation/production-resilience-summary.json
+            runtime/validation/production-evidence-summary.json
+            runtime/validation/p5-long-soak-summary.json
+            runtime/validation/p5-fault-data-recovery-summary.json
+            runtime/validation/p5-specialized-failure-summary.json
+            runtime/validation/p5-runtime-observability-summary.json
+            runtime/validation/p5-control-plane-kind-summary.json
+            runtime/validation/p5-release-baseline-summary.json
+            runtime/validation/p6-stability-soak-summary.json
+            runtime/validation/p6-data-recovery-summary.json
+            runtime/validation/p6-specialized-e2e-summary.json
+            runtime/validation/p6-candidate-audit-summary.json
+            runtime/validation/p6-release-baseline-summary.json
+            runtime/validation/p2-observability-runtime-summary.json
+            runtime/validation/gateway-observability-runtime-summary.json
+            runtime/perf/release-baseline/summary.json
 
       - name: Upload production gate evidence
         if: always()

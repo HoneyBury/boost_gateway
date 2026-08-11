@@ -129,8 +129,8 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 
 1. 已将 workflow 名称、触发类型、权限、runner 类别和生命周期提取到
    `docs/workflow-catalog.json`；检查代码消费清单并保留安全关键的语义断言。
-2. 统计重复的 Conan/setup/build/artifact 片段，达到三处即迁入 composite action；每次只迁移
-   一类片段，并用原 workflow rehearsal 对照。
+2. 已把六个 workflow 重复的 summary path 解析、去重和 Step Summary 渲染迁入
+   `.github/actions/render-validation-summary`；后续 setup/build/artifact 片段继续遵守三处提取规则。
 3. 对超过约 800 行或同时承担 CLI、执行、解析、判定、渲染的脚本，先抽纯函数和测试，再按
    子域拆包。优先候选是性能采集、release deployment、恢复演练，不做一次性重写。
 4. 为 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役条件；

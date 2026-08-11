@@ -254,15 +254,13 @@ jobs:
 
       - name: Render pre-production summary
         if: always()
-        shell: bash
-        run: |
-          summaries=()
-          for path in runtime/validation/runner-cache-identity.json runtime/validation/preprod-evidence-preflight-summary.json runtime/validation/preprod-recovery-drill-summary.json runtime/validation/tls-preprod-multi-run-summary.json; do
-            if [ -f "$path" ]; then summaries+=("$path"); fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/runner-cache-identity.json
+            runtime/validation/preprod-evidence-preflight-summary.json
+            runtime/validation/preprod-recovery-drill-summary.json
+            runtime/validation/tls-preprod-multi-run-summary.json
 
       - name: Upload pre-production evidence
         if: always()

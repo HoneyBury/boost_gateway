@@ -153,11 +153,10 @@ jobs:
 
       - name: Render stability summary
         if: always()
-        shell: bash
-        run: |
-          if [ -f runtime/validation/nightly-stability-soak-summary.json ]; then
-            python3 scripts/tools/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: runtime/validation/nightly-stability-soak-summary.json
+          title: Nightly Stability
 
       - name: Upload stability summary
         if: always()

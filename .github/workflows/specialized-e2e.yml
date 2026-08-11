@@ -231,22 +231,13 @@ jobs:
 
       - name: Render specialized E2E summary
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          summaries=()
-          for path in \
-            runtime/validation/fixed-runner-preflight-summary.json \
-            runtime/validation/raft-conan-offline-summary.json \
-            runtime/validation/specialized-e2e-summary.json \
-            runtime/validation/raft-data-recovery-summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/fixed-runner-preflight-summary.json
+            runtime/validation/raft-conan-offline-summary.json
+            runtime/validation/specialized-e2e-summary.json
+            runtime/validation/raft-data-recovery-summary.json
 
       - name: Upload specialized E2E summary
         if: always()

@@ -316,6 +316,36 @@ def main() -> int:
         [*actions_root.glob("*/action.yml"), *actions_root.glob("*/action.yaml")]
     )
     checks.extend(action_reference_checks(action_paths))
+    render_action_path = actions_root / "render-validation-summary" / "action.yml"
+    render_action = read(render_action_path) if render_action_path.exists() else ""
+    render_action_reference = "uses: ./.github/actions/render-validation-summary"
+    add(
+        checks,
+        "shared-action:render-validation-summary:exists",
+        bool(render_action),
+        "the shared validation-summary renderer action exists",
+    )
+    add(
+        checks,
+        "shared-action:render-validation-summary:contract",
+        all(
+            token in render_action
+            for token in (
+                "SUMMARY_PATH_PATTERNS",
+                "compgen -G",
+                "declare -A observed",
+                "scripts/tools/render_validation_summary.py",
+                '>> "$GITHUB_STEP_SUMMARY"',
+            )
+        ),
+        "the shared action expands paths, deduplicates summaries and renders the job summary",
+    )
+    add(
+        checks,
+        "shared-action:render-validation-summary:reused",
+        sum(text.count(render_action_reference) for text in map(read, workflow_paths)) >= 6,
+        "at least six workflows reuse the shared renderer action",
+    )
 
     for path in workflow_paths:
         stem = path.stem
