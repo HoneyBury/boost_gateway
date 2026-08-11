@@ -52,6 +52,9 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
 
+`ci.yml` 在 Conan helper 修改 PATH 前固定 setup-python 的解释器用于完整 pytest；Conan venv
+只承载 Conan，不能用来隐式提供或运行 `requirements-dev.txt` 中的测试依赖。
+
 Release、long soak、nightly、preprod 和 production-candidate workflow 统一通过
 `.github/actions/setup-cpp-conan` 安装 CMake/Python、验证离线 Conan venv 并解析持久 cache
 identity。它们保留各自的 `--no-remote` bootstrap 和 build/preflight 步骤，以维持原有执行顺序、

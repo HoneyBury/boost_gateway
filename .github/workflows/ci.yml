@@ -53,7 +53,10 @@ jobs:
 
       - name: Install Python test dependencies
         shell: bash
-        run: python3 -m pip install --disable-pip-version-check -r requirements-dev.txt
+        run: |
+          test_python=$(command -v python3)
+          "$test_python" -m pip install --disable-pip-version-check -r requirements-dev.txt
+          echo "PYTHON_TEST_EXECUTABLE=$test_python" >> "$GITHUB_ENV"
 
       - name: Restore sccache cache
         id: restore-sccache
@@ -217,7 +220,7 @@ jobs:
       - name: Repository governance gate
         shell: bash
         run: |
-          python3 -m pytest -q tests/python
+          "$PYTHON_TEST_EXECUTABLE" -m pytest -q tests/python
           python3 scripts/gates/governance/check_repository_governance.py
 
       - name: Next minor decision gate

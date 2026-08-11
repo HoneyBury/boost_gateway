@@ -490,7 +490,7 @@
     "cli_implementations": 127,
     "script_files": 164,
     "script_lines": 58889,
-    "workflow_lines": 5599
+    "workflow_lines": 5602
   },
   "external_metrics": {
     "automation_change_failure_rate": {
