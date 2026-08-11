@@ -9,6 +9,7 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "public_entrypoints": [
+    "scripts/dev.py",
     "scripts/run_tests.py",
     "scripts/bootstrap_conan.py",
     "scripts/generate_conan_lock.py",
@@ -138,6 +139,9 @@
     "scripts/check_operations_host.py": {
       "category": "public_entrypoint",
       "canonical": "scripts/gates/infrastructure/check_operations_host.py"
+    },
+    "scripts/dev.py": {
+      "category": "public_entrypoint"
     },
     "scripts/gates/e2e/verify_raft_mixed_binary.py": {
       "category": "aggregate_gate"

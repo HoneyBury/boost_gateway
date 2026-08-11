@@ -24,6 +24,11 @@ hosted pull-request workflow performs a bounded Release build, complete CTest ru
 repository governance checks. Add focused tests for changed behavior and report the exact
 commands and results in the pull request template.
 
+For a normal local change, begin with `python3.12 scripts/dev.py doctor`, use
+`python3.12 scripts/dev.py test <layer> --build-dir <dir>` during development, and run
+`python3.12 scripts/dev.py check` before pushing. The facade is intentionally local-only;
+release and fixed-runner workflows continue to call explicit governed entrypoints.
+
 Long soak, capacity, Redis live, native platform, and pre-production results require their
 admitted runners. Do not represent a local or hosted smoke run as fixed-runner evidence.
 

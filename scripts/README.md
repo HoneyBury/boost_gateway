@@ -2,6 +2,19 @@
 
 The maintained script index is `docs/script-inventory.json`.
 
+For day-to-day contributor work, start with the thin task facade instead of
+discovering individual scripts:
+
+```bash
+python3.12 scripts/dev.py doctor
+python3.12 scripts/dev.py check
+python3.12 scripts/dev.py test unit --build-dir build/contributor-debug --verbose
+python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
+```
+
+`dev.py` only composes stable entrypoints. Canonical scripts remain directly
+callable for CI, fixed-runner evidence, debugging, and documented operations.
+
 Canonical implementation paths may live under role-oriented subdirectories such
 as `scripts/gates/` and `scripts/lib/`. Root-level script names remain stable
 compatibility shims unless explicitly retired.
@@ -31,6 +44,7 @@ Canonical groups migrated so far:
 
 Use these stable public entrypoints first:
 
+- `dev.py` for contributor diagnostics, bounded governance, tests, and the first business smoke.
 - `verify_release_candidate.py` for local/PR bounded release checks.
 - `check_mainline_readiness.py` for docs, script, config, and evidence governance checks.
 - `check_legacy_helper_inventory.py` for legacy/helper compatibility-surface governance.

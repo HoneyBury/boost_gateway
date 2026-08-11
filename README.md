@@ -29,11 +29,8 @@ GCC 13、Conan 2.8.1、Debug/Release 构建、CLion、测试和 Docker 的完整
 完成 Conan 和 Debug 配置后，最短验证路径是：
 
 ```bash
-cmake --build build/contributor-debug --parallel \
-  --target project_v2_unit_tests v2_gateway_demo
-python3.12 scripts/run_tests.py unit \
-  --build-dir build/contributor-debug --verbose
-build/contributor-debug/examples/v2_gateway_demo/v2_gateway_demo --script
+python3.12 scripts/dev.py doctor --build-dir build/contributor-debug
+python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ```
 
 `--script` 在进程内执行 login、room、battle 和 settlement smoke，不需要先启动五个
@@ -58,10 +55,7 @@ backend。完整六服务环境见
 ## 常用验证
 
 ```bash
-python3.12 scripts/gates/governance/check_current_docs_install.py
-python3.12 scripts/check_mainline_readiness.py
-python3.12 scripts/gates/governance/check_script_inventory.py
-python3.12 scripts/gates/governance/check_config_source_layout.py
+python3.12 scripts/dev.py check
 python3.12 scripts/verify_release_candidate.py \
   --skip-release-baseline --soak-profile smoke
 ```
@@ -75,9 +69,10 @@ smoke 代替。完整门禁矩阵见 [发布治理](docs/release-governance.md)�
 |---|---|
 | [文档索引](docs/README.md) | 当前维护文档、历史归档和事实优先级 |
 | [开发者入门](docs/ONBOARDING.md) | 构建、测试、CLion、代码规范和贡献流程 |
+| [维护者指南](docs/maintainer-guide.md) | 代码地图、脚本/workflow 治理、变更路径和验证分层 |
 | [当前状态](docs/current-state.md) | 已实现能力、默认边界和当前工作 |
 | [架构总览](docs/architecture-overview.md) | 组件、数据流、端口和部署模型 |
-| [主线执行计划](docs/mainline-execution-plan.md) | v3.6.2 发布后的企业运营主线 |
+| [主线执行计划](docs/mainline-execution-plan.md) | v3.6.6 发布后的企业运营主线 |
 | [性能基线](docs/performance-baseline.md) | 性能事实、测量口径和声明边界 |
 | [固定 Runner 手册](docs/fixed-runner-playbook.md) | Conan/Docker cache 和生产证据操作 |
 | [贡献指南](CONTRIBUTING.md) | PR、review、测试和敏感变更要求 |

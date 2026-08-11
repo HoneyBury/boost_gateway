@@ -21,9 +21,10 @@ Options:
 """
 
 import argparse
-import sys
-import subprocess
 import os
+from pathlib import Path
+import subprocess
+import sys
 
 
 LAYERS = {
@@ -104,6 +105,30 @@ def find_build_dir(preset):
     return None
 
 
+def configured_tool(build_dir: str | os.PathLike[str], cache_key: str) -> str | None:
+    """Resolve the exact CMake tool recorded when a build tree was configured."""
+    cache = Path(build_dir) / "CMakeCache.txt"
+    try:
+        lines = cache.read_text(encoding="utf-8-sig").splitlines()
+    except OSError:
+        return None
+
+    prefix = f"{cache_key}:INTERNAL="
+    for line in lines:
+        if line.startswith(prefix):
+            candidate = line[len(prefix):]
+            if Path(candidate).is_file():
+                return candidate
+    return None
+
+
+def resolve_test_context(args):
+    """Return the configured CTest executable and optional build directory."""
+    build_dir = args.build_dir or find_build_dir(args.preset)
+    ctest = configured_tool(build_dir, "CMAKE_CTEST_COMMAND") if build_dir else None
+    return ctest or "ctest", build_dir
+
+
 def list_layers():
     print("Available test layers:")
     print()
@@ -118,17 +143,13 @@ def list_layers():
 
 
 def build_ctest_command(args, layer_info):
-    cmd = ["ctest"]
-
-    preset = args.preset
-    build_dir = args.build_dir
-
-    # Try to auto-detect build dir if not specified
-    if build_dir is None:
-        build_dir = find_build_dir(preset)
+    ctest, build_dir = resolve_test_context(args)
+    cmd = [ctest]
 
     if build_dir:
         cmd.extend(["--test-dir", build_dir])
+    else:
+        cmd.extend(["--preset", args.preset])
 
     # Use label filter for layers with labels
     label = layer_info.get("label")
@@ -193,9 +214,12 @@ def main():
 
     if layer == "all":
         # Run everything: all labeled tests + perf/fuzz/security if built
-        cmd = ["ctest"]
-        if args.build_dir:
-            cmd.extend(["--test-dir", args.build_dir])
+        ctest, build_dir = resolve_test_context(args)
+        cmd = [ctest]
+        if build_dir:
+            cmd.extend(["--test-dir", build_dir])
+        else:
+            cmd.extend(["--preset", args.preset])
         if args.timeout:
             cmd.extend(["--timeout", str(args.timeout)])
         if args.parallel:

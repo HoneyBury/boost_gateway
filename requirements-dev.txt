@@ -1,0 +1,2 @@
+# Python script and governance test runner. Runtime and Conan dependencies stay separate.
+pytest==9.1.1

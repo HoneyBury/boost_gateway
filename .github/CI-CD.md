@@ -25,7 +25,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | Linux x64 runtime/symbol/wheel、x64 RID NuGet、测试与门禁；tag 才发布/attest |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收 runtime/symbol、wheel/NuGet、checksum、consumer 和 attestations |
-| `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan 与两个 60 秒 libFuzzer target；三个 job 均有硬超时 |
+| `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan、TSan 与两个 60 秒 libFuzzer target；四个 job 均有硬超时 |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 | `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、UUID-bound dSYM、SDK consumer 与候选资产 |
@@ -39,7 +39,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **Linux 调试符号候选**: Linux x64 + GNU binutils、支持 build-id 的 linker、Syft
 - **JWKS 轮换证据**: `linux-x64` 或 `macos-arm64` 原生 runner + 实际 OS/arch、OpenSSL、localhost bind、临时 CA trust 和对应平台严格离线 Conan 图
-- **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
+- **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.12, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
 ### Conan fixed-runner 缓存
