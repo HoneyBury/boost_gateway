@@ -120,6 +120,19 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
 提交说明和 PR 必须记录实际运行的命令和结果，不用“全部测试通过”代替可复查证据。
 
+## 工具治理指标
+
+`python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口
+数量、跨三个以上 workflow 的重复三行 shell 片段，以及没有显式 Python 单测引用的 canonical
+CLI。评审基线位于 `docs/tooling-metrics-baseline.json`；新增入口、扩大重复片段或扩大无测试
+allowlist 都必须在同一变更中说明原因并接受维护者评审，不能只为让 CI 变绿而刷新基线。
+
+脚本文件数、workflow 数和行数作为观察值写入 summary，不以“文件少”或“行数少”代替低耦合。
+脚本/workflow 变更失败率不能从 checkout 静态推导：维护者每月从 GitHub Actions 取最近 90 天
+相关变更的已完成运行，按 `失败 / (成功 + 失败)` 计算，排除 cancelled，并在月度维护 Issue 或
+release governance review 记录窗口、分子、分母和结果。本地 gate 只保证这个外部指标的 owner、
+口径和目标不会静默消失。
+
 ## 渐进治理路线
 
 本轮先解决入口和可验证性：增加开发者 facade；测试入口绑定配置时使用的 CTest；给脚本
@@ -137,5 +150,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 4. 已为全部 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役
    条件，并由 script inventory gate 校验完整性与枚举漂移。每个版本继续评审未引用 shim、
    废弃 workflow input 和重复 summary renderer。
-5. 持续观测四项指标：public entrypoint 数量、workflow 重复片段、无单测 CLI 数量、脚本与
-   workflow 的变更失败率。治理目标是降低修改耦合，而不是单纯追求文件数更少。
+5. 已建立 `tooling-metrics-baseline.json` 和本地/CI drift gate，持续观测 public entrypoint、
+   workflow 重复片段、无单测 CLI，并登记需要 GitHub Actions 月度核验的变更失败率。治理目标
+   是降低修改耦合，而不是单纯追求文件数更少。

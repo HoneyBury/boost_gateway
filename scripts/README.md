@@ -41,6 +41,7 @@ Canonical groups migrated so far:
 - Fixed-runner Conan/sccache namespace resolver: `scripts/tools/resolve_runner_cache.py`
 - Conan lockfile workflow gate: `scripts/gates/governance/check_conan_lockfile_workflows.py`
 - Workflow catalog gate: `scripts/gates/governance/check_workflow_catalog.py`
+- Tooling metrics drift gate: `scripts/gates/governance/check_tooling_metrics.py`
 - Repository governance gate: `scripts/gates/governance/check_repository_governance.py`
 - Workflow Python CLI contract gate: `scripts/gates/governance/check_workflow_python_cli_contracts.py`
 - Evidence provenance contract gate: `scripts/gates/governance/check_evidence_provenance_contract.py`

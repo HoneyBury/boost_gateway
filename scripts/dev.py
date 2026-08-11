@@ -22,6 +22,7 @@ CHECK_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("scripts/gates/governance/check_script_inventory.py",),
     ("scripts/gates/governance/check_workflow_python_cli_contracts.py",),
     ("scripts/gates/governance/check_workflow_catalog.py",),
+    ("scripts/gates/governance/check_tooling_metrics.py",),
     ("scripts/gates/governance/check_repository_governance.py",),
     ("scripts/check_mainline_readiness.py",),
     ("scripts/manage_todos.py", "check"),

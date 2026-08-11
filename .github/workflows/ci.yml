@@ -198,6 +198,10 @@ jobs:
         shell: bash
         run: python3 scripts/gates/governance/check_workflow_catalog.py
 
+      - name: Tooling metrics drift gate
+        shell: bash
+        run: python3 scripts/gates/governance/check_tooling_metrics.py
+
       - name: Current documentation contract gate
         shell: bash
         run: python3 scripts/gates/governance/check_current_docs_install.py

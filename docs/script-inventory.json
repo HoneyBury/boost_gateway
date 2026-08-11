@@ -255,6 +255,12 @@
     "scripts/lib/summary_utils.py": {
       "category": "tool"
     },
+    "scripts/lib/tooling_metrics.py": {
+      "category": "tool"
+    },
+    "scripts/gates/governance/check_tooling_metrics.py": {
+      "category": "aggregate_gate"
+    },
     "scripts/producers/__init__.py": {
       "category": "tool"
     },
