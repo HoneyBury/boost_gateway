@@ -3,11 +3,21 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import concurrent.futures
 import http.server
 import json
-import math
 import os
 import platform
 import re
@@ -26,6 +36,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 from urllib.request import urlopen
+
+from scripts.lib.perf_statistics import (
+    distribution,
+    latency_percentile,
+    linear_slope,
+    metric_distribution,
+)
 
 try:
     import resource
@@ -1415,14 +1432,6 @@ def run_matchmaking_scenario(
     }
 
 
-def latency_percentile(values: list[float], percentile: float) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    index = max(0, math.ceil(percentile * len(ordered)) - 1)
-    return round(ordered[index], 3)
-
-
 def summarize_business_operations(
     operation_names: list[str],
     records: list[dict[str, Any]],
@@ -1501,16 +1510,6 @@ def run_leaderboard_scenario(
         "persistence_mode": persistence_mode,
         "redis_comparison": False,
         "operations": operations,
-    }
-
-
-def metric_distribution(values: list[float]) -> dict[str, float | None]:
-    if not values:
-        return {"min": None, "median": None, "max": None}
-    return {
-        "min": round(min(values), 3),
-        "median": round(statistics.median(values), 3),
-        "max": round(max(values), 3),
     }
 
 
@@ -1648,21 +1647,6 @@ def run_business_operation_perf(
             "redis_comparison": False,
         } if "leaderboard" in selected_scenarios else None,
     }
-
-
-def linear_slope(values: list[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    mean_x = (len(values) - 1) / 2.0
-    mean_y = statistics.mean(values)
-    denominator = sum((index - mean_x) ** 2 for index in range(len(values)))
-    if denominator == 0:
-        return 0.0
-    numerator = sum(
-        (index - mean_x) * (value - mean_y)
-        for index, value in enumerate(values)
-    )
-    return numerator / denominator
 
 
 def evaluate_resource_stability_gate(
@@ -2292,16 +2276,6 @@ def otel_exporter_metrics(diagnostics: dict[str, Any]) -> dict[str, Any]:
         "successful_batches": int(raw.get("successful_batches", 0)),
         "failed_batches": int(raw.get("failed_batches", 0)),
         "buffered_spans": int(raw.get("buffered_spans", 0)),
-    }
-
-
-def distribution(values: list[float]) -> dict[str, float | None]:
-    if not values:
-        return {"min": None, "median": None, "max": None}
-    return {
-        "min": round(min(values), 3),
-        "median": round(statistics.median(values), 3),
-        "max": round(max(values), 3),
     }
 
 

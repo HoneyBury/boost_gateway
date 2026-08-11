@@ -131,8 +131,9 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    `docs/workflow-catalog.json`；检查代码消费清单并保留安全关键的语义断言。
 2. 已把六个 workflow 重复的 summary path 解析、去重和 Step Summary 渲染迁入
    `.github/actions/render-validation-summary`；后续 setup/build/artifact 片段继续遵守三处提取规则。
-3. 对超过约 800 行或同时承担 CLI、执行、解析、判定、渲染的脚本，先抽纯函数和测试，再按
-   子域拆包。优先候选是性能采集、release deployment、恢复演练，不做一次性重写。
+3. 已从三个优先超大脚本按子域拆出 `perf_statistics`、`release_lifecycle_io` 和
+   `recovery_evidence`，保留原 CLI 与可导入符号，并用独立单测覆盖统计、持久化和证据结构。
+   后续继续采用“一个职责、原入口兼容、先有回归测试”的小步拆分，不做一次性重写。
 4. 为 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役条件；
    每个版本评审未引用 shim、废弃 workflow input 和重复 summary renderer。
 5. 持续观测四项指标：public entrypoint 数量、workflow 重复片段、无单测 CLI 数量、脚本与

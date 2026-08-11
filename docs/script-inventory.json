@@ -57,6 +57,15 @@
     "scripts/lib/operations_identity.py": {
       "category": "tool"
     },
+    "scripts/lib/perf_statistics.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_lifecycle_io.py": {
+      "category": "tool"
+    },
     "scripts/lib/summary_utils.py": {
       "category": "tool"
     },
