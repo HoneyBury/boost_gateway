@@ -1,6 +1,7 @@
 ﻿#!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -12,7 +13,10 @@ def print_status(category: str, path: Path) -> None:
         print(f"{category}: missing ({path})")
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Inspect local dependency and toolchain caches.")
+    parser.parse_args(argv)
+
     root = Path(__file__).resolve().parents[2]
     print("Dependency layout report")
     print(f"root: {root}")

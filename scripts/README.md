@@ -17,6 +17,12 @@ replacement, retirement condition, temporary status, and expiry date. The toolin
 metrics gate rejects missing, stale, invalid, or expired records and unreviewed
 workflow dependency or cross-CLI import growth.
 
+Every canonical CLI must also have a direct Python test. Historical commands have
+an executable import/parser smoke contract in
+`tests/python/test_cli_entrypoint_contracts.py`; changing command behavior still
+requires focused assertions in the owning domain test. The untested-CLI allowlist
+is empty and must not be used as a compatibility escape hatch.
+
 For day-to-day contributor work, start with the thin task facade instead of
 discovering individual scripts:
 

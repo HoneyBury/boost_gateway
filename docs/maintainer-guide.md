@@ -147,8 +147,13 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 canonical CLI、`scripts/tools/`/`scripts/lib/` 文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
 片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11、31/15、58、122、
-15、11 和 60 个历史无测试 allowlist 项；11 个 library 中有 10 个冻结基线和 1 个带直接测试的
-reviewed exception。
+15、11 和 0；11 个 library 中有 10 个冻结基线和 1 个带直接测试的 reviewed exception。
+
+原有 59 个缺少直接测试引用的 canonical CLI 已转为
+`tests/python/test_cli_entrypoint_contracts.py` 中实际执行的 Python 3.12 `--help` 契约，至少验证
+入口可导入、参数解析器可启动且不会在帮助路径触发外部操作。该 smoke 契约不能替代参数行为、
+失败路径或证据内容测试；修改业务语义时仍必须在对应领域测试中增加断言。无测试 allowlist 已
+清空并冻结为 0，不能通过重新加入静态豁免来接纳新命令。
 
 依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
 变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
@@ -193,6 +198,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    gate 校验完整性和文档存在性。每个版本继续评审未引用 shim、废弃 workflow input 和重复
    summary renderer。
 5. 已建立 `tooling-metrics-baseline.json` 和本地/CI drift gate，冻结 CLI、工具文件、大脚本、
-   workflow fan-out、CLI 导入边、public entrypoint、重复片段与无单测 CLI；新脚本必须提供可验证
-   的例外记录，并登记需要 GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，
-   而不是单纯追求文件数更少。
+   workflow fan-out、CLI 导入边、public entrypoint 与重复片段；历史无测试 CLI 已全部转为可执行
+   的入口 smoke 契约并把 allowlist 收紧为 0。新脚本必须提供可验证的例外记录，并登记需要
+   GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，而不是单纯追求文件数更少。
