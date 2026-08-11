@@ -16,7 +16,7 @@ if __package__ in {None, ""}:
 
 import argparse
 import json
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -25,10 +25,94 @@ from scripts.lib.tooling_metrics import collect_tooling_metrics, load_json_objec
 
 ROOT = Path(__file__).resolve().parents[3]
 BASELINE_PATH = ROOT / "docs/tooling-metrics-baseline.json"
+GROWTH_EXCEPTION_FIELDS = {
+    "kind",
+    "domain",
+    "consumers",
+    "test",
+    "why_new_script",
+    "replaces",
+    "retirement_condition",
+    "temporary",
+    "expires_on",
+}
+VALID_GROWTH_KINDS = {"cli", "tool-module"}
+VALID_GROWTH_DOMAINS = {
+    "contributor",
+    "dependencies",
+    "governance",
+    "infrastructure",
+    "performance",
+    "platform",
+    "production",
+    "recovery",
+    "release",
+    "security",
+    "sdk",
+}
 
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def valid_growth_exception(path_text: str, metadata: Any) -> tuple[bool, str]:
+    if not isinstance(metadata, dict):
+        return False, "metadata must be an object"
+    problems: list[str] = []
+    if set(metadata) != GROWTH_EXCEPTION_FIELDS:
+        problems.append("fields do not match the governed schema")
+    if metadata.get("kind") not in VALID_GROWTH_KINDS:
+        problems.append("kind is invalid")
+    if metadata.get("domain") not in VALID_GROWTH_DOMAINS:
+        problems.append("domain is invalid")
+    consumers = metadata.get("consumers")
+    if not (
+        isinstance(consumers, list)
+        and consumers
+        and all(isinstance(item, str) and item.strip() for item in consumers)
+        and len(consumers) == len(set(consumers))
+    ):
+        problems.append("consumers must be a non-empty unique string list")
+    test_text = metadata.get("test")
+    test_path = ROOT / str(test_text)
+    if not (
+        isinstance(test_text, str)
+        and test_text.startswith("tests/")
+        and test_path.is_file()
+        and test_path.suffix == ".py"
+        and test_path.resolve().is_relative_to((ROOT / "tests").resolve())
+    ):
+        problems.append("test must reference an existing Python test under tests/")
+    if not (
+        isinstance(metadata.get("why_new_script"), str)
+        and len(metadata["why_new_script"].strip()) >= 30
+    ):
+        problems.append("why_new_script must contain at least 30 characters")
+    if not isinstance(metadata.get("replaces"), str):
+        problems.append("replaces must be a string, empty when there is no replacement")
+    if not (
+        isinstance(metadata.get("retirement_condition"), str)
+        and len(metadata["retirement_condition"].strip()) >= 20
+    ):
+        problems.append("retirement_condition must contain at least 20 characters")
+    temporary = metadata.get("temporary")
+    expires_on = metadata.get("expires_on")
+    if not isinstance(temporary, bool):
+        problems.append("temporary must be a boolean")
+    elif temporary:
+        try:
+            expiry = date.fromisoformat(str(expires_on))
+        except ValueError:
+            problems.append("temporary exceptions require an ISO expires_on date")
+        else:
+            if expiry < date.today():
+                problems.append("temporary exception has expired")
+    elif expires_on != "":
+        problems.append("permanent exceptions must use an empty expires_on")
+    if not (ROOT / path_text).is_file():
+        problems.append("exception path does not exist")
+    return not problems, "; ".join(problems) if problems else "metadata is complete"
 
 
 def main() -> int:
@@ -67,13 +151,89 @@ def main() -> int:
         fragment_lines >= 2 and min_workflows >= 2,
         f"fragment_lines={fragment_lines}; minimum_workflows={min_workflows}",
     )
-    for metric in ("public_entrypoints", "workflow_duplicate_fragments", "untested_cli"):
+    for metric in (
+        "public_entrypoints",
+        "workflow_duplicate_fragments",
+        "untested_cli",
+        "large_scripts_over_500",
+        "large_scripts_over_800",
+        "workflow_script_dependencies",
+        "cross_cli_imports",
+    ):
         limit = limits.get(metric, {}).get("maximum") if isinstance(limits, dict) else None
         add(
             checks,
             f"limit:{metric}",
             isinstance(limit, int) and int(current[metric]) <= limit,
             f"current={current[metric]}; maximum={limit}",
+        )
+
+    inventory = load_json_object(ROOT / "docs/script-inventory.json")
+    exceptions = inventory.get("script_growth_exceptions", {})
+    exception_map = exceptions if isinstance(exceptions, dict) else {}
+    add(
+        checks,
+        "script-growth-exceptions-object",
+        isinstance(exceptions, dict),
+        "script_growth_exceptions is an object",
+    )
+    valid_exceptions: set[str] = set()
+    for path_text, metadata in sorted(exception_map.items()):
+        valid, detail = valid_growth_exception(path_text, metadata)
+        add(checks, f"growth-exception:{path_text}", valid, detail)
+        if valid:
+            valid_exceptions.add(path_text)
+
+    known = baseline.get("known_surfaces", {})
+    known = known if isinstance(known, dict) else {}
+    known_cli = set(known.get("cli_implementations", []))
+    known_tools = set(known.get("tool_files", []))
+    current_cli = set(current["cli_implementation_paths"])
+    current_tools = set(current["tool_file_paths"])
+    new_cli = current_cli - known_cli
+    new_tools = current_tools - known_tools
+    required_exceptions = new_cli | new_tools
+    add(
+        checks,
+        "new-script-growth-exceptions",
+        valid_exceptions == required_exceptions,
+        f"missing={sorted(required_exceptions - valid_exceptions)}; "
+        f"stale_or_invalid={sorted(set(exception_map) - required_exceptions)}",
+    )
+    for path_text in sorted(required_exceptions & valid_exceptions):
+        expected_kind = "cli" if path_text in new_cli else "tool-module"
+        actual_kind = exception_map[path_text].get("kind")
+        add(
+            checks,
+            f"growth-exception-kind:{path_text}",
+            actual_kind == expected_kind,
+            f"kind={actual_kind}; expected={expected_kind}",
+        )
+    for metric, additions in (
+        ("cli_implementations", new_cli & valid_exceptions),
+        ("tool_files", new_tools & valid_exceptions),
+    ):
+        limit = limits.get(metric, {}).get("maximum") if isinstance(limits, dict) else None
+        permitted = limit + len(additions) if isinstance(limit, int) else None
+        add(
+            checks,
+            f"limit:{metric}",
+            isinstance(permitted, int) and int(current[metric]) <= permitted,
+            f"current={current[metric]}; maximum={limit}; reviewed_additions={len(additions)}",
+        )
+
+    for name, current_key in (
+        ("workflow_script_dependencies", "workflow_script_dependency_paths"),
+        ("cross_cli_import_edges", "cross_cli_import_edges"),
+    ):
+        allowed_items = known.get(name, [])
+        allowed_set = set(allowed_items) if isinstance(allowed_items, list) else set()
+        current_set = set(current[current_key])
+        add(
+            checks,
+            f"known-surface:{name}",
+            isinstance(allowed_items, list) and current_set <= allowed_set,
+            f"new={sorted(current_set - allowed_set)}",
         )
 
     allowed_untested = limits.get("untested_cli", {}).get("allowlist", [])
@@ -137,7 +297,12 @@ def main() -> int:
         "metrics: "
         f"public={current['public_entrypoints']}, "
         f"workflow-duplicates={current['workflow_duplicate_fragments']}, "
-        f"untested-cli={current['untested_cli']}"
+        f"untested-cli={current['untested_cli']}, "
+        f"cli={current['cli_implementations']}, "
+        f"tools={current['tool_files']}, "
+        f"large-500={current['large_scripts_over_500']}, "
+        f"workflow-deps={current['workflow_script_dependencies']}, "
+        f"cross-cli-imports={current['cross_cli_imports']}"
     )
     print(f"summary: {summary_path}")
     return 0 if not failed else 1

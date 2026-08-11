@@ -27,13 +27,20 @@ def prepare_repository(root: Path) -> tuple[Path, Path]:
     (root / ".github/workflows").mkdir(parents=True)
     (root / "docs").mkdir(parents=True)
     covered_relative = Path("scripts") / "tools" / "covered.py"
+    auxiliary_relative = Path("scripts") / "tools" / "auxiliary.py"
     (root / covered_relative).write_text(CLI_SOURCE, encoding="utf-8")
+    (root / auxiliary_relative).write_text(CLI_SOURCE, encoding="utf-8")
     (root / "tests/python/test_covered.py").write_text(
         "# explicit coverage for covered.py\n", encoding="utf-8"
     )
+    (root / "tests/python/test_auxiliary.py").write_text(
+        "# explicit coverage for auxiliary.py\n", encoding="utf-8"
+    )
     inventory = {
+        "schema_version": 5,
         "public_entrypoints": [covered_relative.as_posix()],
         "scripts": {covered_relative.as_posix(): {"category": "public_entrypoint"}},
+        "script_growth_exceptions": {},
     }
     (root / "docs/script-inventory.json").write_text(
         json.dumps(inventory), encoding="utf-8"
@@ -67,6 +74,26 @@ jobs:
                 "maximum": current["untested_cli"],
                 "allowlist": current["untested_cli_paths"],
             },
+            "cli_implementations": {"maximum": current["cli_implementations"]},
+            "tool_files": {"maximum": current["tool_files"]},
+            "large_scripts_over_500": {
+                "maximum": current["large_scripts_over_500"]
+            },
+            "large_scripts_over_800": {
+                "maximum": current["large_scripts_over_800"]
+            },
+            "workflow_script_dependencies": {
+                "maximum": current["workflow_script_dependencies"]
+            },
+            "cross_cli_imports": {"maximum": current["cross_cli_imports"]},
+        },
+        "known_surfaces": {
+            "cli_implementations": current["cli_implementation_paths"],
+            "tool_files": current["tool_file_paths"],
+            "workflow_script_dependencies": current[
+                "workflow_script_dependency_paths"
+            ],
+            "cross_cli_import_edges": current["cross_cli_import_edges"],
         },
         "external_metrics": {
             "automation_change_failure_rate": {
@@ -118,3 +145,67 @@ def test_new_untested_cli_fails_without_baseline_review(tmp_path: Path) -> None:
     failed = {item["name"] for item in document["checks"] if not item["passed"]}
     assert "limit:untested_cli" in failed
     assert "untested-cli-allowlist" in failed
+    assert "limit:cli_implementations" in failed
+    assert "limit:tool_files" in failed
+    assert "new-script-growth-exceptions" in failed
+
+
+def test_reviewed_new_cli_with_complete_exception_passes(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    new_relative = (Path("scripts") / "tools" / "new_cli.py").as_posix()
+    test_relative = "tests/python/test_new_cli.py"
+    (tmp_path / new_relative).write_text(CLI_SOURCE, encoding="utf-8")
+    (tmp_path / test_relative).write_text("# governed CLI test\n", encoding="utf-8")
+    inventory_path = tmp_path / "docs/script-inventory.json"
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    inventory["script_growth_exceptions"][new_relative] = {
+        "kind": "cli",
+        "domain": "governance",
+        "consumers": ["maintainers"],
+        "test": test_relative,
+        "why_new_script": "This command owns a distinct reviewed governance boundary.",
+        "replaces": "",
+        "retirement_condition": "The capability moves into an existing maintained command.",
+        "temporary": False,
+        "expires_on": "",
+    }
+    inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+
+    assert run_gate(tmp_path, baseline, summary) == 0
+
+
+def test_new_workflow_script_dependency_fails_exact_surface_check(
+    tmp_path: Path,
+) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    workflow = tmp_path / ".github/workflows/check-0.yml"
+    dependency = (Path("scripts") / "tools" / "unreviewed_dependency.py").as_posix()
+    workflow.write_text(
+        workflow.read_text(encoding="utf-8")
+        + "\n      - name: unreviewed dependency\n"
+        + f"        run: python3 {dependency}\n",
+        encoding="utf-8",
+    )
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:workflow_script_dependencies" in failed
+    assert "known-surface:workflow_script_dependencies" in failed
+
+
+def test_new_cross_cli_import_fails_exact_edge_check(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    covered = tmp_path / "scripts" / "tools" / "covered.py"
+    covered.write_text(
+        "from scripts.tools."
+        + "auxiliary import main as auxiliary_main\n"
+        + CLI_SOURCE,
+        encoding="utf-8",
+    )
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:cross_cli_imports" in failed
+    assert "known-surface:cross_cli_import_edges" in failed

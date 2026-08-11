@@ -25,7 +25,8 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         self.inventory.write_text(
             json.dumps(
                 {
-                    "schema_version": 4,
+                    "schema_version": 5,
+                    "script_growth_exceptions": {},
                     "public_entrypoints": [public_script.as_posix()],
                     "public_entrypoint_lifecycle": {
                         public_script.as_posix(): {
@@ -70,6 +71,16 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         summary = json.loads(self.summary.read_text(encoding="utf-8"))
         failed = {item["name"] for item in summary["checks"] if not item["passed"]}
         self.assertIn("all-recursive-scripts-represented", failed)
+
+    def test_growth_exception_registry_must_be_an_object(self) -> None:
+        document = json.loads(self.inventory.read_text(encoding="utf-8"))
+        document["script_growth_exceptions"] = []
+        self.inventory.write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(1, self.run_gate())
+        summary = json.loads(self.summary.read_text(encoding="utf-8"))
+        failed = {item["name"] for item in summary["checks"] if not item["passed"]}
+        self.assertIn("script-growth-exceptions-object", failed)
 
     def test_public_entrypoint_without_lifecycle_metadata_fails(self) -> None:
         document = json.loads(self.inventory.read_text(encoding="utf-8"))

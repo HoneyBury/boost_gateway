@@ -27,8 +27,8 @@ Leaderboard。主要维护边界如下：
 
 ## 为什么工具面会膨胀
 
-截至本页更新时，仓库有 157 个受版本控制的 Python 脚本、18 个 workflow，脚本约
-57,000 行、workflow 约 5,700 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
+截至本页更新时，仓库有 163 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
+58,500 行、workflow 约 5,700 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
 增长主要来自四类真实需求：多平台证据不可互换；发布、恢复、TLS、性能和长稳需要独立
@@ -88,11 +88,14 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
    放 `lib/`。对外入口才放 `scripts/` 根目录。
 2. 在 `docs/script-inventory.json` 精确登记一次。移动现有入口时保留薄 shim，并填写
    `canonical`；所有活动引用清零并跨过兼容周期后才能删除。
-3. CLI 使用 `argparse`，有界超时，失败返回非零；证据 summary 使用 `summary_version: 2`、
+3. 新增 canonical CLI 或 `scripts/tools/` 文件时，在 `script_growth_exceptions` 登记领域、消费方、
+   独立测试、不能扩展现有入口的原因、替代对象、退役条件和临时项到期日。没有完整记录的新增
+   文件会被 tooling metrics gate 拒绝；优先扩展现有入口或把无 CLI 的复用实现下沉到 `lib/`。
+4. CLI 使用 `argparse`，有界超时，失败返回非零；证据 summary 使用 `summary_version: 2`、
    `overall_pass`、`passed`、`failed_category`、`failed_step` 和 `artifacts`。
-4. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
+5. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
    拼装脚本尚未声明的参数。
-5. 运行期产物只写 `runtime/` 或显式临时目录，不写回 `scripts/`、`docs/` 或源目录。
+6. 运行期产物只写 `runtime/` 或显式临时目录，不写回 `scripts/`、`docs/` 或源目录。
 
 ## 修改 Workflow 的规则
 
@@ -122,10 +125,15 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
 ## 工具治理指标
 
-`python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口
-数量、跨三个以上 workflow 的重复三行 shell 片段，以及没有显式 Python 单测引用的 canonical
-CLI。评审基线位于 `docs/tooling-metrics-baseline.json`；新增入口、扩大重复片段或扩大无测试
-allowlist 都必须在同一变更中说明原因并接受维护者评审，不能只为让 CI 变绿而刷新基线。
+`python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
+canonical CLI、`scripts/tools/` 文件、超过 500/800 行的脚本、workflow 直接依赖的脚本、CLI
+之间的导入边、跨三个以上 workflow 的重复三行 shell 片段，以及没有显式 Python 单测引用的
+CLI。当前冻结值分别是 23、127、55、31/15、53、14、11 和 60 个历史无测试 allowlist 项。
+
+评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增 CLI/工具文件
+只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
+依赖、CLI 导入边、超大脚本或提高其他 maximum 则必须在同一变更解释架构理由并接受维护者
+评审，不能只为让 CI 变绿而刷新基线。summary 会列出具体的新路径或导入边，便于定位。
 
 脚本文件数、workflow 数和行数作为观察值写入 summary，不以“文件少”或“行数少”代替低耦合。
 脚本/workflow 变更失败率不能从 checkout 静态推导：维护者每月从 GitHub Actions 取最近 90 天
@@ -150,6 +158,7 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 4. 已为全部 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役
    条件，并由 script inventory gate 校验完整性与枚举漂移。每个版本继续评审未引用 shim、
    废弃 workflow input 和重复 summary renderer。
-5. 已建立 `tooling-metrics-baseline.json` 和本地/CI drift gate，持续观测 public entrypoint、
-   workflow 重复片段、无单测 CLI，并登记需要 GitHub Actions 月度核验的变更失败率。治理目标
-   是降低修改耦合，而不是单纯追求文件数更少。
+5. 已建立 `tooling-metrics-baseline.json` 和本地/CI drift gate，冻结 CLI、工具文件、大脚本、
+   workflow fan-out、CLI 导入边、public entrypoint、重复片段与无单测 CLI；新脚本必须提供可验证
+   的例外记录，并登记需要 GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，
+   而不是单纯追求文件数更少。

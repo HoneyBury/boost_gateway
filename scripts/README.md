@@ -7,6 +7,14 @@ inventory: owner, support level, execution environment, typical duration,
 external side effects, and an explicit retirement condition. Update the metadata
 in the same change whenever an entrypoint's operational contract changes.
 
+Before adding a canonical CLI or a file under `scripts/tools/`, prefer extending an
+existing command or placing non-CLI shared code under `scripts/lib/`. A genuinely
+new surface must add a `script_growth_exceptions` record to the inventory with its
+domain, consumers, direct test, reason it cannot extend an existing entrypoint,
+replacement, retirement condition, temporary status, and expiry date. The tooling
+metrics gate rejects missing, stale, invalid, or expired records and unreviewed
+workflow dependency or cross-CLI import growth.
+
 For day-to-day contributor work, start with the thin task facade instead of
 discovering individual scripts:
 

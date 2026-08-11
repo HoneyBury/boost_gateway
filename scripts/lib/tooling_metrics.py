@@ -12,6 +12,9 @@ from typing import Any
 
 
 RUN_PATTERN = re.compile(r"^(?P<indent>\s*)run:\s*(?P<body>.*)$")
+PYTHON_SCRIPT_PATTERN = re.compile(
+    r"\bpython(?:3)?\b\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
+)
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
@@ -138,7 +141,22 @@ def cli_implementations(root: Path, inventory: dict[str, Any]) -> list[Path]:
     return implementations
 
 
-def explicitly_tested_cli(root: Path, script_path: Path, test_paths: list[Path]) -> bool:
+def explicitly_tested_cli(
+    root: Path,
+    script_path: Path,
+    test_paths: list[Path],
+    *,
+    declared_test: str = "",
+) -> bool:
+    if declared_test:
+        declared_path = root / declared_test
+        if not (
+            declared_path.is_file()
+            and declared_path.suffix == ".py"
+            and declared_path.resolve().is_relative_to((root / "tests").resolve())
+        ):
+            return False
+        test_paths = [declared_path]
     stem = script_path.stem
     filename = script_path.name
     dotted = script_path.relative_to(root).with_suffix("").as_posix().replace("/", ".")
@@ -164,6 +182,46 @@ def line_count(paths: list[Path]) -> int:
     return total
 
 
+def workflow_script_dependencies(workflow_paths: list[Path]) -> list[str]:
+    dependencies: set[str] = set()
+    for path in workflow_paths:
+        for block in extract_run_blocks(path):
+            dependencies.update(PYTHON_SCRIPT_PATTERN.findall(block))
+    return sorted(dependencies)
+
+
+def imported_script_modules(path: Path) -> set[str]:
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+    except (OSError, SyntaxError):
+        return set()
+    modules: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            modules.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            modules.add(node.module)
+    return modules
+
+
+def cross_cli_import_edges(root: Path, cli_paths: list[Path]) -> list[str]:
+    module_to_path = {
+        path.relative_to(root).with_suffix("").as_posix().replace("/", "."): path
+        for path in cli_paths
+        if path.suffix == ".py"
+    }
+    edges: set[str] = set()
+    for importer in cli_paths:
+        if importer.suffix != ".py":
+            continue
+        for module in imported_script_modules(importer):
+            if module not in module_to_path or module_to_path[module] == importer:
+                continue
+            relative = importer.relative_to(root).as_posix()
+            edges.add(f"{relative} -> {module}")
+    return sorted(edges)
+
+
 def collect_tooling_metrics(
     root: Path, *, fragment_lines: int = 3, min_workflows: int = 3
 ) -> dict[str, Any]:
@@ -185,25 +243,70 @@ def collect_tooling_metrics(
         path for path in (root / "tests/python").glob("test_*.py") if path.is_file()
     )
     cli_paths = cli_implementations(root, inventory)
+    growth_exceptions = inventory.get("script_growth_exceptions", {})
+    growth_exceptions = growth_exceptions if isinstance(growth_exceptions, dict) else {}
     untested = [
         path.relative_to(root).as_posix()
         for path in cli_paths
-        if not explicitly_tested_cli(root, path, test_paths)
+        if not explicitly_tested_cli(
+            root,
+            path,
+            test_paths,
+            declared_test=str(
+                growth_exceptions.get(path.relative_to(root).as_posix(), {}).get(
+                    "test", ""
+                )
+            )
+            if isinstance(
+                growth_exceptions.get(path.relative_to(root).as_posix()), dict
+            )
+            else "",
+        )
     ]
     repeated = duplicate_workflow_fragments(
         workflow_paths,
         fragment_lines=fragment_lines,
         min_workflows=min_workflows,
     )
+    cli_relative = [path.relative_to(root).as_posix() for path in cli_paths]
+    tool_paths = [
+        path
+        for path in script_paths
+        if path.is_relative_to(root / "scripts/tools")
+    ]
+    script_sizes = {path: line_count([path]) for path in script_paths}
+    large_over_500 = [
+        path.relative_to(root).as_posix()
+        for path in script_paths
+        if script_sizes[path] > 500
+    ]
+    large_over_800 = [
+        path.relative_to(root).as_posix()
+        for path in script_paths
+        if script_sizes[path] > 800
+    ]
+    workflow_dependencies = workflow_script_dependencies(workflow_paths)
+    import_edges = cross_cli_import_edges(root, cli_paths)
     return {
         "public_entrypoints": len(inventory.get("public_entrypoints", [])),
         "workflow_files": len(workflow_paths),
         "workflow_duplicate_fragments": len(repeated),
         "workflow_duplicate_fragment_details": repeated,
         "cli_implementations": len(cli_paths),
+        "cli_implementation_paths": cli_relative,
+        "tool_files": len(tool_paths),
+        "tool_file_paths": [path.relative_to(root).as_posix() for path in tool_paths],
+        "large_scripts_over_500": len(large_over_500),
+        "large_scripts_over_500_paths": large_over_500,
+        "large_scripts_over_800": len(large_over_800),
+        "large_scripts_over_800_paths": large_over_800,
+        "workflow_script_dependencies": len(workflow_dependencies),
+        "workflow_script_dependency_paths": workflow_dependencies,
+        "cross_cli_imports": len(import_edges),
+        "cross_cli_import_edges": import_edges,
         "untested_cli": len(untested),
         "untested_cli_paths": untested,
         "script_files": len(script_paths),
-        "script_lines": line_count(script_paths),
+        "script_lines": sum(script_sizes.values()),
         "workflow_lines": line_count(workflow_paths),
     }

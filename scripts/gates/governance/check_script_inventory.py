@@ -28,6 +28,17 @@ LIFECYCLE_FIELDS = {
     "side_effects",
     "retirement_condition",
 }
+GROWTH_EXCEPTION_FIELDS = {
+    "kind",
+    "domain",
+    "consumers",
+    "test",
+    "why_new_script",
+    "replaces",
+    "retirement_condition",
+    "temporary",
+    "expires_on",
+}
 VALID_SUPPORT_LEVELS = {"stable", "controlled"}
 VALID_EXECUTION_ENVIRONMENTS = {
     "developer-or-ci",
@@ -140,11 +151,32 @@ def main() -> int:
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
-    add(checks, "inventory-schema-version", inventory.get("schema_version") == 4, "schema_version is 4")
+    add(checks, "inventory-schema-version", inventory.get("schema_version") == 5, "schema_version is 5")
     add(checks, "all-top-level-scripts-declared", actual_top_level <= declared, "all top-level files are declared")
     add(checks, "all-recursive-scripts-represented", actual_scripts == represented, "every executable script is represented exactly once by role")
     add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
     add(checks, "no-missing-internal-scripts", all((ROOT / p).exists() for p in internal_declared), "all internal scripts exist")
+    growth_exceptions = inventory.get("script_growth_exceptions")
+    add(
+        checks,
+        "script-growth-exceptions-object",
+        isinstance(growth_exceptions, dict),
+        "script_growth_exceptions must be an object",
+    )
+    if isinstance(growth_exceptions, dict):
+        for path_text, metadata in sorted(growth_exceptions.items()):
+            add(
+                checks,
+                f"growth-exception-fields:{path_text}",
+                isinstance(metadata, dict) and set(metadata) == GROWTH_EXCEPTION_FIELDS,
+                "growth exception contains the governed field set",
+            )
+            add(
+                checks,
+                f"growth-exception-path:{path_text}",
+                path_text in actual_scripts and path_text in represented,
+                "growth exception references a represented script",
+            )
     runtime_files = [
         path for path in (ROOT / "scripts").rglob("*")
         if path.is_file() and "runtime" in path.relative_to(ROOT / "scripts").parts

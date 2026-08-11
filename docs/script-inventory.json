@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "description": "Maintained script inventory. Every tracked Python or shell script is represented exactly once. Root commands are the stable public surface; gates, producers, tools, and libraries use canonical role-oriented paths.",
   "categories": {
     "public_entrypoint": "Stable commands intended for humans and workflows.",
@@ -8,6 +8,7 @@
     "tool": "Small operational or rendering utility.",
     "legacy": "Historical compatibility script; avoid new references."
   },
+  "script_growth_exceptions": {},
   "public_entrypoints": [
     "scripts/dev.py",
     "scripts/run_tests.py",
