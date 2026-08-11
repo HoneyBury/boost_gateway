@@ -69,6 +69,27 @@ jobs:
 
         self.assertEqual({"contents": "read"}, catalog.top_level_permissions(text))
 
+    def test_machine_catalog_covers_every_workflow(self) -> None:
+        payload = catalog.load_catalog()
+        rules = catalog.workflow_rules(payload)
+        actual = {path.stem for path in catalog.WORKFLOWS_ROOT.glob("*.yml")}
+
+        self.assertEqual(actual, set(rules))
+        self.assertTrue(
+            all("workflow_dispatch" in rule["triggers"] for rule in rules.values())
+        )
+
+    def test_runner_class_is_derived_from_operational_expression(self) -> None:
+        self.assertEqual("github-hosted", catalog.expected_runner_class('"ubuntu-latest"'))
+        self.assertEqual(
+            "native-macos",
+            catalog.expected_runner_class('["self-hosted","macOS","ARM64"]'),
+        )
+        self.assertEqual(
+            "self-hosted",
+            catalog.expected_runner_class('["self-hosted","Linux","X64"]'),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

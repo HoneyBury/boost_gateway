@@ -13,29 +13,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
-EXPECTED_NAMES = {
-    "ci": "Mainline / Build, Test & Governance",
-    "conan-validate": "Dependencies / Conan Graph Validation",
-    "debug-symbols": "Release / Linux Debug Symbols Candidate",
-    "grpc-experimental": "Experimental / gRPC",
-    "jwks-rotation": "Security / JWKS Rotation Drill",
-    "long-soak-capacity": "Stability / Fixed-Runner Soak & Capacity",
-    "macos-arm64": "Platform / macOS ARM64 Production Candidate",
-    "nightly-stability": "Stability / Bounded Soak",
-    "perf-regression": "Performance / Baseline & Regression",
-    "preprod-evidence": "Production / Preproduction Evidence",
-    "production-candidate-evidence": "Production / Candidate Evidence",
-    "production-gates": "Production / Gate Diagnostics",
-    "production-readiness": "Production / Readiness Decision",
-    "release": "Release / Package & Publish",
-    "release-asset-verification": "Release / Published Asset Verification",
-    "security-maintenance": "Security / Dependency, Sanitizer & Fuzz Maintenance",
-    "sdk-distribution": "SDK / Wheel & NuGet Candidate",
-    "specialized-e2e": "Infrastructure / Redis, Raft & Operator E2E",
-}
-TAG_WORKFLOWS = {"release"}
-PULL_REQUEST_WORKFLOWS = {"ci"}
-SCHEDULED_WORKFLOWS = {"security-maintenance"}
+CATALOG_PATH = ROOT / "docs" / "workflow-catalog.json"
 REVIEWED_ACTIONS = {
     "actions/attest": ("f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6", "v4.2.0"),
     "actions/cache/restore": ("0057852bfaa89a56745cba8c7296529d2fc39830", "v4.3.0"),
@@ -56,24 +34,35 @@ REVIEWED_ACTIONS = {
     "seanmiddleditch/gha-setup-ninja": ("96bed6edff20d1dd61ecff9b75cc519d516e6401", "v5"),
     "softprops/action-gh-release": ("3bb12739c298aeb8a4eeaf626c5b8d85266b0e65", "v2.6.2"),
 }
-WORKFLOW_PERMISSIONS = {
-    "perf-regression": {"actions": "read", "contents": "read"},
-    "production-readiness": {"actions": "read", "contents": "read"},
-    "release": {"attestations": "write", "contents": "write", "id-token": "write"},
-    "release-asset-verification": {"attestations": "read", "contents": "read"},
-}
-STRICT_OFFLINE_CONAN_WORKFLOWS = {
-    "grpc-experimental",
-    "jwks-rotation",
-    "long-soak-capacity",
-    "nightly-stability",
-    "perf-regression",
-    "preprod-evidence",
-    "production-candidate-evidence",
-    "production-gates",
-    "release",
-    "specialized-e2e",
-}
+
+
+def load_catalog(path: Path = CATALOG_PATH) -> dict[str, Any]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def workflow_rules(catalog: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    rules = catalog.get("workflows", {})
+    if not isinstance(rules, dict):
+        return {}
+    return {
+        str(stem): metadata
+        for stem, metadata in rules.items()
+        if isinstance(metadata, dict)
+    }
+
+
+def expected_runner_class(runner: str) -> str:
+    if "ubuntu-latest" in runner:
+        return "github-hosted"
+    if "macOS" in runner and "ARM64" in runner:
+        return "native-macos"
+    if "self-hosted" in runner:
+        return "self-hosted"
+    return "unknown"
 
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
@@ -180,6 +169,7 @@ def action_reference_checks(paths: list[Path]) -> list[dict[str, Any]]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--catalog", type=Path, default=CATALOG_PATH)
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -189,19 +179,63 @@ def main() -> int:
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     checks: list[dict[str, Any]] = []
+    catalog_path = args.catalog if args.catalog.is_absolute() else ROOT / args.catalog
+    catalog = load_catalog(catalog_path)
+    rules = workflow_rules(catalog)
+    expected_names = {
+        stem: str(metadata.get("display_name", ""))
+        for stem, metadata in rules.items()
+    }
     workflow_paths = sorted(
         [*WORKFLOWS_ROOT.glob("*.yml"), *WORKFLOWS_ROOT.glob("*.yaml")]
     )
     actual = {path.stem for path in workflow_paths}
-    expected = set(EXPECTED_NAMES)
+    expected = set(rules)
 
-    add(checks, "workflow-count", len(actual) == len(EXPECTED_NAMES), f"actual={len(actual)}")
+    add(checks, "catalog-json", bool(catalog), f"catalog={catalog_path}")
+    add(
+        checks,
+        "catalog-schema-version",
+        catalog.get("schema_version") == 1,
+        f"schema_version={catalog.get('schema_version')}",
+    )
+    add(checks, "workflow-count", len(actual) == len(rules), f"actual={len(actual)}")
     add(checks, "workflow-set:expected", actual == expected, f"actual={sorted(actual)} expected={sorted(expected)}")
 
     matrix_path = ROOT / ".github" / "runner-matrix.json"
     matrix = json.loads(read(matrix_path)) if matrix_path.exists() else {}
     matrix_workflows = set(matrix.get("workflows", {}))
     add(checks, "runner-matrix:exact-workflow-set", matrix_workflows == actual, f"matrix={sorted(matrix_workflows)} actual={sorted(actual)}")
+    for stem, metadata in sorted(rules.items()):
+        matrix_entry = matrix.get("workflows", {}).get(stem, {})
+        default_runner = str(metadata.get("default_runner", ""))
+        runner_class = str(metadata.get("runner_class", ""))
+        triggers = metadata.get("triggers", [])
+        lifecycle = str(metadata.get("lifecycle", ""))
+        add(
+            checks,
+            f"catalog:{stem}:default-runner",
+            default_runner == matrix_entry.get("runner"),
+            f"catalog={default_runner!r} matrix={matrix_entry.get('runner')!r}",
+        )
+        add(
+            checks,
+            f"catalog:{stem}:runner-class",
+            runner_class == expected_runner_class(default_runner),
+            f"runner_class={runner_class!r}",
+        )
+        add(
+            checks,
+            f"catalog:{stem}:triggers",
+            isinstance(triggers, list) and "workflow_dispatch" in triggers,
+            f"triggers={triggers}",
+        )
+        add(
+            checks,
+            f"catalog:{stem}:lifecycle",
+            lifecycle in {"required", "maintained", "experimental"},
+            f"lifecycle={lifecycle!r}",
+        )
 
     boundary_path = ROOT / "docs" / "platform-production-boundaries.json"
     boundary = json.loads(read(boundary_path)) if boundary_path.exists() else {}
@@ -286,7 +320,9 @@ def main() -> int:
     for path in workflow_paths:
         stem = path.stem
         text = read(path)
-        add(checks, f"name:{stem}", workflow_name(text) == EXPECTED_NAMES.get(stem), f"{path.name} name={workflow_name(text)!r}")
+        metadata = rules.get(stem, {})
+        triggers = set(metadata.get("triggers", []))
+        add(checks, f"name:{stem}", workflow_name(text) == expected_names.get(stem), f"{path.name} name={workflow_name(text)!r}")
         add(checks, f"trigger:{stem}:dispatch", "workflow_dispatch:" in text, f"{path.name} supports workflow_dispatch")
         dispatch_inputs = workflow_dispatch_inputs(text)
         add(
@@ -296,15 +332,15 @@ def main() -> int:
             f"{path.name} declares {len(dispatch_inputs)}/25 workflow_dispatch inputs",
         )
         has_tag_push = "push:" in text and "tags:" in text and "v*" in text
-        add(checks, f"trigger:{stem}:tag-policy", has_tag_push == (stem in TAG_WORKFLOWS), f"{path.name} tag_push={has_tag_push}")
+        add(checks, f"trigger:{stem}:tag-policy", has_tag_push == ("tag_push" in triggers), f"{path.name} tag_push={has_tag_push}")
         has_schedule = "schedule:" in text or "cron:" in text
         add(
             checks,
             f"trigger:{stem}:schedule-policy",
-            has_schedule == (stem in SCHEDULED_WORKFLOWS),
+            has_schedule == ("schedule" in triggers),
             f"{path.name} scheduled={has_schedule}",
         )
-        expected_permissions = WORKFLOW_PERMISSIONS.get(stem, {"contents": "read"})
+        expected_permissions = metadata.get("permissions", {})
         actual_permissions = top_level_permissions(text)
         add(
             checks,
@@ -316,7 +352,7 @@ def main() -> int:
         add(
             checks,
             f"trigger:{stem}:pr-policy",
-            has_pull_request == (stem in PULL_REQUEST_WORKFLOWS),
+            has_pull_request == ("pull_request" in triggers),
             f"{path.name} pull_request={has_pull_request}",
         )
         if "uses: actions/setup-go@" in text:
@@ -326,7 +362,7 @@ def main() -> int:
                 "cache-dependency-path: operator/boostgateway-operator/go.sum" in text,
                 f"{path.name} keys setup-go cache from the operator go.sum file",
             )
-        if stem in STRICT_OFFLINE_CONAN_WORKFLOWS:
+        if metadata.get("strict_offline_conan") is True:
             add(
                 checks,
                 f"conan:{stem}:no-public-remote",
@@ -1068,7 +1104,7 @@ def main() -> int:
         "GitHub Release body uses deterministic CHANGELOG notes",
     )
 
-    retired = ("perf-commit-check.yml", "production-resilience.yml", "production-evidence.yml")
+    retired = tuple(catalog.get("retired_workflows", []))
     for filename in retired:
         add(checks, f"retired:{filename}", not (WORKFLOWS_ROOT / filename).exists(), f"{filename} is retired")
 
@@ -1083,7 +1119,10 @@ def main() -> int:
         "total_checks": len(checks),
         "failed_checks": len(failed),
         "checks": checks,
-        "artifacts": {"summary_path": str(summary_path)},
+        "artifacts": {
+            "summary_path": str(summary_path),
+            "catalog_path": str(catalog_path),
+        },
     }
     summary_path.parent.mkdir(parents=True, exist_ok=True)
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")

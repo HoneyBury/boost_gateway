@@ -127,8 +127,8 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 
 后续按风险从低到高推进：
 
-1. 把 workflow 名称、触发类型、权限、runner 等静态 catalog 从 1,000 行检查脚本提取为
-   机器可读清单，检查代码只解释规则；保留安全关键的语义断言。
+1. 已将 workflow 名称、触发类型、权限、runner 类别和生命周期提取到
+   `docs/workflow-catalog.json`；检查代码消费清单并保留安全关键的语义断言。
 2. 统计重复的 Conan/setup/build/artifact 片段，达到三处即迁入 composite action；每次只迁移
    一类片段，并用原 workflow rehearsal 对照。
 3. 对超过约 800 行或同时承担 CLI、执行、解析、判定、渲染的脚本，先抽纯函数和测试，再按
