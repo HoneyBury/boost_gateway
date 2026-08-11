@@ -25,8 +25,18 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         self.inventory.write_text(
             json.dumps(
                 {
-                    "schema_version": 3,
+                    "schema_version": 4,
                     "public_entrypoints": [public_script.as_posix()],
+                    "public_entrypoint_lifecycle": {
+                        public_script.as_posix(): {
+                            "owner": "@maintainer",
+                            "support_level": "stable",
+                            "execution_environment": "developer-or-ci",
+                            "typical_duration": "minutes",
+                            "side_effects": ["runtime-artifacts"],
+                            "retirement_condition": "A replacement remains stable for one release cycle.",
+                        }
+                    },
                     "internal_scripts": {internal_script.as_posix(): {"category": "tool"}},
                     "scripts": {
                         public_script.as_posix(): {"category": "public_entrypoint"}
@@ -60,6 +70,27 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         summary = json.loads(self.summary.read_text(encoding="utf-8"))
         failed = {item["name"] for item in summary["checks"] if not item["passed"]}
         self.assertIn("all-recursive-scripts-represented", failed)
+
+    def test_public_entrypoint_without_lifecycle_metadata_fails(self) -> None:
+        document = json.loads(self.inventory.read_text(encoding="utf-8"))
+        document["public_entrypoint_lifecycle"] = {}
+        self.inventory.write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(1, self.run_gate())
+        summary = json.loads(self.summary.read_text(encoding="utf-8"))
+        failed = {item["name"] for item in summary["checks"] if not item["passed"]}
+        self.assertIn("public-lifecycle-exact-set", failed)
+
+    def test_unknown_lifecycle_side_effect_fails(self) -> None:
+        document = json.loads(self.inventory.read_text(encoding="utf-8"))
+        metadata = next(iter(document["public_entrypoint_lifecycle"].values()))
+        metadata["side_effects"] = ["surprise-production-mutation"]
+        self.inventory.write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(1, self.run_gate())
+        summary = json.loads(self.summary.read_text(encoding="utf-8"))
+        failed = {item["name"] for item in summary["checks"] if not item["passed"]}
+        self.assertTrue(any(name.startswith("lifecycle-side-effects:") for name in failed))
 
 
 if __name__ == "__main__":

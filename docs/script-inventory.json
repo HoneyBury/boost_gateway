@@ -1,5 +1,5 @@
 {
-  "schema_version": 3,
+  "schema_version": 4,
   "description": "Maintained script inventory. Every tracked Python or shell script is represented exactly once. Root commands are the stable public surface; gates, producers, tools, and libraries use canonical role-oriented paths.",
   "categories": {
     "public_entrypoint": "Stable commands intended for humans and workflows.",
@@ -33,6 +33,192 @@
     "scripts/build_release_images.py",
     "scripts/verify_release_deployment.py"
   ],
+  "public_entrypoint_lifecycle": {
+    "scripts/dev.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "A documented contributor facade replaces every command and remains stable for one release."
+    },
+    "scripts/run_tests.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "CTest preset selection fully replaces this cross-platform compatibility surface."
+    },
+    "scripts/bootstrap_conan.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["dependency-cache", "network-access"],
+      "retirement_condition": "A pinned package bootstrap replaces online and offline modes on every admitted runner."
+    },
+    "scripts/generate_conan_lock.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["dependency-cache", "network-access", "workspace-files"],
+      "retirement_condition": "Lock generation moves to a governed package-manager surface with equivalent validation."
+    },
+    "scripts/verify_release_candidate.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "The release-candidate policy is replaced and all workflow and maintainer references migrate."
+    },
+    "scripts/check_mainline_readiness.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "A single bounded governance gate replaces its checks and summary contract."
+    },
+    "scripts/verify_production_candidate_evidence.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "ci-runner",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "Production evidence policy is versioned forward and all R0 consumers migrate."
+    },
+    "scripts/check_production_evidence_manifest.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "ci-runner",
+      "typical_duration": "seconds",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "A newer manifest schema and validator are adopted by all production gates."
+    },
+    "scripts/render_production_readiness_report.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "ci-runner",
+      "typical_duration": "seconds",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "All report consumers adopt a replacement renderer and schema for one release."
+    },
+    "scripts/run_long_soak_capacity.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "fixed-runner",
+      "typical_duration": "multi-day",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement N1 soak gate produces equivalent capacity and stability evidence."
+    },
+    "scripts/verify_sdk_enterprise_delivery.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "fixed-runner",
+      "typical_duration": "hours",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement N5 gate covers every supported SDK distribution and consumer."
+    },
+    "scripts/verify_preprod_recovery_drill.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "preproduction-runner",
+      "typical_duration": "hours",
+      "side_effects": ["containers", "network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement R5 drill validates the same failure, recovery, RTO, and evidence contracts."
+    },
+    "scripts/verify_prometheus_alert_states.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "preproduction-runner",
+      "typical_duration": "minutes",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "Alert-state verification moves to an equivalent monitored-environment gate."
+    },
+    "scripts/verify_tls_preprod_multi_run.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "preproduction-runner",
+      "typical_duration": "hours",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement R6 gate preserves multi-run TLS evidence and rollback coverage."
+    },
+    "scripts/verify_macos_arm64_package.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "macos-arm64-runner",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "macOS arm64 package verification is subsumed by an equivalent signed-package gate."
+    },
+    "scripts/verify_jwks_rotation.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "preproduction-runner",
+      "typical_duration": "hours",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement security drill covers rotation, stale grace, outage, and rollback."
+    },
+    "scripts/manage_todos.py": {
+      "owner": "@HoneyBury",
+      "support_level": "stable",
+      "execution_environment": "developer-or-ci",
+      "typical_duration": "minutes",
+      "side_effects": ["repository-issues", "workspace-files"],
+      "retirement_condition": "The versioned TODO board and Issue synchronization migrate to a governed replacement."
+    },
+    "scripts/manage_release_deployment.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "operations-host",
+      "typical_duration": "hours",
+      "side_effects": ["network-services", "release-state"],
+      "retirement_condition": "A transactional deployment controller replaces install through recovery on admitted hosts."
+    },
+    "scripts/check_operations_host.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "operations-host",
+      "typical_duration": "minutes",
+      "side_effects": ["runtime-artifacts"],
+      "retirement_condition": "Host admission policy moves to a replacement with equivalent fail-closed evidence."
+    },
+    "scripts/apply_operations_host_baseline.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "operations-host",
+      "typical_duration": "hours",
+      "side_effects": ["host-configuration", "network-services"],
+      "retirement_condition": "A governed converger replaces plan and apply while preserving admission evidence."
+    },
+    "scripts/prepare_release_runtime.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "operations-host",
+      "typical_duration": "minutes",
+      "side_effects": ["network-access", "release-state"],
+      "retirement_condition": "An atomic staging replacement preserves supply-chain verification and rollback inputs."
+    },
+    "scripts/build_release_images.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "fixed-runner",
+      "typical_duration": "hours",
+      "side_effects": ["containers", "runtime-artifacts"],
+      "retirement_condition": "A replacement produces immutable runtime image IDs with network-disabled builds."
+    },
+    "scripts/verify_release_deployment.py": {
+      "owner": "@HoneyBury",
+      "support_level": "controlled",
+      "execution_environment": "operations-host",
+      "typical_duration": "minutes",
+      "side_effects": ["network-services", "runtime-artifacts"],
+      "retirement_condition": "A replacement verifies resolved Compose, health, Redis, and SDK full-flow equivalently."
+    }
+  },
   "compatibility_policy": {
     "cycle": "v3.6-completed",
     "rule": "A non-public root script must name a canonical implementation and may be removed only after active references reach zero.",

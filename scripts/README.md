@@ -2,6 +2,11 @@
 
 The maintained script index is `docs/script-inventory.json`.
 
+Every stable public entrypoint also has machine-checked lifecycle metadata in that
+inventory: owner, support level, execution environment, typical duration,
+external side effects, and an explicit retirement condition. Update the metadata
+in the same change whenever an entrypoint's operational contract changes.
+
 For day-to-day contributor work, start with the thin task facade instead of
 discovering individual scripts:
 

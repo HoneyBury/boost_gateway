@@ -134,7 +134,8 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 3. 已从三个优先超大脚本按子域拆出 `perf_statistics`、`release_lifecycle_io` 和
    `recovery_evidence`，保留原 CLI 与可导入符号，并用独立单测覆盖统计、持久化和证据结构。
    后续继续采用“一个职责、原入口兼容、先有回归测试”的小步拆分，不做一次性重写。
-4. 为 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役条件；
-   每个版本评审未引用 shim、废弃 workflow input 和重复 summary renderer。
+4. 已为全部 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役
+   条件，并由 script inventory gate 校验完整性与枚举漂移。每个版本继续评审未引用 shim、
+   废弃 workflow input 和重复 summary renderer。
 5. 持续观测四项指标：public entrypoint 数量、workflow 重复片段、无单测 CLI 数量、脚本与
    workflow 的变更失败率。治理目标是降低修改耦合，而不是单纯追求文件数更少。

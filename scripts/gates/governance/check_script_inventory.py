@@ -20,6 +20,36 @@ VALID_CATEGORIES = {
     "platform_wrapper",
     "legacy",
 }
+LIFECYCLE_FIELDS = {
+    "owner",
+    "support_level",
+    "execution_environment",
+    "typical_duration",
+    "side_effects",
+    "retirement_condition",
+}
+VALID_SUPPORT_LEVELS = {"stable", "controlled"}
+VALID_EXECUTION_ENVIRONMENTS = {
+    "developer-or-ci",
+    "ci-runner",
+    "fixed-runner",
+    "preproduction-runner",
+    "macos-arm64-runner",
+    "operations-host",
+}
+VALID_DURATIONS = {"seconds", "minutes", "hours", "multi-day"}
+VALID_SIDE_EFFECTS = {
+    "none",
+    "runtime-artifacts",
+    "dependency-cache",
+    "network-access",
+    "workspace-files",
+    "containers",
+    "network-services",
+    "repository-issues",
+    "host-configuration",
+    "release-state",
+}
 SCRIPT_REFERENCE_PATTERN = re.compile(r"scripts/[A-Za-z0-9_./-]+\.(?:py|sh|ps1)")
 
 
@@ -110,7 +140,7 @@ def main() -> int:
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
-    add(checks, "inventory-schema-version", inventory.get("schema_version") == 3, "schema_version is 3")
+    add(checks, "inventory-schema-version", inventory.get("schema_version") == 4, "schema_version is 4")
     add(checks, "all-top-level-scripts-declared", actual_top_level <= declared, "all top-level files are declared")
     add(checks, "all-recursive-scripts-represented", actual_scripts == represented, "every executable script is represented exactly once by role")
     add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
@@ -156,6 +186,80 @@ def main() -> int:
             )
     else:
         add(checks, "public-entrypoints-list", False, "public_entrypoints must be a list")
+
+    lifecycle = inventory.get("public_entrypoint_lifecycle")
+    public_set = set(public) if isinstance(public, list) else set()
+    lifecycle_set = set(lifecycle) if isinstance(lifecycle, dict) else set()
+    add(
+        checks,
+        "public-lifecycle-exact-set",
+        lifecycle_set == public_set,
+        "lifecycle metadata exists exactly once for every public entrypoint",
+    )
+    if isinstance(lifecycle, dict):
+        for path_text, metadata in sorted(lifecycle.items()):
+            fields = set(metadata) if isinstance(metadata, dict) else set()
+            add(
+                checks,
+                f"lifecycle-fields:{path_text}",
+                fields == LIFECYCLE_FIELDS,
+                "lifecycle metadata contains the governed field set",
+            )
+            if not isinstance(metadata, dict):
+                continue
+            owner = metadata.get("owner")
+            add(
+                checks,
+                f"lifecycle-owner:{path_text}",
+                isinstance(owner, str) and owner.startswith("@") and len(owner) > 1,
+                f"owner={owner}",
+            )
+            support_level = metadata.get("support_level")
+            add(
+                checks,
+                f"lifecycle-support:{path_text}",
+                support_level in VALID_SUPPORT_LEVELS,
+                f"support_level={support_level}",
+            )
+            execution_environment = metadata.get("execution_environment")
+            add(
+                checks,
+                f"lifecycle-environment:{path_text}",
+                execution_environment in VALID_EXECUTION_ENVIRONMENTS,
+                f"execution_environment={execution_environment}",
+            )
+            typical_duration = metadata.get("typical_duration")
+            add(
+                checks,
+                f"lifecycle-duration:{path_text}",
+                typical_duration in VALID_DURATIONS,
+                f"typical_duration={typical_duration}",
+            )
+            side_effects = metadata.get("side_effects")
+            side_effect_set = set(side_effects) if isinstance(side_effects, list) else set()
+            add(
+                checks,
+                f"lifecycle-side-effects:{path_text}",
+                bool(side_effect_set)
+                and len(side_effect_set) == len(side_effects)
+                and side_effect_set <= VALID_SIDE_EFFECTS,
+                f"side_effects={side_effects}",
+            )
+            retirement_condition = metadata.get("retirement_condition")
+            add(
+                checks,
+                f"lifecycle-retirement:{path_text}",
+                isinstance(retirement_condition, str)
+                and len(retirement_condition.strip()) >= 20,
+                "retirement condition is explicit",
+            )
+    else:
+        add(
+            checks,
+            "public-lifecycle-object",
+            False,
+            "public_entrypoint_lifecycle must be an object",
+        )
 
     if isinstance(public, list):
         root_public = {path for path in public if Path(path).parent == Path("scripts")}
