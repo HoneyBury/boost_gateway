@@ -25,12 +25,15 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         self.inventory.write_text(
             json.dumps(
                 {
-                    "schema_version": 5,
+                    "schema_version": 6,
                     "script_growth_exceptions": {},
                     "public_entrypoints": [public_script.as_posix()],
                     "public_entrypoint_lifecycle": {
                         public_script.as_posix(): {
                             "owner": "@maintainer",
+                            "domain": "contributor",
+                            "summary": "Run the bounded contributor validation and smoke workflow.",
+                            "documentation": ["docs/maintainer-guide.md"],
                             "support_level": "stable",
                             "execution_environment": "developer-or-ci",
                             "typical_duration": "minutes",
@@ -45,6 +48,9 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
                 }
             ),
             encoding="utf-8",
+        )
+        (self.root / "docs/maintainer-guide.md").write_text(
+            "# Maintainer guide\n", encoding="utf-8"
         )
 
     def run_gate(self) -> int:
@@ -102,6 +108,17 @@ class ScriptInventoryGovernanceTest(unittest.TestCase):
         summary = json.loads(self.summary.read_text(encoding="utf-8"))
         failed = {item["name"] for item in summary["checks"] if not item["passed"]}
         self.assertTrue(any(name.startswith("lifecycle-side-effects:") for name in failed))
+
+    def test_missing_lifecycle_documentation_fails(self) -> None:
+        document = json.loads(self.inventory.read_text(encoding="utf-8"))
+        metadata = next(iter(document["public_entrypoint_lifecycle"].values()))
+        metadata["documentation"] = ["docs/missing.md"]
+        self.inventory.write_text(json.dumps(document), encoding="utf-8")
+
+        self.assertEqual(1, self.run_gate())
+        summary = json.loads(self.summary.read_text(encoding="utf-8"))
+        failed = {item["name"] for item in summary["checks"] if not item["passed"]}
+        self.assertTrue(any(name.startswith("lifecycle-documentation:") for name in failed))
 
 
 if __name__ == "__main__":

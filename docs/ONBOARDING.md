@@ -48,6 +48,18 @@ git --version
 python3.12 scripts/dev.py doctor
 ```
 
+不要从 `scripts/` 中逐个猜测命令。先查看按维护领域整理的稳定入口；输出同时标明允许的
+运行环境、典型时长、外部副作用和权威操作文档：
+
+```bash
+python3.12 scripts/dev.py commands
+python3.12 scripts/dev.py commands --domain contributor
+python3.12 scripts/dev.py commands --domain release --json
+```
+
+`commands` 只展示受支持的 public entrypoint。内部 gate、producer 和 tool 是实现细节；除非
+对应 runbook 明确要求，否则新贡献者不应直接把它们加入 workflow 或文档。
+
 ### 克隆并准备 Conan
 
 ```bash

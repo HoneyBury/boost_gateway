@@ -63,6 +63,10 @@ fail-closed 门禁；兼容入口不能突然删除；生产证据需要详细 p
 ## 日常入口
 
 ```bash
+# 从受治理清单发现稳定入口、用途、运行环境和权威文档
+python3.12 scripts/dev.py commands
+python3.12 scripts/dev.py commands --domain recovery
+
 # 检查 Python 3.12、Git/CMake/Ninja 和现有 build tree 的工具配对
 python3.12 scripts/dev.py doctor --build-dir build/contributor-debug
 
@@ -81,6 +85,19 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
 固定 runner、发布和运维命令仍直接使用 `scripts/README.md` 与 runbook 中的明确入口，避免
 开发者 facade 隐藏证据参数。
+
+`commands` 的事实源是 `docs/script-inventory.json`，不是硬编码在 `dev.py` 的第二份清单。
+每个 public entrypoint 必须声明维护领域、使用目的、运行环境、支持级别和至少一份实际存在的
+权威 Markdown 文档。常用筛选关系如下：
+
+| 需要处理的工作 | `--domain` |
+|---|---|
+| 开发机检查、测试、smoke | `contributor` |
+| Conan 和 lockfile | `dependencies` |
+| 仓库规则和 TODO | `governance` |
+| 主机、平台或性能证据 | `infrastructure` / `platform` / `performance` |
+| 发布、生产、恢复 | `release` / `production` / `recovery` |
+| TLS、身份轮换、SDK | `security` / `sdk` |
 
 ## 修改脚本的规则
 
@@ -155,9 +172,10 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 3. 已从三个优先超大脚本按子域拆出 `perf_statistics`、`release_lifecycle_io` 和
    `recovery_evidence`，保留原 CLI 与可导入符号，并用独立单测覆盖统计、持久化和证据结构。
    后续继续采用“一个职责、原入口兼容、先有回归测试”的小步拆分，不做一次性重写。
-4. 已为全部 public entrypoint 增加 owner、支持级别、运行环境、典型时长、外部副作用和退役
-   条件，并由 script inventory gate 校验完整性与枚举漂移。每个版本继续评审未引用 shim、
-   废弃 workflow input 和重复 summary renderer。
+4. 已为全部 public entrypoint 增加 owner、领域、用途、权威文档、支持级别、运行环境、典型
+   时长、外部副作用和退役条件，并由 `dev.py commands` 提供任务发现、由 script inventory
+   gate 校验完整性和文档存在性。每个版本继续评审未引用 shim、废弃 workflow input 和重复
+   summary renderer。
 5. 已建立 `tooling-metrics-baseline.json` 和本地/CI drift gate，冻结 CLI、工具文件、大脚本、
    workflow fan-out、CLI 导入边、public entrypoint、重复片段与无单测 CLI；新脚本必须提供可验证
    的例外记录，并登记需要 GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，

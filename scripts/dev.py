@@ -5,17 +5,19 @@ from __future__ import annotations
 
 import argparse
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import platform
 import shutil
 import subprocess
 import sys
-from typing import Sequence
+from typing import Any, Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUILD_DIR = Path("build/contributor-debug")
 MINIMUM_PYTHON = (3, 12)
+INVENTORY_PATH = ROOT / "docs/script-inventory.json"
 
 CHECK_COMMANDS: tuple[tuple[str, ...], ...] = (
     ("scripts/gates/governance/check_current_docs_install.py",),
@@ -137,6 +139,82 @@ def run_commands(commands: Sequence[Sequence[str]]) -> int:
     return 0 if failures == 0 else 1
 
 
+def load_public_commands(inventory_path: Path = INVENTORY_PATH) -> list[dict[str, Any]]:
+    try:
+        inventory = json.loads(inventory_path.read_text(encoding="utf-8-sig"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read script inventory: {exc}") from exc
+    public = inventory.get("public_entrypoints")
+    lifecycle = inventory.get("public_entrypoint_lifecycle")
+    if not isinstance(public, list) or not isinstance(lifecycle, dict):
+        raise ValueError("script inventory does not contain a public entrypoint catalog")
+    commands: list[dict[str, Any]] = []
+    for path_text in public:
+        metadata = lifecycle.get(path_text)
+        if not isinstance(path_text, str) or not isinstance(metadata, dict):
+            raise ValueError(f"missing public entrypoint metadata: {path_text}")
+        command = {
+            "command": path_text,
+            "domain": metadata.get("domain"),
+            "summary": metadata.get("summary"),
+            "environment": metadata.get("execution_environment"),
+            "typical_duration": metadata.get("typical_duration"),
+            "side_effects": metadata.get("side_effects"),
+            "support_level": metadata.get("support_level"),
+            "documentation": metadata.get("documentation"),
+        }
+        string_fields = (
+            "domain",
+            "summary",
+            "environment",
+            "typical_duration",
+            "support_level",
+        )
+        if not all(isinstance(command[field], str) and command[field] for field in string_fields):
+            raise ValueError(f"invalid public entrypoint metadata: {path_text}")
+        for field in ("side_effects", "documentation"):
+            values = command[field]
+            if not (
+                isinstance(values, list)
+                and values
+                and all(isinstance(value, str) and value for value in values)
+            ):
+                raise ValueError(f"invalid public entrypoint {field}: {path_text}")
+        commands.append(command)
+    return commands
+
+
+def run_command_catalog(domain: str | None, json_output: bool) -> int:
+    try:
+        commands = load_public_commands(INVENTORY_PATH)
+    except ValueError as exc:
+        print(f"command catalog: ERROR: {exc}", file=sys.stderr)
+        return 2
+    available_domains = sorted({str(item["domain"]) for item in commands})
+    if domain is not None and domain not in available_domains:
+        print(
+            f"command catalog: ERROR: unknown domain '{domain}'; "
+            f"choose from: {', '.join(available_domains)}",
+            file=sys.stderr,
+        )
+        return 2
+    selected = [item for item in commands if domain is None or item["domain"] == domain]
+    if json_output:
+        print(json.dumps({"schema_version": 1, "commands": selected}, indent=2))
+        return 0
+    heading = "Stable public commands" + (f" for domain '{domain}'" if domain else "")
+    print(f"{heading}:\n")
+    for item in selected:
+        side_effects = ",".join(item["side_effects"])
+        print(
+            f"{item['command']} [{item['domain']}; {item['environment']}; "
+            f"{item['typical_duration']}; side-effects={side_effects}]"
+        )
+        print(f"  {item['summary']}")
+        print(f"  docs: {', '.join(item['documentation'])}")
+    return 0
+
+
 def run_check() -> int:
     if sys.version_info < MINIMUM_PYTHON:
         print(
@@ -206,6 +284,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("check", help="run bounded repository governance checks")
 
+    commands = subparsers.add_parser(
+        "commands", help="list stable commands by maintenance domain"
+    )
+    commands.add_argument("--domain")
+    commands.add_argument("--json", action="store_true", dest="json_output")
+
     test = subparsers.add_parser("test", help="delegate to the unified CTest runner")
     test.add_argument("test_args", nargs=argparse.REMAINDER)
 
@@ -221,6 +305,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return run_doctor(args.build_dir)
     if args.command == "check":
         return run_check()
+    if args.command == "commands":
+        return run_command_catalog(args.domain, args.json_output)
     if args.command == "test":
         return subprocess.run(
             [sys.executable, "scripts/run_tests.py", *args.test_args],

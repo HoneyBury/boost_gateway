@@ -30,6 +30,7 @@ GCC 13、Conan 2.8.1、Debug/Release 构建、CLion、测试和 Docker 的完整
 
 ```bash
 python3.12 scripts/dev.py doctor --build-dir build/contributor-debug
+python3.12 scripts/dev.py commands --domain contributor
 python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ```
 

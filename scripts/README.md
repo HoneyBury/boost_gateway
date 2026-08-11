@@ -2,10 +2,11 @@
 
 The maintained script index is `docs/script-inventory.json`.
 
-Every stable public entrypoint also has machine-checked lifecycle metadata in that
-inventory: owner, support level, execution environment, typical duration,
-external side effects, and an explicit retirement condition. Update the metadata
-in the same change whenever an entrypoint's operational contract changes.
+Every stable public entrypoint also has machine-checked lifecycle and discovery
+metadata in that inventory: owner, maintenance domain, purpose, authoritative
+documentation, support level, execution environment, typical duration, external
+side effects, and an explicit retirement condition. Update the metadata in the
+same change whenever an entrypoint's operational contract changes.
 
 Before adding a canonical CLI or a file under `scripts/tools/`, prefer extending an
 existing command or placing non-CLI shared code under `scripts/lib/`. A genuinely
@@ -20,6 +21,7 @@ discovering individual scripts:
 
 ```bash
 python3.12 scripts/dev.py doctor
+python3.12 scripts/dev.py commands --domain contributor
 python3.12 scripts/dev.py check
 python3.12 scripts/dev.py test unit --build-dir build/contributor-debug --verbose
 python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
@@ -27,6 +29,8 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 
 `dev.py` only composes stable entrypoints. Canonical scripts remain directly
 callable for CI, fixed-runner evidence, debugging, and documented operations.
+Use `dev.py commands` (optionally with `--domain` or `--json`) to discover those
+stable entrypoints instead of scanning this document or the physical script tree.
 
 Canonical implementation paths may live under role-oriented subdirectories such
 as `scripts/gates/` and `scripts/lib/`. Root-level script names remain stable

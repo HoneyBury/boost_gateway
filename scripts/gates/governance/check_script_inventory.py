@@ -22,11 +22,27 @@ VALID_CATEGORIES = {
 }
 LIFECYCLE_FIELDS = {
     "owner",
+    "domain",
+    "summary",
+    "documentation",
     "support_level",
     "execution_environment",
     "typical_duration",
     "side_effects",
     "retirement_condition",
+}
+VALID_COMMAND_DOMAINS = {
+    "contributor",
+    "dependencies",
+    "governance",
+    "infrastructure",
+    "performance",
+    "platform",
+    "production",
+    "recovery",
+    "release",
+    "security",
+    "sdk",
 }
 GROWTH_EXCEPTION_FIELDS = {
     "kind",
@@ -151,7 +167,7 @@ def main() -> int:
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
-    add(checks, "inventory-schema-version", inventory.get("schema_version") == 5, "schema_version is 5")
+    add(checks, "inventory-schema-version", inventory.get("schema_version") == 6, "schema_version is 6")
     add(checks, "all-top-level-scripts-declared", actual_top_level <= declared, "all top-level files are declared")
     add(checks, "all-recursive-scripts-represented", actual_scripts == represented, "every executable script is represented exactly once by role")
     add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
@@ -245,6 +261,40 @@ def main() -> int:
                 f"lifecycle-owner:{path_text}",
                 isinstance(owner, str) and owner.startswith("@") and len(owner) > 1,
                 f"owner={owner}",
+            )
+            domain = metadata.get("domain")
+            add(
+                checks,
+                f"lifecycle-domain:{path_text}",
+                domain in VALID_COMMAND_DOMAINS,
+                f"domain={domain}",
+            )
+            summary_text = metadata.get("summary")
+            add(
+                checks,
+                f"lifecycle-summary:{path_text}",
+                isinstance(summary_text, str) and len(summary_text.strip()) >= 20,
+                "summary explains when a maintainer should use this command",
+            )
+            documentation = metadata.get("documentation")
+            documentation_paths = (
+                [ROOT / item for item in documentation]
+                if isinstance(documentation, list)
+                and all(isinstance(item, str) for item in documentation)
+                else []
+            )
+            add(
+                checks,
+                f"lifecycle-documentation:{path_text}",
+                bool(documentation_paths)
+                and len(documentation_paths) == len(set(documentation_paths))
+                and all(
+                    item.is_file()
+                    and item.suffix == ".md"
+                    and item.resolve().is_relative_to(ROOT.resolve())
+                    for item in documentation_paths
+                ),
+                f"documentation={documentation}",
             )
             support_level = metadata.get("support_level")
             add(

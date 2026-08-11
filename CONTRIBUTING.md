@@ -28,6 +28,8 @@ For a normal local change, begin with `python3.12 scripts/dev.py doctor`, use
 `python3.12 scripts/dev.py test <layer> --build-dir <dir>` during development, and run
 `python3.12 scripts/dev.py check` before pushing. The facade is intentionally local-only;
 release and fixed-runner workflows continue to call explicit governed entrypoints.
+Use `python3.12 scripts/dev.py commands --domain <domain>` to find the supported command
+and its authoritative runbook before invoking an internal gate or tool directly.
 
 Long soak, capacity, Redis live, native platform, and pre-production results require their
 admitted runners. Do not represent a local or hosted smoke run as fixed-runner evidence.
