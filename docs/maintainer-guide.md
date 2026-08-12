@@ -21,7 +21,7 @@ Leaderboard。主要维护边界如下：
 | 生产配置 | `env/` | config governance、Compose/K8s 专项 |
 | 发布和生产证据 | `scripts/gates/`、`scripts/producers/`、`.github/workflows/` | 对应 fixed runner；本地 smoke 不能替代 |
 
-发布线当前是 v3.6.6 / SDK 4.2.1，主任务已从扩展协议和 demo 转向 Ubuntu 24.04 x64
+发布目标当前是 v3.6.7 / SDK 4.2.1，主任务已从扩展协议和 demo 转向 Ubuntu 24.04 x64
 单节点部署、观测、备份恢复、72 小时预演和 30 天不可变验证。新增能力前应先确认它是否
 服务于这条主线。
 
