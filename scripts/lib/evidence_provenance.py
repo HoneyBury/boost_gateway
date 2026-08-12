@@ -6,7 +6,12 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import pwd
+import socket
 import subprocess
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +28,123 @@ REQUIRED_PROVENANCE_KEYS = {
     "conan_lockfile_sha256",
     "revision_matches_checkout",
 }
+
+
+class OperationsIdentityError(ValueError):
+    """Raised when required host or operator identity cannot be established."""
+
+
+@dataclass
+class EvidenceReport:
+    checks: list[dict[str, Any]] = field(default_factory=list)
+
+    def add(self, name: str, passed: bool, detail: str, **facts: Any) -> None:
+        check: dict[str, Any] = {"name": name, "passed": passed, "detail": detail}
+        check.update(facts)
+        self.checks.append(check)
+
+    @property
+    def failed(self) -> list[dict[str, Any]]:
+        return [check for check in self.checks if not check["passed"]]
+
+
+def operations_admission_summary(
+    path: Path,
+    phase: str,
+    policy_path: Path,
+    report: EvidenceReport,
+    host_id: str,
+    current_boot_id: str,
+    artifacts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    failed = report.failed
+    try:
+        policy_sha256 = hashlib.sha256(policy_path.read_bytes()).hexdigest()
+    except OSError:
+        policy_sha256 = ""
+    return {
+        "summary_version": 2,
+        "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        "phase": phase,
+        "overall_pass": not failed,
+        "passed": not failed,
+        "failed_category": "operations_host_admission" if failed else "",
+        "failed_step": failed[0]["name"] if failed else "",
+        "host": {
+            "hostname": socket.gethostname(),
+            "host_id_sha256": host_id,
+            "boot_id": current_boot_id,
+        },
+        "policy": {"path": str(policy_path), "sha256": policy_sha256},
+        "checks": report.checks,
+        "artifacts": {"summary_path": str(path), **(artifacts or {})},
+    }
+
+
+def _required_text(path: Path, label: str) -> str:
+    value = path.read_text(encoding="utf-8").strip()
+    if not value:
+        raise OperationsIdentityError(f"{label} is empty")
+    return value
+
+
+def _host_os_release(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, value = line.split("=", 1)
+            if key in {"ID", "VERSION_ID"}:
+                values[key] = value.strip().strip('"')
+    return values
+
+
+def _operator(environment: Mapping[str, str]) -> dict[str, Any]:
+    sudo_user = environment.get("SUDO_USER", "").strip()
+    sudo_uid = environment.get("SUDO_UID", "").strip()
+    if sudo_user or sudo_uid:
+        if (
+            not sudo_user or not sudo_uid.isdecimal()
+            or any(character.isspace() or ord(character) < 32 for character in sudo_user)
+            or len(sudo_user) > 128
+        ):
+            raise OperationsIdentityError("SUDO_USER/SUDO_UID identity is invalid")
+        return {"name": sudo_user, "uid": int(sudo_uid), "source": "sudo"}
+    uid = os.getuid()
+    try:
+        name = pwd.getpwuid(uid).pw_name
+    except KeyError as exc:
+        raise OperationsIdentityError(f"cannot resolve process uid {uid}") from exc
+    return {"name": name, "uid": uid, "source": "process"}
+
+
+def collect_operations_identity(
+    *,
+    environment: Mapping[str, str] | None = None,
+    machine_id_path: Path = Path("/etc/machine-id"),
+    boot_id_path: Path = Path("/proc/sys/kernel/random/boot_id"),
+    os_release_path: Path = Path("/etc/os-release"),
+) -> dict[str, Any]:
+    """Return secret-free host and operator provenance for operations evidence."""
+    machine_id = machine_id_path.read_bytes()
+    if not machine_id.strip():
+        raise OperationsIdentityError("machine-id is empty")
+    release = _host_os_release(os_release_path)
+    if not release.get("ID") or not release.get("VERSION_ID"):
+        raise OperationsIdentityError("os-release lacks ID or VERSION_ID")
+    return {
+        "host": {
+            "hostname": socket.gethostname(),
+            "host_id_sha256": hashlib.sha256(machine_id).hexdigest(),
+            "boot_id": _required_text(boot_id_path, "boot_id"),
+            "os": {
+                "id": release["ID"], "version_id": release["VERSION_ID"],
+                "kernel_release": platform.release(),
+            },
+            "architecture": platform.machine(),
+        },
+        "operator": _operator(environment if environment is not None else os.environ),
+    }
 
 
 def _git_value(repo_root: Path, *args: str) -> str:

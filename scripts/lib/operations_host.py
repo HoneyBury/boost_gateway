@@ -7,20 +7,22 @@ import ipaddress
 import json
 import os
 import platform
-import pwd
 import re
 import socket
 import subprocess
-import tempfile
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 
-class OperationsIdentityError(ValueError):
-    """Raised when required host or operator identity cannot be established."""
+from scripts.lib.evidence_provenance import (  # noqa: E402,F401
+    EvidenceReport as Report,
+    OperationsIdentityError,
+    collect_operations_identity,
+    operations_admission_summary as admission_summary,
+)
 
 
 @dataclass(frozen=True)
@@ -31,143 +33,8 @@ class CommandResult:
     stderr: str
 
 
-@dataclass
-class Report:
-    checks: list[dict[str, Any]] = field(default_factory=list)
-
-    def add(self, name: str, passed: bool, detail: str, **facts: Any) -> None:
-        check: dict[str, Any] = {"name": name, "passed": passed, "detail": detail}
-        check.update(facts)
-        self.checks.append(check)
-
-    @property
-    def failed(self) -> list[dict[str, Any]]:
-        return [check for check in self.checks if not check["passed"]]
-
-
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
-
-
-def load_json(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ValueError(f"expected JSON object: {path}")
-    return value
-
-
-def atomic_write_json(path: Path, value: dict[str, Any], mode: int = 0o640) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
-    temporary_path = Path(temporary)
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
-            json.dump(value, stream, indent=2, sort_keys=True)
-            stream.write("\n")
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.chmod(temporary_path, mode)
-        os.replace(temporary_path, path)
-    finally:
-        temporary_path.unlink(missing_ok=True)
-
-
-def write_summary(
-    path: Path,
-    phase: str,
-    policy_path: Path,
-    report: Report,
-    host_id: str,
-    current_boot_id: str,
-    artifacts: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    failed = report.failed
-    try:
-        policy_sha256 = hashlib.sha256(policy_path.read_bytes()).hexdigest()
-    except OSError:
-        policy_sha256 = ""
-    summary = {
-        "summary_version": 2,
-        "generated_at": now(),
-        "phase": phase,
-        "overall_pass": not failed,
-        "passed": not failed,
-        "failed_category": "operations_host_admission" if failed else "",
-        "failed_step": failed[0]["name"] if failed else "",
-        "host": {
-            "hostname": socket.gethostname(),
-            "host_id_sha256": host_id,
-            "boot_id": current_boot_id,
-        },
-        "policy": {"path": str(policy_path), "sha256": policy_sha256},
-        "checks": report.checks,
-        "artifacts": {"summary_path": str(path), **(artifacts or {})},
-    }
-    atomic_write_json(path, summary)
-    return summary
-
-
-def _required_text(path: Path, label: str) -> str:
-    value = path.read_text(encoding="utf-8").strip()
-    if not value:
-        raise OperationsIdentityError(f"{label} is empty")
-    return value
-
-
-def _os_release(path: Path) -> dict[str, str]:
-    values = parse_os_release(path.read_text(encoding="utf-8"))
-    return {key: value for key, value in values.items() if key in {"ID", "VERSION_ID"}}
-
-
-def _operator(environment: Mapping[str, str]) -> dict[str, Any]:
-    sudo_user = environment.get("SUDO_USER", "").strip()
-    sudo_uid = environment.get("SUDO_UID", "").strip()
-    if sudo_user or sudo_uid:
-        if (
-            not sudo_user
-            or not sudo_uid.isdecimal()
-            or any(character.isspace() or ord(character) < 32 for character in sudo_user)
-            or len(sudo_user) > 128
-        ):
-            raise OperationsIdentityError("SUDO_USER/SUDO_UID identity is invalid")
-        return {"name": sudo_user, "uid": int(sudo_uid), "source": "sudo"}
-
-    uid = os.getuid()
-    try:
-        name = pwd.getpwuid(uid).pw_name
-    except KeyError as exc:
-        raise OperationsIdentityError(f"cannot resolve process uid {uid}") from exc
-    return {"name": name, "uid": uid, "source": "process"}
-
-
-def collect_operations_identity(
-    *,
-    environment: Mapping[str, str] | None = None,
-    machine_id_path: Path = Path("/etc/machine-id"),
-    boot_id_path: Path = Path("/proc/sys/kernel/random/boot_id"),
-    os_release_path: Path = Path("/etc/os-release"),
-) -> dict[str, Any]:
-    """Return only governed host and operator fields suitable for JSON evidence."""
-    machine_id = machine_id_path.read_bytes()
-    if not machine_id.strip():
-        raise OperationsIdentityError("machine-id is empty")
-    release = _os_release(os_release_path)
-    if not release.get("ID") or not release.get("VERSION_ID"):
-        raise OperationsIdentityError("os-release lacks ID or VERSION_ID")
-    return {
-        "host": {
-            "hostname": socket.gethostname(),
-            "host_id_sha256": hashlib.sha256(machine_id).hexdigest(),
-            "boot_id": _required_text(boot_id_path, "boot_id"),
-            "os": {
-                "id": release["ID"],
-                "version_id": release["VERSION_ID"],
-                "kernel_release": platform.release(),
-            },
-            "architecture": platform.machine(),
-        },
-        "operator": _operator(environment if environment is not None else os.environ),
-    }
 
 
 def run_host_command(command: Sequence[str], timeout: int = 15) -> CommandResult:
@@ -184,6 +51,18 @@ def run_host_command(command: Sequence[str], timeout: int = 15) -> CommandResult
         )
     except (OSError, subprocess.SubprocessError) as exc:
         return CommandResult(tuple(command), 127, "", f"{type(exc).__name__}: {exc}")
+
+
+run = run_host_command
+
+
+def check_command(report: Report, name: str, command: Sequence[str]) -> CommandResult:
+    result = run_host_command(command)
+    detail = "command completed" if result.returncode == 0 else "command failed or is unavailable"
+    report.add(name, result.returncode == 0, detail, command=list(command),
+               returncode=result.returncode, stdout=result.stdout.strip(),
+               stderr=result.stderr.strip())
+    return result
 
 
 def parse_os_release(text: str) -> dict[str, str]:
@@ -377,7 +256,7 @@ def evaluate_reboot_marker(marker: dict[str, Any], host_id: str, current_boot_id
     )
 
 
-def reboot_marker(host_id: str, current_boot_id: str) -> dict[str, Any]:
+def build_reboot_marker(host_id: str, current_boot_id: str) -> dict[str, Any]:
     """Build the minimal same-host reboot challenge without recording environment data."""
     return {
         "schema_version": 1,
@@ -392,3 +271,191 @@ def smartctl_health_command(device_args: Sequence[str]) -> list[str]:
     if not device_args:
         raise ValueError("SMART device arguments are empty")
     return ["smartctl", "-H", "-j", *device_args[1:], device_args[0]]
+
+
+def host_resource_snapshot() -> dict[str, object]:
+    """Collect best-effort, secret-free host resource facts on Linux or Darwin."""
+    snapshot: dict[str, object] = {
+        "captured_at": datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z"),
+        "platform": platform.platform(),
+        "cpu_count": os.cpu_count(),
+    }
+    try:
+        snapshot["load_average"] = list(os.getloadavg())
+    except (AttributeError, OSError):
+        pass
+    if platform.system() == "Darwin":
+        return _darwin_host_resource_snapshot(snapshot)
+
+    try:
+        snapshot["proc_loadavg"] = Path("/proc/loadavg").read_text(encoding="utf-8").strip()
+    except OSError:
+        pass
+    try:
+        fields = [
+            int(value)
+            for value in Path("/proc/stat").read_text(encoding="utf-8").splitlines()[0].split()[1:]
+        ]
+        snapshot["cpu_ticks"] = {"total": sum(fields), "idle": sum(fields[3:5])}
+    except (OSError, ValueError, IndexError):
+        pass
+    try:
+        wanted = {"MemTotal", "MemAvailable", "SwapTotal", "SwapFree"}
+        snapshot["memory_kib"] = {
+            key: int(value.split()[0])
+            for line in Path("/proc/meminfo").read_text(encoding="utf-8").splitlines()
+            for key, value in [line.split(":", 1)] if key in wanted
+        }
+    except (OSError, ValueError):
+        pass
+
+    frequencies: list[int] = []
+    for path in Path("/sys/devices/system/cpu").glob("cpu*/cpufreq/scaling_cur_freq"):
+        try:
+            frequencies.append(int(path.read_text(encoding="utf-8").strip()))
+        except (OSError, ValueError):
+            continue
+    if frequencies:
+        snapshot["cpu_frequency_khz"] = {
+            "minimum": min(frequencies), "maximum": max(frequencies),
+            "average": round(sum(frequencies) / len(frequencies), 3),
+            "sampled_cpus": len(frequencies),
+        }
+    temperatures: dict[str, int] = {}
+    for path in Path("/sys/class/thermal").glob("thermal_zone*/temp"):
+        try:
+            temperatures[path.parent.name] = int(path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            continue
+    if temperatures:
+        snapshot["thermal_millicelsius"] = temperatures
+    return snapshot
+
+
+def _darwin_host_resource_snapshot(snapshot: dict[str, object]) -> dict[str, object]:
+    try:
+        completed = subprocess.run(
+            ["top", "-l", "1", "-n", "0", "-stats", "pid"], check=False,
+            capture_output=True, text=True, timeout=10,
+        )
+        match = re.search(r"CPU usage:\s*([0-9.]+)% user,\s*([0-9.]+)% sys", completed.stdout)
+        if completed.returncode == 0 and match:
+            snapshot["cpu_percent"] = round(float(match.group(1)) + float(match.group(2)), 3)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    try:
+        completed = subprocess.run(
+            ["vm_stat"], check=False, capture_output=True, text=True, timeout=10,
+        )
+        page_match = re.search(r"page size of (\d+) bytes", completed.stdout)
+        pages = {
+            key: int(value)
+            for key, value in re.findall(
+                r"^Pages ([^:]+):\s+(\d+)\.", completed.stdout, flags=re.MULTILINE
+            )
+        }
+        total = subprocess.run(
+            ["sysctl", "-n", "hw.memsize"], check=False,
+            capture_output=True, text=True, timeout=10,
+        )
+        if completed.returncode == 0 and total.returncode == 0 and page_match:
+            page_size = int(page_match.group(1))
+            available = sum(pages.get(name, 0) for name in ("free", "inactive", "speculative"))
+            snapshot["memory_kib"] = {
+                "MemTotal": int(total.stdout.strip()) // 1024,
+                "MemAvailable": available * page_size // 1024,
+            }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return snapshot
+
+
+def process_tree_resource_snapshot(root_pid: int) -> dict[str, object]:
+    """Aggregate RSS, file descriptor, and thread counts for a process tree."""
+    if platform.system() == "Darwin":
+        return darwin_process_tree_resource_snapshot(root_pid)
+    processes: dict[int, dict[str, object]] = {}
+    for status_path in Path("/proc").glob("[0-9]*/status"):
+        try:
+            fields = dict(
+                line.split(":", 1) for line in status_path.read_text(encoding="utf-8").splitlines()
+                if ":" in line
+            )
+            pid = int(status_path.parent.name)
+            processes[pid] = {
+                "pid": pid, "ppid": int(fields.get("PPid", "0")),
+                "name": fields.get("Name", "unknown").strip(),
+                "rss_kib": int(fields.get("VmRSS", "0 kB").split()[0]),
+                "threads": int(fields.get("Threads", "0")),
+            }
+        except (OSError, ValueError, IndexError):
+            continue
+    return _aggregate_process_tree(root_pid, processes, linux=True)
+
+
+def darwin_process_tree_resource_snapshot(root_pid: int) -> dict[str, object]:
+    processes: dict[int, dict[str, object]] = {}
+    try:
+        completed = subprocess.run(
+            ["ps", "-axo", "pid=,ppid=,rss=,comm="], check=False,
+            capture_output=True, text=True, timeout=10,
+        )
+        if completed.returncode == 0:
+            for line in completed.stdout.splitlines():
+                fields = line.strip().split(maxsplit=3)
+                if len(fields) < 3:
+                    continue
+                pid, ppid, rss = (int(value) for value in fields[:3])
+                processes[pid] = {
+                    "pid": pid, "ppid": ppid, "rss_kib": rss,
+                    "name": fields[3] if len(fields) == 4 else "unknown",
+                }
+    except (OSError, subprocess.SubprocessError, ValueError):
+        pass
+    return _aggregate_process_tree(root_pid, processes, linux=False)
+
+
+def _aggregate_process_tree(
+    root_pid: int, processes: dict[int, dict[str, object]], *, linux: bool
+) -> dict[str, object]:
+    selected = {root_pid}
+    changed = True
+    while changed:
+        changed = False
+        for pid, process in processes.items():
+            if pid not in selected and int(process["ppid"]) in selected:
+                selected.add(pid)
+                changed = True
+    samples: list[dict[str, object]] = []
+    for pid in sorted(selected):
+        process = processes.get(pid)
+        if process is None:
+            continue
+        fd_count = 0
+        threads = int(process.get("threads", 0))
+        try:
+            if linux:
+                fd_count = sum(1 for _ in (Path("/proc") / str(pid) / "fd").iterdir())
+            else:
+                descriptors = subprocess.run(
+                    ["lsof", "-a", "-p", str(pid), "-Fn"], check=False,
+                    capture_output=True, text=True, timeout=10,
+                )
+                if descriptors.returncode == 0:
+                    fd_count = sum(1 for line in descriptors.stdout.splitlines() if line.startswith("f"))
+                thread_list = subprocess.run(
+                    ["ps", "-M", "-p", str(pid)], check=False,
+                    capture_output=True, text=True, timeout=10,
+                )
+                if thread_list.returncode == 0:
+                    threads = max(1, len(thread_list.stdout.splitlines()) - 1)
+        except (OSError, subprocess.SubprocessError):
+            pass
+        samples.append({**process, "fd_count": fd_count, "threads": threads})
+    return {
+        "root_pid": root_pid, "process_count": len(samples),
+        "rss_kib": sum(int(item["rss_kib"]) for item in samples),
+        "fd_count": sum(int(item["fd_count"]) for item in samples),
+        "thread_count": sum(int(item["threads"]) for item in samples),
+        "processes": samples,
+    }

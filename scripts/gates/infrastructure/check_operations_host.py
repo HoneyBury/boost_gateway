@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from scripts.lib.operations_host import *  # noqa: E402,F401,F403
+from scripts.lib.release_lifecycle_io import atomic_write_json  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_POLICY = ROOT / "deploy/operations/operations-host-policy.json"
@@ -33,25 +34,11 @@ DEFAULT_SUMMARY = Path("runtime/validation/operations-host-admission-summary.jso
 DEFAULT_REBOOT_MARKER = Path("/etc/boost-gateway/reboot-challenge.json")
 
 
-run = run_host_command
-
-
-def check_command(report: Report, name: str, command: Sequence[str]) -> CommandResult:
-    result = run(command)
-    report.add(
-        name,
-        result.returncode == 0,
-        (
-            "command completed"
-            if result.returncode == 0
-            else "command failed or is unavailable"
-        ),
-        command=list(command),
-        returncode=result.returncode,
-        stdout=result.stdout.strip(),
-        stderr=result.stderr.strip(),
-    )
-    return result
+def load_json(path: Path) -> dict[str, Any]:
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError(f"expected JSON object: {path}")
+    return value
 
 
 def check_platform(report: Report, policy: dict[str, Any]) -> None:
@@ -657,6 +644,22 @@ def check_runtime(report: Report, policy: dict[str, Any]) -> None:
         )
 
 
+def write_summary(
+    path: Path,
+    phase: str,
+    policy_path: Path,
+    report: Report,
+    host_id: str,
+    current_boot_id: str,
+    artifacts: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    summary = admission_summary(
+        path, phase, policy_path, report, host_id, current_boot_id, artifacts
+    )
+    atomic_write_json(path, summary)
+    return summary
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("phase", choices=["admit", "prepare-reboot", "verify-reboot"])
@@ -674,7 +677,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.summary_path.is_absolute()
         else ROOT / args.summary_path
     )
-    reboot_marker = (
+    reboot_marker_path = (
         args.reboot_marker
         if args.reboot_marker.is_absolute()
         else ROOT / args.reboot_marker
@@ -743,13 +746,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
 
     if args.phase == "prepare-reboot" and not report.failed:
-        marker = reboot_marker(current_host_id, current_boot_id)
-        atomic_write_json(reboot_marker, marker)
-        artifacts["reboot_marker"] = str(reboot_marker)
+        marker = build_reboot_marker(current_host_id, current_boot_id)
+        atomic_write_json(reboot_marker_path, marker)
+        artifacts["reboot_marker"] = str(reboot_marker_path)
     elif args.phase == "verify-reboot":
         try:
-            marker_status = reboot_marker.stat()
-            marker = load_json(reboot_marker)
+            marker_status = reboot_marker_path.stat()
+            marker = load_json(reboot_marker_path)
             secure_marker = (
                 marker_status.st_uid == 0
                 and stat.S_IMODE(marker_status.st_mode) & 0o022 == 0
@@ -765,11 +768,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 boot_id_after=current_boot_id,
                 marker_mode=f"{stat.S_IMODE(marker_status.st_mode):04o}",
             )
-            artifacts["reboot_marker"] = str(reboot_marker)
+            artifacts["reboot_marker"] = str(reboot_marker_path)
             if marker_pass and not report.failed:
                 marker["verified_at"] = now()
                 marker["boot_id_after"] = current_boot_id
-                atomic_write_json(reboot_marker, marker)
+                atomic_write_json(reboot_marker_path, marker)
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             report.add(
                 "reboot:boot-id-changed", False, f"cannot verify reboot marker: {exc}"
@@ -789,7 +792,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     print(f"summary: {summary_path}")
     if args.phase == "prepare-reboot" and summary["overall_pass"]:
-        print(f"reboot marker: {reboot_marker}")
+        print(f"reboot marker: {reboot_marker_path}")
     return 0 if summary["overall_pass"] else 1
 
 
