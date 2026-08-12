@@ -47,6 +47,29 @@ class WorkflowPythonCliContractsTest(unittest.TestCase):
         self.assertEqual("", error)
         self.assertEqual({"--help", "--build-dir", "--verbose"}, options)
 
+    def test_collects_only_iterated_imported_option_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            library = root / ("scripts" + "/lib/options.py")
+            library.parent.mkdir(parents=True)
+            library.write_text(
+                "OPTIONS = ((\"--build-dir\", {}), (\"--run-preset\", {}))\n"
+                "UNUSED = ((\"--must-not-leak\", {}),)\n",
+                encoding="utf-8",
+            )
+            script = root / ("scripts" + "/tool.py")
+            script.write_text(
+                "from scripts.lib.options import *\n"
+                "for flag, options in OPTIONS:\n"
+                "    parser.add_argument(flag, **options)\n",
+                encoding="utf-8",
+            )
+            with mock.patch.object(contracts, "ROOT", root):
+                options, error = contracts.collect_declared_options(script)
+
+        self.assertEqual("", error)
+        self.assertEqual({"--help", "--build-dir", "--run-preset"}, options)
+
 
 if __name__ == "__main__":
     unittest.main()

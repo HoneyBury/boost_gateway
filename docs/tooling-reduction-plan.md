@@ -145,3 +145,21 @@ CLI contract 和一次对应 `workflow_dispatch` rehearsal。fixed-runner、secr
    restore transport、隔离恢复、观测证据、Compose preflight 和恢复策略。
 4. 运行原 CLI `--help`、领域测试、完整 Python suite、治理 suite 与已有 CTest 单元入口；生产
    Compose、Redis、fixed runner 和 secret 仍需目标环境 rehearsal，本地验证不冒充外部证据。
+
+### 第二轮执行结果
+
+第二轮退出目标已全部达到：public entrypoint、canonical CLI 和 `scripts/tools` 分别保持
+23/127/55；超过 800 行的脚本由 10 降到 8；跨 CLI 导入由 8 清零；Workflow 唯一依赖、依赖边和
+重复片段保持 47/103/5，未测试 CLI 保持 0。超过 500 行脚本保持 20，没有因模块拆分制造新的
+中型热点。
+
+`collect_v2_perf_baseline.py` 从 4,707 行降到 736 行，拆出的模块分别拥有进程 affinity、服务
+生命周期、OTel、bench、业务协议、业务操作、资源证据、饱和分析、报告和 release contract。
+`verify_preprod_recovery_drill.py` 从 2,069 行降到 787 行，拆出的模块分别拥有失败注入、Compose
+contract、镜像 manifest、preflight 和记录渲染。边界测试要求这些模块无 CLI，并锁定预期失败、
+候选镜像和稳定证据行为。
+
+全部 peer-CLI 导入已改为 CLI-free contract；工具 façade 保留原路径、参数和退出码，独立安装的
+观测 evidence 与 forced-command restore 路径同步安装所需 library。24 个新增内部模块进入人工
+评审基线，library 总数为 55，迁移例外重新清零。内部模块增长不是成果本身；下一轮新增模块仍需
+先证明不能扩展现有职责。

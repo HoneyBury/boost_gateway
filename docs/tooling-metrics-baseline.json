@@ -24,8 +24,8 @@
       "maximum": 55
     },
     "library_files": {
-      "baseline": 49,
-      "maximum": 49
+      "baseline": 55,
+      "maximum": 55
     },
     "other_script_files": {
       "baseline": 25,
@@ -36,8 +36,8 @@
       "maximum": 20
     },
     "large_scripts_over_800": {
-      "baseline": 10,
-      "maximum": 10
+      "baseline": 8,
+      "maximum": 8
     },
     "workflow_script_dependencies": {
       "baseline": 47,
@@ -48,8 +48,8 @@
       "maximum": 103
     },
     "cross_cli_imports": {
-      "baseline": 8,
-      "maximum": 8
+      "baseline": 0,
+      "maximum": 0
     },
     "untested_cli": {
       "baseline": 0,
@@ -247,14 +247,19 @@
       "library_files": [
         "scripts/lib/__init__.py",
         "scripts/lib/backup_recovery.py",
+        "scripts/lib/backup_recovery_policy.py",
+        "scripts/lib/backup_vault.py",
         "scripts/lib/cancellable_process.py",
         "scripts/lib/conan_workflow_contract.py",
         "scripts/lib/cpu_capacity_evidence_contract.py",
         "scripts/lib/deploy_operability_contract.py",
         "scripts/lib/evidence_provenance.py",
         "scripts/lib/evidence_provenance_cases.py",
+        "scripts/lib/isolated_restore.py",
         "scripts/lib/long_soak_contract.py",
         "scripts/lib/monitoring_operability_contract.py",
+        "scripts/lib/observability_evidence.py",
+        "scripts/lib/observability_preflight.py",
         "scripts/lib/operations_identity.py",
         "scripts/lib/perf_bench_runtime.py",
         "scripts/lib/perf_cli_support.py",
@@ -289,6 +294,7 @@
         "scripts/lib/release_package.py",
         "scripts/lib/release_sbom_io.py",
         "scripts/lib/release_sbom_semantics.py",
+        "scripts/lib/restore_bundle_transport.py",
         "scripts/lib/sdk_distribution_contract.py",
         "scripts/lib/sdk_full_flow_runtime.py",
         "scripts/lib/subprocess_utils.py",
@@ -530,8 +536,8 @@
   "observations": {
     "workflow_files": 18,
     "cli_implementations": 127,
-    "script_files": 184,
-    "script_lines": 59392,
+    "script_files": 208,
+    "script_lines": 60078,
     "workflow_lines": 5464
   },
   "external_metrics": {
