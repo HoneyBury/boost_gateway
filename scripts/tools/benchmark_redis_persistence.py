@@ -21,10 +21,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 try:
-    from scripts.tools import manage_backup_recovery as backup
+    from scripts.lib import backup_recovery as backup
 except ModuleNotFoundError:  # pragma: no cover - direct installed-script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.tools import manage_backup_recovery as backup
+    from scripts.lib import backup_recovery as backup
 
 
 ROOT = Path(__file__).resolve().parents[2]

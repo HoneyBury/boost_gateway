@@ -23,7 +23,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
-    from scripts.tools.manage_backup_recovery import (  # noqa: E402
+    from scripts.lib.backup_recovery import (  # noqa: E402
         BackupError,
         canonical_json,
         load_json_object,

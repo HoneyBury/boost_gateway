@@ -237,6 +237,7 @@ sudo cat /etc/boost-gateway/backup-vault-ed25519.pub
 ```bash
 RECEIVER_ROOT="$HOME/.local/libexec/boost-gateway-backup"
 install -d -m 0700 "$RECEIVER_ROOT"
+install -m 0500 scripts/lib/backup_recovery.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/manage_backup_recovery.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/backup_vault_ssh_receiver.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/verify_backup_vault.py "$RECEIVER_ROOT/"

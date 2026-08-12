@@ -14,7 +14,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 try:
-    from scripts.tools.manage_backup_recovery import (  # noqa: E402
+    from scripts.lib.backup_recovery import (  # noqa: E402
         BACKUP_ID_RE,
         BackupError,
         canonical_json,

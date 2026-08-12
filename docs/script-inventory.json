@@ -9,6 +9,17 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/backup_recovery.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["backup lifecycle CLI", "vault verification", "isolated restore tooling"],
+      "test": "tests/python/test_backup_recovery_tool.py",
+      "why_new_script": "Backup, vault and restore commands require one import-safe implementation instead of importing a peer CLI.",
+      "replaces": "Shared implementation previously embedded in manage_backup_recovery.py",
+      "retirement_condition": "All backup and restore consumers migrate to a replacement versioned recovery library.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/release_package.py": {
       "kind": "library-module",
       "domain": "release",
@@ -398,6 +409,9 @@
       "category": "tool"
     },
     "scripts/lib/cancellable_process.py": {
+      "category": "tool"
+    },
+    "scripts/lib/backup_recovery.py": {
       "category": "tool"
     },
     "scripts/lib/evidence_provenance.py": {
