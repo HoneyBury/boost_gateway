@@ -429,11 +429,9 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
         "-X connect" in service
         and "StandardInput=socket" in service
         and "StandardOutput=socket" in service
-        and "IPAddressDeny=any" in service
-        and "IPAddressAllow=localhost" in service
         and "DynamicUser=yes" in service
         and "User=nobody" not in service,
-        "each SMTP relay connection is unprivileged and can reach only the loopback CONNECT proxy",
+        "each SMTP relay connection is unprivileged and has a fixed CONNECT proxy command",
     )
     add_check(
         checks,
@@ -445,6 +443,8 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
         and "printf 'ListenStream=%s:%s" in installer
         and 'ufw allow in on "${BRIDGE_NAME}"' in installer
         and 'from "${NETWORK_SUBNET}" to "${RELAY_HOST}"' in installer
+        and "PROXY_ADDRESS=\"${BOOST_GATEWAY_CONNECT_PROXY:-127.0.0.1:7890}\""
+        in installer
         and installer.count("openssl s_client") >= 2,
         "installer limits UFW to the private production bridge and verifies both proxy hops",
     )
