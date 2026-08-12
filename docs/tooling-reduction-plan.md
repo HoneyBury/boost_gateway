@@ -204,3 +204,20 @@ Redis persistence benchmark、external business canary 和 isolated business ver
 
 本轮不处理其余五个恢复/性能/业务工具热点。它们含 Docker volume、Redis 数据、外部告警或
 备份保留删除副作用；在没有录制 fixture 和资源所有权失败注入前，不以行数目标驱动迁移。
+
+### 第三轮执行结果
+
+第三轮退出目标全部达到：超过 800 行的脚本由 8 降到 5，超过 500 行脚本保持 20；public、
+canonical CLI、tools 和 library 分别保持 23/127/55/55；跨 CLI 导入保持 0，Workflow 唯一依赖、
+依赖边和重复片段保持 47/103/5。两个替换 library 已纳入评审基线，growth exception 再次清零。
+
+`check_workflow_catalog.py` 从 1,181 行降到 798 行，catalog JSON、runner matrix、platform boundary、
+权限、触发器和第三方 Action pinning 进入直接测试的 workflow contract；原 gate 保留仓库特定的
+release、security、offline Conan 和证据策略。`check_operations_host.py` 从 1,111 行降到 800 行，
+主机身份、网络 policy evaluator、reboot marker 与 Linux/Darwin 资源采样统一为 operations host
+contract；迁移同时修复了 `prepare-reboot` 中路径变量遮蔽 marker 构造函数的问题。
+
+`verify_stability_soak.py` 从 1,233 行降到 702 行，直接复用同一个主机/进程树采样实现，并把资源
+趋势、采样器、失败归档和持续失败政策合入既有 long-soak contract。原入口、参数、summary 字段、
+退出码和测试 patch 边界保持不变。下一轮只剩五个 >800 热点，进入恢复或 Redis 工具前必须先有
+录制 fixture、资源 ownership 注入和 cleanup 失败测试。

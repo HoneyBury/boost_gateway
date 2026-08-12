@@ -214,3 +214,7 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 8. 第三轮以 library 不高于 55 为硬边界，优先复用 workflow、operations host 和 long-soak 契约；
    不再通过为每个函数组新增扁平模块来追求行数。恢复、Redis 和外部 canary 热点必须先补录制
    fixture 与资源所有权失败注入，再进入后续减量。
+9. 第三轮已把 workflow catalog、operations host 和 stability soak 三个入口降到 798/800/702 行，
+   超过 800 行脚本降到 5，library 保持 55，growth exception 清零。主机身份、网络策略、跨平台
+   资源采样和持续失败政策已有单一边界；新代码不得在 gate 中重建 `/proc`、Darwin `ps` 或失败率
+   实现。

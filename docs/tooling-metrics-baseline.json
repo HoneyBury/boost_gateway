@@ -36,8 +36,8 @@
       "maximum": 20
     },
     "large_scripts_over_800": {
-      "baseline": 8,
-      "maximum": 8
+      "baseline": 5,
+      "maximum": 5
     },
     "workflow_script_dependencies": {
       "baseline": 47,
@@ -260,7 +260,7 @@
         "scripts/lib/monitoring_operability_contract.py",
         "scripts/lib/observability_evidence.py",
         "scripts/lib/observability_preflight.py",
-        "scripts/lib/operations_identity.py",
+        "scripts/lib/operations_host.py",
         "scripts/lib/perf_bench_runtime.py",
         "scripts/lib/perf_cli_support.py",
         "scripts/lib/perf_business_operations.py",
@@ -298,7 +298,7 @@
         "scripts/lib/sdk_distribution_contract.py",
         "scripts/lib/sdk_full_flow_runtime.py",
         "scripts/lib/subprocess_utils.py",
-        "scripts/lib/summary_utils.py",
+        "scripts/lib/workflow_catalog_contract.py",
         "scripts/lib/tooling_metrics.py"
       ],
       "other_script_files": [
