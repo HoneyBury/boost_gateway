@@ -6,7 +6,6 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
-import pwd
 import socket
 import subprocess
 from collections.abc import Mapping
@@ -14,6 +13,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+try:
+    import pwd
+except ImportError:  # pragma: no cover - Windows import safety
+    pwd = None  # type: ignore[assignment]
 
 
 REQUIRED_PROVENANCE_KEYS = {
@@ -110,6 +114,8 @@ def _operator(environment: Mapping[str, str]) -> dict[str, Any]:
         ):
             raise OperationsIdentityError("SUDO_USER/SUDO_UID identity is invalid")
         return {"name": sudo_user, "uid": int(sudo_uid), "source": "sudo"}
+    if pwd is None or not hasattr(os, "getuid"):
+        raise OperationsIdentityError("process uid identity is unavailable on this platform")
     uid = os.getuid()
     try:
         name = pwd.getpwuid(uid).pw_name

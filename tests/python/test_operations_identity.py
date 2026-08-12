@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.lib.operations_host import (
     OperationsIdentityError,
@@ -61,6 +63,26 @@ class OperationsIdentityTest(unittest.TestCase):
             with self.assertRaisesRegex(OperationsIdentityError, "SUDO_USER"):
                 collect_operations_identity(
                     environment={"SUDO_USER": "operator"},
+                    machine_id_path=root / "machine-id",
+                    boot_id_path=root / "boot-id",
+                    os_release_path=root / "os-release",
+                )
+
+    def test_reports_unsupported_process_identity_without_breaking_imports(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "machine-id").write_text("host", encoding="utf-8")
+            (root / "boot-id").write_text("boot", encoding="utf-8")
+            (root / "os-release").write_text(
+                "ID=ubuntu\nVERSION_ID=24.04\n", encoding="utf-8"
+            )
+            with (
+                mock.patch("scripts.lib.evidence_provenance.pwd", None),
+                mock.patch.object(os, "environ", {}),
+                self.assertRaisesRegex(OperationsIdentityError, "unavailable"),
+            ):
+                collect_operations_identity(
+                    environment={},
                     machine_id_path=root / "machine-id",
                     boot_id_path=root / "boot-id",
                     os_release_path=root / "os-release",
