@@ -27,7 +27,7 @@ Leaderboard。主要维护边界如下：
 
 ## 为什么工具面会膨胀
 
-截至本页更新时，仓库有 208 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
+截至本页更新时，仓库有 208 个受治理的 Python/POSIX shell 脚本、18 个 workflow，脚本约
 60,100 行、workflow 约 5,500 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
@@ -115,6 +115,10 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 5. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
    拼装脚本尚未声明的参数。
 6. 运行期产物只写 `runtime/` 或显式临时目录，不写回 `scripts/`、`docs/` 或源目录。
+7. 脚本运行主机以 `platform-production-boundaries.json` 为准，当前仅支持 Linux 和 macOS。
+   禁止新增 Windows OS 分支、`.exe` 原生入口、PowerShell/批处理脚本或 Windows 虚拟环境路径；
+   NuGet 中的托管 `.dll` 是跨平台包内容，不代表 Windows 原生支持。恢复 Windows 支持必须先有
+   ADR、工具链、原生证据和平台基线评审。
 
 ## 修改 Workflow 的规则
 
@@ -147,8 +151,9 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
 canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
-片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/55/25、20/8、47、
-103、0、5 和 0；55 个 library 已全部进入 2026-08-12 冻结基线，当前 reviewed exception 为 0。
+片段、Windows 兼容分支，以及没有显式 Python 单测引用的 CLI。当前值分别是
+23、127、55/55/25、20/5、47、103、0、5、0 和 0；55 个 library 已全部进入 2026-08-12
+冻结基线，当前 reviewed exception 为 0。
 “其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
 `main()` 绕过增长审查。
 

@@ -51,6 +51,10 @@
       "baseline": 0,
       "maximum": 0
     },
+    "windows_compatibility_fragments": {
+      "baseline": 0,
+      "maximum": 0
+    },
     "untested_cli": {
       "baseline": 0,
       "maximum": 0,

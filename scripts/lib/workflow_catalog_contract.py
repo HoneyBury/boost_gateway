@@ -220,13 +220,22 @@ def evaluate_catalog_foundation(
     boundary_path = root / "docs" / "platform-production-boundaries.json"
     boundary = json.loads(read(boundary_path)) if boundary_path.exists() else {}
     boundary_workflows = set(boundary.get("workflows", {}))
-    production_platforms = boundary.get("policy", {}).get("production_platforms", [])
-    release_platforms = boundary.get("policy", {}).get("release_platforms", [])
+    boundary_policy = boundary.get("policy", {})
+    production_platforms = boundary_policy.get("production_platforms", [])
+    release_platforms = boundary_policy.get("release_platforms", [])
+    script_host_platforms = boundary_policy.get("script_host_platforms", [])
+    unsupported_platforms = boundary_policy.get("unsupported_platforms", [])
     add(checks, "platform-boundary:production-platforms",
         production_platforms == ["linux-x64", "linux-arm64", "macos-arm64"],
         f"production_platforms={production_platforms}")
     add(checks, "platform-boundary:release-platforms", release_platforms == ["linux-x64"],
         f"release_platforms={release_platforms}")
+    add(checks, "platform-boundary:script-host-platforms",
+        script_host_platforms == ["linux", "macos"],
+        f"script_host_platforms={script_host_platforms}")
+    add(checks, "platform-boundary:unsupported-platforms",
+        unsupported_platforms == ["windows"],
+        f"unsupported_platforms={unsupported_platforms}")
     add(checks, "platform-boundary:exact-workflow-set", boundary_workflows == actual,
         f"boundary={sorted(boundary_workflows)} actual={sorted(actual)}")
     for stem in (

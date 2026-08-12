@@ -221,3 +221,11 @@ contract；迁移同时修复了 `prepare-reboot` 中路径变量遮蔽 marker �
 趋势、采样器、失败归档和持续失败政策合入既有 long-soak contract。原入口、参数、summary 字段、
 退出码和测试 patch 边界保持不变。下一轮只剩五个 >800 热点，进入恢复或 Redis 工具前必须先有
 录制 fixture、资源 ownership 注入和 cleanup 失败测试。
+
+### 平台兼容面收口
+
+当前平台事实源只维护 Linux x64、Linux ARM64 和 macOS ARM64，Windows 暂不支持。脚本层已删除
+Windows 可执行文件发现、PowerShell 采样、`taskkill`、Windows venv 布局和 SDK 原生 DLL 分支；
+受治理脚本类型收紧为 Python 与 POSIX shell。tooling metrics 将 Windows 兼容片段冻结为 0，防止
+在没有 ADR、工具链和原生验证的情况下重新累积名义兼容代码。NuGet 的托管 `.dll` 仍作为跨平台
+.NET 包契约保留，不计为 Windows 原生支持。
