@@ -51,6 +51,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Python test dependencies
+        shell: bash
+        run: |
+          test_python=$(command -v python3)
+          "$test_python" -m pip install --disable-pip-version-check -r requirements-dev.txt
+          echo "PYTHON_TEST_EXECUTABLE=$test_python" >> "$GITHUB_ENV"
+
       - name: Restore sccache cache
         id: restore-sccache
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
@@ -198,6 +205,10 @@ jobs:
         shell: bash
         run: python3 scripts/gates/governance/check_workflow_catalog.py
 
+      - name: Tooling metrics drift gate
+        shell: bash
+        run: python3 scripts/gates/governance/check_tooling_metrics.py
+
       - name: Current documentation contract gate
         shell: bash
         run: python3 scripts/gates/governance/check_current_docs_install.py
@@ -209,9 +220,7 @@ jobs:
       - name: Repository governance gate
         shell: bash
         run: |
-          python3 -m unittest tests.python.test_repository_governance
-          python3 -m unittest tests.python.test_release_source_authorization
-          python3 -m unittest tests.python.test_workflow_supply_chain_governance
+          "$PYTHON_TEST_EXECUTABLE" -m pytest -q tests/python
           python3 scripts/gates/governance/check_repository_governance.py
 
       - name: Next minor decision gate

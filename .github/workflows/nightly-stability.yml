@@ -41,41 +41,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Setup Ninja
-        if: runner.os != 'Linux' || runner.arch != 'ARM64'
-        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
-
-      - name: Setup CMake
-        if: runner.os != 'Linux' || runner.arch != 'ARM64'
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-
-      - name: Setup Python
-        if: runner.os == 'Linux' && runner.arch != 'ARM64'
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - name: Setup governed C++ Conan toolchain
+        uses: ./.github/actions/setup-cpp-conan
         with:
-          python-version: "3.12"
-
-      - name: Ensure pinned Conan virtual environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/tools/ensure_conan_venv.py \
-            --venv /opt/boost-gateway/tools/conan-2.8.1-py3.12 \
-            --conan-version 2.8.1 \
-            --offline \
-            --github-env "$GITHUB_ENV" \
-            --github-path "$GITHUB_PATH"
-
-      - name: Resolve persistent runner caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/tools/resolve_runner_cache.py \
-            --build-type Release \
-            --profile conan/profiles/linux-gcc-x64 \
-            --lockfile conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock \
-            --github-env "$GITHUB_ENV" \
-            --summary-path runtime/validation/runner-cache-identity.json
+          conan-venv-offline: "true"
+          cache-profile: conan/profiles/linux-gcc-x64
+          cache-lockfile: conan/locks/linux-gcc-x64-release-nogrpc-nosqlite.lock
+          run-bootstrap: "false"
 
       - name: Bootstrap Conan home
         shell: bash
@@ -153,11 +125,10 @@ jobs:
 
       - name: Render stability summary
         if: always()
-        shell: bash
-        run: |
-          if [ -f runtime/validation/nightly-stability-soak-summary.json ]; then
-            python3 scripts/tools/render_validation_summary.py runtime/validation/nightly-stability-soak-summary.json --title "Nightly Stability" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: runtime/validation/nightly-stability-soak-summary.json
+          title: Nightly Stability
 
       - name: Upload stability summary
         if: always()

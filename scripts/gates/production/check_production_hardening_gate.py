@@ -45,7 +45,7 @@ def validate_h0(checks: list[dict[str, Any]]) -> None:
     add(checks, f"h0:{workflow}:concurrency", "group: production-gates-" in text, "workflow has stable concurrency group")
     add(checks, f"h0:{workflow}:p5", "scripts/gates/production/verify_production_resilience_gate.py" in text, "workflow exposes P5 resilience gate")
     add(checks, f"h0:{workflow}:p6", "scripts/gates/production/verify_production_evidence_gate.py" in text, "workflow exposes P6 evidence gate")
-    add(checks, f"h0:{workflow}:summary-render", "scripts/tools/render_validation_summary.py" in text, "workflow renders GitHub Step Summary")
+    add(checks, f"h0:{workflow}:summary-render", "uses: ./.github/actions/render-validation-summary" in text, "workflow renders GitHub Step Summary through the shared action")
     add(checks, f"h0:{workflow}:artifact", "actions/upload-artifact@" in text, "workflow archives evidence artifacts")
 
 

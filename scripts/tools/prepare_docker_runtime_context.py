@@ -3,6 +3,17 @@
 
 from __future__ import annotations
 
+if __package__ in {None, ""}:
+    import sys
+    from pathlib import Path
+
+    repo_import_root = next(
+        parent
+        for parent in Path(__file__).resolve().parents
+        if (parent / "scripts" / "__init__.py").is_file()
+    )
+    sys.path.insert(0, str(repo_import_root))
+
 import argparse
 import hashlib
 import json
@@ -10,6 +21,8 @@ import shutil
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
+
+from scripts.lib.release_package import validate_runtime_dependencies
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -21,16 +34,6 @@ BINARIES = {
     "v2_battle_backend": Path("examples/v2_battle_backend/v2_battle_backend"),
     "v2_match_backend": Path("examples/v2_match_backend/v2_match_backend"),
     "v2_leaderboard_backend": Path("examples/v2_leaderboard_backend/v2_leaderboard_backend"),
-}
-ALLOWED_RUNTIME_LIBRARIES = {
-    "libc.so.6",
-    "libgcc_s.so.1",
-    "libm.so.6",
-    "libstdc++.so.6",
-}
-ALLOWED_RUNTIME_LOADERS = {
-    "/lib/ld-linux-aarch64.so.1",
-    "/lib64/ld-linux-x86-64.so.2",
 }
 
 
@@ -51,27 +54,6 @@ def resolve_binary(build_dir: Path, relative: Path, configuration: str | None) -
             return candidate
     searched = ", ".join(str(path) for path in candidates)
     raise FileNotFoundError(f"missing built binary {relative.name}; searched: {searched}")
-
-
-def validate_runtime_dependencies(binary: Path, ldd_output: str) -> list[str]:
-    if "not found" in ldd_output:
-        raise RuntimeError(f"{binary}: unresolved runtime dependency\n{ldd_output}")
-    libraries: list[str] = []
-    for raw_line in ldd_output.splitlines():
-        line = raw_line.strip()
-        loader = line.split(maxsplit=1)[0] if line else ""
-        if not line or line.startswith("linux-vdso.so") or loader in ALLOWED_RUNTIME_LOADERS:
-            continue
-        name = line.split(" => ", 1)[0].split()[0]
-        libraries.append(name)
-    unexpected = sorted(set(libraries) - ALLOWED_RUNTIME_LIBRARIES)
-    if unexpected:
-        names = ", ".join(unexpected)
-        raise RuntimeError(
-            f"{binary}: non-system runtime libraries remain ({names}); "
-            "the Conan release graph must link third-party dependencies statically"
-        )
-    return sorted(set(libraries))
 
 
 def git_revision() -> str:

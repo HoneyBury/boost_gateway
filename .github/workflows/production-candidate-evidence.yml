@@ -97,25 +97,21 @@ jobs:
         shell: bash
         run: test "${{ inputs.include_kind }}" != true
 
-      - name: Setup Ninja
-        if: runner.os != 'Linux' || runner.arch != 'ARM64'
-        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
-
-      - name: Setup CMake
-        if: runner.os != 'Linux' || runner.arch != 'ARM64'
-        uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
-
       - name: Setup Go
         uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: operator/boostgateway-operator/go.mod
           cache-dependency-path: operator/boostgateway-operator/go.sum
 
-      - name: Setup Python
-        if: runner.os == 'Linux' && runner.arch != 'ARM64'
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+      - name: Setup governed C++ Conan toolchain
+        uses: ./.github/actions/setup-cpp-conan
         with:
-          python-version: "3.12"
+          conan-venv-offline: "true"
+          conan-venv: ${{ env.BOOST_GATEWAY_CONAN_VENV }}
+          cache-root: ${{ env.PRODUCTION_CACHE_ROOT }}
+          cache-profile: ${{ env.PRODUCTION_CONAN_PROFILE }}
+          cache-lockfile: ${{ env.PRODUCTION_RELEASE_LOCKFILE }}
+          run-bootstrap: "false"
 
       - name: Bootstrap pinned kind and kubectl
         if: inputs.include_kind
@@ -124,29 +120,6 @@ jobs:
           python3 scripts/tools/bootstrap_kind_tools.py \
             --install-dir "/opt/boost-gateway/tools/kubernetes-v0.32.0-v1.36.1" \
             --github-path "$GITHUB_PATH"
-
-      - name: Verify pinned offline Conan virtual environment
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/tools/ensure_conan_venv.py \
-            --venv "$BOOST_GATEWAY_CONAN_VENV" \
-            --conan-version 2.8.1 \
-            --offline \
-            --github-env "$GITHUB_ENV" \
-            --github-path "$GITHUB_PATH"
-
-      - name: Resolve persistent runner caches
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/tools/resolve_runner_cache.py \
-            --build-type Release \
-            --profile "$PRODUCTION_CONAN_PROFILE" \
-            --lockfile "$PRODUCTION_RELEASE_LOCKFILE" \
-            --cache-root "$PRODUCTION_CACHE_ROOT" \
-            --github-env "$GITHUB_ENV" \
-            --summary-path runtime/validation/runner-cache-identity.json
 
       - name: Fixed runner preflight
         shell: bash
@@ -254,15 +227,11 @@ jobs:
 
       - name: Render candidate summary
         if: always()
-        shell: bash
-        run: |
-          summaries=()
-          for path in runtime/validation/r0-*-summary.json runtime/validation/n5-*-summary.json; do
-            if [ -f "$path" ]; then summaries+=("$path"); fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/r0-*-summary.json
+            runtime/validation/n5-*-summary.json
 
       - name: Upload production candidate evidence
         if: always()

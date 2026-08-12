@@ -1,0 +1,173 @@
+{
+  "schema_version": 1,
+  "description": "Maintained workflow lifecycle and policy catalog. Operational runner expressions remain in .github/runner-matrix.json.",
+  "workflows": {
+    "ci": {
+      "display_name": "Mainline / Build, Test & Governance",
+      "triggers": ["pull_request", "workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "github-hosted",
+      "default_runner": "\"ubuntu-latest\"",
+      "lifecycle": "required",
+      "strict_offline_conan": false
+    },
+    "conan-validate": {
+      "display_name": "Dependencies / Conan Graph Validation",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "debug-symbols": {
+      "display_name": "Release / Linux Debug Symbols Candidate",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "grpc-experimental": {
+      "display_name": "Experimental / gRPC",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "experimental",
+      "strict_offline_conan": true
+    },
+    "jwks-rotation": {
+      "display_name": "Security / JWKS Rotation Drill",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "long-soak-capacity": {
+      "display_name": "Stability / Fixed-Runner Soak & Capacity",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "macos-arm64": {
+      "display_name": "Platform / macOS ARM64 Production Candidate",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "native-macos",
+      "default_runner": "[\"self-hosted\",\"macOS\",\"ARM64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "nightly-stability": {
+      "display_name": "Stability / Bounded Soak",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "perf-regression": {
+      "display_name": "Performance / Baseline & Regression",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"actions": "read", "contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "preprod-evidence": {
+      "display_name": "Production / Preproduction Evidence",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "production-candidate-evidence": {
+      "display_name": "Production / Candidate Evidence",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "production-gates": {
+      "display_name": "Production / Gate Diagnostics",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    },
+    "production-readiness": {
+      "display_name": "Production / Readiness Decision",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"actions": "read", "contents": "read"},
+      "runner_class": "github-hosted",
+      "default_runner": "\"ubuntu-latest\"",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "release": {
+      "display_name": "Release / Package & Publish",
+      "triggers": ["tag_push", "workflow_dispatch"],
+      "permissions": {"attestations": "write", "contents": "write", "id-token": "write"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "required",
+      "strict_offline_conan": true
+    },
+    "release-asset-verification": {
+      "display_name": "Release / Published Asset Verification",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"attestations": "read", "contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "sdk-distribution": {
+      "display_name": "SDK / Wheel & NuGet Candidate",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": false
+    },
+    "security-maintenance": {
+      "display_name": "Security / Dependency, Sanitizer & Fuzz Maintenance",
+      "triggers": ["schedule", "workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "github-hosted",
+      "default_runner": "\"ubuntu-latest\"",
+      "lifecycle": "required",
+      "strict_offline_conan": false
+    },
+    "specialized-e2e": {
+      "display_name": "Infrastructure / Redis, Raft & Operator E2E",
+      "triggers": ["workflow_dispatch"],
+      "permissions": {"contents": "read"},
+      "runner_class": "self-hosted",
+      "default_runner": "[\"self-hosted\",\"Linux\",\"X64\"]",
+      "lifecycle": "maintained",
+      "strict_offline_conan": true
+    }
+  },
+  "retired_workflows": [
+    "perf-commit-check.yml",
+    "production-evidence.yml",
+    "production-resilience.yml"
+  ]
+}

@@ -19,7 +19,6 @@ import json
 import shutil
 import subprocess
 import sys
-import tarfile
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -28,9 +27,12 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.tools.prepare_docker_runtime_context import validate_runtime_dependencies
-from scripts.tools.verify_release_archive import verify_archive
 from scripts.lib.evidence_provenance import build_evidence_provenance
+from scripts.lib.release_package import (
+    extract_archive,
+    validate_runtime_dependencies,
+    verify_archive,
+)
 
 
 REQUIRED_BINARIES = (
@@ -80,16 +82,6 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
-
-
-def extract_archive(archive: Path, destination: Path) -> None:
-    destination = destination.resolve()
-    with tarfile.open(archive, "r:gz") as bundle:
-        for member in bundle.getmembers():
-            target = (destination / member.name).resolve()
-            if not target.is_relative_to(destination):
-                raise RuntimeError(f"unsafe archive member: {member.name}")
-        bundle.extractall(destination, filter="data")
 
 
 def inspect_installed_binaries(package_root: Path, expected_platform: str) -> list[dict[str, object]]:

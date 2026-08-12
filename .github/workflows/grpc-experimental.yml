@@ -191,21 +191,12 @@ jobs:
 
       - name: Render gRPC validation summary
         if: always()
-        shell: bash
-        run: |
-          set -euo pipefail
-          summaries=()
-          for path in \
-            runtime/validation/grpc-fixed-runner-preflight-summary.json \
-            runtime/validation/grpc-sdk-package-consumer-summary.json \
-            runtime/validation/grpc-fixed-runner-decision-summary.json; do
-            if [ -f "$path" ]; then
-              summaries+=("$path")
-            fi
-          done
-          if [ "${#summaries[@]}" -gt 0 ]; then
-            python3 scripts/tools/render_validation_summary.py "${summaries[@]}" >> "$GITHUB_STEP_SUMMARY"
-          fi
+        uses: ./.github/actions/render-validation-summary
+        with:
+          paths: |
+            runtime/validation/grpc-fixed-runner-preflight-summary.json
+            runtime/validation/grpc-sdk-package-consumer-summary.json
+            runtime/validation/grpc-fixed-runner-decision-summary.json
 
       - name: Upload gRPC validation artifacts
         if: always()

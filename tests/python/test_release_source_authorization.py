@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -173,7 +174,7 @@ class ReleaseSourceAuthorizationTest(unittest.TestCase):
         summary = self.root / "authorization-summary.json"
         completed = subprocess.run(
             [
-                "python3",
+                sys.executable,
                 str(Path(authorization.__file__)),
                 "--root",
                 str(self.root),

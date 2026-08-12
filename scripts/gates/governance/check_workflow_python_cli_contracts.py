@@ -15,9 +15,13 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[3]
 WORKFLOWS_ROOT = ROOT / ".github" / "workflows"
+ACTIONS_ROOT = ROOT / ".github" / "actions"
 INVENTORY_PATH = ROOT / "docs" / "script-inventory.json"
 RUN_PATTERN = re.compile(r"^(?P<indent>\s*)run:\s*(?P<body>.*)$")
-PYTHON_INVOCATION_PATTERN = re.compile(r"\bpython(?:3)?\b\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?")
+PYTHON_INVOCATION_PATTERN = re.compile(
+    r"(?:\bpython(?:3(?:\.\d+)?)?\b|['\"]?\$[A-Z][A-Z0-9_]*PYTHON['\"]?)"
+    r"\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
+)
 LONG_OPTION_PATTERN = re.compile(r"(?<![\w-])(--[A-Za-z0-9][A-Za-z0-9-]*)(?:(?:=|\s)|$)")
 
 
@@ -152,6 +156,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--inventory", type=Path, default=INVENTORY_PATH)
     parser.add_argument("--workflows-root", type=Path, default=WORKFLOWS_ROOT)
+    parser.add_argument("--actions-root", type=Path, default=ACTIONS_ROOT)
     parser.add_argument(
         "--summary-path",
         type=Path,
@@ -161,18 +166,29 @@ def main() -> int:
 
     inventory_path = args.inventory if args.inventory.is_absolute() else ROOT / args.inventory
     workflows_root = args.workflows_root if args.workflows_root.is_absolute() else ROOT / args.workflows_root
+    actions_root = args.actions_root if args.actions_root.is_absolute() else ROOT / args.actions_root
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     inventory = load_json(inventory_path)
     checks: list[dict[str, Any]] = []
     add(checks, "inventory-json", bool(inventory), f"{inventory_path} is valid JSON")
     add(checks, "workflows-root-exists", workflows_root.exists(), f"{workflows_root} exists")
+    add(checks, "actions-root-exists", actions_root.exists(), f"{actions_root} exists")
 
     declared_option_cache: dict[str, tuple[set[str], str]] = {}
     invocations: list[dict[str, Any]] = []
     if workflows_root.exists():
-        for workflow_path in sorted(workflows_root.glob("*.yml")):
-            invocations.extend(extract_invocations(workflow_path))
+        automation_paths = sorted(
+            [*workflows_root.glob("*.yml"), *workflows_root.glob("*.yaml")]
+        )
+        if actions_root.exists():
+            automation_paths.extend(
+                sorted(
+                    [*actions_root.glob("*/action.yml"), *actions_root.glob("*/action.yaml")]
+                )
+            )
+        for automation_path in automation_paths:
+            invocations.extend(extract_invocations(automation_path))
 
     add(checks, "python-invocations-discovered", bool(invocations), "workflow Python script invocations were discovered")
 
@@ -212,6 +228,7 @@ def main() -> int:
             "summary_path": str(summary_path),
             "inventory_path": str(inventory_path),
             "workflows_root": str(workflows_root),
+            "actions_root": str(actions_root),
         },
         "invocations": invocations,
     }

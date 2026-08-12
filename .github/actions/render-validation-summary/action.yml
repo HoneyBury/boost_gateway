@@ -1,0 +1,54 @@
+name: Render validation summaries
+description: Resolve governed summary paths and append their Markdown rendering to the job summary.
+
+inputs:
+  paths:
+    description: Newline-delimited exact paths or shell glob patterns under the checkout.
+    required: true
+  title:
+    description: Optional title passed to the summary renderer.
+    required: false
+    default: ""
+  require-any:
+    description: Fail when no matching summary exists.
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Resolve and render validation summaries
+      shell: bash
+      env:
+        SUMMARY_PATH_PATTERNS: ${{ inputs.paths }}
+        SUMMARY_TITLE: ${{ inputs.title }}
+        SUMMARY_REQUIRE_ANY: ${{ inputs.require-any }}
+      run: |
+        set -euo pipefail
+        shopt -s nullglob
+        summaries=()
+        declare -A observed=()
+        while IFS= read -r pattern; do
+          [ -n "$pattern" ] || continue
+          while IFS= read -r path; do
+            [ -f "$path" ] || continue
+            if [ -z "${observed[$path]:-}" ]; then
+              summaries+=("$path")
+              observed["$path"]=1
+            fi
+          done < <(compgen -G "$pattern" || true)
+        done <<< "$SUMMARY_PATH_PATTERNS"
+
+        if [ "${#summaries[@]}" -eq 0 ]; then
+          echo "No validation summaries matched the configured paths."
+          if [ "$SUMMARY_REQUIRE_ANY" = "true" ]; then
+            exit 1
+          fi
+          exit 0
+        fi
+
+        args=("${summaries[@]}")
+        if [ -n "$SUMMARY_TITLE" ]; then
+          args+=(--title "$SUMMARY_TITLE")
+        fi
+        python3 scripts/tools/render_validation_summary.py "${args[@]}" >> "$GITHUB_STEP_SUMMARY"

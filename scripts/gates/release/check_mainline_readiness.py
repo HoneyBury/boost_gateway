@@ -25,6 +25,15 @@ def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> N
     checks.append({"name": name, "passed": passed, "detail": detail})
 
 
+def process_supervisor_kills_process_group(source: str) -> bool:
+    """Recognize group signalling without binding the gate to a PID variable name."""
+    return (
+        "const pid_t process_group = -" in source
+        and "::kill(process_group, SIGTERM)" in source
+        and "::kill(process_group, SIGKILL)" in source
+    )
+
+
 def validate_p0_docs(checks: list[dict[str, Any]]) -> None:
     readme = read("README.md")
     docs = read("docs/README.md")
@@ -119,7 +128,7 @@ def validate_p2_evidence(checks: list[dict[str, Any]]) -> None:
         "include_capacity_baseline",
         "include_observability_runtime",
         "actions/upload-artifact@",
-        "scripts/tools/render_validation_summary.py",
+        "uses: ./.github/actions/render-validation-summary",
     ):
         add(checks, f"p2:workflow:{token}", token in workflow, f"production gates workflow includes {token}")
 
@@ -289,9 +298,7 @@ def validate_p4_integration_stability(checks: list[dict[str, Any]]) -> None:
     add(
         checks,
         "p4:process-supervisor-kills-process-group",
-        "const pid_t process_group = -state.pid" in supervisor
-        and "::kill(process_group, SIGTERM)" in supervisor
-        and "::kill(process_group, SIGKILL)" in supervisor,
+        process_supervisor_kills_process_group(supervisor),
         "POSIX ProcessSupervisor terminates child process groups, not only the direct child PID",
     )
     add(

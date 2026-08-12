@@ -2,7 +2,7 @@
 
 BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回归和 fixed-runner 证据是两个不同场景：
 
-- `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build/test/gate 回归。
+- `ci.yml` 可在 GitHub-hosted `ubuntu-latest` 上执行，用于无 self-hosted Linux runner 时的主线 Conan build、完整 CTest、完整 Python pytest 和 gate 回归。
 - `security-maintenance.yml` 固定在 GitHub-hosted `ubuntu-latest`，定期执行依赖漏洞、sanitizer 和 fuzz 检查；不能接受 runner 覆盖，也不接触 production-validation 主机。
 - `release.yml` 与其他 fixed-runner workflow 强制使用 runner 本地 Conan 虚拟环境和持久 cache，不再把 GitHub-hosted runner 作为回退路径。
 - Linux release/performance/stability/capacity/production evidence/long soak 以 Linux self-hosted runner 作为事实源；macOS ARM64 构建、R5、JWKS 和平台基线只使用原生 Apple Silicon runner。
@@ -11,7 +11,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 
 | Workflow | Actions 显示名 | 触发方式 | 用途 |
 |---|---|---|---|
-| `ci.yml` | Mainline / Build, Test & Governance | PR / 手动 | `main` PR 的 hosted 有界构建、测试、Conan 验证和静态治理；保留手动诊断入口 |
+| `ci.yml` | Mainline / Build, Test & Governance | PR / 手动 | `main` PR 的 hosted 有界构建、完整 CTest/Python 测试、Conan 验证和静态治理；保留手动诊断入口 |
 | `conan-validate.yml` | Dependencies / Conan Graph Validation | 手动 | Conan 依赖图验证 |
 | `debug-symbols.yml` | Release / Linux Debug Symbols Candidate | 手动 | RelWithDebInfo runtime/symbol pair、build-id/debuglink、受控崩溃符号化候选证据 |
 | `grpc-experimental.yml` | Experimental / gRPC | 手动 | gRPC 可选依赖图、构建、SDK consumer 与决策边界 |
@@ -25,7 +25,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 | `production-readiness.yml` | Production / Readiness Decision | 手动 | 跨 workflow 汇聚 artifact，生成 R2/R3 准入结论 |
 | `release.yml` | Release / Package & Publish | v* tag / 手动 | Linux x64 runtime/symbol/wheel、x64 RID NuGet、测试与门禁；tag 才发布/attest |
 | `release-asset-verification.yml` | Release / Published Asset Verification | 手动 | 从不可移动 tag checkout 验收 runtime/symbol、wheel/NuGet、checksum、consumer 和 attestations |
-| `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan 与两个 60 秒 libFuzzer target；三个 job 均有硬超时 |
+| `security-maintenance.yml` | Security / Dependency, Sanitizer & Fuzz Maintenance | 每周 / 手动 | hosted-only OSV、ASan/UBSan、TSan 与两个 60 秒 libFuzzer target；四个 job 均有硬超时 |
 | `sdk-distribution.yml` | SDK / Wheel & NuGet Candidate | 手动 | Linux x64 wheel/NuGet clean install、真实 full-flow、SBOM 与 checksum 候选证据 |
 | `specialized-e2e.yml` | Infrastructure / Redis, Raft & Operator E2E | 手动 | Raft/Redis/Operator 专项 E2E |
 | `macos-arm64.yml` | Platform / macOS ARM64 Production Candidate | 手动 | 原生 ARM64 Conan build、CTest、gateway restart R5、有界性能/稳定性、UUID-bound dSYM、SDK consumer 与候选资产 |
@@ -39,7 +39,7 @@ BoostGateway 使用 GitHub Actions 进行持续集成和发布。当前主线回
 - **SDK 分发候选**: Ubuntu 22.04/glibc 2.35 x64 + Python 3.12、.NET 8、Syft
 - **Linux 调试符号候选**: Linux x64 + GNU binutils、支持 build-id 的 linker、Syft
 - **JWKS 轮换证据**: `linux-x64` 或 `macos-arm64` 原生 runner + 实际 OS/arch、OpenSSL、localhost bind、临时 CA trust 和对应平台严格离线 Conan 图
-- **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.10+, Go 1.21+
+- **预装工具**: CMake 3.21+, Ninja, GCC 11+, Python 3.12, Go 1.21+
 - **可选**: sccache, Conan 2, Redis, Docker
 
 ### Conan fixed-runner 缓存
@@ -51,6 +51,14 @@ Conan 图和 remote 配置。新机器先按 lockfile 预热，后续 fixed-runn
 GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 `conan-validate.yml` 是唯一允许操作者显式选择批准 remote 的预热入口；
 `production-readiness.yml` 不运行 Conan。最终汇聚只能使用同一个候选提交产生的 R0、2h、R4、R5、R6；核心 summary 的 provenance 会校验 checkout、workflow/run、runner、构建配置和 Conan lockfile 摘要。
+
+`ci.yml` 在 Conan helper 修改 PATH 前固定 setup-python 的解释器用于完整 pytest；Conan venv
+只承载 Conan，不能用来隐式提供或运行 `requirements-dev.txt` 中的测试依赖。
+
+Release、long soak、nightly、preprod 和 production-candidate workflow 统一通过
+`.github/actions/setup-cpp-conan` 安装 CMake/Python、验证离线 Conan venv 并解析持久 cache
+identity。它们保留各自的 `--no-remote` bootstrap 和 build/preflight 步骤，以维持原有执行顺序、
+失败定位和 artifact 边界；不要把这段初始化重新复制回 job。
 
 生产证据 workflow 的 `platform` 必须显式选择其准入平台；profile、lockfile、build
 directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.6 的 Release 与
@@ -83,7 +91,10 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 
 ## 配置源
 
+- Workflow 生命周期、触发、权限和 runner 类别: `docs/workflow-catalog.json`
 - Runner 标签和默认值: `.github/runner-matrix.json`
+- Summary path 展开、去重和 Step Summary 渲染: `.github/actions/render-validation-summary/action.yml`
+- Fixed-runner CMake/Python/Conan/cache 初始化: `.github/actions/setup-cpp-conan/action.yml`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
 - 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA 和同行 release tag 注释；catalog gate 会阻断浮动 tag、未知 Action 和权限扩大
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）

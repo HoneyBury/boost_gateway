@@ -461,13 +461,20 @@ def main() -> int:
     add(
         checks,
         "workflow:preprod-evidence:isolated-pinned-conan",
-        all(
-            token in preprod
-            for token in (
-                "scripts/tools/ensure_conan_venv.py",
-                "--conan-version 2.8.1",
-                "--offline",
-                '--github-path "$GITHUB_PATH"',
+        (
+            all(
+                token in preprod
+                for token in (
+                    "scripts/tools/ensure_conan_venv.py",
+                    "--conan-version 2.8.1",
+                    "--offline",
+                    '--github-path "$GITHUB_PATH"',
+                )
+            )
+            or (
+                uses_composite_conan_action(preprod)
+                and 'conan-venv-offline: "true"' in preprod
+                and composite_uses_pinned_venv(composite_conan)
             )
         ),
         "preprod evidence requires the pinned isolated Conan virtual environment without network installation",

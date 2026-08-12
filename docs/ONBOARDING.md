@@ -19,6 +19,14 @@
 - **Redis**: 用于集群相关功能测试
 - **Docker / OrbStack**: 用于容器化部署测试
 
+脚本回归测试使用独立的轻量开发环境，不向固定 Conan 环境混装测试依赖：
+
+```bash
+python3.12 -m venv .venv/dev
+.venv/dev/bin/python -m pip install -r requirements-dev.txt
+.venv/dev/bin/python -m pytest -q tests/python
+```
+
 首次配置前可检查关键工具：
 
 ```bash
@@ -31,6 +39,26 @@ git --version
 ```
 
 ## 快速开始
+
+任何构建前先运行本地诊断。它会明确报告 Python 版本、基础工具以及现有 build tree
+记录的 CMake/CTest；Ubuntu 22.04 的系统 `python3` 可能仍是 3.10，因此不要省略
+`python3.12`：
+
+```bash
+python3.12 scripts/dev.py doctor
+```
+
+不要从 `scripts/` 中逐个猜测命令。先查看按维护领域整理的稳定入口；输出同时标明允许的
+运行环境、典型时长、外部副作用和权威操作文档：
+
+```bash
+python3.12 scripts/dev.py commands
+python3.12 scripts/dev.py commands --domain contributor
+python3.12 scripts/dev.py commands --domain release --json
+```
+
+`commands` 只展示受支持的 public entrypoint。内部 gate、producer 和 tool 是实现细节；除非
+对应 runbook 明确要求，否则新贡献者不应直接把它们加入 workflow 或文档。
 
 ### 克隆并准备 Conan
 
@@ -87,7 +115,7 @@ gRPC 和 SQLite 是独立实验/可选构建面，不应在首次开发构建中
 ### 运行首次测试
 
 ```bash
-python3 scripts/run_tests.py unit \
+python3.12 scripts/dev.py test unit \
   --build-dir build/contributor-debug \
   --timeout 300 \
   --verbose
@@ -96,13 +124,17 @@ python3 scripts/run_tests.py unit \
 ### 最快运行一个业务闭环
 
 ```bash
-./build/contributor-debug/examples/v2_gateway_demo/v2_gateway_demo --script
+python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 ```
 
-`--script` 不监听网络端口，也不要求先启动五个 backend。它会在进程内执行 login、
+该命令会增量构建 unit test 和 gateway demo、运行 unit 层，再用 `--script` 执行业务
+smoke。`--script` 不监听网络端口，也不要求先启动五个 backend。它会在进程内执行 login、
 room、ready、battle input、settlement 等基本交换，适合作为首次运行和 Gateway Runtime
 修改后的快速 smoke。真实多进程路径由 `project_v2_multi_process_tests` 和 Docker
 Compose 覆盖。
+
+排查 facade 本身时，可直接运行其最终业务命令：
+`build/contributor-debug/examples/v2_gateway_demo/v2_gateway_demo --script`。
 
 ### Docker 方式启动
 
@@ -231,7 +263,9 @@ clang-format -i <changed-files>
 
 | 门禁 | 命令 | 触发方式 |
 |---|---|---|
-| 本地构建+测试 | `cmake --build build/contributor-debug --parallel && python3 scripts/run_tests.py unit --build-dir build/contributor-debug --verbose` | 本地 |
+| 本地工具诊断 | `python3.12 scripts/dev.py doctor` | 本地 |
+| 本地构建+测试+业务 smoke | `python3.12 scripts/dev.py smoke --build-dir build/contributor-debug` | 本地 |
+| 脚本/workflow/文档治理和完整 Python 契约测试 | `.venv/dev/bin/python scripts/dev.py check` | 本地 |
 | PR build/test/governance | `linux-build-and-test` | 目标为 `main` 的 PR 自动触发 |
 | GitHub-hosted 主线回归 | `gh workflow run ci.yml --ref main -f runner='"ubuntu-latest"'` | 手动 |
 | 本地 RC 总门禁 | `python3 scripts/verify_release_candidate.py --skip-release-baseline --soak-profile smoke` | 本地/手动 |
@@ -276,6 +310,7 @@ python3 scripts/producers/collect_release_baseline.py --perf-preset business-cap
 | 文档 | 用途 |
 |---|---|
 | [架构总览](architecture-overview.md) | 组件、数据流、部署模型 |
+| [维护者指南](maintainer-guide.md) | 代码地图、脚本/workflow 治理、变更路径和验证分层 |
 | [当前状态](current-state.md) | 已实现能力的权威事实源 |
 | [Runner Inventory](runner-inventory.md) | GitHub Actions runner 拓扑单一事实源 |
 | [发布治理](release-governance.md) | 可靠性矩阵和发布检查清单 |

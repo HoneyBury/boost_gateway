@@ -130,6 +130,7 @@ bool ProcessSupervisor::health_check(const ProcessConfig& config) {
 
 bool ProcessSupervisor::start_all() {
     LOG_INFO("ProcessSupervisor: starting all {} process(es)", processes_.size());
+    supervisor_stopping_.store(false);
 
     bool all_ok = true;
 
@@ -169,13 +170,11 @@ bool ProcessSupervisor::start_all() {
 
 void ProcessSupervisor::stop_all() {
     LOG_INFO("ProcessSupervisor: stopping all processes");
-    supervisor_stopping_.store(true);
 
     for (auto& state : processes_) {
-        if (!state->running.load()) continue;
-        state->stopping.store(true);
         terminate_process(state->config, *state);
     }
+    supervisor_stopping_.store(true);
 
     for (auto& state : processes_) {
         if (state->monitor_thread.joinable()) {
@@ -224,7 +223,6 @@ bool ProcessSupervisor::restart_process(const std::string& name) {
     for (auto& state : processes_) {
         if (state->config.name != name) continue;
 
-        state->stopping.store(true);
         terminate_process(state->config, *state);
 
         if (state->monitor_thread.joinable()) {
@@ -364,26 +362,37 @@ void ProcessSupervisor::terminate_process(
 
     LOG_INFO("ProcessSupervisor: terminating '{}'", config.name);
 
-    if (state.pid <= 0) return;
+    const pid_t pid = state.pid;
+    state.stopping.store(true);
+    if (pid <= 0) return;
 
     // 1. Graceful signal the whole process group.
-    const pid_t process_group = -state.pid;
+    const pid_t process_group = -pid;
     ::kill(process_group, SIGTERM);
 
     // 2. Wait up to 5 seconds.
     for (int i = 0; i < 50; ++i) {
         int status = 0;
-        pid_t result = waitpid(state.pid, &status, WNOHANG);
-        if (result == state.pid) {
+        pid_t result = waitpid(pid, &status, WNOHANG);
+        if (result == pid) {
+            // The group leader may exit before a shell child. Do not leave a
+            // descendant holding inherited stdout/stderr descriptors open.
+            ::kill(process_group, SIGKILL);
+            return;
+        }
+        if (result < 0 && errno == ECHILD) {
+            // The monitor may have reaped the leader first. The process group
+            // can still contain descendants that inherited output handles.
+            ::kill(process_group, SIGKILL);
             return;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
 
     // 3. Force kill the whole process group.
-    LOG_WARN("ProcessSupervisor: force killing '{}' (PID {})", config.name, state.pid);
+    LOG_WARN("ProcessSupervisor: force killing '{}' (PID {})", config.name, pid);
     ::kill(process_group, SIGKILL);
-    waitpid(state.pid, nullptr, 0);
+    waitpid(pid, nullptr, 0);
 }
 
 // ===================================================================
@@ -418,6 +427,13 @@ bool ProcessSupervisor::spawn_posix(
     }
 
     state.pid = pid;
+
+    // The child also calls setpgid(), but doing so in the parent closes the
+    // fork/exec race before lifecycle signals target the new process group.
+    if (::setpgid(pid, pid) < 0 && errno != EACCES && errno != ESRCH) {
+        LOG_WARN("ProcessSupervisor: setpgid failed for '{}' (PID {}, error {})",
+                 config.name, pid, strerror(errno));
+    }
 
     LOG_DEBUG("ProcessSupervisor: spawned '{}' (PID {})", config.name, state.pid);
     return true;

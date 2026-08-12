@@ -69,6 +69,77 @@ jobs:
 
         self.assertEqual({"contents": "read"}, catalog.top_level_permissions(text))
 
+    def test_machine_catalog_covers_every_workflow(self) -> None:
+        payload = catalog.load_catalog()
+        rules = catalog.workflow_rules(payload)
+        actual = {path.stem for path in catalog.WORKFLOWS_ROOT.glob("*.yml")}
+
+        self.assertEqual(actual, set(rules))
+        self.assertTrue(
+            all("workflow_dispatch" in rule["triggers"] for rule in rules.values())
+        )
+
+    def test_runner_class_is_derived_from_operational_expression(self) -> None:
+        self.assertEqual("github-hosted", catalog.expected_runner_class('"ubuntu-latest"'))
+        self.assertEqual(
+            "native-macos",
+            catalog.expected_runner_class('["self-hosted","macOS","ARM64"]'),
+        )
+        self.assertEqual(
+            "self-hosted",
+            catalog.expected_runner_class('["self-hosted","Linux","X64"]'),
+        )
+
+    def test_shared_summary_action_is_local_and_reused(self) -> None:
+        action = catalog.ROOT / ".github/actions/render-validation-summary/action.yml"
+        self.assertTrue(action.is_file())
+        self.assertIn("compgen -G", action.read_text(encoding="utf-8"))
+        references = sum(
+            "uses: ./.github/actions/render-validation-summary"
+            in path.read_text(encoding="utf-8")
+            for path in catalog.WORKFLOWS_ROOT.glob("*.yml")
+        )
+        self.assertGreaterEqual(references, 6)
+
+    def test_offline_composite_allows_deferred_governed_bootstrap(self) -> None:
+        text = """uses: ./.github/actions/setup-cpp-conan
+with:
+  conan-venv-offline: "true"
+  run-bootstrap: "false"
+run: python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --no-remote
+"""
+
+        self.assertTrue(catalog.offline_composite_action_is_safe(text))
+
+    def test_offline_composite_rejects_deferred_remote_bootstrap(self) -> None:
+        text = """uses: ./.github/actions/setup-cpp-conan
+with:
+  conan-venv-offline: "true"
+  run-bootstrap: "false"
+run: python3 scripts/bootstrap_conan.py --conan-home "$CONAN_HOME" --allow-public
+"""
+
+        self.assertFalse(catalog.offline_composite_action_is_safe(text))
+
+    def test_fixed_runner_workflows_reuse_governed_conan_setup(self) -> None:
+        migrated = {
+            "long-soak-capacity.yml": 0,
+            "nightly-stability.yml": 0,
+            "preprod-evidence.yml": 0,
+            "production-candidate-evidence.yml": 1,
+            "release.yml": 0,
+        }
+        for filename, remaining_cache_resolvers in migrated.items():
+            text = (catalog.WORKFLOWS_ROOT / filename).read_text(encoding="utf-8")
+            with self.subTest(workflow=filename):
+                self.assertIn("uses: ./.github/actions/setup-cpp-conan", text)
+                self.assertTrue(catalog.offline_composite_action_is_safe(text))
+                self.assertNotIn("scripts/tools/ensure_conan_venv.py", text)
+                self.assertEqual(
+                    remaining_cache_resolvers,
+                    text.count("scripts/tools/resolve_runner_cache.py"),
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

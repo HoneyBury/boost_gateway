@@ -20,6 +20,63 @@ VALID_CATEGORIES = {
     "platform_wrapper",
     "legacy",
 }
+LIFECYCLE_FIELDS = {
+    "owner",
+    "domain",
+    "summary",
+    "documentation",
+    "support_level",
+    "execution_environment",
+    "typical_duration",
+    "side_effects",
+    "retirement_condition",
+}
+VALID_COMMAND_DOMAINS = {
+    "contributor",
+    "dependencies",
+    "governance",
+    "infrastructure",
+    "performance",
+    "platform",
+    "production",
+    "recovery",
+    "release",
+    "security",
+    "sdk",
+}
+GROWTH_EXCEPTION_FIELDS = {
+    "kind",
+    "domain",
+    "consumers",
+    "test",
+    "why_new_script",
+    "replaces",
+    "retirement_condition",
+    "temporary",
+    "expires_on",
+}
+VALID_SUPPORT_LEVELS = {"stable", "controlled"}
+VALID_EXECUTION_ENVIRONMENTS = {
+    "developer-or-ci",
+    "ci-runner",
+    "fixed-runner",
+    "preproduction-runner",
+    "macos-arm64-runner",
+    "operations-host",
+}
+VALID_DURATIONS = {"seconds", "minutes", "hours", "multi-day"}
+VALID_SIDE_EFFECTS = {
+    "none",
+    "runtime-artifacts",
+    "dependency-cache",
+    "network-access",
+    "workspace-files",
+    "containers",
+    "network-services",
+    "repository-issues",
+    "host-configuration",
+    "release-state",
+}
 SCRIPT_REFERENCE_PATTERN = re.compile(r"scripts/[A-Za-z0-9_./-]+\.(?:py|sh|ps1)")
 
 
@@ -110,11 +167,32 @@ def main() -> int:
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
-    add(checks, "inventory-schema-version", inventory.get("schema_version") == 3, "schema_version is 3")
+    add(checks, "inventory-schema-version", inventory.get("schema_version") == 6, "schema_version is 6")
     add(checks, "all-top-level-scripts-declared", actual_top_level <= declared, "all top-level files are declared")
     add(checks, "all-recursive-scripts-represented", actual_scripts == represented, "every executable script is represented exactly once by role")
     add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
     add(checks, "no-missing-internal-scripts", all((ROOT / p).exists() for p in internal_declared), "all internal scripts exist")
+    growth_exceptions = inventory.get("script_growth_exceptions")
+    add(
+        checks,
+        "script-growth-exceptions-object",
+        isinstance(growth_exceptions, dict),
+        "script_growth_exceptions must be an object",
+    )
+    if isinstance(growth_exceptions, dict):
+        for path_text, metadata in sorted(growth_exceptions.items()):
+            add(
+                checks,
+                f"growth-exception-fields:{path_text}",
+                isinstance(metadata, dict) and set(metadata) == GROWTH_EXCEPTION_FIELDS,
+                "growth exception contains the governed field set",
+            )
+            add(
+                checks,
+                f"growth-exception-path:{path_text}",
+                path_text in actual_scripts and path_text in represented,
+                "growth exception references a represented script",
+            )
     runtime_files = [
         path for path in (ROOT / "scripts").rglob("*")
         if path.is_file() and "runtime" in path.relative_to(ROOT / "scripts").parts
@@ -156,6 +234,114 @@ def main() -> int:
             )
     else:
         add(checks, "public-entrypoints-list", False, "public_entrypoints must be a list")
+
+    lifecycle = inventory.get("public_entrypoint_lifecycle")
+    public_set = set(public) if isinstance(public, list) else set()
+    lifecycle_set = set(lifecycle) if isinstance(lifecycle, dict) else set()
+    add(
+        checks,
+        "public-lifecycle-exact-set",
+        lifecycle_set == public_set,
+        "lifecycle metadata exists exactly once for every public entrypoint",
+    )
+    if isinstance(lifecycle, dict):
+        for path_text, metadata in sorted(lifecycle.items()):
+            fields = set(metadata) if isinstance(metadata, dict) else set()
+            add(
+                checks,
+                f"lifecycle-fields:{path_text}",
+                fields == LIFECYCLE_FIELDS,
+                "lifecycle metadata contains the governed field set",
+            )
+            if not isinstance(metadata, dict):
+                continue
+            owner = metadata.get("owner")
+            add(
+                checks,
+                f"lifecycle-owner:{path_text}",
+                isinstance(owner, str) and owner.startswith("@") and len(owner) > 1,
+                f"owner={owner}",
+            )
+            domain = metadata.get("domain")
+            add(
+                checks,
+                f"lifecycle-domain:{path_text}",
+                domain in VALID_COMMAND_DOMAINS,
+                f"domain={domain}",
+            )
+            summary_text = metadata.get("summary")
+            add(
+                checks,
+                f"lifecycle-summary:{path_text}",
+                isinstance(summary_text, str) and len(summary_text.strip()) >= 20,
+                "summary explains when a maintainer should use this command",
+            )
+            documentation = metadata.get("documentation")
+            documentation_paths = (
+                [ROOT / item for item in documentation]
+                if isinstance(documentation, list)
+                and all(isinstance(item, str) for item in documentation)
+                else []
+            )
+            add(
+                checks,
+                f"lifecycle-documentation:{path_text}",
+                bool(documentation_paths)
+                and len(documentation_paths) == len(set(documentation_paths))
+                and all(
+                    item.is_file()
+                    and item.suffix == ".md"
+                    and item.resolve().is_relative_to(ROOT.resolve())
+                    for item in documentation_paths
+                ),
+                f"documentation={documentation}",
+            )
+            support_level = metadata.get("support_level")
+            add(
+                checks,
+                f"lifecycle-support:{path_text}",
+                support_level in VALID_SUPPORT_LEVELS,
+                f"support_level={support_level}",
+            )
+            execution_environment = metadata.get("execution_environment")
+            add(
+                checks,
+                f"lifecycle-environment:{path_text}",
+                execution_environment in VALID_EXECUTION_ENVIRONMENTS,
+                f"execution_environment={execution_environment}",
+            )
+            typical_duration = metadata.get("typical_duration")
+            add(
+                checks,
+                f"lifecycle-duration:{path_text}",
+                typical_duration in VALID_DURATIONS,
+                f"typical_duration={typical_duration}",
+            )
+            side_effects = metadata.get("side_effects")
+            side_effect_set = set(side_effects) if isinstance(side_effects, list) else set()
+            add(
+                checks,
+                f"lifecycle-side-effects:{path_text}",
+                bool(side_effect_set)
+                and len(side_effect_set) == len(side_effects)
+                and side_effect_set <= VALID_SIDE_EFFECTS,
+                f"side_effects={side_effects}",
+            )
+            retirement_condition = metadata.get("retirement_condition")
+            add(
+                checks,
+                f"lifecycle-retirement:{path_text}",
+                isinstance(retirement_condition, str)
+                and len(retirement_condition.strip()) >= 20,
+                "retirement condition is explicit",
+            )
+    else:
+        add(
+            checks,
+            "public-lifecycle-object",
+            False,
+            "public_entrypoint_lifecycle must be an object",
+        )
 
     if isinstance(public, list):
         root_public = {path for path in public if Path(path).parent == Path("scripts")}
