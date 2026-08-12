@@ -513,7 +513,9 @@ def stage_runtime(
         for relative in (
             "scripts/__init__.py",
             "scripts/lib/__init__.py",
+            "scripts/lib/observability_preflight.py",
             "scripts/lib/operations_identity.py",
+            "scripts/lib/release_deployment_verification.py",
             "scripts/tools/__init__.py",
         ):
             source = ROOT / relative
