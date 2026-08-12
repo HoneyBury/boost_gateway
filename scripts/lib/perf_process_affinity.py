@@ -32,16 +32,10 @@ from scripts.lib.perf_statistics import (
     metric_distribution,
 )
 
-try:
-    import resource
-except ImportError:  # pragma: no cover - unavailable on Windows
-    resource = None  # type: ignore[assignment]
+import resource
 
 def log_step(message: str) -> None:
     print(f"==> {message}", flush=True)
-
-def is_windows() -> bool:
-    return os.name == "nt"
 
 def parse_cpu_set(value: str) -> set[int]:
     """Parse a Linux CPU list such as ``0-3,6`` into CPU identifiers."""
@@ -231,14 +225,10 @@ def record_process_affinity(
     if constraint["applied"]:
         constraint["effective_cpu_set"] = constraint["requested"]
 
-def exe_name(base: str) -> str:
-    return f"{base}.exe" if is_windows() else base
-
 def resolve_executable(build_dir: Path, base_name: str) -> Path:
-    target_names = {exe_name(base_name), base_name}
     matches = sorted(
         p for p in build_dir.rglob("*")
-        if p.is_file() and p.name in target_names
+        if p.is_file() and p.name == base_name
     )
     direct_matches = [
         p for p in matches
@@ -246,14 +236,6 @@ def resolve_executable(build_dir: Path, base_name: str) -> Path:
     ]
     if direct_matches:
         matches = sorted(direct_matches, key=lambda p: (len(p.relative_to(build_dir).parts), str(p)))
-    elif is_windows():
-        preferred = [
-            p for p in matches
-            if any(part.lower() in {"debug", "release", "relwithdebinfo", "minsizerel"} for part in p.parts)
-        ]
-        if preferred:
-            matches = preferred
     if not matches:
-        target_name = exe_name(base_name)
-        raise FileNotFoundError(f"Executable not found: {target_name} under {build_dir}")
+        raise FileNotFoundError(f"Executable not found: {base_name} under {build_dir}")
     return matches[0]

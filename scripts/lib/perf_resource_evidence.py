@@ -32,10 +32,7 @@ from scripts.lib.perf_statistics import (
     metric_distribution,
 )
 
-try:
-    import resource
-except ImportError:  # pragma: no cover - unavailable on Windows
-    resource = None  # type: ignore[assignment]
+import resource
 
 from scripts.lib.perf_process_affinity import *  # noqa: F401,F403
 from scripts.lib.perf_process_runtime import *  # noqa: F401,F403

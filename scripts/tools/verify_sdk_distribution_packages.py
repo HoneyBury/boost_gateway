@@ -67,7 +67,7 @@ def main() -> int:
         add(checks, "wheel:platform-tag", not wheel.name.endswith("-any.whl"), wheel.name)
         with zipfile.ZipFile(wheel) as archive:
             names = archive.namelist()
-            native_names = [name for name in names if "/libboost_gateway_sdk." in name or name.endswith("/boost_gateway_sdk.dll")]
+            native_names = [name for name in names if "/libboost_gateway_sdk." in name]
             manifest_names = [name for name in names if name.endswith("/_native_manifest.json")]
             add(checks, "wheel:safe-paths", safe_members(names), f"members={len(names)}")
             add(checks, "wheel:one-native", len(native_names) == 1, str(native_names))
@@ -108,7 +108,7 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="boost-sdk-wheel-consumer-") as temp_text:
             venv = Path(temp_text) / "venv"
             subprocess.run([sys.executable, "-m", "venv", str(venv)], check=True)
-            python = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+            python = venv / "bin/python"
             subprocess.run([str(python), "-m", "pip", "install", "--no-index", "--no-deps", str(wheel)], check=True)
             env = os.environ.copy()
             env.pop("BOOST_GATEWAY_SDK_LIBRARY", None)

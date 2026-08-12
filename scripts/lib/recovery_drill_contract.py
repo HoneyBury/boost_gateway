@@ -232,9 +232,7 @@ def repository_revision() -> str:
 
 
 def resolve_sdk_shared_library(build_dir: Path, configuration: str) -> Path:
-    library_name = (
-        "boost_gateway_sdk.dll" if os.name == "nt" else "libboost_gateway_sdk.so"
-    )
+    library_name = "libboost_gateway_sdk.so"
     candidates = [
         build_dir / "sdk" / library_name,
         build_dir / "sdk" / configuration / library_name,

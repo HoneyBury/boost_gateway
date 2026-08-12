@@ -73,16 +73,11 @@ CLI_HELP_CONTRACTS = (
     "scripts/tools/send_restore_bundle.py",
 )
 
-POSIX_ONLY = {"scripts/tools/schedule_observability_evidence.py"}
-
-
 class CliEntrypointContractsTest(unittest.TestCase):
     def test_historical_cli_help_contracts_are_import_safe(self) -> None:
         environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
         for relative in CLI_HELP_CONTRACTS:
             with self.subTest(command=relative):
-                if os.name == "nt" and relative in POSIX_ONLY:
-                    continue
                 result = subprocess.run(
                     [sys.executable, relative, "--help"],
                     cwd=ROOT,

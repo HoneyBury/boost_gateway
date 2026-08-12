@@ -32,10 +32,7 @@ from scripts.lib.perf_statistics import (
     metric_distribution,
 )
 
-try:
-    import resource
-except ImportError:  # pragma: no cover - unavailable on Windows
-    resource = None  # type: ignore[assignment]
+import resource
 
 from scripts.lib.perf_process_affinity import *  # noqa: F401,F403
 def wait_tcp_port(host: str, port: int, timeout_seconds: float = 30.0) -> None:
@@ -119,28 +116,6 @@ def process_cpu_seconds(pid: int) -> float | None:
     return None
 
 def process_snapshot(pid: int) -> dict[str, Any]:
-    if is_windows():
-        cmd = [
-            "powershell",
-            "-NoProfile",
-            "-Command",
-            (
-                f"$p = Get-Process -Id {pid} -ErrorAction Stop; "
-                "[pscustomobject]@{"
-                "pid=$p.Id;"
-                "process_name=$p.ProcessName;"
-                "working_set_mb=[math]::Round($p.WorkingSet64 / 1MB, 2);"
-                "private_memory_mb=[math]::Round($p.PrivateMemorySize64 / 1MB, 2);"
-                "virtual_memory_mb=[math]::Round($p.VirtualMemorySize64 / 1MB, 2);"
-                "handles=$p.Handles;"
-                "threads=$p.Threads.Count;"
-                "cpu_seconds=[math]::Round($p.CPU, 2)"
-                "} | ConvertTo-Json -Compress"
-            ),
-        ]
-        output = subprocess.check_output(cmd, text=True).strip()
-        return json.loads(output)
-
     status_path = Path(f"/proc/{pid}/status")
     if not status_path.exists():
         cmd = ["ps", "-o", "pid=,comm=,rss=,vsz=,%cpu=", "-p", str(pid)]
@@ -217,8 +192,6 @@ def process_snapshot(pid: int) -> dict[str, Any]:
     return snapshot
 
 def completed_children_cpu_seconds() -> float | None:
-    if resource is None:
-        return None
     usage = resource.getrusage(resource.RUSAGE_CHILDREN)
     return float(usage.ru_utime) + float(usage.ru_stime)
 
@@ -275,11 +248,8 @@ class ManagedProcess:
     def stop(self) -> None:
         if self.proc.poll() is None:
             with suppress(Exception):
-                if is_windows():
-                    self.proc.kill()
-                else:
-                    self.proc.send_signal(signal.SIGTERM)
-                    self.proc.wait(timeout=5)
+                self.proc.send_signal(signal.SIGTERM)
+                self.proc.wait(timeout=5)
             if self.proc.poll() is None:
                 with suppress(Exception):
                     self.proc.kill()

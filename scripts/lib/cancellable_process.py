@@ -87,20 +87,6 @@ def terminate_process_group(
     hard_timeout_seconds: float = 2.0,
 ) -> tuple[str, str]:
     def signal_tree(*, force: bool) -> None:
-        if os.name == "nt":
-            command = ["taskkill", "/PID", str(process.pid), "/T"]
-            if force:
-                command.append("/F")
-            with suppress(OSError, subprocess.SubprocessError):
-                subprocess.run(
-                    command,
-                    check=False,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    timeout=hard_timeout_seconds,
-                )
-            return
-
         try:
             os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
         except (AttributeError, ProcessLookupError, PermissionError):

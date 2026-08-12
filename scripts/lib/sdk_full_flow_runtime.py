@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import platform
 import socket
 import subprocess
@@ -27,16 +26,9 @@ def safe_print(value: Any = "") -> None:
 
 def resolve_executable(build_dir: Path, relative: str) -> Path:
     base = build_dir / relative
-    candidates = [
-        base,
-        base.with_suffix(".exe"),
-        base / "Release" / (base.name + ".exe"),
-        base.parent / "Release" / (base.name + ".exe"),
-    ]
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return candidates[1]
+    if base.exists():
+        return base
+    raise FileNotFoundError(f"executable not found: {base}")
 
 
 def build_command_for_targets(build_dir: Path, targets: list[str]) -> list[str]:
@@ -65,9 +57,8 @@ def process_runtime_path_entries(paths: list[Path]) -> list[str]:
         if not parent.exists():
             continue
         value = str(parent)
-        key = value.lower() if os.name == "nt" else value
-        if key not in seen:
-            seen.add(key)
+        if value not in seen:
+            seen.add(value)
             entries.append(value)
     return entries
 

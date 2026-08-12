@@ -213,13 +213,12 @@ def validate_build_artifacts(build_dir: Path | None, checks: list[dict[str, Any]
         return
     release_dir = build_dir / "Release"
     expected = {
-        "static-library": ("libboost_gateway_sdk.a", "boost_gateway_sdk.lib"),
+        "static-library": ("libboost_gateway_sdk.a",),
         "shared-library": (
             "libboost_gateway_sdk.dylib",
             "libboost_gateway_sdk.so",
-            "boost_gateway_sdk.dll",
         ),
-        "unit-test": ("sdk_tests", "sdk_tests.exe"),
+        "unit-test": ("sdk_tests",),
     }
     for name, candidates in expected.items():
         search_roots = [build_dir]

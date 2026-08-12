@@ -125,22 +125,12 @@ SUSTAINED_GATE_CONFIRMATION_RUNS = 2
 DEFAULT_RESOURCE_SAMPLE_INTERVAL_SECONDS = 30.0
 
 
-def exe_name(base: str) -> str:
-    return f"{base}.exe" if os.name == "nt" else base
-
-
 def find_executable(build_dir: Path, base_name: str) -> Path:
-    names = {exe_name(base_name), base_name}
-    matches = sorted(p for p in build_dir.rglob("*") if p.is_file() and p.name in names)
-    if os.name == "nt":
-        preferred = [
-            p for p in matches
-            if any(part.lower() in {"debug", "release", "relwithdebinfo", "minsizerel"} for part in p.parts)
-        ]
-        if preferred:
-            matches = preferred
+    matches = sorted(
+        path for path in build_dir.rglob(base_name) if path.is_file()
+    )
     if not matches:
-        raise FileNotFoundError(f"{exe_name(base_name)} not found under {build_dir}")
+        raise FileNotFoundError(f"{base_name} not found under {build_dir}")
     return matches[0]
 
 
