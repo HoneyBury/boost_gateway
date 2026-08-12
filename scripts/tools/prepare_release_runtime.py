@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in os.sys.path:
     os.sys.path.insert(0, str(ROOT))
 
-from scripts.tools.harden_release_sbom import verify_attested_sbom_predicate
+from scripts.lib.release_sbom_semantics import verify_attested_sbom_predicate
 from scripts.lib.release_package import (
     extract_archive,
     validate_runtime_dependencies,

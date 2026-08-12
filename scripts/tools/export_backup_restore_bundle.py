@@ -20,12 +20,13 @@ if str(SCRIPT_DIR) not in sys.path:
 
 try:
     from scripts.lib import backup_recovery as backup  # noqa: E402
-    from scripts.tools import verify_backup_vault as vault  # noqa: E402
+    from scripts.lib import backup_vault as vault  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name != "scripts":
         raise
-    import manage_backup_recovery as backup  # type: ignore[no-redef]  # noqa: E402
-    import verify_backup_vault as vault  # type: ignore[no-redef]  # noqa: E402
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.lib import backup_recovery as backup  # type: ignore[no-redef]  # noqa: E402
+    from scripts.lib import backup_vault as vault  # type: ignore[no-redef]  # noqa: E402
 
 StartCommand = Callable[..., Any]
 

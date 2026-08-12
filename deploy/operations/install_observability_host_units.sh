@@ -33,6 +33,7 @@ install -o root -g root -m 0644 \
   /usr/local/libexec/boost-gateway/scripts/__init__.py
 install -o root -g root -m 0644 \
   "${ROOT}/scripts/lib/__init__.py" \
+  "${ROOT}/scripts/lib/observability_evidence.py" \
   "${ROOT}/scripts/lib/operations_identity.py" \
   /usr/local/libexec/boost-gateway/scripts/lib/
 install -o root -g root -m 0644 \

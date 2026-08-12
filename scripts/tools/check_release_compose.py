@@ -494,7 +494,7 @@ def main() -> int:
         return 1
     if sys.platform == "linux" and os.geteuid() == 0:
         try:
-            from scripts.tools.check_observability_preflight import (
+            from scripts.lib.observability_preflight import (
                 DEFAULT_ATTESTATION,
                 DEFAULT_CONFIG,
                 DEFAULT_ENV,

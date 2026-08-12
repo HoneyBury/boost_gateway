@@ -16,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[3]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from scripts.tools.check_backup_recovery_policy import validate_policy  # noqa: E402
+from scripts.lib.backup_recovery_policy import validate_policy  # noqa: E402
 
 
 DEPLOYMENT_RUNBOOK = "docs/deployment/production-deployment-runbook.md"

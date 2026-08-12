@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from scripts.gates.release.aggregate_cpu_capacity_evidence import (
+from scripts.lib.cpu_capacity_evidence_contract import (
     REPO_ROOT,
     add_check,
     candidate_revision,

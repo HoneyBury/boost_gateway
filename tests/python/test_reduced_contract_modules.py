@@ -3,17 +3,23 @@
 from pathlib import Path
 
 from scripts.lib import conan_workflow_contract
+from scripts.lib import backup_recovery_policy
+from scripts.lib import backup_vault
 from scripts.lib import cpu_capacity_evidence_contract
 from scripts.lib import deploy_operability_contract
 from scripts.lib import evidence_provenance_cases
 from scripts.lib import long_soak_contract
 from scripts.lib import monitoring_operability_contract
+from scripts.lib import observability_evidence
+from scripts.lib import observability_preflight
 from scripts.lib import raft_mixed_binary_runtime
 from scripts.lib import release_deployment_verification
 from scripts.lib import release_sbom_io
 from scripts.lib import release_sbom_semantics
 from scripts.lib import sdk_distribution_contract
 from scripts.lib import sdk_full_flow_runtime
+from scripts.lib import isolated_restore
+from scripts.lib import restore_bundle_transport
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -22,17 +28,23 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def test_reduced_contract_modules_bind_the_repository_root() -> None:
     modules = {
         "scripts/lib/conan_workflow_contract.py": conan_workflow_contract.ROOT,
+        "scripts/lib/backup_recovery_policy.py": backup_recovery_policy.ROOT,
+        "scripts/lib/backup_vault.py": backup_vault.ROOT,
         "scripts/lib/cpu_capacity_evidence_contract.py": cpu_capacity_evidence_contract.REPO_ROOT,
         "scripts/lib/deploy_operability_contract.py": deploy_operability_contract.REPO_ROOT,
         "scripts/lib/evidence_provenance_cases.py": evidence_provenance_cases.ROOT,
         "scripts/lib/long_soak_contract.py": long_soak_contract.ROOT,
         "scripts/lib/monitoring_operability_contract.py": monitoring_operability_contract.REPO_ROOT,
+        "scripts/lib/observability_evidence.py": observability_evidence.ROOT,
+        "scripts/lib/observability_preflight.py": observability_preflight.ROOT,
         "scripts/lib/raft_mixed_binary_runtime.py": raft_mixed_binary_runtime.ROOT,
         "scripts/lib/release_deployment_verification.py": release_deployment_verification.ROOT,
         "scripts/lib/release_sbom_io.py": release_sbom_io.ROOT,
         "scripts/lib/release_sbom_semantics.py": release_sbom_semantics.ROOT,
         "scripts/lib/sdk_distribution_contract.py": sdk_distribution_contract.REPO_ROOT,
         "scripts/lib/sdk_full_flow_runtime.py": sdk_full_flow_runtime.REPO_ROOT,
+        "scripts/lib/isolated_restore.py": isolated_restore.ROOT,
+        "scripts/lib/restore_bundle_transport.py": restore_bundle_transport.ROOT,
     }
     for path, resolved in modules.items():
         assert path.endswith(".py")
@@ -53,3 +65,9 @@ def test_reduced_contract_modules_keep_expected_entry_contracts() -> None:
     assert callable(release_sbom_semantics.verify_sbom_document)
     assert sdk_distribution_contract.SDK_VERSION == "4.2.1"
     assert callable(sdk_full_flow_runtime.isolated_leaderboard_environment)
+    assert callable(backup_recovery_policy.validate_policy)
+    assert callable(backup_vault.verify_backup)
+    assert callable(observability_evidence.create_record)
+    assert callable(observability_preflight.validate_preflight)
+    assert callable(isolated_restore.run_isolated_restore)
+    assert callable(restore_bundle_transport.store_bundle)

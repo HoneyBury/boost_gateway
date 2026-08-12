@@ -8,7 +8,74 @@
     "tool": "Small operational or rendering utility.",
     "legacy": "Historical compatibility script; avoid new references."
   },
-  "script_growth_exceptions": {},
+  "script_growth_exceptions": {
+    "scripts/lib/backup_recovery_policy.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["backup policy CLI", "production recovery aggregate gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Repository backup policy validation must be shared without importing its CLI.",
+      "replaces": "Validation implementation embedded in check_backup_recovery_policy.py",
+      "retirement_condition": "Backup policy adopts an equivalent schema-backed validator.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/backup_vault.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["vault verification CLI", "restore bundle exporter"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Streaming vault verification must be reusable without importing a peer CLI.",
+      "replaces": "Vault verification implementation embedded in verify_backup_vault.py",
+      "retirement_condition": "Vault and restore export adopt an equivalent governed recovery library.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/isolated_restore.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["isolated restore CLI", "restored business verifier"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Isolated restore primitives must be reusable without importing the restore CLI.",
+      "replaces": "Restore implementation embedded in restore_backup_isolated.py",
+      "retirement_condition": "Recovery verification adopts an equivalent isolated restore controller.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/observability_evidence.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": ["observability evidence CLI", "scheduled evidence producer"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Evidence ledger operations must be shared without importing their CLI.",
+      "replaces": "Evidence ledger implementation embedded in manage_observability_evidence.py",
+      "retirement_condition": "Observability evidence adopts an equivalent governed ledger library.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/observability_preflight.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": ["observability preflight CLI", "release Compose verification"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Alert delivery preflight must be shared without a runtime peer-CLI import.",
+      "replaces": "Preflight implementation embedded in check_observability_preflight.py",
+      "retirement_condition": "Observability admission adopts an equivalent schema-backed preflight.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/restore_bundle_transport.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["forced-command restore receiver", "restore bundle sender"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Restore framing and manifest validation must be shared without importing the receiver CLI.",
+      "replaces": "Transport implementation embedded in restore_bundle_ssh_receiver.py",
+      "retirement_condition": "Restore transport adopts an equivalent versioned protocol library.",
+      "temporary": false,
+      "expires_on": ""
+    }
+  },
   "public_entrypoints": [
     "scripts/dev.py",
     "scripts/run_tests.py",
@@ -307,6 +374,12 @@
     "scripts/lib/cancellable_process.py": {
       "category": "tool"
     },
+    "scripts/lib/backup_recovery_policy.py": {
+      "category": "tool"
+    },
+    "scripts/lib/backup_vault.py": {
+      "category": "tool"
+    },
     "scripts/lib/cpu_capacity_evidence_contract.py": {
       "category": "tool"
     },
@@ -322,7 +395,16 @@
     "scripts/lib/long_soak_contract.py": {
       "category": "tool"
     },
+    "scripts/lib/isolated_restore.py": {
+      "category": "tool"
+    },
     "scripts/lib/monitoring_operability_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/observability_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/lib/observability_preflight.py": {
       "category": "tool"
     },
     "scripts/lib/raft_mixed_binary_runtime.py": {
@@ -335,6 +417,9 @@
       "category": "tool"
     },
     "scripts/lib/release_sbom_semantics.py": {
+      "category": "tool"
+    },
+    "scripts/lib/restore_bundle_transport.py": {
       "category": "tool"
     },
     "scripts/lib/sdk_distribution_contract.py": {

@@ -238,6 +238,7 @@ sudo cat /etc/boost-gateway/backup-vault-ed25519.pub
 RECEIVER_ROOT="$HOME/.local/libexec/boost-gateway-backup"
 install -d -m 0700 "$RECEIVER_ROOT"
 install -m 0500 scripts/lib/backup_recovery.py "$RECEIVER_ROOT/"
+install -m 0500 scripts/lib/backup_vault.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/manage_backup_recovery.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/backup_vault_ssh_receiver.py "$RECEIVER_ROOT/"
 install -m 0500 scripts/tools/verify_backup_vault.py "$RECEIVER_ROOT/"
@@ -328,6 +329,17 @@ python3 scripts/tools/send_restore_bundle.py \
 receiver 在 Ubuntu 的成功目录加入第六个 create-only 文件 `transport-receipt.json`。隔离控制器
 严格要求这六个文件，独立重载和复算 manifest、vault receipt、vault validation、transport receipt、
 policy、Redis profile 和 RDB 的全部 binding。
+
+forced-command 路径必须安装为固定的两文件实现，receiver CLI 只负责参数和退出码，transport
+library 持有帧格式与 manifest 校验；两者版本必须来自同一提交：
+
+```bash
+sudo install -d -o root -g root -m 0755 /opt/boost-gateway/restore-tools
+sudo install -o root -g root -m 0500 \
+  scripts/lib/restore_bundle_transport.py \
+  scripts/tools/restore_bundle_ssh_receiver.py \
+  /opt/boost-gateway/restore-tools/
+```
 
 在 **Ubuntu 小主机终端**运行隔离恢复。`REDIS_IMAGE` 必须是本机已有的 immutable image ID；目标
 volume 必须使用新的 `boost-gateway-recovery-*` 名称：
