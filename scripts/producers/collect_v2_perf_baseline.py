@@ -35,6 +35,7 @@ from scripts.lib.perf_resource_evidence import *  # noqa: E402,F401,F403
 from scripts.lib.perf_saturation_analysis import *  # noqa: E402,F401,F403
 from scripts.lib.perf_report import *  # noqa: E402,F401,F403
 from scripts.lib.perf_release_contract import *  # noqa: E402,F401,F403
+from scripts.lib.perf_cli_support import *  # noqa: E402,F401,F403
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Collect v2 performance baseline data.")

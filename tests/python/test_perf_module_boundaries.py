@@ -10,6 +10,7 @@ MODULES = {
     "scripts/lib/perf_process_runtime.py": ("ManagedProcess", "start_perf_topology"),
     "scripts/lib/perf_otel_runtime.py": ("LoopbackOtelCollector", "wait_for_otel_mode_quiescence"),
     "scripts/lib/perf_bench_runtime.py": ("invoke_bench_case",),
+    "scripts/lib/perf_cli_support.py": ("prepare_perf_constraints", "initial_perf_summary"),
     "scripts/lib/perf_business_protocol.py": ("BusinessOperationClient", "recv_business_packet"),
     "scripts/lib/perf_business_operations.py": ("run_business_operation_perf",),
     "scripts/lib/perf_stability_evidence.py": ("evaluate_resource_stability_gate",),
@@ -17,7 +18,7 @@ MODULES = {
     "scripts/lib/perf_resource_evidence.py": ("analyze_resources",),
     "scripts/lib/perf_saturation_analysis.py": ("build_saturation_analysis",),
     "scripts/lib/perf_report.py": ("render_markdown_report",),
-    "scripts/lib/perf_release_contract.py": ("prepare_perf_constraints", "initial_perf_summary"),
+    "scripts/lib/perf_release_contract.py": ("evaluate_release_gates", "build_run_cases"),
 }
 
 

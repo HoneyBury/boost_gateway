@@ -10,6 +10,8 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts.lib import recovery_drill_runtime
+
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 SCRIPT_PATH = REPO_ROOT / "scripts/gates/production/verify_preprod_recovery_drill.py"
@@ -23,14 +25,14 @@ SPEC.loader.exec_module(DRILL)
 
 def test_expected_failure_is_required() -> None:
     with patch.object(
-        DRILL, "run_step", return_value={"status": "failed", "stderr_tail": "down"}
+        recovery_drill_runtime, "run_step", return_value={"status": "failed", "stderr_tail": "down"}
     ):
         step = DRILL.run_expected_failure_step("name", "category", ["command"], 1)
     assert step["status"] == "passed"
     assert step["expected_failure_observed"] is True
 
     with patch.object(
-        DRILL, "run_step", return_value={"status": "passed", "stderr_tail": ""}
+        recovery_drill_runtime, "run_step", return_value={"status": "passed", "stderr_tail": ""}
     ):
         step = DRILL.run_expected_failure_step("name", "category", ["command"], 1)
     assert step["status"] == "failed"
@@ -39,7 +41,7 @@ def test_expected_failure_is_required() -> None:
 
 def test_stdout_contract_rejects_wrong_value() -> None:
     with patch.object(
-        DRILL,
+        recovery_drill_runtime,
         "run_step",
         return_value={
             "status": "passed",
@@ -56,7 +58,7 @@ def test_stdout_contract_rejects_wrong_value() -> None:
 
 def test_stdout_contract_accepts_exact_trimmed_value() -> None:
     with patch.object(
-        DRILL,
+        recovery_drill_runtime,
         "run_step",
         return_value={"status": "passed", "stdout_tail": "PONG\n", "stderr_tail": ""},
     ):
@@ -66,7 +68,7 @@ def test_stdout_contract_accepts_exact_trimmed_value() -> None:
 
 def test_expected_failure_requires_dependency_evidence() -> None:
     with patch.object(
-        DRILL,
+        recovery_drill_runtime,
         "run_step",
         return_value={
             "status": "failed",
@@ -172,7 +174,7 @@ def test_alert_wait_passes_only_after_firing() -> None:
             "status": "success",
             "data": {"alerts": [{"labels": {"alertname": "Alert"}, "state": "firing"}]},
         }
-        with patch.object(DRILL, "fetch_json", return_value=response):
+        with patch.object(recovery_drill_runtime, "fetch_json", return_value=response):
             step = DRILL.wait_for_prometheus_alert_firing(process, "Alert", 1.0)
         assert step["status"] == "passed"
     finally:

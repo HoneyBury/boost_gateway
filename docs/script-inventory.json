@@ -410,6 +410,21 @@
     "scripts/lib/raft_mixed_binary_runtime.py": {
       "category": "tool"
     },
+    "scripts/lib/recovery_drill_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_images.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_preflight.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_record.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_runtime.py": {
+      "category": "tool"
+    },
     "scripts/lib/release_deployment_verification.py": {
       "category": "tool"
     },
@@ -438,6 +453,9 @@
       "category": "tool"
     },
     "scripts/lib/perf_bench_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_cli_support.py": {
       "category": "tool"
     },
     "scripts/lib/perf_business_operations.py": {
