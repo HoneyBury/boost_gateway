@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## v3.6.7 - Runtime concurrency and operations hardening (2026-08-12)
+
+### Runtime correctness
+
+- Make cross-core Gateway mailbox fan-in MPSC-safe with exactly-once and per-producer FIFO
+  coverage, and linearize mailbox, actor, process-supervisor, and write-behind shutdown so
+  lifecycle races cannot strand work or block teardown.
+- Harden realtime instance/player lifecycle locking and callbacks, reap closed Login sessions,
+  and keep business-level Battle rejections out of the transport circuit breaker.
+
+### Performance and evidence
+
+- Streamline Battle input/snapshot/frame scans, ECS dense iteration, realtime batched ticks, and
+  the persistent parallel-system worker pool without changing the public protocol or default
+  production topology.
+- Add fixed-runner architecture comparisons, MPSC and ECS/scheduler microbenchmarks, complete
+  closed/open-loop pressure evidence, and accelerated resource-stability gates that fail closed
+  on incomplete lifecycle windows.
+
+### Operations and maintenance
+
+- Relay Alertmanager SMTP through the governed host HTTP CONNECT proxy with a bridge-scoped UFW
+  rule and socket-activated, bounded connections; preserve the accepted socket return path and
+  require a fresh real firing/resolved delivery attestation after activation.
+- Add governed contributor command discovery, script/workflow lifecycle inventories, tooling
+  drift metrics, shared validation-summary rendering, and direct contract tests for public CLIs.
+
 ## v3.6.6 - Battle resource lifecycle patch (2026-08-05)
 
 ### Runtime

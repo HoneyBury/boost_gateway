@@ -45,10 +45,10 @@
     "production-candidate-evidence": {"linux-x64": "implemented", "linux-arm64": "implemented-routing-evidence-required", "macos-arm64": "implemented-native-routing-evidence-required"},
     "production-gates": {"linux-x64": "implemented", "linux-arm64": "implemented-routing-evidence-required", "macos-arm64": "implemented-native-routing-evidence-required"},
     "production-readiness": {"linux-x64": "implemented", "linux-arm64": "implemented-platform-isolation-evidence-required", "macos-arm64": "implemented-platform-isolation-evidence-required"},
-    "release": {"linux-x64": "v3.6.6-release-target", "linux-arm64": "paused-after-v3.6.2", "macos-arm64": "paused-after-v3.6.2"},
-    "release-asset-verification": {"linux-x64": "v3.6.6-release-verifier", "linux-arm64": "historical-v3.6.2-verifier", "macos-arm64": "historical-v3.6.2-verifier"},
+    "release": {"linux-x64": "v3.6.7-release-target", "linux-arm64": "paused-after-v3.6.2", "macos-arm64": "paused-after-v3.6.2"},
+    "release-asset-verification": {"linux-x64": "v3.6.7-release-verifier", "linux-arm64": "historical-v3.6.2-verifier", "macos-arm64": "historical-v3.6.2-verifier"},
     "security-maintenance": {"linux-x64": "not-applicable-github-hosted", "linux-arm64": "not-applicable-github-hosted", "macos-arm64": "not-applicable-github-hosted"},
-    "sdk-distribution": {"linux-x64": "v3.6.6-sdk-4.2.1-release-target", "linux-arm64": "historical-v3.6.2-sdk-4.2.0", "macos-arm64": "historical-v3.6.2-sdk-4.2.0"},
+    "sdk-distribution": {"linux-x64": "v3.6.7-sdk-4.2.1-release-target", "linux-arm64": "historical-v3.6.2-sdk-4.2.0", "macos-arm64": "historical-v3.6.2-sdk-4.2.0"},
     "specialized-e2e": {"linux-x64": "implemented", "linux-arm64": "planned", "macos-arm64": "planned-native-subset"}
   }
 }

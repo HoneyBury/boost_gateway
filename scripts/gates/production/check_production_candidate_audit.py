@@ -37,12 +37,12 @@ REQUIRED_FILES = {
 
 REQUIRED_TEXT = {
     "docs/current-state.md": [
-        "v3.6.6 / SDK 4.2.1",
+        "v3.6.7 / SDK 4.2.1",
         "默认生产主链仍是 SDK + TCP gateway",
         "mainline-execution-plan.md",
     ],
     "docs/mainline-execution-plan.md": [
-        "v3.6.6 Linux x64 release archive",
+        "v3.6.7 Linux x64 release archive",
         "30 天不可变验证",
         "完成恢复演练",
     ],
@@ -80,7 +80,7 @@ REQUIRED_TEXT = {
         "linux-arm64",
         "macos-arm64",
         "v3.6.2",
-        "v3.6.6-release-target",
+        "v3.6.7-release-target",
     ],
 }
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:

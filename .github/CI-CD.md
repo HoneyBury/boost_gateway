@@ -61,7 +61,7 @@ identity。它们保留各自的 `--no-remote` bootstrap 和 build/preflight 步
 失败定位和 artifact 边界；不要把这段初始化重新复制回 job。
 
 生产证据 workflow 的 `platform` 必须显式选择其准入平台；profile、lockfile、build
-directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.6 的 Release 与
+directory、Docker target 与 artifact suffix 不接受独立覆盖。v3.6.7 的 Release 与
 published-asset verification 按独立 release manifest 只接受 `linux-x64`。tag Release
 只有 x64 package 与 NuGet job 全部成功后，才发布 runtime/symbol、一个 wheel、一个
 NuGet、逐资产 SPDX/provenance metadata 和统一 checksum manifest。

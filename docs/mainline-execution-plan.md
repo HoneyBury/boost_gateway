@@ -1,10 +1,10 @@
-# v3.6.6 Linux x64 企业运营主线
+# v3.6.7 Linux x64 企业运营主线
 
-更新时间：2026-08-05
+更新时间：2026-08-12
 
 ## 目标
 
-当前两个月不扩大业务或默认协议面，而是把 v3.6.6 Linux x64 不可变资产交付为可重复运营的
+当前两个月不扩大业务或默认协议面，而是把 v3.6.7 Linux x64 不可变资产交付为可重复运营的
 Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢复、回滚和仓库强制
 治理完成后，执行 72 小时预演，并让同一 tag/SHA/runtime digest 连续运行至少 30 天。
 
@@ -26,7 +26,7 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 执行顺序
 
-1. **冻结部署输入**：只接受 v3.6.6 Linux x64 release archive、checksum、SBOM、provenance 和明确
+1. **冻结部署输入**：只接受 v3.6.7 Linux x64 release archive、checksum、SBOM、provenance 和明确
    的配置版本，不在服务器上构建源码。
 2. **实现 host preflight**：校验 OS、磁盘、端口、Docker/Compose、时钟、ulimit、目录
    权限、secret/config 和备份目标。
@@ -49,12 +49,16 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 已完成基线
 
+- v3.6.7 已作为新的 Linux x64 release target 准备。它保持 SDK 4.2.1 和默认 TCP/五后端
+  生产链路不变，纳入 v3.6.6 后合入的 MPSC mailbox、实例生命周期、Login session 回收、
+  shutdown race、Battle/ECS 热路径和 SMTP relay 修复。正式 tag、Release run、线上资产复验、
+  runtime digest 和生产 deployment identity 在各自完成前保持未声明。
 - v3.6.6 annotated tag 固定到
   `d0db2cfd2efaffca55522a58402a48015b39d091`；main 演练 `31019859848`、正式
   Release `31020678952` 和独立 aoi Linux x64 published-asset verification
   `31021854876` 全部通过。runtime archive SHA-256 是
-  `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`；生产仍保持
-  v3.6.5，等待 W32 收口后受控 upgrade。
+  `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`。该版本未进入
+  miniserver；tag 后的运行时正确性修复使生产候选前移到 v3.6.7，生产仍保持 v3.6.5。
 - v3.6.5 annotated tag 固定到 governed main commit
   `94f0c5d12d29839bed1598c17f661550c28d84f0`；Release run `30708242109` 和独立
   Linux x64 published-asset verification run `30708591962` 全部通过。
@@ -69,11 +73,15 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   成功、100% coverage 和 inclusive availability 通过，作为 `TODO-0013` 收口证据。
 - 同一窗口确认 v3.6.5 Battle RSS 约以 0.48–0.50 MiB/h 增长，因此拒绝其作为
   `TODO-0016` Day 0。PR #79 的资源释放修复已在 aoi 通过完整 CI 和 sanitizer 专项，
-  v3.6.6 是已发布、已复验但尚未受控部署的替代候选。
-- `TODO-0011` 的最早干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
-  final ledger 和异机 package 复验完成前不得声明 `TODO-0016` Day 0。
+  v3.6.6 随后已发布并复验，但因 tag 后运行时正确性修复未被选择为正式预演候选；
+  v3.6.7 接管候选冻结。
+- `TODO-0011` 的首个干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
+  报告以 `coverage_complete=true`、`gap_count=0` 通过。生产 SMTP relay 随后于
+  `2026-08-10T03:13:52Z` 激活并改变最终通知配置，因此 W32 保留为历史通过证据，正式
+  closure 使用该配置冻结后的 W33 自然周；final ledger 和异机 package 复验完成前不得声明
+  `TODO-0016` Day 0。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
-  runner 边界使用，不能替代 v3.6.6 Linux x64 生产证据。
+  runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、
   SDK clean consumer 和 published-asset verifier 已进入治理链。
 - 五项 v3.6 ADR 已接受，P0-P6 仓库内实现完成。仓库内实现不代表默认激活或发布资产已经交付；

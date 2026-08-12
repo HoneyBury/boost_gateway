@@ -8,6 +8,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 
@@ -330,11 +331,29 @@ void MultiProcessFixture::SetUp() {
     services_.clear();
     startup_error_.clear();
     all_started_ = false;
-    gateway_port_ = reserve_free_port();
-    login_port_ = reserve_free_port();
-    room_port_ = reserve_free_port();
-    battle_port_ = reserve_free_port();
-    leaderboard_port_ = reserve_free_port();
+
+    // A bind-to-zero probe releases its socket before the child process starts.
+    // Linux may immediately return the same ephemeral port to a later probe. If
+    // that happens, the second backend fails to bind while wait_for_port()
+    // mistakenly observes the first backend on the shared port. Keep every
+    // fixture port distinct so readiness always refers to the intended process.
+    std::set<std::uint16_t> fixture_ports;
+    const auto reserve_distinct_port = [&fixture_ports]() {
+        constexpr int kMaxAttempts = 100;
+        for (int attempt = 0; attempt < kMaxAttempts; ++attempt) {
+            const auto port = reserve_free_port();
+            if (fixture_ports.insert(port).second) {
+                return port;
+            }
+        }
+        throw std::runtime_error("unable to reserve distinct fixture ports");
+    };
+
+    gateway_port_ = reserve_distinct_port();
+    login_port_ = reserve_distinct_port();
+    room_port_ = reserve_distinct_port();
+    battle_port_ = reserve_distinct_port();
+    leaderboard_port_ = reserve_distinct_port();
     setenv("CONFIG_PATH", "/tmp/boost_gateway_multi_process_no_config.json", 1);
     setenv("BOOST_DISABLE_REDIS_AUTO_CONNECT", "1", 1);
 }
@@ -433,6 +452,10 @@ bool MultiProcessFixture::start_service(const std::string& service_id) {
     if (!wait_for_port(port, kServiceStartTimeout)) {
         startup_error_ = service_id + " port " + std::to_string(port) +
                          " not ready within timeout";
+        return false;
+    }
+    if (!pg.is_running()) {
+        startup_error_ = service_id + " exited before readiness completed";
         return false;
     }
 

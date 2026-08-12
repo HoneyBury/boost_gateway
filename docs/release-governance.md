@@ -129,7 +129,7 @@ attestation、总 checksum 或 GitHub Release，因此不能直接交给生产�
 从 v3.6.3 失败候选及其后续补丁开始，正式发布 manifest 按
 [`docs/decisions/v3.6.3-linux-x64-release.md`](decisions/v3.6.3-linux-x64-release.md) 收敛到 Linux x64。
 该变更只影响新 tag 的必需资产，不改写 v3.6.2 的三平台历史事实，也不允许把手动 workflow
-artifact 复制到生产机。ARM candidate 能力可以保留，但不得被解释为 v3.6.6 发布支持。
+artifact 复制到生产机。ARM candidate 能力可以保留，但不得被解释为 v3.6.7 发布支持。
 
 生产主机在该决策完成前保持当前已验证 Release。任何新 Release 部署都会改变 runtime
 subject，并重置正在进行的 canary、72 小时预演或 30 天窗口。
@@ -152,7 +152,7 @@ subject，并重置正在进行的 canary、72 小时预演或 30 天窗口。
 | **文档** | README.md, CHANGELOG.md, docs/ 目录下当前维护的文档 |
 | **部署** | deploy/systemd/*.service, deploy/README.md |
 
-`v3.6.6` GitHub Release manifest 必须包含 Linux x64 stripped runtime、对应
+`v3.6.7` GitHub Release manifest 必须包含 Linux x64 stripped runtime、对应
 debug-symbol archive、一个 SDK 4.2.1 wheel、一个 Linux x64 RID NuGet、每个
 二进制/package subject 的 SPDX SBOM、两份 SDK provenance metadata 和总
 `SHA256SUMS.txt`。PyPI/NuGet.org 不属于该发布事务；未配置 trusted publishing 时

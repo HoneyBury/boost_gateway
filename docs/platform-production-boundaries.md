@@ -10,7 +10,7 @@ BoostGateway 维护三个彼此独立的原生生产平台。机器可读事实�
 
 | 平台 | 原生产物 | 容器/运行模型 | 发布状态 |
 |---|---|---|---|
-| `linux-x64` | ELF x86_64 | 原生进程或 `linux/amd64` Compose | v3.6.6 release target；v3.6.2 已发布复验 |
+| `linux-x64` | ELF x86_64 | 原生进程或 `linux/amd64` Compose | v3.6.7 release target；v3.6.6、v3.6.2 已发布复验 |
 | `linux-arm64` | ELF ARM64 | 原生进程或 `linux/arm64` Compose | 暂停新发布；v3.6.2 历史资产保留 |
 | `macos-arm64` | Mach-O ARM64 | macOS 原生进程编排 | 暂停新发布；v3.6.2 历史资产保留，未声明 notarized |
 
@@ -19,8 +19,8 @@ provenance 和 checksum 资产。线上复验 runs `30063950242`、`30063441646`
 `30063444082` 分别在目标平台完成独立消费。详细交付记录位于
 [v3.6 实现状态归档](archive/releases/v3.6-implementation-status.md)。
 
-v3.6.6 按 [Linux x64-only patch ADR](decisions/v3.6.3-linux-x64-release.md) 只发布
-`linux-x64`。`production_platforms` 继续描述已经实现的原生能力，`release_platforms`
+v3.6.7 继续按 [Linux x64-only patch ADR](decisions/v3.6.3-linux-x64-release.md) 只发布
+`linux-x64`；v3.6.6 保持不可变历史 Release。`production_platforms` 继续描述已经实现的原生能力，`release_platforms`
 单独定义新 tag 的强制资产集合，二者不得混用。
 
 ## 不可替代原则
