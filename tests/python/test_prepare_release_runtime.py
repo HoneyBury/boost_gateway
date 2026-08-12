@@ -178,6 +178,7 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                 "scripts/tools/check_observability_preflight.py",
                 "scripts/lib/__init__.py",
                 "scripts/lib/observability_preflight.py",
+                "scripts/lib/evidence_provenance.py",
                 "scripts/lib/operations_host.py",
                 "scripts/lib/release_deployment_verification.py",
             )
