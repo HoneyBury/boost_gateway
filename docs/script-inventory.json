@@ -9,6 +9,61 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/cpu_capacity_evidence_contract.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["CPU capacity evidence aggregation gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Capacity evidence parsing and validation need separation from comparison aggregation and CLI reporting.",
+      "replaces": "Capacity evidence contracts embedded in aggregate_cpu_capacity_evidence.py",
+      "retirement_condition": "Capacity evidence adopts an equivalent versioned schema validator.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_verification.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release deployment verification CLI"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Compose, image and Prometheus validation contracts need separation from live deployment orchestration.",
+      "replaces": "Pure verification helpers embedded in verify_release_deployment.py",
+      "retirement_condition": "Deployment verification migrates to an equivalent schema-backed contract.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_sbom_io.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release SBOM hardening CLI", "release SBOM semantic verifier"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Safe archive, Conan lock and SPDX identity primitives need an import-safe ownership boundary.",
+      "replaces": "SBOM input and normalization helpers embedded in harden_release_sbom.py",
+      "retirement_condition": "Release SBOM processing adopts an equivalent governed library.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_sbom_semantics.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release SBOM hardening CLI"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "SPDX enrichment, verification and attestation semantics need separation from argument handling.",
+      "replaces": "SBOM semantic operations embedded in harden_release_sbom.py",
+      "retirement_condition": "Release SBOM processing adopts an equivalent governed library.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/sdk_full_flow_runtime.py": {
+      "kind": "library-module",
+      "domain": "sdk",
+      "consumers": ["SDK full-flow verification gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "SDK process, port and runtime-isolation helpers need separation from full-flow orchestration.",
+      "replaces": "Runtime helpers embedded in verify_sdk_full_flow_client.py",
+      "retirement_condition": "SDK full-flow verification adopts a replacement governed runtime harness.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/conan_workflow_contract.py": {
       "kind": "library-module",
       "domain": "dependencies",
@@ -488,6 +543,9 @@
     "scripts/lib/cancellable_process.py": {
       "category": "tool"
     },
+    "scripts/lib/cpu_capacity_evidence_contract.py": {
+      "category": "tool"
+    },
     "scripts/lib/conan_workflow_contract.py": {
       "category": "tool"
     },
@@ -506,7 +564,19 @@
     "scripts/lib/raft_mixed_binary_runtime.py": {
       "category": "tool"
     },
+    "scripts/lib/release_deployment_verification.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_sbom_io.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_sbom_semantics.py": {
+      "category": "tool"
+    },
     "scripts/lib/sdk_distribution_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/sdk_full_flow_runtime.py": {
       "category": "tool"
     },
     "scripts/lib/backup_recovery.py": {
