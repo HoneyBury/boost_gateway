@@ -1,6 +1,6 @@
 # 72 小时生产预演 Runbook
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 本文档是 `TODO-0016` 在 Ubuntu 24.04 x64 单节点生产主机上的 maintained 执行入口。
 它不负责关闭 `TODO-0011` 或 `TODO-0013`，也不把诊断性 canary 时间自动升级为正式
@@ -9,18 +9,21 @@ Day 0。机器可读的预声明模板位于
 
 ## 当前候选和边界
 
-当前没有完成生产准入的不可变候选。新的 release target 是：
+当前已有发布和独立资产复验完成、但尚未完成生产准入的不可变候选：
 
-- tag：`v3.6.7`（待创建）
-- commit：等待受治理 main 候选冻结
-- runtime archive SHA-256：等待正式 Release
-- Release run：等待正式 tag workflow
-- published-asset verification run：等待独立线上消费
+- tag：`v3.6.7`（annotated tag）
+- commit：`db0f905d0421b2052b9de7f49d9bf71787915e23`
+- runtime archive SHA-256：`fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0`
+- governed rehearsal run：`31616669960`（PASS）
+- Release run：`31617730727`（PASS）
+- published-asset verification run：`31618651955` attempt 2（PASS）
 - deployment/configuration identity：等待 W33 后受控 upgrade
 
-v3.6.6 已完成 Release `31020678952` 和独立资产复验 `31021854876`，但没有进入
-miniserver。该 tag 后合入了 cross-core MPSC、实例生命周期、Login session 回收和 shutdown
-race 等运行时正确性修复；这些代码不能复用 v3.6.6 provenance，因此由 v3.6.7 新候选承载。
+独立复验已验证 checksum、归档布局、runtime/symbol/SDK、SPDX 语义、无网络 Ubuntu 24.04
+consumer、provenance 与 SBOM attestation。attempt 1 因 GitHub HTTP/2 `GOAWAY` 在下载阶段
+中断；失败历史保留，attempt 2 从空目录完整重跑并通过。v3.6.6 已完成 Release
+`31020678952` 和独立资产复验 `31021854876`，但没有进入 miniserver；其 tag 后的运行时
+正确性修复由 v3.6.7 承载。
 
 当前 v3.6.5 生产身份是：
 

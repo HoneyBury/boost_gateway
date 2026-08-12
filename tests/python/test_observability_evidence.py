@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import tarfile
 import tempfile
 import unittest
 from pathlib import Path
 
+from scripts.lib import observability_evidence_package as package_verifier
 from scripts.tools import manage_observability_evidence as evidence
 
 
@@ -154,6 +157,73 @@ class ObservabilityEvidenceTest(unittest.TestCase):
         for line in sums:
             expected, relative = line.split("  ", 1)
             self.assertEqual(evidence.sha256_file(extraction / relative), expected)
+
+    def test_verify_package_extracts_and_writes_create_only_remote_receipt(self) -> None:
+        self._record("daily", "day-1", {"checkpoint_date": "2026-07-26"})
+        manifest_path, manifest = evidence.build_manifest(
+            self.ledger, "manifest-1", identity=self.identity
+        )
+        package = self.root / "off-host-evidence.tar.gz"
+        evidence.package_manifest(manifest_path, package)
+        extraction = self.root / "remote" / "manifest-1"
+        receipt = self.root / "remote" / "manifest-1-receipt.json"
+
+        result = evidence.verify_package(
+            package, extraction, receipt, identity=self.identity
+        )
+
+        self.assertTrue(result["overall_pass"])
+        self.assertTrue(result["off_host_copy_verified"])
+        self.assertTrue(result["create_only"])
+        self.assertEqual(result["manifest"]["manifest_id"], "manifest-1")
+        self.assertEqual(
+            result["checksums"]["verified_entry_count"], manifest["entry_count"] + 1
+        )
+        self.assertTrue((extraction / "SHA256SUMS").is_file())
+        self.assertEqual(
+            json.loads(receipt.read_text()),
+            {
+                key: value
+                for key, value in result.items()
+                if key not in {"receipt", "receipt_sha256"}
+            },
+        )
+        with self.assertRaisesRegex(
+            package_verifier.PackageVerificationError, "cannot be reused"
+        ):
+            evidence.verify_package(package, extraction, self.root / "another.json", identity=self.identity)
+
+    def test_verify_package_rejects_checksum_drift_without_extracting(self) -> None:
+        package = self.root / "drifted.tar.gz"
+        manifest = json.dumps(
+            {
+                "manifest_id": "manifest-1",
+                "entry_count": 1,
+                "entries": [{"archive_path": "raw/value.json"}],
+            }
+        ).encode("utf-8")
+        sums = (
+            f"{'0' * 64}  raw/value.json\n"
+            f"{hashlib.sha256(manifest).hexdigest()}  manifest.json\n"
+        ).encode("utf-8")
+        with tarfile.open(package, "w:gz") as archive:
+            for name, content in (
+                ("raw/value.json", b"{}\n"),
+                ("manifest.json", manifest),
+                ("SHA256SUMS", sums),
+            ):
+                info = tarfile.TarInfo(name)
+                info.size = len(content)
+                archive.addfile(info, io.BytesIO(content))
+
+        extraction = self.root / "remote"
+        with self.assertRaisesRegex(
+            package_verifier.PackageVerificationError, "checksum differs"
+        ):
+            evidence.verify_package(
+                package, extraction, self.root / "receipt.json", identity=self.identity
+            )
+        self.assertFalse(extraction.exists())
 
 
 if __name__ == "__main__":

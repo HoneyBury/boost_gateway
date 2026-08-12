@@ -24,7 +24,7 @@ BoostGateway 是企业级、高性能、跨平台的 C++20 实时服务框架，
 
 | 领域 | 当前事实 |
 |---|---|
-| 发布 | v3.6.7 Linux x64 release target、SDK 4.2.1；v3.6.6 已发布，ARM 停留在 v3.6.2 |
+| 发布 | v3.6.7 Linux x64 / SDK 4.2.1 已发布并独立复验；ARM 停留在 v3.6.2 |
 | 默认链路 | SDK + TCP Gateway + 五 backend；gRPC 保持实验 |
 | 平台 | Linux x64、Linux ARM64、macOS ARM64 原生证据独立维护 |
 | 依赖 | Conan 2.8.1、profile/lockfile、严格 CMake provider |

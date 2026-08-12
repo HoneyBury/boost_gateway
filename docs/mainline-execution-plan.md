@@ -1,6 +1,6 @@
 # v3.6.7 Linux x64 企业运营主线
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 ## 目标
 
@@ -49,10 +49,14 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 已完成基线
 
-- v3.6.7 已作为新的 Linux x64 release target 准备。它保持 SDK 4.2.1 和默认 TCP/五后端
-  生产链路不变，纳入 v3.6.6 后合入的 MPSC mailbox、实例生命周期、Login session 回收、
-  shutdown race、Battle/ECS 热路径和 SMTP relay 修复。正式 tag、Release run、线上资产复验、
-  runtime digest 和生产 deployment identity 在各自完成前保持未声明。
+- v3.6.7 已作为新的 Linux x64 release 发布。它保持 SDK 4.2.1 和默认 TCP/五后端生产链路
+  不变，纳入 v3.6.6 后合入的 MPSC mailbox、实例生命周期、Login session 回收、shutdown
+  race、Battle/ECS 热路径和 SMTP relay 修复。annotated tag 固定到
+  `db0f905d0421b2052b9de7f49d9bf71787915e23`；main 演练 `31616669960`、正式 Release
+  `31617730727` 和独立 aoi Linux x64 published-asset verification `31618651955` attempt 2
+  全部通过。runtime archive SHA-256 是
+  `fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0`；生产
+  deployment/configuration identity 仍等待 W33 后的受控 upgrade。
 - v3.6.6 annotated tag 固定到
   `d0db2cfd2efaffca55522a58402a48015b39d091`；main 演练 `31019859848`、正式
   Release `31020678952` 和独立 aoi Linux x64 published-asset verification

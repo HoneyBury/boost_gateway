@@ -4,10 +4,10 @@ BoostGateway 是一个面向实时业务的企业级 C++20 服务框架。默认
 Login、Room、Battle、Matchmaking、Leaderboard 和多语言 SDK 组成，并提供 Redis/Raft、
 TLS、观测、容器部署和生产证据门禁。
 
-当前发布目标是 [v3.6.7](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.7)
-Linux x64；最近已发布版本是 v3.6.6。v3.6.7 保持 SDK 4.2.1，并将 v3.6.6 后的运行时
-并发、资源回收、SMTP relay 和工具治理修复绑定到新的不可变 tag、符号、SBOM、checksum
-和 provenance。
+当前发布版本是 [v3.6.7](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.7)
+Linux x64。它保持 SDK 4.2.1，并将 v3.6.6 后的运行时并发、资源回收、SMTP relay 和
+工具治理修复绑定到不可变 tag、符号、SBOM、checksum 和 provenance；正式 Release 与
+独立线上资产复验均已通过。
 ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsioDemo`，部分兼容路径仍保留旧名称。
 
 ## 当前状态
@@ -17,7 +17,7 @@ ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsio
 | 默认传输 | SDK + TCP Gateway + `BackendEnvelope`；gRPC 仍为实验能力 |
 | 默认依赖 | Conan 2.8.1、仓库 profile/lockfile、CMake `conan` provider |
 | 支持平台 | Linux x64、Linux ARM64、macOS ARM64；平台证据不可互换 |
-| 发布状态 | v3.6.7 Linux x64 release target；v3.6.6 已发布，ARM 保留 v3.6.2 历史资产 |
+| 发布状态 | v3.6.7 Linux x64 已发布并独立复验；ARM 保留 v3.6.2 历史资产 |
 | 当前主线 | Ubuntu 24.04 x64 单节点自动部署、观测、备份恢复和 30 天不可变验证 |
 
 权威事实和当前边界见 [当前项目事实源](docs/current-state.md)，当前执行顺序见

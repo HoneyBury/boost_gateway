@@ -6,6 +6,7 @@ import hashlib
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from scripts.lib.operations_identity import (
     OperationsIdentityError,
@@ -65,6 +66,23 @@ class OperationsIdentityTest(unittest.TestCase):
                     boot_id_path=root / "boot-id",
                     os_release_path=root / "os-release",
                 )
+
+    def test_collects_native_macos_identity_when_linux_identity_files_do_not_apply(self) -> None:
+        host = {
+            "hostname": "mac-runner",
+            "host_id_sha256": "a" * 64,
+            "boot_id": "b" * 64,
+            "os": {"id": "macos", "version_id": "26.5", "kernel_release": "25.0"},
+            "architecture": "arm64",
+        }
+        with (
+            patch("scripts.lib.operations_identity.platform.system", return_value="Darwin"),
+            patch("scripts.lib.operations_identity._darwin_host_identity", return_value=host),
+        ):
+            identity = collect_operations_identity(environment={})
+
+        self.assertEqual(identity["host"], host)
+        self.assertEqual(identity["operator"]["source"], "process")
 
 
 if __name__ == "__main__":
