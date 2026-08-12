@@ -114,3 +114,34 @@ CLI contract 和一次对应 `workflow_dispatch` rehearsal。fixed-runner、secr
 `recovery_evidence` 边界，但主体仍是 4,707/2,069 行。它们涉及 fixed-runner 性能采集和真实恢复
 副作用，本轮不为了行数目标继续机械拆分；下一轮应先建立录制 fixture 与失败注入，再按进程资源、
 业务负载、故障执行和证据渲染继续拆解。
+
+## 2026-08-12 第二轮主动减量
+
+第二轮以第一轮冻结值为基线，处理尚未完成的两个最大热点和全部剩余跨 CLI 实现依赖：
+
+| 指标 | 第二轮基线 | 退出目标 |
+|---|---:|---:|
+| public entrypoint | 23 | 不高于 23 |
+| canonical CLI | 127 | 不高于 127 |
+| `scripts/tools` 文件 | 55 | 不高于 55 |
+| 未直接测试 CLI | 0 | 保持 0 |
+| 超过 800 行的脚本 | 10 | 不高于 8 |
+| 跨 CLI 导入边 | 8 | 清零 |
+| workflow 唯一脚本依赖 | 47 | 不高于 47 |
+| workflow 到脚本依赖边 | 103 | 不高于 103 |
+| 三处以上重复 workflow 片段 | 5 | 不高于 5 |
+
+内部 library 数量不是减量成果，允许增长仅用于替换既有大文件职责或跨 CLI 复用。每个新增模块
+必须同时满足：没有 `argparse`/`main()`、只有一个维护领域、具有直接测试或录制 fixture、原入口
+兼容、登记唯一消费者和退役条件。第二轮结束时将稳定模块纳入新人工基线并清空迁移例外。
+
+实施顺序：
+
+1. 为性能采集的 CPU/进程、连接预算、业务操作、OTel、资源分析和报告判定建立可导入契约，
+   保持原模块的兼容导出；CLI 只保留参数、拓扑生命周期和阶段编排。
+2. 为恢复演练的子进程失败注入、Compose/image preflight、SDK 探针和记录渲染建立无副作用
+   fixture；CLI 只保留真实演练状态机。
+3. 将剩余 8 条 peer-CLI 导入改到既有或新建的 CLI-free contract：容量证据、SBOM、备份 vault、
+   restore transport、隔离恢复、观测证据、Compose preflight 和恢复策略。
+4. 运行原 CLI `--help`、领域测试、完整 Python suite、治理 suite 与已有 CTest 单元入口；生产
+   Compose、Redis、fixed runner 和 secret 仍需目标环境 rehearsal，本地验证不冒充外部证据。
