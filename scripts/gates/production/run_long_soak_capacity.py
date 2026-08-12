@@ -33,77 +33,21 @@ from scripts.lib.cancellable_process import (
 from scripts.lib.evidence_provenance import build_evidence_provenance
 
 
-ROOT = Path(__file__).resolve().parents[3]
 
-LONG_SOAK_PRESETS = {
-    "2h": {
-        "soak_profile": "long",
-        "step_timeout_seconds": 16200,
-        "summary_path": "runtime/validation/long-soak-2h-summary.json",
-    },
-    "8h": {
-        "soak_profile": "overnight",
-        "step_timeout_seconds": 37800,
-        "summary_path": "runtime/validation/long-soak-8h-summary.json",
-    },
-}
-
-
-def tail(text: str | bytes | None, max_chars: int = 4000) -> str:
-    if text is None:
-        return ""
-    if isinstance(text, bytes):
-        text = text.decode("utf-8", errors="replace")
-    return text if len(text) <= max_chars else text[-max_chars:]
-
-
-def run_step(
-    name: str,
-    category: str,
-    cmd: list[str],
-    timeout_seconds: int,
-    cancellation: CancellationState | None = None,
-) -> dict[str, object]:
-    print(f"==> {name}", flush=True)
-    result = run_cancellable_process(
-        cmd,
-        ROOT,
-        timeout_seconds,
-        cancellation or CancellationState(),
-        cancellation_grace_seconds=10.0,
-        timeout_grace_seconds=0.5,
-    )
-    stdout = str(result.get("stdout", ""))
-    stderr = str(result.get("stderr", ""))
-
-    if stdout:
-        print(stdout, end="")
-    if stderr:
-        print(stderr, end="", file=sys.stderr)
-    return {
-        "name": name,
-        "category": category,
-        "command": cmd,
-        "status": result["status"],
-        "returncode": result.get("returncode"),
-        "signal": result.get("signal", ""),
-        "duration_seconds": result["duration_seconds"],
-        "stdout_tail": tail(stdout),
-        "stderr_tail": tail(stderr),
-    }
+from scripts.lib.long_soak_contract import *  # noqa: E402,F403
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--build-dir", type=Path, default=Path("build/release"))
     parser.add_argument("--configuration", default="Release")
-    parser.add_argument("--skip-build", action="store_true")
-    parser.add_argument("--run-2h-soak", action="store_true")
-    parser.add_argument("--run-8h-soak", action="store_true")
-    parser.add_argument("--run-capacity", action="store_true")
-    parser.add_argument("--run-business-capacity", action="store_true")
-    parser.add_argument("--run-saturation", action="store_true")
-    parser.add_argument("--perf-repetitions", type=int, default=3)
+    for flag in (
+        "skip-build", "run-2h-soak", "run-8h-soak", "run-capacity",
+        "run-business-capacity", "run-saturation", "run-business-operation-perf",
+        "run-resource-stability-gate", "leaderboard-redis-comparison",
+        "run-otel-comparison",
+    ):
+        parser.add_argument(f"--{flag}", action="store_true")
     parser.add_argument(
         "--capacity-case",
         action="append",
@@ -116,12 +60,17 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Optional saturation manifest case selection for fixed 1/2/4 CPU or io_cores comparisons.",
     )
-    parser.add_argument("--saturation-cpu-threshold-percent", type=float, default=85.0)
-    parser.add_argument("--saturation-loadgen-headroom-percent", type=float, default=85.0)
-    parser.add_argument("--business-flow-clients", type=int, default=3)
-    parser.add_argument("--backend-pool-size", type=int, default=8)
-    parser.add_argument("--battle-route-workers", type=int, default=8)
-    parser.add_argument("--io-cores", type=int, default=4)
+    numeric_options = {
+        "perf-repetitions": (int, 3), "saturation-cpu-threshold-percent": (float, 85.0),
+        "saturation-loadgen-headroom-percent": (float, 85.0), "business-flow-clients": (int, 3),
+        "backend-pool-size": (int, 8), "battle-route-workers": (int, 8), "io-cores": (int, 4),
+        "loadgen-io-threads": (int, 4), "business-operation-clients": (int, 16),
+        "business-operation-iterations": (int, 10), "resource-stability-windows": (int, 8),
+        "resource-stability-warmup-windows": (int, 2), "resource-stability-clients": (int, 16),
+        "resource-stability-iterations": (int, 100), "leaderboard-redis-port": (int, 6379),
+    }
+    for option, (value_type, default) in numeric_options.items():
+        parser.add_argument(f"--{option}", type=value_type, default=default)
     parser.add_argument(
         "--cpu-set",
         default="",
@@ -132,111 +81,12 @@ def parse_args() -> argparse.Namespace:
         default="",
         help="Disjoint Linux CPU affinity list for capacity load generation.",
     )
-    parser.add_argument("--loadgen-io-threads", type=int, default=4)
-    parser.add_argument("--run-business-operation-perf", action="store_true")
-    parser.add_argument("--business-operation-clients", type=int, default=16)
-    parser.add_argument("--business-operation-iterations", type=int, default=10)
-    parser.add_argument("--run-resource-stability-gate", action="store_true")
-    parser.add_argument("--resource-stability-windows", type=int, default=8)
-    parser.add_argument("--resource-stability-warmup-windows", type=int, default=2)
-    parser.add_argument("--resource-stability-clients", type=int, default=16)
-    parser.add_argument("--resource-stability-iterations", type=int, default=100)
-    parser.add_argument("--leaderboard-redis-comparison", action="store_true")
     parser.add_argument("--leaderboard-redis-host", default="127.0.0.1")
-    parser.add_argument("--leaderboard-redis-port", type=int, default=6379)
     parser.add_argument("--leaderboard-redis-key", default="")
-    parser.add_argument("--run-otel-comparison", action="store_true")
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/long-soak-capacity-summary.json"))
     args = parser.parse_args()
-    if args.run_business_operation_perf and not (args.run_capacity or args.run_business_capacity):
-        parser.error("--run-business-operation-perf requires --run-capacity or --run-business-capacity")
-    if args.run_resource_stability_gate and not args.run_business_capacity:
-        parser.error("--run-resource-stability-gate requires --run-business-capacity")
-    if args.run_resource_stability_gate and (
-        args.resource_stability_windows < 5
-        or args.resource_stability_warmup_windows < 1
-        or args.resource_stability_windows - args.resource_stability_warmup_windows < 3
-        or args.resource_stability_clients <= 0
-        or args.resource_stability_clients % 2 != 0
-        or args.resource_stability_iterations <= 0
-    ):
-        parser.error(
-            "resource stability requires at least five windows, one warmup, three measurement windows, "
-            "positive iterations, and a positive even client count"
-        )
-    if args.leaderboard_redis_comparison and not (
-        args.run_business_operation_perf and args.run_business_capacity
-    ):
-        parser.error(
-            "--leaderboard-redis-comparison requires --run-business-operation-perf "
-            "and --run-business-capacity"
-        )
-    if args.leaderboard_redis_comparison and args.perf_repetitions < 3:
-        parser.error("--leaderboard-redis-comparison requires --perf-repetitions >= 3")
-    if args.run_otel_comparison and not args.run_business_capacity:
-        parser.error("--run-otel-comparison requires --run-business-capacity")
-    if args.run_otel_comparison and args.perf_repetitions < 3:
-        parser.error("--run-otel-comparison requires --perf-repetitions >= 3")
-    if args.loadgen_io_threads <= 0:
-        parser.error("--loadgen-io-threads must be positive")
-    if args.io_cores <= 0:
-        parser.error("--io-cores must be positive")
-    if not 0.0 < args.saturation_cpu_threshold_percent <= 100.0:
-        parser.error("--saturation-cpu-threshold-percent must be in (0, 100]")
-    if not 0.0 < args.saturation_loadgen_headroom_percent <= 100.0:
-        parser.error("--saturation-loadgen-headroom-percent must be in (0, 100]")
-    if (
-        args.cpu_set
-        and (args.run_capacity or args.run_business_capacity or args.run_saturation)
-        and not args.loadgen_cpu_set
-    ):
-        parser.error(
-            "capacity evidence with --cpu-set requires an explicit, reusable --loadgen-cpu-set"
-        )
-    if args.loadgen_cpu_set and not args.cpu_set:
-        parser.error("--loadgen-cpu-set requires --cpu-set")
-    if args.run_saturation and (not args.cpu_set or not args.loadgen_cpu_set):
-        parser.error(
-            "--run-saturation requires explicit disjoint --cpu-set and --loadgen-cpu-set"
-        )
+    validate_args(args, parser)
     return args
-
-
-def environment_snapshot() -> dict[str, object]:
-    return {
-        "platform": platform.platform(),
-        "system": platform.system(),
-        "release": platform.release(),
-        "machine": platform.machine(),
-        "python": sys.version.split()[0],
-        "host": socket.gethostname(),
-        "cwd": str(ROOT),
-    }
-
-
-def attach_provenance(summary_path: Path, provenance: dict[str, object]) -> None:
-    if not summary_path.exists():
-        return
-    try:
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return
-    if not isinstance(summary, dict):
-        return
-    summary["provenance"] = provenance
-    atomic_write_json(summary_path, summary)
-
-
-def validate_child_summary(summary_path: Path) -> str:
-    try:
-        summary = json.loads(summary_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        return f"child summary is unavailable or invalid: {summary_path}: {exc}"
-    if not isinstance(summary, dict):
-        return f"child summary must be a JSON object: {summary_path}"
-    if summary.get("overall_pass") is not True:
-        return f"child summary did not pass: {summary_path}"
-    return ""
 
 
 def main() -> int:

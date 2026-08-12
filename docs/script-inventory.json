@@ -9,6 +9,83 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/conan_workflow_contract.py": {
+      "kind": "library-module",
+      "domain": "dependencies",
+      "consumers": ["Conan workflow governance gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Conan workflow declarations and parsing helpers need separation from the aggregate gate report.",
+      "replaces": "Contract declarations embedded in check_conan_lockfile_workflows.py",
+      "retirement_condition": "Conan workflow policy migrates to an equivalent versioned contract source.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/deploy_operability_contract.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": ["deployment operability gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Deployment topology declarations and validators need separation from gate orchestration and reporting.",
+      "replaces": "Deployment contract helpers embedded in check_deploy_operability.py",
+      "retirement_condition": "Deployment topology validation moves to an equivalent schema-backed contract.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/evidence_provenance_cases.py": {
+      "kind": "library-module",
+      "domain": "governance",
+      "consumers": ["evidence provenance contract gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Provenance acceptance and rejection fixtures need an import-safe home separate from CLI reporting.",
+      "replaces": "Fixture builders embedded in check_evidence_provenance_contract.py",
+      "retirement_condition": "Evidence provenance fixtures move to a replacement schema conformance suite.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/long_soak_contract.py": {
+      "kind": "library-module",
+      "domain": "performance",
+      "consumers": ["long-soak capacity orchestrator"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Long-soak argument, subprocess and provenance contracts need separation from multi-stage orchestration.",
+      "replaces": "Reusable long-soak helpers embedded in run_long_soak_capacity.py",
+      "retirement_condition": "A replacement soak orchestrator owns equivalent presets and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/monitoring_operability_contract.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": ["monitoring operability gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Prometheus, Grafana and alert declarations need separation from operational integration checks.",
+      "replaces": "Monitoring declarations embedded in check_monitoring_operability.py",
+      "retirement_condition": "Monitoring declarations migrate to an equivalent schema-backed policy source.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/raft_mixed_binary_runtime.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": ["Raft mixed-binary evidence gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "Raft node process and wire helpers need separation from rolling-upgrade decision orchestration.",
+      "replaces": "Node runtime helpers embedded in verify_raft_mixed_binary.py",
+      "retirement_condition": "Raft compatibility evidence adopts a replacement cluster runtime harness.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/sdk_distribution_contract.py": {
+      "kind": "library-module",
+      "domain": "sdk",
+      "consumers": ["SDK distribution gate"],
+      "test": "tests/python/test_reduced_contract_modules.py",
+      "why_new_script": "SDK versions, ABI symbols and wrapper validators need separation from artifact and report checks.",
+      "replaces": "SDK distribution declarations embedded in check_sdk_distribution.py",
+      "retirement_condition": "SDK distribution validation migrates to an equivalent versioned compatibility manifest.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/backup_recovery.py": {
       "kind": "library-module",
       "domain": "recovery",
@@ -409,6 +486,27 @@
       "category": "tool"
     },
     "scripts/lib/cancellable_process.py": {
+      "category": "tool"
+    },
+    "scripts/lib/conan_workflow_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/deploy_operability_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/evidence_provenance_cases.py": {
+      "category": "tool"
+    },
+    "scripts/lib/long_soak_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/monitoring_operability_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/raft_mixed_binary_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/sdk_distribution_contract.py": {
       "category": "tool"
     },
     "scripts/lib/backup_recovery.py": {
