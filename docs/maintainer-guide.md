@@ -1,6 +1,6 @@
 # 维护者指南：代码、脚本与 Workflow 治理
 
-更新时间：2026-08-11
+更新时间：2026-08-12
 
 本文面向需要修改跨模块代码、脚本、CI/CD 或生产门禁的维护者。当前产品事实以
 [当前状态](current-state.md)为准，构建步骤以[开发者入门](ONBOARDING.md)为准；本文负责
@@ -27,8 +27,8 @@ Leaderboard。主要维护边界如下：
 
 ## 为什么工具面会膨胀
 
-截至本页更新时，仓库有 164 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
-58,800 行、workflow 约 5,600 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
+截至本页更新时，仓库有 184 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
+59,400 行、workflow 约 5,500 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
 增长主要来自四类真实需求：多平台证据不可互换；发布、恢复、TLS、性能和长稳需要独立
@@ -147,8 +147,8 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
 canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
-片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11/25、31/15、58、
-122、15、11 和 0；11 个 library 中有 10 个冻结基线和 1 个带直接测试的 reviewed exception。
+片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/31/25、20/10、47、
+103、8、5 和 0；31 个 library 已全部进入 2026-08-12 冻结基线，当前 reviewed exception 为 0。
 “其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
 `main()` 绕过增长审查。
 
@@ -161,14 +161,14 @@ canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/
 注释、仅匹配的测试文件名或没有测试函数的引用清单不再被当作覆盖。
 
 依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
-变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
-workflow 的初始化收敛后为 122 条，实际减少 9 条。不能把修正后的 122 与旧提取器遗漏调用时
-记录的 89 直接比较。
+变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；第一轮
+初始化收敛后为 122 条，本轮治理 suite 与构建指标 composite action 收敛后为 103 条。不能把
+修正后的数值与旧提取器遗漏调用时记录的 89 直接比较。
 
 跨 CLI 导入提取也识别 `from scripts.tools import module` 形式。修正该盲区后，发布包解耦前的
-真实图为 22 条边；`release_package` 共享库承接归档布局、安全解包和运行时动态库契约后为
-15 条，消除了 7 条发布 CLI 耦合。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续
-兼容，避免一次性迁移调用方。
+真实图为 22 条边；`release_package` 共享库承接发布包契约后为 15 条，本轮备份恢复共享库继续
+降到 8 条。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续兼容，避免一次性迁移
+调用方。
 
 评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增任何脚本文件
 只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
@@ -206,3 +206,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    workflow fan-out、CLI 导入边、public entrypoint 与重复片段；历史无测试 CLI 已全部转为可执行
    的入口 smoke 契约并把 allowlist 收紧为 0。新脚本必须提供可验证的例外记录，并登记需要
    GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，而不是单纯追求文件数更少。
+6. 2026-08-12 主动减量把超过 500/800 行脚本降到 20/10，Workflow 依赖边降到 103，跨 CLI
+   导入降到 8，重复片段降到 5；迁移库已转入稳定基线并清空增长例外。下一轮优先为
+   `collect_v2_perf_baseline.py` 和 `verify_preprod_recovery_drill.py` 建立可录制 fixture，再继续拆分。

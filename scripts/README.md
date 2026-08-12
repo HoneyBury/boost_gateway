@@ -19,6 +19,12 @@ replacement, retirement condition, temporary status, and expiry date. The toolin
 metrics gate rejects missing, stale, invalid, or expired records and unreviewed
 workflow dependency or cross-CLI import growth.
 
+The reviewed 2026-08-12 baseline contains 23 public entrypoints, 127 canonical
+CLIs, 31 CLI-free libraries, 20/10 scripts over 500/800 lines, 47 unique workflow
+script dependencies, 103 workflow dependency edges, 8 cross-CLI imports, and 5
+repeated workflow fragments. `script_growth_exceptions` is currently empty; a new
+module must earn a new exception instead of copying a retired migration record.
+
 Every canonical CLI must also have a direct Python test. Historical commands have
 an executable import/parser smoke contract in
 `tests/python/test_cli_entrypoint_contracts.py`; changing command behavior still

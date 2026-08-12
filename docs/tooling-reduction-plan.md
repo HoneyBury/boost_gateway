@@ -81,3 +81,36 @@ CLI contract 和一次对应 `workflow_dispatch` rehearsal。fixed-runner、secr
 - 不把实验 gRPC、Raft protobuf writer 或新的平台声明带入本轮。
 - 不合并仍有独立触发、权限、runner 或证据生命周期的 Workflow。
 - 不在 v3.6.6 的 72 小时和 30 天验证期间改变生产 runtime 候选。
+
+## 2026-08-12 执行结果
+
+本轮退出指标已全部达到，并已写回评审基线：
+
+| 指标 | 执行前 | 执行后 |
+|---|---:|---:|
+| public entrypoint | 23 | 23 |
+| canonical CLI | 127 | 127 |
+| 未直接测试 CLI | 0 | 0 |
+| 超过 800 行的脚本 | 15 | 10 |
+| 超过 500 行的脚本 | 31 | 20 |
+| 跨 CLI 导入边 | 15 | 8 |
+| workflow 到脚本依赖边 | 122 | 103 |
+| 三处以上重复 workflow 片段 | 11 | 5 |
+
+具体收口如下：
+
+1. 发布部署 CLI 拆为布局、执行器、安装、事务、激活、恢复和命令分发边界；原 CLI、参数、测试
+   patch 路径和退出语义保留。
+2. 备份恢复实现进入 CLI-free 库，7 个消费者不再导入备份 CLI；独立 forced-command 安装同步
+   携带共享库。
+3. 仓库治理检查由 `check_mainline_readiness.py --repository-suite` 聚合，构建时长与 sccache 证据
+   由一个 composite action 复用；CI 和 Release 不再重复展开同一治理清单。
+4. 11 个超过阈值的 gate/release 脚本按契约、运行时帮助函数和编排职责拆分，并用直接模块契约
+   测试锁定仓库根、稳定常量与关键 callable。
+5. 迁移期 21 个 reviewed library exception 已在最终评审中纳入新的稳定 library 基线并清零；
+   后续新增文件仍必须逐项登记，不能复用本轮例外。
+
+`collect_v2_perf_baseline.py` 和 `verify_preprod_recovery_drill.py` 已分别具有 `perf_statistics` 与
+`recovery_evidence` 边界，但主体仍是 4,707/2,069 行。它们涉及 fixed-runner 性能采集和真实恢复
+副作用，本轮不为了行数目标继续机械拆分；下一轮应先建立录制 fixture 与失败注入，再按进程资源、
+业务负载、故障执行和证据渲染继续拆解。
