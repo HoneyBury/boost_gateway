@@ -39,6 +39,7 @@ REQUIRED_TOP_LEVEL_DOCS = [
     "docs/deployment/72-hour-production-shakedown-runbook.md",
     "docs/fixed-runner-playbook.md",
     "docs/release-governance.md",
+    "docs/tooling-reduction-plan.md",
     "docs/tls-mtls-runbook.md",
     "docs/decisions/v3.6-decision-manifest.json",
     "docs/production/production-candidate-evidence-manifest.json",
