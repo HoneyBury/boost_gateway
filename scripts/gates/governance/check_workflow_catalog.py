@@ -530,20 +530,20 @@ def main() -> int:
         '"$test_python" -m pip install --disable-pip-version-check -r requirements-dev.txt'
         in ci_workflow
         and '"$PYTHON_TEST_EXECUTABLE" -m pytest -q tests/python' in ci_workflow
-        and "python3 scripts/gates/governance/check_repository_governance.py" in ci_workflow,
+        and "python3 scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
         "mainline CI runs the complete Python contract suite and the live-tree gate",
     )
     add(
         checks,
         "ci:current-documentation-contract-gate",
-        "python3 scripts/gates/governance/check_current_docs_install.py" in ci_workflow,
+        "python3 scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
         "mainline CI blocks current-document and installed-document contract drift",
     )
     add(
         checks,
         "ci:next-minor-decision-gate",
-        "- name: Next minor decision gate" in ci_workflow
-        and "python3 scripts/gates/governance/check_next_minor_decisions.py" in ci_workflow,
+        "- name: Repository governance suite" in ci_workflow
+        and "python3 scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
         "mainline CI enforces the accepted next-minor decision manifest",
     )
     add(

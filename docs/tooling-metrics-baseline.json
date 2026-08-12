@@ -285,6 +285,7 @@
       ],
       "workflow_script_dependencies": [
         "scripts/bootstrap_conan.py",
+        "scripts/check_mainline_readiness.py",
         "scripts/check_production_evidence_manifest.py",
         "scripts/gates/e2e/verify_raft_mixed_binary.py",
         "scripts/gates/e2e/verify_specialized_e2e.py",
@@ -345,6 +346,7 @@
       ],
       "workflow_script_dependency_edges": [
         ".github/workflows/ci.yml -> scripts/bootstrap_conan.py",
+        ".github/workflows/ci.yml -> scripts/check_mainline_readiness.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_current_docs_install.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_evidence_provenance_contract.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_legacy_helper_inventory.py",
@@ -421,6 +423,7 @@
         ".github/workflows/release-asset-verification.yml -> scripts/tools/verify_release_package_consumer.py",
         ".github/workflows/release-asset-verification.yml -> scripts/tools/verify_sdk_distribution_packages.py",
         ".github/workflows/release.yml -> scripts/bootstrap_conan.py",
+        ".github/workflows/release.yml -> scripts/check_mainline_readiness.py",
         ".github/workflows/release.yml -> scripts/gates/e2e/verify_raft_mixed_binary.py",
         ".github/workflows/release.yml -> scripts/gates/e2e/verify_specialized_e2e.py",
         ".github/workflows/release.yml -> scripts/gates/governance/check_evidence_provenance_contract.py",
