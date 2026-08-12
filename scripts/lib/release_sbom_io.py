@@ -279,5 +279,3 @@ def parse_conan_purl(value: str) -> tuple[str, str, str] | None:
 
 def _spdx_id(kind: str, identity: str) -> str:
     return f"SPDXRef-{kind}-{hashlib.sha256(identity.encode('utf-8')).hexdigest()[:24]}"
-
-

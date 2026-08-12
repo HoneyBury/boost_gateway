@@ -290,4 +290,3 @@ def validate_alerts(checks: list[dict[str, Any]]) -> None:
         and "redis_rdb_changes_since_last_save > 0 and" not in alerts,
         "RDB stale warning follows save 300 100 and save 60 10000 instead of flagging expected low-churn AOF-protected changes",
     )
-

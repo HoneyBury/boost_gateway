@@ -164,4 +164,3 @@ def workflow_checks(checks: list[dict[str, Any]], name: str, path: str, content:
             all(token in content for token in CACHE_INPUTS),
             f"{path} cache key is bound to Conan graph inputs",
         )
-

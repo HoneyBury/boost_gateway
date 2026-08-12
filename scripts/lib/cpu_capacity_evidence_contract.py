@@ -398,5 +398,3 @@ def validate_business_resource_window(
         valid,
         f"services={len(services) if isinstance(services, dict) else 0} loadgen_cpu={loadgen_cpu}",
     )
-
-

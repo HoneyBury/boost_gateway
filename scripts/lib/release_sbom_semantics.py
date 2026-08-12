@@ -443,4 +443,3 @@ def write_json(path: Path, document: dict[str, Any]) -> None:
         json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     temporary.replace(path)
-

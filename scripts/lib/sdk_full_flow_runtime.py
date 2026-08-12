@@ -494,5 +494,3 @@ def add_backend_tls_metric_check(
                 "stderr": str(exc),
             }
         )
-
-

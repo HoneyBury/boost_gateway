@@ -187,4 +187,3 @@ class Node:
         if self.log_stream is not None:
             self.log_stream.close()
             self.log_stream = None
-

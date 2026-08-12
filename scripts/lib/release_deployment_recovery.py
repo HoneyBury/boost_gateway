@@ -735,4 +735,3 @@ class RecoveryMixin:
             "record_sha256": sha256_file(transaction / "record.json"),
             "idempotent": True,
         }
-

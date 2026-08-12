@@ -309,4 +309,3 @@ def run_r3_case(
     )
     payload = json.loads(summary.read_text(encoding="utf-8")) if summary.exists() else {}
     return completed.returncode, payload, completed.stdout
-

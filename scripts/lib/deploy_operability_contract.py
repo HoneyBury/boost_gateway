@@ -299,4 +299,3 @@ def validate_dockerfile(checks: list[dict[str, Any]]) -> None:
         "cmake" not in backend.lower() and "cmake" not in gateway.lower() and "FetchContent" not in backend + gateway,
         "Docker runtime images cannot configure or fetch CMake dependencies",
     )
-

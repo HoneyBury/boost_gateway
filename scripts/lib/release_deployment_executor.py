@@ -489,4 +489,3 @@ def lifecycle_lock(layout: Layout) -> Iterator[None]:
     finally:
         fcntl.flock(descriptor, fcntl.LOCK_UN)
         os.close(descriptor)
-

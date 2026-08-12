@@ -408,4 +408,3 @@ class CommandsMixin:
                 "failures": failures,
                 "protected_state_mutated": False,
             }
-

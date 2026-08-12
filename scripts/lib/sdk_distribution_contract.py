@@ -260,4 +260,3 @@ def validate_wrappers(checks: list[dict[str, Any]]) -> None:
             symbol in csharp,
             f"C# wrapper imports {symbol}",
         )
-

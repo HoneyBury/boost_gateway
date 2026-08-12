@@ -258,5 +258,3 @@ class Layout:
     @property
     def lock_path(self) -> Path:
         return self.transaction_root / ".lifecycle.lock"
-
-
