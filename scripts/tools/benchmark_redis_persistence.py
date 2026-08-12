@@ -1311,7 +1311,7 @@ def benchmark_persistence(
     if identity is None:
         if str(Path(__file__).resolve().parents[2]) not in sys.path:
             sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-        from scripts.lib.operations_identity import collect_operations_identity
+        from scripts.lib.operations_host import collect_operations_identity
 
         observed_identity = collect_operations_identity()
     else:

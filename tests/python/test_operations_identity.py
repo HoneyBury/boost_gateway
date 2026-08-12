@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.lib.operations_identity import (
+from scripts.lib.operations_host import (
     OperationsIdentityError,
     collect_operations_identity,
 )

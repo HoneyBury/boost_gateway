@@ -511,7 +511,7 @@ def create_encrypted_backup(
     if identity is None:
         if str(ROOT) not in sys.path:
             sys.path.insert(0, str(ROOT))
-        from scripts.lib.operations_identity import collect_operations_identity
+        from scripts.lib.operations_host import collect_operations_identity
 
         observed_identity = collect_operations_identity()
     else:

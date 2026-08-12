@@ -226,7 +226,7 @@ class ScheduledBackupTest(unittest.TestCase):
         for runtime_dependency in (
             '"${ROOT}/scripts/__init__.py"',
             '"${ROOT}/scripts/lib/__init__.py"',
-            '"${ROOT}/scripts/lib/operations_identity.py"',
+            '"${ROOT}/scripts/lib/operations_host.py"',
             '"${ROOT}/scripts/tools/__init__.py"',
         ):
             self.assertIn(runtime_dependency, installer)

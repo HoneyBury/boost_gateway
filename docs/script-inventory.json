@@ -9,6 +9,21 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/operations_host.py": {
+      "kind": "library-module",
+      "domain": "infrastructure",
+      "consumers": [
+        "scripts/gates/infrastructure/check_operations_host.py",
+        "scripts/lib/backup_recovery.py",
+        "scripts/lib/observability_evidence.py"
+      ],
+      "test": "tests/python/test_operations_identity.py",
+      "why_new_script": "The former identity-only module now owns the directly tested host identity, policy parsing, and admission evidence contract.",
+      "replaces": "scripts/lib/operations_identity.py",
+      "retirement_condition": "Replace only when operations admission and evidence consumers share another smaller secret-free host contract.",
+      "temporary": true,
+      "expires_on": "2026-09-30"
+    },
     "scripts/lib/workflow_catalog_contract.py": {
       "kind": "library-module",
       "domain": "governance",
@@ -394,7 +409,7 @@
     "scripts/lib/evidence_provenance.py": {
       "category": "tool"
     },
-    "scripts/lib/operations_identity.py": {
+    "scripts/lib/operations_host.py": {
       "category": "tool"
     },
     "scripts/lib/perf_bench_runtime.py": {

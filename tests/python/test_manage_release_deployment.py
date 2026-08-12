@@ -185,7 +185,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         (source / "scripts/tools/check_release_compose.py").write_text(
             "pass\n", encoding="utf-8"
         )
-        (source / "scripts/lib/operations_identity.py").write_text(
+        (source / "scripts/lib/operations_host.py").write_text(
             marker, encoding="utf-8"
         )
         (source / "bin/sdk_full_flow_client").write_text(marker, encoding="utf-8")
@@ -610,7 +610,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         first = self.manager.install(
             source, image_env, release_summary, image_summary, None
         )
-        (source / "scripts/lib/operations_identity.py").write_text(
+        (source / "scripts/lib/operations_host.py").write_text(
             "changed", encoding="utf-8"
         )
         manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
