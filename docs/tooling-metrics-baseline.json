@@ -24,8 +24,8 @@
       "maximum": 55
     },
     "library_files": {
-      "baseline": 31,
-      "maximum": 31
+      "baseline": 43,
+      "maximum": 43
     },
     "other_script_files": {
       "baseline": 25,
@@ -256,7 +256,19 @@
         "scripts/lib/long_soak_contract.py",
         "scripts/lib/monitoring_operability_contract.py",
         "scripts/lib/operations_identity.py",
+        "scripts/lib/perf_bench_runtime.py",
+        "scripts/lib/perf_business_operations.py",
+        "scripts/lib/perf_business_protocol.py",
+        "scripts/lib/perf_otel_runtime.py",
+        "scripts/lib/perf_process_affinity.py",
+        "scripts/lib/perf_process_runtime.py",
+        "scripts/lib/perf_release_contract.py",
+        "scripts/lib/perf_report.py",
+        "scripts/lib/perf_resource_evidence.py",
+        "scripts/lib/perf_result_aggregation.py",
+        "scripts/lib/perf_saturation_analysis.py",
         "scripts/lib/perf_statistics.py",
+        "scripts/lib/perf_stability_evidence.py",
         "scripts/lib/raft_mixed_binary_runtime.py",
         "scripts/lib/recovery_evidence.py",
         "scripts/lib/release_deployment_activation.py",

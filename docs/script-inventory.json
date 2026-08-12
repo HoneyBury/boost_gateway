@@ -437,7 +437,43 @@
     "scripts/lib/operations_identity.py": {
       "category": "tool"
     },
+    "scripts/lib/perf_bench_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_business_operations.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_business_protocol.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_otel_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_process_affinity.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_process_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_release_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_report.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_resource_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_result_aggregation.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_saturation_analysis.py": {
+      "category": "tool"
+    },
     "scripts/lib/perf_statistics.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_stability_evidence.py": {
       "category": "tool"
     },
     "scripts/lib/recovery_evidence.py": {
