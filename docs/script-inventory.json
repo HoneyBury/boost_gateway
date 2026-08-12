@@ -8,7 +8,19 @@
     "tool": "Small operational or rendering utility.",
     "legacy": "Historical compatibility script; avoid new references."
   },
-  "script_growth_exceptions": {},
+  "script_growth_exceptions": {
+    "scripts/lib/workflow_catalog_contract.py": {
+      "kind": "library-module",
+      "domain": "governance",
+      "consumers": ["scripts/gates/governance/check_workflow_catalog.py"],
+      "test": "tests/python/test_workflow_supply_chain_governance.py",
+      "why_new_script": "The workflow gate needs one directly tested CLI-free boundary for catalog, runner, platform, and Action checks.",
+      "replaces": "scripts/lib/summary_utils.py",
+      "retirement_condition": "Merge into a smaller governed workflow contract if this module loses its only catalog-gate consumer.",
+      "temporary": true,
+      "expires_on": "2026-09-30"
+    }
+  },
   "public_entrypoints": [
     "scripts/dev.py",
     "scripts/run_tests.py",
@@ -457,7 +469,7 @@
     "scripts/lib/release_package.py": {
       "category": "tool"
     },
-    "scripts/lib/summary_utils.py": {
+    "scripts/lib/workflow_catalog_contract.py": {
       "category": "tool"
     },
     "scripts/lib/tooling_metrics.py": {

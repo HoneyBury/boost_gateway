@@ -18,8 +18,8 @@ import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
+from scripts.lib.cancellable_process import atomic_write_json as write_json_summary
 from scripts.lib.subprocess_utils import run_gate_step
-from scripts.lib.summary_utils import write_json_summary
 
 
 run_step = run_gate_step
