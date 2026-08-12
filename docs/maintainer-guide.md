@@ -211,3 +211,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    `collect_v2_perf_baseline.py` 和 `verify_preprod_recovery_drill.py` 建立可录制 fixture，再继续拆分。
 7. 第二轮已把两个热点入口降到 736/787 行，并把跨 CLI 导入清零；超过 800 行脚本进一步降到 8，
    超过 500 行脚本保持 20。新增内部模块以 CLI-free 边界测试约束，public/CLI/tool 数量没有增长。
+8. 第三轮以 library 不高于 55 为硬边界，优先复用 workflow、operations host 和 long-soak 契约；
+   不再通过为每个函数组新增扁平模块来追求行数。恢复、Redis 和外部 canary 热点必须先补录制
+   fixture 与资源所有权失败注入，再进入后续减量。

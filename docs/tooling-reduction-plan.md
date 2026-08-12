@@ -163,3 +163,44 @@ contract、镜像 manifest、preflight 和记录渲染。边界测试要求这�
 观测 evidence 与 forced-command restore 路径同步安装所需 library。24 个新增内部模块进入人工
 评审基线，library 总数为 55，迁移例外重新清零。内部模块增长不是成果本身；下一轮新增模块仍需
 先证明不能扩展现有职责。
+
+## 2026-08-12 第三轮结构收敛
+
+第二轮消除了跨 CLI 导入，但内部 library 已从第一轮的迁移规模增长到 55 个。第三轮不再把
+“新增一个 library”作为默认拆分手段，而是先复用和校正已有边界。开始时仍有 8 个超过 800 行
+的热点：workflow catalog、operations host、stability soak、backup/recovery、isolated restore、
+Redis persistence benchmark、external business canary 和 isolated business verification。
+
+本轮退出指标如下：
+
+| 指标 | 第三轮基线 | 退出目标 |
+|---|---:|---:|
+| public entrypoint | 23 | 不高于 23 |
+| canonical CLI | 127 | 不高于 127 |
+| `scripts/tools` 文件 | 55 | 不高于 55 |
+| 内部 library 文件 | 55 | 不高于 55 |
+| 未直接测试 CLI | 0 | 保持 0 |
+| 超过 800 行的脚本 | 8 | 不高于 5 |
+| 超过 500 行的脚本 | 20 | 不高于 21 |
+| 跨 CLI 导入边 | 0 | 保持 0 |
+| workflow 唯一脚本依赖 | 47 | 不高于 47 |
+| workflow 到脚本依赖边 | 103 | 不高于 103 |
+| 三处以上重复 workflow 片段 | 5 | 不高于 5 |
+
+允许超过 500 行的中型脚本增加 1 个，是为了把两个不同入口中的主机探测、资源采样和判定逻辑
+合并到一个可直接测试的既有运维契约；不得用该余量新增入口或复制实现。任一新 library 必须在
+同一阶段删除一个被完全替代的单用途 library，迁移完成后的 library 总数不得增长。
+
+实施顺序：
+
+1. 将 workflow catalog 的 JSON、runner、platform boundary、权限和第三方 Action 通用检查提取为
+   无 CLI 的 catalog contract；原 gate 只保留仓库特定策略，原导入符号继续可用。
+2. 将 `verify_stability_soak.py` 的跨平台主机/进程树采样复用到运维主机契约，将资源趋势和持续
+   失败判定复用到 long-soak contract；不得形成第三套 `/proc`、Darwin `ps` 或失败率算法。
+3. 让 `check_operations_host.py` 消费同一个运维主机契约，移出纯解析与无副作用 policy evaluator，
+   CLI 保留命令执行、真实主机读取、summary 和退出码。
+4. 用直接 contract 测试锁定 Linux/Darwin 录制输出、异常降级、workflow catalog fixture 和原
+   facade 导出；随后刷新 reviewed baseline 并保持 growth exception 为空。
+
+本轮不处理其余五个恢复/性能/业务工具热点。它们含 Docker volume、Redis 数据、外部告警或
+备份保留删除副作用；在没有录制 fixture 和资源所有权失败注入前，不以行数目标驱动迁移。
