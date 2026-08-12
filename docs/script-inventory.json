@@ -23,6 +23,83 @@
       "retirement_condition": "All release package consumers move to a different governed library contract.",
       "temporary": false,
       "expires_on": ""
+    },
+    "scripts/lib/release_deployment_core.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle executor", "release lifecycle state machine"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Immutable deployment constants, layout and validation primitives need one CLI-free ownership boundary.",
+      "replaces": "Shared definitions embedded in manage_release_deployment.py",
+      "retirement_condition": "The release deployment controller is replaced by an equivalent governed implementation.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_executor.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle CLI", "operations host lifecycle tests"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Host process and systemd execution must be isolated from deployment state transition policy.",
+      "replaces": "SystemLifecycleExecutor embedded in manage_release_deployment.py",
+      "retirement_condition": "A governed host executor replaces systemd and Compose lifecycle execution.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_recovery.py": {
+      "kind": "library-module",
+      "domain": "recovery",
+      "consumers": ["release lifecycle CLI", "manual recovery reconciliation"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Manual recovery evidence validation and reconciliation form an independent fail-closed policy.",
+      "replaces": "Recovery reconciliation methods embedded in manage_release_deployment.py",
+      "retirement_condition": "Recovery reconciliation moves to a versioned controller with equivalent evidence checks.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_install.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle CLI", "immutable release installation"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Immutable input validation and installation require a boundary separate from runtime activation.",
+      "replaces": "Install and versioned layout methods embedded in manage_release_deployment.py",
+      "retirement_condition": "Immutable release installation moves to a replacement transactional controller.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_transaction.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle CLI", "interrupted transaction reconciliation"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Interrupted transaction reconciliation is independent from candidate activation and command parsing.",
+      "replaces": "Pending transaction reconciliation embedded in manage_release_deployment.py",
+      "retirement_condition": "A durable transaction engine replaces the file-backed reconciliation state machine.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_activation.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle CLI", "upgrade and rollback transactions"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Candidate activation and automatic restoration need one directly tested transactional boundary.",
+      "replaces": "Activation and restoration methods embedded in manage_release_deployment.py",
+      "retirement_condition": "A replacement deployment controller owns candidate activation and automatic restoration.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/release_deployment_commands.py": {
+      "kind": "library-module",
+      "domain": "release",
+      "consumers": ["release lifecycle CLI", "deployment status and verification"],
+      "test": "tests/python/test_manage_release_deployment.py",
+      "why_new_script": "Public lifecycle operations need a small orchestration layer above the transaction policies.",
+      "replaces": "Deploy, upgrade, rollback, verify and status methods embedded in manage_release_deployment.py",
+      "retirement_condition": "Public lifecycle operations migrate to a replacement controller for one release.",
+      "temporary": false,
+      "expires_on": ""
     }
   },
   "public_entrypoints": [
@@ -336,6 +413,27 @@
       "category": "tool"
     },
     "scripts/lib/release_lifecycle_io.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_activation.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_commands.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_core.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_executor.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_install.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_recovery.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_transaction.py": {
       "category": "tool"
     },
     "scripts/lib/release_package.py": {

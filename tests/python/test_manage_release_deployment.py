@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -105,6 +106,20 @@ class FakeExecutor:
 
 
 class ReleaseDeploymentManagerTest(unittest.TestCase):
+    def test_internal_lifecycle_modules_are_importable(self) -> None:
+        modules = {
+            "scripts.lib.release_deployment_core": "scripts/lib/release_deployment_core.py",
+            "scripts.lib.release_deployment_executor": "scripts/lib/release_deployment_executor.py",
+            "scripts.lib.release_deployment_recovery": "scripts/lib/release_deployment_recovery.py",
+            "scripts.lib.release_deployment_install": "scripts/lib/release_deployment_install.py",
+            "scripts.lib.release_deployment_transaction": "scripts/lib/release_deployment_transaction.py",
+            "scripts.lib.release_deployment_activation": "scripts/lib/release_deployment_activation.py",
+            "scripts.lib.release_deployment_commands": "scripts/lib/release_deployment_commands.py",
+        }
+        for dotted, path in modules.items():
+            with self.subTest(path=path):
+                self.assertIsNotNone(importlib.import_module(dotted))
+
     def setUp(self) -> None:
         self.temporary = tempfile.TemporaryDirectory()
         root = Path(self.temporary.name)
@@ -820,9 +835,8 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
                 with (
                     mock.patch.object(executor, "_environment", return_value={}),
                     mock.patch.object(executor, "_run", side_effect=run_checkpoint),
-                    mock.patch.object(
-                        module,
-                        "load_compose_document",
+                    mock.patch(
+                        "scripts.lib.release_deployment_executor.load_compose_document",
                         side_effect=[source_document, target_document],
                     ),
                 ):
@@ -881,7 +895,10 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         with (
             mock.patch.object(executor, "_environment", return_value={}),
             mock.patch.object(executor, "_run", side_effect=run_checkpoint),
-            mock.patch.object(module, "load_compose_document", side_effect=documents),
+            mock.patch(
+                "scripts.lib.release_deployment_executor.load_compose_document",
+                side_effect=documents,
+            ),
             self.assertRaisesRegex(module.LifecycleError, "seed evidence"),
         ):
             executor.prepare_transition(source, target, summary, 60.0)
