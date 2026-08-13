@@ -1,6 +1,6 @@
 # Runner Gate Standard
 
-更新时间：2026-07-22
+更新时间：2026-08-13
 
 本文定义 BoostGateway 自托管 Linux x64、Linux ARM64 和 macOS ARM64 runner 的命名、标签、缓存和证据准入规则。
 它是 `docs/runner-inventory.md` 的配置标准；inventory 记录实际机器及在线状态，
@@ -48,7 +48,7 @@ registered -> initialized -> conan-ready -> docker-ready -> preprod-r5 eligible 
 
 | Gate | 目的 | 必需条件 | 通过证据 |
 |---|---|---|---|
-| G0 Identity | 机器可定位 | runner online，系统 labels 与唯一 custom label 正确 | `gh api .../runners/<id>/labels` 输出 |
+| G0 Identity | 机器可定位 | runner online，系统 labels 与唯一 custom label 正确；Actions Runner 不低于 `2.327.1`，能够原生执行 Node.js 24 Action | `gh api .../runners/<id>/labels` 输出、`Runner.Listener --version` 与 fixed-runner preflight summary |
 | G1 Host | 工具链与容量 | Linux 使用 GCC 与 Docker/Compose；macOS 使用 Apple Clang 和原生进程模式；均要求 Python 3.12，构建前空间/并发满足平台基线 | host inventory 与平台资源 summary |
 | G2 Conan | 固定工具链和本机 ABI-safe 依赖缓存 | Linux 的 `/opt/boost-gateway/{conan,sccache,tools}` 或 macOS `$RUNNER_TOOL_CACHE/boost-gateway` 可写；隔离 venv 只含 Conan `2.8.1`；按 OS release、实际 compiler、arch、build type 和 graph remote digest 生成 namespace；`--no-remote --build=never` install 成功 | `runner-cache-identity.json`、venv `conan --version` 和离线 install 日志 |
 | G3 Runtime | 目标平台运行时准入 | Linux 的所有 Compose images 精确匹配 `linux/amd64` 或 `linux/arm64` 且离线 preflight 通过；macOS 的 Mach-O server/SDK 架构检查通过 | Docker preflight 或 macOS package summary |
@@ -57,6 +57,11 @@ registered -> initialized -> conan-ready -> docker-ready -> preprod-r5 eligible 
 
 G0-G3 通过后可添加 `preprod-r5`；G4-G5 通过后才可被 R2/R3 作为生产候选证据。
 本机手动演练只满足 G4 的技术路径验证，不能替代 G5。
+
+仓库外部 Action 只允许 `node24`、Docker 或 composite runtime，并固定到 reviewed SHA。
+不得使用 `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` 掩盖 Node.js 20 Action；升级 Action 前必须先把
+self-hosted runner 更新到 `2.327.1` 或更高。固定 runner Workflow 依赖的 CMake、Ninja 和
+Python 属于 G1 预装工具，缺失时应在 preflight 快速失败，不得由未治理的下载 Action 临时写入。
 
 ## Conan Virtual Environment Contract
 

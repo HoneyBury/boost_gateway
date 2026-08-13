@@ -232,15 +232,11 @@ workload:
 
 ## CI/CD
 
-The GitHub Actions pipeline (`env/cicd/github-actions.yml`) runs on push to
-`develop` or `main`, and on version tags (`v*`):
-
-1. **Build** — CMake configure + build across ubuntu-latest, macos-latest,
-   windows-2022
-2. **Test** — ctest with output on failure
-3. **Docker** — Build and push images to GitHub Container Registry (main branch
-   only)
-4. **Deploy** — Example kubectl apply step for Kubernetes (tagged releases only)
+The maintained pipelines live in `.github/workflows` and are cataloged in
+`.github/CI-CD.md`. The former `env/cicd/github-actions.yml` example was removed:
+it duplicated the real workflows, advertised unsupported Windows jobs, and used
+floating third-party Action tags. New workflows must use the reviewed immutable
+Action pins enforced by the workflow catalog gate.
 
 ## Prerequisites
 

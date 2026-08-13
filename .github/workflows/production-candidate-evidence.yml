@@ -1,7 +1,6 @@
 name: Production / Candidate Evidence
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
 
 on:
@@ -84,7 +83,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Resolve native production platform
         uses: ./.github/actions/resolve-production-platform
@@ -98,7 +97,7 @@ jobs:
         run: test "${{ inputs.include_kind }}" != true
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: operator/boostgateway-operator/go.mod
           cache-dependency-path: operator/boostgateway-operator/go.sum
@@ -235,7 +234,7 @@ jobs:
 
       - name: Upload production candidate evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: production-candidate-evidence-${{ inputs.platform }}-${{ github.run_id }}
           path: |

@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from scripts.gates.governance import check_workflow_catalog as catalog
 from scripts.lib import workflow_catalog_contract
@@ -30,7 +31,7 @@ class WorkflowSupplyChainGovernanceTest(unittest.TestCase):
         }
 
     def test_reviewed_sha_and_release_comment_pass(self) -> None:
-        sha, tag = catalog.REVIEWED_ACTIONS["actions/checkout"]
+        sha, tag, _runtime = catalog.REVIEWED_ACTIONS["actions/checkout"]
         path = self.write_action(f"actions/checkout@{sha} # {tag}")
 
         self.assertEqual(set(), self.failures(path))
@@ -53,10 +54,28 @@ class WorkflowSupplyChainGovernanceTest(unittest.TestCase):
         self.assertIn("action-reference:workflow.yml:2", self.failures(path))
 
     def test_missing_release_comment_fails(self) -> None:
-        sha, _ = catalog.REVIEWED_ACTIONS["actions/checkout"]
+        sha, _tag, _runtime = catalog.REVIEWED_ACTIONS["actions/checkout"]
         path = self.write_action(f"actions/checkout@{sha}")
 
         self.assertIn("action-release-comment:workflow.yml:2", self.failures(path))
+
+    def test_node20_action_runtime_fails(self) -> None:
+        action = "legacy/example"
+        sha = "0123456789abcdef0123456789abcdef01234567"
+        path = self.write_action(f"{action}@{sha} # v1.0.0")
+        with mock.patch.dict(
+            catalog.REVIEWED_ACTIONS,
+            {action: (sha, "v1.0.0", "node20")},
+        ):
+            self.assertIn("action-runtime:workflow.yml:2", self.failures(path))
+
+    def test_reviewed_actions_use_supported_runtimes(self) -> None:
+        self.assertTrue(
+            all(
+                metadata[2] in catalog.ALLOWED_ACTION_RUNTIMES
+                for metadata in catalog.REVIEWED_ACTIONS.values()
+            )
+        )
 
     def test_top_level_permissions_are_parsed_without_job_permissions(self) -> None:
         text = """permissions:
@@ -69,6 +88,15 @@ jobs:
 """
 
         self.assertEqual({"contents": "read"}, catalog.top_level_permissions(text))
+
+    def test_empty_top_level_env_mapping_is_rejected(self) -> None:
+        self.assertFalse(catalog.top_level_mapping_is_nonempty("env:\n\non:\n", "env"))
+        self.assertTrue(
+            catalog.top_level_mapping_is_nonempty(
+                "env:\n  CACHE_ROOT: /tmp/cache\n\non:\n", "env"
+            )
+        )
+        self.assertTrue(catalog.top_level_mapping_is_nonempty("on:\n", "env"))
 
     def test_machine_catalog_covers_every_workflow(self) -> None:
         payload = catalog.load_catalog()

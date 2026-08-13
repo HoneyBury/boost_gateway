@@ -1,7 +1,6 @@
 name: Release / Package & Publish
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   BOOST_GATEWAY_CANDIDATE_REVISION: ${{ github.sha }}
 
 on:
@@ -78,7 +77,7 @@ jobs:
           fi
 
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           fetch-depth: 0
 
@@ -139,7 +138,7 @@ jobs:
             --github-env "$GITHUB_ENV"
 
       - name: Setup Go
-        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: operator/boostgateway-operator/go.mod
           cache-dependency-path: operator/boostgateway-operator/go.sum
@@ -332,7 +331,7 @@ jobs:
 
       - name: Upload Raft Phase B runtime evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: raft-phase-b-${{ matrix.platform }}-${{ github.run_id }}
           path: |
@@ -363,7 +362,7 @@ jobs:
 
       - name: Upload release baseline
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: release-perf-baseline-${{ matrix.platform }}-${{ github.run_id }}
           path: |
@@ -617,7 +616,7 @@ jobs:
 
       - name: Upload packaged artifact
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         env:
           ACTIONS_ARTIFACT_UPLOAD_CONCURRENCY: "3"
           ACTIONS_ARTIFACT_UPLOAD_TIMEOUT_MS: "1200000"
@@ -665,15 +664,15 @@ jobs:
     needs: package
 
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
+        uses: actions/setup-dotnet@d4c94342e560b34958eacfc5d055d21461ed1c5d # v5.0.0
         with:
           dotnet-version: "8.0.x"
 
       - name: Download platform package artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: boost-gateway-*-${{ github.sha }}
           path: runtime/platform-assets
@@ -779,7 +778,7 @@ jobs:
           sbom-path: runtime/release-nuget-assets/BoostGateway.Sdk.4.2.1.nupkg.spdx.json
 
       - name: Upload NuGet release artifact
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: boost-gateway-nuget-${{ github.sha }}
           path: |
@@ -804,7 +803,7 @@ jobs:
           printf 'RELEASE_ASSET_DIR=%s\n' "$release_asset_dir" >> "$GITHUB_ENV"
 
       - name: Download packaged artifacts
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: boost-gateway-*-${{ github.sha }}
           path: ${{ env.RELEASE_ASSET_DIR }}
@@ -838,7 +837,7 @@ jobs:
           cp "${notes[0]}" "$RELEASE_ASSET_DIR/RELEASE_NOTES.md"
 
       - name: Publish GitHub release
-        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2
         with:
           body_path: ${{ env.RELEASE_ASSET_DIR }}/RELEASE_NOTES.md
           files: |

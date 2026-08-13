@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import importlib.util
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -36,6 +38,62 @@ class OrbStackPortIsolationTests(unittest.TestCase):
         self.assertIs(result["required"], True)
         self.assertEqual(errors, [])
 
+
+class ActionsRunnerVersionTests(unittest.TestCase):
+    def test_script_resolves_repository_root(self) -> None:
+        self.assertEqual(SCRIPT.parents[3], MODULE.repository_root(SCRIPT))
+
+    def test_skips_outside_github_actions(self) -> None:
+        errors: list[str] = []
+
+        result = MODULE.check_actions_runner_version(errors, {})
+
+        self.assertEqual("skipped", result["status"])
+        self.assertEqual([], errors)
+
+    def test_accepts_node24_compatible_runner(self) -> None:
+        errors: list[str] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            listener = root / "bin" / "Runner.Listener"
+            listener.parent.mkdir()
+            listener.write_text("listener", encoding="ascii")
+            environment = {
+                "GITHUB_ACTIONS": "true",
+                "ACTIONS_RUNNER_ROOT": str(root),
+            }
+            completed = subprocess.CompletedProcess(
+                [str(listener), "--version"], 0, "2.336.0\n", ""
+            )
+            with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+                result = MODULE.check_actions_runner_version(errors, environment)
+
+        self.assertEqual("passed", result["status"])
+        self.assertEqual("2.327.1", result["minimum_version"])
+        self.assertEqual([], errors)
+
+    def test_rejects_runner_below_node24_minimum(self) -> None:
+        errors: list[str] = []
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            listener = root / "bin" / "Runner.Listener"
+            listener.parent.mkdir()
+            listener.write_text("listener", encoding="ascii")
+            environment = {
+                "GITHUB_ACTIONS": "true",
+                "ACTIONS_RUNNER_ROOT": str(root),
+            }
+            completed = subprocess.CompletedProcess(
+                [str(listener), "--version"], 0, "2.326.0\n", ""
+            )
+            with mock.patch.object(MODULE.subprocess, "run", return_value=completed):
+                result = MODULE.check_actions_runner_version(errors, environment)
+
+        self.assertEqual("failed", result["status"])
+        self.assertIn("below the Node.js 24 minimum", errors[0])
+
+
+class OrbStackPortIsolationFailureTests(unittest.TestCase):
     def test_rejects_forwarding_on_shared_host(self) -> None:
         errors: list[str] = []
         with (

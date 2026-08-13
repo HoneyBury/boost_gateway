@@ -56,7 +56,8 @@ GitHub-hosted runner，使用 checkout 内 `.conan2-local` + Actions cache；
 只承载 Conan，不能用来隐式提供或运行 `requirements-dev.txt` 中的测试依赖。
 
 Release、long soak、nightly、preprod 和 production-candidate workflow 统一通过
-`.github/actions/setup-cpp-conan` 安装 CMake/Python、验证离线 Conan venv 并解析持久 cache
+`.github/actions/setup-cpp-conan` 验证预装 Ninja、安装 CMake/Python、验证离线 Conan venv
+并解析持久 cache
 identity。它们保留各自的 `--no-remote` bootstrap 和 build/preflight 步骤，以维持原有执行顺序、
 失败定位和 artifact 边界；不要把这段初始化重新复制回 job。
 
@@ -96,7 +97,9 @@ Docker 缓存导入及 image preflight 后才可运行。`missing` 与 `always` 
 - Summary path 展开、去重和 Step Summary 渲染: `.github/actions/render-validation-summary/action.yml`
 - Fixed-runner CMake/Python/Conan/cache 初始化: `.github/actions/setup-cpp-conan/action.yml`
 - Workflow 清单一致性: `scripts/gates/governance/check_workflow_catalog.py`
-- 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA 和同行 release tag 注释；catalog gate 会阻断浮动 tag、未知 Action 和权限扩大
+- 外部 Action 必须同时命中 reviewed allowlist、完整 commit SHA、同行 release tag 注释和
+  `node24`/Docker/composite runtime；catalog gate 会阻断浮动 tag、未知 Action、Node.js 20、
+  强制 runtime 覆盖和权限扩大
 - CMake preset: `CMakePresets.json`（`default` = Debug, `release` = Release）
 - 推荐策略: `ci.yml` 的 PR 路径强制使用 GitHub-hosted `ubuntu-latest`，手动 dispatch
   仍可显式选择 runner；执行 Conan 的其他常规 workflow 默认使用 self-hosted Linux
