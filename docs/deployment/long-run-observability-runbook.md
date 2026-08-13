@@ -234,11 +234,17 @@ sequence after the production subject and monitoring configuration are frozen:
    record and off-host package are created.
 4. Re-run the production lifecycle verifier and confirm all services, all five
    Prometheus targets, retention, alert rules and required metric series pass.
-5. Create a `final` ledger record that references the passing daily/weekly
-   reports, current deployment verification, current observability preflight,
-   receiver attestation and any incident dispositions used in the conclusion.
-6. Build a fresh manifest/package, copy it off-host, verify every `SHA256SUMS`
-   entry there and record the remote receipt. Only then synchronize the TODO
+5. Build a create-only closure-candidate manifest/package from the passing
+   daily/weekly reports, current deployment verification, current observability
+   preflight, receiver attestation and any incident dispositions. Copy it
+   off-host, verify every `SHA256SUMS` entry there, and write a create-only raw
+   receipt summary on the operations host.
+6. Create a `final` ledger record that references those conclusions and the
+   closure-candidate remote receipt. This two-phase order is required because a
+   record cannot contain the digest of an archive that already contains itself.
+7. Build a fresh final manifest/package that now contains the `final` record,
+   copy it off-host, verify every `SHA256SUMS` entry there, and retain its remote
+   sealing receipt beside the extracted archive. Only then synchronize the TODO
    and GitHub Issue as completed.
 
 A oneshot unit in `failed` state is not automatically a scheduler defect. The
@@ -246,12 +252,12 @@ scheduler deliberately creates an immutable report and exits non-zero when it
 finds gaps. Judge closure from the report content and the next natural period;
 never reset a failed unit or delete a report to make the ledger appear clean.
 
-## Off-host package
+## Two-phase off-host closure
 
-Build a create-only manifest and package after records exist:
+First build the create-only closure-candidate package after all pre-final records exist:
 
 ```bash
-ID="todo0011-$(date -u +%Y%m%dT%H%M%SZ)"
+ID="todo0011-candidate-$(date -u +%Y%m%dT%H%M%SZ)"
 sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" manifest \
   --manifest-id "$ID"
 sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" package \
@@ -259,14 +265,54 @@ sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" packag
   --output "/var/lib/boost-gateway-evidence/observability/$ID.tar.gz"
 ```
 
-Copy the archive to a different host or storage system. After extracting it there, run
-the standard verifier from the extraction directory:
+Copy that archive to a different host or storage system. From a clean checkout of the same or
+newer controller revision on that host, run the cross-platform create-only verifier (it works on
+the macOS evidence host without GNU `sha256sum`):
 
 ```bash
-sha256sum -c SHA256SUMS
+python3 scripts/tools/manage_observability_evidence.py verify-package \
+  --package /different-host/path/$ID.tar.gz \
+  --extract-to /different-host/path/$ID \
+  --receipt /different-host/path/$ID-receipt.json
 ```
 
-The local package result deliberately reports `off_host_copy_verified=false`. Record the
-remote host/storage identity, remote path, archive SHA-256, copy time, and the successful
-`sha256sum -c` output as a raw summary, then include that summary in the final record.
-An archive remaining only on the operations host does not satisfy TODO-0011.
+The local package result deliberately reports `off_host_copy_verified=false`. In a new JSON
+raw summary on the operations host, record the candidate manifest ID, remote host/storage
+identity, remote path, archive SHA-256, copy time, and the successful per-entry checksum output.
+The verifier-generated receipt provides those fields and a per-entry `name: OK` result. Copy
+that receipt back to a protected, create-only path on the operations host. Create the `final`
+record only after it exists, passing the copied receipt and every other required conclusion
+source as separate `--summary` arguments; use a new record ID and the exact W33 UTC interval:
+
+```bash
+FINAL_RECORD_ID="todo0011-final-$(date -u +%Y%m%dT%H%M%SZ)"
+printf '%s\n' \
+  '{"report_title":"TODO-0011 W33 final observability closure","period_start":"2026-08-10T00:00:00Z","period_end":"2026-08-17T00:00:00Z"}' \
+  >/tmp/todo0011-final-attributes.json
+sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" record \
+  --kind final --record-id "$FINAL_RECORD_ID" \
+  --summary <W33-weekly-summary> \
+  --summary <current-deployment-verification-summary> \
+  --summary <current-observability-preflight-summary> \
+  --summary <fresh-receiver-attestation-summary> \
+  --summary <copied-candidate-receipt-summary> \
+  --attributes-json /tmp/todo0011-final-attributes.json
+rm -f /tmp/todo0011-final-attributes.json
+```
+
+Then create a distinct final manifest/package; never overwrite or reuse the candidate ID:
+
+```bash
+FINAL_ID="todo0011-final-$(date -u +%Y%m%dT%H%M%SZ)"
+sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" manifest \
+  --manifest-id "$FINAL_ID"
+sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" package \
+  --manifest "/var/lib/boost-gateway-evidence/observability/manifests/$FINAL_ID.json" \
+  --output "/var/lib/boost-gateway-evidence/observability/$FINAL_ID.tar.gz"
+```
+
+Copy and verify this final archive on the other host with `verify-package` too. Its remote
+sealing receipt stays beside the extracted final archive and is referenced by the TODO/Issue
+closure comment; it cannot be embedded into the archive whose digest it attests. An archive
+remaining only on the operations host, a final record that omits the candidate receipt, or a
+candidate package mistaken for the final package does not satisfy TODO-0011.

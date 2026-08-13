@@ -4,11 +4,11 @@
   "formal_todo0016_claim": false,
   "todo_id": "TODO-0016",
   "issue_number": 30,
-  "candidate_status": "pending_v3.6.7_release_deployment_and_production_admission",
+  "candidate_status": "released_and_independently_verified_pending_production_admission",
   "candidate": {
     "tag": "v3.6.7",
-    "commit": null,
-    "runtime_asset_sha256": null,
+    "commit": "db0f905d0421b2052b9de7f49d9bf71787915e23",
+    "runtime_asset_sha256": "fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0",
     "deployment_id": null,
     "configuration_sha256": null
   },
@@ -64,8 +64,8 @@
     "duplicate_samples": 0
   },
   "evidence": {
-    "release_workflow_run": null,
-    "published_asset_verification_run": null,
+    "release_workflow_run": "31617730727",
+    "published_asset_verification_run": "31618651955/attempt-2",
     "upgrade_transaction_id": null,
     "todo0011_final_record": null,
     "todo0011_off_host_receipt": null,

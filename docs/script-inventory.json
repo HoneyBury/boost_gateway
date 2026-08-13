@@ -9,6 +9,20 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/observability_evidence_package.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": [
+        "TODO-0011 off-host package verification",
+        "observability evidence management CLI"
+      ],
+      "test": "tests/python/test_observability_evidence.py",
+      "why_new_script": "Cross-platform safe package extraction and create-only remote receipts must be shared without pushing the maintained management CLI over the governed complexity threshold.",
+      "replaces": "Inline verification logic in scripts/tools/manage_observability_evidence.py",
+      "retirement_condition": "A different governed evidence transport provides equivalent safe extraction, checksum verification, host identity, and create-only receipts.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/release_package.py": {
       "kind": "library-module",
       "domain": "release",
@@ -324,6 +338,9 @@
       "category": "tool"
     },
     "scripts/lib/evidence_provenance.py": {
+      "category": "tool"
+    },
+    "scripts/lib/observability_evidence_package.py": {
       "category": "tool"
     },
     "scripts/lib/operations_identity.py": {

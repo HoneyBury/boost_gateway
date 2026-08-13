@@ -29,6 +29,17 @@
 - Add governed contributor command discovery, script/workflow lifecycle inventories, tooling
   drift metrics, shared validation-summary rendering, and direct contract tests for public CLIs.
 
+### Release evidence
+
+- Freeze the annotated `v3.6.7` tag at
+  `db0f905d0421b2052b9de7f49d9bf71787915e23`. Governed rehearsal run `31616669960` and
+  Release run `31617730727` passed; the latter published the Linux x64-only runtime, symbols,
+  SDK 4.2.1, SPDX, provenance and checksum set.
+- Independently consume the published assets on the aoi Linux x64 runner in run `31618651955`
+  attempt 2. Checksums, archive layout, runtime/symbol/SDK packages, SBOM semantics, offline
+  Ubuntu 24.04 consumer, provenance and SBOM attestations all passed. The runtime archive
+  SHA-256 is `fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0`.
+
 ## v3.6.6 - Battle resource lifecycle patch (2026-08-05)
 
 ### Runtime

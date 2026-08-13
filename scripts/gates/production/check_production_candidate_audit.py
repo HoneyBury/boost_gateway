@@ -80,7 +80,7 @@ REQUIRED_TEXT = {
         "linux-arm64",
         "macos-arm64",
         "v3.6.2",
-        "v3.6.7-release-target",
+        "v3.6.7-release-published",
     ],
 }
 def add_check(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:

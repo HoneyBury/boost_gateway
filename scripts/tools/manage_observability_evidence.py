@@ -21,6 +21,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.lib.operations_identity import collect_operations_identity
+from scripts.lib.observability_evidence_package import (
+    PackageVerificationError,
+    verify_package,
+)
 
 
 DEFAULT_ROOT = Path("/var/lib/boost-gateway-evidence/observability")
@@ -405,6 +409,11 @@ def main() -> int:
     package_parser.add_argument("--manifest", type=Path, required=True)
     package_parser.add_argument("--output", type=Path, required=True)
 
+    verify_parser = subparsers.add_parser("verify-package")
+    verify_parser.add_argument("--package", type=Path, required=True)
+    verify_parser.add_argument("--extract-to", type=Path, required=True)
+    verify_parser.add_argument("--receipt", type=Path, required=True)
+
     seal_parser = subparsers.add_parser("seal")
     seal_parser.add_argument("--ledger-root", type=Path, default=DEFAULT_ROOT)
 
@@ -430,9 +439,11 @@ def main() -> int:
             result = {"manifest": str(path), "manifest_sha256": sha256_file(path), **value}
         elif args.command == "package":
             result = package_manifest(args.manifest, args.output)
+        elif args.command == "verify-package":
+            result = verify_package(args.package, args.extract_to, args.receipt)
         else:
             result = seal_legacy_records(args.ledger_root)
-    except (EvidenceError, OSError, ValueError) as exc:
+    except (EvidenceError, PackageVerificationError, OSError, ValueError) as exc:
         print(f"observability evidence: FAIL: {exc}", file=sys.stderr)
         return 1
     print(json.dumps(result, indent=2, sort_keys=True))
