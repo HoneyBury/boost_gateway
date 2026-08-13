@@ -1,0 +1,398 @@
+{
+  "schema_version": 1,
+  "description": "Lifecycle catalog for every maintained Markdown document outside docs/archive.",
+  "policy": {
+    "growth": "Prefer updating an existing authoritative document. A new document requires a unique purpose, owner, entrypoint, update trigger, and archive condition.",
+    "history": "Completed plans, dated execution records, and run/artifact logs belong under docs/archive.",
+    "authority": "One maintained document owns each current fact or procedure; indexes route readers and do not duplicate the owned content."
+  },
+  "documents": {
+    "docs/ONBOARDING.md": {
+      "type": "guide",
+      "purpose": "Authoritative maintained content for ONBOARDING.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/README.md": {
+      "type": "index",
+      "purpose": "Authoritative maintained content for README.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/architecture-overview.md": {
+      "type": "policy",
+      "purpose": "Authoritative maintained content for architecture-overview.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/current-state.md": {
+      "type": "fact-source",
+      "purpose": "Authoritative maintained content for current-state.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/README.md": {
+      "type": "index",
+      "purpose": "Authoritative maintained content for decisions/README.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6-debug-symbols.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6-debug-symbols.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6-identity-jwks.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6-identity-jwks.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6-macos-arm64.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6-macos-arm64.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6-raft-wire-schema.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6-raft-wire-schema.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6-sdk-distribution.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6-sdk-distribution.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/decisions/v3.6.3-linux-x64-release.md": {
+      "type": "decision",
+      "purpose": "Authoritative maintained content for decisions/v3.6.3-linux-x64-release.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/decisions/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/README.md": {
+      "type": "index",
+      "purpose": "Authoritative maintained content for deployment/README.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/72-hour-production-shakedown-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/72-hour-production-shakedown-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/backup-recovery-policy-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/backup-recovery-policy-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/debug-symbols-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/debug-symbols-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/deployment-quickstart.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/deployment-quickstart.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/external-business-canary-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/external-business-canary-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/identity-key-rotation-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/identity-key-rotation-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/immutable-release-deployment-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/immutable-release-deployment-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/long-run-observability-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/long-run-observability-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/operations-host-admission-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/operations-host-admission-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/production-configuration-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/production-configuration-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/production-deployment-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/production-deployment-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/production-operations-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/production-operations-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/raft-schema-migration-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/raft-schema-migration-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/deployment/release-lifecycle-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for deployment/release-lifecycle-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/fixed-runner-playbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for fixed-runner-playbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/legacy/legacy-helper-inventory.md": {
+      "type": "legacy",
+      "purpose": "Authoritative maintained content for legacy/legacy-helper-inventory.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/legacy/script-config-consolidation-plan.md": {
+      "type": "legacy",
+      "purpose": "Authoritative maintained content for legacy/script-config-consolidation-plan.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/legacy/v2-control-plane-preplan.md": {
+      "type": "legacy",
+      "purpose": "Authoritative maintained content for legacy/v2-control-plane-preplan.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/mainline-execution-plan.md": {
+      "type": "plan",
+      "purpose": "Authoritative maintained content for mainline-execution-plan.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/maintainer-guide.md": {
+      "type": "policy",
+      "purpose": "Authoritative maintained content for maintainer-guide.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/performance-baseline.md": {
+      "type": "policy",
+      "purpose": "Authoritative maintained content for performance-baseline.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/platform-production-boundaries.md": {
+      "type": "fact-source",
+      "purpose": "Authoritative maintained content for platform-production-boundaries.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/project-blueprint.md": {
+      "type": "plan",
+      "purpose": "Authoritative maintained content for project-blueprint.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/release-governance.md": {
+      "type": "policy",
+      "purpose": "Authoritative maintained content for release-governance.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/runner-gate-standard.md": {
+      "type": "policy",
+      "purpose": "Authoritative maintained content for runner-gate-standard.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/runner-inventory.md": {
+      "type": "fact-source",
+      "purpose": "Authoritative maintained content for runner-inventory.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/single-node-enterprise-validation-plan.md": {
+      "type": "plan",
+      "purpose": "Authoritative maintained content for single-node-enterprise-validation-plan.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/tls-mtls-runbook.md": {
+      "type": "runbook",
+      "purpose": "Authoritative maintained content for tls-mtls-runbook.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/todos/BOARD.md": {
+      "type": "generated",
+      "purpose": "Authoritative maintained content for todos/BOARD.",
+      "owner": "@HoneyBury",
+      "status": "generated",
+      "entrypoint": "docs/todos/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/todos/README.md": {
+      "type": "index",
+      "purpose": "Authoritative maintained content for todos/README.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/tooling-reduction-plan.md": {
+      "type": "plan",
+      "purpose": "Authoritative maintained content for tooling-reduction-plan.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
+      "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    }
+  }
+}

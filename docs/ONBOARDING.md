@@ -330,131 +330,18 @@ python3 scripts/producers/collect_release_baseline.py --perf-preset business-cap
 
 ---
 
-## 编码规范
+## 编码与测试政策
 
-### 文件与目录组织
-
-- 公共头文件放 `include/v2/`（框架主线）或 `include/v3/`（协议演进层）
-- 实现文件放 `src/v2/`，目录结构镜像 `include/v2/`
-- 每个 `.h` 对应一个 `.cpp`（模板或 header-only 除外）
-- 测试文件命名 `*_test.cpp`，放在 `tests/v2/unit/` 或 `tests/v2/integration/`
-
-### 命名约定
-
-| 种类 | 风格 | 示例 |
-|------|------|------|
-| 文件名 | `snake_case` | `backend_metrics.h`, `gateway_service_bridge.cpp` |
-| 类 / 结构体 / 枚举 | `PascalCase` | `SessionManager`, `DecodedHandlerPayload` |
-| 函数 / 方法 | `snake_case` | `decode_handler_payload()`, `record_latency()` |
-| 变量 / 参数 | `snake_case` | `connection_pool_size`, `max_pending` |
-| 宏 / 常量 | `UPPER_SNAKE` | `V2_RATE_LIMIT_CONNECTION`, `BOOST_DEPENDENCY_PROVIDER` |
-| 命名空间 | `snake_case` | `v2::gateway`, `v3::cluster` |
-
-### 代码风格
-
-- 使用 `.clang-format`（LLVM 风格，4 空格，100 列限制）统一格式：
-  ```bash
-  clang-format -i <changed-files>
-  ```
-- 禁止 `using namespace std;` 或 `using namespace boost;`
-- 头文件使用前向声明而非直接 `#include`，仅在需要完整类型时包含
-- 公共 API 优先使用 typed contract（`DecodedHandlerPayload`、`TypedEnvelope`），不扩展 raw JSON
-- 禁止把业务规则写入 `include/v2/` 或 `src/v2/` 公共框架层；业务 demo 放在 `demo/games/`
-
-### C++ 标准
-
-- 项目使用 **C++20**，可使用的特性包括 `std::span`、`concepts`、`std::midpoint`、三路比较运算符
-- 新代码应优先使用标准库设施而非 Boost 对应组件（Boost 1.86 作为后备）
-
-## 测试政策
-
-### 测试分层
-
-| 层级 | 位置 | 执行时间 | 触发方式 |
-|------|------|---------|---------|
-| **单元测试** | `tests/v2/unit/` | 秒级 | 本地 / 手动主 CI |
-| **集成测试** | `tests/v2/integration/` | 分钟级 | 本地 / 手动主 CI |
-| **E2E 多进程** | `tests/v2/integration/` (multi_process) | 分钟级 | 手动主 CI / 专项 workflow |
-| **性能 Smoke** | `tests/perf/` (可选构建) | 30s | `perf-regression.yml` 手动 `perf_preset=smoke` |
-| **模糊测试** | `tests/fuzz/` (可选构建) | 自定义 | 手动 |
-| **安全测试** | `tests/security/` (可选构建) | 分钟级 | 手动 |
-
-### 运行命令
+编码风格、文件组织、测试要求和 PR review 规则统一由
+[`CONTRIBUTING.md`](../CONTRIBUTING.md) 维护。日常分层测试使用：
 
 ```bash
-# 全部测试
-python3 scripts/run_tests.py all --build-dir build/contributor-debug --verbose
-
-# 分层运行
-python3 scripts/run_tests.py unit --build-dir build/contributor-debug --verbose
-python3 scripts/run_tests.py integration --build-dir build/contributor-debug --verbose
-python3 scripts/run_tests.py e2e --build-dir build/contributor-debug --verbose
-
-# 仅 SDK 测试
-python3 scripts/run_tests.py sdk --build-dir build/contributor-debug --verbose
-
-# Release 模式（性能相关）
-cmake --build build/release --parallel
-python3 scripts/run_tests.py all --build-dir build/release --verbose
+.venv/dev/bin/python scripts/dev.py test unit --build-dir build/contributor-debug --verbose
+.venv/dev/bin/python scripts/dev.py test integration --build-dir build/contributor-debug --verbose
+.venv/dev/bin/python scripts/dev.py ready
 ```
 
-### 测试要求
-
-- **新增代码必须附带单元测试**，覆盖核心逻辑分支
-- **修改公共接口**（handler 签名、消息格式、配置结构）必须更新集成测试
-- **性能敏感路径**需要 smoke 覆盖（通过 `collect_v2_perf_baseline.py --run-preset smoke`）
-- 测试命名：测试套件使用 `PascalCase`（`HealthCheckTest`），用例使用 `snake_case`（`all_pass_when_backends_healthy`）
-- 框架使用 Google Test + `gtest_discover_tests()` CMake 集成
-
-### 统一测试入口
-
-`scripts/run_tests.py` 封装了 ctest 的分层过滤：
-
-```bash
-# 运行当前 build directory 中的全部测试
-python3 scripts/run_tests.py all --build-dir build/contributor-debug
-
-# 按层级运行
-python3 scripts/run_tests.py unit --build-dir build/contributor-debug
-python3 scripts/run_tests.py integration --build-dir build/contributor-debug
-python3 scripts/run_tests.py e2e --build-dir build/contributor-debug
-python3 scripts/run_tests.py sdk --build-dir build/contributor-debug
-
-# 可选构建层（需要 CMake 选项）
-python3 scripts/run_tests.py perf          # 性能基准测试
-python3 scripts/run_tests.py fuzz          # 模糊测试
-python3 scripts/run_tests.py security      # 安全测试
-
-# 选项
-python3 scripts/run_tests.py unit --timeout 120        # 超时控制
-python3 scripts/run_tests.py unit --parallel 4         # 并行数
-python3 scripts/run_tests.py --list                    # 列出可用层级
-```
-
-内部通过 CTest label（`-L unit`）过滤，与 `gtest_discover_tests(PROPERTIES LABELS ...)` 配合。
-
-### 验证矩阵
-
-各 CI 场景执行的测试层：
-
-| CI 场景 | 触发方式 | 执行的测试层 |
-|---------|---------|-------------|
-| 主 CI（`ci.yml`） | 手动 `workflow_dispatch` | unit + integration + e2e |
-| 性能门禁 | `workflow_dispatch` | `perf-regression.yml`，`perf_preset=smoke|baseline|capacity` |
-| Release 构建 | `v*` tag push / 手动 | unit + integration + e2e + 所选性能 profile |
-| Bounded stability | 手动 | `nightly-stability.yml`，smoke/short/medium soak |
-| 固定 Runner 容量 | 手动 | e2e + perf capacity |
-| 本地开发 | `python3 scripts/run_tests.py <layer> --build-dir <dir>` | 按改动选择 unit / integration / e2e / sdk；`all` 会运行已注册的全部测试 |
-
-### 测试层级选择指南
-
-新增测试文件时按以下规则选择层级：
-
-- **单元测试**（`tests/v2/unit/`）: 纯逻辑、无外部依赖（数据库、网络、文件系统）。单文件单职责，命名 `*_test.cpp`。秒级完成。
-- **集成测试**（`tests/v2/integration/`）: 涉及服务间通信、配置加载、进程启动/停止。依赖 `project_v2` 框架对象。分钟级。
-- **E2E 多进程**（`tests/v2/integration/`，`project_v2_multi_process_tests` 目标）: 启动真实 OS 进程做全链路验证。需要编译好的 service binary。分钟级。
-- **SDK 测试**（`sdk/tests/`）: 分 unit（纯 SDK 逻辑）和 business flow（与 server 交互）。按 `-L sdk` 过滤。
-- **性能/模糊/安全**（可选构建）: 不影响默认构建路径，通过 CMake option 单独开启。
+新增行为必须附带对应层级的测试；公共协议、SDK ABI、配置或部署边界变更必须同时提供兼容与回滚说明。
 
 ## Benchmark 政策
 
@@ -530,17 +417,5 @@ Demo（如 `demo/games/tank_battle/`）用于在框架能力之上验证业务�
 
 ### 报告安全问题
 
-如有安全漏洞或敏感信息泄露，通过 GitHub Issues 报告（不公开细节）或联系仓库维护者。本项目暂无公开的 CVE 编号分配流程。
-
----
-
-## 已完成的治理工作
-
-这些是该项目当前的治理基础设施，新开发者应了解：
-
-| 领域 | 状态 | 关键文件 |
-|------|------|---------|
-| **G3 Legacy Raw JSON 收束** | 全部 5 服务域 29 个业务 handler 已统一接入 adapter，且 29 个均已具备 schema-backed typed contract；内部 Raft 已严格双读 JSON/protobuf，legacy JSON 仅作为 v3.6 writer 兼容路径保留 | `include/v2/service/envelope_adapter.h`, `proto/v3/raft.proto`, `docs/legacy/legacy-helper-inventory.md` |
-| **G4 Conan 依赖治理** | `BOOST_DEPENDENCY_PROVIDER=conan` 严格默认；lockfile/profile/workflow 已落地；缺包直接失败 | `conan/README.md`, `conanfile.py`, `conan/locks/` |
-| **G5 CI 构建缓存** | 4 个主要 build/perf workflow 启用 sccache；每次运行归档构建耗时与缓存命中率至 `runtime/perf/build-times/` | `.github/workflows/ci.yml`, `docs/performance-baseline.md` |
-| **G8 v1 遗留模块退场** | v1 game/examples/tests 已移除，CMake 选项已清理 | ✅ 已完成 |
+如有安全漏洞或敏感信息泄露，不要在公开 Issue 中披露细节；按
+[`SECURITY.md`](../SECURITY.md) 使用私密披露入口联系维护者。

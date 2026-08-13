@@ -38,3 +38,7 @@
   P0-P6 实现与三平台发布证据。
 - [`project-blueprint-2026-07-09.md`](plans/project-blueprint-2026-07-09.md)：Conan、命名、
   Developer Guide 和 v3.6 发布前阶段的旧蓝图。
+- [`tooling-reduction-rounds-2026-08-12.md`](governance/tooling-reduction-rounds-2026-08-12.md)：
+  脚本与 Workflow 前三轮减量结果和 v3.6.7 同步例外。
+- [`fixed-runner-evidence-2026-07.md`](operations/fixed-runner-evidence-2026-07.md)：
+  2026-07 固定 runner 接入、cache、run 和 artifact 历史索引。

@@ -13,34 +13,9 @@ from urllib.parse import unquote
 
 
 ROOT = Path(__file__).resolve().parents[3]
+DOCUMENT_CATALOG = ROOT / "docs/document-catalog.json"
 
-REQUIRED_TOP_LEVEL_DOCS = [
-    "docs/README.md",
-    "docs/ONBOARDING.md",
-    "docs/current-state.md",
-    "docs/runner-inventory.md",
-    "docs/runner-gate-standard.md",
-    "docs/project-blueprint.md",
-    "docs/mainline-execution-plan.md",
-    "docs/single-node-enterprise-validation-plan.md",
-    "docs/platform-production-boundaries.md",
-    "docs/platform-production-boundaries.json",
-    "docs/legacy/legacy-helper-inventory.md",
-    "docs/architecture-overview.md",
-    "docs/performance-baseline.md",
-    "docs/legacy/v2-control-plane-preplan.md",
-    "docs/deployment/production-deployment-runbook.md",
-    "docs/deployment/production-operations-runbook.md",
-    "docs/deployment/production-configuration-runbook.md",
-    "docs/deployment/operations-host-admission-runbook.md",
-    "docs/deployment/immutable-release-deployment-runbook.md",
-    "docs/deployment/release-lifecycle-runbook.md",
-    "docs/deployment/backup-recovery-policy-runbook.md",
-    "docs/deployment/72-hour-production-shakedown-runbook.md",
-    "docs/fixed-runner-playbook.md",
-    "docs/release-governance.md",
-    "docs/tooling-reduction-plan.md",
-    "docs/tls-mtls-runbook.md",
+REQUIRED_MACHINE_DOCS = [
     "docs/decisions/v3.6-decision-manifest.json",
     "docs/production/production-candidate-evidence-manifest.json",
     "docs/production/production-recovery-drill-record-template.json",
@@ -76,6 +51,61 @@ def local_markdown_links(path: Path) -> list[tuple[str, Path]]:
     return links
 
 
+def load_document_catalog() -> dict[str, Any]:
+    payload = json.loads(DOCUMENT_CATALOG.read_text(encoding="utf-8"))
+    documents = payload.get("documents")
+    if payload.get("schema_version") != 1 or not isinstance(documents, dict):
+        raise ValueError("document catalog must use schema_version=1 and contain documents")
+    return payload
+
+
+def maintained_markdown_paths() -> list[str]:
+    return sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / "docs").rglob("*.md")
+        if "archive" not in path.relative_to(ROOT / "docs").parts
+    )
+
+
+def validate_document_catalog(checks: list[dict[str, Any]]) -> list[Path]:
+    try:
+        catalog = load_document_catalog()
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        add(checks, "docs:catalog-readable", False, str(exc))
+        return []
+    add(checks, "docs:catalog-readable", True, "document catalog schema is valid")
+    documents = catalog["documents"]
+    actual = maintained_markdown_paths()
+    add(
+        checks,
+        "docs:catalog-complete",
+        sorted(documents) == actual,
+        f"catalog covers all {len(actual)} maintained Markdown documents",
+    )
+    allowed_types = {"index", "guide", "fact-source", "policy", "plan", "runbook", "decision", "legacy", "generated"}
+    allowed_statuses = {"maintained", "generated"}
+    purposes: list[str] = []
+    paths: list[Path] = []
+    for relative, metadata in sorted(documents.items()):
+        valid = isinstance(metadata, dict)
+        required = ("type", "purpose", "owner", "status", "entrypoint", "update_trigger", "archive_condition")
+        valid = valid and all(isinstance(metadata.get(key), str) and metadata[key].strip() for key in required)
+        valid = valid and metadata.get("type") in allowed_types and metadata.get("status") in allowed_statuses
+        add(checks, f"docs:catalog-entry:{relative}", valid, f"{relative} has complete lifecycle metadata")
+        if not valid:
+            continue
+        purposes.append(metadata["purpose"].strip().casefold())
+        path = ROOT / relative
+        paths.append(path)
+        entrypoint = ROOT / metadata["entrypoint"]
+        add(checks, f"docs:catalog-entrypoint:{relative}", entrypoint.is_file(), f"entrypoint {metadata['entrypoint']} exists")
+        if path != entrypoint:
+            entry_text = entrypoint.read_text(encoding="utf-8") if entrypoint.is_file() else ""
+            add(checks, f"docs:catalog-indexed:{relative}", path.name in entry_text, f"{relative} is linked from {metadata['entrypoint']}")
+    add(checks, "docs:catalog-unique-purpose", len(purposes) == len(set(purposes)), "maintained documents have unique purposes")
+    return paths
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -87,12 +117,13 @@ def main() -> int:
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     checks: list[dict[str, Any]] = []
-    for relative in REQUIRED_TOP_LEVEL_DOCS:
+    for relative in [*REQUIRED_MACHINE_DOCS, "docs/document-catalog.json"]:
         add(checks, f"required:{relative}", (ROOT / relative).exists(), f"{relative} exists")
     for relative in ARCHIVED_RELEASE_DOCS:
         add(checks, f"archive:{relative}", (ROOT / relative).exists(), f"{relative} exists")
 
-    maintained_markdown = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    catalog_markdown = validate_document_catalog(checks)
+    maintained_markdown = [ROOT / "README.md", *catalog_markdown]
     for path in maintained_markdown:
         for target, resolved in local_markdown_links(path):
             relative = path.relative_to(ROOT).as_posix()
@@ -138,15 +169,16 @@ def main() -> int:
         all(
             token in onboarding
             for token in (
+                "scripts/dev.py setup --allow-public",
+                "scripts/dev.py ready",
                 "python3.12 scripts/tools/ensure_conan_venv.py",
                 "--conan-version 2.8.1",
                 "linux-gcc-x64-debug-nogrpc-nosqlite.lock",
                 '"&:with_raft_protobuf=True"',
                 "build/contributor-debug",
-                "scripts/run_tests.py unit",
+                "scripts/dev.py test unit",
                 "v2_gateway_demo --script",
                 "## CLion 配置",
-                "--allow-dirty",
                 "当前 `4.2.1`",
             )
         ),
