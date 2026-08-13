@@ -9,6 +9,23 @@ from scripts import run_tests
 
 
 class RunTestsTest(unittest.TestCase):
+    def test_document_only_change_recommends_governance_without_ctest_layer(self) -> None:
+        layers, reasons = run_tests.recommend_layers(["docs/ONBOARDING.md", "scripts/dev.py"])
+
+        self.assertEqual([], layers)
+        self.assertEqual(2, len(reasons))
+
+    def test_sdk_and_gateway_changes_recommend_focused_layers(self) -> None:
+        layers, _ = run_tests.recommend_layers(
+            ["sdk/src/client.cpp", "src/v2/gateway/gateway_service.cpp"]
+        )
+
+        self.assertEqual(["e2e", "integration", "sdk", "unit"], layers)
+
+    def test_unknown_change_fails_safe_to_all(self) -> None:
+        layers, _ = run_tests.recommend_layers(["third_party/new-layout.txt"])
+
+        self.assertEqual(["all"], layers)
     def test_configured_tool_uses_tool_from_cmake_cache(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

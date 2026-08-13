@@ -60,6 +60,13 @@ python3.12 scripts/dev.py commands --domain release --json
 `commands` 只展示受支持的 public entrypoint。内部 gate、producer 和 tool 是实现细节；除非
 对应 runbook 明确要求，否则新贡献者不应直接把它们加入 workflow 或文档。
 
+开发过程中可查看基于 Git diff 的建议测试层。该结果只用于选择快速反馈，不会让 `ready` 或
+CI 跳过完整治理：
+
+```bash
+python3.12 scripts/run_tests.py --recommend
+```
+
 ### 克隆并准备 Conan
 
 普通 Linux 贡献者使用上面的 `dev.py setup`，不需要手工执行本节命令。以下展开命令只用于

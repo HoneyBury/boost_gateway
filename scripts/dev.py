@@ -414,6 +414,7 @@ def run_smoke(build_dir: Path, parallel: int | None) -> int:
 def run_ready(build_dir: Path, parallel: int, skip_smoke: bool) -> int:
     if run_doctor(build_dir):
         return 1
+    run_external([sys.executable, "scripts/run_tests.py", "--recommend"])
     if not skip_smoke and run_smoke(build_dir, parallel):
         return 1
     dev_python = repository_path(DEFAULT_DEV_VENV) / "bin/python"

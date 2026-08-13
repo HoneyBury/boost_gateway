@@ -25,6 +25,9 @@
 - [ ] New tests added for new/changed code
 - [ ] Required `linux-build-and-test` check passes
 
+<!-- Paste the exact focused command(s) and result. Use
+     `python3.12 scripts/run_tests.py --recommend` when selecting a local layer. -->
+
 ## Review and Risk
 
 - [ ] At least one independent reviewer approved
