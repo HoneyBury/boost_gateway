@@ -100,8 +100,10 @@ def validate_document_catalog(checks: list[dict[str, Any]]) -> list[Path]:
         entrypoint = ROOT / metadata["entrypoint"]
         add(checks, f"docs:catalog-entrypoint:{relative}", entrypoint.is_file(), f"entrypoint {metadata['entrypoint']} exists")
         if path != entrypoint:
-            entry_text = entrypoint.read_text(encoding="utf-8") if entrypoint.is_file() else ""
-            add(checks, f"docs:catalog-indexed:{relative}", path.name in entry_text, f"{relative} is linked from {metadata['entrypoint']}")
+            linked = entrypoint.is_file() and any(
+                resolved == path.resolve() for _, resolved in local_markdown_links(entrypoint)
+            )
+            add(checks, f"docs:catalog-indexed:{relative}", linked, f"{relative} is linked from {metadata['entrypoint']}")
     add(checks, "docs:catalog-unique-purpose", len(purposes) == len(set(purposes)), "maintained documents have unique purposes")
     return paths
 

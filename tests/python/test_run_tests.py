@@ -4,11 +4,23 @@ import argparse
 from pathlib import Path
 import tempfile
 import unittest
+from unittest import mock
 
 from scripts import run_tests
 
 
 class RunTestsTest(unittest.TestCase):
+    def test_changed_paths_includes_untracked_files(self) -> None:
+        completed = [
+            mock.Mock(returncode=0, stdout="src/v2/existing.cpp\n"),
+            mock.Mock(returncode=0, stdout=""),
+            mock.Mock(returncode=0, stdout="sdk/new_client.cpp\n"),
+        ]
+        with mock.patch.object(run_tests.subprocess, "run", side_effect=completed):
+            paths = run_tests.changed_paths("origin/main")
+
+        self.assertEqual(["sdk/new_client.cpp", "src/v2/existing.cpp"], paths)
+
     def test_document_only_change_recommends_governance_without_ctest_layer(self) -> None:
         layers, reasons = run_tests.recommend_layers(["docs/ONBOARDING.md", "scripts/dev.py"])
 

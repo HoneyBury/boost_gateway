@@ -178,7 +178,8 @@ def build_ctest_command(args, layer_info):
 
 def changed_paths(base: str = "origin/main") -> list[str]:
     commands = (["git", "diff", "--name-only", f"{base}...HEAD"],
-                ["git", "diff", "--name-only", "HEAD"])
+                ["git", "diff", "--name-only", "HEAD"],
+                ["git", "ls-files", "--others", "--exclude-standard"])
     paths: set[str] = set()
     for command in commands:
         completed = subprocess.run(command, check=False, capture_output=True, text=True)
@@ -191,22 +192,24 @@ def recommend_layers(paths: list[str]) -> tuple[list[str], list[str]]:
     layers: set[str] = set()
     reasons: list[str] = []
     for path in paths:
+        path_layers: set[str] = set()
         if path.startswith(("docs/", ".github/", "scripts/", "tests/python/")) or path in {
             "README.md", "CONTRIBUTING.md", "GOVERNANCE.md"
         }:
             reasons.append(f"{path}: governance/Python contracts")
             continue
         if path.startswith("sdk/"):
-            layers.update(("unit", "sdk"))
+            path_layers.update(("unit", "sdk"))
         elif path.startswith(("proto/", "include/", "src/", "tests/v2/", "demo/", "examples/")):
-            layers.update(("unit", "integration"))
+            path_layers.update(("unit", "integration"))
             if any(token in path for token in ("gateway", "backend", "protocol", "service")):
-                layers.add("e2e")
+                path_layers.add("e2e")
         elif path.startswith(("config/perf/", "tests/perf/")):
-            layers.add("perf")
+            path_layers.add("perf")
         else:
-            layers.add("all")
-        reasons.append(f"{path}: {', '.join(sorted(layers)) or 'governance'}")
+            path_layers.add("all")
+        layers.update(path_layers)
+        reasons.append(f"{path}: {', '.join(sorted(path_layers))}")
     if "all" in layers:
         return ["all"], reasons
     return sorted(layers), reasons

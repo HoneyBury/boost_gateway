@@ -5,6 +5,7 @@
 本记录保存 2026-07 Linux x64、Linux ARM64、macOS ARM64 固定 runner 接入期间的运行索引、
 cache namespace、artifact 和失败诊断。当前操作方式以
 [固定 Runner 执行手册](../../fixed-runner-playbook.md)为准。
+完整原始手册由 Git 提交 `c2fe7e7` 保留，避免在当前文档树中复制历史正文。
 
 ## Linux x64
 

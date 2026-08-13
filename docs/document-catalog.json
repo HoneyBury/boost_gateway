@@ -9,7 +9,7 @@
   "documents": {
     "docs/ONBOARDING.md": {
       "type": "guide",
-      "purpose": "Authoritative maintained content for ONBOARDING.",
+      "purpose": "Supported Linux contributor setup, first build, IDE, common tasks, and local validation path.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -18,7 +18,7 @@
     },
     "docs/README.md": {
       "type": "index",
-      "purpose": "Authoritative maintained content for README.",
+      "purpose": "Task-oriented index and authority order for all maintained documentation.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "README.md",
@@ -27,7 +27,7 @@
     },
     "docs/architecture-overview.md": {
       "type": "policy",
-      "purpose": "Authoritative maintained content for architecture-overview.",
+      "purpose": "Current component topology, request flow, code boundaries, and deployment model.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -36,7 +36,7 @@
     },
     "docs/current-state.md": {
       "type": "fact-source",
-      "purpose": "Authoritative maintained content for current-state.",
+      "purpose": "Single source of truth for released capability, current runtime boundary, and active blockers.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -45,7 +45,7 @@
     },
     "docs/decisions/README.md": {
       "type": "index",
-      "purpose": "Authoritative maintained content for decisions/README.",
+      "purpose": "Index and activation semantics for accepted v3.6 architecture decisions.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -54,7 +54,7 @@
     },
     "docs/decisions/v3.6-debug-symbols.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6-debug-symbols.",
+      "purpose": "Decision contract for independently packaged native debug-symbol assets.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -63,7 +63,7 @@
     },
     "docs/decisions/v3.6-identity-jwks.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6-identity-jwks.",
+      "purpose": "Decision contract for external JWKS identity and bounded key rotation.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -72,7 +72,7 @@
     },
     "docs/decisions/v3.6-macos-arm64.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6-macos-arm64.",
+      "purpose": "Decision contract for native macOS ARM64 build, evidence, and release support.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -81,7 +81,7 @@
     },
     "docs/decisions/v3.6-raft-wire-schema.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6-raft-wire-schema.",
+      "purpose": "Decision contract for Raft protobuf wire and command schema migration.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -90,7 +90,7 @@
     },
     "docs/decisions/v3.6-sdk-distribution.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6-sdk-distribution.",
+      "purpose": "Decision contract for Python wheel and NuGet SDK distribution.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -99,7 +99,7 @@
     },
     "docs/decisions/v3.6.3-linux-x64-release.md": {
       "type": "decision",
-      "purpose": "Authoritative maintained content for decisions/v3.6.3-linux-x64-release.",
+      "purpose": "Accepted release decision and evidence boundary for v3.6.3 Linux x64.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/decisions/README.md",
@@ -108,7 +108,7 @@
     },
     "docs/deployment/README.md": {
       "type": "index",
-      "purpose": "Authoritative maintained content for deployment/README.",
+      "purpose": "Task index for current deployment, operations, recovery, and migration runbooks.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -117,7 +117,7 @@
     },
     "docs/deployment/72-hour-production-shakedown-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/72-hour-production-shakedown-runbook.",
+      "purpose": "Formal admission, execution, failure, and handoff procedure for the 72-hour shakedown.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -126,7 +126,7 @@
     },
     "docs/deployment/backup-recovery-policy-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/backup-recovery-policy-runbook.",
+      "purpose": "Production Redis persistence, backup vault, isolated restore, and RTO/RPO procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -135,7 +135,7 @@
     },
     "docs/deployment/debug-symbols-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/debug-symbols-runbook.",
+      "purpose": "Creation, verification, publication, and use procedure for debug-symbol assets.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -144,7 +144,7 @@
     },
     "docs/deployment/deployment-quickstart.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/deployment-quickstart.",
+      "purpose": "Bounded local six-service container deployment procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -153,7 +153,7 @@
     },
     "docs/deployment/external-business-canary-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/external-business-canary-runbook.",
+      "purpose": "External SDK business canary scheduling, aggregation, and incident procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -162,7 +162,7 @@
     },
     "docs/deployment/identity-key-rotation-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/identity-key-rotation-runbook.",
+      "purpose": "External identity key rotation, stale grace, outage, and rollback procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -171,7 +171,7 @@
     },
     "docs/deployment/immutable-release-deployment-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/immutable-release-deployment-runbook.",
+      "purpose": "Operations-host staging and verification procedure for immutable release assets.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -180,7 +180,7 @@
     },
     "docs/deployment/long-run-observability-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/long-run-observability-runbook.",
+      "purpose": "Long-run metrics, ledger, off-host evidence, and reporting procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -189,7 +189,7 @@
     },
     "docs/deployment/operations-host-admission-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/operations-host-admission-runbook.",
+      "purpose": "Ubuntu operations-host admission, baseline convergence, and reboot verification.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -198,7 +198,7 @@
     },
     "docs/deployment/production-configuration-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/production-configuration-runbook.",
+      "purpose": "Supported production configuration, secrets, Redis, and drift-control procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -207,7 +207,7 @@
     },
     "docs/deployment/production-deployment-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/production-deployment-runbook.",
+      "purpose": "Production candidate preparation, deployment, evidence, and rollback procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -216,7 +216,7 @@
     },
     "docs/deployment/production-operations-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/production-operations-runbook.",
+      "purpose": "Day-to-day service, monitoring, alert, incident, and maintenance procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -225,7 +225,7 @@
     },
     "docs/deployment/raft-schema-migration-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/raft-schema-migration-runbook.",
+      "purpose": "Raft state and wire schema upgrade, downgrade, mixed-version, and recovery procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -234,7 +234,7 @@
     },
     "docs/deployment/release-lifecycle-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for deployment/release-lifecycle-runbook.",
+      "purpose": "Transactional install, upgrade, rollback, reconciliation, and status procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/deployment/README.md",
@@ -243,7 +243,7 @@
     },
     "docs/fixed-runner-playbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for fixed-runner-playbook.",
+      "purpose": "Current fixed-runner admission, cache, execution matrix, and evidence interpretation.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -252,7 +252,7 @@
     },
     "docs/legacy/legacy-helper-inventory.md": {
       "type": "legacy",
-      "purpose": "Authoritative maintained content for legacy/legacy-helper-inventory.",
+      "purpose": "Inventory and retirement conditions for supported compatibility helpers.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -261,7 +261,7 @@
     },
     "docs/legacy/script-config-consolidation-plan.md": {
       "type": "legacy",
-      "purpose": "Authoritative maintained content for legacy/script-config-consolidation-plan.",
+      "purpose": "Historical compatibility constraints retained from completed script configuration consolidation.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -270,7 +270,7 @@
     },
     "docs/legacy/v2-control-plane-preplan.md": {
       "type": "legacy",
-      "purpose": "Authoritative maintained content for legacy/v2-control-plane-preplan.",
+      "purpose": "Non-activated v2 control-plane design boundary retained for future evaluation.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -279,7 +279,7 @@
     },
     "docs/mainline-execution-plan.md": {
       "type": "plan",
-      "purpose": "Authoritative maintained content for mainline-execution-plan.",
+      "purpose": "Near-term ordered execution plan for the v3.6.7 Linux x64 operations program.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -288,7 +288,7 @@
     },
     "docs/maintainer-guide.md": {
       "type": "policy",
-      "purpose": "Authoritative maintained content for maintainer-guide.",
+      "purpose": "Maintainer code map, script and Workflow rules, validation layers, and governance metrics.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -297,7 +297,7 @@
     },
     "docs/performance-baseline.md": {
       "type": "policy",
-      "purpose": "Authoritative maintained content for performance-baseline.",
+      "purpose": "Authoritative performance measurement methods, accepted evidence, baselines, and claim limits.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -306,7 +306,7 @@
     },
     "docs/platform-production-boundaries.md": {
       "type": "fact-source",
-      "purpose": "Authoritative maintained content for platform-production-boundaries.",
+      "purpose": "Human-readable supported platform, artifact, and non-transferable evidence boundaries.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -315,7 +315,7 @@
     },
     "docs/project-blueprint.md": {
       "type": "plan",
-      "purpose": "Authoritative maintained content for project-blueprint.",
+      "purpose": "Long-horizon product direction, scope choices, and enterprise readiness gates.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -324,7 +324,7 @@
     },
     "docs/release-governance.md": {
       "type": "policy",
-      "purpose": "Authoritative maintained content for release-governance.",
+      "purpose": "Release reliability matrix, evidence contracts, artifacts, and blocking conditions.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -333,7 +333,7 @@
     },
     "docs/runner-gate-standard.md": {
       "type": "policy",
-      "purpose": "Authoritative maintained content for runner-gate-standard.",
+      "purpose": "Runner naming, labels, admission lifecycle, isolation, and cache standard.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -342,7 +342,7 @@
     },
     "docs/runner-inventory.md": {
       "type": "fact-source",
-      "purpose": "Authoritative maintained content for runner-inventory.",
+      "purpose": "Current runner identity, online state, admitted platform, and capabilities.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -351,7 +351,7 @@
     },
     "docs/single-node-enterprise-validation-plan.md": {
       "type": "plan",
-      "purpose": "Authoritative maintained content for single-node-enterprise-validation-plan.",
+      "purpose": "Eight-week single-node preparation, shakedown, immutable validation, and decision contract.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -360,7 +360,7 @@
     },
     "docs/tls-mtls-runbook.md": {
       "type": "runbook",
-      "purpose": "Authoritative maintained content for tls-mtls-runbook.",
+      "purpose": "TLS and mTLS profiles, certificate lifecycle, verification, rotation, and rollback.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -369,7 +369,7 @@
     },
     "docs/todos/BOARD.md": {
       "type": "generated",
-      "purpose": "Authoritative maintained content for todos/BOARD.",
+      "purpose": "Generated human-readable status board for versioned project TODO records.",
       "owner": "@HoneyBury",
       "status": "generated",
       "entrypoint": "docs/todos/README.md",
@@ -378,7 +378,7 @@
     },
     "docs/todos/README.md": {
       "type": "index",
-      "purpose": "Authoritative maintained content for todos/README.",
+      "purpose": "TODO data ownership, lifecycle, rendering, and GitHub synchronization procedure.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",
@@ -387,7 +387,7 @@
     },
     "docs/tooling-reduction-plan.md": {
       "type": "plan",
-      "purpose": "Authoritative maintained content for tooling-reduction-plan.",
+      "purpose": "Current tooling freeze limits, side-effect protections, next reductions, and non-goals.",
       "owner": "@HoneyBury",
       "status": "maintained",
       "entrypoint": "docs/README.md",

@@ -411,11 +411,11 @@ def run_smoke(build_dir: Path, parallel: int | None) -> int:
     return subprocess.run([str(demo), "--script"], cwd=ROOT, check=False).returncode
 
 
-def run_ready(build_dir: Path, parallel: int, skip_smoke: bool) -> int:
+def run_ready(build_dir: Path, parallel: int) -> int:
     if run_doctor(build_dir):
         return 1
     run_external([sys.executable, "scripts/run_tests.py", "--recommend"])
-    if not skip_smoke and run_smoke(build_dir, parallel):
+    if run_smoke(build_dir, parallel):
         return 1
     dev_python = repository_path(DEFAULT_DEV_VENV) / "bin/python"
     if not can_import(dev_python, "pytest"):
@@ -462,7 +462,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ready.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
     ready.add_argument("--parallel", type=int, default=4)
-    ready.add_argument("--skip-smoke", action="store_true")
     return parser
 
 
@@ -489,7 +488,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "smoke":
         return run_smoke(args.build_dir, args.parallel)
     if args.command == "ready":
-        return run_ready(args.build_dir, args.parallel, args.skip_smoke)
+        return run_ready(args.build_dir, args.parallel)
     return 2
 
 

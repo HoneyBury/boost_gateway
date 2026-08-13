@@ -33,6 +33,7 @@
 | [单节点运营与 30 天验证](single-node-enterprise-validation-plan.md) | 自动部署、SLI/SLO、备份恢复、72 小时预演和 30 天运行契约 |
 | [平台生产边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的不可互换证据边界 |
 | [平台边界清单](platform-production-boundaries.json) | 平台契约的机器可读事实源 |
+| [TODO 管理](todos/README.md) | 任务数据所有权、生命周期、渲染和 GitHub 同步方式 |
 | [TODO Board](todos/BOARD.md) | 当前版本化任务状态；由 `tasks.json` 生成 |
 
 ## 开发与治理
@@ -72,7 +73,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| [decisions/](decisions/) | 已接受 ADR；接受不等于默认激活，当前状态以 decision manifest 为准 |
+| [decisions/](decisions/README.md) | 已接受 ADR；接受不等于默认激活，当前状态以 decision manifest 为准 |
 | [v3.6 decision manifest](decisions/v3.6-decision-manifest.json) | 身份、SDK、Raft、macOS ARM64 和符号决策的机器可读状态 |
 | [deployment/](deployment/) | 快速部署、生产配置、发布、运维和迁移 runbook |
 | [legacy/](legacy/) | 仍受治理的兼容清单和预案，不是新功能入口 |

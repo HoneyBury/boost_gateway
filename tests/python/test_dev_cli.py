@@ -105,7 +105,7 @@ class DeveloperCliTest(unittest.TestCase):
              mock.patch.object(dev, "run_smoke", return_value=0) as smoke, \
              mock.patch.object(dev, "can_import", return_value=True), \
              mock.patch.object(dev, "run_external", return_value=0) as external:
-            result = dev.run_ready(Path("build/contributor-debug"), 8, False)
+            result = dev.run_ready(Path("build/contributor-debug"), 8)
 
         self.assertEqual(0, result)
         doctor.assert_called_once()
