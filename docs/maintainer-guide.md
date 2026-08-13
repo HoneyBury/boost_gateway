@@ -21,7 +21,7 @@ Leaderboard。主要维护边界如下：
 | 生产配置 | `env/` | config governance、Compose/K8s 专项 |
 | 发布和生产证据 | `scripts/gates/`、`scripts/producers/`、`.github/workflows/` | 对应 fixed runner；本地 smoke 不能替代 |
 
-发布线当前是 v3.6.6 / SDK 4.2.1，主任务已从扩展协议和 demo 转向 Ubuntu 24.04 x64
+发布目标当前是 v3.6.7 / SDK 4.2.1，主任务已从扩展协议和 demo 转向 Ubuntu 24.04 x64
 单节点部署、观测、备份恢复、72 小时预演和 30 天不可变验证。新增能力前应先确认它是否
 服务于这条主线。
 
@@ -152,8 +152,9 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
 片段、Windows 兼容分支，以及没有显式 Python 单测引用的 CLI。当前值分别是
-23、127、55/55/25、20/5、47、103、0、5、0 和 0；55 个 library 已全部进入 2026-08-12
-冻结基线，当前 reviewed exception 为 0。
+23、127、55/56/25、20/5、47、103、0、5、0 和 0；55 个 library 已进入 2026-08-12
+冻结基线，v3.6.7 合入的异机 evidence package verifier 作为 1 个带直接测试的 reviewed
+exception 受控进入，冻结 maximum 没有上调。
 “其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
 `main()` 绕过增长审查。
 

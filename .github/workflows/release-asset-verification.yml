@@ -18,7 +18,7 @@ on:
       tag:
         description: "Published release tag"
         required: true
-        default: "v3.6.6"
+        default: "v3.6.7"
       expected_commit:
         description: "Full commit SHA referenced by the tag"
         required: true

@@ -1,16 +1,17 @@
 # 当前项目事实源
 
-更新时间：2026-08-05
+更新时间：2026-08-13
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
 
 ## 当前结论
 
-- 仓库发布线是 v3.6.6 / SDK 4.2.1，按 Linux x64-only patch manifest 构建和复验；
-  `miniserver` 在 W32 自然观测周期结束前继续运行不可变 v3.6.5 deployment。
+- 仓库当前发布版本是 v3.6.7 / SDK 4.2.1，已按 Linux x64-only patch manifest 发布并
+  独立复验；`miniserver` 在最终观测配置的 W33 自然周期结束前继续运行不可变 v3.6.5
+  deployment，发布完成不等于生产已升级。
 - v3.6.2 三平台 runtime、SDK 4.2.0、symbols/dSYM 和供应链资产保持不可变历史事实；
-  Linux ARM64 与 macOS ARM64 不进入 v3.6.6 新资产集合。
+  Linux ARM64 与 macOS ARM64 不进入 v3.6.7 新资产集合。
 - Mac 外部 canary 可以继续使用线协议兼容的历史 macOS SDK 4.2.0 访问 v3.6.5 服务端；
   canary deployment identity 必须记录实际 SDK 版本，不得伪装为 4.2.1。
 - 当前主线不是继续增加 demo 或协议表面积，而是执行 Ubuntu 24.04 x64 单节点自动
@@ -51,8 +52,20 @@ v3.6.6 annotated tag 已固定到
 Release `31020678952` 和独立 aoi Linux x64 published-asset verification
 `31021854876` 均 PASS；发布包含 11 个 Linux x64-only 治理资产，runtime archive
 SHA-256 是 `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`。
-该事实只关闭发布和异机复验，不代表 `miniserver` 已升级；W32 收口前 current 仍是上述
-v3.6.5 deployment。
+该事实只关闭发布和异机复验，不代表 `miniserver` 已升级；v3.6.6 未进入生产，current 仍是
+上述 v3.6.5 deployment。
+
+v3.6.6 发布后，主线继续合入 cross-core MPSC mailbox、实例生命周期并发、Login session
+回收、process/write-behind shutdown race、Battle/ECS 热路径和生产 SMTP relay 修复。这些
+变更已由 v3.6.7 新候选承载：annotated tag 固定到
+`db0f905d0421b2052b9de7f49d9bf71787915e23`；受治理 main 演练 `31616669960`、正式
+Release `31617730727` 和独立 aoi Linux x64 published-asset verification
+`31618651955` attempt 2 均 PASS。发布包含 11 个 Linux x64-only 治理资产，runtime archive
+SHA-256 是 `fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0`。
+独立复验确认 checksum、归档布局、runtime/symbol/SDK、SPDX 语义、无网络 Ubuntu 24.04
+consumer、provenance 和 SBOM attestation。attempt 1 的 GitHub HTTP/2 `GOAWAY` 下载中断
+保留在同一 run 历史中，attempt 2 完整重跑通过。该事实只关闭发布资产链；生产 deployment
+identity 仍必须等待 W33 收口后的受控 upgrade 才能声明。
 
 `TODO-0012` 已于 2026-07-28 完成：production-validation Redis 已实际启用 AOF `everysec` +
 RDB，声明并验证不高于 60 秒的 RPO；加密 daily backup 已复制到异机 vault，至少两份独立
@@ -66,11 +79,14 @@ node-exporter、cAdvisor、Redis persistence 和 Docker restart-count 指标契�
 真实 Alertmanager receiver 的 firing/resolved 投递证据、完整 host/container/application/Redis
 指标样本和异机 bootstrap 包复验。生产预检继续拒绝默认 Grafana 凭据、占位 receiver、过期或
 单边投递声明；ledger 可生成 create-only daily/weekly/incident/final record 及带 `SHA256SUMS` 的
-异机包。`TODO-0011` 仍保持 open，剩余边界是自然 daily/完整 ISO weekly 周期与最终报告覆盖，
-不能把已激活的采集和 receiver 错写成整段长期观测已经完成。W31 的历史 gap 已被不可变保留；
-最早可用于关闭任务的完整干净周期是 W32（`2026-08-03T00:00:00Z` 至
-`2026-08-10T00:00:00Z`），周报在 `2026-08-10T00:45:00Z` 自然运行。之后仍须更新
-firing/resolved 回执、生成 final ledger，并在异机验证新 evidence package。
+异机包。`TODO-0011` 仍保持 open。W31 的历史 gap 已被不可变保留；W32
+（`2026-08-03T00:00:00Z` 至 `2026-08-10T00:00:00Z`）周报已在
+`2026-08-10T00:45:00Z` 以 `coverage_complete=true`、`gap_count=0` 自然通过。生产 SMTP
+relay 随后于 `2026-08-10T03:13:52Z` 激活并改变最终通知配置，因此 W32 只保留为通过的历史
+观测证据，不越权关闭任务。最终配置冻结后的完整自然周期是 W33
+（`2026-08-10T00:00:00Z` 至 `2026-08-17T00:00:00Z`），周报计划在
+`2026-08-17T00:45:00Z` 运行；之后仍须刷新 firing/resolved 回执、生成 final ledger，并在
+异机验证新 evidence package。
 
 `TODO-0013` 的 v3.6.2 诊断窗口完整记录 4,320 个分钟，但五次真实 gateway-to-backend
 timeout 使结果为 FAIL；原始样本和 incident 均保留。#73 修复进入 v3.6.5 后，Mac 外部主机
@@ -88,9 +104,10 @@ deployment、commit `94f0c5d12d29839bed1598c17f661550c28d84f0` 和 runtime diges
 该 v3.6.5 诊断窗口同时确认 Battle backend working set 约以 0.48–0.50 MiB/h 线性增长。
 Issue #78 的 RCA 定位到完成 battle 的 runtime/per-battle/replay 状态没有完整释放；修复已由
 PR #79 合入主线，并在 aoi Linux x64 runner 通过完整 CI 与 ASan/UBSan/LSan 资源专项。
-v3.6.5 因此不得成为 `TODO-0016` Day 0。替代候选 v3.6.6 已完成 Release 和独立资产
-复验；W32 收口和受控生产 upgrade 完成前，deployment/configuration identity 继续留空，
-不得把发布完成写成生产已激活。
+v3.6.5 因此不得成为 `TODO-0016` Day 0。v3.6.6 已完成 Release 和独立资产复验，但未在
+tag 后运行时正确性修复完成前进入生产；v3.6.7 已完成发布和独立资产复验并接管替代候选。
+W33 收口和受控 production upgrade 完成前，新的 deployment/configuration identity 继续
+留空，不得把已发布写成生产已激活。
 
 ## 默认生产链路
 
@@ -165,7 +182,8 @@ runner 当前状态见 [`docs/runner-inventory.md`](runner-inventory.md)。
 当前两个月工作由 `TODO-0007` 至 `TODO-0018` 管理，目标是：
 
 1. 已在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
-2. 完成 W32 自然 metrics/ledger 周期；v3.6.5 外部 SDK canary 诊断窗口已完成并通过。
+2. 完成最终 SMTP relay 配置下的 W33 自然 metrics/ledger 周期；v3.6.5 外部 SDK canary
+   诊断窗口已完成并通过。
 3. 已完成异机备份、Redis/host/runtime 恢复演练，并满足 5/10 分钟 RTO 边界。
 4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
 5. 关闭 `TODO-0011`/`TODO-0013` 后执行独立的 72 小时上线预演，再冻结单一

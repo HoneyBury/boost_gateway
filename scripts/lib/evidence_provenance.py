@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import os
 import platform
+import re
 import socket
 import subprocess
 import pwd
@@ -99,6 +100,50 @@ def _host_os_release(path: Path) -> dict[str, str]:
     return values
 
 
+def _command_output(command: list[str], label: str) -> str:
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        raise OperationsIdentityError(f"cannot collect macOS {label}: {exc}") from exc
+    value = completed.stdout.strip()
+    if not value:
+        raise OperationsIdentityError(f"macOS {label} is empty")
+    return value
+
+
+def _darwin_host_identity() -> dict[str, Any]:
+    ioreg = _command_output(
+        ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"], "platform identity"
+    )
+    match = re.search(r'"IOPlatformUUID"\s*=\s*"([0-9A-Fa-f-]+)"', ioreg)
+    if match is None:
+        raise OperationsIdentityError("macOS platform identity lacks IOPlatformUUID")
+    boot = _command_output(["sysctl", "-n", "kern.boottime"], "boot identity")
+    version = platform.mac_ver()[0]
+    if not version:
+        raise OperationsIdentityError("macOS version is empty")
+    return {
+        "hostname": socket.gethostname(),
+        "host_id_sha256": hashlib.sha256(
+            match.group(1).lower().encode("ascii")
+        ).hexdigest(),
+        "boot_id": hashlib.sha256(boot.encode("utf-8")).hexdigest(),
+        "os": {
+            "id": "macos",
+            "version_id": version,
+            "kernel_release": platform.release(),
+        },
+        "architecture": platform.machine(),
+    }
+
+
 def _operator(environment: Mapping[str, str]) -> dict[str, Any]:
     sudo_user = environment.get("SUDO_USER", "").strip()
     sudo_uid = environment.get("SUDO_UID", "").strip()
@@ -126,6 +171,16 @@ def collect_operations_identity(
     os_release_path: Path = Path("/etc/os-release"),
 ) -> dict[str, Any]:
     """Return secret-free host and operator provenance for operations evidence."""
+    default_linux_paths = (
+        machine_id_path == Path("/etc/machine-id")
+        and boot_id_path == Path("/proc/sys/kernel/random/boot_id")
+        and os_release_path == Path("/etc/os-release")
+    )
+    if default_linux_paths and platform.system() == "Darwin":
+        return {
+            "host": _darwin_host_identity(),
+            "operator": _operator(environment if environment is not None else os.environ),
+        }
     machine_id = machine_id_path.read_bytes()
     if not machine_id.strip():
         raise OperationsIdentityError("machine-id is empty")

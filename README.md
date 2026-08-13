@@ -4,8 +4,10 @@ BoostGateway 是一个面向实时业务的企业级 C++20 服务框架。默认
 Login、Room、Battle、Matchmaking、Leaderboard 和多语言 SDK 组成，并提供 Redis/Raft、
 TLS、观测、容器部署和生产证据门禁。
 
-最新发布版本是 [v3.6.6](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.6)，
-包含 Linux x64 runtime、SDK 4.2.1，以及对应的符号、SBOM、checksum 和 provenance。
+当前发布版本是 [v3.6.7](https://github.com/HoneyBury/boost_gateway/releases/tag/v3.6.7)
+Linux x64。它保持 SDK 4.2.1，并将 v3.6.6 后的运行时并发、资源回收、SMTP relay 和
+工具治理修复绑定到不可变 tag、符号、SBOM、checksum 和 provenance；正式 Release 与
+独立线上资产复验均已通过。
 ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsioDemo`，部分兼容路径仍保留旧名称。
 
 ## 当前状态
@@ -15,7 +17,7 @@ ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsio
 | 默认传输 | SDK + TCP Gateway + `BackendEnvelope`；gRPC 仍为实验能力 |
 | 默认依赖 | Conan 2.8.1、仓库 profile/lockfile、CMake `conan` provider |
 | 支持平台 | Linux x64、Linux ARM64、macOS ARM64；平台证据不可互换 |
-| 发布状态 | v3.6.6 Linux x64 runtime、SDK 4.2.1 和符号资产；ARM 保留 v3.6.2 历史资产 |
+| 发布状态 | v3.6.7 Linux x64 已发布并独立复验；ARM 保留 v3.6.2 历史资产 |
 | 当前主线 | Ubuntu 24.04 x64 单节点自动部署、观测、备份恢复和 30 天不可变验证 |
 
 权威事实和当前边界见 [当前项目事实源](docs/current-state.md)，当前执行顺序见
@@ -73,7 +75,7 @@ smoke 代替。完整门禁矩阵见 [发布治理](docs/release-governance.md)�
 | [维护者指南](docs/maintainer-guide.md) | 代码地图、脚本/workflow 治理、变更路径和验证分层 |
 | [当前状态](docs/current-state.md) | 已实现能力、默认边界和当前工作 |
 | [架构总览](docs/architecture-overview.md) | 组件、数据流、端口和部署模型 |
-| [主线执行计划](docs/mainline-execution-plan.md) | v3.6.6 发布后的企业运营主线 |
+| [主线执行计划](docs/mainline-execution-plan.md) | v3.6.7 冻结后的企业运营主线 |
 | [性能基线](docs/performance-baseline.md) | 性能事实、测量口径和声明边界 |
 | [固定 Runner 手册](docs/fixed-runner-playbook.md) | Conan/Docker cache 和生产证据操作 |
 | [贡献指南](CONTRIBUTING.md) | PR、review、测试和敏感变更要求 |

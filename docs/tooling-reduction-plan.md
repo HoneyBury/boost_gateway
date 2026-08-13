@@ -229,3 +229,10 @@ Windows 可执行文件发现、PowerShell 采样、`taskkill`、Windows venv �
 受治理脚本类型收紧为 Python 与 POSIX shell。tooling metrics 将 Windows 兼容片段冻结为 0，防止
 在没有 ADR、工具链和原生验证的情况下重新累积名义兼容代码。NuGet 的托管 `.dll` 仍作为跨平台
 .NET 包契约保留，不计为 Windows 原生支持。
+
+### v3.6.7 主线同步
+
+2026-08-13 同步 v3.6.7/W33 主线后，跨平台异机 evidence package verifier 作为 1 个带直接
+测试的 reviewed library exception 进入；原主线新增的独立 identity 模块没有保留，其 macOS
+采集能力合入既有 operations host/provenance 契约。当前 library 为 56，但冻结 maximum 仍为
+55，后续治理必须消化该例外或以人工评审重新冻结稳定边界，不能把同步动作当作增长豁免。

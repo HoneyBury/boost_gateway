@@ -9,7 +9,7 @@
       "python": ">=3.8",
       "dotnet": "8.0",
       "wheel_platform": "manylinux_2_35_x86_64",
-      "status": "release_target_v3.6.6"
+      "status": "release_target_v3.6.7"
     }
   ],
   "historical_packages": [

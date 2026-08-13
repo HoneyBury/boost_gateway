@@ -55,7 +55,7 @@ def test_reduced_contract_modules_keep_expected_entry_contracts() -> None:
     assert conan_workflow_contract.bootstrap_uses_resolved_home(
         'python scripts/bootstrap_conan.py --conan-home "$CONAN_HOME"'
     )
-    assert deploy_operability_contract.PROJECT_VERSION == "3.6.6"
+    assert deploy_operability_contract.PROJECT_VERSION == "3.6.7"
     assert evidence_provenance_cases.provenance()["candidate_revision"] == "a" * 40
     assert "2h" in long_soak_contract.LONG_SOAK_PRESETS
     assert "BoostGatewayScrapeDown" in monitoring_operability_contract.REQUIRED_ALERTS
