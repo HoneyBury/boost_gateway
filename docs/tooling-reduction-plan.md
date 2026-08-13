@@ -236,3 +236,21 @@ Windows 可执行文件发现、PowerShell 采样、`taskkill`、Windows venv �
 测试的 reviewed library exception 进入；原主线新增的独立 identity 模块没有保留，其 macOS
 采集能力合入既有 operations host/provenance 契约。当前 library 为 56，但冻结 maximum 仍为
 55，后续治理必须消化该例外或以人工评审重新冻结稳定边界，不能把同步动作当作增长豁免。
+
+## 2026-08-13 第四轮旁路保护
+
+剩余五个超过 800 行的热点直接操作 Docker volume、Redis 数据、备份保留集、外部业务环境或
+一次性验证拓扑。本轮不拆分这些入口，也不新增 library；先把资源 ownership、create-only 和
+cleanup 失败证据固定为可执行契约，避免以行数下降掩盖副作用边界回归。
+
+| 热点 | 本轮保护边界 |
+|---|---|
+| `backup_recovery.py` | 保留失败进入隔离区；临时容器尽力清理；证据与备份均为 create-only |
+| `isolated_restore.py` | 已存在目标拒绝执行；只清理本次新建目标；目标卷清理失败必须写入摘要 |
+| `benchmark_redis_persistence.py` | 活动卷身份不变；超时、采样失败和模糊创建均回收本次资源 |
+| `external_business_canary.py` | 失败路径尽力退出 room；外部证据保持 create-only，不覆盖既有记录 |
+| `verify_restored_business_isolated.py` | 保留卷只读、工作拓扑一次性；工作卷清理失败不得误报已删除 |
+
+退出条件：五个热点均有现成或补充的失败注入覆盖；恢复和业务验证明确断言活动卷、保留卷不进入
+删除调用；清理失败同时反映在异常与 create-only summary 中；tool、CLI、library 和 workflow
+依赖计数不增长。后续结构减量必须先复用这些 fixture，且一次只迁移一个无副作用 contract。

@@ -224,3 +224,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    超过 800 行脚本降到 5，library 保持 55，growth exception 清零。主机身份、网络策略、跨平台
    资源采样和持续失败政策已有单一边界；新代码不得在 gate 中重建 `/proc`、Darwin `ps` 或失败率
    实现。
+10. 第四轮先治理五个剩余旁路热点的副作用边界，不以拆文件为目标。隔离恢复和业务验证的清理
+    失败必须写入 create-only summary，并直接断言活动卷与保留卷不进入删除调用；只有这些 fixture
+    保持通过后，才允许迁移无副作用 contract。
