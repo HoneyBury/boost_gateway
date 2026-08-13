@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.tools import manage_observability_evidence as evidence
+from scripts.lib import observability_evidence as evidence
 
 
 DEFAULT_LEDGER = Path("/var/lib/boost-gateway-evidence/observability")

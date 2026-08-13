@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -64,28 +63,16 @@ OTEL_COLLECTOR_FILTER = (
 )
 
 
-def exe_name(base: str) -> str:
-    return f"{base}.exe" if os.name == "nt" else base
-
-
 def find_executable(build_dir: Path, base_name: str) -> Path:
-    names = {exe_name(base_name), base_name}
-    matches = sorted(p for p in build_dir.rglob("*") if p.is_file() and p.name in names)
+    matches = sorted(p for p in build_dir.rglob(base_name) if p.is_file())
     direct_matches = [
         p for p in matches
         if "build" not in p.relative_to(build_dir).parts[:-1]
     ]
     if direct_matches:
         matches = sorted(direct_matches, key=lambda p: (len(p.relative_to(build_dir).parts), str(p)))
-    if os.name == "nt":
-        preferred = [
-            p for p in matches
-            if any(part.lower() in {"debug", "release", "relwithdebinfo", "minsizerel"} for part in p.parts)
-        ]
-        if preferred:
-            matches = preferred
     if not matches:
-        raise FileNotFoundError(f"{exe_name(base_name)} not found under {build_dir}")
+        raise FileNotFoundError(f"{base_name} not found under {build_dir}")
     return matches[0]
 
 

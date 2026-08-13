@@ -81,10 +81,10 @@ class OtelPerfComparisonTest(unittest.TestCase):
         snapshots = [diagnostics(2, 1), diagnostics(2, 2), diagnostics(2, 2)]
         with (
             patch(
-                "scripts.producers.collect_v2_perf_baseline.fetch_json",
+                "scripts.lib.perf_otel_runtime.fetch_json",
                 side_effect=snapshots,
             ) as fetch,
-            patch("scripts.producers.collect_v2_perf_baseline.time.sleep"),
+            patch("scripts.lib.perf_otel_runtime.time.sleep"),
         ):
             result = wait_for_otel_mode_quiescence(
                 "http://collector.test/diagnostics",

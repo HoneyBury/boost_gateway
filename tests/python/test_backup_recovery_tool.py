@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.tools import backup_vault_ssh_receiver as receiver
-from scripts.tools import manage_backup_recovery as backup
+from scripts.lib import backup_recovery as backup
 
 
 def digest(content: bytes) -> str:
@@ -317,6 +317,10 @@ class BackupRecoveryToolTest(unittest.TestCase):
         install_root = self.root / "receiver-install"
         install_root.mkdir()
         tools_root = Path(__file__).resolve().parents[2] / "scripts/tools"
+        shutil.copy2(
+            Path(__file__).resolve().parents[2] / "scripts/lib/backup_recovery.py",
+            install_root / "backup_recovery.py",
+        )
         for name in ("manage_backup_recovery.py", "backup_vault_ssh_receiver.py"):
             shutil.copy2(tools_root / name, install_root / name)
 

@@ -17,19 +17,19 @@ class PerfConnectionBudgetTest(unittest.TestCase):
         self.assertEqual(first, "bench_battle_500_30s_run1")
         self.assertLessEqual(len(long_prefix), 48)
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Linux")
+    @patch("scripts.lib.perf_otel_runtime.platform.system", return_value="Linux")
     def test_non_darwin_does_not_inspect_socket_state(self, _system) -> None:
-        with patch("scripts.producers.collect_v2_perf_baseline.subprocess.run") as run:
+        with patch("scripts.lib.perf_otel_runtime.subprocess.run") as run:
             result = wait_for_local_connection_budget(10_000)
 
         self.assertFalse(result["required"])
         self.assertEqual(result["target_connections"], 10_000)
         run.assert_not_called()
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Darwin")
-    @patch("scripts.producers.collect_v2_perf_baseline.time.sleep")
-    @patch("scripts.producers.collect_v2_perf_baseline.time.monotonic")
-    @patch("scripts.producers.collect_v2_perf_baseline.subprocess.run")
+    @patch("scripts.lib.perf_otel_runtime.platform.system", return_value="Darwin")
+    @patch("scripts.lib.perf_otel_runtime.time.sleep")
+    @patch("scripts.lib.perf_otel_runtime.time.monotonic")
+    @patch("scripts.lib.perf_otel_runtime.subprocess.run")
     def test_darwin_waits_for_time_wait_budget(
         self, run, monotonic, sleep, _system
     ) -> None:
@@ -57,8 +57,8 @@ class PerfConnectionBudgetTest(unittest.TestCase):
         self.assertEqual(result["wait_seconds"], 1.0)
         sleep.assert_called_once_with(1)
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Darwin")
-    @patch("scripts.producers.collect_v2_perf_baseline.subprocess.run")
+    @patch("scripts.lib.perf_otel_runtime.platform.system", return_value="Darwin")
+    @patch("scripts.lib.perf_otel_runtime.subprocess.run")
     def test_darwin_rejects_target_larger_than_port_pool(self, run, _system) -> None:
         run.return_value = unittest.mock.Mock(returncode=0, stdout="49152\n65535\n")
 

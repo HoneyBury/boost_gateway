@@ -1,6 +1,6 @@
 # 文档索引
 
-更新时间：2026-08-11
+更新时间：2026-08-12
 
 `docs/` 顶层只保留当前仍维护的事实源、规范、计划和操作手册。已经结束的版本计划、
 交付记录和旧 runbook 进入 [`docs/archive/`](archive/README.md)，不作为当前事实源，
@@ -41,6 +41,7 @@
 |---|---|
 | [开发者入门](ONBOARDING.md) | Conan/CMake、测试、CLion、编码规范、协议和 SDK 开发 |
 | [维护者指南](maintainer-guide.md) | 代码地图、脚本/workflow 生命周期、变更路径和本地验证 |
+| [工具主动减量计划](tooling-reduction-plan.md) | 脚本和 Workflow 的量化减量目标、迁移顺序与验收边界 |
 | [发布治理](release-governance.md) | 可靠性矩阵、发布门禁、产物和阻断条件 |
 | [性能基线](performance-baseline.md) | 测量命令、有效证据、历史数据和容量声明边界 |
 | [TLS/mTLS Runbook](tls-mtls-runbook.md) | TLS profile、证书、验证、轮换和回滚 |

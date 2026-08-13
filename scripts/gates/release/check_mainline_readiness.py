@@ -5,12 +5,28 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 
 ROOT = Path(__file__).resolve().parents[3]
+
+REPOSITORY_SUITE = (
+    "scripts/gates/governance/check_workflow_python_cli_contracts.py",
+    "scripts/gates/governance/check_workflow_catalog.py",
+    "scripts/gates/governance/check_tooling_metrics.py",
+    "scripts/gates/governance/check_current_docs_install.py",
+    "scripts/gates/governance/check_reliability_matrix.py",
+    "scripts/gates/governance/check_repository_governance.py",
+    "scripts/gates/governance/check_next_minor_decisions.py",
+    "scripts/manage_todos.py",
+    "scripts/gates/governance/check_evidence_provenance_contract.py",
+    "scripts/gates/governance/check_r5_docker_image_policy_contract.py",
+    "scripts/gates/governance/check_legacy_helper_inventory.py",
+)
 
 
 def read(relative: str) -> str:
@@ -23,6 +39,27 @@ def exists(relative: str) -> bool:
 
 def add(checks: list[dict[str, Any]], name: str, passed: bool, detail: str) -> None:
     checks.append({"name": name, "passed": passed, "detail": detail})
+
+
+def run_repository_suite(checks: list[dict[str, Any]]) -> None:
+    """Run the bounded repository governance suite through one stable entrypoint."""
+    for relative in REPOSITORY_SUITE:
+        completed = subprocess.run(
+            [sys.executable, str(ROOT / relative), *( ["check"] if relative == "scripts/manage_todos.py" else [])],
+            cwd=ROOT,
+            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=180,
+        )
+        output = completed.stdout.strip()
+        add(
+            checks,
+            f"repository-suite:{relative}",
+            completed.returncode == 0,
+            output[-4000:] if output else f"{relative} exited {completed.returncode}",
+        )
 
 
 def process_supervisor_kills_process_group(source: str) -> bool:
@@ -226,35 +263,37 @@ def validate_p3_governance(checks: list[dict[str, Any]]) -> None:
         "p3:todo-module-governed",
         exists("docs/todos/tasks.json")
         and exists("docs/todos/BOARD.md")
-        and "scripts/manage_todos.py check" in ci_workflow,
+        and "scripts/check_mainline_readiness.py --repository-suite" in ci_workflow
+        and "scripts/manage_todos.py" in REPOSITORY_SUITE,
         "versioned TODO source, generated board, and CI drift gate are present",
     )
     add(
         checks,
         "p3:ci-runs-workflow-python-cli-contract-gate",
-        "Workflow Python CLI contract gate" in ci_workflow and "scripts/gates/governance/check_workflow_python_cli_contracts.py" in ci_workflow,
-        "CI runs the workflow Python CLI contract governance gate",
+        "Repository governance suite" in ci_workflow
+        and "scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
+        "CI runs the workflow CLI contract through the repository governance suite",
     )
     add(
         checks,
         "p3:ci-runs-evidence-provenance-contract-gate",
-        "Evidence provenance contract gate" in ci_workflow
-        and "scripts/gates/governance/check_evidence_provenance_contract.py" in ci_workflow,
-        "CI runs the evidence provenance contract governance gate",
+        "Repository governance suite" in ci_workflow
+        and "scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
+        "CI runs evidence provenance through the repository governance suite",
     )
     add(
         checks,
         "p3:ci-runs-r5-docker-image-policy-contract-gate",
-        "R5 Docker image policy contract gate" in ci_workflow
-        and "scripts/gates/governance/check_r5_docker_image_policy_contract.py" in ci_workflow,
-        "CI runs the R5 Docker image policy contract governance gate",
+        "Repository governance suite" in ci_workflow
+        and "scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
+        "CI runs the R5 image policy through the repository governance suite",
     )
     add(
         checks,
         "p3:ci-runs-next-minor-decision-gate",
-        "Next minor decision gate" in ci_workflow
-        and "scripts/gates/governance/check_next_minor_decisions.py" in ci_workflow,
-        "CI runs the accepted next-minor decision governance gate",
+        "Repository governance suite" in ci_workflow
+        and "scripts/check_mainline_readiness.py --repository-suite" in ci_workflow,
+        "CI runs next-minor decisions through the repository governance suite",
     )
 
     root_cmake = read("CMakeLists.txt")
@@ -342,6 +381,11 @@ def main() -> int:
         type=Path,
         default=ROOT / "runtime/validation/mainline-readiness-summary.json",
     )
+    parser.add_argument(
+        "--repository-suite",
+        action="store_true",
+        help="Run the bounded repository governance commands after mainline checks.",
+    )
     args = parser.parse_args()
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
@@ -351,6 +395,8 @@ def main() -> int:
     validate_p2_evidence(checks)
     validate_p3_governance(checks)
     validate_p4_integration_stability(checks)
+    if args.repository_suite:
+        run_repository_suite(checks)
 
     failed = [check for check in checks if not check["passed"]]
     summary = {

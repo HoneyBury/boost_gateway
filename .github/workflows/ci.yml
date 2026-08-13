@@ -149,8 +149,10 @@ jobs:
           grep -F -n "$SCCACHE_BIN" build/release/CMakeCache.txt build/release/build.ninja
 
       - name: Record build start time
-        shell: bash
-        run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+        uses: ./.github/actions/record-build-metrics
+        with:
+          phase: start
+          workflow: ci
 
       - name: Build
         shell: bash
@@ -197,78 +199,19 @@ jobs:
         shell: bash
         run: python3 scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
-      - name: Workflow Python CLI contract gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_workflow_python_cli_contracts.py
-
-      - name: Workflow catalog gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_workflow_catalog.py
-
-      - name: Tooling metrics drift gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_tooling_metrics.py
-
-      - name: Current documentation contract gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_current_docs_install.py
-
-      - name: Reliability matrix evidence gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_reliability_matrix.py
-
-      - name: Repository governance gate
+      - name: Repository governance suite
         shell: bash
         run: |
           "$PYTHON_TEST_EXECUTABLE" -m pytest -q tests/python
-          python3 scripts/gates/governance/check_repository_governance.py
-
-      - name: Next minor decision gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_next_minor_decisions.py
-
-      - name: Project TODO board gate
-        shell: bash
-        run: python3 scripts/manage_todos.py check
-
-      - name: Evidence provenance contract gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_evidence_provenance_contract.py
-
-      - name: R5 Docker image policy contract gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_r5_docker_image_policy_contract.py
-
-      - name: Legacy/helper inventory gate
-        shell: bash
-        run: python3 scripts/gates/governance/check_legacy_helper_inventory.py
-
-      - name: Show sccache stats
-        if: always()
-        shell: bash
-        run: |
-          if [ -f runtime/perf/build-times/sccache-stats.json ]; then
-            cat runtime/perf/build-times/sccache-stats.json
-          else
-            sccache --show-stats || true
-          fi
+          python3 scripts/check_mainline_readiness.py --repository-suite \
+            --summary-path runtime/validation/ci-repository-governance-summary.json
 
       - name: Capture build metrics
         if: always()
-        shell: bash
-        run: |
-          mkdir -p runtime/perf/build-times
-          now=$(date +%s)
-          iso_now=$(date -Iseconds)
-          duration=$(( now - BUILD_START_EPOCH ))
-          cat > runtime/perf/build-times/build-time.json << EOF
-          {
-            "workflow": "ci",
-            "runner_os": "${{ runner.os }}",
-            "timestamp": "${iso_now}",
-            "build_duration_seconds": ${duration}
-          }
-          EOF
+        uses: ./.github/actions/record-build-metrics
+        with:
+          phase: finish
+          workflow: ci
 
       - name: Upload build metrics
         if: always()

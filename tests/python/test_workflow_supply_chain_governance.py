@@ -5,6 +5,7 @@ import unittest
 from pathlib import Path
 
 from scripts.gates.governance import check_workflow_catalog as catalog
+from scripts.lib import workflow_catalog_contract
 
 
 class WorkflowSupplyChainGovernanceTest(unittest.TestCase):
@@ -77,6 +78,20 @@ jobs:
         self.assertEqual(actual, set(rules))
         self.assertTrue(
             all("workflow_dispatch" in rule["triggers"] for rule in rules.values())
+        )
+
+    def test_catalog_foundation_is_cli_free_and_complete(self) -> None:
+        context = workflow_catalog_contract.evaluate_catalog_foundation(
+            catalog.ROOT,
+            catalog.WORKFLOWS_ROOT,
+            catalog.CATALOG_PATH,
+        )
+
+        self.assertTrue(context.checks)
+        self.assertFalse([check for check in context.checks if not check["passed"]])
+        self.assertEqual(
+            {path.stem for path in catalog.WORKFLOWS_ROOT.glob("*.yml")},
+            set(workflow_catalog_contract.workflow_rules(context.catalog)),
         )
 
     def test_runner_class_is_derived_from_operational_expression(self) -> None:

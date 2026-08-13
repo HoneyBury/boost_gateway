@@ -98,6 +98,9 @@ jobs:
                 "maximum": current["workflow_script_dependency_edges"]
             },
             "cross_cli_imports": {"maximum": current["cross_cli_imports"]},
+            "windows_compatibility_fragments": {
+                "maximum": current["windows_compatibility_fragments"]
+            },
         },
         "known_surfaces": {
             "cli_implementations": current["cli_implementation_paths"],
@@ -147,9 +150,33 @@ def test_matching_tooling_metrics_baseline_passes(tmp_path: Path) -> None:
     assert run_gate(tmp_path, baseline, summary) == 0
     document = json.loads(summary.read_text(encoding="utf-8"))
     assert document["metrics"]["workflow_duplicate_fragments"] == 1
+    assert document["metrics"]["windows_compatibility_fragments"] == 0
     assert document["external_metrics"]["automation_change_failure_rate"]["status"] == (
         "external-verification-required"
     )
+
+
+def test_windows_script_compatibility_fails_without_platform_review(tmp_path: Path) -> None:
+    baseline, summary = prepare_repository(tmp_path)
+    covered_relative = Path("scripts") / "tools" / "covered.py"
+    covered = tmp_path / covered_relative
+    covered.write_text(
+        covered.read_text(encoding="utf-8")
+        + '\nEXECUTABLE = "gateway_pressure.exe"\n',
+        encoding="utf-8",
+    )
+
+    assert run_gate(tmp_path, baseline, summary) == 1
+    document = json.loads(summary.read_text(encoding="utf-8"))
+    failed = {item["name"] for item in document["checks"] if not item["passed"]}
+    assert "limit:windows_compatibility_fragments" in failed
+    assert document["metrics"]["windows_compatibility_fragment_details"] == [
+        {
+            "kind": "windows-executable",
+            "line": 10,
+            "path": covered_relative.as_posix(),
+        }
+    ]
 
 
 def test_new_untested_cli_fails_without_baseline_review(tmp_path: Path) -> None:

@@ -17,6 +17,97 @@ PYTHON_SCRIPT_PATTERN = re.compile(
     r"(?:\bpython(?:3(?:\.\d+)?)?\b|['\"]?\$[A-Z][A-Z0-9_]*PYTHON['\"]?)"
     r"\s+['\"]?(scripts/[A-Za-z0-9_./-]+\.py)['\"]?"
 )
+UNSUPPORTED_SCRIPT_SUFFIXES = {".bat", ".cmd", ".ps1"}
+
+
+def _qualified_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _qualified_name(node.value)
+        return f"{parent}.{node.attr}" if parent else node.attr
+    return ""
+
+
+def windows_compatibility_fragments(root: Path) -> list[dict[str, Any]]:
+    """Return active Windows-only branches and script surfaces.
+
+    Managed .NET assemblies are intentionally not violations: a NuGet DLL is a
+    cross-platform package artifact, not a supported script host or native target.
+    """
+    violations: list[dict[str, Any]] = []
+    executable_suffix = "." + "exe"
+    native_sdk_library = "boost_gateway_sdk." + "dll"
+    windows_venv_layout = "/" + "scripts" + "/python"
+    process_commands = {
+        "power" + "shell",
+        "power" + "shell" + executable_suffix,
+        "task" + "kill",
+        "task" + "kill" + executable_suffix,
+    }
+    scripts_root = root / "scripts"
+    for path in sorted(scripts_root.rglob("*")):
+        if not path.is_file() or "__pycache__" in path.parts:
+            continue
+        relative = path.relative_to(root).as_posix()
+        if path.suffix.lower() in UNSUPPORTED_SCRIPT_SUFFIXES:
+            violations.append({"path": relative, "line": 1, "kind": "windows-script"})
+            continue
+        if path.suffix != ".py":
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8-sig"), filename=str(path))
+        except (OSError, SyntaxError):
+            continue
+        seen: set[tuple[int, str]] = set()
+        for node in ast.walk(tree):
+            kind = ""
+            if isinstance(node, ast.Compare):
+                expressions = [node.left, *node.comparators]
+                names = {_qualified_name(item) for item in expressions}
+                strings = {
+                    str(item.value).lower()
+                    for item in expressions
+                    if isinstance(item, ast.Constant) and isinstance(item.value, str)
+                }
+                if "os.name" in names and "nt" in strings:
+                    kind = "windows-os-branch"
+                elif "sys.platform" in names and strings & {"win32", "windows"}:
+                    kind = "windows-platform-branch"
+                elif any(
+                    isinstance(item, ast.Call)
+                    and _qualified_name(item.func) == "platform.system"
+                    for item in expressions
+                ) and "windows" in strings:
+                    kind = "windows-platform-branch"
+            elif (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "startswith"
+                and _qualified_name(node.func.value) == "sys.platform"
+                and node.args
+                and isinstance(node.args[0], ast.Constant)
+                and str(node.args[0].value).lower().startswith("win")
+            ):
+                kind = "windows-platform-branch"
+            elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+                value = node.value.replace("\\", "/").lower()
+                if value in process_commands:
+                    kind = "windows-process-command"
+                elif value.endswith(executable_suffix):
+                    kind = "windows-executable"
+                elif native_sdk_library in value:
+                    kind = "windows-native-sdk-library"
+                elif windows_venv_layout in f"/{value}":
+                    kind = "windows-venv-layout"
+            if kind:
+                key = (getattr(node, "lineno", 1), kind)
+                if key not in seen:
+                    seen.add(key)
+                    violations.append(
+                        {"path": relative, "line": key[0], "kind": kind}
+                    )
+    return violations
 
 
 def load_json_object(path: Path) -> dict[str, Any]:
@@ -138,7 +229,7 @@ def cli_implementations(root: Path, inventory: dict[str, Any]) -> list[Path]:
             continue
         if path.suffix == ".py" and python_declares_cli(path):
             implementations.append(path)
-        elif path.suffix in {".sh", ".ps1"}:
+        elif path.suffix == ".sh":
             implementations.append(path)
     return implementations
 
@@ -286,7 +377,7 @@ def collect_tooling_metrics(
         for path in (root / "scripts").rglob("*")
         if path.is_file()
         and "__pycache__" not in path.parts
-        and path.suffix in {".py", ".sh", ".ps1"}
+        and path.suffix in {".py", ".sh"}
     )
     test_paths = sorted(
         path for path in (root / "tests/python").glob("test_*.py") if path.is_file()
@@ -342,6 +433,7 @@ def collect_tooling_metrics(
     workflow_dependencies = workflow_script_dependencies(workflow_paths)
     workflow_dependency_edges = workflow_script_dependency_edges(root, workflow_paths)
     import_edges = cross_cli_import_edges(root, cli_paths)
+    windows_fragments = windows_compatibility_fragments(root)
     governed_role_paths = set(cli_paths) | set(tool_paths) | set(library_paths)
     other_script_paths = [
         path for path in script_paths if path not in governed_role_paths
@@ -373,6 +465,8 @@ def collect_tooling_metrics(
         "workflow_script_dependency_edge_paths": workflow_dependency_edges,
         "cross_cli_imports": len(import_edges),
         "cross_cli_import_edges": import_edges,
+        "windows_compatibility_fragments": len(windows_fragments),
+        "windows_compatibility_fragment_details": windows_fragments,
         "untested_cli": len(untested),
         "untested_cli_paths": untested,
         "script_files": len(script_paths),

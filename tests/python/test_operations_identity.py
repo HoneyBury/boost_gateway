@@ -8,7 +8,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.lib.operations_identity import (
+from scripts.lib.operations_host import (
     OperationsIdentityError,
     collect_operations_identity,
 )
@@ -76,8 +76,8 @@ class OperationsIdentityTest(unittest.TestCase):
             "architecture": "arm64",
         }
         with (
-            patch("scripts.lib.operations_identity.platform.system", return_value="Darwin"),
-            patch("scripts.lib.operations_identity._darwin_host_identity", return_value=host),
+            patch("scripts.lib.evidence_provenance.platform.system", return_value="Darwin"),
+            patch("scripts.lib.evidence_provenance._darwin_host_identity", return_value=host),
         ):
             identity = collect_operations_identity(environment={})
 

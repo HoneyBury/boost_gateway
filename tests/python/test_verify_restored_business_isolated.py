@@ -701,6 +701,110 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self.assertFalse(summary["formal_todo0012_claim"])
         self.assertIn("internal network publish unsupported", summary["failure"])
 
+    def test_work_volume_cleanup_failure_is_recorded_without_touching_sources(
+        self,
+    ) -> None:
+        retained_state = {
+            "Name": self.retained,
+            "Driver": "local",
+            "Mountpoint": "/retained",
+            "Scope": "local",
+            "Labels": {"boost-gateway.restore-id": "restore-pass-one"},
+        }
+        work_state = {
+            "Name": self.work,
+            "Driver": "local",
+            "Mountpoint": "/work",
+            "Scope": "local",
+            "Labels": {
+                "boost-gateway.todo": "TODO-0012",
+                "boost-gateway.business-id": "business-cleanup-failure",
+                "boost-gateway.source-volume": self.retained,
+            },
+        }
+        active_state = {
+            "Name": self.active,
+            "Driver": "local",
+            "Mountpoint": "/active",
+            "Scope": "local",
+            "Labels": {},
+        }
+        self._bind_restore_runtime(retained_state, active_state)
+
+        def remove_only_owned(
+            runner: object, docker: str, kind: str, name: str
+        ) -> bool:
+            return not (kind == "volume" and name == self.work)
+
+        with (
+            mock.patch.object(business, "assert_image_ids"),
+            mock.patch.object(business, "assert_local_docker"),
+            mock.patch.object(
+                business.restore,
+                "inspect_volume",
+                side_effect=lambda runner, docker, volume: (
+                    active_state if volume == self.active else work_state
+                ),
+            ),
+            mock.patch.object(
+                business, "ensure_unused_volume", return_value=retained_state
+            ),
+            mock.patch.object(business, "ensure_absent"),
+            mock.patch.object(
+                business,
+                "audit_retained_seed",
+                return_value=(
+                    self.seed_sha,
+                    2,
+                    {"lb:global", "lb:global:names"},
+                ),
+            ),
+            mock.patch.object(
+                business,
+                "checked",
+                side_effect=[
+                    subprocess.CompletedProcess([], 0, "", ""),
+                    business.BusinessValidationError("network creation failed"),
+                ],
+            ),
+            mock.patch.object(
+                business, "clone_retained_volume", return_value=self.snapshot_sha
+            ),
+            mock.patch.object(
+                business, "remove_resource", side_effect=remove_only_owned
+            ) as remove,
+        ):
+            with self.assertRaisesRegex(
+                business.BusinessValidationError,
+                r"cleanup failures: \['volume:boost-gateway-recovery-business-work'\]",
+            ):
+                business.run_business_validation(
+                    business_id="business-cleanup-failure",
+                    restore_summary_path=self.restore_summary,
+                    deployment_record_path=self.deployment_record,
+                    release_dir=self.release,
+                    retained_volume=self.retained,
+                    work_volume=self.work,
+                    network=self.network,
+                    redis_image=self.redis_image,
+                    summary_path=self.summary,
+                    active_volume=self.active,
+                    lock_path=self.lock,
+                    docker="docker-test",
+                )
+
+        removed = {(call.args[2], call.args[3]) for call in remove.call_args_list}
+        self.assertIn(("volume", self.work), removed)
+        self.assertNotIn(("volume", self.retained), removed)
+        self.assertNotIn(("volume", self.active), removed)
+        summary = json.loads(self.summary.read_text())
+        self.assertEqual(
+            [f"volume:{self.work}"], summary["cleanup_failures"]
+        )
+        self.assertTrue(summary["work_volume_created"])
+        self.assertFalse(summary["work_volume_removed"])
+        self.assertFalse(summary["overall_pass"])
+
 
 if __name__ == "__main__":
     unittest.main()

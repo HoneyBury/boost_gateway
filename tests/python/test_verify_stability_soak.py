@@ -15,6 +15,7 @@ from pathlib import Path
 from unittest import mock
 
 from scripts.gates.release import verify_stability_soak
+from scripts.lib import operations_host
 from scripts.gates.release.verify_stability_soak import (
     archive_failed_arch_run,
     host_resource_snapshot,
@@ -213,9 +214,9 @@ class ResourceEvidenceTest(unittest.TestCase):
 
     def test_darwin_host_snapshot_uses_native_resource_commands(self) -> None:
         with (
-            mock.patch.object(verify_stability_soak.platform, "system", return_value="Darwin"),
+            mock.patch.object(operations_host.platform, "system", return_value="Darwin"),
             mock.patch.object(
-                verify_stability_soak.subprocess,
+                operations_host.subprocess,
                 "run",
                 side_effect=self.darwin_command_result,
             ),
@@ -228,9 +229,9 @@ class ResourceEvidenceTest(unittest.TestCase):
 
     def test_darwin_process_tree_includes_descendants(self) -> None:
         with (
-            mock.patch.object(verify_stability_soak.platform, "system", return_value="Darwin"),
+            mock.patch.object(operations_host.platform, "system", return_value="Darwin"),
             mock.patch.object(
-                verify_stability_soak.subprocess,
+                operations_host.subprocess,
                 "run",
                 side_effect=self.darwin_command_result,
             ),

@@ -6,7 +6,9 @@
     "evidence_is_platform_specific": true,
     "cross_platform_substitution": false,
     "docker_targets": ["linux/amd64", "linux/arm64"],
-    "native_process_targets": ["linux-x64", "linux-arm64", "macos-arm64"]
+    "native_process_targets": ["linux-x64", "linux-arm64", "macos-arm64"],
+    "script_host_platforms": ["linux", "macos"],
+    "unsupported_platforms": ["windows"]
   },
   "platforms": {
     "linux-x64": {

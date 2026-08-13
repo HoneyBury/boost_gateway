@@ -206,8 +206,6 @@ def main() -> int:
             build_ok = bool(result["passed"])
         if build_ok:
             exe = consumer_build / "sdk_consumer_smoke"
-            if os.name == "nt":
-                exe = consumer_build / args.configuration / "sdk_consumer_smoke.exe"
             checks.append(run_step(
                 name="run-consumer",
                 command=[str(exe)],

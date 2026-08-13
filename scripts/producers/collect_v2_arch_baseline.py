@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import platform
 import subprocess
 import sys
@@ -14,29 +13,13 @@ from pathlib import Path
 from typing import Any
 
 
-def is_windows() -> bool:
-    return os.name == "nt"
-
-
-def exe_name(base: str) -> str:
-    return f"{base}.exe" if is_windows() else base
-
-
 def resolve_executable(build_dir: Path, base_name: str) -> Path:
-    target_names = {exe_name(base_name), base_name}
     matches = sorted(
         p for p in build_dir.rglob("*")
-        if p.is_file() and p.name in target_names
+        if p.is_file() and p.name == base_name
     )
-    if is_windows():
-        preferred = [
-            p for p in matches
-            if any(part.lower() in {"debug", "release", "relwithdebinfo", "minsizerel"} for part in p.parts)
-        ]
-        if preferred:
-            matches = preferred
     if not matches:
-        raise FileNotFoundError(f"{exe_name(base_name)} not found under {build_dir}")
+        raise FileNotFoundError(f"{base_name} not found under {build_dir}")
     return matches[0]
 
 

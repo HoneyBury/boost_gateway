@@ -19,11 +19,12 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
-    from scripts.tools import restore_bundle_ssh_receiver as transport  # noqa: E402
+    from scripts.lib import restore_bundle_transport as transport  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name != "scripts":
         raise
-    import restore_bundle_ssh_receiver as transport  # type: ignore[no-redef]  # noqa: E402
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.lib import restore_bundle_transport as transport  # type: ignore[no-redef]  # noqa: E402
 
 
 Runner = Callable[..., subprocess.CompletedProcess[Any]]

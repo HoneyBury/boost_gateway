@@ -131,6 +131,46 @@ def collect_declared_options(script_path: Path) -> tuple[set[str], str]:
         for arg in node.args:
             if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value.startswith("--"):
                 options.add(arg.value.split("=", 1)[0])
+
+    # A large CLI may keep immutable option metadata in an imported CLI-free
+    # contract. Follow only constants that the facade actually iterates; this
+    # preserves static workflow validation without treating every imported
+    # string as a declared option.
+    iterated_contracts = {
+        node.iter.id
+        for node in ast.walk(tree)
+        if isinstance(node, ast.For) and isinstance(node.iter, ast.Name)
+    }
+    imported_modules = {
+        node.module
+        for node in tree.body
+        if isinstance(node, ast.ImportFrom)
+        and isinstance(node.module, str)
+        and node.module.startswith("scripts.lib.")
+    }
+    for module_name in imported_modules:
+        module_path = ROOT / f"{module_name.replace('.', '/')}.py"
+        try:
+            module_tree = ast.parse(
+                module_path.read_text(encoding="utf-8-sig"), filename=str(module_path)
+            )
+        except (OSError, SyntaxError):
+            continue
+        for node in module_tree.body:
+            if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            names = {target.id for target in targets if isinstance(target, ast.Name)}
+            if not names.intersection(iterated_contracts):
+                continue
+            value = node.value
+            for item in ast.walk(value):
+                if (
+                    isinstance(item, ast.Constant)
+                    and isinstance(item.value, str)
+                    and item.value.startswith("--")
+                ):
+                    options.add(item.value.split("=", 1)[0])
     return options, ""
 
 

@@ -23,7 +23,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in os.sys.path:
     os.sys.path.insert(0, str(ROOT))
 
-from scripts.tools.harden_release_sbom import verify_attested_sbom_predicate
+from scripts.lib.release_sbom_semantics import verify_attested_sbom_predicate
 from scripts.lib.release_package import (
     extract_archive,
     validate_runtime_dependencies,
@@ -513,7 +513,10 @@ def stage_runtime(
         for relative in (
             "scripts/__init__.py",
             "scripts/lib/__init__.py",
-            "scripts/lib/operations_identity.py",
+            "scripts/lib/observability_preflight.py",
+            "scripts/lib/evidence_provenance.py",
+            "scripts/lib/operations_host.py",
+            "scripts/lib/release_deployment_verification.py",
             "scripts/tools/__init__.py",
         ):
             source = ROOT / relative

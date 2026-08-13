@@ -169,6 +169,7 @@ def main() -> int:
         "workflow_script_dependencies",
         "workflow_script_dependency_edges",
         "cross_cli_imports",
+        "windows_compatibility_fragments",
     ):
         limit = limits.get(metric, {}).get("maximum") if isinstance(limits, dict) else None
         add(
@@ -333,6 +334,7 @@ def main() -> int:
         f"workflow-deps={current['workflow_script_dependencies']}, "
         f"workflow-edges={current['workflow_script_dependency_edges']}, "
         f"cross-cli-imports={current['cross_cli_imports']}"
+        f", windows-compat={current['windows_compatibility_fragments']}"
     )
     print(f"summary: {summary_path}")
     return 0 if not failed else 1

@@ -77,7 +77,7 @@ VALID_SIDE_EFFECTS = {
     "host-configuration",
     "release-state",
 }
-SCRIPT_REFERENCE_PATTERN = re.compile(r"scripts/[A-Za-z0-9_./-]+\.(?:py|sh|ps1)")
+SCRIPT_REFERENCE_PATTERN = re.compile(r"scripts/[A-Za-z0-9_./-]+\.(?:py|sh)")
 
 
 def maintained_reference_sources() -> list[Path]:
@@ -151,7 +151,7 @@ def main() -> int:
         for path in (ROOT / "scripts").rglob("*")
         if path.is_file()
         and "__pycache__" not in path.parts
-        and path.suffix in {".py", ".ps1", ".sh"}
+        and path.suffix in {".py", ".sh"}
     }
     canonical_paths = {
         str(meta.get("canonical"))
@@ -163,13 +163,24 @@ def main() -> int:
     represented = {
         path
         for path in declared | canonical_paths | internal_declared
-        if Path(path).suffix in {".py", ".ps1", ".sh"}
+        if Path(path).suffix in {".py", ".sh"}
     }
 
     add(checks, "inventory-json", bool(inventory), "inventory is valid JSON object")
     add(checks, "inventory-schema-version", inventory.get("schema_version") == 6, "schema_version is 6")
     add(checks, "all-top-level-scripts-declared", actual_top_level <= declared, "all top-level files are declared")
     add(checks, "all-recursive-scripts-represented", actual_scripts == represented, "every executable script is represented exactly once by role")
+    unsupported_scripts = sorted(
+        str(path.relative_to(ROOT)).replace("\\", "/")
+        for path in (ROOT / "scripts").rglob("*")
+        if path.is_file() and path.suffix.lower() in {".bat", ".cmd", ".ps1"}
+    )
+    add(
+        checks,
+        "no-unsupported-windows-scripts",
+        not unsupported_scripts,
+        f"unsupported={unsupported_scripts}",
+    )
     add(checks, "no-missing-declared-scripts", all((ROOT / p).exists() for p in declared), "all declared scripts exist")
     add(checks, "no-missing-internal-scripts", all((ROOT / p).exists() for p in internal_declared), "all internal scripts exist")
     growth_exceptions = inventory.get("script_growth_exceptions")
@@ -356,7 +367,7 @@ def main() -> int:
             for path_text, meta in scripts.items()
             if Path(path_text).parent == Path("scripts")
             and path_text not in root_public
-            and Path(path_text).suffix in {".py", ".sh", ".ps1"}
+            and Path(path_text).suffix in {".py", ".sh"}
             and path_text != "scripts/__init__.py"
         } if isinstance(scripts, dict) else set()
         add(

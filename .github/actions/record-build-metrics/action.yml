@@ -1,0 +1,57 @@
+name: Record build metrics
+description: Start or finish the shared sccache/build-duration evidence lifecycle.
+inputs:
+  phase:
+    description: start or finish
+    required: true
+  workflow:
+    description: Stable workflow identity written to the summary
+    required: true
+  production-platform:
+    description: Optional governed production platform identity
+    required: false
+    default: ""
+runs:
+  using: composite
+  steps:
+    - name: Record build start
+      if: inputs.phase == 'start'
+      shell: bash
+      run: echo "BUILD_START_EPOCH=$(date +%s)" >> "$GITHUB_ENV"
+
+    - name: Capture build metrics
+      if: inputs.phase == 'finish'
+      shell: bash
+      env:
+        METRICS_WORKFLOW: ${{ inputs.workflow }}
+        METRICS_PRODUCTION_PLATFORM: ${{ inputs.production-platform }}
+      run: |
+        set -euo pipefail
+        mkdir -p runtime/perf/build-times
+        if [ -f runtime/perf/build-times/sccache-stats.json ]; then
+          cat runtime/perf/build-times/sccache-stats.json
+        else
+          sccache --show-stats || true
+        fi
+        python3 - <<'PY'
+        import json
+        import os
+        import platform
+        import time
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        started = int(os.environ["BUILD_START_EPOCH"])
+        document = {
+            "workflow": os.environ["METRICS_WORKFLOW"],
+            "runner_os": os.environ.get("RUNNER_OS", platform.system()),
+            "runner_arch": os.environ.get("RUNNER_ARCH", platform.machine()),
+            "timestamp": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "build_duration_seconds": int(time.time()) - started,
+        }
+        production_platform = os.environ.get("METRICS_PRODUCTION_PLATFORM", "")
+        if production_platform:
+            document["production_platform"] = production_platform
+        path = Path("runtime/perf/build-times/build-time.json")
+        path.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        PY

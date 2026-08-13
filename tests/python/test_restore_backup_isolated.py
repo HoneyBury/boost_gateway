@@ -12,9 +12,12 @@ from scripts.tools import restore_backup_isolated as restore
 
 
 class FakeDocker:
-    def __init__(self, *, drift_target: bool = False) -> None:
+    def __init__(
+        self, *, drift_target: bool = False, fail_target_removal: bool = False
+    ) -> None:
         self.commands: list[list[str]] = []
         self.drift_target = drift_target
+        self.fail_target_removal = fail_target_removal
         self.target_created = False
         self.baseline_staging_modes: tuple[int, int] | None = None
         self.seeded_payload: bytes | None = None
@@ -60,7 +63,10 @@ class FakeDocker:
         elif command[1:3] == ["volume", "create"]:
             self.target_created = True
         elif command[1:3] == ["volume", "rm"]:
-            self.target_created = False
+            if self.fail_target_removal:
+                returncode = 1
+            else:
+                self.target_created = False
         elif command[1:3] == ["run", "--rm"] and "-i" in command:
             stream = kwargs.get("stdin")
             if stream is None or not hasattr(stream, "read"):
@@ -438,6 +444,33 @@ class IsolatedRestoreTest(unittest.TestCase):
         self.assertTrue(summary["target_removed_on_failure"])
         self.assertFalse(summary["target_volume_retained"])
         self.assertFalse(summary["restore_known_good"])
+
+    def test_cleanup_failure_is_recorded_without_removing_active_volume(self) -> None:
+        runner = FakeDocker(drift_target=True, fail_target_removal=True)
+        with self.assertRaisesRegex(
+            restore.RestoreError, r"cleanup failures: \['target_volume'\]"
+        ):
+            self._run(runner)
+
+        target_remove = [
+            "docker-test",
+            "volume",
+            "rm",
+            "boost-gateway-recovery-drill-one",
+        ]
+        active_remove = [
+            "docker-test",
+            "volume",
+            "rm",
+            "boost-gateway-production-redis-data",
+        ]
+        self.assertIn(target_remove, runner.commands)
+        self.assertNotIn(active_remove, runner.commands)
+        summary = json.loads(self.summary.read_text())
+        self.assertEqual(["target_volume"], summary["cleanup_failures"])
+        self.assertFalse(summary["target_removed_on_failure"])
+        self.assertFalse(summary["target_volume_retained"])
+        self.assertFalse(summary["overall_pass"])
 
     def test_rejects_transport_restore_or_receiver_identity_drift(self) -> None:
         path = self.bundle / "transport-receipt.json"

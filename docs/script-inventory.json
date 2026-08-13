@@ -22,21 +22,6 @@
       "retirement_condition": "A different governed evidence transport provides equivalent safe extraction, checksum verification, host identity, and create-only receipts.",
       "temporary": false,
       "expires_on": ""
-    },
-    "scripts/lib/release_package.py": {
-      "kind": "library-module",
-      "domain": "release",
-      "consumers": [
-        "release archive verification",
-        "release package consumers",
-        "immutable runtime staging"
-      ],
-      "test": "tests/python/test_release_package_library.py",
-      "why_new_script": "Release package primitives need one import-safe home shared by multiple stable CLIs.",
-      "replaces": "Helpers previously implemented inside release CLI modules",
-      "retirement_condition": "All release package consumers move to a different governed library contract.",
-      "temporary": false,
-      "expires_on": ""
     }
   },
   "public_entrypoints": [
@@ -337,16 +322,127 @@
     "scripts/lib/cancellable_process.py": {
       "category": "tool"
     },
+    "scripts/lib/backup_recovery_policy.py": {
+      "category": "tool"
+    },
+    "scripts/lib/backup_vault.py": {
+      "category": "tool"
+    },
+    "scripts/lib/cpu_capacity_evidence_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/conan_workflow_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/deploy_operability_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/evidence_provenance_cases.py": {
+      "category": "tool"
+    },
+    "scripts/lib/long_soak_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/isolated_restore.py": {
+      "category": "tool"
+    },
+    "scripts/lib/monitoring_operability_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/observability_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/lib/observability_preflight.py": {
+      "category": "tool"
+    },
+    "scripts/lib/raft_mixed_binary_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_images.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_preflight.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_record.py": {
+      "category": "tool"
+    },
+    "scripts/lib/recovery_drill_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_verification.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_sbom_io.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_sbom_semantics.py": {
+      "category": "tool"
+    },
+    "scripts/lib/restore_bundle_transport.py": {
+      "category": "tool"
+    },
+    "scripts/lib/sdk_distribution_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/sdk_full_flow_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/backup_recovery.py": {
+      "category": "tool"
+    },
     "scripts/lib/evidence_provenance.py": {
       "category": "tool"
     },
     "scripts/lib/observability_evidence_package.py": {
       "category": "tool"
     },
-    "scripts/lib/operations_identity.py": {
+    "scripts/lib/operations_host.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_bench_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_cli_support.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_business_operations.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_business_protocol.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_otel_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_process_affinity.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_process_runtime.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_release_contract.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_report.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_resource_evidence.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_result_aggregation.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_saturation_analysis.py": {
       "category": "tool"
     },
     "scripts/lib/perf_statistics.py": {
+      "category": "tool"
+    },
+    "scripts/lib/perf_stability_evidence.py": {
       "category": "tool"
     },
     "scripts/lib/recovery_evidence.py": {
@@ -355,10 +451,31 @@
     "scripts/lib/release_lifecycle_io.py": {
       "category": "tool"
     },
+    "scripts/lib/release_deployment_activation.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_commands.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_core.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_executor.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_install.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_recovery.py": {
+      "category": "tool"
+    },
+    "scripts/lib/release_deployment_transaction.py": {
+      "category": "tool"
+    },
     "scripts/lib/release_package.py": {
       "category": "tool"
     },
-    "scripts/lib/summary_utils.py": {
+    "scripts/lib/workflow_catalog_contract.py": {
       "category": "tool"
     },
     "scripts/lib/tooling_metrics.py": {

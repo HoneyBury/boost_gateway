@@ -1,6 +1,6 @@
 # 维护者指南：代码、脚本与 Workflow 治理
 
-更新时间：2026-08-11
+更新时间：2026-08-12
 
 本文面向需要修改跨模块代码、脚本、CI/CD 或生产门禁的维护者。当前产品事实以
 [当前状态](current-state.md)为准，构建步骤以[开发者入门](ONBOARDING.md)为准；本文负责
@@ -27,8 +27,8 @@ Leaderboard。主要维护边界如下：
 
 ## 为什么工具面会膨胀
 
-截至本页更新时，仓库有 164 个受治理的 Python/PowerShell/shell 脚本、18 个 workflow，脚本约
-58,800 行、workflow 约 5,600 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
+截至本页更新时，仓库有 208 个受治理的 Python/POSIX shell 脚本、18 个 workflow，脚本约
+60,100 行、workflow 约 5,500 行。Git 历史显示，自 2026-06-01 起有 223 个提交触及
 `scripts/`、149 个提交触及 workflow；这些路径累计约增加 56,000 行、删除 13,500 行。
 
 增长主要来自四类真实需求：多平台证据不可互换；发布、恢复、TLS、性能和长稳需要独立
@@ -115,6 +115,10 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 5. 新参数必须补单测，并运行 workflow→Python CLI contract gate。不要在 workflow 中
    拼装脚本尚未声明的参数。
 6. 运行期产物只写 `runtime/` 或显式临时目录，不写回 `scripts/`、`docs/` 或源目录。
+7. 脚本运行主机以 `platform-production-boundaries.json` 为准，当前仅支持 Linux 和 macOS。
+   禁止新增 Windows OS 分支、`.exe` 原生入口、PowerShell/批处理脚本或 Windows 虚拟环境路径；
+   NuGet 中的托管 `.dll` 是跨平台包内容，不代表 Windows 原生支持。恢复 Windows 支持必须先有
+   ADR、工具链、原生证据和平台基线评审。
 
 ## 修改 Workflow 的规则
 
@@ -147,8 +151,10 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 `python3.12 scripts/gates/governance/check_tooling_metrics.py` 会从当前工作树重新计算公共入口、
 canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
-片段，以及没有显式 Python 单测引用的 CLI。当前值分别是 23、127、55/11/25、31/15、58、
-122、15、11 和 0；11 个 library 中有 10 个冻结基线和 1 个带直接测试的 reviewed exception。
+片段、Windows 兼容分支，以及没有显式 Python 单测引用的 CLI。当前值分别是
+23、127、55/56/25、20/5、47、103、0、5、0 和 0；55 个 library 已进入 2026-08-12
+冻结基线，v3.6.7 合入的异机 evidence package verifier 作为 1 个带直接测试的 reviewed
+exception 受控进入，冻结 maximum 没有上调。
 “其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
 `main()` 绕过增长审查。
 
@@ -161,14 +167,14 @@ canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/
 注释、仅匹配的测试文件名或没有测试函数的引用清单不再被当作覆盖。
 
 依赖提取同时识别 `python`、`python3`、`python3.12` 和 `"$EVIDENCE_PYTHON"` 等受治理解释器
-变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；上述五个
-workflow 的初始化收敛后为 122 条，实际减少 9 条。不能把修正后的 122 与旧提取器遗漏调用时
-记录的 89 直接比较。
+变量。修正识别盲区后，同一工作树在 composite action 迁移前有 131 条直接依赖边；第一轮
+初始化收敛后为 122 条，本轮治理 suite 与构建指标 composite action 收敛后为 103 条。不能把
+修正后的数值与旧提取器遗漏调用时记录的 89 直接比较。
 
 跨 CLI 导入提取也识别 `from scripts.tools import module` 形式。修正该盲区后，发布包解耦前的
-真实图为 22 条边；`release_package` 共享库承接归档布局、安全解包和运行时动态库契约后为
-15 条，消除了 7 条发布 CLI 耦合。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续
-兼容，避免一次性迁移调用方。
+真实图为 22 条边；`release_package` 共享库承接发布包契约后为 15 条，本轮备份恢复共享库继续
+降到 8 条。共享库本身没有 `main()`/`argparse`，原 CLI 导入符号继续兼容，避免一次性迁移
+调用方。
 
 评审基线位于 `docs/tooling-metrics-baseline.json`。现有路径和耦合可以减少；新增任何脚本文件
 只能通过 `script_growth_exceptions` 的完整、可到期、带测试记录受控进入。新增 workflow 脚本
@@ -206,3 +212,18 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
    workflow fan-out、CLI 导入边、public entrypoint 与重复片段；历史无测试 CLI 已全部转为可执行
    的入口 smoke 契约并把 allowlist 收紧为 0。新脚本必须提供可验证的例外记录，并登记需要
    GitHub Actions 月度核验的变更失败率。治理目标是降低修改耦合，而不是单纯追求文件数更少。
+6. 2026-08-12 主动减量把超过 500/800 行脚本降到 20/10，Workflow 依赖边降到 103，跨 CLI
+   导入降到 8，重复片段降到 5；迁移库已转入稳定基线并清空增长例外。下一轮优先为
+   `collect_v2_perf_baseline.py` 和 `verify_preprod_recovery_drill.py` 建立可录制 fixture，再继续拆分。
+7. 第二轮已把两个热点入口降到 736/787 行，并把跨 CLI 导入清零；超过 800 行脚本进一步降到 8，
+   超过 500 行脚本保持 20。新增内部模块以 CLI-free 边界测试约束，public/CLI/tool 数量没有增长。
+8. 第三轮以 library 不高于 55 为硬边界，优先复用 workflow、operations host 和 long-soak 契约；
+   不再通过为每个函数组新增扁平模块来追求行数。恢复、Redis 和外部 canary 热点必须先补录制
+   fixture 与资源所有权失败注入，再进入后续减量。
+9. 第三轮已把 workflow catalog、operations host 和 stability soak 三个入口降到 798/800/702 行，
+   超过 800 行脚本降到 5，library 保持 55，growth exception 清零。主机身份、网络策略、跨平台
+   资源采样和持续失败政策已有单一边界；新代码不得在 gate 中重建 `/proc`、Darwin `ps` 或失败率
+   实现。
+10. 第四轮先治理五个剩余旁路热点的副作用边界，不以拆文件为目标。隔离恢复和业务验证的清理
+    失败必须写入 create-only summary，并直接断言活动卷与保留卷不进入删除调用；只有这些 fixture
+    保持通过后，才允许迁移无副作用 contract。

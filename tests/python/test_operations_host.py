@@ -166,6 +166,13 @@ class OperationsHostRebootEvidenceTests(unittest.TestCase):
         self.assertTrue(MODULE.evaluate_reboot_marker(marker, "host-a", "boot-b"))
         self.assertFalse(MODULE.evaluate_reboot_marker(marker, "host-a", "boot-c"))
 
+    def test_builds_prepare_reboot_marker_without_shadowing_its_path(self) -> None:
+        marker = MODULE.build_reboot_marker("host-a", "boot-a")
+
+        self.assertEqual("host-a", marker["host_id_sha256"])
+        self.assertEqual("boot-a", marker["boot_id_before"])
+        self.assertNotIn("boot_id_after", marker)
+
     def test_atomic_summary_replaces_stale_content(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "summary.json"

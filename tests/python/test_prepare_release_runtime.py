@@ -177,7 +177,10 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                 "scripts/tools/check_release_compose.py",
                 "scripts/tools/check_observability_preflight.py",
                 "scripts/lib/__init__.py",
-                "scripts/lib/operations_identity.py",
+                "scripts/lib/observability_preflight.py",
+                "scripts/lib/evidence_provenance.py",
+                "scripts/lib/operations_host.py",
+                "scripts/lib/release_deployment_verification.py",
             )
             for relative in required:
                 self.assertTrue((destination / relative).is_file(), relative)
@@ -193,8 +196,10 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                     (
                         "from scripts.tools.check_observability_preflight "
                         "import validate_preflight; "
-                        "from scripts.lib.operations_identity "
-                        "import collect_operations_identity"
+                        "from scripts.lib.operations_host "
+                        "import collect_operations_identity; "
+                        "from scripts.tools.verify_release_deployment "
+                        "import validate_gateway_ready"
                     ),
                 ],
                 cwd=destination,

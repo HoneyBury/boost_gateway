@@ -12,8 +12,8 @@
       "maximum": 23
     },
     "workflow_duplicate_fragments": {
-      "baseline": 11,
-      "maximum": 11
+      "baseline": 5,
+      "maximum": 5
     },
     "cli_implementations": {
       "baseline": 127,
@@ -24,32 +24,36 @@
       "maximum": 55
     },
     "library_files": {
-      "baseline": 10,
-      "maximum": 10
+      "baseline": 55,
+      "maximum": 55
     },
     "other_script_files": {
       "baseline": 25,
       "maximum": 25
     },
     "large_scripts_over_500": {
-      "baseline": 31,
-      "maximum": 31
+      "baseline": 20,
+      "maximum": 20
     },
     "large_scripts_over_800": {
-      "baseline": 15,
-      "maximum": 15
+      "baseline": 5,
+      "maximum": 5
     },
     "workflow_script_dependencies": {
-      "baseline": 58,
-      "maximum": 58
+      "baseline": 47,
+      "maximum": 47
     },
     "workflow_script_dependency_edges": {
-      "baseline": 122,
-      "maximum": 122
+      "baseline": 103,
+      "maximum": 103
     },
     "cross_cli_imports": {
-      "baseline": 15,
-      "maximum": 15
+      "baseline": 0,
+      "maximum": 0
+    },
+    "windows_compatibility_fragments": {
+      "baseline": 0,
+      "maximum": 0
     },
     "untested_cli": {
       "baseline": 0,
@@ -246,14 +250,59 @@
       ],
       "library_files": [
         "scripts/lib/__init__.py",
+        "scripts/lib/backup_recovery.py",
+        "scripts/lib/backup_recovery_policy.py",
+        "scripts/lib/backup_vault.py",
         "scripts/lib/cancellable_process.py",
+        "scripts/lib/conan_workflow_contract.py",
+        "scripts/lib/cpu_capacity_evidence_contract.py",
+        "scripts/lib/deploy_operability_contract.py",
         "scripts/lib/evidence_provenance.py",
-        "scripts/lib/operations_identity.py",
+        "scripts/lib/evidence_provenance_cases.py",
+        "scripts/lib/isolated_restore.py",
+        "scripts/lib/long_soak_contract.py",
+        "scripts/lib/monitoring_operability_contract.py",
+        "scripts/lib/observability_evidence.py",
+        "scripts/lib/observability_preflight.py",
+        "scripts/lib/operations_host.py",
+        "scripts/lib/perf_bench_runtime.py",
+        "scripts/lib/perf_cli_support.py",
+        "scripts/lib/perf_business_operations.py",
+        "scripts/lib/perf_business_protocol.py",
+        "scripts/lib/perf_otel_runtime.py",
+        "scripts/lib/perf_process_affinity.py",
+        "scripts/lib/perf_process_runtime.py",
+        "scripts/lib/perf_release_contract.py",
+        "scripts/lib/perf_report.py",
+        "scripts/lib/perf_resource_evidence.py",
+        "scripts/lib/perf_result_aggregation.py",
+        "scripts/lib/perf_saturation_analysis.py",
         "scripts/lib/perf_statistics.py",
+        "scripts/lib/perf_stability_evidence.py",
+        "scripts/lib/raft_mixed_binary_runtime.py",
+        "scripts/lib/recovery_drill_contract.py",
+        "scripts/lib/recovery_drill_images.py",
+        "scripts/lib/recovery_drill_preflight.py",
+        "scripts/lib/recovery_drill_record.py",
+        "scripts/lib/recovery_drill_runtime.py",
         "scripts/lib/recovery_evidence.py",
+        "scripts/lib/release_deployment_activation.py",
+        "scripts/lib/release_deployment_commands.py",
+        "scripts/lib/release_deployment_core.py",
+        "scripts/lib/release_deployment_executor.py",
+        "scripts/lib/release_deployment_install.py",
+        "scripts/lib/release_deployment_recovery.py",
+        "scripts/lib/release_deployment_transaction.py",
+        "scripts/lib/release_deployment_verification.py",
         "scripts/lib/release_lifecycle_io.py",
+        "scripts/lib/release_package.py",
+        "scripts/lib/release_sbom_io.py",
+        "scripts/lib/release_sbom_semantics.py",
+        "scripts/lib/restore_bundle_transport.py",
+        "scripts/lib/sdk_distribution_contract.py",
+        "scripts/lib/sdk_full_flow_runtime.py",
         "scripts/lib/subprocess_utils.py",
-        "scripts/lib/summary_utils.py",
+        "scripts/lib/workflow_catalog_contract.py",
         "scripts/lib/tooling_metrics.py"
       ],
       "other_script_files": [
@@ -285,6 +334,7 @@
       ],
       "workflow_script_dependencies": [
         "scripts/bootstrap_conan.py",
+        "scripts/check_mainline_readiness.py",
         "scripts/check_production_evidence_manifest.py",
         "scripts/gates/e2e/verify_raft_mixed_binary.py",
         "scripts/gates/e2e/verify_specialized_e2e.py",
@@ -345,6 +395,7 @@
       ],
       "workflow_script_dependency_edges": [
         ".github/workflows/ci.yml -> scripts/bootstrap_conan.py",
+        ".github/workflows/ci.yml -> scripts/check_mainline_readiness.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_current_docs_install.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_evidence_provenance_contract.py",
         ".github/workflows/ci.yml -> scripts/gates/governance/check_legacy_helper_inventory.py",
@@ -421,6 +472,7 @@
         ".github/workflows/release-asset-verification.yml -> scripts/tools/verify_release_package_consumer.py",
         ".github/workflows/release-asset-verification.yml -> scripts/tools/verify_sdk_distribution_packages.py",
         ".github/workflows/release.yml -> scripts/bootstrap_conan.py",
+        ".github/workflows/release.yml -> scripts/check_mainline_readiness.py",
         ".github/workflows/release.yml -> scripts/gates/e2e/verify_raft_mixed_binary.py",
         ".github/workflows/release.yml -> scripts/gates/e2e/verify_specialized_e2e.py",
         ".github/workflows/release.yml -> scripts/gates/governance/check_evidence_provenance_contract.py",
@@ -488,9 +540,9 @@
   "observations": {
     "workflow_files": 18,
     "cli_implementations": 127,
-    "script_files": 164,
-    "script_lines": 58889,
-    "workflow_lines": 5602
+    "script_files": 208,
+    "script_lines": 60120,
+    "workflow_lines": 5464
   },
   "external_metrics": {
     "automation_change_failure_rate": {

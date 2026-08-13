@@ -22,13 +22,14 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 try:
-    from scripts.tools import manage_backup_recovery as backup  # noqa: E402
-    from scripts.tools import restore_backup_isolated as restore  # noqa: E402
+    from scripts.lib import backup_recovery as backup  # noqa: E402
+    from scripts.lib import isolated_restore as restore  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name != "scripts":
         raise
-    import manage_backup_recovery as backup  # type: ignore[no-redef]  # noqa: E402
-    import restore_backup_isolated as restore  # type: ignore[no-redef]  # noqa: E402
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.lib import backup_recovery as backup  # type: ignore[no-redef]  # noqa: E402
+    from scripts.lib import isolated_restore as restore  # type: ignore[no-redef]  # noqa: E402
 
 
 Runner = Callable[..., subprocess.CompletedProcess[Any]]

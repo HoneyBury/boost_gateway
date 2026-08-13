@@ -31,9 +31,9 @@ class PerfCpuAffinityTest(unittest.TestCase):
             with self.subTest(value=value), self.assertRaises(ValueError):
                 parse_cpu_set(value)
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Linux")
-    @patch("scripts.producers.collect_v2_perf_baseline.os.sched_setaffinity", create=True)
-    @patch("scripts.producers.collect_v2_perf_baseline.os.sched_getaffinity", create=True)
+    @patch("scripts.lib.perf_process_affinity.platform.system", return_value="Linux")
+    @patch("scripts.lib.perf_process_affinity.os.sched_setaffinity", create=True)
+    @patch("scripts.lib.perf_process_affinity.os.sched_getaffinity", create=True)
     def test_apply_cpu_affinity_verifies_effective_set(
         self,
         get_affinity,
@@ -50,10 +50,10 @@ class PerfCpuAffinityTest(unittest.TestCase):
         self.assertEqual(result["effective_cpu_set"], "0-1")
         self.assertEqual(result["cpu_count"], 2)
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Linux")
-    @patch("scripts.producers.collect_v2_perf_baseline.os.sched_setaffinity", create=True)
+    @patch("scripts.lib.perf_process_affinity.platform.system", return_value="Linux")
+    @patch("scripts.lib.perf_process_affinity.os.sched_setaffinity", create=True)
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.os.sched_getaffinity",
+        "scripts.lib.perf_process_affinity.os.sched_getaffinity",
         return_value={2, 3},
         create=True,
     )
@@ -67,9 +67,9 @@ class PerfCpuAffinityTest(unittest.TestCase):
             apply_cpu_affinity("0")
         set_affinity.assert_not_called()
 
-    @patch("scripts.producers.collect_v2_perf_baseline.platform.system", return_value="Linux")
+    @patch("scripts.lib.perf_process_affinity.platform.system", return_value="Linux")
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.os.sched_getaffinity",
+        "scripts.lib.perf_process_affinity.os.sched_getaffinity",
         return_value={0, 1, 2, 3, 4, 5},
         create=True,
     )
@@ -85,11 +85,11 @@ class PerfCpuAffinityTest(unittest.TestCase):
             resolve_loadgen_cpu_set("", "2-5")
 
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        "scripts.lib.perf_otel_runtime.process_snapshot",
         return_value={"cpu_seconds": 12.5},
     )
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        "scripts.lib.perf_otel_runtime.fetch_json",
         return_value={"backend_metrics": {"battle": {"total_requests": 10}}},
     )
     def test_service_quiescence_requires_stable_routing_and_cpu_samples(
@@ -109,11 +109,11 @@ class PerfCpuAffinityTest(unittest.TestCase):
         self.assertEqual(result["idle_cpu_budget_percent"], 5.0)
 
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        "scripts.lib.perf_otel_runtime.process_snapshot",
         side_effect=[{"cpu_seconds": 12.5}, {"cpu_seconds": 12.51}],
     )
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        "scripts.lib.perf_otel_runtime.fetch_json",
         return_value={"backend_metrics": {"battle": {"total_requests": 10}}},
     )
     def test_service_quiescence_accepts_quantized_idle_cpu_tick(
@@ -131,11 +131,11 @@ class PerfCpuAffinityTest(unittest.TestCase):
         self.assertAlmostEqual(result["aggregate_cpu_delta_seconds"], 0.01)
 
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        "scripts.lib.perf_otel_runtime.process_snapshot",
         return_value={"cpu_seconds": 12.5},
     )
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        "scripts.lib.perf_otel_runtime.fetch_json",
         side_effect=[
             {"backend_metrics": {}, "total_active_sessions": 10},
             {"backend_metrics": {}, "total_active_sessions": 0},
@@ -157,14 +157,14 @@ class PerfCpuAffinityTest(unittest.TestCase):
         self.assertEqual(result["active_sessions"], 0)
 
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.process_snapshot",
+        "scripts.lib.perf_otel_runtime.process_snapshot",
         side_effect=[
             *({"cpu_seconds": 10.0} for _ in range(6)),
             *({"cpu_seconds": 10.01} for _ in range(6)),
         ],
     )
     @patch(
-        "scripts.producers.collect_v2_perf_baseline.fetch_json",
+        "scripts.lib.perf_otel_runtime.fetch_json",
         return_value={"backend_metrics": {}, "total_active_sessions": 0},
     )
     def test_service_quiescence_scales_quantized_budget_by_process_count(
