@@ -1,6 +1,6 @@
 # Project TODO Module
 
-`tasks.json` is the versioned source of truth. `BOARD.md` is generated for quick
+`tasks.json` is the versioned source of truth. [`BOARD.md`](BOARD.md) is generated for quick
 review. Local operations never contact GitHub unless `--sync-github` or `sync`
 is explicitly requested.
 

@@ -15,7 +15,7 @@
 | 了解当前能力和边界 | [当前状态](current-state.md) |
 | 理解组件和请求链路 | [架构总览](architecture-overview.md) |
 | 查看当前执行优先级 | [主线执行计划](mainline-execution-plan.md) |
-| 部署和运维 | [部署文档](deployment/) |
+| 部署和运维 | [部署文档](deployment/README.md) |
 | Ubuntu 运营主机准入 | [运营主机准入手册](deployment/operations-host-admission-runbook.md) |
 | 不可变 Release 单节点部署 | [不可变 Release 部署手册](deployment/immutable-release-deployment-runbook.md) |
 | 长期观测与证据 ledger | [长期观测与证据手册](deployment/long-run-observability-runbook.md) |
@@ -33,6 +33,7 @@
 | [单节点运营与 30 天验证](single-node-enterprise-validation-plan.md) | 自动部署、SLI/SLO、备份恢复、72 小时预演和 30 天运行契约 |
 | [平台生产边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的不可互换证据边界 |
 | [平台边界清单](platform-production-boundaries.json) | 平台契约的机器可读事实源 |
+| [TODO 管理](todos/README.md) | 任务数据所有权、生命周期、渲染和 GitHub 同步方式 |
 | [TODO Board](todos/BOARD.md) | 当前版本化任务状态；由 `tasks.json` 生成 |
 
 ## 开发与治理
@@ -46,7 +47,10 @@
 | [性能基线](performance-baseline.md) | 测量命令、有效证据、历史数据和容量声明边界 |
 | [TLS/mTLS Runbook](tls-mtls-runbook.md) | TLS profile、证书、验证、轮换和回滚 |
 | [Legacy/Helper 清单](legacy/legacy-helper-inventory.md) | 当前仍保留的兼容面和删除条件 |
+| [脚本配置收敛历史计划](legacy/script-config-consolidation-plan.md) | 已完成配置治理的兼容约束；不作为新增入口 |
+| [v2 控制面预案](legacy/v2-control-plane-preplan.md) | 未激活控制面的历史设计边界 |
 | [脚本索引](script-inventory.json) | public entrypoint、gate、producer、tool 和 legacy 分类 |
+| [文档生命周期目录](document-catalog.json) | 活跃文档职责、owner、入口、更新触发和归档条件 |
 | [Workflow Catalog](workflow-catalog.json) | workflow 名称、触发、权限、runner 类别、生命周期和离线策略 |
 | [贡献指南](../CONTRIBUTING.md) | PR、review、测试、文档和敏感变更要求 |
 | [安全策略](../SECURITY.md) | 支持版本、非公开披露和响应预期 |
@@ -69,7 +73,7 @@
 
 | 目录 | 内容 |
 |---|---|
-| [decisions/](decisions/) | 已接受 ADR；接受不等于默认激活，当前状态以 decision manifest 为准 |
+| [decisions/](decisions/README.md) | 已接受 ADR；接受不等于默认激活，当前状态以 decision manifest 为准 |
 | [v3.6 decision manifest](decisions/v3.6-decision-manifest.json) | 身份、SDK、Raft、macOS ARM64 和符号决策的机器可读状态 |
 | [deployment/](deployment/) | 快速部署、生产配置、发布、运维和迁移 runbook |
 | [legacy/](legacy/) | 仍受治理的兼容清单和预案，不是新功能入口 |

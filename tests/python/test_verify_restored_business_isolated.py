@@ -93,6 +93,77 @@ class GatewayBindingRunner(CommandRunner):
         return completed
 
 
+class ResourceOwnershipTranscript:
+    def __init__(
+        self,
+        *,
+        fail_create: tuple[str, str] | None = None,
+        fail_remove: set[tuple[str, str]] | None = None,
+        snapshot_digest: str = "a" * 64,
+    ) -> None:
+        self.runner_impl = CommandRunner()
+        self.fail_create = fail_create
+        self.fail_remove = fail_remove or set()
+        self.snapshot_digest = snapshot_digest
+        self.created: list[tuple[str, str]] = []
+        self.removal_attempts: list[tuple[str, str]] = []
+        self.mounts: list[dict[str, object]] = []
+
+    def _record(self, command: list[str]) -> None:
+        if command[1:3] == ["volume", "create"]:
+            self.created.append(("volume", command[-1]))
+        elif command[1:3] == ["network", "create"]:
+            self.created.append(("network", command[-1]))
+        for index, value in enumerate(command[:-1]):
+            if value != "--mount":
+                continue
+            fields = command[index + 1].split(",")
+            options = {
+                key: item
+                for field in fields
+                for key, _, item in [field.partition("=")]
+                if item
+            }
+            self.mounts.append(
+                {
+                    "source": options.get("src", ""),
+                    "destination": options.get("dst", ""),
+                    "readonly": "readonly" in fields,
+                }
+            )
+
+    def runner(
+        self, command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        self._record(command)
+        if "sha256sum /data/dump.rdb" in command[-1]:
+            self.runner_impl.commands.append(command)
+            return subprocess.CompletedProcess(
+                command, 0, f"{self.snapshot_digest}  /data/dump.rdb\n", ""
+            )
+        return self.runner_impl(command, **kwargs)
+
+    def checked(
+        self, runner: object, command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
+        resource = None
+        if command[1:3] == ["volume", "create"]:
+            resource = ("volume", command[-1])
+        elif command[1:3] == ["network", "create"]:
+            resource = ("network", command[-1])
+        if resource is not None and resource == self.fail_create:
+            self._record(command)
+            raise business.BusinessValidationError(
+                f"injected {resource[0]} creation failure: {resource[1]}"
+            )
+        return self.runner(command, **kwargs)
+
+    def remove(self, runner: object, docker: str, kind: str, name: str) -> bool:
+        resource = (kind, name)
+        self.removal_attempts.append(resource)
+        return resource not in self.fail_remove
+
+
 class RestoredBusinessValidationTest(unittest.TestCase):
     def setUp(self) -> None:
         temporary = tempfile.TemporaryDirectory()
@@ -219,21 +290,29 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             )
 
     def test_clone_mounts_retained_readonly_and_writes_only_work_volume(self) -> None:
-        runner = CommandRunner()
+        transcript = ResourceOwnershipTranscript()
         digest = business.clone_retained_volume(
-            runner,
+            transcript.runner,
             "docker-test",
             self.redis_image,
             self.retained,
             self.work,
         )
         self.assertEqual("a" * 64, digest)
-        command = runner.commands[0]
+        command = transcript.runner_impl.commands[0]
         self.assertIn(f"type=volume,src={self.retained},dst=/source,readonly", command)
         self.assertIn(f"type=volume,src={self.work},dst=/data", command)
         self.assertIn("redis", command)
         self.assertNotIn("0", command)
         self.assertNotIn("--cap-add", command)
+        self.assertIn(
+            {"source": self.retained, "destination": "/source", "readonly": True},
+            transcript.mounts,
+        )
+        self.assertIn(
+            {"source": self.work, "destination": "/data", "readonly": False},
+            transcript.mounts,
+        )
 
     def test_topology_uses_internal_aliases_without_published_port(self) -> None:
         runner = CommandRunner()
@@ -522,6 +601,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             "leaderboard_rank": True,
         }
         ticks = iter((0.0, 40.0, 40.0))
+        transcript = ResourceOwnershipTranscript(snapshot_digest=self.snapshot_sha)
         self._bind_restore_runtime(retained_state, active_state)
 
         def started(*args: object, **kwargs: object) -> None:
@@ -556,10 +636,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business,
                 "checked",
-                return_value=subprocess.CompletedProcess([], 0, "", ""),
-            ),
-            mock.patch.object(
-                business, "clone_retained_volume", return_value=self.snapshot_sha
+                side_effect=transcript.checked,
             ),
             mock.patch.object(
                 business,
@@ -591,7 +668,9 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business, "verify_leaderboard_effects", return_value=leaderboard_result
             ),
-            mock.patch.object(business, "remove_resource", return_value=True),
+            mock.patch.object(
+                business, "remove_resource", side_effect=transcript.remove
+            ),
         ):
             result = business.run_business_validation(
                 business_id="business-pass-one",
@@ -606,6 +685,7 @@ class RestoredBusinessValidationTest(unittest.TestCase):
                 active_volume=self.active,
                 lock_path=self.lock,
                 docker="docker-test",
+                runner=transcript.runner,
                 monotonic=lambda: next(ticks),
             )
 
@@ -631,6 +711,16 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         self.assertFalse(result["production_switched"])
         self.assertFalse(result["restore_known_good"])
         self.assertFalse(result["formal_todo0012_claim"])
+        self.assertIn(("volume", self.work), transcript.created)
+        self.assertIn(("network", self.network), transcript.created)
+        self.assertIn(("volume", self.work), transcript.removal_attempts)
+        self.assertIn(("network", self.network), transcript.removal_attempts)
+        self.assertNotIn(("volume", self.retained), transcript.removal_attempts)
+        self.assertNotIn(("volume", self.active), transcript.removal_attempts)
+        self.assertIn(
+            {"source": self.retained, "destination": "/source", "readonly": True},
+            transcript.mounts,
+        )
 
     def test_internal_network_failure_is_recorded_without_claim(self) -> None:
         retained_state = {
@@ -647,6 +737,21 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             "Scope": "local",
             "Labels": {},
         }
+        work_state = {
+            "Name": self.work,
+            "Driver": "local",
+            "Mountpoint": "/work",
+            "Scope": "local",
+            "Labels": {
+                "boost-gateway.todo": "TODO-0012",
+                "boost-gateway.business-id": "business-failure",
+                "boost-gateway.source-volume": self.retained,
+            },
+        }
+        transcript = ResourceOwnershipTranscript(
+            fail_create=("network", self.network),
+            snapshot_digest=self.snapshot_sha,
+        )
         self._bind_restore_runtime(retained_state, active_state)
         with (
             mock.patch.object(business, "assert_image_ids"),
@@ -654,7 +759,9 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business.restore,
                 "inspect_volume",
-                return_value=active_state,
+                side_effect=lambda runner, docker, volume: (
+                    active_state if volume == self.active else work_state
+                ),
             ),
             mock.patch.object(
                 business, "ensure_unused_volume", return_value=retained_state
@@ -672,14 +779,14 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business,
                 "checked",
-                side_effect=business.BusinessValidationError(
-                    "internal network publish unsupported"
-                ),
+                side_effect=transcript.checked,
             ),
-            mock.patch.object(business, "remove_resource", return_value=True),
+            mock.patch.object(
+                business, "remove_resource", side_effect=transcript.remove
+            ),
         ):
             with self.assertRaisesRegex(
-                business.BusinessValidationError, "internal network publish unsupported"
+                business.BusinessValidationError, "injected network creation failure"
             ):
                 business.run_business_validation(
                     business_id="business-failure",
@@ -694,12 +801,16 @@ class RestoredBusinessValidationTest(unittest.TestCase):
                     active_volume=self.active,
                     lock_path=self.lock,
                     docker="docker-test",
+                    runner=transcript.runner,
                 )
         summary = json.loads(self.summary.read_text())
         self.assertFalse(summary["overall_pass"])
         self.assertFalse(summary["restore_known_good"])
         self.assertFalse(summary["formal_todo0012_claim"])
-        self.assertIn("internal network publish unsupported", summary["failure"])
+        self.assertIn("injected network creation failure", summary["failure"])
+        self.assertIn(("volume", self.work), transcript.removal_attempts)
+        self.assertNotIn(("volume", self.retained), transcript.removal_attempts)
+        self.assertNotIn(("volume", self.active), transcript.removal_attempts)
 
     def test_work_volume_cleanup_failure_is_recorded_without_touching_sources(
         self,
@@ -731,11 +842,11 @@ class RestoredBusinessValidationTest(unittest.TestCase):
         }
         self._bind_restore_runtime(retained_state, active_state)
 
-        def remove_only_owned(
-            runner: object, docker: str, kind: str, name: str
-        ) -> bool:
-            return not (kind == "volume" and name == self.work)
-
+        transcript = ResourceOwnershipTranscript(
+            fail_create=("network", self.network),
+            fail_remove={("volume", self.work)},
+            snapshot_digest=self.snapshot_sha,
+        )
         with (
             mock.patch.object(business, "assert_image_ids"),
             mock.patch.object(business, "assert_local_docker"),
@@ -762,17 +873,11 @@ class RestoredBusinessValidationTest(unittest.TestCase):
             mock.patch.object(
                 business,
                 "checked",
-                side_effect=[
-                    subprocess.CompletedProcess([], 0, "", ""),
-                    business.BusinessValidationError("network creation failed"),
-                ],
+                side_effect=transcript.checked,
             ),
             mock.patch.object(
-                business, "clone_retained_volume", return_value=self.snapshot_sha
+                business, "remove_resource", side_effect=transcript.remove
             ),
-            mock.patch.object(
-                business, "remove_resource", side_effect=remove_only_owned
-            ) as remove,
         ):
             with self.assertRaisesRegex(
                 business.BusinessValidationError,
@@ -791,9 +896,10 @@ class RestoredBusinessValidationTest(unittest.TestCase):
                     active_volume=self.active,
                     lock_path=self.lock,
                     docker="docker-test",
+                    runner=transcript.runner,
                 )
 
-        removed = {(call.args[2], call.args[3]) for call in remove.call_args_list}
+        removed = set(transcript.removal_attempts)
         self.assertIn(("volume", self.work), removed)
         self.assertNotIn(("volume", self.retained), removed)
         self.assertNotIn(("volume", self.active), removed)

@@ -19,10 +19,6 @@ import sys
 from pathlib import Path
 
 from scripts.lib.observability_evidence import *  # noqa: E402,F401,F403
-from scripts.lib.observability_evidence_package import (  # noqa: E402
-    PackageVerificationError,
-    verify_package,
-)
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)

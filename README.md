@@ -28,16 +28,16 @@ ARM 平台保留 v3.6.2 不可变历史资产。仓库历史名称为 `BoostAsio
 新贡献者从 [开发者入门指南](docs/ONBOARDING.md) 开始。该文档包含 Python 3.12、
 GCC 13、Conan 2.8.1、Debug/Release 构建、CLion、测试和 Docker 的完整配置。
 
-完成 Conan 和 Debug 配置后，最短验证路径是：
+Linux 新贡献者从 clone 到完整本地验证只需要：
 
 ```bash
-python3.12 scripts/dev.py doctor --build-dir build/contributor-debug
-python3.12 scripts/dev.py commands --domain contributor
-python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
+python3.12 scripts/dev.py setup --allow-public
+.venv/dev/bin/python scripts/dev.py ready
 ```
 
-`--script` 在进程内执行 login、room、battle 和 settlement smoke，不需要先启动五个
-backend。完整六服务环境见
+`setup` 只在显式传入 `--allow-public` 时允许补齐 pip/Conan 依赖，重复运行不会重置本地
+Conan home。`ready` 执行工具诊断、增量构建、unit、进程内业务 smoke 和治理契约。
+完整六服务环境见
 [部署快速入门](docs/deployment/deployment-quickstart.md)。
 
 ## 服务拓扑

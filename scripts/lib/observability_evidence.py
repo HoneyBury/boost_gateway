@@ -9,10 +9,12 @@ import io
 import json
 import os
 import re
+import shutil
 import sys
 import tarfile
+import tempfile
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 
@@ -41,6 +43,10 @@ SECRET_KEY_RE = re.compile(
 
 class EvidenceError(RuntimeError):
     """Raised when evidence cannot be recorded without weakening provenance."""
+
+
+class PackageVerificationError(EvidenceError):
+    """Raised when an off-host evidence package cannot be trusted."""
 
 
 def now() -> str:
@@ -383,3 +389,98 @@ def package_manifest(manifest_path: Path, output_path: Path) -> dict[str, Any]:
         "entry_count": len(entries),
         "off_host_copy_verified": False,
     }
+
+
+def _extract_package(package: Path, root: Path) -> dict[str, str]:
+    actual: dict[str, str] = {}
+    total = 0
+    with tarfile.open(package, "r:gz") as archive:
+        for member in archive:
+            relative = PurePosixPath(member.name)
+            total += member.size
+            if (relative.is_absolute() or ".." in relative.parts or not member.isfile()
+                    or member.name in actual or len(actual) >= 10_000
+                    or total > 4 * 1024**3):
+                raise PackageVerificationError(f"unsafe, duplicate, or oversized member: {member.name}")
+            source = archive.extractfile(member)
+            if source is None:
+                raise PackageVerificationError(f"cannot read package member: {member.name}")
+            destination = root.joinpath(*relative.parts)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            digest = hashlib.sha256()
+            descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
+            with source, os.fdopen(descriptor, "wb") as output:
+                for block in iter(lambda: source.read(1024 * 1024), b""):
+                    digest.update(block)
+                    output.write(block)
+                output.flush()
+                os.fsync(output.fileno())
+            actual[member.name] = digest.hexdigest()
+    return actual
+
+
+def verify_package(package_path: Path, extraction_path: Path, receipt_path: Path, *,
+                   identity: dict[str, Any] | None = None) -> dict[str, Any]:
+    package = package_path.resolve(strict=True)
+    if package_path.is_symlink() or not package.is_file():
+        raise PackageVerificationError(f"package must be a regular non-symlink file: {package_path}")
+    if extraction_path.exists() or extraction_path.is_symlink():
+        raise PackageVerificationError(f"extraction directory already exists and cannot be reused: {extraction_path}")
+    if receipt_path.exists() or receipt_path.is_symlink():
+        raise PackageVerificationError(f"receipt already exists and cannot be overwritten: {receipt_path}")
+    observed = identity or collect_operations_identity()
+    if not isinstance(observed.get("host"), dict) or not isinstance(observed.get("operator"), dict):
+        raise PackageVerificationError("host and operator identity are required")
+    extraction_path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = Path(tempfile.mkdtemp(prefix=f".{extraction_path.name}.", dir=extraction_path.parent.resolve()))
+    try:
+        actual = _extract_package(package, temporary)
+        if not {"SHA256SUMS", "manifest.json"} <= set(actual):
+            raise PackageVerificationError("package must contain SHA256SUMS and manifest.json")
+        controls = (temporary / "SHA256SUMS", temporary / "manifest.json")
+        if any(path.stat().st_size > 16 * 1024**2 for path in controls):
+            raise PackageVerificationError("package control file exceeds the size limit")
+        expected: dict[str, str] = {}
+        for line in controls[0].read_text(encoding="utf-8").splitlines():
+            match = re.fullmatch(r"([0-9a-f]{64})  ([^\r\n]+)", line)
+            if not match:
+                raise PackageVerificationError(f"invalid SHA256SUMS line: {line!r}")
+            digest, name = match.groups()
+            relative = PurePosixPath(name)
+            if relative.is_absolute() or ".." in relative.parts or name in expected:
+                raise PackageVerificationError(f"unsafe or duplicate SHA256SUMS path: {name}")
+            expected[name] = digest
+        if set(actual) != {*expected, "SHA256SUMS"}:
+            raise PackageVerificationError("package members differ from SHA256SUMS")
+        for name, digest in expected.items():
+            if actual[name] != digest:
+                raise PackageVerificationError(f"package checksum differs: {name}")
+        manifest = json.loads(controls[1].read_text(encoding="utf-8"))
+        entries = manifest.get("entries") if isinstance(manifest, dict) else None
+        paths = [str(item.get("archive_path", "")) for item in entries or [] if isinstance(item, dict)]
+        if (not isinstance(entries, list) or len(paths) != len(entries) or len(paths) != len(set(paths))
+                or set(paths) != set(expected) - {"manifest.json"}
+                or manifest.get("entry_count") != len(paths)
+                or RECORD_ID_RE.fullmatch(str(manifest.get("manifest_id", ""))) is None):
+            raise PackageVerificationError("manifest identity or entry set differs from SHA256SUMS")
+        os.replace(temporary, extraction_path)
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise PackageVerificationError(f"package control file is invalid: {exc}") from exc
+    except Exception:
+        shutil.rmtree(temporary, ignore_errors=True)
+        raise
+    receipt = {
+        "schema_version": 1, "overall_pass": True, "off_host_copy_verified": True,
+        "create_only": True, "verified_at": now(), "host": observed["host"],
+        "operator": observed["operator"],
+        "package": {"path": str(package), "sha256": sha256_file(package), "size_bytes": package.stat().st_size},
+        "extraction_directory": str(extraction_path.resolve()),
+        "manifest": {"manifest_id": manifest["manifest_id"], "sha256": actual["manifest.json"],
+                     "entry_count": manifest["entry_count"]},
+        "checksums": {"verified_entry_count": len(expected),
+                      "verification_output": [f"{name}: OK" for name in sorted(expected)]},
+        "secret_material_recorded": False,
+    }
+    _write_new_json(receipt_path, receipt)
+    return {"receipt": str(receipt_path.resolve()), "receipt_sha256": sha256_file(receipt_path), **receipt}

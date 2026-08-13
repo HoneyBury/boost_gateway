@@ -154,6 +154,7 @@ jobs:
           workflow: ci
 
       - name: Build
+        id: build
         shell: bash
         run: |
           cmake --build build/release --parallel
@@ -161,6 +162,7 @@ jobs:
           sccache --show-stats --stats-format json > runtime/perf/build-times/sccache-stats.json
 
       - name: Test
+        id: ctest
         shell: bash
         run: ctest --test-dir build/release --output-on-failure --timeout 300
 
@@ -191,19 +193,46 @@ jobs:
             --gtest_filter='ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughBattleCreateAndFinish:ServiceBusIntegrity.BattleBackendReapsInputFinishedResourcesAndBoundsReplayFallback:ServiceBusIntegrity.BattleBackendReapsFrameLimitFinishedResources:ServiceBusIntegrity.BattleBackendPersistsReplayBeforeReapingMemory:ServiceBusIntegrity.ProtoEnvelopeRoundTripsThroughReplayLoad'
 
       - name: R4 contract gate
+        id: r4
         shell: bash
         run: python3 scripts/gates/release/verify_r4_contract.py --build-dir build/release --skip-build --skip-arch-baseline --configuration Release
 
       - name: Monitoring operability gate
+        id: monitoring
         shell: bash
         run: python3 scripts/gates/production/check_monitoring_operability.py --summary-path runtime/validation/ci-monitoring-operability-summary.json
 
       - name: Repository governance suite
+        id: governance
         shell: bash
         run: |
           "$PYTHON_TEST_EXECUTABLE" -m pytest -q tests/python
           python3 scripts/check_mainline_readiness.py --repository-suite \
             --summary-path runtime/validation/ci-repository-governance-summary.json
+
+      - name: Contributor feedback summary
+        if: always()
+        shell: bash
+        env:
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          CTEST_OUTCOME: ${{ steps.ctest.outcome }}
+          R4_OUTCOME: ${{ steps.r4.outcome }}
+          MONITORING_OUTCOME: ${{ steps.monitoring.outcome }}
+          GOVERNANCE_OUTCOME: ${{ steps.governance.outcome }}
+        run: |
+          {
+            echo "## Contributor feedback"
+            echo
+            echo "| Area | Result | Local reproduction |"
+            echo "|---|---|---|"
+            echo "| Build | $BUILD_OUTCOME | \`cmake --build build/contributor-debug --parallel\` |"
+            echo "| CTest | $CTEST_OUTCOME | \`ctest --test-dir build/contributor-debug --output-on-failure --timeout 300\` |"
+            echo "| R4 contract | $R4_OUTCOME | \`python3.12 scripts/gates/release/verify_r4_contract.py --build-dir build/contributor-debug --skip-build --skip-arch-baseline --configuration Debug\` |"
+            echo "| Monitoring | $MONITORING_OUTCOME | \`python3.12 scripts/gates/production/check_monitoring_operability.py\` |"
+            echo "| Governance | $GOVERNANCE_OUTCOME | \`.venv/dev/bin/python scripts/check_mainline_readiness.py --repository-suite\` |"
+            echo
+            echo "For the fresh-checkout and full local readiness path, follow \`docs/ONBOARDING.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Capture build metrics
         if: always()

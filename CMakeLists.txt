@@ -106,6 +106,7 @@ install(FILES
     docs/runner-gate-standard.md
     docs/runner-inventory.md
     docs/script-inventory.json
+    docs/document-catalog.json
     docs/tooling-reduction-plan.md
     docs/tls-mtls-runbook.md
     docs/ONBOARDING.md

@@ -7,6 +7,18 @@
   },
   "configurePresets": [
     {
+      "name": "contributor-debug",
+      "displayName": "Contributor Debug (Conan)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/contributor-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTING": "ON",
+        "BOOST_DEPENDENCY_PROVIDER": "conan",
+        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/build/conan-debug/build/Debug/generators/conan_toolchain.cmake"
+      }
+    },
+    {
       "name": "default",
       "displayName": "Default (Debug)",
       "generator": "Ninja",
@@ -40,6 +52,10 @@
   ],
   "buildPresets": [
     {
+      "name": "contributor-debug",
+      "configurePreset": "contributor-debug"
+    },
+    {
       "name": "default",
       "configurePreset": "default"
     },
@@ -53,6 +69,13 @@
     }
   ],
   "testPresets": [
+    {
+      "name": "contributor-debug",
+      "configurePreset": "contributor-debug",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
     {
       "name": "default",
       "configurePreset": "default",

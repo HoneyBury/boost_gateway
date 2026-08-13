@@ -7,7 +7,6 @@ import argparse
 import hashlib
 import ipaddress
 import json
-import math
 import os
 import re
 import socket
@@ -21,6 +20,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Iterable
+
+try:
+    from scripts.lib.perf_statistics import interpolated_percentile
+except ModuleNotFoundError:  # pragma: no cover - direct installed-script execution
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+    from scripts.lib.perf_statistics import interpolated_percentile
 
 DEFAULT_EVIDENCE_ROOT = Path("/var/lib/boost-gateway-canary")
 DEFAULT_DEPLOYMENT_RECORD = Path("/etc/boost-gateway-canary/deployment-record.json")
@@ -662,16 +667,7 @@ def run_once(
 
 
 def _percentile(values: list[float], percentile: float) -> float | None:
-    if not values:
-        return None
-    ordered = sorted(values)
-    if len(ordered) == 1:
-        return round(ordered[0], 3)
-    position = (len(ordered) - 1) * percentile
-    lower = math.floor(position)
-    upper = math.ceil(position)
-    result = ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
-    return round(result, 3)
+    return interpolated_percentile(values, percentile)
 
 
 def load_maintenance_windows(path: Path | None) -> list[dict[str, Any]]:

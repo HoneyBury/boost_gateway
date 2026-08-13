@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import hashlib
 import json
 import os
@@ -22,9 +21,17 @@ from typing import Any, Callable
 
 try:
     from scripts.lib import backup_recovery as backup
+    from scripts.lib.perf_statistics import (
+        parse_redis_benchmark_csv,
+        relative_percent_change,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct installed-script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.lib import backup_recovery as backup
+    from scripts.lib.perf_statistics import (
+        parse_redis_benchmark_csv,
+        relative_percent_change,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -586,24 +593,10 @@ def benchmark_command(
 
 
 def parse_benchmark_csv(text: str) -> dict[str, float]:
-    rows = list(csv.reader(text.splitlines()))
-    for row in reversed(rows):
-        if len(row) < 8:
-            continue
-        try:
-            values = [float(item) for item in row[1:8]]
-        except ValueError:
-            continue
-        return {
-            "throughput_requests_per_second": values[0],
-            "average_latency_ms": values[1],
-            "minimum_latency_ms": values[2],
-            "p50_latency_ms": values[3],
-            "p95_latency_ms": values[4],
-            "p99_latency_ms": values[5],
-            "maximum_latency_ms": values[6],
-        }
-    raise BenchmarkError("redis-benchmark CSV output is invalid")
+    try:
+        return parse_redis_benchmark_csv(text)
+    except ValueError as exc:
+        raise BenchmarkError(str(exc)) from exc
 
 
 def terminate_process(process: Any) -> None:
@@ -1256,9 +1249,7 @@ def aggregate_mode(rounds: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def percent_change(candidate: float, baseline: float) -> float | None:
-    if baseline == 0:
-        return None
-    return round((candidate - baseline) / baseline * 100.0, 6)
+    return relative_percent_change(candidate, baseline)
 
 
 def benchmark_persistence(

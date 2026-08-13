@@ -86,6 +86,32 @@ class DeveloperCliTest(unittest.TestCase):
         self.assertEqual(2, result)
         self.assertIn("requirements-dev.txt", errors.getvalue())
 
+    def test_setup_requires_explicit_network_authorization_for_fresh_clone(self) -> None:
+        errors = io.StringIO()
+        with mock.patch.object(dev, "linux_conan_inputs", return_value=("profile", "lock")), \
+             mock.patch.object(dev, "repository_path", side_effect=lambda path: Path("/missing") / path), \
+             redirect_stderr(errors):
+            result = dev.run_setup(
+                allow_public=False,
+                build_dir=Path("build/contributor-debug"),
+                conan_build_dir=Path("build/conan-debug"),
+            )
+
+        self.assertEqual(2, result)
+        self.assertIn("--allow-public", errors.getvalue())
+
+    def test_ready_runs_doctor_smoke_and_check_in_order(self) -> None:
+        with mock.patch.object(dev, "run_doctor", return_value=0) as doctor, \
+             mock.patch.object(dev, "run_smoke", return_value=0) as smoke, \
+             mock.patch.object(dev, "can_import", return_value=True), \
+             mock.patch.object(dev, "run_external", return_value=0) as external:
+            result = dev.run_ready(Path("build/contributor-debug"), 8)
+
+        self.assertEqual(0, result)
+        doctor.assert_called_once()
+        smoke.assert_called_once_with(Path("build/contributor-debug"), 8)
+        self.assertIn("scripts/dev.py", external.call_args.args[0])
+
     def test_command_catalog_filters_maintainer_domain(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             inventory = self.write_command_inventory(Path(temporary))

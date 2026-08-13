@@ -24,18 +24,18 @@ if str(SCRIPT_DIR) not in sys.path:
 try:
     from scripts.lib import backup_recovery as backup  # noqa: E402
     from scripts.lib import isolated_restore as restore  # noqa: E402
+    from scripts.lib import recovery_evidence  # noqa: E402
 except ModuleNotFoundError as exc:
     if exc.name != "scripts":
         raise
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.lib import backup_recovery as backup  # type: ignore[no-redef]  # noqa: E402
     from scripts.lib import isolated_restore as restore  # type: ignore[no-redef]  # noqa: E402
+    from scripts.lib import recovery_evidence  # type: ignore[no-redef]  # noqa: E402
 
 
 Runner = Callable[..., subprocess.CompletedProcess[Any]]
 IMAGE_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
-SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
-COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
 ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
 DOCKER_ID_RE = re.compile(r"[0-9a-f]{64}\Z")
 DEFAULT_LOCK = Path("/var/lib/boost-gateway/deployment-transactions/.lifecycle.lock")
@@ -144,90 +144,27 @@ def load_release_context(
     retained_volume: str,
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, str], Path]:
     summary = load_json(restore_summary_path, "isolated restore summary")
-    if (
-        summary.get("schema_version") != 1
-        or summary.get("overall_pass") is not True
-        or summary.get("status") != "passed"
-        or summary.get("target_volume") != retained_volume
-        or summary.get("target_volume_retained") is not True
-        or summary.get("leaderboard_seed_exact") is not True
-        or summary.get("redis_ping") is not True
-        or summary.get("production_switched") is not False
-        or summary.get("active_volume_mounted_by_drill") is not False
-        or summary.get("restore_known_good") is not False
-        or summary.get("formal_todo0012_claim") is not False
-        or SHA256_RE.fullmatch(str(summary.get("active_volume_identity_sha256", "")))
-        is None
-        or SHA256_RE.fullmatch(str(summary.get("target_volume_identity_sha256", "")))
-        is None
-        or SHA256_RE.fullmatch(str(summary.get("canonical_seed_restored_sha256", "")))
-        is None
-        or SHA256_RE.fullmatch(str(summary.get("redis_snapshot_sha256", ""))) is None
-        or IMAGE_RE.fullmatch(str(summary.get("redis_image", ""))) is None
-        or not isinstance(summary.get("canonical_seed_key_count"), int)
-        or isinstance(summary.get("canonical_seed_key_count"), bool)
-        or summary.get("canonical_seed_key_count", 0) <= 0
-    ):
-        raise BusinessValidationError(
-            "restore summary is not an eligible retained seed"
-        )
-    validate_id(str(summary.get("restore_id", "")), "restore ID")
-
     record = load_json(deployment_record_path, "deployment record")
-    deployment_id = validate_id(str(record.get("deployment_id", "")), "deployment ID")
-    summary_deployment = summary.get("deployment")
-    if (
-        not isinstance(summary_deployment, dict)
-        or summary_deployment.get("deployment_id") != deployment_id
-        or summary_deployment.get("tag") != record.get("tag")
-        or summary_deployment.get("commit") != record.get("commit")
-        or summary_deployment.get("runtime_asset_sha256")
-        != record.get("runtime_asset_sha256")
-        or record.get("status") != "verified"
-    ):
-        raise BusinessValidationError("restore and deployment identities differ")
     resolved_release = release_dir.resolve(strict=True)
-    if (
-        release_dir.is_symlink()
-        or not resolved_release.is_dir()
-        or record.get("release_path") != str(resolved_release)
-    ):
+    if release_dir.is_symlink() or not resolved_release.is_dir():
         raise BusinessValidationError("release directory binding differs")
     manifest = load_json(resolved_release / "manifest.json", "release manifest")
-    if (
-        manifest.get("schema_version") != 1
-        or manifest.get("tag") != record.get("tag")
-        or manifest.get("commit") != record.get("commit")
-        or COMMIT_RE.fullmatch(str(manifest.get("commit", ""))) is None
-        or manifest.get("platform") != "linux-x64"
-        or manifest.get("source_build_performed") is not False
-    ):
-        raise BusinessValidationError("release manifest identity differs")
     client = resolved_release / "bin/sdk_full_flow_client"
     if client.is_symlink() or not client.is_file() or not os.access(client, os.X_OK):
         raise BusinessValidationError("release SDK full-flow client is unavailable")
-    binaries = manifest.get("binaries")
-    client_records = (
-        [
-            item
-            for item in binaries
-            if isinstance(item, dict) and item.get("name") == client.name
-        ]
-        if isinstance(binaries, list)
-        else []
-    )
-    if len(client_records) != 1 or client_records[0].get("sha256") != sha256_file(
-        client
-    ):
-        raise BusinessValidationError("release SDK full-flow client digest differs")
-    image_ids = record.get("image_ids")
-    if not isinstance(image_ids, dict):
-        raise BusinessValidationError("deployment image identity is incomplete")
-    images = {
-        service: str(image_ids.get(key, "")) for service, key in IMAGE_KEYS.items()
-    }
-    if any(IMAGE_RE.fullmatch(image) is None for image in images.values()):
-        raise BusinessValidationError("deployment image identity is invalid")
+    try:
+        images = recovery_evidence.validate_retained_release_context(
+            summary,
+            record,
+            manifest,
+            retained_volume=retained_volume,
+            resolved_release_path=str(resolved_release),
+            client_name=client.name,
+            client_sha256=sha256_file(client),
+            image_keys=IMAGE_KEYS,
+        )
+    except ValueError as exc:
+        raise BusinessValidationError(str(exc)) from exc
     return summary, record, manifest, images, client
 
 

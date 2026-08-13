@@ -176,6 +176,58 @@ def build_ctest_command(args, layer_info):
     return cmd
 
 
+def changed_paths(base: str = "origin/main") -> list[str]:
+    commands = (["git", "diff", "--name-only", f"{base}...HEAD"],
+                ["git", "diff", "--name-only", "HEAD"],
+                ["git", "ls-files", "--others", "--exclude-standard"])
+    paths: set[str] = set()
+    for command in commands:
+        completed = subprocess.run(command, check=False, capture_output=True, text=True)
+        if completed.returncode == 0:
+            paths.update(line.strip() for line in completed.stdout.splitlines() if line.strip())
+    return sorted(paths)
+
+
+def recommend_layers(paths: list[str]) -> tuple[list[str], list[str]]:
+    layers: set[str] = set()
+    reasons: list[str] = []
+    for path in paths:
+        path_layers: set[str] = set()
+        if path.startswith(("docs/", ".github/", "scripts/", "tests/python/")) or path in {
+            "README.md", "CONTRIBUTING.md", "GOVERNANCE.md"
+        }:
+            reasons.append(f"{path}: governance/Python contracts")
+            continue
+        if path.startswith("sdk/"):
+            path_layers.update(("unit", "sdk"))
+        elif path.startswith(("proto/", "include/", "src/", "tests/v2/", "demo/", "examples/")):
+            path_layers.update(("unit", "integration"))
+            if any(token in path for token in ("gateway", "backend", "protocol", "service")):
+                path_layers.add("e2e")
+        elif path.startswith(("config/perf/", "tests/perf/")):
+            path_layers.add("perf")
+        else:
+            path_layers.add("all")
+        layers.update(path_layers)
+        reasons.append(f"{path}: {', '.join(sorted(path_layers))}")
+    if "all" in layers:
+        return ["all"], reasons
+    return sorted(layers), reasons
+
+
+def print_recommendation(base: str) -> None:
+    paths = changed_paths(base)
+    layers, reasons = recommend_layers(paths)
+    print(f"Changed-path recommendation relative to {base}:")
+    if not paths:
+        print("  no changed paths detected; run ready before pushing")
+        return
+    print(f"  suggested CTest layers: {', '.join(layers) if layers else 'none (governance only)'}")
+    for reason in reasons:
+        print(f"  - {reason}")
+    print("  advisory only: scripts/dev.py ready still runs smoke and the complete governance suite")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Unified test runner",
@@ -203,12 +255,17 @@ def main():
     parser.add_argument("--parallel", type=int, default=None, help="Parallel test jobs")
     parser.add_argument("--build-dir", default=None, help="Build directory override")
     parser.add_argument("--list", action="store_true", help="List available layers")
+    parser.add_argument("--recommend", action="store_true", help="Recommend test layers from changed paths")
+    parser.add_argument("--base", default="origin/main", help="Git base used by --recommend")
     parser.add_argument("--verbose", "-v", action="store_true", help="Verbose output")
 
     args = parser.parse_args()
 
     if args.list:
         list_layers()
+    if args.recommend:
+        print_recommendation(args.base)
+        return
 
     layer = args.layer
 

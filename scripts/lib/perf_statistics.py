@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import math
 import statistics
 
@@ -13,6 +14,29 @@ def latency_percentile(values: list[float], percentile: float) -> float | None:
     ordered = sorted(values)
     index = max(0, math.ceil(percentile * len(ordered)) - 1)
     return round(ordered[index], 3)
+
+
+def interpolated_percentile(values: list[float], percentile: float) -> float | None:
+    """Return a linearly interpolated percentile for operational latency reports."""
+    if not values:
+        return None
+    if not 0.0 <= percentile <= 1.0:
+        raise ValueError("percentile must be between 0 and 1")
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    result = ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+    return round(result, 3)
+
+
+def relative_percent_change(
+    candidate: float, baseline: float, *, digits: int = 6
+) -> float | None:
+    """Return candidate change relative to a non-zero baseline."""
+    if baseline == 0:
+        return None
+    return round((candidate - baseline) / baseline * 100.0, digits)
 
 
 def metric_distribution(values: list[float]) -> dict[str, float | None]:
@@ -45,3 +69,25 @@ def linear_slope(values: list[float]) -> float:
         for index, value in enumerate(values)
     )
     return numerator / denominator
+
+
+def parse_redis_benchmark_csv(content: str) -> dict[str, float]:
+    """Parse the final complete redis-benchmark CSV measurement row."""
+    rows = list(csv.reader(content.splitlines()))
+    for row in reversed(rows):
+        if len(row) < 8:
+            continue
+        try:
+            values = [float(item) for item in row[1:8]]
+        except ValueError:
+            continue
+        return {
+            "throughput_requests_per_second": values[0],
+            "average_latency_ms": values[1],
+            "minimum_latency_ms": values[2],
+            "p50_latency_ms": values[3],
+            "p95_latency_ms": values[4],
+            "p99_latency_ms": values[5],
+            "maximum_latency_ms": values[6],
+        }
+    raise ValueError("redis-benchmark CSV output is invalid")

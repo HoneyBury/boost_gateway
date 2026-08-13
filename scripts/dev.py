@@ -7,6 +7,7 @@ import argparse
 from dataclasses import dataclass
 from importlib.util import find_spec
 import json
+import os
 from pathlib import Path
 import platform
 import shutil
@@ -17,6 +18,11 @@ from typing import Any, Sequence
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_BUILD_DIR = Path("build/contributor-debug")
+DEFAULT_CONAN_BUILD_DIR = Path("build/conan-debug")
+DEFAULT_CONAN_HOME = Path(".conan2-local")
+DEFAULT_CONAN_VENV = Path(".venv/conan-2.8.1")
+DEFAULT_DEV_VENV = Path(".venv/dev")
+CONAN_VERSION = "2.8.1"
 MINIMUM_PYTHON = (3, 12)
 INVENTORY_PATH = ROOT / "docs/script-inventory.json"
 
@@ -124,6 +130,129 @@ def run_doctor(build_dir: Path) -> int:
     for item in diagnostics:
         print(f"[{'PASS' if item.passed else 'FAIL'}] {item.name}: {item.detail}")
     return 0 if all(item.passed for item in diagnostics) else 1
+
+
+def repository_path(path: Path) -> Path:
+    return path if path.is_absolute() else ROOT / path
+
+
+def run_external(command: Sequence[str], env: dict[str, str] | None = None) -> int:
+    print(f"+ {' '.join(str(item) for item in command)}", flush=True)
+    return subprocess.run(command, cwd=ROOT, env=env, check=False).returncode
+
+
+def can_import(python: Path, module: str) -> bool:
+    if not python.is_file():
+        return False
+    return subprocess.run(
+        [str(python), "-c", f"import {module}"],
+        cwd=ROOT,
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode == 0
+
+
+def linux_conan_inputs() -> tuple[str, str]:
+    machine = platform.machine().lower()
+    if not sys.platform.startswith("linux"):
+        raise ValueError(
+            "automatic contributor setup currently supports Linux only; use conan/README.md "
+            "for the maintained macOS ARM64 setup"
+        )
+    if machine in {"x86_64", "amd64"}:
+        platform_name = "x64"
+    elif machine in {"aarch64", "arm64"}:
+        platform_name = "arm64"
+    else:
+        raise ValueError(f"unsupported Linux contributor architecture: {machine}")
+    return (
+        f"conan/profiles/linux-gcc-{platform_name}",
+        f"conan/locks/linux-gcc-{platform_name}-debug-nogrpc-nosqlite.lock",
+    )
+
+
+def run_setup(
+    *,
+    allow_public: bool,
+    build_dir: Path,
+    conan_build_dir: Path,
+) -> int:
+    if sys.version_info < MINIMUM_PYTHON:
+        print("setup requires Python 3.12+", file=sys.stderr)
+        return 2
+    try:
+        profile, lockfile = linux_conan_inputs()
+    except ValueError as exc:
+        print(f"setup: ERROR: {exc}", file=sys.stderr)
+        return 2
+
+    dev_venv = repository_path(DEFAULT_DEV_VENV)
+    dev_python = dev_venv / "bin/python"
+    if not dev_python.is_file():
+        if not allow_public:
+            print(
+                "setup: .venv/dev is missing; rerun with --allow-public to install pinned "
+                "development dependencies",
+                file=sys.stderr,
+            )
+            return 2
+        if run_external([sys.executable, "-m", "venv", str(dev_venv)]):
+            return 1
+    if not can_import(dev_python, "pytest"):
+        if not allow_public:
+            print(
+                "setup: requirements-dev.txt is not installed; rerun with --allow-public",
+                file=sys.stderr,
+            )
+            return 2
+        if run_external(
+            [str(dev_python), "-m", "pip", "install", "-r", "requirements-dev.txt"]
+        ):
+            return 1
+
+    conan_venv = repository_path(DEFAULT_CONAN_VENV)
+    ensure_command = [sys.executable, "scripts/tools/ensure_conan_venv.py",
+                      "--venv", str(conan_venv), "--conan-version", CONAN_VERSION]
+    if allow_public:
+        ensure_command.append("--recreate-if-python-mismatch")
+    else:
+        ensure_command.append("--offline")
+    if run_external(ensure_command):
+        return 1
+
+    environment = os.environ.copy()
+    environment["CONAN_HOME"] = str(repository_path(DEFAULT_CONAN_HOME))
+    environment["PATH"] = f"{conan_venv / 'bin'}{os.pathsep}{environment.get('PATH', '')}"
+    bootstrap_command = [sys.executable, "scripts/bootstrap_conan.py",
+                         "--conan-home", environment["CONAN_HOME"],
+                         "--disable-example-internal"]
+    bootstrap_command.append("--allow-public" if allow_public else "--no-remote")
+    if run_external(bootstrap_command, environment):
+        return 1
+
+    absolute_conan_build = repository_path(conan_build_dir)
+    conan_command = [str(conan_venv / "bin/conan"), "install", ".",
+                     "--profile:host", profile, "--profile:build", profile,
+                     "--lockfile", lockfile,
+                     "-o", "&:with_grpc=False", "-o", "&:with_raft_protobuf=True",
+                     "-o", "&:with_sqlite=False", "--output-folder", str(absolute_conan_build),
+                     "--build=missing", "-s", "build_type=Debug"]
+    if run_external(conan_command, environment):
+        return 1
+
+    toolchain = absolute_conan_build / "build/Debug/generators/conan_toolchain.cmake"
+    absolute_build = repository_path(build_dir)
+    configure_command = ["cmake", "-S", ".", "-B", str(absolute_build), "-G", "Ninja",
+                         "-DBOOST_DEPENDENCY_PROVIDER=conan", "-DENABLE_TESTING=ON",
+                         "-DCMAKE_BUILD_TYPE=Debug", f"-DCMAKE_TOOLCHAIN_FILE={toolchain}"]
+    if run_external(configure_command, environment):
+        return 1
+    print(
+        "Contributor setup complete. Next run: "
+        f"{dev_python.relative_to(ROOT)} scripts/dev.py ready --build-dir {build_dir}"
+    )
+    return 0
 
 
 def run_commands(commands: Sequence[Sequence[str]]) -> int:
@@ -282,12 +411,36 @@ def run_smoke(build_dir: Path, parallel: int | None) -> int:
     return subprocess.run([str(demo), "--script"], cwd=ROOT, check=False).returncode
 
 
+def run_ready(build_dir: Path, parallel: int) -> int:
+    if run_doctor(build_dir):
+        return 1
+    run_external([sys.executable, "scripts/run_tests.py", "--recommend"])
+    if run_smoke(build_dir, parallel):
+        return 1
+    dev_python = repository_path(DEFAULT_DEV_VENV) / "bin/python"
+    if not can_import(dev_python, "pytest"):
+        print("ready requires .venv/dev; run: python3.12 scripts/dev.py setup --allow-public", file=sys.stderr)
+        return 2
+    return run_external([str(dev_python), "scripts/dev.py", "check"])
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     doctor = subparsers.add_parser("doctor", help="check the local contributor toolchain")
     doctor.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
+
+    setup = subparsers.add_parser(
+        "setup", help="prepare the pinned Linux contributor environment"
+    )
+    setup.add_argument(
+        "--allow-public",
+        action="store_true",
+        help="allow pip and Conan Center access when local environments or packages are missing",
+    )
+    setup.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
+    setup.add_argument("--conan-build-dir", type=Path, default=DEFAULT_CONAN_BUILD_DIR)
 
     subparsers.add_parser("check", help="run bounded repository governance checks")
 
@@ -303,6 +456,12 @@ def build_parser() -> argparse.ArgumentParser:
     smoke = subparsers.add_parser("smoke", help="build, run unit tests, and execute the demo smoke")
     smoke.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
     smoke.add_argument("--parallel", type=int, default=4)
+
+    ready = subparsers.add_parser(
+        "ready", help="run the contributor toolchain, smoke, and governance checks"
+    )
+    ready.add_argument("--build-dir", type=Path, default=DEFAULT_BUILD_DIR)
+    ready.add_argument("--parallel", type=int, default=4)
     return parser
 
 
@@ -310,6 +469,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     if args.command == "doctor":
         return run_doctor(args.build_dir)
+    if args.command == "setup":
+        return run_setup(
+            allow_public=args.allow_public,
+            build_dir=args.build_dir,
+            conan_build_dir=args.conan_build_dir,
+        )
     if args.command == "check":
         return run_check()
     if args.command == "commands":
@@ -322,6 +487,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ).returncode
     if args.command == "smoke":
         return run_smoke(args.build_dir, args.parallel)
+    if args.command == "ready":
+        return run_ready(args.build_dir, args.parallel)
     return 2
 
 
