@@ -613,6 +613,12 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
         with self.assertRaisesRegex(benchmark.BenchmarkError, "aof_delayed_fsync"):
             self._run(runner=FakeDocker(omit_candidate_delayed_fsync=True))
 
+    def test_invalid_benchmark_csv_preserves_cli_error_contract(self) -> None:
+        with self.assertRaisesRegex(
+            benchmark.BenchmarkError, "redis-benchmark CSV output is invalid"
+        ):
+            benchmark.parse_benchmark_csv('"eval","incomplete"\n')
+
     def test_ambiguous_create_is_reconciled_by_exact_labels(self) -> None:
         runner = FakeDocker(ambiguous_volume_create=True)
         with self.assertRaisesRegex(benchmark.BenchmarkError, "command failed"):

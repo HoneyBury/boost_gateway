@@ -1,6 +1,6 @@
 # 维护者指南：代码、脚本与 Workflow 治理
 
-更新时间：2026-08-12
+更新时间：2026-08-13
 
 本文面向需要修改跨模块代码、脚本、CI/CD 或生产门禁的维护者。当前产品事实以
 [当前状态](current-state.md)为准，构建步骤以[开发者入门](ONBOARDING.md)为准；本文负责
@@ -152,9 +152,9 @@ python3.12 scripts/dev.py smoke --build-dir build/contributor-debug
 canonical CLI、`scripts/tools/`/`scripts/lib/`/其余脚本文件、超过 500/800 行的脚本、workflow 直接依赖的唯一脚本、
 每个 workflow 到脚本的依赖边、CLI 之间的导入边、跨三个以上 workflow 的重复三行 shell
 片段、Windows 兼容分支，以及没有显式 Python 单测引用的 CLI。当前值分别是
-23、127、55/56/25、20/5、47、103、0、5、0 和 0；55 个 library 已进入 2026-08-12
-冻结基线，v3.6.7 合入的异机 evidence package verifier 作为 1 个带直接测试的 reviewed
-exception 受控进入，冻结 maximum 没有上调。
+23、127、55/55/25、20/5、47、103、0、5、0 和 0；55 个 library 已进入 2026-08-13
+冻结基线，异机 evidence package verifier 已合回既有 observability evidence library，增长
+例外清零，冻结 maximum 没有上调。
 “其余脚本”覆盖没有 CLI 的 gate/producer helper、包初始化和根兼容 shim，防止通过换目录或省略
 `main()` 绕过增长审查。
 

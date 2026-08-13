@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import csv
 import math
 import statistics
 
@@ -45,3 +46,25 @@ def linear_slope(values: list[float]) -> float:
         for index, value in enumerate(values)
     )
     return numerator / denominator
+
+
+def parse_redis_benchmark_csv(content: str) -> dict[str, float]:
+    """Parse the final complete redis-benchmark CSV measurement row."""
+    rows = list(csv.reader(content.splitlines()))
+    for row in reversed(rows):
+        if len(row) < 8:
+            continue
+        try:
+            values = [float(item) for item in row[1:8]]
+        except ValueError:
+            continue
+        return {
+            "throughput_requests_per_second": values[0],
+            "average_latency_ms": values[1],
+            "minimum_latency_ms": values[2],
+            "p50_latency_ms": values[3],
+            "p95_latency_ms": values[4],
+            "p99_latency_ms": values[5],
+            "maximum_latency_ms": values[6],
+        }
+    raise ValueError("redis-benchmark CSV output is invalid")

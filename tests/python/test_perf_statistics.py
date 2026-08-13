@@ -5,6 +5,7 @@ from scripts.lib.perf_statistics import (
     latency_percentile,
     linear_slope,
     metric_distribution,
+    parse_redis_benchmark_csv,
 )
 
 
@@ -31,3 +32,31 @@ def test_linear_slope_handles_short_flat_and_growing_series() -> None:
     assert linear_slope([9.0]) == 0.0
     assert linear_slope([4.0, 4.0, 4.0]) == 0.0
     assert linear_slope([1.0, 3.0, 5.0]) == 2.0
+
+
+def test_parse_redis_benchmark_csv_uses_final_complete_measurement() -> None:
+    content = (
+        '"command","rps","avg","min","p50","p95","p99","max"\n'
+        '"invalid","not-a-number","0","0","0","0","0","0"\n'
+        '"eval leaderboard","50000.0","0.30","0.10","0.25","0.60","0.90","1.20"\n'
+    )
+
+    assert parse_redis_benchmark_csv(content) == {
+        "throughput_requests_per_second": 50000.0,
+        "average_latency_ms": 0.3,
+        "minimum_latency_ms": 0.1,
+        "p50_latency_ms": 0.25,
+        "p95_latency_ms": 0.6,
+        "p99_latency_ms": 0.9,
+        "maximum_latency_ms": 1.2,
+    }
+
+
+def test_parse_redis_benchmark_csv_rejects_incomplete_output() -> None:
+    for content in ('"eval","1.0"\n', '"eval","invalid","0","0","0","0","0","0"\n'):
+        try:
+            parse_redis_benchmark_csv(content)
+        except ValueError as exc:
+            assert str(exc) == "redis-benchmark CSV output is invalid"
+        else:
+            raise AssertionError("incomplete redis-benchmark output was accepted")
