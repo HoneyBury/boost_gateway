@@ -1,7 +1,5 @@
 name: SDK / Wheel & NuGet Candidate
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

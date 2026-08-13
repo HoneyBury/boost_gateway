@@ -1,7 +1,5 @@
 name: Release / Linux Debug Symbols Candidate
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

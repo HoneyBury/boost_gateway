@@ -1,7 +1,5 @@
 name: Performance / Baseline & Regression
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

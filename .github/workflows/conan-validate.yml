@@ -1,7 +1,5 @@
 name: Dependencies / Conan Graph Validation
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

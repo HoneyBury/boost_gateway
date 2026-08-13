@@ -1,7 +1,5 @@
 name: Production / Gate Diagnostics
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

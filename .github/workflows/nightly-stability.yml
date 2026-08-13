@@ -1,7 +1,5 @@
 name: Stability / Bounded Soak
 
-env:
-
 on:
   workflow_dispatch:
     inputs:

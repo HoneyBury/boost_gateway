@@ -141,6 +141,19 @@ def top_level_permissions(text: str) -> dict[str, str]:
     return permissions
 
 
+def top_level_mapping_is_nonempty(text: str, key: str) -> bool:
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if line != f"{key}:":
+            continue
+        for following in lines[index + 1:]:
+            if not following.strip():
+                continue
+            return following.startswith("  ")
+        return False
+    return True
+
+
 def action_reference_checks(paths: list[Path]) -> list[dict[str, Any]]:
     checks: list[dict[str, Any]] = []
     pattern = re.compile(r"^\s*(?:-\s+)?uses:\s+(.+?)\s*$")
@@ -306,6 +319,9 @@ def evaluate_catalog_foundation(
         triggers = set(metadata.get("triggers", []))
         add(checks, f"name:{stem}", workflow_name(text) == expected_names.get(stem),
             f"{path.name} name={workflow_name(text)!r}")
+        add(checks, f"schema:{stem}:nonempty-top-level-env",
+            top_level_mapping_is_nonempty(text, "env"),
+            f"{path.name} has no empty top-level env mapping")
         add(checks, f"trigger:{stem}:dispatch", "workflow_dispatch:" in text,
             f"{path.name} supports workflow_dispatch")
         dispatch_inputs = workflow_dispatch_inputs(text)

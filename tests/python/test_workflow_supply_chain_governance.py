@@ -89,6 +89,15 @@ jobs:
 
         self.assertEqual({"contents": "read"}, catalog.top_level_permissions(text))
 
+    def test_empty_top_level_env_mapping_is_rejected(self) -> None:
+        self.assertFalse(catalog.top_level_mapping_is_nonempty("env:\n\non:\n", "env"))
+        self.assertTrue(
+            catalog.top_level_mapping_is_nonempty(
+                "env:\n  CACHE_ROOT: /tmp/cache\n\non:\n", "env"
+            )
+        )
+        self.assertTrue(catalog.top_level_mapping_is_nonempty("on:\n", "env"))
+
     def test_machine_catalog_covers_every_workflow(self) -> None:
         payload = catalog.load_catalog()
         rules = catalog.workflow_rules(payload)
