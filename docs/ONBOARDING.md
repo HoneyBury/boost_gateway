@@ -27,6 +27,11 @@ python3.12 scripts/dev.py setup --allow-public
 .venv/dev/bin/python scripts/dev.py ready
 ```
 
+空 Conan cache 的首次 `setup` 会下载和构建数 GiB 的锁定依赖；实际耗时主要取决于 Boost
+等上游归档的网络吞吐，不能用后续增量运行的分钟级耗时估算。公司网络或公网受限环境应先按
+下文配置 `conan/remotes.local.json`，再执行不带 `--allow-public` 的 `setup`。不要通过删除
+lockfile、改用全局 Conan 或反复中断下载来缩短首次准备。
+
 首次配置前可检查关键工具：
 
 ```bash
