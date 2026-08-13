@@ -17,7 +17,7 @@
 | public entrypoint | 23 |
 | canonical CLI | 127 |
 | `scripts/tools` 文件 | 55 |
-| 内部 library 文件 | 55，当前另有 1 个 reviewed exception |
+| 内部 library 文件 | 55 |
 | 其余受治理脚本 | 25 |
 | 未直接测试 CLI | 0 |
 | 超过 500/800 行脚本 | 20/5 |
@@ -47,12 +47,11 @@
 
 ## 下一步
 
-1. 消化 `scripts/lib/observability_evidence_package.py` 的唯一 library 增长例外，不新增入口。
-2. 只在已有旁路 fixture 下迁移一个纯解析或判定契约。
-3. 保持 Workflow 数量、直接依赖和重复片段不增长。
-4. 每月从 GitHub Actions 记录工具/Workflow 变更的失败原因和可复现性，不把 runner 环境失败
+1. 只在已有旁路 fixture 下迁移一个纯解析或判定契约。
+2. 保持 Workflow 数量、直接依赖和重复片段不增长。
+3. 每月从 GitHub Actions 记录工具/Workflow 变更的失败原因和可复现性，不把 runner 环境失败
    与代码回归混为同一结论。
-5. 每个阶段运行 `.venv/dev/bin/python scripts/dev.py check`；涉及真实 runner、secret、
+4. 每个阶段运行 `.venv/dev/bin/python scripts/dev.py check`；涉及真实 runner、secret、
    ruleset 或生产主机的结论继续通过外部 rehearsal 验证。
 
 ## 非目标

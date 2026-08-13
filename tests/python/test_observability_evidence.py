@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from scripts.lib import observability_evidence_package as package_verifier
+from scripts.lib import observability_evidence as package_verifier
 from scripts.tools import manage_observability_evidence as evidence
 
 

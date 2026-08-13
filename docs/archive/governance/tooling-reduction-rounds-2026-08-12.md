@@ -26,5 +26,5 @@
 
 ## v3.6.7 同步
 
-异机 observability evidence package verifier 以一个 reviewed library exception 进入，
-library 实际值为 56，冻结 maximum 仍为 55。该例外必须在后续阶段消化，不能转成永久增长。
+异机 observability evidence package verifier 曾以一个 reviewed library exception 进入；
+后续治理已将其合回既有 evidence contract，library 恢复到 55，例外清零。
