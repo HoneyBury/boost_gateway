@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from scripts.lib.perf_statistics import (
     distribution,
+    interpolated_percentile,
     latency_percentile,
     linear_slope,
     metric_distribution,
@@ -15,6 +16,25 @@ def test_latency_percentile_uses_nearest_rank_and_rounds() -> None:
     assert latency_percentile(values, 0.50) == 2.0
     assert latency_percentile(values, 0.99) == 8.124
     assert latency_percentile([], 0.50) is None
+
+
+def test_interpolated_percentile_preserves_operational_latency_contract() -> None:
+    assert interpolated_percentile([], 0.50) is None
+    assert interpolated_percentile([8.1239], 0.99) == 8.124
+    assert interpolated_percentile([10.0, 30.0], 0.50) == 20.0
+    assert interpolated_percentile([10.0, 30.0], 0.99) == 29.8
+    assert interpolated_percentile([10.0, 30.0], 0.0) == 10.0
+    assert interpolated_percentile([10.0, 30.0], 1.0) == 30.0
+
+
+def test_interpolated_percentile_rejects_out_of_range_fraction() -> None:
+    for percentile in (-0.01, 1.01):
+        try:
+            interpolated_percentile([1.0], percentile)
+        except ValueError as exc:
+            assert str(exc) == "percentile must be between 0 and 1"
+        else:
+            raise AssertionError("out-of-range percentile was accepted")
 
 
 def test_metric_distribution_preserves_empty_sample_contract() -> None:

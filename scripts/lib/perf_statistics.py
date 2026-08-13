@@ -16,6 +16,20 @@ def latency_percentile(values: list[float], percentile: float) -> float | None:
     return round(ordered[index], 3)
 
 
+def interpolated_percentile(values: list[float], percentile: float) -> float | None:
+    """Return a linearly interpolated percentile for operational latency reports."""
+    if not values:
+        return None
+    if not 0.0 <= percentile <= 1.0:
+        raise ValueError("percentile must be between 0 and 1")
+    ordered = sorted(values)
+    position = (len(ordered) - 1) * percentile
+    lower = math.floor(position)
+    upper = math.ceil(position)
+    result = ordered[lower] + (ordered[upper] - ordered[lower]) * (position - lower)
+    return round(result, 3)
+
+
 def metric_distribution(values: list[float]) -> dict[str, float | None]:
     """Summarize a metric sample without hiding an empty input."""
     if not values:
