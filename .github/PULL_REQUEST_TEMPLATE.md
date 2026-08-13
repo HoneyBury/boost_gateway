@@ -19,8 +19,8 @@
 
 <!-- Describe what was tested and how. At minimum: -->
 
-- [ ] Local build passes: `cmake --build --preset <preset> --parallel`
-- [ ] Relevant ctest suites pass: `ctest --preset <preset> -R <target>`
+- [ ] Contributor readiness passes: `.venv/dev/bin/python scripts/dev.py ready`
+- [ ] Focused tests for the changed behavior pass
 - [ ] Governance gates pass (if applicable)
 - [ ] New tests added for new/changed code
 - [ ] Required `linux-build-and-test` check passes

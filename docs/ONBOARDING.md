@@ -19,12 +19,12 @@
 - **Redis**: 用于集群相关功能测试
 - **Docker / OrbStack**: 用于容器化部署测试
 
-脚本回归测试使用独立的轻量开发环境，不向固定 Conan 环境混装测试依赖：
+Linux 新 clone 的推荐入口会幂等创建开发测试环境、固定 Conan 环境、依赖图和 Debug
+build tree。只有显式传入 `--allow-public` 时才允许从 pip/Conan Center 补齐缺失内容：
 
 ```bash
-python3.12 -m venv .venv/dev
-.venv/dev/bin/python -m pip install -r requirements-dev.txt
-.venv/dev/bin/python -m pytest -q tests/python
+python3.12 scripts/dev.py setup --allow-public
+.venv/dev/bin/python scripts/dev.py ready
 ```
 
 首次配置前可检查关键工具：
@@ -40,7 +40,7 @@ git --version
 
 ## 快速开始
 
-任何构建前先运行本地诊断。它会明确报告 Python 版本、基础工具以及现有 build tree
+`setup` 已运行本地诊断所需的准备步骤。单独排查工具链时可运行：
 记录的 CMake/CTest；Ubuntu 22.04 的系统 `python3` 可能仍是 3.10，因此不要省略
 `python3.12`：
 
@@ -61,6 +61,9 @@ python3.12 scripts/dev.py commands --domain release --json
 对应 runbook 明确要求，否则新贡献者不应直接把它们加入 workflow 或文档。
 
 ### 克隆并准备 Conan
+
+普通 Linux 贡献者使用上面的 `dev.py setup`，不需要手工执行本节命令。以下展开命令只用于
+排查依赖或配置公司 Conan 镜像。
 
 ```bash
 git clone <repo-url> boost_gateway
@@ -109,8 +112,9 @@ cmake --build build/contributor-debug --parallel \
 gRPC 和 SQLite 是独立实验/可选构建面，不应在首次开发构建中开启。CMake 的 Conan
 模式是严格模式：toolchain 或任何锁定依赖缺失时会直接失败，不会回退到 FetchContent。
 
-仓库的 `CMakePresets.json` 当前没有注入 Conan toolchain，因此新克隆不要直接以
-`cmake --preset default` 代替上述首次配置命令。
+`contributor-debug` preset 与 `dev.py setup` 使用同一 Conan toolchain 和 build tree；依赖已
+准备完成后可使用 `cmake --preset contributor-debug`。通用 `default` preset 不承担 Conan
+首次安装。
 
 ### 运行首次测试
 
