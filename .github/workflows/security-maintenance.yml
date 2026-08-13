@@ -1,7 +1,6 @@
 name: Security / Dependency, Sanitizer & Fuzz Maintenance
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   LANG: C.UTF-8
   LC_ALL: C.UTF-8
 
@@ -23,7 +22,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
@@ -42,12 +41,12 @@ jobs:
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+      - name: Verify preinstalled Ninja
+        run: ninja --version
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
@@ -84,12 +83,12 @@ jobs:
       TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+      - name: Verify preinstalled Ninja
+        run: ninja --version
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
@@ -122,12 +121,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Ninja
-        uses: seanmiddleditch/gha-setup-ninja@96bed6edff20d1dd61ecff9b75cc519d516e6401 # v5
+      - name: Verify preinstalled Ninja
+        run: ninja --version
 
       - name: Setup CMake
         uses: jwlawson/actions-setup-cmake@0d6a7d60b009d01c9e7523be22153ff8f19460d3 # v2.2.0
@@ -164,7 +163,7 @@ jobs:
 
       - name: Upload fuzz crash artifacts
         if: failure()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: security-fuzz-crashes-${{ github.run_id }}
           path: runtime/security-fuzz/crashes/**

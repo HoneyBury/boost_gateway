@@ -10,25 +10,26 @@ from typing import Any
 
 
 REVIEWED_ACTIONS = {
-    "actions/attest": ("f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6", "v4.2.0"),
-    "actions/cache/restore": ("0057852bfaa89a56745cba8c7296529d2fc39830", "v4.3.0"),
-    "actions/cache/save": ("0057852bfaa89a56745cba8c7296529d2fc39830", "v4.3.0"),
-    "actions/checkout": ("11d5960a326750d5838078e36cf38b85af677262", "v4.4.0"),
-    "actions/download-artifact": ("d3f86a106a0bac45b974a628896c90dbdf5c8093", "v4.3.0"),
-    "actions/setup-dotnet": ("67a3573c9a986a3f9c594539f4ab511d57bb3ce9", "v4.3.1"),
-    "actions/setup-go": ("40f1582b2485089dde7abd97c1529aa768e1baff", "v5.6.0"),
-    "actions/setup-python": ("a26af69be951a213d495a4c3e4e4022e16d87065", "v5.6.0"),
-    "actions/upload-artifact": ("ea165f8d65b6e75b540449e92b4886f43607fa02", "v4.6.2"),
-    "anchore/sbom-action": ("e22c389904149dbc22b58101806040fa8d37a610", "v0.24.0"),
-    "docker/setup-compose-action": ("2fe291b7677a45ee1269ec56a42604c143505e7e", "v1.3.0"),
+    "actions/attest": ("f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6", "v4.2.0", "node24"),
+    "actions/cache/restore": ("cdf6c1fa76f9f475f3d7449005a359c84ca0f306", "v5.0.3", "node24"),
+    "actions/cache/save": ("cdf6c1fa76f9f475f3d7449005a359c84ca0f306", "v5.0.3", "node24"),
+    "actions/checkout": ("93cb6efe18208431cddfb8368fd83d5badbf9bfd", "v5.0.1", "node24"),
+    "actions/download-artifact": ("37930b1c2abaa49bbe596cd826c3c89aef350131", "v7.0.0", "node24"),
+    "actions/setup-dotnet": ("d4c94342e560b34958eacfc5d055d21461ed1c5d", "v5.0.0", "node24"),
+    "actions/setup-go": ("b7ad1dad31e06c5925ef5d2fc7ad053ef454303e", "v7.0.0", "node24"),
+    "actions/setup-python": ("a309ff8b426b58ec0e2a45f0f869d46889d02405", "v6.2.0", "node24"),
+    "actions/upload-artifact": ("b7c566a772e6b6bfb58ed0dc250532a479d7789f", "v6.0.0", "node24"),
+    "anchore/sbom-action": ("e22c389904149dbc22b58101806040fa8d37a610", "v0.24.0", "node24"),
+    "docker/setup-compose-action": ("4eb059ff7f16592f9c84d5ca339c53cb7c5064e2", "v2.3.0", "node24"),
     "google/osv-scanner-action/osv-scanner-action": (
         "9a498708959aeaef5ef730655706c5a1df1edbc2",
         "v2.3.8",
+        "docker",
     ),
-    "jwlawson/actions-setup-cmake": ("0d6a7d60b009d01c9e7523be22153ff8f19460d3", "v2.2.0"),
-    "seanmiddleditch/gha-setup-ninja": ("96bed6edff20d1dd61ecff9b75cc519d516e6401", "v5"),
-    "softprops/action-gh-release": ("3bb12739c298aeb8a4eeaf626c5b8d85266b0e65", "v2.6.2"),
+    "jwlawson/actions-setup-cmake": ("0d6a7d60b009d01c9e7523be22153ff8f19460d3", "v2.2.0", "node24"),
+    "softprops/action-gh-release": ("3d0d9888cb7fd7b750713d6e236d1fcb99157228", "v3.0.2", "node24"),
 }
+ALLOWED_ACTION_RUNTIMES = {"node24", "docker", "composite"}
 DEFAULT_CATALOG_PATH = Path(__file__).resolve().parents[2] / "docs" / "workflow-catalog.json"
 
 
@@ -166,6 +167,10 @@ def action_reference_checks(paths: list[Path]) -> list[dict[str, Any]]:
             add(checks, f"action-release-comment:{path.name}:{line_number}",
                 expected is not None and release_tag == expected[1],
                 f"{location} release_tag={release_tag!r}")
+            runtime = expected[2] if expected is not None else ""
+            add(checks, f"action-runtime:{path.name}:{line_number}",
+                runtime in ALLOWED_ACTION_RUNTIMES,
+                f"{location} runtime={runtime!r}")
     return checks
 
 
@@ -276,6 +281,10 @@ def evaluate_catalog_foundation(
         *actions_root.glob("*/action.yaml"),
     ])
     checks.extend(action_reference_checks(action_paths))
+    forced_runtime = "FORCE_JAVASCRIPT_ACTIONS_TO_NODE24"
+    add(checks, "action-runtime:no-forced-node24-override",
+        all(forced_runtime not in read(path) for path in action_paths),
+        "workflows use native Node.js 24 Action releases without a runtime override")
     render_action_path = actions_root / "render-validation-summary" / "action.yml"
     render_action = read(render_action_path) if render_action_path.exists() else ""
     render_reference = "uses: ./.github/actions/render-validation-summary"
