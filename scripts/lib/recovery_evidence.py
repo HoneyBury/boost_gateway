@@ -4,10 +4,115 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+
+IDENTIFIER_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,95}\Z")
+SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
+COMMIT_RE = re.compile(r"[0-9a-f]{40}\Z")
+IMAGE_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
+
+
+def _identifier(value: object, label: str) -> str:
+    text = str(value or "")
+    if IDENTIFIER_RE.fullmatch(text) is None or text.startswith("."):
+        raise ValueError(f"{label} is invalid")
+    return text
+
+
+def validate_retained_release_context(
+    restore_summary: dict[str, Any],
+    deployment_record: dict[str, Any],
+    release_manifest: dict[str, Any],
+    *,
+    retained_volume: str,
+    resolved_release_path: str,
+    client_name: str,
+    client_sha256: str,
+    image_keys: dict[str, str],
+) -> dict[str, str]:
+    """Validate retained restore evidence against one immutable release identity."""
+    if (
+        restore_summary.get("schema_version") != 1
+        or restore_summary.get("overall_pass") is not True
+        or restore_summary.get("status") != "passed"
+        or restore_summary.get("target_volume") != retained_volume
+        or restore_summary.get("target_volume_retained") is not True
+        or restore_summary.get("leaderboard_seed_exact") is not True
+        or restore_summary.get("redis_ping") is not True
+        or restore_summary.get("production_switched") is not False
+        or restore_summary.get("active_volume_mounted_by_drill") is not False
+        or restore_summary.get("restore_known_good") is not False
+        or restore_summary.get("formal_todo0012_claim") is not False
+        or any(
+            SHA256_RE.fullmatch(str(restore_summary.get(field, ""))) is None
+            for field in (
+                "active_volume_identity_sha256",
+                "target_volume_identity_sha256",
+                "canonical_seed_restored_sha256",
+                "redis_snapshot_sha256",
+            )
+        )
+        or IMAGE_RE.fullmatch(str(restore_summary.get("redis_image", ""))) is None
+        or not isinstance(restore_summary.get("canonical_seed_key_count"), int)
+        or isinstance(restore_summary.get("canonical_seed_key_count"), bool)
+        or restore_summary.get("canonical_seed_key_count", 0) <= 0
+    ):
+        raise ValueError("restore summary is not an eligible retained seed")
+    _identifier(restore_summary.get("restore_id"), "restore ID")
+
+    deployment_id = _identifier(
+        deployment_record.get("deployment_id"), "deployment ID"
+    )
+    summary_deployment = restore_summary.get("deployment")
+    if (
+        not isinstance(summary_deployment, dict)
+        or summary_deployment.get("deployment_id") != deployment_id
+        or summary_deployment.get("tag") != deployment_record.get("tag")
+        or summary_deployment.get("commit") != deployment_record.get("commit")
+        or summary_deployment.get("runtime_asset_sha256")
+        != deployment_record.get("runtime_asset_sha256")
+        or deployment_record.get("status") != "verified"
+    ):
+        raise ValueError("restore and deployment identities differ")
+    if deployment_record.get("release_path") != resolved_release_path:
+        raise ValueError("release directory binding differs")
+    if (
+        release_manifest.get("schema_version") != 1
+        or release_manifest.get("tag") != deployment_record.get("tag")
+        or release_manifest.get("commit") != deployment_record.get("commit")
+        or COMMIT_RE.fullmatch(str(release_manifest.get("commit", ""))) is None
+        or release_manifest.get("platform") != "linux-x64"
+        or release_manifest.get("source_build_performed") is not False
+    ):
+        raise ValueError("release manifest identity differs")
+    binaries = release_manifest.get("binaries")
+    client_records = (
+        [
+            item
+            for item in binaries
+            if isinstance(item, dict) and item.get("name") == client_name
+        ]
+        if isinstance(binaries, list)
+        else []
+    )
+    if (
+        SHA256_RE.fullmatch(client_sha256) is None
+        or len(client_records) != 1
+        or client_records[0].get("sha256") != client_sha256
+    ):
+        raise ValueError("release SDK full-flow client digest differs")
+    image_ids = deployment_record.get("image_ids")
+    if not isinstance(image_ids, dict):
+        raise ValueError("deployment image identity is incomplete")
+    images = {service: str(image_ids.get(key, "")) for service, key in image_keys.items()}
+    if any(IMAGE_RE.fullmatch(image) is None for image in images.values()):
+        raise ValueError("deployment image identity is invalid")
+    return images
 
 
 def write_command_summary(path: Path, name: str, step: dict[str, Any]) -> None:

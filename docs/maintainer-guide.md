@@ -227,3 +227,6 @@ inventory 和 workflow CLI contract 补回归测试；同步 Python 3.12 和当�
 10. 第四轮先治理五个剩余旁路热点的副作用边界，不以拆文件为目标。隔离恢复和业务验证的清理
     失败必须写入 create-only summary，并直接断言活动卷与保留卷不进入删除调用；只有这些 fixture
     保持通过后，才允许迁移无副作用 contract。
+11. 第四轮后续已为恢复业务验证建立资源 ownership transcript，统一记录 disposable volume/network
+    创建、retained volume 只读挂载和删除尝试；retained-seed/release 身份判定随后迁入既有
+    `recovery_evidence`。Docker 编排、清理顺序、maintenance window 和正式证据阈值没有迁移。

@@ -50,10 +50,13 @@
 1. Redis persistence benchmark 的 CSV 解析、相对变化和 external canary 的插值百分位已在
    现有 failure-injection fixture 下迁入 `perf_statistics`；下一次只选择另一个无资源副作用的
    纯判定契约。
-2. 保持 Workflow 数量、直接依赖和重复片段不增长。
-3. 每月从 GitHub Actions 记录工具/Workflow 变更的失败原因和可复现性，不把 runner 环境失败
+2. 恢复业务验证已用 ownership transcript 记录 disposable 资源创建、只读源挂载和删除尝试，
+   retained-seed/release 身份判定已迁入现有 `recovery_evidence`；active/retained volume 不得进入
+   删除集合，Docker cleanup、maintenance window 和正式证据阈值继续留在原领域入口。
+3. 保持 Workflow 数量、直接依赖和重复片段不增长。
+4. 每月从 GitHub Actions 记录工具/Workflow 变更的失败原因和可复现性，不把 runner 环境失败
    与代码回归混为同一结论。
-4. 每个阶段运行 `.venv/dev/bin/python scripts/dev.py check`；涉及真实 runner、secret、
+5. 每个阶段运行 `.venv/dev/bin/python scripts/dev.py check`；涉及真实 runner、secret、
    ruleset 或生产主机的结论继续通过外部 rehearsal 验证。
 
 ## 非目标
