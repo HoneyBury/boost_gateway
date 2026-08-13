@@ -619,6 +619,11 @@ class RedisPersistenceBenchmarkTest(unittest.TestCase):
         ):
             benchmark.parse_benchmark_csv('"eval","incomplete"\n')
 
+    def test_percent_change_preserves_benchmark_compatibility_contract(self) -> None:
+        self.assertEqual(20.0, benchmark.percent_change(120.0, 100.0))
+        self.assertEqual(-66.666667, benchmark.percent_change(1.0, 3.0))
+        self.assertIsNone(benchmark.percent_change(1.0, 0.0))
+
     def test_ambiguous_create_is_reconciled_by_exact_labels(self) -> None:
         runner = FakeDocker(ambiguous_volume_create=True)
         with self.assertRaisesRegex(benchmark.BenchmarkError, "command failed"):

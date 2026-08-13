@@ -47,8 +47,8 @@
 
 ## 下一步
 
-1. Redis persistence benchmark 的 CSV 解析和 external canary 的插值百分位已在现有
-   failure-injection fixture 下迁入 `perf_statistics`；下一次只选择另一个无资源副作用的
+1. Redis persistence benchmark 的 CSV 解析、相对变化和 external canary 的插值百分位已在
+   现有 failure-injection fixture 下迁入 `perf_statistics`；下一次只选择另一个无资源副作用的
    纯判定契约。
 2. 保持 Workflow 数量、直接依赖和重复片段不增长。
 3. 每月从 GitHub Actions 记录工具/Workflow 变更的失败原因和可复现性，不把 runner 环境失败

@@ -7,6 +7,7 @@ from scripts.lib.perf_statistics import (
     linear_slope,
     metric_distribution,
     parse_redis_benchmark_csv,
+    relative_percent_change,
 )
 
 
@@ -35,6 +36,14 @@ def test_interpolated_percentile_rejects_out_of_range_fraction() -> None:
             assert str(exc) == "percentile must be between 0 and 1"
         else:
             raise AssertionError("out-of-range percentile was accepted")
+
+
+def test_relative_percent_change_preserves_zero_and_rounding_contract() -> None:
+    assert relative_percent_change(120.0, 100.0) == 20.0
+    assert relative_percent_change(90.0, 100.0) == -10.0
+    assert relative_percent_change(1.0, 3.0) == -66.666667
+    assert relative_percent_change(1.0, 3.0, digits=3) == -66.667
+    assert relative_percent_change(1.0, 0.0) is None
 
 
 def test_metric_distribution_preserves_empty_sample_contract() -> None:

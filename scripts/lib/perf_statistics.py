@@ -30,6 +30,15 @@ def interpolated_percentile(values: list[float], percentile: float) -> float | N
     return round(result, 3)
 
 
+def relative_percent_change(
+    candidate: float, baseline: float, *, digits: int = 6
+) -> float | None:
+    """Return candidate change relative to a non-zero baseline."""
+    if baseline == 0:
+        return None
+    return round((candidate - baseline) / baseline * 100.0, digits)
+
+
 def metric_distribution(values: list[float]) -> dict[str, float | None]:
     """Summarize a metric sample without hiding an empty input."""
     if not values:

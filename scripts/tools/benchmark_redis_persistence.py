@@ -21,11 +21,17 @@ from typing import Any, Callable
 
 try:
     from scripts.lib import backup_recovery as backup
-    from scripts.lib.perf_statistics import parse_redis_benchmark_csv
+    from scripts.lib.perf_statistics import (
+        parse_redis_benchmark_csv,
+        relative_percent_change,
+    )
 except ModuleNotFoundError:  # pragma: no cover - direct installed-script execution
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
     from scripts.lib import backup_recovery as backup
-    from scripts.lib.perf_statistics import parse_redis_benchmark_csv
+    from scripts.lib.perf_statistics import (
+        parse_redis_benchmark_csv,
+        relative_percent_change,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -1243,9 +1249,7 @@ def aggregate_mode(rounds: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def percent_change(candidate: float, baseline: float) -> float | None:
-    if baseline == 0:
-        return None
-    return round((candidate - baseline) / baseline * 100.0, 6)
+    return relative_percent_change(candidate, baseline)
 
 
 def benchmark_persistence(
