@@ -1,7 +1,7 @@
 # GitHub Actions Runner Inventory
 
-更新时间：2026-07-24
-GitHub API 验证时间：2026-07-24（本次文档整理）
+更新时间：2026-08-13
+GitHub API 验证时间：2026-08-13
 
 本文档是仓库 self-hosted runner 身份和在线状态的单一事实源。标签、缓存和 G0-G5 准入
 规则见 [Runner Gate Standard](runner-gate-standard.md)，具体预热与证据命令见
@@ -15,13 +15,12 @@ gh api repos/HoneyBury/boost_gateway/actions/runners
 
 ## 当前快照
 
-| Runner | OS/Arch | 状态 | Busy | 当前角色 |
-|---|---|---|---|---|
-| `aoi-omen-gaming-laptop-16-am0xxx` | Linux X64 | `online` | `false` | Linux x64 release、asset verification、fixed-runner 验证 |
-| `HoneyBurydeMacBook-Pro` | macOS ARM64 | `online` | `false` | macOS native runtime、SDK、JWKS、dSYM |
-| `HoneyBury-M4-Linux-ARM64` | Linux ARM64 | `online` | `false` | Linux ARM64 release、R5、SDK、JWKS、symbols |
-| `MyDesktop-Win` | Windows X64 | `offline` | `false` | 已退出当前维护平台 |
-| `myserver` | Linux X64 | `offline` | `false` | 历史 R5 runner；离线期间不得调度新证据 |
+| Runner | OS/Arch | 状态 | Busy | Runner 版本 | 当前角色 |
+|---|---|---|---|---|---|
+| `aoi-omen-gaming-laptop-16-am0xxx` | Linux X64 | `online` | `false` | `2.336.0` | Linux x64 release、asset verification、fixed-runner 验证 |
+| `HoneyBurydeMacBook-Pro` | macOS ARM64 | `offline` | `false` | 重新上线时复验 | macOS native runtime、SDK、JWKS、dSYM |
+| `HoneyBury-M4-Linux-ARM64` | Linux ARM64 | `offline` | `false` | `2.336.0`（最近准入记录） | Linux ARM64 release、R5、SDK、JWKS、symbols |
+| `MyDesktop-Win` | Windows X64 | `offline` | `false` | 不适用 | 已退出当前维护平台 |
 
 ## 当前标签
 
@@ -30,7 +29,6 @@ gh api repos/HoneyBury/boost_gateway/actions/runners
 | AOI Linux x64 | `node-aoi-omen-gaming-laptop-16-am0xxx` |
 | macOS ARM64 | `node-honeybury-macbook-pro`, `macos-arm64-candidate`, `sdk-osx-arm64`, `jwks-macos-arm64` |
 | Linux ARM64 | `node-honeybury-m4-linux-arm64`, `ubuntu-2404`, `conan-gcc13-release`, `conan-gcc13-debug`, `conan-gcc13-grpc`, `preprod-r5`, `sdk-linux-arm64`, `debug-symbols-linux-arm64`, `jwks-linux-arm64` |
-| myserver | `preprod-r5-myserver`；当前 offline，历史 label 不表示当前准入 |
 
 `["self-hosted","Linux","X64"]` 可以匹配多台机器，只适用于不要求唯一宿主的任务。
 R5、cache admission、published-asset verification 等机器绑定证据必须使用唯一
@@ -68,7 +66,9 @@ R5、cache admission、published-asset verification 等机器绑定证据必须�
 2. 平台发布和资产复验由 `.github/runner-matrix.json` 的 platform map 选择唯一 runner。
 3. 调度前重新查询 API；`online` 只表示可接单，不表示 cache、Docker 或 R5 仍满足准入。
 4. OS、compiler、Conan、Docker root 或 cache 图变化后，必须从对应 gate 重新准入。
-5. `myserver` 和 Windows 当前 offline；历史成功 run 不得替代新候选或新环境证据。
+5. macOS、Linux ARM64 和 Windows 当前 offline；历史成功 run 不得替代新候选或新环境证据。
+6. 所有重新上线的受支持 runner 必须先通过 `Runner.Listener >= 2.327.1` 和 G0-G3 复验；
+   `myserver` 已从 GitHub runner 注册列表移除，仅保留为历史证据名称。
 
 ## 历史记录
 

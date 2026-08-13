@@ -15,6 +15,96 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 
+MINIMUM_NODE24_RUNNER = (2, 327, 1)
+
+
+def repository_root(script_path: Path = Path(__file__)) -> Path:
+    return script_path.resolve().parents[3]
+
+
+def parse_version(value: str) -> tuple[int, ...] | None:
+    parts = value.strip().split(".")
+    if not parts or any(not part.isdigit() for part in parts):
+        return None
+    return tuple(int(part) for part in parts)
+
+
+def actions_runner_listener(environment: dict[str, str]) -> Path | None:
+    candidates: list[Path] = []
+    configured_root = environment.get("ACTIONS_RUNNER_ROOT")
+    if configured_root:
+        candidates.append(Path(configured_root) / "bin" / "Runner.Listener")
+    for key in ("RUNNER_TOOL_CACHE", "RUNNER_TEMP"):
+        value = environment.get(key)
+        if value:
+            path = Path(value).resolve()
+            if len(path.parents) >= 2:
+                candidates.append(path.parents[1] / "bin" / "Runner.Listener")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def check_actions_runner_version(
+    errors: list[str], environment: dict[str, str] | None = None
+) -> dict[str, object]:
+    current = dict(os.environ if environment is None else environment)
+    if current.get("GITHUB_ACTIONS") != "true":
+        return {
+            "name": "actions-runner:node24-runtime",
+            "required": False,
+            "status": "skipped",
+            "message": "not running inside GitHub Actions",
+        }
+    listener = actions_runner_listener(current)
+    if listener is None:
+        message = "cannot locate Runner.Listener for Node.js 24 admission"
+        errors.append(message)
+        return {
+            "name": "actions-runner:node24-runtime",
+            "required": True,
+            "status": "failed",
+            "message": message,
+        }
+    try:
+        completed = subprocess.run(
+            [str(listener), "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        message = f"cannot query Actions runner version: {exc}"
+        errors.append(message)
+        return {
+            "name": "actions-runner:node24-runtime",
+            "required": True,
+            "status": "failed",
+            "message": message,
+        }
+    version_text = completed.stdout.strip()
+    version = parse_version(version_text)
+    passed = version is not None and version >= MINIMUM_NODE24_RUNNER
+    if not passed:
+        minimum = ".".join(map(str, MINIMUM_NODE24_RUNNER))
+        message = (
+            f"Actions runner {version_text!r} is below the Node.js 24 minimum "
+            f"{minimum}"
+        )
+        errors.append(message)
+    return {
+        "name": "actions-runner:node24-runtime",
+        "required": True,
+        "status": "passed" if passed else "failed",
+        "version": version_text,
+        "minimum_version": ".".join(map(str, MINIMUM_NODE24_RUNNER)),
+        "path": str(listener),
+        **({} if passed else {"message": message}),
+    }
+
+
 def check_command(name: str, required: bool, errors: list[str], warnings: list[str]) -> dict[str, object]:
     path = shutil.which(name)
     if path:
@@ -165,7 +255,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    root = Path(__file__).resolve().parent.parent
+    root = repository_root()
     summary_path = args.summary_path if args.summary_path.is_absolute() else root / args.summary_path
     errors: list[str] = []
     warnings: list[str] = []
@@ -173,12 +263,13 @@ def main() -> int:
 
     for command in ["python3", "cmake"]:
         checks.append(check_command(command, True, errors, warnings))
+    checks.append(check_actions_runner_version(errors))
     checks.append(check_orbstack_port_isolation(errors))
 
     if args.profile == "release-baseline":
-        checks.append(check_command("ninja", False, errors, warnings))
+        checks.append(check_command("ninja", True, errors, warnings))
     elif args.profile in {"production-resilience", "production-evidence", "long-soak-capacity"}:
-        checks.append(check_command("ninja", False, errors, warnings))
+        checks.append(check_command("ninja", True, errors, warnings))
         if args.profile in {"production-resilience", "long-soak-capacity"}:
             warnings.append("long soak/capacity evidence must run on a fixed runner with an expanded timeout")
             checks.append({
