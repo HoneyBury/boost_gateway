@@ -1,6 +1,6 @@
 # 72 小时生产预演 Runbook
 
-更新时间：2026-08-13
+更新时间：2026-09-05
 
 本文档是 `TODO-0016` 在 Ubuntu 24.04 x64 单节点生产主机上的 maintained 执行入口。
 它不负责关闭 `TODO-0011` 或 `TODO-0013`，也不把诊断性 canary 时间自动升级为正式
@@ -9,7 +9,7 @@ Day 0。机器可读的预声明模板位于
 
 ## 当前候选和边界
 
-当前已有发布和独立资产复验完成、但尚未完成生产准入的不可变候选：
+当前已完成发布、独立资产复验和生产准入的不可变候选：
 
 - tag：`v3.6.7`（annotated tag）
 - commit：`db0f905d0421b2052b9de7f49d9bf71787915e23`
@@ -17,7 +17,8 @@ Day 0。机器可读的预声明模板位于
 - governed rehearsal run：`31616669960`（PASS）
 - Release run：`31617730727`（PASS）
 - published-asset verification run：`31618651955` attempt 2（PASS）
-- deployment/configuration identity：等待 W33 后受控 upgrade
+- deployment：`v3.6.7-fb5f6bfb2626-fa8b69b36dec`
+- configuration SHA-256：`0692efc4119bac78469672b6fee061fe0dfc7ad68265765da8b36b6e10399777`
 
 独立复验已验证 checksum、归档布局、runtime/symbol/SDK、SPDX 语义、无网络 Ubuntu 24.04
 consumer、provenance 与 SBOM attestation。attempt 1 因 GitHub HTTP/2 `GOAWAY` 在下载阶段
@@ -25,7 +26,7 @@ consumer、provenance 与 SBOM attestation。attempt 1 因 GitHub HTTP/2 `GOAWAY
 `31020678952` 和独立资产复验 `31021854876`，但没有进入 miniserver；其 tag 后的运行时
 正确性修复由 v3.6.7 承载。
 
-当前 v3.6.5 生产身份是：
+此前完成 `TODO-0013` 的 v3.6.5 生产身份是：
 
 - tag：`v3.6.5`
 - commit：`94f0c5d12d29839bed1598c17f661550c28d84f0`
@@ -34,18 +35,28 @@ consumer、provenance 与 SBOM attestation。attempt 1 因 GitHub HTTP/2 `GOAWAY
 - production host identity：`8600b239b110e1e5afc69a8705a366d006563e4d7293a45d9c5e3fbbbfdd3a23`
 - external endpoint：`tcp://100.65.71.117:9201`
 
-该身份完成 `TODO-0013` 的 4,320/4,320 外部 canary 窗口，但 Battle working set 约以
+该历史身份完成 `TODO-0013` 的 4,320/4,320 外部 canary 窗口，但 Battle working set 约以
 0.48–0.50 MiB/h 线性增长，因此已拒绝作为 `TODO-0016` Day 0。v3.6.7 的发布身份只能按
 新的真实证据回填；runtime asset 只有在安装时验证并形成 runtime tree/deployment digest 后才可写入
 deployment identity。任何 runtime、关键配置、host 或 canary endpoint 变化都必须创建新计划并
-重新执行准入。
+重新执行准入。当前 v3.6.7 identity 已由 lifecycle record 和外部 canary deployment record
+共同固定。
 
 Mac 上
 `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)` 是已通过的 `TODO-0013` 权威诊断
 窗口，不是本任务 Day 0。W32 `[2026-08-03T00:00:00Z, 2026-08-10T00:00:00Z)` 已以
-`coverage_complete=true`、`gap_count=0` 通过；生产 SMTP relay 随后改变最终通知配置，因此
-最终 closure 使用配置冻结后的 W33 `[2026-08-10T00:00:00Z, 2026-08-17T00:00:00Z)`。
-W33 结束前禁止注入计划故障、重启主机、rollback 或修改生产配置。
+`coverage_complete=true`、`gap_count=0` 通过。W33 也通过相同 metrics/ledger 门禁，但收口
+投递演练发现并修复了代理超时和 TLS server-name 缺陷；最终通知配置于
+`2026-08-17T11:20:49Z` 改变，因此 W33/W34 均只能保留为历史证据。最终 closure 使用配置
+冻结后的 W35 `[2026-08-24T00:00:00Z, 2026-08-31T00:00:00Z)`，并已完成 final ledger 与
+异机 package 验证。随后六项计划内演练全部通过；正式窗口已经声明为
+`[2026-08-31T19:45:00Z, 2026-09-03T19:45:00Z)`，maintenance plan 为空。该窗口结束和固定
+聚合 PASS 前，`TODO-0016` 必须保持 open。该窗口最终以 4,320/4,320 样本、100% coverage/
+availability、零 gap/invalid/duplicate/restart/OOM 通过；final shakedown record SHA-256 为
+`76a4453d70fab2bc8b302ac1df1a70e170622f3818dc749b464a6d0c01f18aed`，异机 final package
+SHA-256 为 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`，`TODO-0016`
+已于 2026-09-05 完成。随后声明的独立 `TODO-0017` 窗口是
+`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)`，不累计本预演时间。
 
 ## Day 0 硬准入
 
@@ -58,7 +69,7 @@ W33 结束前禁止注入计划故障、重启主机、rollback 或修改生产�
 3. lifecycle `status` 和 `verify` PASS，current/previous、六个 image ID、配置摘要、数据卷和
    受保护状态没有未解释漂移。
 4. 五个 Prometheus targets 为 up，规则 health 全部为 ok，45 天 retention 生效；最近 daily
-   和最终配置下完整 W33 weekly report 均为 `coverage_complete=true`、`gap_count=0`。
+   和最终配置下完整 W35 weekly report 均为 `coverage_complete=true`、`gap_count=0`。
 5. Alertmanager firing/resolved 回执在七天有效期内，Grafana 使用非默认生产凭据；最新
    evidence package 已在异机通过全部 `SHA256SUMS`。
 6. 外部 canary 固定结束聚合 PASS，Mac 与 production host 身份不同，run/watchdog 已连续
@@ -88,7 +99,7 @@ sudo python3 /home/honeybury/boost-gateway-controller/scripts/tools/check_observ
 
 ## 计划内演练阶段
 
-计划演练在 W33 weekly/final ledger 和 `TODO-0013` 关闭之后执行，并在正式 Day 0 之前结束。
+计划演练在 W35 weekly/final ledger 和 `TODO-0013` 关闭之后执行，并在正式 Day 0 之前结束。
 原因是 72h 聚合的 inclusive availability 会把批准维护分钟也计为失败，不能用 maintenance
 排除来隐藏计划内停机。演练必须使用最终 candidate/config/host，全部恢复并重新 verify 后才可
 开始稳定窗口。

@@ -202,7 +202,7 @@
     {
       "id": "TODO-0011",
       "title": "Establish long-run observability and an evidence ledger",
-      "status": "open",
+      "status": "completed",
       "priority": "P0",
       "category": "observability-evidence",
       "description": "Turn the single-node deployment into an auditable operations environment with host, container, application, Redis and deployment evidence retained beyond the formal validation window.",
@@ -213,7 +213,7 @@
         "Daily checkpoints, weekly trend reports, incident records and the final report reference raw summaries and are copied off-host with a verifiable manifest."
       ],
       "created_at": "2026-07-24T07:00:29Z",
-      "completed_at": null,
+      "completed_at": "2026-08-31T18:26:07Z",
       "github": {
         "issue_number": 25,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/25"
@@ -302,7 +302,7 @@
     {
       "id": "TODO-0016",
       "title": "Pass the 72-hour single-node production shakedown",
-      "status": "open",
+      "status": "completed",
       "priority": "P1",
       "category": "validation-shakedown",
       "description": "Exercise the complete automatic deployment and operations loop for 72 continuous hours before freezing the formal 30-day candidate. Runtime fixes remain allowed only in this stage.",
@@ -313,7 +313,7 @@
         "All discovered defects have an Issue, RCA and disposition; the final shakedown result explicitly identifies the immutable release selected for Day 0."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-09-05T10:19:22Z",
       "github": {
         "issue_number": 30,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/30"

@@ -1,6 +1,6 @@
 # Enterprise Single-Node Operations And 30-Day Validation Plan
 
-更新时间：2026-07-29
+更新时间：2026-09-05
 
 ## 目标
 
@@ -66,6 +66,10 @@
 `TODO-0016` 通过后再次审核 tag/SHA/digest 和所有缺陷 disposition，再声明
 `TODO-0017` Day 0。30 天期间任何 runtime hotfix、候选漂移或不可解释中断都保留旧证据，
 但新候选必须从 Day 0 重新计时。
+
+当前 `TODO-0016` 已由 v3.6.7 的 4,320/4,320 正式预演结果关闭。独立 `TODO-0017` Day 0
+半开窗口为 `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)`，maintenance plan 为空，
+预期 43,200 个一分钟样本；该声明不追溯累计任何诊断或 72 小时预演时间。
 
 `TODO-0016` 的 maintained 执行入口是
 [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)。计划内 gateway、
