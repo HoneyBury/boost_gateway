@@ -67,7 +67,7 @@ sudo install -d -o root -g boost-gateway -m 0750 /etc/boost-gateway
 sudo install -d -o root -g root -m 0700 /etc/boost-gateway/secrets
 sudo install -d -o boost-gateway -g boost-gateway -m 0750 \
   /var/lib/boost-gateway /var/log/boost-gateway /var/lib/boost-gateway-evidence
-sudo install -d -o root -g root -m 0700 /var/backups/boost-gateway
+sudo install -d -o root -g boost-gateway -m 0750 /var/backups/boost-gateway
 
 sudo install -D -o root -g root -m 0644 \
   deploy/operations/boost-gateway-journald.conf \

@@ -26,11 +26,16 @@ ALLOWED_ENVIRONMENT_TYPES = {
 ALLOWED_SCENARIOS = {
     "gateway_restart",
     "backend_restart",
+    "single_backend_restart",
     "redis_recovery",
+    "redis_restart_restore",
     "compose_image_rollback",
+    "release_rollback_upgrade_back",
     "k8s_rollout_rollback",
     "network_jitter",
+    "network_backend_outage",
     "config_reload",
+    "host_reboot",
 }
 
 SUMMARY_FIELDS = [

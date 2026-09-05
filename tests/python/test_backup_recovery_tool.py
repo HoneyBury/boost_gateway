@@ -313,6 +313,19 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 with self.assertRaises(backup.BackupError):
                     receiver.parse_original_command(command)
 
+    def test_forced_receiver_bounds_store_lifetime(self) -> None:
+        with mock.patch.object(receiver.signal, "signal") as signal_mock, mock.patch.object(
+            receiver.signal, "alarm"
+        ) as alarm_mock:
+            with receiver.bounded_store(90):
+                pass
+
+        alarm_mock.assert_has_calls([mock.call(90), mock.call(0)])
+        self.assertEqual(2, signal_mock.call_count)
+        with self.assertRaisesRegex(backup.BackupError, "timeout must be positive"):
+            with receiver.bounded_store(0):
+                pass
+
     def test_forced_receiver_runs_from_standalone_install_directory(self) -> None:
         install_root = self.root / "receiver-install"
         install_root.mkdir()
@@ -373,6 +386,10 @@ class BackupRecoveryToolTest(unittest.TestCase):
                     "ClearAllForwardings=yes",
                     "-o",
                     "IdentitiesOnly=yes",
+                    "-o",
+                    "ServerAliveInterval=30",
+                    "-o",
+                    "ServerAliveCountMax=3",
                     "-o",
                     f"IdentityFile={ssh_identity.resolve()}",
                     "-o",

@@ -9,7 +9,7 @@
     "min_memory_bytes": 16000000000,
     "min_physical_disk_bytes": 512000000000,
     "min_root_filesystem_bytes": 500000000000,
-    "min_root_available_bytes": 429496729600,
+    "min_root_available_bytes": 375000000000,
     "allowed_root_filesystems": ["ext4", "xfs", "btrfs"]
   },
   "docker": {
@@ -36,7 +36,7 @@
     {"path": "/etc/boost-gateway/secrets", "owner": "root", "group": "root", "mode": "0700"},
     {"path": "/var/lib/boost-gateway", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"},
     {"path": "/var/log/boost-gateway", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"},
-    {"path": "/var/backups/boost-gateway", "owner": "root", "group": "root", "mode": "0700"},
+    {"path": "/var/backups/boost-gateway", "owner": "root", "group": "boost-gateway", "mode": "0750"},
     {"path": "/var/lib/boost-gateway-evidence", "owner": "boost-gateway", "group": "boost-gateway", "mode": "0750"}
   ],
   "power": {

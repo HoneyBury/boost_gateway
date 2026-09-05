@@ -183,6 +183,14 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
     )
     add_check(
         checks,
+        "smtp-relay:tls-server-name",
+        "SMTP_HOST=$(read_env_value SMTP_HOST)" in activation
+        and "server_name: {smtp_host}" in activation
+        and "smtp_tls_server_name" in activation,
+        "Alertmanager verifies the upstream SMTP certificate against its DNS name",
+    )
+    add_check(
+        checks,
         "smtp-relay:secret-preserving-activation",
         "--no-deps --force-recreate" in activation
         and "alertmanager-secrets:/etc/alertmanager/secrets:ro" in activation

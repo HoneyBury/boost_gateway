@@ -5,6 +5,18 @@ from __future__ import annotations
 from scripts.lib.release_deployment_core import *  # noqa: F403
 from scripts.tools.check_release_compose import load_compose_document
 
+
+TOOLS_ROOT = Path(__file__).resolve().parents[1] / "tools"
+
+
+def lifecycle_tool(name: str) -> Path:
+    """Resolve a lifecycle helper from scripts/tools after the module split."""
+    path = TOOLS_ROOT / name
+    if not path.is_file():
+        raise LifecycleError(f"lifecycle tool is missing: {path}")
+    return path
+
+
 class LifecycleExecutor(Protocol):
     def precheck(self, deployment_path: Path, timeout_seconds: float) -> None: ...
 
@@ -86,7 +98,7 @@ class SystemLifecycleExecutor:
         return environment
 
     def precheck(self, deployment_path: Path, timeout_seconds: float) -> None:
-        checker = Path(__file__).resolve().parent / "check_release_compose.py"
+        checker = lifecycle_tool("check_release_compose.py")
         compose = deployment_path / "deploy/operations/docker-compose.production.yml"
         self._run(
             [
@@ -197,9 +209,7 @@ class SystemLifecycleExecutor:
         target = self._redis_persistence_contract(target_path)
         if source["mode"] == target["mode"]:
             return None
-        tool = (
-            Path(__file__).resolve().parent / "prepare_redis_persistence_transition.py"
-        )
+        tool = lifecycle_tool("prepare_redis_persistence_transition.py")
         self._run(
             [
                 sys.executable,
@@ -349,7 +359,7 @@ class SystemLifecycleExecutor:
         read_only: bool,
         allow_legacy_redis_hardening_bridge: bool = False,
     ) -> dict[str, Any]:
-        verifier = Path(__file__).resolve().parent / "verify_release_deployment.py"
+        verifier = lifecycle_tool("verify_release_deployment.py")
         compose = deployment_path / "deploy/operations/docker-compose.production.yml"
         image_environment = deployment_path / "compose-images.env"
         command = [

@@ -142,6 +142,30 @@ pmset -g custom
 pmset -g assertions
 ```
 
+During an admitted observability, shakedown, or long-run window, install the
+repository-owned keep-awake LaunchAgent so unplugging AC does not silently let
+idle sleep interrupt the canary, Alertmanager forward, or backup-vault receiver.
+This is a secondary guard only: the formal host boundary still requires AC power,
+an open lid, and a logged-in user session.
+
+```bash
+install -m 0644 \
+  deploy/operations/io.boostgateway.operations-keepawake.plist \
+  "$HOME/Library/LaunchAgents/io.boostgateway.operations-keepawake.plist"
+launchctl bootstrap "gui/$(id -u)" \
+  "$HOME/Library/LaunchAgents/io.boostgateway.operations-keepawake.plist"
+launchctl print "gui/$(id -u)/io.boostgateway.operations-keepawake"
+pmset -g assertions
+```
+
+After the governed window has ended, remove the assertion without deleting its
+repository definition:
+
+```bash
+launchctl bootout "gui/$(id -u)/io.boostgateway.operations-keepawake"
+rm -f "$HOME/Library/LaunchAgents/io.boostgateway.operations-keepawake.plist"
+```
+
 Use `StartCalendarInterval` with an empty dictionary in both LaunchAgents. All
 missing calendar fields are wildcards, so launchd starts the jobs on every
 natural minute. The run job starts immediately; the watchdog job passes

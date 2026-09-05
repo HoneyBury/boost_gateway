@@ -150,7 +150,10 @@ bridge-specific UFW rule owns that ingress boundary. The activation script prese
 the existing root-managed Gmail password, validates the candidate config with the
 pinned `amtool` image, and recreates
 only Alertmanager so the bind-mounted config cannot remain attached to an old inode. It
-records config digests but no email password.
+records config digests but no email password. Because the local relay listens on a Docker
+gateway address while it passes through Gmail's TLS certificate, the generated email receiver
+also pins `tls_config.server_name` to the configured upstream SMTP DNS name; validating the
+certificate against the relay IP is rejected.
 After activation, repeat the real firing/resolved delivery drill and replace the stale
 attestation; relay reachability alone is not delivery evidence.
 
@@ -282,16 +285,16 @@ identity, remote path, archive SHA-256, copy time, and the successful per-entry 
 The verifier-generated receipt provides those fields and a per-entry `name: OK` result. Copy
 that receipt back to a protected, create-only path on the operations host. Create the `final`
 record only after it exists, passing the copied receipt and every other required conclusion
-source as separate `--summary` arguments; use a new record ID and the exact W33 UTC interval:
+source as separate `--summary` arguments; use a new record ID and the exact W35 UTC interval:
 
 ```bash
 FINAL_RECORD_ID="todo0011-final-$(date -u +%Y%m%dT%H%M%SZ)"
 printf '%s\n' \
-  '{"report_title":"TODO-0011 W33 final observability closure","period_start":"2026-08-10T00:00:00Z","period_end":"2026-08-17T00:00:00Z"}' \
+  '{"report_title":"TODO-0011 W35 final observability closure","period_start":"2026-08-24T00:00:00Z","period_end":"2026-08-31T00:00:00Z"}' \
   >/tmp/todo0011-final-attributes.json
 sudo python3 "$CONTROLLER/scripts/tools/manage_observability_evidence.py" record \
   --kind final --record-id "$FINAL_RECORD_ID" \
-  --summary <W33-weekly-summary> \
+  --summary <W35-weekly-summary> \
   --summary <current-deployment-verification-summary> \
   --summary <current-observability-preflight-summary> \
   --summary <fresh-receiver-attestation-summary> \

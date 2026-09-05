@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
+from scripts.lib import release_deployment_executor as executor_module
 from scripts.tools import manage_release_deployment as module
 
 
@@ -106,6 +107,18 @@ class FakeExecutor:
 
 
 class ReleaseDeploymentManagerTest(unittest.TestCase):
+    def test_lifecycle_helpers_resolve_from_tools_directory(self) -> None:
+        for name in (
+            "check_release_compose.py",
+            "prepare_redis_persistence_transition.py",
+            "verify_release_deployment.py",
+        ):
+            with self.subTest(name=name):
+                self.assertEqual(
+                    executor_module.TOOLS_ROOT / name,
+                    executor_module.lifecycle_tool(name),
+                )
+
     def test_internal_lifecycle_modules_are_importable(self) -> None:
         modules = {
             "scripts.lib.release_deployment_core": "scripts/lib/release_deployment_core.py",
@@ -914,6 +927,10 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
             *,
             environment: dict[str, str] | None = None,
         ) -> mock.Mock:
+            self.assertEqual(
+                executor_module.TOOLS_ROOT / "verify_release_deployment.py",
+                Path(command[1]),
+            )
             self.assertIn("--read-only", command)
             self.assertIn("--allow-legacy-redis-hardening-bridge", command)
             summary.write_text(

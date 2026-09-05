@@ -56,6 +56,9 @@ class SmtpProxyHostUnitsTest(unittest.TestCase):
         )
 
         self.assertIn("smtp_smarthost: smtp.gmail.com:587", text)
+        self.assertIn("SMTP_HOST=$(read_env_value SMTP_HOST)", text)
+        self.assertIn("server_name: {smtp_host}", text)
+        self.assertIn("smtp_tls_server_name", text)
         self.assertIn("--no-deps --force-recreate", text)
         self.assertIn("alertmanager-secrets:/etc/alertmanager/secrets:ro", text)
         self.assertNotIn("gmail-app-password", text)

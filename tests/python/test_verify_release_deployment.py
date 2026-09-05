@@ -7,6 +7,7 @@ import tempfile
 import unittest
 from unittest import mock
 
+from scripts.lib import release_deployment_verification as verification_module
 from scripts.tools import verify_release_deployment as module
 
 
@@ -373,6 +374,23 @@ class VerifyReleaseDeploymentTest(unittest.TestCase):
             expected = module.load_expected_images(path)
         self.assertEqual(set(expected), set(module.IMAGE_ENV_BY_SERVICE))
         self.assertTrue(all(value.startswith("sha256:") for value in expected.values()))
+
+    @mock.patch.object(verification_module, "run")
+    def test_container_image_verification_uses_module_runner(
+        self, run: mock.Mock
+    ) -> None:
+        expected = "sha256:" + "a" * 64
+        run.return_value = mock.Mock(returncode=0, stdout=expected + "\n", stderr="")
+
+        failures = module.verify_container_images(
+            [{"Service": "gateway", "ID": "container-id"}],
+            {"gateway": expected},
+        )
+
+        self.assertEqual(failures, [])
+        run.assert_called_once_with(
+            ["docker", "inspect", "--format", "{{.Image}}", "container-id"]
+        )
 
 
 if __name__ == "__main__":
