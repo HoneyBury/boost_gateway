@@ -5,9 +5,7 @@ from __future__ import annotations
 from scripts.lib.release_deployment_core import *  # noqa: F403
 from scripts.tools.check_release_compose import load_compose_document
 
-
 TOOLS_ROOT = Path(__file__).resolve().parents[1] / "tools"
-
 
 def lifecycle_tool(name: str) -> Path:
     """Resolve a lifecycle helper from scripts/tools after the module split."""
