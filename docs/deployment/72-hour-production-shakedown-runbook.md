@@ -1,6 +1,6 @@
 # 72 小时生产预演 Runbook
 
-更新时间：2026-09-05
+更新时间：2026-09-06
 
 本文档是 `TODO-0016` 在 Ubuntu 24.04 x64 单节点生产主机上的 maintained 执行入口。
 它不负责关闭 `TODO-0011` 或 `TODO-0013`，也不把诊断性 canary 时间自动升级为正式
@@ -55,8 +55,10 @@ Mac 上
 availability、零 gap/invalid/duplicate/restart/OOM 通过；final shakedown record SHA-256 为
 `76a4453d70fab2bc8b302ac1df1a70e170622f3818dc749b464a6d0c01f18aed`，异机 final package
 SHA-256 为 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`，`TODO-0016`
-已于 2026-09-05 完成。随后声明的独立 `TODO-0017` 窗口是
-`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)`，不累计本预演时间。
+已于 2026-09-05 完成。随后最初声明的独立 `TODO-0017` 窗口
+`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 因 Day 0 前已存在的 SMTP relay
+启动失败而 supersede，不累计本预演或该失效窗口时间；修复与新窗口声明由 `TODO-0017`
+继续管理。
 
 ## Day 0 硬准入
 

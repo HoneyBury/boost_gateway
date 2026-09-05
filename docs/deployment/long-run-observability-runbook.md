@@ -142,7 +142,10 @@ sudo "$CONTROLLER/deploy/operations/switch_alertmanager_smtp_relay.sh"
 
 The installer discovers Alertmanager's single private Docker gateway, bridge and subnet,
 binds the relay only to that address, and adds an idempotent UFW rule limited to that
-interface, source subnet, destination and port. Each accepted connection uses a
+interface, source subnet, destination and port. The production Compose network has a
+fixed name, subnet and gateway, while the socket uses `FreeBind=true`; the relay can
+therefore bind during boot before Docker restores the bridge instead of remaining failed
+with `Cannot assign requested address`. Each accepted connection uses a
 transient dynamic user and a fixed command bound to the root-managed loopback CONNECT
 proxy configuration, and is capped at two minutes. Service-level `IPAddressDeny` is not
 used because it also filters the accepted socket's return path to the container; the
@@ -156,6 +159,51 @@ also pins `tls_config.server_name` to the configured upstream SMTP DNS name; val
 certificate against the relay IP is rejected.
 After activation, repeat the real firing/resolved delivery drill and replace the stale
 attestation; relay reachability alone is not delivery evidence.
+
+The installer can expose the same CONNECT relay to additional single-network containers
+without making it public. Pass a comma-separated `container:port` list; every container
+gateway/subnet is discovered and validated independently, and each listener receives its
+own bridge-scoped UFW rule:
+
+```bash
+sudo env BOOST_GATEWAY_SMTP_RELAY_ADDITIONAL_CLIENTS=calibre-web-automated:587 \
+  "$CONTROLLER/deploy/operations/install_smtp_proxy_host_units.sh"
+```
+
+For an SMTP client that cannot configure a TLS server name separately from its connection
+host, retain `smtp.gmail.com:587` in the application and add an exact host mapping to that
+container's fixed Docker gateway. For example, after confirming the subnet does not
+conflict with another host route:
+
+```yaml
+services:
+  calibre-web-automated:
+    extra_hosts:
+      - "smtp.gmail.com:172.19.0.1"
+
+networks:
+  default:
+    name: calibre-web-automated_default
+    ipam:
+      config:
+        - subnet: 172.19.0.0/16
+          gateway: 172.19.0.1
+```
+
+This keeps STARTTLS certificate validation bound to `smtp.gmail.com`; do not enable an
+"allow unverified SMTP TLS" option to work around an IP/certificate mismatch. The
+`boost-gateway-smtp-proxy-health.timer` repeats a primary relay handshake every five
+minutes. Inspect it with:
+
+```bash
+sudo systemctl status --no-pager boost-gateway-smtp-proxy-health.timer
+sudo systemctl status --no-pager boost-gateway-smtp-proxy-health.service
+```
+
+If an operator removes and recreates one of the Docker networks, its Linux bridge name
+may change even though the fixed subnet and gateway remain the same. Re-run the installer
+after that operation so it discovers the replacement bridge and reconciles the scoped
+UFW rule before relying on application delivery.
 
 ## Runtime verification
 

@@ -1,6 +1,6 @@
 # 当前项目事实源
 
-更新时间：2026-09-05
+更新时间：2026-09-06
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
@@ -118,9 +118,12 @@ tag 后运行时正确性修复完成前进入生产；v3.6.7 已完成发布、
 `[2026-08-31T19:45:00Z, 2026-09-03T19:45:00Z)` 以 4,320/4,320 样本、100% coverage/
 availability、零 gap/invalid/duplicate/restart/OOM 通过；final package SHA-256 为
 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`，Mac 异机复验
-91/91 文件通过，`TODO-0016` 已完成。独立 30 天窗口为
-`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)`；不追溯累计预演时间，runtime、关键配置、
-deployment、endpoint 或 host identity 变化会重置 Day 0。
+91/91 文件通过，`TODO-0016` 已完成。最初声明的独立 30 天窗口
+`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede，因为 SMTP relay 自窗口
+开始前的主机重启起一直启动失败，Alertmanager 准入不成立。事件
+`smtp-multi-client-recovery-20260905T215241Z` 已记录恢复结果；新的 30 天窗口等待受治理修复、
+外部 Mac 交流供电和自然分钟样本复验后重新声明。任何 runtime、关键配置、deployment、
+endpoint 或 host identity 变化仍会重置 Day 0，旧窗口时间不会累计。
 
 ## 默认生产链路
 

@@ -145,6 +145,10 @@ def validate_evidence_scheduler(checks: list[dict[str, Any]]) -> None:
 def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
     socket = read_text("deploy/systemd/boost-gateway-smtp-proxy.socket")
     service = read_text("deploy/systemd/boost-gateway-smtp-proxy@.service")
+    health_service = read_text(
+        "deploy/systemd/boost-gateway-smtp-proxy-health.service"
+    )
+    health_timer = read_text("deploy/systemd/boost-gateway-smtp-proxy-health.timer")
     installer = read_text("deploy/operations/install_smtp_proxy_host_units.sh")
     activation = read_text("deploy/operations/switch_alertmanager_smtp_relay.sh")
     runbook = read_text("docs/deployment/long-run-observability-runbook.md")
@@ -152,9 +156,12 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
         checks,
         "smtp-relay:safe-default-listener",
         "ListenStream=127.0.0.1:1587" in socket
+        and "FreeBind=true" in socket
+        and "Wants=network-online.target docker.service mihomo.service" in socket
+        and "After=network-online.target docker.service mihomo.service" in socket
         and "Accept=yes" in socket
         and "MaxConnections=32" in socket,
-        "SMTP relay defaults to a bounded loopback socket",
+        "SMTP relay uses a bounded listener that survives late bridge creation",
     )
     add_check(
         checks,
@@ -173,13 +180,28 @@ def validate_smtp_connect_relay(checks: list[dict[str, Any]]) -> None:
         and "docker network inspect" in installer
         and "value.is_private" in installer
         and "value not in network" in installer
+        and "BOOST_GATEWAY_SMTP_RELAY_ADDITIONAL_CLIENTS" in installer
+        and "CLIENT_CONTAINERS" in installer
+        and "FreeBind=true" in installer
         and "printf 'ListenStream=%s:%s" in installer
-        and 'ufw allow in on "${BRIDGE_NAME}"' in installer
-        and 'from "${NETWORK_SUBNET}" to "${RELAY_HOST}"' in installer
+        and 'ufw allow in on "${BRIDGE_NAMES[index]}"' in installer
+        and 'from "${NETWORK_SUBNETS[index]}"' in installer
+        and 'to "${RELAY_HOSTS[index]}"' in installer
         and "PROXY_ADDRESS=\"${BOOST_GATEWAY_CONNECT_PROXY:-127.0.0.1:7890}\""
         in installer
         and installer.count("openssl s_client") >= 2,
-        "installer limits UFW to the private production bridge and verifies both proxy hops",
+        "installer limits UFW to each declared private bridge and verifies every proxy hop",
+    )
+    add_check(
+        checks,
+        "smtp-relay:periodic-health",
+        "Requires=boost-gateway-smtp-proxy.socket" in health_service
+        and "openssl s_client -starttls smtp" in health_service
+        and "-servername ${SMTP_HOST}" in health_service
+        and "OnUnitActiveSec=5min" in health_timer
+        and "Persistent=true" in health_timer
+        and "boost-gateway-smtp-proxy-health.timer" in installer,
+        "a persistent timer rechecks the primary SMTP relay every five minutes",
     )
     add_check(
         checks,

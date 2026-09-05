@@ -1,0 +1,13 @@
+[Unit]
+Description=Periodically verify the BoostGateway SMTP CONNECT relay
+Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/long-run-observability-runbook.md
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=15s
+Persistent=true
+Unit=boost-gateway-smtp-proxy-health.service
+
+[Install]
+WantedBy=timers.target

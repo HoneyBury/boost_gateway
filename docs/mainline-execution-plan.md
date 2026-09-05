@@ -1,6 +1,6 @@
 # v3.6.7 Linux x64 企业运营主线
 
-更新时间：2026-09-05
+更新时间：2026-09-06
 
 ## 目标
 
@@ -94,9 +94,13 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   `[2026-08-31T19:45:00Z, 2026-09-03T19:45:00Z)` 以 4,320/4,320 canary、100% coverage/
   availability、零 gap/invalid/duplicate/restart/OOM 通过，`TODO-0016` 已关闭。最终异机包
   SHA-256 为 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`。
-- `TODO-0017` 独立 Day 0 已声明为
-  `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)`，无维护窗口，预期 43,200 个自然分钟；
-  72 小时预演时间没有追溯累计，固定结束聚合计划在 `2026-10-05T10:31:00Z` 执行。
+- `TODO-0017` 最初声明的
+  `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede：主机重启时 SMTP relay
+  在 Docker bridge 恢复前绑定失败，并从 `2026-08-31T19:30:25Z` 保持 failed，说明原 Day 0
+  的告警准入条件并未成立。事件
+  `smtp-multi-client-recovery-20260905T215241Z` 已记录 FreeBind、多 bridge 受限 relay、CWA
+  STARTTLS/实际投递和 Alertmanager firing/resolved 恢复验证。新的完整 30 天窗口只能在
+  修复进入受治理 controller、Mac 恢复交流供电且连续自然分钟样本通过后重新声明。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
   runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、

@@ -2,7 +2,12 @@ name: boost-gateway-production
 
 networks:
   boost-net:
+    name: boost-gateway-production_boost-net
     driver: bridge
+    ipam:
+      config:
+        - subnet: 172.18.0.0/16
+          gateway: 172.18.0.1
 
 volumes:
   gateway-logs:
