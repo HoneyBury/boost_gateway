@@ -42,6 +42,11 @@ def stamp(value: datetime | None = None) -> str:
     return (value or utcnow()).astimezone(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
+def calendar_timestamp(value: datetime) -> str:
+    """systemd OnCalendar accepts a spaced date/time and explicit timezone, not ISO T/Z."""
+    return value.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+
+
 def instant(value: object) -> datetime:
     require(isinstance(value, str), "invalid UTC timestamp")
     require(bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z", value)), "invalid UTC timestamp")

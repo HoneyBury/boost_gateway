@@ -141,6 +141,9 @@ def test_rearm_must_be_scheduled_before_suppression(tmp_path):
     stopped = next(i for i, c in enumerate(calls) if c[:2] == ("systemctl", "stop"))
     assert scheduled < verified < stopped
     assert [c[2] for c in calls if c[:2] == ("systemctl", "stop")] == [manager.TIMER]
+    calendar_argument = next(argument for argument in calls[scheduled] if argument.startswith("--on-calendar="))
+    assert calendar_argument.endswith(" UTC")
+    assert "T" not in calendar_argument.split("=", 1)[1].split(" ", 1)[0]
 
 
 def test_failed_rearm_admission_never_stops_watchdog(tmp_path):
@@ -157,3 +160,43 @@ def test_failed_rearm_admission_never_stops_watchdog(tmp_path):
         with pytest.raises(reporter.DeadmanError):
             manager.arm_drill("test", snap)
     assert not any(c[:2] == ("systemctl", "stop") for c in calls)
+
+
+@pytest.mark.parametrize("stray_heartbeat", [False, True])
+def test_complete_attestation_binds_rearm_and_rejects_heartbeat_during_gap(tmp_path, stray_heartbeat):
+    state = tmp_path / "state"
+    directory = state / "drills/test"
+    directory.mkdir(parents=True)
+    (state / "events").mkdir()
+    (state / "attestations").mkdir()
+    subject = {key: "a" * 64 for key in ("canary_host_id_sha256", "check_identity_sha256", "reporter_sha256",
+               "service_unit_sha256", "watchdog_dropin_sha256", "provider_contract_sha256", "candidate_record_sha256")}
+    subject["check_identity_sha256"] = provider_snapshot()["check_identity_sha256"]
+    for role, status, minutes in (("before", "up", 10), ("down", "down", 6), ("up", "up", 1)):
+        evidence.create(directory / (role + ".json"), provider_snapshot(status, NOW - timedelta(minutes=minutes)))
+    evidence.create(directory / "armed.json", {"created_at": evidence.stamp(NOW - timedelta(minutes=9)),
+        "rearm_at": evidence.stamp(NOW - timedelta(minutes=2)), "subject": subject})
+    evidence.create(directory / "stopped.json", {"created_at": evidence.stamp(NOW - timedelta(minutes=8))})
+    evidence.create(directory / "rearmed.json", {"created_at": evidence.stamp(NOW - timedelta(minutes=2)),
+        "overall_pass": True, "automatic": True, "arm_sha256": evidence.digest(directory / "armed.json")})
+    success = state / "events/success.json"
+    event = {"signal_status": "success", "delivery_accepted": True, "overall_pass": True,
+             "provider_http_status": 200, "check_identity_sha256": subject["check_identity_sha256"],
+             "observed_at": evidence.stamp(NOW - timedelta(seconds=90))}
+    evidence.create(success, event)
+    if stray_heartbeat:
+        evidence.create(state / "events/stray.json", event | {"observed_at": evidence.stamp(NOW - timedelta(minutes=4))})
+    deliveries = directory / "deliveries.json"
+    # Raw mailbox input is checked in the attestation's contextual delivery schema.
+    deliveries.write_text(json.dumps({state: {"message_id": f"<{state}@example.org>", "observed_at": evidence.stamp(NOW)}
+                                     for state in ("down", "up")}))
+    with mock.patch.object(manager, "STATE", state), mock.patch.object(manager, "root"), \
+         mock.patch.object(manager, "subject", return_value=subject), mock.patch.object(evidence, "utcnow", return_value=NOW):
+        if stray_heartbeat:
+            with pytest.raises(reporter.DeadmanError, match="during the missing-heartbeat"):
+                manager.attest("test", directory / "down.json", directory / "up.json", success, deliveries)
+        else:
+            output = manager.attest("test", directory / "down.json", directory / "up.json", success, deliveries)
+            result = evidence.read_json(output)
+            assert result["overall_pass"] is True
+            assert output.name.startswith(evidence.digest(output))
