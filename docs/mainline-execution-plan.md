@@ -99,8 +99,10 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   在 Docker bridge 恢复前绑定失败，并从 `2026-08-31T19:30:25Z` 保持 failed，说明原 Day 0
   的告警准入条件并未成立。事件
   `smtp-multi-client-recovery-20260905T215241Z` 已记录 FreeBind、多 bridge 受限 relay、CWA
-  STARTTLS/实际投递和 Alertmanager firing/resolved 恢复验证。新的完整 30 天窗口只能在
-  修复进入受治理 controller、Mac 恢复交流供电且连续自然分钟样本通过后重新声明。
+  STARTTLS/实际投递和 Alertmanager firing/resolved 恢复验证。受治理修复和 Mac 至阿里云的
+  external canary、告警转发、异机备份及 evidence 职责迁移已于 `2026-09-07` 完成，Mac 不再需要
+  为日常监控保持通电。新的完整 30 天窗口仍须从迁移验收之后、尚未采样的未来自然 UTC 分钟
+  明确声明，迁移前后的预检分钟不得追溯累计。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
   runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、

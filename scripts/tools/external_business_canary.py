@@ -11,6 +11,7 @@ import os
 import re
 import socket
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -23,13 +24,29 @@ from typing import Any, Callable, Iterable
 
 try:
     from scripts.lib.perf_statistics import interpolated_percentile
-except ModuleNotFoundError:  # pragma: no cover - direct installed-script execution
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-    from scripts.lib.perf_statistics import interpolated_percentile
+except ModuleNotFoundError as exc:  # pragma: no cover - flat host installation
+    repository_root = Path(__file__).resolve().parents[2]
+    repository_module = repository_root / "scripts/lib/perf_statistics.py"
+    flat_module = Path(__file__).resolve().with_name("perf_statistics.py")
+    if repository_module.is_file():
+        sys.path.insert(0, str(repository_root))
+        from scripts.lib.perf_statistics import interpolated_percentile
+    elif flat_module.is_file() and exc.name in {
+        "scripts",
+        "scripts.lib",
+        "scripts.lib.perf_statistics",
+    }:
+        from perf_statistics import interpolated_percentile
+    else:
+        raise
 
 DEFAULT_EVIDENCE_ROOT = Path("/var/lib/boost-gateway-canary")
 DEFAULT_DEPLOYMENT_RECORD = Path("/etc/boost-gateway-canary/deployment-record.json")
 DEFAULT_TIMEOUT_MS = 5000
+ALERT_LIFETIME = timedelta(minutes=5)
+SILENT_ALERT_REFRESH_AFTER = timedelta(minutes=4)
+CREATE_ONLY_TEMP_PREFIX = ".boost-gateway-evidence-"
+CREATE_ONLY_TEMP_SUFFIX = ".tmp"
 ENVIRONMENT_KEYS = frozenset(
     {
         "BOOST_GATEWAY_CANARY_HOST",
@@ -121,21 +138,51 @@ def read_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_CLOEXEC", 0)
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def write_create_only(path: Path, value: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o750)
     payload = json.dumps(value, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+    descriptor: int | None = None
+    temporary_path: Path | None = None
     try:
-        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o640)
-    except FileExistsError as exc:
-        raise CanaryError(f"refusing to replace create-only evidence: {path}") from exc
-    try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=CREATE_ONLY_TEMP_PREFIX,
+            suffix=CREATE_ONLY_TEMP_SUFFIX,
+            dir=path.parent,
+        )
+        temporary_path = Path(temporary_name)
+        os.fchmod(descriptor, 0o640)
+        stream = os.fdopen(descriptor, "w", encoding="utf-8")
+        descriptor = None
+        with stream:
             stream.write(payload)
             stream.flush()
             os.fsync(stream.fileno())
-    except Exception:
-        path.unlink(missing_ok=True)
-        raise
+        try:
+            os.link(temporary_path, path, follow_symlinks=False)
+        except FileExistsError as exc:
+            raise CanaryError(
+                f"refusing to replace create-only evidence: {path}"
+            ) from exc
+        # Persist the complete final-name link before removing the staging name.
+        # If a later cleanup/sync fails, the final evidence must never be rolled back.
+        _fsync_directory(path.parent)
+        temporary_path.unlink()
+        temporary_path = None
+        _fsync_directory(path.parent)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def validate_alertmanager_url(value: str) -> str:
@@ -164,6 +211,56 @@ def validate_alertmanager_url(value: str) -> str:
     port = f":{parsed_port}" if parsed_port is not None else ""
     host = f"[{parsed.hostname}]" if ":" in parsed.hostname else parsed.hostname
     return f"{parsed.scheme}://{host}{port}/api/v2/alerts"
+
+
+def alertmanager_readiness_url(value: str) -> str:
+    alerts_url = urllib.parse.urlsplit(validate_alertmanager_url(value))
+    return urllib.parse.urlunsplit(
+        (alerts_url.scheme, alerts_url.netloc, "/-/ready", "", "")
+    )
+
+
+def check_alertmanager_readiness(
+    alertmanager_url: str,
+    *,
+    opener: Callable[..., Any] = urllib.request.urlopen,
+) -> dict[str, Any]:
+    url = alertmanager_readiness_url(alertmanager_url)
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "text/plain"},
+        method="GET",
+    )
+    try:
+        with opener(request, timeout=5) as response:
+            status_value = getattr(response, "status", None)
+            if status_value is None:
+                status_value = response.getcode()
+            status = int(status_value)
+            response.read(4096)
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        exc.close()
+        return {
+            "ready": False,
+            "url": url,
+            "status_code": status,
+            "error_type": type(exc).__name__,
+        }
+    except (OSError, urllib.error.URLError) as exc:
+        return {
+            "ready": False,
+            "url": url,
+            "status_code": None,
+            "error_type": type(exc).__name__,
+        }
+    ready = status == 200
+    return {
+        "ready": ready,
+        "url": url,
+        "status_code": status,
+        "error_type": None if ready else "unexpected_http_status",
+    }
 
 
 def validate_config(config: CanaryConfig) -> CanaryConfig:
@@ -564,7 +661,7 @@ def deliver_alert(
                 "runtime_digest": candidate["runtime_digest"],
             },
             "startsAt": isoformat(observed_at),
-            "endsAt": isoformat(observed_at + timedelta(minutes=5)),
+            "endsAt": isoformat(observed_at + ALERT_LIFETIME),
             "generatorURL": "https://github.com/HoneyBury/boost_gateway/issues/27",
         }
     ]
@@ -576,15 +673,31 @@ def deliver_alert(
     )
     try:
         with opener(request, timeout=10) as response:
-            status = int(getattr(response, "status", response.getcode()))
+            status_value = getattr(response, "status", None)
+            if status_value is None:
+                status_value = response.getcode()
+            status = int(status_value)
             response.read(4096)
-    except (OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
+    except urllib.error.HTTPError as exc:
+        status = int(exc.code)
+        exc.close()
+        return {
+            "delivered": False,
+            "status_code": status,
+            "error_type": type(exc).__name__,
+        }
+    except (OSError, urllib.error.URLError) as exc:
         return {
             "delivered": False,
             "status_code": None,
             "error_type": type(exc).__name__,
         }
-    return {"delivered": 200 <= status < 300, "status_code": status, "error_type": None}
+    delivered = status == 200
+    return {
+        "delivered": delivered,
+        "status_code": status,
+        "error_type": None if delivered else "unexpected_http_status",
+    }
 
 
 def _sample_path(root: Path, observed_at: datetime, sample_id: str) -> Path:
@@ -916,8 +1029,14 @@ def watchdog(
     observed_at: datetime | None = None,
     max_age_seconds: int = 130,
     alert_opener: Callable[..., Any] = urllib.request.urlopen,
+    readiness_opener: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
+    config = validate_config(config)
     observed = (observed_at or utc_now()).astimezone(UTC)
+    readiness = check_alertmanager_readiness(
+        config.alertmanager_url,
+        opener=readiness_opener if readiness_opener is not None else alert_opener,
+    )
     samples: list[tuple[datetime, Path, dict[str, Any]]] = []
     for path in (evidence_root / "samples").glob("**/*.json"):
         try:
@@ -927,7 +1046,55 @@ def watchdog(
             continue
     latest = max(samples, default=None, key=lambda item: item[0])
     age = None if latest is None else max(0.0, (observed - latest[0]).total_seconds())
-    if age is not None and age <= max_age_seconds:
+    if readiness["ready"] is not True:
+        candidate = candidate_from_record(deployment_record)
+        delivery = deliver_alert(
+            config.alertmanager_url,
+            alertname="BoostGatewayExternalCanaryAlertmanagerUnavailable",
+            candidate=candidate,
+            endpoint=config.endpoint,
+            summary="External canary cannot reach the Alertmanager readiness endpoint through its governed forward",
+            observed_at=observed,
+            opener=alert_opener,
+        )
+        incident_path = (
+            evidence_root
+            / "incidents"
+            / (
+                "alertmanager-forward-"
+                f"{observed.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:12]}.json"
+            )
+        )
+        latest_sample = str(latest[1]) if latest else None
+        write_create_only(
+            incident_path,
+            {
+                "schema_version": 1,
+                "incident_id": incident_path.stem,
+                "incident_type": "alertmanager_forward_unready",
+                "created_at": isoformat(observed),
+                "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27",
+                "candidate": candidate,
+                "endpoint": config.endpoint,
+                "latest_sample": latest_sample,
+                "age_seconds": age,
+                "alertmanager_readiness": readiness,
+                "alertmanager_delivery": delivery,
+                "overall_pass": False,
+                "secret_material_recorded": False,
+            },
+        )
+        return {
+            "overall_pass": False,
+            "failure_type": "alertmanager_forward_unready",
+            "latest_sample": latest_sample,
+            "age_seconds": age,
+            "alertmanager_readiness": readiness,
+            "alertmanager_delivery": delivery,
+            "incident_record": str(incident_path),
+        }
+    failed_sample_retry: dict[str, Any] | None = None
+    if latest is not None:
         sample = latest[2]
         previous_delivery = sample.get("alertmanager_delivery")
         if sample.get("overall_pass") is False and (
@@ -940,14 +1107,11 @@ def watchdog(
             for path in (evidence_root / "incidents").glob(f"retry-{source_id}-*.json"):
                 try:
                     incident = read_json(path)
-                    if (
-                        incident.get("alertmanager_delivery", {}).get("delivered")
-                        is True
+                    incident_delivery = incident.get("alertmanager_delivery")
+                    if isinstance(incident_delivery, dict) and (
+                        incident_delivery.get("delivered") is True
                     ):
-                        return {
-                            "overall_pass": True,
-                            "latest_sample": str(latest[1]),
-                            "age_seconds": age,
+                        failed_sample_retry = {
                             "alertmanager_delivery": {
                                 "delivered": True,
                                 "status_code": None,
@@ -956,48 +1120,59 @@ def watchdog(
                             },
                             "incident_record": str(path),
                         }
+                        break
                 except CanaryError:
                     continue
-            candidate = candidate_from_record(deployment_record)
-            delivery = deliver_alert(
-                config.alertmanager_url,
-                alertname="BoostGatewayExternalCanaryFailed",
-                candidate=candidate,
-                endpoint=config.endpoint,
-                summary="Retrying Alertmanager delivery for a failed external business canary sample",
-                observed_at=observed,
-                opener=alert_opener,
-            )
-            incident_path = (
-                evidence_root
-                / "incidents"
-                / f"retry-{source_id}-{observed.strftime('%Y%m%dT%H%M%S')}.json"
-            )
-            write_create_only(
-                incident_path,
-                {
-                    "schema_version": 1,
-                    "incident_id": incident_path.stem,
-                    "created_at": isoformat(observed),
-                    "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27",
-                    "candidate": candidate,
-                    "endpoint": config.endpoint,
-                    "source_sample": str(latest[1]),
+            if failed_sample_retry is None:
+                candidate = candidate_from_record(deployment_record)
+                delivery = deliver_alert(
+                    config.alertmanager_url,
+                    alertname="BoostGatewayExternalCanaryFailed",
+                    candidate=candidate,
+                    endpoint=config.endpoint,
+                    summary="Retrying Alertmanager delivery for a failed external business canary sample",
+                    observed_at=observed,
+                    opener=alert_opener,
+                )
+                incident_path = (
+                    evidence_root
+                    / "incidents"
+                    / f"retry-{source_id}-{observed.strftime('%Y%m%dT%H%M%S')}.json"
+                )
+                write_create_only(
+                    incident_path,
+                    {
+                        "schema_version": 1,
+                        "incident_id": incident_path.stem,
+                        "created_at": isoformat(observed),
+                        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/27",
+                        "candidate": candidate,
+                        "endpoint": config.endpoint,
+                        "source_sample": str(latest[1]),
+                        "alertmanager_delivery": delivery,
+                        "secret_material_recorded": False,
+                    },
+                )
+                failed_sample_retry = {
                     "alertmanager_delivery": delivery,
-                    "secret_material_recorded": False,
-                },
-            )
+                    "incident_record": str(incident_path),
+                }
+    if age is not None and age <= max_age_seconds:
+        if failed_sample_retry is not None:
             return {
-                "overall_pass": delivery["delivered"],
+                "overall_pass": failed_sample_retry["alertmanager_delivery"][
+                    "delivered"
+                ],
                 "latest_sample": str(latest[1]),
                 "age_seconds": age,
-                "alertmanager_delivery": delivery,
-                "incident_record": str(incident_path),
+                "alertmanager_readiness": readiness,
+                **failed_sample_retry,
             }
         return {
             "overall_pass": True,
             "latest_sample": str(latest[1]),
             "age_seconds": age,
+            "alertmanager_readiness": readiness,
             "alertmanager_delivery": None,
         }
     candidate = candidate_from_record(deployment_record)
@@ -1006,10 +1181,16 @@ def watchdog(
     for path in (evidence_root / "incidents").glob(f"silent-{stale_key}-*.json"):
         try:
             incident = read_json(path)
-            if incident.get("alertmanager_delivery", {}).get("delivered") is True:
+            incident_delivery = incident.get("alertmanager_delivery")
+            delivered_at = parse_time(str(incident["created_at"]))
+            delivery_age = observed - delivered_at
+            if isinstance(incident_delivery, dict) and (
+                incident_delivery.get("delivered") is True
+                and timedelta(0) <= delivery_age < SILENT_ALERT_REFRESH_AFTER
+            ):
                 delivered_for_stale = True
                 break
-        except CanaryError:
+        except (CanaryError, KeyError):
             continue
     delivery = {
         "delivered": True,
@@ -1052,8 +1233,10 @@ def watchdog(
         "overall_pass": False,
         "latest_sample": str(latest[1]) if latest else None,
         "age_seconds": age,
+        "alertmanager_readiness": readiness,
         "alertmanager_delivery": delivery,
         "incident_record": str(incident_path) if incident_path else None,
+        "failed_sample_retry": failed_sample_retry,
     }
 
 

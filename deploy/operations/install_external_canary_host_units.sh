@@ -62,6 +62,9 @@ install -o root -g boost-gateway-canary -m 0750 \
   "${ROOT}/scripts/tools/external_business_canary.py" \
   /usr/local/libexec/boost-gateway-canary/external_business_canary.py
 install -o root -g boost-gateway-canary -m 0640 \
+  "${ROOT}/scripts/lib/perf_statistics.py" \
+  /usr/local/libexec/boost-gateway-canary/perf_statistics.py
+install -o root -g boost-gateway-canary -m 0640 \
   "${ENVIRONMENT_FILE}" /etc/boost-gateway-canary/environment
 install -o root -g boost-gateway-canary -m 0640 \
   "${DEPLOYMENT_RECORD}" /etc/boost-gateway-canary/deployment-record.json

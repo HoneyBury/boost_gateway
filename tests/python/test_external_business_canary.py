@@ -1,11 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
 import tempfile
+import threading
 import unittest
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from unittest import mock
 
 from scripts.tools import external_business_canary as canary
 
@@ -68,7 +77,8 @@ class FakeClient:
 
 
 class FakeResponse:
-    status = 200
+    def __init__(self, status: int = 200) -> None:
+        self.status = status
 
     def __enter__(self) -> "FakeResponse":
         return self
@@ -78,6 +88,20 @@ class FakeResponse:
 
     def getcode(self) -> int:
         return self.status
+
+    def read(self, _: int) -> bytes:
+        return b""
+
+
+class StatusOnlyResponse:
+    def __init__(self, status: int) -> None:
+        self.status = status
+
+    def __enter__(self) -> "StatusOnlyResponse":
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
 
     def read(self, _: int) -> bytes:
         return b""
@@ -116,6 +140,40 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
 
     def factory(self, state: dict[str, Any]):
         return lambda: FakeClient(state)
+
+    def test_cli_imports_from_repo_and_flat_install_layouts(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        script = repository / "scripts/tools/external_business_canary.py"
+        environment = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        environment.pop("PYTHONPATH", None)
+        for working_directory in (repository, self.root):
+            completed = subprocess.run(
+                [sys.executable, str(script), "--help"],
+                cwd=working_directory,
+                env=environment,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(0, completed.returncode, completed.stderr)
+
+        flat = self.root / "flat"
+        flat.mkdir()
+        flat_script = flat / script.name
+        shutil.copy2(script, flat_script)
+        shutil.copy2(
+            repository / "scripts/lib/perf_statistics.py",
+            flat / "perf_statistics.py",
+        )
+        completed = subprocess.run(
+            [sys.executable, str(flat_script), "--help"],
+            cwd=self.root,
+            env=environment,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(0, completed.returncode, completed.stderr)
 
     def test_full_flow_has_required_typed_steps_and_bounded_identities(self) -> None:
         state: dict[str, Any] = {}
@@ -208,6 +266,133 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
         link.symlink_to(environment_file)
         with self.assertRaisesRegex(canary.CanaryError, "non-symlink"):
             canary.load_environment_file(link)
+
+    def test_create_only_atomic_publish_preserves_existing_target(self) -> None:
+        target = self.root / "existing.json"
+        original = b'{"original":true}\n'
+        target.write_bytes(original)
+        target.chmod(0o640)
+
+        with self.assertRaisesRegex(canary.CanaryError, "create-only"):
+            canary.write_create_only(target, {"replacement": True})
+
+        self.assertEqual(original, target.read_bytes())
+        self.assertEqual(
+            [], list(target.parent.glob(f"{canary.CREATE_ONLY_TEMP_PREFIX}*"))
+        )
+
+        backing = self.root / "backing.json"
+        backing.write_bytes(original)
+        symlink_target = self.root / "existing-symlink.json"
+        symlink_target.symlink_to(backing)
+        with self.assertRaisesRegex(canary.CanaryError, "create-only"):
+            canary.write_create_only(symlink_target, {"replacement": True})
+        self.assertTrue(symlink_target.is_symlink())
+        self.assertEqual(original, backing.read_bytes())
+
+    def test_create_only_failure_before_publish_leaves_no_target_or_temp(self) -> None:
+        target = self.root / "not-published.json"
+        with mock.patch.object(
+            canary.os, "fsync", side_effect=OSError("simulated data sync failure")
+        ):
+            with self.assertRaisesRegex(OSError, "data sync failure"):
+                canary.write_create_only(target, {"complete": False})
+
+        self.assertFalse(target.exists())
+        self.assertEqual(
+            [], list(target.parent.glob(f"{canary.CREATE_ONLY_TEMP_PREFIX}*"))
+        )
+
+    def test_create_only_syncs_complete_file_then_parent_directory(self) -> None:
+        target = self.root / "published.json"
+        sync_events: list[tuple[str, bool]] = []
+        real_fsync = os.fsync
+
+        def observe_fsync(descriptor: int) -> None:
+            kind = "directory" if stat.S_ISDIR(os.fstat(descriptor).st_mode) else "file"
+            sync_events.append((kind, target.exists()))
+            real_fsync(descriptor)
+
+        previous_umask = os.umask(0o077)
+        try:
+            with mock.patch.object(canary.os, "fsync", side_effect=observe_fsync):
+                canary.write_create_only(target, {"complete": True, "sequence": 7})
+        finally:
+            os.umask(previous_umask)
+
+        self.assertEqual(
+            [("file", False), ("directory", True), ("directory", True)],
+            sync_events,
+        )
+        self.assertEqual(
+            {"complete": True, "sequence": 7},
+            json.loads(target.read_text(encoding="utf-8")),
+        )
+        self.assertTrue(target.read_bytes().endswith(b"\n"))
+        self.assertEqual(0o640, stat.S_IMODE(target.stat().st_mode))
+
+    def test_create_only_never_rolls_back_a_fully_published_target(self) -> None:
+        target = self.root / "published-before-directory-sync-failure.json"
+        real_fsync = os.fsync
+
+        def fail_directory_sync(descriptor: int) -> None:
+            if stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                raise OSError("simulated directory sync failure")
+            real_fsync(descriptor)
+
+        with mock.patch.object(canary.os, "fsync", side_effect=fail_directory_sync):
+            with self.assertRaisesRegex(OSError, "directory sync failure"):
+                canary.write_create_only(target, {"fully_written": True})
+
+        self.assertEqual(
+            {"fully_written": True}, json.loads(target.read_text(encoding="utf-8"))
+        )
+        self.assertEqual(
+            [], list(target.parent.glob(f"{canary.CREATE_ONLY_TEMP_PREFIX}*"))
+        )
+
+    def test_create_only_concurrent_publish_has_exactly_one_winner(self) -> None:
+        target = self.root / "concurrent.json"
+        barrier = threading.Barrier(2)
+
+        def publish(writer: str) -> str:
+            barrier.wait(timeout=5)
+            try:
+                canary.write_create_only(target, {"writer": writer})
+            except canary.CanaryError:
+                return "exists"
+            return "published"
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            outcomes = list(executor.map(publish, ("one", "two")))
+
+        self.assertEqual(["exists", "published"], sorted(outcomes))
+        self.assertIn(
+            json.loads(target.read_text(encoding="utf-8"))["writer"], {"one", "two"}
+        )
+        self.assertEqual(
+            [], list(target.parent.glob(f"{canary.CREATE_ONLY_TEMP_PREFIX}*"))
+        )
+
+    def test_orphan_atomic_publish_temps_are_not_evidence(self) -> None:
+        sample_orphan = (
+            self.evidence
+            / "samples/2026/08/01"
+            / f"{canary.CREATE_ONLY_TEMP_PREFIX}sample{canary.CREATE_ONLY_TEMP_SUFFIX}"
+        )
+        incident_orphan = (
+            self.evidence
+            / "incidents"
+            / f"{canary.CREATE_ONLY_TEMP_PREFIX}incident{canary.CREATE_ONLY_TEMP_SUFFIX}"
+        )
+        sample_orphan.parent.mkdir(parents=True)
+        incident_orphan.parent.mkdir(parents=True)
+        sample_orphan.write_text('{"looks":"complete"}\n', encoding="utf-8")
+        incident_orphan.write_text('{"looks":"complete"}\n', encoding="utf-8")
+
+        self.assertEqual([], list((self.evidence / "samples").glob("**/*.json")))
+        self.assertEqual([], list((self.evidence / "incidents").glob("retry-*.json")))
+        self.assertEqual([], list((self.evidence / "incidents").glob("silent-*.json")))
 
     def test_success_sample_binds_candidate_without_tokens_and_is_create_only(
         self,
@@ -381,9 +566,80 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
         )
 
         self.assertFalse(first["overall_pass"])
+        self.assertTrue(first["alertmanager_readiness"]["ready"])
         self.assertTrue(first["alertmanager_delivery"]["delivered"])
         self.assertTrue(second["alertmanager_delivery"]["deduplicated"])
-        self.assertEqual(1, len(calls))
+        self.assertEqual(2, sum(request.get_method() == "GET" for request in calls))
+        self.assertEqual(1, sum(request.get_method() == "POST" for request in calls))
+
+    def test_watchdog_refreshes_a_delivered_silent_alert_before_it_expires(
+        self,
+    ) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
+        self.write_sample(observed - timedelta(minutes=3), True)
+        calls = []
+
+        def open_alert(request: Any, timeout: int) -> FakeResponse:
+            calls.append(request)
+            return FakeResponse()
+
+        first = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed,
+            alert_opener=open_alert,
+        )
+        second = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed + canary.SILENT_ALERT_REFRESH_AFTER,
+            alert_opener=open_alert,
+        )
+
+        self.assertFalse(first["overall_pass"])
+        self.assertFalse(second["overall_pass"])
+        self.assertNotEqual(first["incident_record"], second["incident_record"])
+        self.assertEqual(2, sum(request.get_method() == "GET" for request in calls))
+        self.assertEqual(2, sum(request.get_method() == "POST" for request in calls))
+        self.assertEqual(
+            2, len(list((self.evidence / "incidents").glob("silent-*.json")))
+        )
+
+    def test_watchdog_ignores_malformed_dedup_delivery_metadata(self) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
+        sample_time = observed - timedelta(minutes=3)
+        self.write_sample(sample_time, True)
+        malformed = (
+            self.evidence
+            / "incidents"
+            / f"silent-{sample_time.strftime('%Y%m%dT%H%M%S')}-malformed.json"
+        )
+        canary.write_create_only(
+            malformed,
+            {
+                "created_at": canary.isoformat(observed),
+                "alertmanager_delivery": None,
+            },
+        )
+        calls = []
+
+        def open_alert(request: Any, timeout: int) -> FakeResponse:
+            calls.append(request)
+            return FakeResponse()
+
+        result = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed,
+            alert_opener=open_alert,
+        )
+
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(result["alertmanager_delivery"]["delivered"])
+        self.assertEqual(["GET", "POST"], [request.get_method() for request in calls])
 
     def test_watchdog_retries_alert_delivery_for_latest_failed_sample(self) -> None:
         observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
@@ -410,12 +666,172 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
         )
 
         self.assertTrue(result["overall_pass"])
+        self.assertTrue(result["alertmanager_readiness"]["ready"])
         self.assertTrue(result["alertmanager_delivery"]["delivered"])
-        self.assertEqual(1, len(calls))
+        self.assertEqual(2, sum(request.get_method() == "GET" for request in calls))
+        self.assertEqual(1, sum(request.get_method() == "POST" for request in calls))
         self.assertTrue(second["alertmanager_delivery"]["deduplicated"])
         retry = json.loads(Path(result["incident_record"]).read_text(encoding="utf-8"))
         self.assertIn("source_sample", retry)
         self.assertFalse(retry["secret_material_recorded"])
+
+    def test_watchdog_retries_failed_sample_and_stale_stream_alert_together(
+        self,
+    ) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
+        self.write_sample(observed - timedelta(minutes=3), False)
+        calls = []
+
+        def open_alert(request: Any, timeout: int) -> FakeResponse:
+            calls.append(request)
+            return FakeResponse()
+
+        result = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed,
+            alert_opener=open_alert,
+        )
+
+        self.assertFalse(result["overall_pass"])
+        self.assertTrue(
+            result["failed_sample_retry"]["alertmanager_delivery"]["delivered"]
+        )
+        self.assertTrue(result["alertmanager_delivery"]["delivered"])
+        self.assertEqual(
+            ["GET", "POST", "POST"], [request.get_method() for request in calls]
+        )
+        self.assertEqual(
+            1, len(list((self.evidence / "incidents").glob("retry-*.json")))
+        )
+        self.assertEqual(
+            1, len(list((self.evidence / "incidents").glob("silent-*.json")))
+        )
+
+    def test_watchdog_records_local_incident_when_forward_is_unready(self) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
+        self.write_sample(observed - timedelta(seconds=30), True)
+        calls = []
+
+        def unavailable(request: Any, timeout: int) -> FakeResponse:
+            calls.append((request, timeout))
+            raise ConnectionRefusedError("governed forward is unavailable")
+
+        result = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed,
+            alert_opener=unavailable,
+        )
+
+        self.assertFalse(result["overall_pass"])
+        self.assertEqual("alertmanager_forward_unready", result["failure_type"])
+        self.assertIsNotNone(result["latest_sample"])
+        self.assertEqual(30.0, result["age_seconds"])
+        self.assertEqual(
+            "http://127.0.0.1:19093/-/ready",
+            result["alertmanager_readiness"]["url"],
+        )
+        self.assertFalse(result["alertmanager_readiness"]["ready"])
+        self.assertEqual(
+            "ConnectionRefusedError",
+            result["alertmanager_readiness"]["error_type"],
+        )
+        self.assertFalse(result["alertmanager_delivery"]["delivered"])
+        self.assertEqual(
+            "ConnectionRefusedError", result["alertmanager_delivery"]["error_type"]
+        )
+        self.assertEqual(["GET", "POST"], [call[0].get_method() for call in calls])
+        incident_path = Path(result["incident_record"])
+        incident = json.loads(incident_path.read_text(encoding="utf-8"))
+        self.assertEqual("alertmanager_forward_unready", incident["incident_type"])
+        self.assertEqual(result["latest_sample"], incident["latest_sample"])
+        self.assertEqual(30.0, incident["age_seconds"])
+        self.assertFalse(incident["overall_pass"])
+        self.assertFalse(incident["alertmanager_delivery"]["delivered"])
+        self.assertFalse(incident["secret_material_recorded"])
+        payload = incident_path.read_text(encoding="utf-8")
+        self.assertNotIn(self.config.token_a, payload)
+        self.assertNotIn(self.config.token_b, payload)
+        with self.assertRaisesRegex(canary.CanaryError, "create-only"):
+            canary.write_create_only(incident_path, {"replacement": True})
+
+        first_payload = incident_path.read_text(encoding="utf-8")
+        second = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=observed,
+            alert_opener=unavailable,
+        )
+        second_path = Path(second["incident_record"])
+        self.assertNotEqual(incident_path, second_path)
+        self.assertEqual(first_payload, incident_path.read_text(encoding="utf-8"))
+        self.assertEqual(
+            "alertmanager_forward_unready",
+            json.loads(second_path.read_text(encoding="utf-8"))["incident_type"],
+        )
+
+    def test_watchdog_fails_on_unready_http_status_even_if_alert_is_delivered(
+        self,
+    ) -> None:
+        calls = []
+
+        def status_aware(request: Any, timeout: int) -> FakeResponse:
+            calls.append((request, timeout))
+            if request.get_method() == "GET":
+                raise urllib.error.HTTPError(
+                    request.full_url,
+                    503,
+                    "not ready",
+                    hdrs=None,
+                    fp=None,
+                )
+            return FakeResponse()
+
+        result = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=datetime(2026, 8, 1, 0, 5, tzinfo=UTC),
+            alert_opener=status_aware,
+        )
+
+        self.assertFalse(result["overall_pass"])
+        self.assertFalse(result["alertmanager_readiness"]["ready"])
+        self.assertEqual(503, result["alertmanager_readiness"]["status_code"])
+        self.assertEqual("HTTPError", result["alertmanager_readiness"]["error_type"])
+        self.assertTrue(result["alertmanager_delivery"]["delivered"])
+        self.assertEqual(["GET", "POST"], [call[0].get_method() for call in calls])
+
+    def test_watchdog_rejects_non_200_readiness_and_delivery_statuses(self) -> None:
+        calls = []
+
+        def non_contract_status(request: Any, timeout: int) -> StatusOnlyResponse:
+            calls.append((request, timeout))
+            return StatusOnlyResponse(204 if request.get_method() == "GET" else 202)
+
+        result = canary.watchdog(
+            self.config,
+            self.deployment,
+            self.evidence,
+            observed_at=datetime(2026, 8, 1, 0, 5, tzinfo=UTC),
+            alert_opener=non_contract_status,
+        )
+
+        self.assertFalse(result["overall_pass"])
+        self.assertEqual(204, result["alertmanager_readiness"]["status_code"])
+        self.assertEqual(
+            "unexpected_http_status",
+            result["alertmanager_readiness"]["error_type"],
+        )
+        self.assertFalse(result["alertmanager_delivery"]["delivered"])
+        self.assertEqual(202, result["alertmanager_delivery"]["status_code"])
+        self.assertEqual(
+            "unexpected_http_status", result["alertmanager_delivery"]["error_type"]
+        )
 
     def test_systemd_schedule_and_installer_preserve_external_host_boundary(
         self,
@@ -439,16 +855,109 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
 
         self.assertIn("OnCalendar=*-*-* *:*:00 UTC", timer)
         self.assertIn("OnCalendar=*-*-* *:*:45 UTC", watchdog)
+        dependency = "boost-gateway-canary-alertmanager-forward.service"
+        for unit in (service, timer, watchdog):
+            with self.subTest(unit=unit.splitlines()[1]):
+                self.assertNotIn(f"Requires={dependency}", unit)
+                self.assertRegex(unit, rf"(?m)^Wants=.*{dependency}")
+                self.assertRegex(unit, rf"(?m)^After=.*{dependency}")
+        self.assertIn("After=boost-gateway-canary-alertmanager-forward.service", timer)
+        self.assertIn(
+            "After=boost-gateway-canary-alertmanager-forward.service", watchdog
+        )
         self.assertIn("User=boost-gateway-canary", service)
+        self.assertNotIn("ConditionPathExists=", service)
+        self.assertIn("AssertPathExists=/etc/boost-gateway-canary/environment", service)
+        self.assertIn(
+            "AssertPathExists=/etc/boost-gateway-canary/deployment-record.json",
+            service,
+        )
         self.assertIn("ProtectSystem=strict", service)
         self.assertNotIn("/var/run/docker.sock", service)
         self.assertIn("assert_compatible_version", installer)
+        self.assertIn("scripts/lib/perf_statistics.py", installer)
+        self.assertIn(
+            "/usr/local/libexec/boost-gateway-canary/perf_statistics.py",
+            installer,
+        )
         self.assertIn("@validate.service", installer)
         self.assertIn("0:600", installer)
         self.assertIn(
             "BOOST_GATEWAY_CANARY_ALERTMANAGER_URL=http://127.0.0.1:19093",
             example,
         )
+
+    def test_linux_alertmanager_forward_is_fixed_and_fail_closed(self) -> None:
+        repository = Path(__file__).resolve().parents[2]
+        service = (
+            repository
+            / "deploy/systemd/boost-gateway-canary-alertmanager-forward.service"
+        ).read_text()
+        installer = (
+            repository
+            / "deploy/operations/install_external_canary_alertmanager_forward.sh"
+        ).read_text()
+
+        self.assertIn("User=boost-gateway-canary-forward", service)
+        self.assertIn("Group=boost-gateway-canary-forward", service)
+        self.assertNotIn("ConditionPathExists=", service)
+        self.assertIn("Wants=network-online.target tailscaled.service", service)
+        self.assertIn("Restart=on-failure", service)
+        self.assertIn(
+            "EnvironmentFile=/etc/boost-gateway-canary/alertmanager-forward.env",
+            service,
+        )
+        self.assertIn("LoadCredential=ssh_identity:", service)
+        self.assertIn("LoadCredential=ssh_known_hosts:", service)
+        self.assertIn("-F /dev/null -NT", service)
+        for option in (
+            "BatchMode=yes",
+            "IdentitiesOnly=yes",
+            "StrictHostKeyChecking=yes",
+            "ExitOnForwardFailure=yes",
+            "ServerAliveInterval=30",
+            "ServerAliveCountMax=3",
+        ):
+            self.assertIn(option, service)
+        self.assertIn("-L 127.0.0.1:19093:127.0.0.1:9093", service)
+        self.assertEqual(service.count(" -L "), 1)
+        self.assertNotIn(" -R ", service)
+        self.assertNotIn("0.0.0.0:19093", service)
+        self.assertNotIn("ClearAllForwardings=yes", service)
+
+        self.assertIn("SSH identity must be root-owned mode 0600", installer)
+        self.assertIn("ssh-keygen -y -P ''", installer)
+        self.assertIn("SSH identity must use Ed25519", installer)
+        self.assertIn("TARGET_FORWARD_USER=boost-gateway-alert-forward", installer)
+        self.assertIn("--ssh-target user must be ${TARGET_FORWARD_USER}", installer)
+        self.assertIn('ssh-keygen -F "${TARGET_HOST}"', installer)
+        self.assertIn("SSH known_hosts must be root-owned mode 0600", installer)
+        self.assertIn('install_secret "${IDENTITY_FILE}"', installer)
+        self.assertIn('install_secret "${KNOWN_HOSTS_FILE}"', installer)
+        self.assertIn("${source} -ef ${destination}", installer)
+        self.assertIn("FORWARD_USER=boost-gateway-canary-forward", installer)
+        self.assertIn("forward service account and group must not be root", installer)
+        self.assertIn(
+            "forward service account must not belong to supplementary groups",
+            installer,
+        )
+        self.assertIn("systemctl restart", installer)
+        self.assertIn("systemctl is-active --quiet", installer)
+        self.assertIn("http://127.0.0.1:19093/-/ready", installer)
+        self.assertIn(
+            'from="<external-canary-tailscale-address>",command="/bin/false",'
+            "restrict,port-forwarding,"
+            'permitopen="127.0.0.1:9093"',
+            installer,
+        )
+        self.assertIn(
+            "target_authorization_installer="
+            "deploy/operations/install_alertmanager_forward_target.sh",
+            installer,
+        )
+        self.assertNotIn("--local-port", installer)
+        self.assertNotIn("--remote-port", installer)
+        self.assertNotIn("set -x", installer)
 
 
 if __name__ == "__main__":

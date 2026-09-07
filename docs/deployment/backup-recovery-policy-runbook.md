@@ -143,8 +143,10 @@ manifest、summary 或日志。任何明文 staging 必须在加密成功后清�
 archive SHA-256，然后生成 checksum-bound receipt。同机目录、loopback SSH、只记录上传成功或
 只信任 transport exit code 都不能令 `off_host_copy_verified` 成立。
 
-retention 当前冻结为 14 份 daily、8 份 weekly，并始终保留至少两份 known-good backup。
-只有远端 copy 和 readback 都验证通过后才能删除旧副本，每次删除必须产生记录。
+基础/legacy retention 冻结为 14 份 daily、8 份 weekly，并始终保留至少两份 known-good
+backup。阿里云 active vault 使用独立受治理 override：7 份 daily、4 份 weekly、至少 2 份
+known-good，且受十进制 `20,000,000,000` logical bytes 与 `5,000,000,000` filesystem free
+门禁约束。只有远端 copy 和 readback 都验证通过后才能删除旧副本，每次删除必须产生记录。
 
 ## Restore Contract
 
@@ -181,22 +183,30 @@ host、deployment、Redis profile、backup manifest 和 remote receipt SHA-256�
 
 ## Encrypted Backup Tool Slice
 
-仓库提供三个尚未定时激活的工具：
+仓库提供以下备份工具；当前 `miniserver` source timer 与阿里云 active-vault retention timer
+已经受控激活，下面的 Mac 路径继续描述未改写的 legacy vault：
 
 - `scripts/tools/manage_backup_recovery.py`：在 lifecycle lock 内通过 `redis-cli --rdb`
   生成一致 RDB，生成 link-free tar 和经验证的 link manifest，使用 recipient-only `age` 加密，
   然后以流式帧上传。
-- `scripts/tools/backup_vault_ssh_receiver.py`：Mac 上的 SSH forced-command receiver；source key
+- `scripts/tools/backup_vault_ssh_receiver.py`：异机上的 SSH forced-command receiver；source key
   只能执行 `boost-gateway-vault store` 和 `boost-gateway-vault receipt <backup-id>`。
 - `scripts/tools/verify_backup_vault.py`：在 Mac 上流式解密并复算 plaintext tar、manifest、receipt
   和 host identity；只把 Redis RDB 写入受限临时目录，再用不可变 Redis image 离线校验。
 
-receiver 不接受远端路径、shell、`prune` 或删除操作。上传先进入 Mac vault 的 `.incoming`，验证长度和
+receiver 不接受远端路径、shell、`prune` 或删除操作。上传先进入目标 vault 的 `.incoming`，验证长度和
 双 SHA-256 后重新打开 archive/manifest 回读，生成 create-only receipt，再原子改名为最终 backup
 目录。Ubuntu source 收到的 receipt 还必须匹配预置 vault identity digest，且该 digest 必须不同于
 source host identity。
 
-当前选定 Mac vault 为：
+forced-command 仍只传 `--vault-root` 和 `--vault-identity-file`，不接受 lock、容量上限或 free-floor
+参数。兼容边界由 receiver 自动识别：当前 legacy Mac vault 完全没有 `<vault>/.vault.lock`，因此
+store/receipt 保持原流程且不套用阿里云 active vault 的 20 GB/5 GB 门禁。若固定 lock 路径存在任何
+entry，receiver 就必须验证 secure layout 并使用该固定锁；symlink、目录、权限/owner 不安全等异常
+一律 fail closed，不能回退 legacy。不要仅为声明新门禁而在约 43 GB 的现有 Mac vault 中创建 lock；
+这需要单独规划完整 layout 与容量迁移。
+
+历史 legacy Mac vault 为：
 
 ```text
 /Users/honeybury/Backups/boost-gateway-vault
@@ -480,7 +490,8 @@ retained target volume identity、leaderboard submit/top/rank 和 release SDK fu
 ### Local-Only Retention
 
 Ubuntu source key 无权删除异机备份。14 daily、8 weekly 和至少 2 known-good 的 retention 只能在
-Mac 本机执行 `remote-prune`，并且必须以最新 verified remote receipt 的 SHA-256 为 anchor：
+完全没有固定 `.vault.lock` 的 legacy Mac 本机执行 `remote-prune`，并且必须以最新 verified remote
+receipt 的 SHA-256 为 anchor：
 
 ```bash
 python3 scripts/tools/manage_backup_recovery.py remote-prune \
@@ -491,6 +502,10 @@ python3 scripts/tools/manage_backup_recovery.py remote-prune \
   --weekly-copies 8 \
   --minimum-known-good 2
 ```
+
+如果固定 lock 路径已有任何 entry，兼容 CLI 会在 prune 前 fail closed；受治理的 secure vault
+必须改用绑定固定 policy、service identity 和同一 vault lock 的 retention service，不能用这里的
+14/8 参数入口替代。
 
 prune 先把候选原子移动到 `.trash/<deletion-id>`，再写 create-only intent；物理删除成功后才写
 completion record。删除失败时保留 quarantine 和 intent，不能生成虚假的 completion。只有已完成
@@ -508,7 +523,7 @@ identity attestation 继续使用 `/etc/boost-gateway` 下的独立 `0600` 文�
 
 ```bash
 sudo deploy/operations/install_backup_host_units.sh \
-  --remote-host 'honeybury@<mac-tailscale-ip>' \
+  --remote-host 'boost-gateway-vault@<off-host-tailscale-name-or-ip>' \
   --run-now
 ```
 
@@ -524,6 +539,48 @@ systemctl list-timers boost-gateway-backup.timer --no-pager
 sudo systemctl status boost-gateway-backup.service --no-pager --full
 sudo journalctl -u boost-gateway-backup.service -n 100 --no-pager
 ```
+
+### 2026-09-07 阿里云 active-vault 快照
+
+当前 `miniserver` 已使用专用 forced-command source identity 指向 `aliyunserver`，Mac vault
+保持未改写的历史冷档。共锁/容量修复重部署后的第三份备份
+`todo0012-scheduled-20260907T012921Z-0ac0e17c` 为 PASS：encrypted archive
+`1,364,936,232` bytes，source summary SHA-256
+`662b17f154cb8ffb3406c9a2a5ef5bed21a23610b370ba706519267aaefedfbc`，remote receipt
+SHA-256 `7a163b0f36004ab2db23124b9d77c210955f4038ec1418560ea839c00dcc7539`。
+
+policy-bound retention run `prune-20260907T014058Z-c5dd7494` 随后 PASS：保留 3 份
+backup、2 份 known-good，`deleted_backup_ids=[]`，完成后 logical regular-file bytes 为
+`4,063,038,013`，filesystem free 为 `28,906,655,744` bytes。create-only intent SHA-256 为
+`93dabc2c2bd7a0e525109b50c1075c50f3e84c96242b0aa81b611862bd23f132`，completion SHA-256
+为 `5de3f2c8559c72d3b98e56e7482aa7a10230e641a814a992e9ace8818c0a32c4`。retention timer
+已 enabled/active，下一次计划运行时间为 `2026-09-07 12:04:53 CST`；oneshot 成功后显示
+`inactive/dead` 是预期状态。
+
+上述 3 份/`4,063,038,013` bytes 是 retention run 完成时的历史快照，不是后续 active vault
+当前值。迁移后的首个自然 scheduled backup 在 `2026-09-07 10:21:20–10:30:34 CST` 由
+`miniserver` timer 自动运行 PASS，并非手动触发：ID
+`todo0012-scheduled-20260907T022120Z-e2fa52e1`，archive `1,364,966,952` bytes、SHA-256
+`151cefbe45a131f6cb7e6edde5f152d23cf35ee593314310f066d1eed8d5a966`，manifest SHA-256
+`81c58c5cb443f6d9873b915115068227372615040f066dc28de1606ae156363a`，source summary
+SHA-256 `369646371dbd935e3e548e3a4c425f233b426e521bb6f46e41107c4e801159f5`，receipt SHA-256
+`735312aa35132a9ac0f48bd56d383b749bed67fc668a57aca4497dc97e54283e`。
+`overall_pass/create_only/off_host_copy_verified/remote_readback_verified=true`，source/cloud
+receipt byte-identical。完成后 active vault 当前为 4 backup / 2 known-good、`.incoming=0`、
+`.trash=0`、`5,428,028,032` logical bytes、`27,361,124,352` free bytes；backup timer 下一次为
+`2026-09-08 10:21:07 CST`。该时间不得与 retention timer 的 `2026-09-07 12:04:53 CST` 混淆。
+
+本轮运维检查曾因对约 1.349 GB archive 调用 Python `read_bytes()` 而在 1.6 GiB 阿里云主机
+触发 global OOM；该调用不是 backup/receiver/retention 服务路径，vault 未删除、覆盖或损坏。
+正常 reboot 后服务全部恢复。此后所有大型 archive、manifest 与 checksum 验证必须使用流式
+I/O 或有界缓冲，禁止整文件 `read_bytes()`/无界 `read()`；`vm.swappiness=10` 只是辅助缓冲，
+不能替代这一约束。
+
+本次 Mac→Aliyun 迁移的备份门禁与另外三项迁移门禁现已全部 PASS，日常职责迁移已正式签收。
+最终邮件投递证据是独立的 create-only attestation，SHA-256 为
+`7f25b5f568be428eea44a653ff0ee2348ce2315ded997f5bb7acc6062e68ccf9`；它不改变 backup
+receipt、known-good 或 retention 的定义。该迁移签收也不关闭 `TODO-0017`，新的 Day 0 尚未
+声明，必须从未来自然 UTC 分钟开始。
 
 安装 timer 不改变 production Compose、Redis volume 或 Redis profile。所有 backup、vault validation、
 restore/business summary 和 known-good attestation 仍固定各自的 formal boundary；只有 repository TODO

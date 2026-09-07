@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "policy_id": "aliyun-offhost-vault-bounded-retention-v1",
+  "scope": {
+    "host_role": "off_host_backup_vault",
+    "host_alias": "aliyunserver",
+    "vault_root": "/srv/boost-gateway-vault",
+    "source_backup_policy": "deploy/operations/backup-recovery-policy.example.json",
+    "source_retention_override": true
+  },
+  "retention": {
+    "daily_copies": 7,
+    "weekly_copies": 4,
+    "minimum_known_good_copies": 2,
+    "max_vault_bytes": 20000000000,
+    "minimum_free_bytes": 5000000000,
+    "size_accounting": "logical_regular_file_bytes",
+    "current_vault_identity_only": true,
+    "pre_upload_reservation_required": true,
+    "delete_only_after_verified_remote_copy": true,
+    "deletion_plan_required": true,
+    "deletion_record_required": true
+  },
+  "bootstrap": {
+    "new_vault_identity_required": true,
+    "mixed_identity_records_rejected": true,
+    "retention_disabled_until_two_known_good_copies": true
+  },
+  "approval": {
+    "decision": "operator-approved-capacity-bounded-off-host-migration",
+    "approved_on": "2026-09-07",
+    "reason": "Keep the Aliyun active vault within a strict decimal 20 GB budget while preserving two independently restored known-good copies.",
+    "fallback": "Fail closed and expand or move the vault when the mandatory retained set cannot fit; never weaken the two-known-good floor."
+  },
+  "secret_material_recorded": false
+}

@@ -13,6 +13,7 @@
 | 不可变 Release | [不可变部署](immutable-release-deployment-runbook.md) |
 | 安装、升级、回滚 | [Release 生命周期](release-lifecycle-runbook.md) |
 | 备份与恢复 | [备份恢复策略](backup-recovery-policy-runbook.md) |
+| Mac 外部职责迁移 | [阿里云异机迁移](aliyun-offhost-migration-runbook.md) |
 | 长期观测 | [长期观测与证据](long-run-observability-runbook.md) |
 | 72 小时预演 | [72 小时生产预演](72-hour-production-shakedown-runbook.md) |
 | 外部业务探针 | [外部业务 Canary](external-business-canary-runbook.md) |

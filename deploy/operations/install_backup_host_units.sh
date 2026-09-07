@@ -4,11 +4,40 @@ set -Eeuo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REMOTE_HOST=""
 RUN_NOW=false
+CONFIG_DIR=/etc/boost-gateway
+PRIVATE_KEY=${CONFIG_DIR}/backup-vault-ed25519
+PUBLIC_KEY=${PRIVATE_KEY}.pub
+PUBLIC_KEY_TEMP=""
 
 fail() {
   printf 'backup host units install: FAIL: %s\n' "$*" >&2
   exit 1
 }
+
+cleanup() {
+  if [[ -n ${PUBLIC_KEY_TEMP} && -e ${PUBLIC_KEY_TEMP} ]]; then
+    rm -f -- "${PUBLIC_KEY_TEMP}"
+  fi
+}
+trap cleanup EXIT
+
+# BEGIN TESTABLE: canonicalize_ed25519_public_key
+canonicalize_ed25519_public_key() {
+  local raw_public_key=${1-}
+  local public_key_type public_key_material public_key_comment
+
+  [[ -n ${raw_public_key} && ${raw_public_key} != *$'\n'* ]] || return 1
+  if printf '%s' "${raw_public_key}" | LC_ALL=C grep -q '[[:cntrl:]]'; then
+    return 1
+  fi
+  read -r public_key_type public_key_material public_key_comment \
+    <<<"${raw_public_key}"
+  [[ ${public_key_type} == ssh-ed25519 \
+      && ${public_key_material} =~ ^[A-Za-z0-9+/]+={0,2}$ ]] \
+    || return 1
+  printf '%s %s\n' "${public_key_type}" "${public_key_material}"
+}
+# END TESTABLE: canonicalize_ed25519_public_key
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,18 +58,61 @@ done
 [[ ${REMOTE_HOST} =~ ^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+$ ]] || fail 'remote host is invalid'
 [[ -S /var/run/docker.sock ]] || fail 'Docker socket is unavailable'
 getent group boost-gateway >/dev/null || fail 'boost-gateway group is missing'
+[[ -d ${CONFIG_DIR} && ! -L ${CONFIG_DIR} ]] \
+  || fail 'backup configuration directory must be a regular non-symlink directory'
+[[ $(stat -c '%u' "${CONFIG_DIR}") == 0 ]] \
+  || fail 'backup configuration directory must be root-owned'
+CONFIG_DIR_MODE=$(stat -c '%a' "${CONFIG_DIR}")
+(( (8#${CONFIG_DIR_MODE} & 0022) == 0 )) \
+  || fail 'backup configuration directory must not be group/world writable'
 for path in \
   /etc/boost-gateway/backup.age-recipient \
   /etc/boost-gateway/backup-remote-host-id.sha256 \
-  /etc/boost-gateway/backup-vault-ed25519 \
+  "${PRIVATE_KEY}" \
   /etc/boost-gateway/backup-vault-known-hosts \
   /opt/boost-gateway/current/record.json \
   /usr/local/bin/age
 do
   [[ -f ${path} && ! -L ${path} ]] || fail "required regular file is missing: ${path}"
 done
-[[ $(stat -c '%u:%a' /etc/boost-gateway/backup-vault-ed25519) == 0:600 ]] \
+[[ $(stat -c '%u:%a' "${PRIVATE_KEY}") == 0:600 ]] \
   || fail 'backup SSH private key must be root-owned mode 0600'
+[[ $(stat -c '%h' "${PRIVATE_KEY}") == 1 ]] \
+  || fail 'backup SSH private key must have exactly one hard link'
+[[ -x /usr/bin/ssh-keygen ]] || fail 'OpenSSH ssh-keygen is required'
+
+if [[ -e ${PUBLIC_KEY} || -L ${PUBLIC_KEY} ]]; then
+  [[ -f ${PUBLIC_KEY} && ! -L ${PUBLIC_KEY} ]] \
+    || fail 'backup SSH public key sidecar must be a regular non-symlink file'
+  [[ $(stat -c '%u:%g' "${PUBLIC_KEY}") == 0:0 ]] \
+    || fail 'backup SSH public key sidecar must be root-owned'
+  [[ $(stat -c '%h' "${PUBLIC_KEY}") == 1 ]] \
+    || fail 'backup SSH public key sidecar must have exactly one hard link'
+  PUBLIC_KEY_MODE=$(stat -c '%a' "${PUBLIC_KEY}")
+  (( (8#${PUBLIC_KEY_MODE} & 0022) == 0 )) \
+    || fail 'backup SSH public key sidecar must not be group/world writable'
+fi
+
+RAW_DERIVED_PUBLIC_KEY=$(
+  /usr/bin/ssh-keygen -y -P '' -f "${PRIVATE_KEY}" 2>/dev/null
+) || fail 'backup SSH private key must be valid and unencrypted'
+CANONICAL_PUBLIC_KEY=$(
+  canonicalize_ed25519_public_key "${RAW_DERIVED_PUBLIC_KEY}"
+) || fail 'backup SSH private key must contain one valid Ed25519 key with a safe comment'
+unset RAW_DERIVED_PUBLIC_KEY
+
+umask 077
+PUBLIC_KEY_TEMP=$(mktemp "${CONFIG_DIR}/.backup-vault-ed25519.pub.XXXXXX")
+printf '%s\n' "${CANONICAL_PUBLIC_KEY}" >"${PUBLIC_KEY_TEMP}"
+chown root:root "${PUBLIC_KEY_TEMP}"
+chmod 0644 "${PUBLIC_KEY_TEMP}"
+mv -fT -- "${PUBLIC_KEY_TEMP}" "${PUBLIC_KEY}"
+PUBLIC_KEY_TEMP=""
+[[ -f ${PUBLIC_KEY} && ! -L ${PUBLIC_KEY} \
+    && $(stat -c '%u:%g:%a:%h' "${PUBLIC_KEY}") == 0:0:644:1 ]] \
+  || fail 'installed backup SSH public key sidecar is unsafe'
+[[ $(<"${PUBLIC_KEY}") == "${CANONICAL_PUBLIC_KEY}" ]] \
+  || fail 'installed backup SSH public key sidecar does not match the private key'
 
 install -d -o root -g boost-gateway -m 0750 \
   /usr/local/libexec/boost-gateway/backup/scripts \

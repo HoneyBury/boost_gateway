@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 """Compatibility CLI for governed backup and recovery operations."""
 
+# ruff: noqa: F405 - this standalone compatibility CLI intentionally re-exports
+# the library surface through either package or adjacent-file import mode.
+
 from __future__ import annotations
 
 if __package__ in {None, ""}:
@@ -15,7 +18,6 @@ except ModuleNotFoundError as exc:  # standalone forced-command installation
     if exc.name != "scripts":
         raise
     from backup_recovery import *  # type: ignore[no-redef]  # noqa: E402,F403
-
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -105,8 +107,13 @@ def main(argv: list[str] | None = None) -> int:
                 business_summary=args.business_summary,
             )
         elif args.command == "remote-prune":
+            root, fixed_lock = fixed_vault_lock_entry(args.vault_root)
+            if fixed_lock is not None:
+                raise BackupError(
+                    "secure vault retention must use the policy-bound retention service"
+                )
             result = prune_remote(
-                args.vault_root,
+                root,
                 anchor_backup_id=args.anchor_backup_id,
                 anchor_receipt_sha256=args.anchor_receipt_sha256,
                 daily_copies=args.daily_copies,

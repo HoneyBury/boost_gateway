@@ -1,5 +1,7 @@
 [Unit]
 Description=Run the external BoostGateway business canary every minute
+Wants=boost-gateway-canary-alertmanager-forward.service
+After=boost-gateway-canary-alertmanager-forward.service
 
 [Timer]
 OnCalendar=*-*-* *:*:00 UTC

@@ -20,8 +20,10 @@ try:
         BACKUP_ID_RE,
         BackupError,
         canonical_json,
+        fixed_vault_lock_entry,
         remote_receipt,
         remote_store,
+        require_secure_vault_layout,
     )
 except ModuleNotFoundError as exc:
     if exc.name != "scripts":
@@ -33,8 +35,10 @@ except ModuleNotFoundError as exc:
         BACKUP_ID_RE,
         BackupError,
         canonical_json,
+        fixed_vault_lock_entry,
         remote_receipt,
         remote_store,
+        require_secure_vault_layout,
     )
 
 
@@ -64,6 +68,41 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def require_secure_vault(
+    vault_root: Path,
+    identity_file: Path,
+    lock_file: Path,
+    *,
+    trusted_owner_uid: int = 0,
+) -> None:
+    require_secure_vault_layout(
+        vault_root,
+        identity_file,
+        lock_file,
+        trusted_owner_uid=trusted_owner_uid,
+    )
+
+
+def require_automatic_vault_boundary(
+    vault_root: Path,
+    identity_file: Path,
+    *,
+    trusted_owner_uid: int = 0,
+) -> bool:
+    """Validate secure layout whenever the fixed lock has any directory entry."""
+
+    root, lock = fixed_vault_lock_entry(vault_root)
+    if lock is None:
+        return False
+    require_secure_vault(
+        root,
+        identity_file,
+        lock,
+        trusted_owner_uid=trusted_owner_uid,
+    )
+    return True
+
+
 @contextmanager
 def bounded_store(seconds: int):
     if seconds <= 0:
@@ -84,13 +123,16 @@ def bounded_store(seconds: int):
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        require_automatic_vault_boundary(args.vault_root, args.vault_identity_file)
         operation, values = parse_original_command(
             os.environ.get("SSH_ORIGINAL_COMMAND", "")
         )
         if operation == "store":
             with bounded_store(args.store_timeout_seconds):
                 result = remote_store(
-                    args.vault_root, args.vault_identity_file, sys.stdin.buffer
+                    args.vault_root,
+                    args.vault_identity_file,
+                    sys.stdin.buffer,
                 )
         elif operation == "receipt":
             result = remote_receipt(args.vault_root, values[0])
