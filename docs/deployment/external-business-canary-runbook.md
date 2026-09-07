@@ -190,7 +190,8 @@ missing fields fail closed:
     "service_unit_sha256": "<64 lowercase hex>",
     "watchdog_dropin_sha256": "<64 lowercase hex>",
     "provider_contract_sha256": "<64 lowercase hex>",
-    "candidate_record_sha256": "<64 lowercase hex>"
+    "candidate_record_sha256": "<64 lowercase hex>",
+    "installation_sha256": "<64 lowercase hex>"
   },
   "drill": {
     "failure_mode": "missing-heartbeat",

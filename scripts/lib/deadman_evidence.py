@@ -187,7 +187,7 @@ def validate_attestation(value: dict, *, now: datetime | None = None) -> None:
     subject = value["subject"]
     require(set(subject) == {"canary_host_id_sha256", "check_identity_sha256", "reporter_sha256",
             "service_unit_sha256", "watchdog_dropin_sha256", "provider_contract_sha256",
-            "candidate_record_sha256"}, "attestation subject schema mismatch")
+            "candidate_record_sha256", "installation_sha256"}, "attestation subject schema mismatch")
     require(all(HEX.fullmatch(str(item)) for item in subject.values()), "invalid subject digest")
     drill = value["drill"]
     require(set(drill) == {"failure_mode", "armed_at", "heartbeat_stopped_at", "provider_down_at",
