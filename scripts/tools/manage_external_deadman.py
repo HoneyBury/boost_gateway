@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -185,9 +186,21 @@ def arm_drill(drill_id: str, snapshot_path: Path) -> None:
     # The recovery timer exists and is active before heartbeat suppression.
     try:
         command("systemctl", "stop", TIMER)
-        # Wait for a running watchdog/reporter to finish before measuring missing heartbeats.
-        command("systemctl", "stop", "boost-gateway-external-canary@watchdog.service")
-        command("systemctl", "stop", "boost-gateway-external-deadman@success.service")
+        # Never terminate a running watchdog: that could dispatch an explicit /fail.
+        # Let the finite in-flight watchdog and its reporter drain before starting
+        # the missing-heartbeat clock. The independent rearm is already scheduled.
+        deadline = time.monotonic() + 75
+        units = ("boost-gateway-external-canary@watchdog.service",
+                 "boost-gateway-external-deadman@success.service",
+                 "boost-gateway-external-deadman@failure.service")
+        while True:
+            states = [command("systemctl", "show", unit, "--property=ActiveState", "--value") for unit in units]
+            if all(state in {"inactive", "failed"} for state in states):
+                break
+            evidence.require(time.monotonic() < deadline, "in-flight heartbeat did not drain")
+            time.sleep(1)
+        evidence.require(command("systemctl", "show", units[0], "--property=Result", "--value") == "success",
+                         "watchdog failed while arming the drill")
         evidence.create(directory / "stopped.json", {"created_at": evidence.stamp(), "overall_pass": True})
     except Exception:
         command("systemctl", "start", TIMER)

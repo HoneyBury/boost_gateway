@@ -125,14 +125,22 @@ def test_rearm_must_be_scheduled_before_suppression(tmp_path):
     snap = tmp_path / "snapshot.json"
     evidence.create(snap, provider_snapshot())
     calls = []
+    def command(*args):
+        calls.append(args)
+        if "--property=ActiveState" in args:
+            return "inactive"
+        if "--property=Result" in args:
+            return "success"
+        return ""
     with mock.patch.object(manager, "STATE", state), mock.patch.object(manager, "preflight"), \
          mock.patch.object(manager, "subject", return_value={}), \
-         mock.patch.object(manager, "command", side_effect=lambda *args: calls.append(args) or ""):
+         mock.patch.object(manager, "command", side_effect=command):
         manager.arm_drill("test", snap)
     scheduled = next(i for i, c in enumerate(calls) if c[0] == "systemd-run")
     verified = next(i for i, c in enumerate(calls) if c[:2] == ("systemctl", "is-active"))
     stopped = next(i for i, c in enumerate(calls) if c[:2] == ("systemctl", "stop"))
     assert scheduled < verified < stopped
+    assert [c[2] for c in calls if c[:2] == ("systemctl", "stop")] == [manager.TIMER]
 
 
 def test_failed_rearm_admission_never_stops_watchdog(tmp_path):
