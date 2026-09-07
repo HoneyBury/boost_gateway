@@ -9,6 +9,61 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/external_deadman.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": [
+        "scripts/tools/external_deadman_reporter.py",
+        "scripts/tools/manage_external_deadman.py"
+      ],
+      "test": "tests/python/test_external_deadman.py",
+      "why_new_script": "Independent heartbeat credentials, fail-closed reporting and recovery evidence require isolation from the production alert transport.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/deadman_evidence.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": [
+        "scripts/tools/manage_external_deadman.py",
+        "scripts/tools/external_deadman_reporter.py"
+      ],
+      "test": "tests/python/test_external_deadman.py",
+      "why_new_script": "Independent heartbeat credentials, fail-closed reporting and recovery evidence require isolation from the production alert transport.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/tools/external_deadman_reporter.py": {
+      "kind": "cli",
+      "domain": "production",
+      "consumers": [
+        "boost-gateway-external-deadman@.service"
+      ],
+      "test": "tests/python/test_external_deadman.py",
+      "why_new_script": "Independent heartbeat credentials, fail-closed reporting and recovery evidence require isolation from the production alert transport.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/tools/manage_external_deadman.py": {
+      "kind": "cli",
+      "domain": "production",
+      "consumers": [
+        "operator",
+        "boost-gateway-deadman-rearm timer"
+      ],
+      "test": "tests/python/test_external_deadman.py",
+      "why_new_script": "Independent heartbeat credentials, fail-closed reporting and recovery evidence require isolation from the production alert transport.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/tools/run_backup_vault_retention.py": {
       "kind": "cli",
       "domain": "recovery",
@@ -325,6 +380,8 @@
     "archive_rule": "Retired executable code is removed and remains available through Git history; it is not copied into an executable scripts/archive tree."
   },
   "internal_scripts": {
+    "scripts/lib/external_deadman.py": {"category": "tool"},
+    "scripts/lib/deadman_evidence.py": {"category": "tool"},
     "scripts/gates/__init__.py": {
       "category": "tool"
     },
@@ -549,6 +606,8 @@
     }
   },
   "scripts": {
+    "scripts/tools/external_deadman_reporter.py": {"category": "tool"},
+    "scripts/tools/manage_external_deadman.py": {"category": "tool"},
     "scripts/README.md": {
       "category": "tool"
     },

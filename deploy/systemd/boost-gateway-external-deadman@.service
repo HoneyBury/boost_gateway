@@ -1,0 +1,25 @@
+[Unit]
+Description=Independent BoostGateway heartbeat (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+LoadCredential=ping_uuid:/etc/boost-gateway-external-deadman/ping_uuid
+ExecStart=/usr/bin/python3 /usr/local/libexec/boost-gateway-deadman/external_deadman_reporter.py --status %i --credential-file %d/ping_uuid --receipt-directory /var/lib/boost-gateway-external-deadman/events
+Environment=PYTHONDONTWRITEBYTECODE=1
+TimeoutStartSec=15s
+UMask=0027
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/boost-gateway-external-deadman/events

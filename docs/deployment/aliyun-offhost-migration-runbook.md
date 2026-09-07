@@ -23,11 +23,12 @@ Day 0 尚未声明。
 |---|---|---|---|
 | 阿里云主机基线 | 已验证 | SSH key-only、UFW/Tailscale 边界、持久 journal、NTP、swap、Docker/Compose 和 age 已就绪；Tailscale direct；OOM 后正常 reboot 到 boot ID `3c82a323-4bd1-4804-9bc9-842ed8b4458f`，相关 unit 自动恢复且 failed unit 为零 | 持续采集容量、listener、Tailscale 和 unit 状态；所有大型文件检查必须流式 |
 | external canary 预检 | 已切换但非正式窗口 | Mac 停止后至少 11 个连续纯云自然分钟 PASS、无 incident；`09:27 CST` 前相同 synthetic identity 的并发竞态不属于生产异常 | 另选未来自然 UTC 分钟声明 Day 0；现有分钟不计入 |
+| Healthchecks.io 独立 dead-man | **未部署，Day 0 阻断** | provider、host unit、真实 missing-heartbeat Down→Up、两条目标端 Message-ID 和 create-only attestation 均尚未形成 | 按本 runbook shadow→activate→drill→attest；最终 provider 必须恢复 `up` |
 | Alertmanager forward | 已验证并签收 | 阿里云只监听 `127.0.0.1:19093`；9093 正向通过，shell、9090 local 和 reverse forward 均拒绝；最终 drill 计数 23→25、failed=3，两条目标端 Message-ID 已写入最终 create-only attestation `7f25b5f…` | 保留 attestation 与 preflight digest，持续检查投递 |
 | active vault 与 source cutover | 已验证 | 两份不同 restore/business/known-good 独立 PASS；修复后第三份 backup PASS；迁移后首个自然 scheduled backup `todo0012-scheduled-20260907T022120Z-e2fa52e1` 自动 upload/readback PASS，当前 4 backups / 2 known-good / incoming 0 / trash 0 / logical bytes `5,428,028,032` / free `27,361,124,352` | backup timer 下一次 `2026-09-08 10:21:07 CST`；持续检查 freshness |
 | Mac 历史冷档 | 已验证 | 阿里云冷档中的迁移 partial 为 `2,108,033,646` bytes、70 个文件，`SHA256SUMS` 全部通过；其中两份完整历史 backup 与 Mac checksum 相同，另有一份未完成传输且不具备恢复资格 | 保留为只读历史；不得加入 active retention 或宣称未完成传输有效 |
 | retention 调度 | 已验证并启用 | receiver/known-good/retention 共锁与容量修复已重部署；`prune-20260907T014058Z-c5dd7494` PASS；当时快照为 3 backup / 2 known-good、空删除集、logical bytes `4,063,038,013`、free `28,906,655,744` | retention timer enabled/active，下一次 `2026-09-07 12:04:53 CST`；不要与 backup timer 混淆 |
-| production 回归 | 已验证 | 迁移签收时所用 controller 下的 lifecycle `status`/`verify`、observability preflight、SMTP relay 和 13 个 governed production containers 均 PASS，生产卷 identity 未改变 | controller 治理对齐属于迁移后的独立工作；不得把后续兼容验证结果追写成迁移时事实 |
+| production 回归 | 已验证 | 迁移签收时所用 controller 下的 lifecycle `status`/`verify`、observability preflight、SMTP relay 和 13 个 governed production containers 均 PASS，生产卷 identity 未改变；迁移后 controller 已独立对齐到 clean `801fb5f37927c0622c038185493d8cff3dc31163`，精确 v3.6.7 bridge verify 也已 PASS | 保留迁移时事实与迁移后 controller receipt 的时间边界；兼容旗标不能用于生命周期写操作 |
 | evidence round trip | 已验证 | package `todo0017-aliyun-cutover-20260906T205500Z` 在阿里云校验 PASS，create-only receipt 已回传 `miniserver` 受保护 raw evidence | 保留 package/manifest/receipt digest，不改写原包 |
 | Mac 收口与 Day 0 | 迁移已签收；Day 0 待声明 | 四个迁移门禁全部 PASS；LaunchAgent disabled/unloaded、配置保留；最终 canary archive 40,594 files / 70,130,774 bytes，checksum/readback PASS；Mac runner、Docker/CWA 与原 vault 未触碰 | 选择尚未采样的未来自然 UTC 分钟声明 Day 0；不得追溯 |
 
@@ -46,8 +47,9 @@ archive 不受 active vault 的 20 GB 上限保护；因此“active vault 不�
   │ create-only backup vault    │◀─ forced SSH ────│ scheduled backup producer   │
   │ off-host evidence verifier  │◀─ verified copy ─│ evidence ledger/package     │
   └─────────────────────────────┘                   └─────────────────────────────┘
-             │
-             └── active rolling vault: 20,000,000,000-byte budget
+             │                         hosted provider (not yet activated)
+             ├── active rolling vault: 20,000,000,000-byte budget
+             └── watchdog result ─────▶ Healthchecks.io ── Down/Up email ──▶ mailbox
 
   Mac: stopped external jobs + independently retained historical cold archive
 ```
@@ -60,6 +62,9 @@ archive 不受 active vault 的 20 GB 上限保护；因此“active vault 不�
   在该机长期运行；离线 backup validation 使用的短生命周期容器除外。
 - 9090、9093、Redis、exporter 和 Docker API 不向公网或 Tailscale 直接发布。外部 canary
   只通过受限 SSH local forward 访问生产 Alertmanager。
+- 独立 dead-man 只从成功/失败的自然分钟 watchdog 派生 check-in。provider 的 Down/Up email
+  不得经过本项目的 Alertmanager、SMTP relay、Tailscale、`miniserver` 或 Mac；单独的成功 timer
+  会掩盖 canary/watchdog 故障，因此禁止安装。
 - Mac 上迁移前形成的 backup、known-good attestation、canary sample、ledger package 和
   delivery receipt 进入独立冷档，不与阿里云 active vault 合并，也不计入其十进制
   20,000,000,000-byte 上限。
@@ -429,6 +434,43 @@ credential 值不得出现在命令参数、shell history 或 systemd unit；ins
 详细安装和 aggregation 规则见
 [`external-business-canary-runbook.md`](external-business-canary-runbook.md)。
 
+### Phase 3.5：建立独立 Healthchecks.io dead-man
+
+该阶段只补上“监控主机自身消失”的外部检测，不迁移或替换生产 Alertmanager。Healthchecks.io
+check 固定使用 UTC OnCalendar `*-*-* *:*:45`、`90` 秒 grace、POST-only、
+`manual_resume=false` 和独立 provider email integration。主机 preflight 只接受净化后的
+read-only Management API snapshot：exact keys 为 `provider`、`provider_unique_key`、
+`check_identity_sha256`、`name`、`tags`、`schedule`、`tz`、`grace`、`methods`、
+`manual_resume`、`status`、`source`、`secret_material_recorded`，状态必须为 `new` 或 `up`。
+其中 `provider_unique_key` 是 API v3 返回的 40 位 lowercase hex stable non-bearer identifier，
+不等于 UUID；preflight 从独立 canonical UUID ASCII bytes 复算 `check_identity_sha256`。原始 UUID、
+ping/update/pause/resume URL、API key、project ping key、channels/integration ID、收件地址、cookie
+或 authorization header 禁止进入 snapshot 和 evidence。
+
+原始 canonical UUID 只允许存在于 root-owned `0600` regular non-symlink 文件
+`/etc/boost-gateway-external-deadman/ping_uuid`，通过 systemd `LoadCredential=` 交给
+`boost-gateway-external-deadman@.service`；Management API key 不安装到阿里云。每次 provider
+POST 最长 15 秒；systemd runtime credential directory 必须为 `root:root 0550`，materialized
+credential 必须为 `root:root 0440`、`nlink=1` 且不能逃逸该目录。create-only 无 secret event receipt 写到
+`/var/lib/boost-gateway-external-deadman/events/`。watchdog drop-in 只允许
+`OnSuccess=boost-gateway-external-deadman@success.service` 和
+`OnFailure=boost-gateway-external-deadman@failure.service`，不得另建无条件 success timer。
+
+安装顺序必须是：先以 shadow 模式验证固定 artifact、受保护输入和 provider snapshot；成功后
+才以 activate 模式安装 watchdog drop-in 并 daemon-reload。激活后等待一次自然 `:45` watchdog，
+确认本地 success receipt 和 provider `up`。真实验收随后由受治理 drill 先创建、启动并验证
+transient rearm，再停止 watchdog timer；不得直接调用 `/fail`。必须观测 provider 因缺失
+heartbeat 进入 `down` 并收到 Down email，随后由预置 rearm 恢复 timer、写入 O_EXCL rearm
+receipt，再由下一个成功自然 watchdog 把 provider 恢复为 `up` 并收到 Up email。
+
+两封邮件的目标端 RFC 5322 `Message-ID`、Down/Up observed time、净化 provider snapshots、
+external host/candidate identity、installed artifact digests 和 event/rearm receipt digests 必须进入
+一个新的 create-only attestation；ping capability 和 recipient 不得进入。任何缺项、provider 未
+真实 `down`、rearm 未自动执行、最终状态非 `up` 或 secret 检测命中都保持 fail closed。
+
+截至 2026-09-07，本 Phase 3.5 **尚未执行**。不能把已有 Alertmanager firing/resolved 邮件、
+迁移影子分钟或 controller bridge PASS 当作 dead-man 证据；完成前不得声明 `TODO-0017` Day 0。
+
 安装后的 root-owned systemd tunnel 为：
 
 ```text
@@ -572,6 +614,9 @@ Day 0 已声明：
   scheduler stop 和最终 canary evidence checksum sync 均 PASS，Mac 可以断电。
 - **已验证**：当前 production evidence package 的阿里云 checksum-bound round trip 与
   create-only receipt 回传。
+- **未部署 / Day 0 阻断**：Healthchecks.io provider check、watchdog success/failure hook、真实
+  missing-heartbeat `Down`→自动 rearm→`Up`、两封目标端 `Message-ID` 与 create-only
+  attestation 均须完成；当前不得记为 PASS。
 - **待开始**：新 `TODO-0017` 从所有迁移门禁之后的未来自然 UTC Day 0 开始，不累计任何 Mac
   或影子验证分钟。
 
@@ -582,14 +627,15 @@ readiness 失败时把 create-only incident 留在阿里云本地，并且受控
 证明该路径；但整台阿里云主机宕机、Tailscale identity 离线或阿里云同时失去出网时，同机
 watchdog 无法把“自己消失”报告出去。
 
-当前尚未部署独立的 dead-man consumer。这不否定已经形成的影子 PASS，也不阻止受控切换
-backup/canary 数据面，但在完成以下任一方案并演练前，不能宣称监控链路零盲区：
+处置方案已固定为 hosted Healthchecks.io，不再把 `miniserver` 经现有 SMTP relay 的轮询当成
+独立方案，因为这仍与被监控生产通知路径共享故障域。精确契约见 Phase 3.5 和
+[`external-business-canary-runbook.md`](external-business-canary-runbook.md)：自然 watchdog
+结果驱动 check-in；整机、timer、Tailscale 路径或阿里云全部出网消失造成 missing heartbeat；
+provider 自己向目标邮箱发送 Down/Up。
 
-- 由 `miniserver` 或另一独立主机轮询阿里云 freshness/check-in，并经现有 SMTP relay 告警；
-- 使用阿里云 CloudMonitor/SLS 或外部 heartbeat 服务检查 `aliyunserver` 的定时 check-in。
-
-验收记录必须把该项标为 pending 或记录显式风险接受、owner 和截止时间；它不能被静默写成
-PASS，也不能使用 Mac 持续通电来伪装已经完成迁移。
+当前 provider、激活、真实缺失心跳演练和 attestation 仍全部 pending。这不否定已经形成的迁移
+影子 PASS，也不要求 Mac 恢复通电，但完成前不能宣称监控链路零盲区、不能以风险接受替代
+`TODO-0017` 的 Day 0 硬门禁，也不能把显式 `/fail` 通知冒充 missing-heartbeat 演练。
 
 ## 回滚
 

@@ -714,6 +714,7 @@ def run_once(
     observed_at: datetime | None = None,
     alert_opener: Callable[..., Any] = urllib.request.urlopen,
     suffix: str | None = None,
+    host_boundary: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     config = validate_config(config)
     observed = (observed_at or utc_now()).astimezone(UTC)
@@ -774,6 +775,8 @@ def run_once(
         "secret_material_recorded": False,
     }
     path = _sample_path(evidence_root, observed, sample_id)
+    if host_boundary is not None:
+        sample["host_boundary"] = host_boundary
     write_create_only(path, sample)
     sample["sample_path"] = str(path)
     return sample
@@ -1028,6 +1031,7 @@ def watchdog(
     *,
     observed_at: datetime | None = None,
     max_age_seconds: int = 130,
+    require_successful_sample: bool = False,
     alert_opener: Callable[..., Any] = urllib.request.urlopen,
     readiness_opener: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
@@ -1158,6 +1162,29 @@ def watchdog(
                     "incident_record": str(incident_path),
                 }
     if age is not None and age <= max_age_seconds:
+        if require_successful_sample:
+            expected_candidate = candidate_from_record(deployment_record)
+            sample_valid = (
+                latest[2].get("overall_pass") is True
+                and tuple(step.get("name") for step in latest[2].get("steps", [])) == REQUIRED_STEPS
+                and all(step.get("ok") is True for step in latest[2].get("steps", []))
+                and latest[2].get("candidate") == expected_candidate
+                and latest[2].get("endpoint") == config.endpoint
+                and latest[0] <= observed
+                and latest[0].replace(second=0, microsecond=0)
+                == observed.replace(second=0, microsecond=0)
+                and sum(moment.replace(second=0, microsecond=0)
+                        == observed.replace(second=0, microsecond=0) for moment, _, _ in samples) == 1
+            )
+            if not sample_valid:
+                return {
+                    "overall_pass": False,
+                    "failure_type": "natural_minute_sample_not_successful",
+                    "latest_sample": str(latest[1]),
+                    "age_seconds": age,
+                    "alertmanager_readiness": readiness,
+                    "retry": failed_sample_retry,
+                }
         if failed_sample_retry is not None:
             return {
                 "overall_pass": failed_sample_retry["alertmanager_delivery"][
@@ -1269,6 +1296,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     watchdog_parser.add_argument("--max-age-seconds", type=int, default=130)
     watchdog_parser.add_argument("--initial-delay-seconds", type=int, default=0)
+    watchdog_parser.add_argument("--require-successful-sample", action="store_true")
     aggregate_parser = subparsers.add_parser(
         "aggregate", help="create a 72-hour or 30-day report"
     )
@@ -1327,6 +1355,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.deployment_record,
                     args.evidence_root,
                     max_age_seconds=args.max_age_seconds,
+                    require_successful_sample=args.require_successful_sample,
                 )
             else:
                 factory, sdk_version = load_sdk()
@@ -1336,6 +1365,7 @@ def main(argv: list[str] | None = None) -> int:
                     args.evidence_root,
                     client_factory=factory,
                     sdk_version=sdk_version,
+                    host_boundary=validate_external_host(args.deployment_record, args.machine_id_path),
                 )
         print(json.dumps(result, sort_keys=True))
         return 0 if result.get("overall_pass") else 1

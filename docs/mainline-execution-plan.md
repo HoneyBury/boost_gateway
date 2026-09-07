@@ -1,6 +1,6 @@
 # v3.6.7 Linux x64 企业运营主线
 
-更新时间：2026-09-06
+更新时间：2026-09-07
 
 ## 目标
 
@@ -101,8 +101,11 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   `smtp-multi-client-recovery-20260905T215241Z` 已记录 FreeBind、多 bridge 受限 relay、CWA
   STARTTLS/实际投递和 Alertmanager firing/resolved 恢复验证。受治理修复和 Mac 至阿里云的
   external canary、告警转发、异机备份及 evidence 职责迁移已于 `2026-09-07` 完成，Mac 不再需要
-  为日常监控保持通电。新的完整 30 天窗口仍须从迁移验收之后、尚未采样的未来自然 UTC 分钟
-  明确声明，迁移前后的预检分钟不得追溯累计。
+  为日常监控保持通电。controller 已对齐到 clean
+  `801fb5f37927c0622c038185493d8cff3dc31163` 并通过精确 v3.6.7 bridge verify；Healthchecks.io
+  独立 dead-man 尚未部署，其真实 missing-heartbeat Down→Up、两条目标端 `Message-ID` 和
+  create-only attestation 仍是 Day 0 阻断。新的完整 30 天窗口只能在该门禁及 fixed-end
+  finalizer 完成后，从尚未采样的未来自然 UTC 分钟明确声明，迁移和预检分钟不得追溯累计。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
   runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、
