@@ -170,6 +170,19 @@ IMAGE_ENV_BY_SERVICE = {
 }
 
 
+def run(command: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    """Run a verifier subprocess from this module's own global namespace."""
+    return subprocess.run(
+        command,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+        timeout=timeout,
+    )
+
 
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")

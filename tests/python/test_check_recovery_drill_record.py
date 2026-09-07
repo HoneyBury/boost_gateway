@@ -29,3 +29,13 @@ def test_executed_failed_drill_is_rejected(tmp_path: Path) -> None:
     checks = check_recovery_drill_record.validate_record(record, record_path, False)
     passed_check = next(check for check in checks if check["name"] == "verification:passed")
     assert passed_check["passed"] is False
+
+
+def test_shakedown_plan_scenarios_are_accepted() -> None:
+    plan_path = check_recovery_drill_record.REPO_ROOT / (
+        "docs/production/production-shakedown-plan-template.json"
+    )
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    scenarios = {item["scenario"] for item in plan["pre_day0_drills"]}
+
+    assert scenarios <= check_recovery_drill_record.ALLOWED_SCENARIOS

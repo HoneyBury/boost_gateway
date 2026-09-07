@@ -1,0 +1,27 @@
+[Unit]
+Description=Verify the BoostGateway SMTP CONNECT relay
+Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/long-run-observability-runbook.md
+Requires=boost-gateway-smtp-proxy.socket
+After=boost-gateway-smtp-proxy.socket network-online.target mihomo.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/boost-gateway/smtp-proxy.env
+ExecStart=/usr/bin/openssl s_client -starttls smtp -connect ${RELAY_HOST}:${RELAY_PORT} -servername ${SMTP_HOST} -brief
+StandardInput=null
+StandardOutput=null
+StandardError=journal
+TimeoutStartSec=30
+NoNewPrivileges=yes
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectProc=invisible
+RestrictAddressFamilies=AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM

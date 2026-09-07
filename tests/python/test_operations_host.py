@@ -24,6 +24,7 @@ NETWORK_POLICY = {
     "trusted_cidrs": [
         "10.0.0.0/8",
         "100.64.0.0/10",
+        "172.16.0.0/12",
         "192.168.0.0/16",
         "fd7a:115c:a1e0::/48",
     ],
@@ -122,6 +123,32 @@ class OperationsHostNetworkPolicyTests(unittest.TestCase):
         )
         self.assertTrue(passed)
         self.assertEqual([], errors)
+
+    def test_accepts_destination_and_interface_scoped_trusted_relay(self) -> None:
+        passed, errors = MODULE.evaluate_ufw_policy(
+            "Status: active\nDefault: deny (incoming), allow (outgoing)\n"
+            "9201/tcp ALLOW IN Anywhere\n"
+            "22/tcp ALLOW IN 100.64.0.0/10\n"
+            "172.18.0.1 1587/tcp on br-production ALLOW IN    172.18.0.0/16"
+            " # BoostGateway SMTP relay\n",
+            NETWORK_POLICY,
+        )
+        self.assertTrue(passed)
+        self.assertEqual([], errors)
+
+    def test_rejects_destination_scoped_relay_from_untrusted_source(self) -> None:
+        passed, errors = MODULE.evaluate_ufw_policy(
+            "Status: active\nDefault: deny (incoming), allow (outgoing)\n"
+            "9201/tcp ALLOW IN Anywhere\n"
+            "22/tcp ALLOW IN 100.64.0.0/10\n"
+            "172.18.0.1 1587/tcp on br-production ALLOW IN 203.0.113.0/24\n",
+            NETWORK_POLICY,
+        )
+        self.assertFalse(passed)
+        self.assertIn(
+            "UFW allow source 203.0.113.0/24 for TCP 1587 is outside trusted networks",
+            errors,
+        )
 
     def test_rejects_world_access_to_management(self) -> None:
         passed, errors = MODULE.evaluate_ufw_policy(

@@ -142,6 +142,20 @@ def valid_document() -> dict[str, object]:
     services["alertmanager"]["user"] = "65534:1234"
     return {
         "name": "test",
+        "networks": {
+            "boost-net": {
+                "name": check_release_compose.PRODUCTION_NETWORK_NAME,
+                "driver": "bridge",
+                "ipam": {
+                    "config": [
+                        {
+                            "subnet": check_release_compose.PRODUCTION_NETWORK_SUBNET,
+                            "gateway": check_release_compose.PRODUCTION_NETWORK_GATEWAY,
+                        }
+                    ]
+                },
+            }
+        },
         "services": services,
         "volumes": {"logs": {}, "prometheus-data": {}},
     }
@@ -175,6 +189,16 @@ class ReleaseComposeContractTest(unittest.TestCase):
     def test_accepts_complete_immutable_contract(self) -> None:
         self.assertEqual(
             [], check_release_compose.validate_compose_document(valid_document())
+        )
+
+    def test_rejects_dynamic_or_drifted_production_network(self) -> None:
+        document = valid_document()
+        document["networks"]["boost-net"]["ipam"] = {}
+
+        failures = check_release_compose.validate_compose_document(document)
+
+        self.assertIn(
+            "boost-net: exactly one fixed IPAM config is required", failures
         )
 
     def test_rejects_source_build_and_mutable_image(self) -> None:

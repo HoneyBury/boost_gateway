@@ -192,15 +192,23 @@ def evaluate_ufw_policy(text: str, network_policy: dict[str, Any]) -> tuple[bool
     for line in text.splitlines():
         if "allow" not in line.lower() or line.lstrip().lower().startswith("default:"):
             continue
-        fields = line.replace(" (v6)", "").split()
-        if not fields:
-            continue
-        port_match = re.match(r"(\d+)(?:/tcp)?$", fields[0])
-        if not port_match:
+        normalized = line.replace(" (v6)", "")
+        rule_parts = re.split(r"\s+ALLOW\s+IN\s+", normalized, maxsplit=1, flags=re.I)
+        if len(rule_parts) != 2:
             errors.append(f"cannot classify UFW allow rule: {line.strip()}")
             continue
-        port = int(port_match.group(1))
-        source = fields[-1].replace("(v6)", "").strip()
+        destination, source_text = rule_parts
+        port_matches = [
+            match
+            for field in destination.split()
+            if (match := re.fullmatch(r"(\d+)(?:/tcp)?", field)) is not None
+        ]
+        source_fields = source_text.split("#", 1)[0].split()
+        if len(port_matches) != 1 or not source_fields:
+            errors.append(f"cannot classify UFW allow rule: {line.strip()}")
+            continue
+        port = int(port_matches[0].group(1))
+        source = source_fields[0].strip()
         if source.lower() == "anywhere":
             if port in public_ports:
                 public_gateway_allowed = True

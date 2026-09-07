@@ -1,6 +1,6 @@
 # Enterprise Single-Node Operations And 30-Day Validation Plan
 
-更新时间：2026-07-29
+更新时间：2026-09-06
 
 ## 目标
 
@@ -66,6 +66,14 @@
 `TODO-0016` 通过后再次审核 tag/SHA/digest 和所有缺陷 disposition，再声明
 `TODO-0017` Day 0。30 天期间任何 runtime hotfix、候选漂移或不可解释中断都保留旧证据，
 但新候选必须从 Day 0 重新计时。
+
+当前 `TODO-0016` 已由 v3.6.7 的 4,320/4,320 正式预演结果关闭。最初声明的独立
+`TODO-0017` Day 0 半开窗口
+`[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede：SMTP relay 自
+`2026-08-31T19:30:25Z` 的主机重启起因 bridge 地址尚未恢复而启动失败，原窗口不满足
+Alertmanager 自然运行的硬准入。修复事件记录为
+`smtp-multi-client-recovery-20260905T215241Z`；在受治理修复、外部 Mac 交流供电和连续自然
+分钟样本全部复验后，重新声明新的 43,200 分钟半开窗口，不累计旧窗口时间。
 
 `TODO-0016` 的 maintained 执行入口是
 [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)。计划内 gateway、

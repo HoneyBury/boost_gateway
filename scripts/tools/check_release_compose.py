@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -52,6 +53,9 @@ CADVISOR_BINDS = {
 }
 IMAGE_ID_RE = re.compile(r"sha256:[0-9a-f]{64}\Z")
 LOOPBACK_ADDRESSES = {"127.0.0.1", "::1"}
+PRODUCTION_NETWORK_NAME = "boost-gateway-production_boost-net"
+PRODUCTION_NETWORK_SUBNET = "172.18.0.0/16"
+PRODUCTION_NETWORK_GATEWAY = "172.18.0.1"
 
 
 class ComposeContractError(RuntimeError):
@@ -182,6 +186,36 @@ def _command_arguments(service: dict[str, Any]) -> set[str]:
     if isinstance(command, str):
         return set(command.split())
     return set()
+
+
+def _validate_production_network(networks: object, failures: list[str]) -> None:
+    if not isinstance(networks, dict):
+        failures.append("Compose document has no networks object")
+        return
+    network = networks.get("boost-net")
+    if not isinstance(network, dict):
+        failures.append("boost-net: fixed production network is required")
+        return
+    if network.get("name") != PRODUCTION_NETWORK_NAME:
+        failures.append("boost-net: exact stable network name is required")
+    if network.get("driver") != "bridge":
+        failures.append("boost-net: bridge driver is required")
+    ipam = network.get("ipam")
+    configs = ipam.get("config") if isinstance(ipam, dict) else None
+    if not isinstance(configs, list) or len(configs) != 1:
+        failures.append("boost-net: exactly one fixed IPAM config is required")
+        return
+    config = configs[0]
+    if not isinstance(config, dict):
+        failures.append("boost-net: IPAM config must be an object")
+        return
+    subnet = str(config.get("subnet", ""))
+    gateway = str(config.get("gateway", ""))
+    if subnet != PRODUCTION_NETWORK_SUBNET or gateway != PRODUCTION_NETWORK_GATEWAY:
+        failures.append("boost-net: exact production subnet and gateway are required")
+        return
+    if ipaddress.ip_address(gateway) not in ipaddress.ip_network(subnet):
+        failures.append("boost-net: gateway must belong to the production subnet")
 
 
 def redis_persistence_mode(service: object) -> str:
@@ -360,6 +394,7 @@ def validate_compose_document(document: object) -> list[str]:
         return ["Compose document must be a JSON object"]
     services = document.get("services")
     volumes = document.get("volumes")
+    _validate_production_network(document.get("networks"), failures)
     if not isinstance(services, dict):
         return ["Compose document has no services object"]
     if not isinstance(volumes, dict):

@@ -1,6 +1,6 @@
 # v3.6.7 Linux x64 企业运营主线
 
-更新时间：2026-08-13
+更新时间：2026-09-06
 
 ## 目标
 
@@ -56,34 +56,51 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   `31617730727` 和独立 aoi Linux x64 published-asset verification `31618651955` attempt 2
   全部通过。runtime archive SHA-256 是
   `fb5f6bfb2626c15a5cd31c7bdd8d06a963192b09132d55e0a387250bdf92fbd0`；生产
-  deployment/configuration identity 仍等待 W33 后的受控 upgrade。
+  deployment 已通过受控 production upgrade 固定为
+  `v3.6.7-fb5f6bfb2626-fa8b69b36dec`，配置 SHA-256 为
+  `0692efc4119bac78469672b6fee061fe0dfc7ad68265765da8b36b6e10399777`。
 - v3.6.6 annotated tag 固定到
   `d0db2cfd2efaffca55522a58402a48015b39d091`；main 演练 `31019859848`、正式
   Release `31020678952` 和独立 aoi Linux x64 published-asset verification
   `31021854876` 全部通过。runtime archive SHA-256 是
   `17d88d752931fb57a07fb1c0b28517ad326bbcb69c3c3626e10007e7e544ac7d`。该版本未进入
-  miniserver；tag 后的运行时正确性修复使生产候选前移到 v3.6.7，生产仍保持 v3.6.5。
+  miniserver；tag 后的运行时正确性修复使生产候选前移并最终激活为 v3.6.7。
 - v3.6.5 annotated tag 固定到 governed main commit
   `94f0c5d12d29839bed1598c17f661550c28d84f0`；Release run `30708242109` 和独立
   Linux x64 published-asset verification run `30708591962` 全部通过。
 - v3.6.5 按 Linux x64-only patch manifest 发布 runtime、SDK 4.2.1、symbols、SPDX、
   provenance、attestation 和 checksum。v3.6.2 的 Linux ARM64/macOS ARM64 资产保持历史
   支持边界，不进入 v3.6.5 manifest。
-- `miniserver` 未编译源码；受控 upgrade transaction
+- `miniserver` 未编译源码；历史受控 upgrade transaction
   `20260801T193531-upgrade-242675750f37` PASS，current 为
-  `v3.6.5-b6d0c8554223-8a1afcfd58dd`，previous 为已验证 v3.6.2 deployment。
-- Mac 外部 canary 已绑定相同 v3.6.5 tag/SHA/runtime digest，诊断窗口是
+  `v3.6.5-b6d0c8554223-8a1afcfd58dd`。2026-08-31 的 v3.6.7 upgrade、rollback 和
+  upgrade-back 均通过；current 为 `v3.6.7-fb5f6bfb2626-fa8b69b36dec`，previous 为
+  `v3.6.5-b6d0c8554223-8a1afcfd58dd`。
+- Mac 外部 canary 的历史 v3.6.5 诊断窗口是
   `[2026-08-01T19:38:00Z, 2026-08-04T19:38:00Z)`；固定结束聚合以 4,320/4,320
   成功、100% coverage 和 inclusive availability 通过，作为 `TODO-0013` 收口证据。
 - 同一窗口确认 v3.6.5 Battle RSS 约以 0.48–0.50 MiB/h 增长，因此拒绝其作为
   `TODO-0016` Day 0。PR #79 的资源释放修复已在 aoi 通过完整 CI 和 sanitizer 专项，
   v3.6.6 随后已发布并复验，但因 tag 后运行时正确性修复未被选择为正式预演候选；
   v3.6.7 接管候选冻结。
-- `TODO-0011` 的首个干净 ISO 周是 W32，周报在 `2026-08-10T00:45:00Z` 自然运行；
-  报告以 `coverage_complete=true`、`gap_count=0` 通过。生产 SMTP relay 随后于
-  `2026-08-10T03:13:52Z` 激活并改变最终通知配置，因此 W32 保留为历史通过证据，正式
-  closure 使用该配置冻结后的 W33 自然周；final ledger 和异机 package 复验完成前不得声明
-  `TODO-0016` Day 0。
+- `TODO-0011` 的 W32、W33、W35 周报均以 `coverage_complete=true`、`gap_count=0` 自然通过。
+  W33 收口投递演练随后真实发现代理超时和 relay IP TLS 主机名校验缺陷；失败、修复和目标端
+  firing/resolved 回执已形成 create-only incident。修复后的最终通知配置在
+  `2026-08-17T11:20:49Z` 激活，因此 W33 只保留为历史 metrics/ledger PASS，W34 也不是完整
+  冻结周。正式 closure 使用 W35 `[2026-08-24T00:00:00Z, 2026-08-31T00:00:00Z)`；final
+  ledger、最新邮件回执和两阶段异机 package 复验已经完成，`TODO-0011` 已关闭。
+- v3.6.7 上的 gateway、单 backend、网络/backend outage、Redis、rollback/upgrade-back 和
+  host reboot 六项恢复演练均通过。正式 72 小时半开窗口
+  `[2026-08-31T19:45:00Z, 2026-09-03T19:45:00Z)` 以 4,320/4,320 canary、100% coverage/
+  availability、零 gap/invalid/duplicate/restart/OOM 通过，`TODO-0016` 已关闭。最终异机包
+  SHA-256 为 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`。
+- `TODO-0017` 最初声明的
+  `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede：主机重启时 SMTP relay
+  在 Docker bridge 恢复前绑定失败，并从 `2026-08-31T19:30:25Z` 保持 failed，说明原 Day 0
+  的告警准入条件并未成立。事件
+  `smtp-multi-client-recovery-20260905T215241Z` 已记录 FreeBind、多 bridge 受限 relay、CWA
+  STARTTLS/实际投递和 Alertmanager firing/resolved 恢复验证。新的完整 30 天窗口只能在
+  修复进入受治理 controller、Mac 恢复交流供电且连续自然分钟样本通过后重新声明。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
   runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、

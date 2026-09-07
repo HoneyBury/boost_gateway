@@ -53,6 +53,7 @@ done
 
 RELAY_HOST=$(read_env_value RELAY_HOST)
 RELAY_PORT=$(read_env_value RELAY_PORT)
+SMTP_HOST=$(read_env_value SMTP_HOST)
 RELAY_ADDRESS="${RELAY_HOST}:${RELAY_PORT}"
 BEFORE_SHA256=$(sha256sum "${CONFIG_PATH}" | awk '{print $1}')
 ORIGINAL_CONFIG=$(mktemp "${CONFIG_PATH}.original.XXXXXX")
@@ -60,10 +61,10 @@ cp --preserve=mode,ownership "${CONFIG_PATH}" "${ORIGINAL_CONFIG}"
 CONFIG_REPLACED=false
 trap rollback ERR INT TERM
 CONFIG_TEMP=$(mktemp "${CONFIG_PATH}.XXXXXX")
-python3 - "${CONFIG_PATH}" "${CONFIG_TEMP}" "${RELAY_ADDRESS}" <<'PY'
+python3 - "${CONFIG_PATH}" "${CONFIG_TEMP}" "${RELAY_ADDRESS}" "${SMTP_HOST}" <<'PY'
 import sys
 
-source, destination, relay = sys.argv[1:]
+source, destination, relay, smtp_host = sys.argv[1:]
 text = open(source, encoding="utf-8").read()
 direct = "smtp_smarthost: smtp.gmail.com:587"
 target = f"smtp_smarthost: {relay}"
@@ -71,6 +72,14 @@ if text.count(direct) == 1 and target not in text:
     text = text.replace(direct, target)
 elif text.count(target) != 1 or direct in text:
     raise SystemExit("Alertmanager config has an unexpected SMTP smarthost contract")
+tls_anchor = "        send_resolved: true\n"
+tls_config = f"        tls_config:\n          server_name: {smtp_host}\n"
+if tls_config not in text:
+    if text.count(tls_anchor) != 1:
+        raise SystemExit("Alertmanager email receiver has an unexpected TLS contract")
+    text = text.replace(tls_anchor, tls_anchor + tls_config)
+elif text.count(tls_config) != 1:
+    raise SystemExit("Alertmanager email receiver has duplicate TLS server names")
 with open(destination, "w", encoding="utf-8") as stream:
     stream.write(text)
 PY
@@ -91,18 +100,20 @@ AFTER_SHA256=$(sha256sum "${CONFIG_PATH}" | awk '{print $1}')
 compose_alertmanager
 curl -fsS http://127.0.0.1:9093/-/ready >/dev/null || fail "Alertmanager is not ready after relay activation"
 ACTIVE_CONFIG=$(curl -fsS http://127.0.0.1:9093/api/v2/status)
-python3 - "${RELAY_ADDRESS}" "${ACTIVE_CONFIG}" <<'PY'
+python3 - "${RELAY_ADDRESS}" "${SMTP_HOST}" "${ACTIVE_CONFIG}" <<'PY'
 import json
 import sys
 
-relay = sys.argv[1]
-status = json.loads(sys.argv[2])
+relay, smtp_host = sys.argv[1:3]
+status = json.loads(sys.argv[3])
 active = status.get("config", {}).get("original", "")
 if f"smtp_smarthost: {relay}" not in active:
     raise SystemExit("active Alertmanager config did not adopt the SMTP relay")
+if f"server_name: {smtp_host}" not in active:
+    raise SystemExit("active Alertmanager config did not adopt the SMTP TLS server name")
 PY
 
-export BEFORE_SHA256 AFTER_SHA256 RELAY_ADDRESS GENERATED_AT
+export BEFORE_SHA256 AFTER_SHA256 RELAY_ADDRESS SMTP_HOST GENERATED_AT
 GENERATED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 SUMMARY_TEMP=$(mktemp "${SUMMARY_PATH}.XXXXXX")
 python3 - "${SUMMARY_TEMP}" <<'PY'
@@ -111,12 +122,13 @@ import os
 import sys
 
 value = {
-    "schema_version": 1,
+    "schema_version": 2,
     "generated_at": os.environ["GENERATED_AT"],
     "overall_pass": True,
     "alertmanager_config_sha256_before": os.environ["BEFORE_SHA256"],
     "alertmanager_config_sha256_after": os.environ["AFTER_SHA256"],
     "smtp_relay": os.environ["RELAY_ADDRESS"],
+    "smtp_tls_server_name": os.environ["SMTP_HOST"],
     "alertmanager_ready": True,
     "secret_material_recorded": False,
 }

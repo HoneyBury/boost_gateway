@@ -1,9 +1,12 @@
 [Unit]
 Description=BoostGateway SMTP CONNECT relay socket
 Documentation=https://github.com/HoneyBury/boost_gateway/blob/main/docs/deployment/long-run-observability-runbook.md
+Wants=network-online.target docker.service mihomo.service
+After=network-online.target docker.service mihomo.service
 
 [Socket]
 ListenStream=127.0.0.1:1587
+FreeBind=true
 Accept=yes
 NoDelay=true
 Backlog=16
