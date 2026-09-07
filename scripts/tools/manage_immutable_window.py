@@ -127,7 +127,7 @@ def bind(directory: Path, issue_comment: str) -> None:
                     f"ReadWritePaths={ROOT}\n")
     due = io.instant(value["end"]) + timedelta(minutes=1)
     timer_text = ("[Unit]\nDescription=Immutable 30-day fixed-end timer\n[Timer]\n"
-                  f"OnCalendar={io.stamp(due)}\nPersistent=true\nAccuracySec=1s\n"
+                  f"OnCalendar={io.calendar_timestamp(due)}\nPersistent=true\nAccuracySec=1s\n"
                   f"Unit={timer_name}.service\n[Install]\nWantedBy=timers.target\n")
     for path, text in ((service, service_text), (timer, timer_text)):
         with path.open("x") as stream:
