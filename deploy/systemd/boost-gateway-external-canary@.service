@@ -1,9 +1,9 @@
 [Unit]
 Description=BoostGateway external business canary (%i)
-After=network-online.target
-Wants=network-online.target
-ConditionPathExists=/etc/boost-gateway-canary/environment
-ConditionPathExists=/etc/boost-gateway-canary/deployment-record.json
+After=network-online.target boost-gateway-canary-alertmanager-forward.service
+Wants=network-online.target boost-gateway-canary-alertmanager-forward.service
+AssertPathExists=/etc/boost-gateway-canary/environment
+AssertPathExists=/etc/boost-gateway-canary/deployment-record.json
 
 [Service]
 Type=oneshot

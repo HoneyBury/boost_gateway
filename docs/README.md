@@ -19,6 +19,7 @@
 | Ubuntu 运营主机准入 | [运营主机准入手册](deployment/operations-host-admission-runbook.md) |
 | 不可变 Release 单节点部署 | [不可变 Release 部署手册](deployment/immutable-release-deployment-runbook.md) |
 | 长期观测与证据 ledger | [长期观测与证据手册](deployment/long-run-observability-runbook.md) |
+| Mac 外部运营职责迁移到阿里云 | [阿里云异机迁移手册](deployment/aliyun-offhost-migration-runbook.md) |
 | Release 生命周期 | [安装、升级和回滚手册](deployment/release-lifecycle-runbook.md) |
 | 72 小时生产预演 | [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md) |
 

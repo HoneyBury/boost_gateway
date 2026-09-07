@@ -3,7 +3,7 @@
 
 from __future__ import annotations
 
-import argparse
+import argparse  # noqa: F401 - re-exported by the standalone compatibility CLI
 import fcntl
 import hashlib
 import json
@@ -32,6 +32,11 @@ SHA256_RE = re.compile(r"[0-9a-f]{64}\Z")
 FRAME = struct.Struct("!Q")
 MAX_HEADER_BYTES = 64 * 1024
 CHUNK_BYTES = 1024 * 1024
+DEFAULT_VAULT_LOCK_NAME = ".vault.lock"
+DEFAULT_MAX_VAULT_BYTES = 20_000_000_000
+DEFAULT_MINIMUM_FREE_BYTES = 5_000_000_000
+REMOTE_RECEIPT_RESERVATION_BYTES = 4096
+KNOWN_GOOD_INCOMPLETE_MARKER = b"known-good attestation in progress\n"
 CommandRunner = Callable[..., subprocess.CompletedProcess[Any]]
 SourceRoot = tuple[str, Path]
 
@@ -142,6 +147,143 @@ def ensure_directory(path: Path, label: str, mode: int = 0o700) -> Path:
     if path.is_symlink() or not path.is_dir():
         raise BackupError(f"{label} must be a non-symlink directory: {path}")
     return path.resolve()
+
+
+def fixed_vault_lock_entry(vault_root: Path) -> tuple[Path, Path | None]:
+    """Detect the non-caller-selectable vault security boundary.
+
+    Only complete absence of the fixed entry identifies a legacy vault.  The
+    caller must validate every existing entry, including dangling symlinks and
+    special files, as a secure-layout lock and fail closed if it is unsafe.
+    """
+
+    root = require_directory(vault_root, "vault root")
+    lock = root / DEFAULT_VAULT_LOCK_NAME
+    try:
+        lock.lstat()
+    except FileNotFoundError:
+        # Distinguish a genuinely absent lock from a concurrently removed or
+        # replaced root; only the former is an eligible legacy boundary.
+        require_directory(root, "vault root")
+        return root, None
+    return root, lock
+
+
+def logical_regular_file_bytes(path: Path) -> int:
+    """Return the logical byte total while rejecting links and special files."""
+
+    root = require_directory(path, "vault inventory root")
+
+    def fail_walk(_error: OSError) -> None:
+        raise BackupError("vault inventory could not be read completely")
+
+    total = 0
+    for directory, names, files in os.walk(root, followlinks=False, onerror=fail_walk):
+        current = Path(directory)
+        for name in names:
+            entry = current / name
+            metadata = entry.lstat()
+            if entry.is_symlink() or not stat.S_ISDIR(metadata.st_mode):
+                raise BackupError("vault contains an unsafe directory entry")
+        for name in files:
+            entry = current / name
+            metadata = entry.lstat()
+            if entry.is_symlink() or not stat.S_ISREG(metadata.st_mode):
+                raise BackupError("vault contains an unsafe file entry")
+            total += metadata.st_size
+    return total
+
+
+def require_secure_vault_layout(
+    vault_root: Path,
+    identity_file: Path,
+    lock_path: Path,
+    *,
+    trusted_owner_uid: int = 0,
+) -> tuple[Path, Path, Path]:
+    """Validate the root-controlled identity/auth boundary and writable data roots."""
+
+    root = require_directory(vault_root, "vault root")
+    identity = require_regular(identity_file, "vault identity")
+    lock = require_regular(lock_path, "vault lock")
+    if identity != root / ".vault-identity":
+        raise BackupError("vault identity must be the fixed vault-local identity file")
+    if lock != root / DEFAULT_VAULT_LOCK_NAME:
+        raise BackupError("vault lock must be the fixed vault-local lock file")
+    root_stat = root.stat()
+    identity_stat = identity.stat()
+    lock_stat = lock.stat()
+    if (
+        root_stat.st_uid != trusted_owner_uid
+        or root_stat.st_gid != os.getegid()
+        or stat.S_IMODE(root_stat.st_mode) != 0o750
+    ):
+        raise BackupError("vault root must be trusted-owner/group-owned with mode 0750")
+    if (
+        identity_stat.st_uid != trusted_owner_uid
+        or identity_stat.st_gid != os.getegid()
+        or stat.S_IMODE(identity_stat.st_mode) != 0o640
+        or identity_stat.st_size != 32
+    ):
+        raise BackupError(
+            "vault identity must be a 32-byte trusted-owner/group-owned mode 0640 file"
+        )
+    if (
+        lock_stat.st_uid != trusted_owner_uid
+        or lock_stat.st_gid != os.getegid()
+        or stat.S_IMODE(lock_stat.st_mode) != 0o660
+        or lock_stat.st_nlink != 1
+    ):
+        raise BackupError("vault lock must be trusted-owner/group-owned mode 0660")
+    for name in ("backups", ".incoming", "known-good", "deletions", ".trash"):
+        directory = root / name
+        resolved = require_directory(directory, f"vault {name} directory")
+        metadata = resolved.stat()
+        if (
+            resolved.parent != root
+            or metadata.st_uid != os.geteuid()
+            or metadata.st_gid != os.getegid()
+            or stat.S_IMODE(metadata.st_mode) != 0o700
+        ):
+            raise BackupError("vault data directories must be service-owned mode 0700")
+    return root, identity, lock
+
+
+@contextmanager
+def vault_local_lock(
+    vault_root: Path,
+    lock_path: Path,
+    *,
+    trusted_owner_uid: int = 0,
+) -> Iterable[None]:
+    """Serialize vault mutation through a non-replaceable vault-local flock."""
+
+    root = require_directory(vault_root, "vault root")
+    expected = root / DEFAULT_VAULT_LOCK_NAME
+    if lock_path.is_symlink() or lock_path.resolve(strict=True) != expected:
+        raise BackupError("vault lock must be the fixed non-symlink vault-local file")
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(lock_path, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        current = lock_path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_dev != current.st_dev
+            or metadata.st_ino != current.st_ino
+            or metadata.st_nlink != 1
+            or metadata.st_uid != trusted_owner_uid
+            or metadata.st_gid != os.getegid()
+            or stat.S_IMODE(metadata.st_mode) != 0o660
+        ):
+            raise BackupError("vault lock must be trusted-owner/group-owned mode 0660")
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_UN)
+        finally:
+            os.close(descriptor)
 
 
 @contextmanager
@@ -744,11 +886,70 @@ def remote_store(
     identity_file: Path,
     stream: BinaryIO,
     *,
+    trusted_lock_owner_uid: int = 0,
     recorded_at: str | None = None,
+    size_reader: Callable[[Path], int] = logical_regular_file_bytes,
+    disk_usage_reader: Callable[[Path], Any] = shutil.disk_usage,
+) -> dict[str, Any]:
+    root = ensure_directory(vault_root, "vault root")
+    root, lock = fixed_vault_lock_entry(root)
+    if lock is None:
+        return _remote_store_locked(
+            root,
+            identity_file,
+            stream,
+            recorded_at=recorded_at,
+            size_reader=size_reader,
+            disk_usage_reader=disk_usage_reader,
+            capacity_bounded=False,
+        )
+    root, identity, lock = require_secure_vault_layout(
+        root,
+        identity_file,
+        lock,
+        trusted_owner_uid=trusted_lock_owner_uid,
+    )
+    with vault_local_lock(root, lock, trusted_owner_uid=trusted_lock_owner_uid):
+        return _remote_store_locked(
+            root,
+            identity,
+            stream,
+            recorded_at=recorded_at,
+            size_reader=size_reader,
+            disk_usage_reader=disk_usage_reader,
+            capacity_bounded=True,
+        )
+
+
+def _remote_store_locked(
+    vault_root: Path,
+    identity_file: Path,
+    stream: BinaryIO,
+    *,
+    recorded_at: str | None = None,
+    size_reader: Callable[[Path], int] = logical_regular_file_bytes,
+    disk_usage_reader: Callable[[Path], Any] = shutil.disk_usage,
+    capacity_bounded: bool,
 ) -> dict[str, Any]:
     root = ensure_directory(vault_root, "vault root")
     header = parse_upload_header(stream)
     backup_id = header["backup_id"]
+    candidate_bytes = (
+        header["archive_size"]
+        + header["manifest_size"]
+        + REMOTE_RECEIPT_RESERVATION_BYTES
+    )
+    if capacity_bounded:
+        current_bytes = size_reader(root)
+        free_bytes = int(disk_usage_reader(root).free)
+        if current_bytes < 0 or free_bytes < 0:
+            raise BackupError("vault capacity observation is invalid")
+        if current_bytes + candidate_bytes > DEFAULT_MAX_VAULT_BYTES:
+            raise BackupError("vault capacity reservation exceeds the configured limit")
+        if free_bytes - candidate_bytes < DEFAULT_MINIMUM_FREE_BYTES:
+            raise BackupError(
+                "vault capacity reservation would breach free-space floor"
+            )
     backups_root = ensure_directory(root / "backups", "vault backups root")
     final = backups_root / backup_id
     incoming_root = ensure_directory(root / ".incoming", "vault incoming root")
@@ -781,7 +982,17 @@ def remote_store(
             "create_only": True,
             "secret_material_recorded": False,
         }
-        write_new(temporary / "receipt.json", canonical_json(receipt), 0o600)
+        receipt_bytes = canonical_json(receipt)
+        if len(receipt_bytes) > REMOTE_RECEIPT_RESERVATION_BYTES:
+            raise BackupError("remote receipt exceeds its fixed capacity reservation")
+        write_new(temporary / "receipt.json", receipt_bytes, 0o600)
+        if capacity_bounded:
+            completed_bytes = size_reader(root)
+            completed_free_bytes = int(disk_usage_reader(root).free)
+            if completed_bytes > DEFAULT_MAX_VAULT_BYTES:
+                raise BackupError("stored candidate exceeds the configured vault limit")
+            if completed_free_bytes < DEFAULT_MINIMUM_FREE_BYTES:
+                raise BackupError("stored candidate breaches the free-space floor")
         os.rename(temporary, final)
         return receipt
     except Exception:
@@ -789,7 +1000,23 @@ def remote_store(
         raise
 
 
-def remote_receipt(vault_root: Path, backup_id: str) -> dict[str, Any]:
+def remote_receipt(
+    vault_root: Path, backup_id: str, *, trusted_lock_owner_uid: int = 0
+) -> dict[str, Any]:
+    root, lock = fixed_vault_lock_entry(vault_root)
+    if lock is None:
+        return _remote_receipt_unlocked(root, backup_id)
+    root, _identity, lock = require_secure_vault_layout(
+        root,
+        root / ".vault-identity",
+        lock,
+        trusted_owner_uid=trusted_lock_owner_uid,
+    )
+    with vault_local_lock(root, lock, trusted_owner_uid=trusted_lock_owner_uid):
+        return _remote_receipt_unlocked(root, backup_id)
+
+
+def _remote_receipt_unlocked(vault_root: Path, backup_id: str) -> dict[str, Any]:
     root = require_directory(vault_root, "vault root")
     backups = require_directory(root / "backups", "vault backups root")
     path = backups / validate_backup_id(backup_id) / "receipt.json"
@@ -1221,10 +1448,41 @@ def validate_known_good_sources(
     }
 
 
-def copy_regular_new(source: Path, destination: Path, label: str) -> None:
+def copy_regular_new(
+    source: Path,
+    destination: Path,
+    label: str,
+    *,
+    expected_size: int | None = None,
+) -> None:
     path = require_regular(source, label)
-    write_new(destination, path.read_bytes(), 0o600)
-    os.chmod(destination, 0o600)
+    flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    try:
+        metadata = os.fstat(descriptor)
+        current = path.lstat()
+        if (
+            not stat.S_ISREG(metadata.st_mode)
+            or metadata.st_dev != current.st_dev
+            or metadata.st_ino != current.st_ino
+        ):
+            raise BackupError(f"{label} changed before it could be copied")
+        reserved_size = metadata.st_size if expected_size is None else expected_size
+        if reserved_size < 0 or metadata.st_size != reserved_size:
+            raise BackupError(f"{label} changed after capacity reservation")
+        with os.fdopen(descriptor, "rb") as stream:
+            descriptor = -1
+            copy_exact(stream, destination, reserved_size, label)
+            if stream.read(1):
+                destination.unlink(missing_ok=True)
+                raise BackupError(f"{label} changed after capacity reservation")
+        os.chmod(destination, 0o600)
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
 
 
 def create_known_good_attestation(
@@ -1235,6 +1493,82 @@ def create_known_good_attestation(
     restore_summary: Path,
     business_summary: Path,
     attested_at: str | None = None,
+    trusted_owner_uid: int = 0,
+) -> dict[str, Any]:
+    root = require_directory(vault_root, "vault root")
+    lock_path = root / DEFAULT_VAULT_LOCK_NAME
+    try:
+        lock_path.lstat()
+    except FileNotFoundError:
+        # Compatibility is deliberately auto-detected rather than caller-selected.
+        # A legacy Mac vault has no vault-local lock at all. Any existing entry,
+        # including a dangling symlink or an unsafe file, must enter the secure path
+        # below and fail closed instead of silently downgrading.
+        return _create_known_good_attestation(
+            root,
+            backup_id=backup_id,
+            vault_validation_summary=vault_validation_summary,
+            restore_summary=restore_summary,
+            business_summary=business_summary,
+            attested_at=attested_at,
+            capacity_bounded=False,
+        )
+    root, _identity, lock = require_secure_vault_layout(
+        root,
+        root / ".vault-identity",
+        lock_path,
+        trusted_owner_uid=trusted_owner_uid,
+    )
+    with vault_local_lock(root, lock, trusted_owner_uid=trusted_owner_uid):
+        return _create_known_good_attestation(
+            root,
+            backup_id=backup_id,
+            vault_validation_summary=vault_validation_summary,
+            restore_summary=restore_summary,
+            business_summary=business_summary,
+            attested_at=attested_at,
+            capacity_bounded=True,
+        )
+
+
+def _known_good_capacity_snapshot(
+    vault_root: Path,
+    *,
+    phase: str,
+    reservation_bytes: int = 0,
+) -> dict[str, int]:
+    if reservation_bytes < 0:
+        raise BackupError("known-good capacity reservation is invalid")
+    current_bytes = logical_regular_file_bytes(vault_root)
+    free_bytes = int(shutil.disk_usage(vault_root).free)
+    if current_bytes < 0 or free_bytes < 0:
+        raise BackupError("known-good vault capacity observation is invalid")
+    if current_bytes + reservation_bytes > DEFAULT_MAX_VAULT_BYTES:
+        raise BackupError(
+            "known-good attestation would exceed the configured vault limit during "
+            f"{phase}"
+        )
+    if free_bytes - reservation_bytes < DEFAULT_MINIMUM_FREE_BYTES:
+        raise BackupError(
+            "known-good attestation would breach the free-space floor during "
+            f"{phase}"
+        )
+    return {
+        "vault_bytes": current_bytes,
+        "filesystem_free_bytes": free_bytes,
+        "reservation_bytes": reservation_bytes,
+    }
+
+
+def _create_known_good_attestation(
+    vault_root: Path,
+    *,
+    backup_id: str,
+    vault_validation_summary: Path,
+    restore_summary: Path,
+    business_summary: Path,
+    attested_at: str | None,
+    capacity_bounded: bool,
 ) -> dict[str, Any]:
     root = require_directory(vault_root, "vault root")
     initial = validate_known_good_sources(
@@ -1244,7 +1578,40 @@ def create_known_good_attestation(
         restore_summary,
         business_summary,
     )
-    known_good_root = ensure_directory(root / "known-good", "known-good root")
+    timestamp = attested_at or now()
+    if not valid_utc_timestamp(timestamp):
+        raise BackupError("known-good attestation timestamp is invalid")
+    attestation = {
+        "schema_version": 1,
+        "attested_at": timestamp,
+        **initial,
+        "overall_pass": True,
+        "restore_known_good": True,
+        "formal_todo0012_claim": False,
+        "secret_material_recorded": False,
+    }
+    attestation_bytes = canonical_json(attestation)
+    source_paths = (
+        require_regular(vault_validation_summary, "vault validation summary"),
+        require_regular(restore_summary, "restore summary"),
+        require_regular(business_summary, "business summary"),
+    )
+    source_sizes = tuple(path.stat().st_size for path in source_paths)
+    reservation_bytes = (
+        sum(source_sizes) + len(KNOWN_GOOD_INCOMPLETE_MARKER) + len(attestation_bytes)
+    )
+    if capacity_bounded:
+        _known_good_capacity_snapshot(
+            root,
+            phase="preflight",
+            reservation_bytes=reservation_bytes,
+        )
+
+    known_good_root = (
+        require_directory(root / "known-good", "known-good root")
+        if capacity_bounded
+        else ensure_directory(root / "known-good", "known-good root")
+    )
     target = known_good_root / validate_backup_id(backup_id)
     try:
         target.mkdir(mode=0o700)
@@ -1255,17 +1622,24 @@ def create_known_good_attestation(
     marker = target / ".incomplete"
     try:
         os.chmod(target, 0o700)
-        write_new(marker, b"known-good attestation in progress\n", 0o600)
+        write_new(marker, KNOWN_GOOD_INCOMPLETE_MARKER, 0o600)
         copy_regular_new(
-            vault_validation_summary,
+            source_paths[0],
             target / "vault-validation.json",
             "vault validation summary",
+            expected_size=source_sizes[0],
         )
         copy_regular_new(
-            restore_summary, target / "restore-summary.json", "restore summary"
+            source_paths[1],
+            target / "restore-summary.json",
+            "restore summary",
+            expected_size=source_sizes[1],
         )
         copy_regular_new(
-            business_summary, target / "business-summary.json", "business summary"
+            source_paths[2],
+            target / "business-summary.json",
+            "business summary",
+            expected_size=source_sizes[2],
         )
         copied = validate_known_good_sources(
             root,
@@ -1276,10 +1650,7 @@ def create_known_good_attestation(
         )
         if copied != initial:
             raise BackupError("known-good evidence changed while being copied")
-        timestamp = attested_at or now()
-        if not valid_utc_timestamp(timestamp):
-            raise BackupError("known-good attestation timestamp is invalid")
-        attestation = {
+        copied_attestation = {
             "schema_version": 1,
             "attested_at": timestamp,
             **copied,
@@ -1288,9 +1659,17 @@ def create_known_good_attestation(
             "formal_todo0012_claim": False,
             "secret_material_recorded": False,
         }
-        write_new(target / "attestation.json", canonical_json(attestation), 0o600)
+        if canonical_json(copied_attestation) != attestation_bytes:
+            raise BackupError(
+                "known-good attestation changed after capacity reservation"
+            )
+        write_new(target / "attestation.json", attestation_bytes, 0o600)
+        if capacity_bounded:
+            _known_good_capacity_snapshot(root, phase="peak")
         marker.unlink()
-        return attestation
+        if capacity_bounded:
+            _known_good_capacity_snapshot(root, phase="completion")
+        return copied_attestation
     except Exception:
         shutil.rmtree(target, ignore_errors=True)
         raise
@@ -1341,9 +1720,21 @@ def load_known_good_attestation(vault_root: Path, backup_id: str) -> dict[str, A
     }
 
 
-def verified_vault_records(vault_root: Path) -> list[dict[str, Any]]:
+def verified_vault_records(
+    vault_root: Path,
+    *,
+    expected_vault_host_id_sha256: str | None = None,
+) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     root = require_directory(vault_root, "vault root")
+    expected_identity = validate_sha256(
+        (
+            expected_vault_host_id_sha256
+            if expected_vault_host_id_sha256 is not None
+            else vault_host_id(root / ".vault-identity")
+        ),
+        "expected vault identity",
+    )
     backups = require_directory(root / "backups", "vault backups root")
     for directory in sorted(backups.glob("*")):
         if (
@@ -1368,9 +1759,19 @@ def verified_vault_records(vault_root: Path) -> list[dict[str, Any]]:
                 "manifest_size": manifest_path.stat().st_size,
             }
             validate_manifest_binding(manifest_path, header)
-            if any(receipt.get(key) != value for key, value in header.items()):
+            expected_receipt = {
+                "schema_version": 1,
+                **header,
+                "vault_host_id_sha256": expected_identity,
+                "remote_readback_sha256": True,
+                "create_only": True,
+                "secret_material_recorded": False,
+            }
+            if any(
+                receipt.get(key) != value for key, value in expected_receipt.items()
+            ):
                 continue
-            if receipt.get("remote_readback_sha256") is not True:
+            if not valid_utc_timestamp(receipt.get("stored_at")):
                 continue
             records.append(
                 {
@@ -1379,6 +1780,7 @@ def verified_vault_records(vault_root: Path) -> list[dict[str, Any]]:
                     "created_at": manifest.get("created_at"),
                     "classes": set(manifest["retention_classes"]),
                     "receipt_sha256": sha256_file(receipt_path),
+                    "logical_bytes": logical_regular_file_bytes(directory),
                 }
             )
         except (BackupError, OSError, KeyError, TypeError):
@@ -1386,7 +1788,7 @@ def verified_vault_records(vault_root: Path) -> list[dict[str, Any]]:
     return records
 
 
-def prune_remote(
+def plan_remote_retention(
     vault_root: Path,
     *,
     anchor_backup_id: str,
@@ -1394,20 +1796,33 @@ def prune_remote(
     daily_copies: int,
     weekly_copies: int,
     minimum_known_good: int,
-    deletion_id: str | None = None,
+    expected_vault_host_id_sha256: str | None = None,
+    records: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     validate_backup_id(anchor_backup_id)
     validate_sha256(anchor_receipt_sha256, "anchor receipt digest")
     if daily_copies < 1 or weekly_copies < 1 or minimum_known_good < 2:
         raise BackupError("retention counts are invalid")
     root = require_directory(vault_root, "vault root")
-    records = verified_vault_records(root)
-    by_id = {record["backup_id"]: record for record in records}
+    expected_identity = validate_sha256(
+        (
+            expected_vault_host_id_sha256
+            if expected_vault_host_id_sha256 is not None
+            else vault_host_id(root / ".vault-identity")
+        ),
+        "expected vault identity",
+    )
+    eligible_records = (
+        verified_vault_records(root, expected_vault_host_id_sha256=expected_identity)
+        if records is None
+        else records
+    )
+    by_id = {record["backup_id"]: record for record in eligible_records}
     anchor = by_id.get(anchor_backup_id)
     if anchor is None or anchor["receipt_sha256"] != anchor_receipt_sha256:
         raise BackupError("retention anchor is not a verified remote copy")
     newest = sorted(
-        records,
+        eligible_records,
         key=lambda item: (str(item["created_at"]), item["backup_id"]),
         reverse=True,
     )
@@ -1445,9 +1860,136 @@ def prune_remote(
             ][:count]
         )
     deleting = [item for item in newest if item["backup_id"] not in keep]
-    identifier = validate_backup_id(
-        deletion_id
-        or f"prune-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    deleted_logical_bytes = 0
+    for item in deleting:
+        logical_bytes = item.get("logical_bytes")
+        if (
+            not isinstance(logical_bytes, int)
+            or isinstance(logical_bytes, bool)
+            or logical_bytes < 0
+        ):
+            raise BackupError("verified backup logical byte count is invalid")
+        deleted_logical_bytes += logical_bytes
+    return {
+        "expected_vault_host_id_sha256": expected_identity,
+        "anchor_backup_id": anchor_backup_id,
+        "anchor_receipt_sha256": anchor_receipt_sha256,
+        "records": newest,
+        "retained_backup_ids": sorted(keep),
+        "retained_known_good_backup_ids": sorted(known_good_attestations),
+        "known_good_attestation_sha256s": known_good_attestations,
+        "deleting_records": deleting,
+        "deleted_backup_ids": sorted(item["backup_id"] for item in deleting),
+        "deleted_logical_bytes": deleted_logical_bytes,
+    }
+
+
+def default_prune_id() -> str:
+    return validate_backup_id(
+        f"prune-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    )
+
+
+def retention_evidence_documents(
+    plan: dict[str, Any],
+    *,
+    deletion_id: str,
+    recorded_at: str,
+    daily_copies: int,
+    weekly_copies: int,
+    minimum_known_good: int,
+) -> dict[str, Any]:
+    """Build the exact logical-byte evidence payloads for a retention plan."""
+
+    identifier = validate_backup_id(deletion_id)
+    if not valid_utc_timestamp(recorded_at):
+        raise BackupError("retention evidence timestamp is invalid")
+    deleted_backup_ids = plan.get("deleted_backup_ids")
+    retained_backup_ids = plan.get("retained_backup_ids")
+    retained_known_good = plan.get("retained_known_good_backup_ids")
+    known_good_digests = plan.get("known_good_attestation_sha256s")
+    if (
+        not isinstance(deleted_backup_ids, list)
+        or not isinstance(retained_backup_ids, list)
+        or not isinstance(retained_known_good, list)
+        or not isinstance(known_good_digests, dict)
+    ):
+        raise BackupError("retention evidence plan is invalid")
+    intent = {
+        "schema_version": 1,
+        "deletion_id": identifier,
+        "recorded_at": recorded_at,
+        "state": "quarantined_before_delete",
+        "anchor_backup_id": plan["anchor_backup_id"],
+        "anchor_receipt_sha256": plan["anchor_receipt_sha256"],
+        "quarantined_backup_ids": deleted_backup_ids,
+        "retained_backup_ids": retained_backup_ids,
+        "daily_copies": daily_copies,
+        "weekly_copies": weekly_copies,
+        "minimum_known_good_copies": minimum_known_good,
+        "retained_known_good_backup_ids": retained_known_good,
+        "known_good_attestation_sha256s": known_good_digests,
+        "delete_only_after_verified_remote_copy": True,
+        "secret_material_recorded": False,
+    }
+    intent_bytes = canonical_json(intent)
+    completion = {
+        "schema_version": 1,
+        "deletion_id": identifier,
+        "recorded_at": recorded_at,
+        "state": "deleted",
+        "deletion_intent_sha256": hashlib.sha256(intent_bytes).hexdigest(),
+        "deleted_backup_ids": deleted_backup_ids,
+        "retained_backup_ids": retained_backup_ids,
+        "anchor_backup_id": plan["anchor_backup_id"],
+        "anchor_receipt_sha256": plan["anchor_receipt_sha256"],
+        "retained_known_good_backup_ids": retained_known_good,
+        "known_good_attestation_sha256s": known_good_digests,
+        "deleted_logical_bytes": plan["deleted_logical_bytes"],
+        "delete_only_after_verified_remote_copy": True,
+        "secret_material_recorded": False,
+    }
+    completion_bytes = canonical_json(completion)
+    return {
+        "intent": intent,
+        "intent_bytes": intent_bytes,
+        "completion": completion,
+        "completion_bytes": completion_bytes,
+        "logical_bytes": len(intent_bytes) + len(completion_bytes),
+    }
+
+
+def prune_remote(
+    vault_root: Path,
+    *,
+    anchor_backup_id: str,
+    anchor_receipt_sha256: str,
+    daily_copies: int,
+    weekly_copies: int,
+    minimum_known_good: int,
+    deletion_id: str | None = None,
+    recorded_at: str | None = None,
+    expected_vault_host_id_sha256: str | None = None,
+) -> dict[str, Any]:
+    root = require_directory(vault_root, "vault root")
+    plan = plan_remote_retention(
+        root,
+        anchor_backup_id=anchor_backup_id,
+        anchor_receipt_sha256=anchor_receipt_sha256,
+        daily_copies=daily_copies,
+        weekly_copies=weekly_copies,
+        minimum_known_good=minimum_known_good,
+        expected_vault_host_id_sha256=expected_vault_host_id_sha256,
+    )
+    deleting = plan["deleting_records"]
+    identifier = deletion_id or default_prune_id()
+    evidence = retention_evidence_documents(
+        plan,
+        deletion_id=identifier,
+        recorded_at=recorded_at or now(),
+        daily_copies=daily_copies,
+        weekly_copies=weekly_copies,
+        minimum_known_good=minimum_known_good,
     )
     deletion_root = ensure_directory(root / "deletions", "vault deletion records")
     trash_root = ensure_directory(root / ".trash", "vault trash root")
@@ -1458,25 +2000,10 @@ def prune_remote(
         for record in deleting:
             os.rename(record["directory"], trash / record["backup_id"])
             moved.append(record["backup_id"])
-        deletion_intent = {
-            "schema_version": 1,
-            "deletion_id": identifier,
-            "recorded_at": now(),
-            "state": "quarantined_before_delete",
-            "anchor_backup_id": anchor_backup_id,
-            "anchor_receipt_sha256": anchor_receipt_sha256,
-            "quarantined_backup_ids": sorted(moved),
-            "retained_backup_ids": sorted(keep),
-            "daily_copies": daily_copies,
-            "weekly_copies": weekly_copies,
-            "minimum_known_good_copies": minimum_known_good,
-            "retained_known_good_backup_ids": sorted(known_good_attestations),
-            "known_good_attestation_sha256s": known_good_attestations,
-            "delete_only_after_verified_remote_copy": True,
-            "secret_material_recorded": False,
-        }
+        if sorted(moved) != plan["deleted_backup_ids"]:
+            raise BackupError("retention deletion differs from its plan")
         intent_path = deletion_root / f"{identifier}.intent.json"
-        write_new(intent_path, canonical_json(deletion_intent), 0o600)
+        write_new(intent_path, evidence["intent_bytes"], 0o600)
     except Exception:
         for backup_id in reversed(moved):
             source = trash / backup_id
@@ -1493,22 +2020,10 @@ def prune_remote(
         raise BackupError(
             f"retention quarantine remains for manual recovery: {trash}"
         ) from exc
-    completion = {
-        "schema_version": 1,
-        "deletion_id": identifier,
-        "recorded_at": now(),
-        "state": "deleted",
-        "deletion_intent_sha256": sha256_file(intent_path),
-        "deleted_backup_ids": sorted(moved),
-        "retained_backup_ids": sorted(keep),
-        "anchor_backup_id": anchor_backup_id,
-        "anchor_receipt_sha256": anchor_receipt_sha256,
-        "retained_known_good_backup_ids": sorted(known_good_attestations),
-        "known_good_attestation_sha256s": known_good_attestations,
-        "delete_only_after_verified_remote_copy": True,
-        "secret_material_recorded": False,
-    }
-    write_new(deletion_root / f"{identifier}.json", canonical_json(completion), 0o600)
+    completion = evidence["completion"]
+    if completion["deletion_intent_sha256"] != sha256_file(intent_path):
+        raise BackupError("retention intent digest differs from its exact plan")
+    write_new(deletion_root / f"{identifier}.json", evidence["completion_bytes"], 0o600)
     return completion
 
 

@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 from scripts.tools import backup_vault_ssh_receiver as receiver
+from scripts.tools import manage_backup_recovery as manager
 from scripts.lib import backup_recovery as backup
 
 
@@ -24,6 +27,8 @@ class BackupRecoveryToolTest(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
         self.vault = self.root / "vault"
+        self.vault.mkdir(mode=0o700)
+        self.lock = self.vault / ".vault.lock"
         self.identity = self.root / "vault-identity"
         self.identity.write_bytes(b"mac-vault-identity-material")
 
@@ -79,7 +84,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
             backup_id, created_at=created_at, classes=classes
         )
         framed = self._framed(backup_id, archive, manifest)
-        return backup.remote_store(
+        return self._remote_store(
             self.vault,
             self.identity,
             io.BytesIO(framed),
@@ -91,11 +96,27 @@ class BackupRecoveryToolTest(unittest.TestCase):
         backup.write_upload_frame(stream, backup_id, archive, manifest)
         return stream.getvalue()
 
+    def _remote_store(self, *args: object, **kwargs: object) -> dict[str, object]:
+        kwargs.setdefault("trusted_lock_owner_uid", os.getuid())
+        return backup.remote_store(*args, **kwargs)
+
+    def _enable_secure_vault_layout(self) -> None:
+        self.vault.chmod(0o750)
+        for name in ("backups", ".incoming", "known-good", "deletions", ".trash"):
+            directory = self.vault / name
+            directory.mkdir(mode=0o700, exist_ok=True)
+            directory.chmod(0o700)
+        self.identity = self.vault / ".vault-identity"
+        self.identity.write_bytes(b"v" * 32)
+        self.identity.chmod(0o640)
+        self.lock.touch(mode=0o660)
+        self.lock.chmod(0o660)
+
     def test_remote_store_is_create_only_and_readback_bound(self) -> None:
         archive, manifest = self._artifacts("backup-one")
         framed = self._framed("backup-one", archive, manifest)
 
-        receipt = backup.remote_store(self.vault, self.identity, io.BytesIO(framed))
+        receipt = self._remote_store(self.vault, self.identity, io.BytesIO(framed))
 
         stored = self.vault / "backups/backup-one"
         self.assertEqual(backup.sha256_file(archive), receipt["archive_sha256"])
@@ -107,23 +128,199 @@ class BackupRecoveryToolTest(unittest.TestCase):
         )
         self.assertEqual(receipt, json.loads((stored / "receipt.json").read_text()))
         with self.assertRaisesRegex(backup.BackupError, "already exists"):
-            backup.remote_store(self.vault, self.identity, io.BytesIO(framed))
+            self._remote_store(self.vault, self.identity, io.BytesIO(framed))
 
     def test_remote_store_rejects_digest_drift_and_trailing_bytes(self) -> None:
         archive, manifest = self._artifacts("backup-drift")
         framed = bytearray(self._framed("backup-drift", archive, manifest))
         framed[-1] ^= 1
         with self.assertRaisesRegex(backup.BackupError, "manifest readback digest"):
-            backup.remote_store(self.vault, self.identity, io.BytesIO(framed))
+            self._remote_store(self.vault, self.identity, io.BytesIO(framed))
         self.assertFalse((self.vault / "backups/backup-drift").exists())
 
         archive, manifest = self._artifacts("backup-trailing")
         with self.assertRaisesRegex(backup.BackupError, "trailing bytes"):
-            backup.remote_store(
+            self._remote_store(
                 self.vault,
                 self.identity,
                 io.BytesIO(self._framed("backup-trailing", archive, manifest) + b"x"),
             )
+
+    def test_legacy_remote_store_does_not_apply_secure_capacity_gate(self) -> None:
+        archive, manifest = self._artifacts("backup-legacy-capacity")
+        receipt = self._remote_store(
+            self.vault,
+            self.identity,
+            io.BytesIO(self._framed("backup-legacy-capacity", archive, manifest)),
+            size_reader=mock.Mock(
+                side_effect=AssertionError("legacy vault used secure size gate")
+            ),
+            disk_usage_reader=mock.Mock(
+                side_effect=AssertionError("legacy vault used secure free-space gate")
+            ),
+        )
+
+        self.assertEqual("backup-legacy-capacity", receipt["backup_id"])
+
+    def test_remote_store_dangling_fixed_lock_never_falls_back(self) -> None:
+        archive, manifest = self._artifacts("backup-unsafe-lock")
+        self.lock.symlink_to(self.root / "missing-lock-target")
+
+        with (
+            mock.patch.object(backup, "_remote_store_locked") as store,
+            self.assertRaises(OSError),
+        ):
+            self._remote_store(
+                self.vault,
+                self.identity,
+                io.BytesIO(self._framed("backup-unsafe-lock", archive, manifest)),
+            )
+
+        store.assert_not_called()
+
+    def test_remote_store_unsafe_fixed_lock_entry_never_falls_back(self) -> None:
+        archive, manifest = self._artifacts("backup-lock-directory")
+        self.lock.mkdir(mode=0o700)
+
+        with (
+            mock.patch.object(backup, "_remote_store_locked") as store,
+            self.assertRaisesRegex(backup.BackupError, "regular non-symlink"),
+        ):
+            self._remote_store(
+                self.vault,
+                self.identity,
+                io.BytesIO(self._framed("backup-lock-directory", archive, manifest)),
+            )
+
+        store.assert_not_called()
+
+    def test_secure_remote_store_cli_uses_fixed_vault_lock(self) -> None:
+        self._enable_secure_vault_layout()
+        archive, manifest = self._artifacts("backup-cli-lock")
+
+        class Input:
+            buffer = io.BytesIO(self._framed("backup-cli-lock", archive, manifest))
+
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+        original_lock = backup.vault_local_lock
+        original_layout = backup.require_secure_vault_layout
+
+        def test_lock(
+            vault_root: Path, lock_path: Path, *, trusted_owner_uid: int
+        ) -> object:
+            self.assertEqual(0, trusted_owner_uid)
+            return original_lock(vault_root, lock_path, trusted_owner_uid=os.getuid())
+
+        def test_layout(
+            vault_root: Path,
+            identity_file: Path,
+            lock_path: Path,
+            *,
+            trusted_owner_uid: int,
+        ) -> object:
+            self.assertEqual(0, trusted_owner_uid)
+            return original_layout(
+                vault_root,
+                identity_file,
+                lock_path,
+                trusted_owner_uid=os.getuid(),
+            )
+
+        with (
+            mock.patch.object(manager.sys, "stdin", Input()),
+            mock.patch.object(manager.sys, "stderr", stderr),
+            mock.patch.object(manager.sys, "stdout", stdout),
+            mock.patch.object(
+                backup, "vault_local_lock", side_effect=test_lock
+            ) as lock_mock,
+            mock.patch.object(
+                backup, "require_secure_vault_layout", side_effect=test_layout
+            ),
+        ):
+            result = manager.main(
+                [
+                    "remote-store",
+                    "--vault-root",
+                    str(self.vault),
+                    "--vault-identity-file",
+                    str(self.identity),
+                ]
+            )
+        self.assertEqual(0, result, stderr.getvalue())
+        resolved_vault = self.vault.resolve()
+        lock_mock.assert_called_once_with(
+            resolved_vault,
+            resolved_vault / ".vault.lock",
+            trusted_owner_uid=0,
+        )
+        self.assertTrue((self.vault / "backups/backup-cli-lock").is_dir())
+
+    def test_remote_store_reserves_candidate_before_reading_payload(self) -> None:
+        self._enable_secure_vault_layout()
+        archive, manifest = self._artifacts("backup-capacity")
+        framed = self._framed("backup-capacity", archive, manifest)
+        header_size = backup.FRAME.unpack(framed[: backup.FRAME.size])[0]
+        header_end = backup.FRAME.size + header_size
+        stream = io.BytesIO(framed)
+        candidate = (
+            archive.stat().st_size
+            + manifest.stat().st_size
+            + backup.REMOTE_RECEIPT_RESERVATION_BYTES
+        )
+        with self.assertRaisesRegex(backup.BackupError, "reservation exceeds"):
+            self._remote_store(
+                self.vault,
+                self.identity,
+                stream,
+                size_reader=lambda _root: 20_000_000_001 - candidate,
+                disk_usage_reader=lambda _root: SimpleNamespace(free=30_000_000_000),
+            )
+        self.assertEqual(header_end, stream.tell())
+        self.assertFalse((self.vault / "backups/backup-capacity").exists())
+
+    def test_remote_store_records_completion_time_and_checks_actual_free_space(
+        self,
+    ) -> None:
+        self._enable_secure_vault_layout()
+        archive, manifest = self._artifacts("backup-completion-time")
+        framed = self._framed("backup-completion-time", archive, manifest)
+        stream = io.BytesIO(framed)
+
+        def completion_time() -> str:
+            self.assertEqual(len(framed), stream.tell())
+            return "2026-09-07T04:01:02Z"
+
+        with mock.patch.object(backup, "now", side_effect=completion_time):
+            receipt = self._remote_store(
+                self.vault,
+                self.identity,
+                stream,
+                disk_usage_reader=mock.Mock(
+                    side_effect=[
+                        SimpleNamespace(free=30_000_000_000),
+                        SimpleNamespace(free=6_000_000_000),
+                    ]
+                ),
+            )
+        self.assertEqual("2026-09-07T04:01:02Z", receipt["stored_at"])
+
+        archive, manifest = self._artifacts("backup-low-free-after-write")
+        with self.assertRaisesRegex(backup.BackupError, "free-space floor"):
+            self._remote_store(
+                self.vault,
+                self.identity,
+                io.BytesIO(
+                    self._framed("backup-low-free-after-write", archive, manifest)
+                ),
+                disk_usage_reader=mock.Mock(
+                    side_effect=[
+                        SimpleNamespace(free=30_000_000_000),
+                        SimpleNamespace(free=4_999_999_999),
+                    ]
+                ),
+            )
+        self.assertFalse((self.vault / "backups/backup-low-free-after-write").exists())
 
     def test_receipt_rejects_same_or_unattested_host(self) -> None:
         archive, manifest = self._artifacts("backup-identity")
@@ -165,6 +362,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 daily_copies=3,
                 weekly_copies=2,
                 minimum_known_good=2,
+                expected_vault_host_id_sha256=backup.vault_host_id(self.identity),
             )
 
         with mock.patch.object(
@@ -188,6 +386,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
                 weekly_copies=2,
                 minimum_known_good=2,
                 deletion_id="prune-test",
+                expected_vault_host_id_sha256=backup.vault_host_id(self.identity),
             )
         self.assertEqual(
             {"backup-09", "backup-08", "backup-07", "backup-06"},
@@ -198,6 +397,141 @@ class BackupRecoveryToolTest(unittest.TestCase):
         self.assertTrue((self.vault / "deletions/prune-test.json").is_file())
         self.assertTrue((self.vault / "deletions/prune-test.intent.json").is_file())
         self.assertFalse((self.vault / ".trash/prune-test").exists())
+
+    def test_secure_vault_compatibility_cli_cannot_bypass_retention_policy(
+        self,
+    ) -> None:
+        self._enable_secure_vault_layout()
+        pruner = mock.Mock()
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+
+        with (
+            mock.patch.object(manager, "prune_remote", pruner),
+            mock.patch.object(manager.sys, "stderr", stderr),
+            mock.patch.object(manager.sys, "stdout", stdout),
+        ):
+            result = manager.main(
+                [
+                    "remote-prune",
+                    "--vault-root",
+                    str(self.vault),
+                    "--anchor-backup-id",
+                    "backup-anchor",
+                    "--anchor-receipt-sha256",
+                    "a" * 64,
+                    "--daily-copies",
+                    "1",
+                    "--weekly-copies",
+                    "1",
+                ]
+            )
+
+        self.assertEqual(1, result)
+        self.assertIn("policy-bound retention service", stderr.getvalue())
+        self.assertEqual("", stdout.getvalue())
+        pruner.assert_not_called()
+
+    def test_legacy_vault_compatibility_cli_retains_local_prune(self) -> None:
+        pruner = mock.Mock(return_value={"state": "deleted"})
+        stderr = io.StringIO()
+        stdout = io.StringIO()
+
+        with (
+            mock.patch.object(manager, "prune_remote", pruner),
+            mock.patch.object(manager.sys, "stderr", stderr),
+            mock.patch.object(manager.sys, "stdout", stdout),
+        ):
+            result = manager.main(
+                [
+                    "remote-prune",
+                    "--vault-root",
+                    str(self.vault),
+                    "--anchor-backup-id",
+                    "backup-anchor",
+                    "--anchor-receipt-sha256",
+                    "a" * 64,
+                    "--daily-copies",
+                    "14",
+                    "--weekly-copies",
+                    "8",
+                ]
+            )
+
+        self.assertEqual(0, result, stderr.getvalue())
+        self.assertIn('"state": "deleted"', stdout.getvalue())
+        pruner.assert_called_once_with(
+            self.vault.resolve(),
+            anchor_backup_id="backup-anchor",
+            anchor_receipt_sha256="a" * 64,
+            daily_copies=14,
+            weekly_copies=8,
+            minimum_known_good=2,
+        )
+
+    def test_real_seven_four_two_plan_ignores_mixed_vault_identity(self) -> None:
+        for index in range(10):
+            classes = ["daily", "weekly"] if index % 3 == 0 else ["daily"]
+            self._store(
+                f"current-{index:02d}",
+                created_at=f"2026-08-{index + 1:02d}T00:00:00Z",
+                classes=classes,
+            )
+        old_identity = self.root / "old-vault-identity"
+        old_identity.write_bytes(b"old-vault-identity-material")
+        archive, manifest = self._artifacts(
+            "mixed-old", created_at="2026-07-01T00:00:00Z"
+        )
+        self._remote_store(
+            self.vault,
+            old_identity,
+            io.BytesIO(self._framed("mixed-old", archive, manifest)),
+            recorded_at="2026-07-01T00:00:00Z",
+        )
+        current_identity = backup.vault_host_id(self.identity)
+        records = backup.verified_vault_records(
+            self.vault, expected_vault_host_id_sha256=current_identity
+        )
+        self.assertNotIn("mixed-old", {item["backup_id"] for item in records})
+        newest = self.vault / "backups/current-09/receipt.json"
+
+        with mock.patch.object(
+            backup,
+            "load_known_good_attestation",
+            side_effect=lambda _root, backup_id: {
+                "attestation_sha256": digest(backup_id.encode("ascii")),
+                "restore_id": f"restore-{backup_id}",
+                "identities": {
+                    "target_volume_identity_sha256": digest(
+                        f"target-{backup_id}".encode("ascii")
+                    )
+                },
+            },
+        ):
+            plan = backup.plan_remote_retention(
+                self.vault,
+                anchor_backup_id="current-09",
+                anchor_receipt_sha256=backup.sha256_file(newest),
+                daily_copies=7,
+                weekly_copies=4,
+                minimum_known_good=2,
+                expected_vault_host_id_sha256=current_identity,
+            )
+            result = backup.prune_remote(
+                self.vault,
+                anchor_backup_id="current-09",
+                anchor_receipt_sha256=backup.sha256_file(newest),
+                daily_copies=7,
+                weekly_copies=4,
+                minimum_known_good=2,
+                deletion_id="prune-seven-four-two",
+                expected_vault_host_id_sha256=current_identity,
+            )
+
+        self.assertEqual(["current-01", "current-02"], plan["deleted_backup_ids"])
+        self.assertEqual(plan["deleted_backup_ids"], result["deleted_backup_ids"])
+        self.assertTrue((self.vault / "backups/mixed-old").is_dir())
+        self.assertNotIn("mixed-old", result["retained_backup_ids"])
 
     def test_retention_failure_keeps_truthful_quarantine_without_completion(
         self,
@@ -240,6 +574,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
                     weekly_copies=1,
                     minimum_known_good=2,
                     deletion_id="prune-failure",
+                    expected_vault_host_id_sha256=backup.vault_host_id(self.identity),
                 )
         self.assertTrue((self.vault / "deletions/prune-failure.intent.json").is_file())
         self.assertFalse((self.vault / "deletions/prune-failure.json").exists())
@@ -250,7 +585,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
             "backup-bad-time", created_at="not-a-timestamp"
         )
         with self.assertRaisesRegex(backup.BackupError, "created_at"):
-            backup.remote_store(
+            self._remote_store(
                 self.vault,
                 self.identity,
                 io.BytesIO(self._framed("backup-bad-time", archive, manifest)),
@@ -272,7 +607,7 @@ class BackupRecoveryToolTest(unittest.TestCase):
         manifest.write_bytes(backup.canonical_json(value))
 
         with self.assertRaisesRegex(backup.BackupError, "link metadata"):
-            backup.remote_store(
+            self._remote_store(
                 self.vault,
                 self.identity,
                 io.BytesIO(self._framed("backup-unsafe-link", archive, manifest)),
@@ -281,11 +616,12 @@ class BackupRecoveryToolTest(unittest.TestCase):
     def test_remote_store_rejects_symlinked_internal_vault_root(self) -> None:
         outside = self.root / "outside"
         outside.mkdir()
-        self.vault.mkdir()
         (self.vault / "backups").symlink_to(outside, target_is_directory=True)
         archive, manifest = self._artifacts("backup-symlink")
-        with self.assertRaisesRegex(backup.BackupError, "non-symlink directory"):
-            backup.remote_store(
+        with self.assertRaisesRegex(
+            backup.BackupError, "unsafe directory|non-symlink directory"
+        ):
+            self._remote_store(
                 self.vault,
                 self.identity,
                 io.BytesIO(self._framed("backup-symlink", archive, manifest)),
@@ -314,9 +650,10 @@ class BackupRecoveryToolTest(unittest.TestCase):
                     receiver.parse_original_command(command)
 
     def test_forced_receiver_bounds_store_lifetime(self) -> None:
-        with mock.patch.object(receiver.signal, "signal") as signal_mock, mock.patch.object(
-            receiver.signal, "alarm"
-        ) as alarm_mock:
+        with (
+            mock.patch.object(receiver.signal, "signal") as signal_mock,
+            mock.patch.object(receiver.signal, "alarm") as alarm_mock,
+        ):
             with receiver.bounded_store(90):
                 pass
 
@@ -351,6 +688,82 @@ class BackupRecoveryToolTest(unittest.TestCase):
 
         self.assertEqual(0, completed.returncode, completed.stderr)
         self.assertIn("--vault-root", completed.stdout)
+
+    def test_legacy_forced_receiver_supports_store_and_receipt_without_lock(
+        self,
+    ) -> None:
+        archive, manifest = self._artifacts("backup-legacy-receiver")
+
+        class Input:
+            def __init__(self, content: bytes) -> None:
+                self.buffer = io.BytesIO(content)
+
+        class Output:
+            def __init__(self) -> None:
+                self.buffer = io.BytesIO()
+
+        store_output = Output()
+        stderr = io.StringIO()
+        with (
+            mock.patch.dict(
+                receiver.os.environ,
+                {"SSH_ORIGINAL_COMMAND": "boost-gateway-vault store"},
+            ),
+            mock.patch.object(
+                receiver.sys,
+                "stdin",
+                Input(self._framed("backup-legacy-receiver", archive, manifest)),
+            ),
+            mock.patch.object(receiver.sys, "stdout", store_output),
+            mock.patch.object(receiver.sys, "stderr", stderr),
+        ):
+            result = receiver.main(
+                [
+                    "--vault-root",
+                    str(self.vault),
+                    "--vault-identity-file",
+                    str(self.identity),
+                ]
+            )
+        self.assertEqual(0, result, stderr.getvalue())
+        stored_receipt = json.loads(store_output.buffer.getvalue())
+        self.assertEqual("backup-legacy-receiver", stored_receipt["backup_id"])
+
+        receipt_output = Output()
+        with (
+            mock.patch.dict(
+                receiver.os.environ,
+                {
+                    "SSH_ORIGINAL_COMMAND": (
+                        "boost-gateway-vault receipt backup-legacy-receiver"
+                    )
+                },
+            ),
+            mock.patch.object(receiver.sys, "stdin", Input(b"")),
+            mock.patch.object(receiver.sys, "stdout", receipt_output),
+            mock.patch.object(receiver.sys, "stderr", stderr),
+        ):
+            result = receiver.main(
+                [
+                    "--vault-root",
+                    str(self.vault),
+                    "--vault-identity-file",
+                    str(self.identity),
+                ]
+            )
+        self.assertEqual(0, result, stderr.getvalue())
+        self.assertEqual(stored_receipt, json.loads(receipt_output.buffer.getvalue()))
+
+    def test_forced_receiver_has_no_lock_or_capacity_override(self) -> None:
+        required = [
+            "--vault-root",
+            str(self.vault),
+            "--vault-identity-file",
+            str(self.identity),
+        ]
+        for forbidden in ("--lock-file", "--max-vault-bytes", "--minimum-free-bytes"):
+            with self.subTest(forbidden=forbidden), self.assertRaises(SystemExit):
+                receiver.build_parser().parse_args([*required, forbidden, "1"])
 
     def test_upload_uses_only_fixed_forced_command_surface(self) -> None:
         archive, manifest = self._artifacts("backup-upload")

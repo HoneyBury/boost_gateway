@@ -1,5 +1,7 @@
 [Unit]
 Description=Detect silent external BoostGateway canary failure
+Wants=boost-gateway-canary-alertmanager-forward.service
+After=boost-gateway-canary-alertmanager-forward.service
 
 [Timer]
 OnCalendar=*-*-* *:*:45 UTC

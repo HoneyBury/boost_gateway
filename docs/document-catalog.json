@@ -124,6 +124,15 @@
       "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
       "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
     },
+    "docs/deployment/aliyun-offhost-migration-runbook.md": {
+      "type": "runbook",
+      "purpose": "Migration, retention, validation, and rollback procedure for moving Mac off-host operations duties to the Aliyun Tailscale node.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the off-host topology, identity, retention, security, cutover, or rollback contract changes.",
+      "archive_condition": "Archive when the Aliyun migration is superseded or the off-host operations topology is retired."
+    },
     "docs/deployment/backup-recovery-policy-runbook.md": {
       "type": "runbook",
       "purpose": "Production Redis persistence, backup vault, isolated restore, and RTO/RPO procedure.",

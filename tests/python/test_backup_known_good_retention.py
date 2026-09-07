@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import tempfile
+import threading
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
+from scripts.lib import backup_recovery as recovery
 from scripts.tools import manage_backup_recovery as backup
 
 
@@ -15,9 +20,19 @@ class KnownGoodRetentionTest(unittest.TestCase):
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.vault = self.root / "vault"
-        (self.vault / "backups").mkdir(parents=True)
+        self.vault.mkdir(mode=0o750)
+        self.vault.chmod(0o750)
+        for name in ("backups", ".incoming", "known-good", "deletions", ".trash"):
+            directory = self.vault / name
+            directory.mkdir(mode=0o700)
+            directory.chmod(0o700)
         self.identity = self.vault / ".vault-identity"
-        self.identity.write_bytes(b"independent-vault-host-identity")
+        self.identity.write_bytes(b"v" * 32)
+        self.identity.chmod(0o640)
+        self.lock = self.vault / recovery.DEFAULT_VAULT_LOCK_NAME
+        self.lock.touch(mode=0o660)
+        self.lock.chmod(0o660)
+        self.trusted_uid = os.getuid()
 
     def _create_backup(
         self,
@@ -239,6 +254,7 @@ class KnownGoodRetentionTest(unittest.TestCase):
             restore_summary=paths["restore"],
             business_summary=paths["business"],
             attested_at="2026-07-27T00:00:00Z",
+            trusted_owner_uid=self.trusted_uid,
         )
 
     def test_attestation_is_create_only_and_binds_complete_evidence(self) -> None:
@@ -308,7 +324,179 @@ class KnownGoodRetentionTest(unittest.TestCase):
             )
         self.assertTrue((self.vault / "backups" / "backup-one").is_dir())
         self.assertTrue((self.vault / "backups" / "backup-two").is_dir())
-        self.assertFalse((self.vault / "deletions").exists())
+        self.assertEqual([], list((self.vault / "deletions").iterdir()))
+
+    def test_attestation_capacity_preflight_is_fail_closed(self) -> None:
+        paths = self._create_backup("backup-capacity", "2026-07-27T00:00:00Z")
+
+        with mock.patch.object(
+            recovery,
+            "logical_regular_file_bytes",
+            return_value=recovery.DEFAULT_MAX_VAULT_BYTES,
+        ), mock.patch.object(
+            recovery.shutil,
+            "disk_usage",
+            return_value=SimpleNamespace(
+                free=recovery.DEFAULT_MINIMUM_FREE_BYTES + 1_000_000
+            ),
+        ), self.assertRaisesRegex(
+            backup.BackupError, "configured vault limit"
+        ):
+            self._attest("backup-capacity", paths)
+
+        self.assertFalse((self.vault / "known-good" / "backup-capacity").exists())
+
+    def test_attestation_free_space_reservation_is_fail_closed(self) -> None:
+        paths = self._create_backup("backup-free", "2026-07-27T00:00:00Z")
+
+        with mock.patch.object(
+            recovery, "logical_regular_file_bytes", return_value=0
+        ), mock.patch.object(
+            recovery.shutil,
+            "disk_usage",
+            return_value=SimpleNamespace(free=recovery.DEFAULT_MINIMUM_FREE_BYTES),
+        ), self.assertRaisesRegex(
+            backup.BackupError, "free-space floor"
+        ):
+            self._attest("backup-free", paths)
+
+        self.assertFalse((self.vault / "known-good" / "backup-free").exists())
+
+    def test_attestation_postcheck_rolls_back_only_its_target(self) -> None:
+        paths = self._create_backup("backup-postcheck", "2026-07-27T00:00:00Z")
+        sentinel = self.vault / "known-good" / "existing-attestation"
+        sentinel.mkdir(mode=0o700)
+        sentinel_file = sentinel / "sentinel"
+        sentinel_file.write_text("preserve", encoding="utf-8")
+
+        with mock.patch.object(
+            recovery,
+            "logical_regular_file_bytes",
+            side_effect=[0, recovery.DEFAULT_MAX_VAULT_BYTES + 1],
+        ), mock.patch.object(
+            recovery.shutil,
+            "disk_usage",
+            return_value=SimpleNamespace(
+                free=recovery.DEFAULT_MINIMUM_FREE_BYTES + 1_000_000
+            ),
+        ), self.assertRaisesRegex(
+            backup.BackupError, "configured vault limit"
+        ):
+            self._attest("backup-postcheck", paths)
+
+        self.assertFalse((self.vault / "known-good" / "backup-postcheck").exists())
+        self.assertEqual("preserve", sentinel_file.read_text(encoding="utf-8"))
+
+    def test_attestation_rejects_source_growth_after_reservation(self) -> None:
+        paths = self._create_backup("backup-growth", "2026-07-27T00:00:00Z")
+        original_snapshot = recovery._known_good_capacity_snapshot
+        mutated = False
+
+        def mutate_after_preflight(*args: object, **kwargs: object) -> dict[str, int]:
+            nonlocal mutated
+            result = original_snapshot(*args, **kwargs)
+            if kwargs.get("phase") == "preflight":
+                with paths["validation"].open("ab") as stream:
+                    stream.write(b"unexpected-growth")
+                mutated = True
+            return result
+
+        with mock.patch.object(
+            recovery,
+            "_known_good_capacity_snapshot",
+            side_effect=mutate_after_preflight,
+        ), self.assertRaisesRegex(backup.BackupError, "capacity reservation"):
+            self._attest("backup-growth", paths)
+
+        self.assertTrue(mutated)
+        self.assertFalse((self.vault / "known-good" / "backup-growth").exists())
+
+    def test_attestation_uses_the_fixed_vault_local_lock(self) -> None:
+        paths = self._create_backup("backup-locked", "2026-07-27T00:00:00Z")
+        finished = threading.Event()
+        failures: list[BaseException] = []
+
+        def attest() -> None:
+            try:
+                self._attest("backup-locked", paths)
+            except BaseException as exc:  # pragma: no cover - asserted below
+                failures.append(exc)
+            finally:
+                finished.set()
+
+        with recovery.vault_local_lock(
+            self.vault, self.lock, trusted_owner_uid=self.trusted_uid
+        ):
+            thread = threading.Thread(target=attest, daemon=True)
+            thread.start()
+            self.assertFalse(finished.wait(0.1))
+            self.assertFalse((self.vault / "known-good" / "backup-locked").exists())
+        self.assertTrue(finished.wait(2.0))
+        thread.join(timeout=2.0)
+        self.assertEqual([], failures)
+        self.assertTrue((self.vault / "known-good" / "backup-locked").is_dir())
+
+    def test_attestation_preserves_legacy_vault_without_lock(self) -> None:
+        self.lock.unlink()
+        self.identity.write_bytes(b"independent-vault-host-identity")
+        paths = self._create_backup("backup-legacy", "2026-07-27T00:00:00Z")
+
+        with mock.patch.object(
+            recovery,
+            "_known_good_capacity_snapshot",
+            side_effect=AssertionError("legacy attestation used secure capacity gate"),
+        ) as capacity_snapshot:
+            result = self._attest("backup-legacy", paths)
+
+        capacity_snapshot.assert_not_called()
+        self.assertTrue(result["restore_known_good"])
+        self.assertTrue((self.vault / "known-good" / "backup-legacy").is_dir())
+
+    def test_attestation_dangling_lock_symlink_cannot_downgrade(self) -> None:
+        paths = self._create_backup("backup-symlink", "2026-07-27T00:00:00Z")
+        self.lock.unlink()
+        self.lock.symlink_to(self.root / "missing-lock-target")
+
+        with mock.patch.object(
+            recovery, "_create_known_good_attestation"
+        ) as create_attestation, self.assertRaises(OSError):
+            self._attest("backup-symlink", paths)
+
+        create_attestation.assert_not_called()
+        self.assertFalse((self.vault / "known-good" / "backup-symlink").exists())
+
+    def test_attestation_unsafe_lock_entry_cannot_downgrade(self) -> None:
+        paths = self._create_backup("backup-unsafe-lock", "2026-07-27T00:00:00Z")
+        self.lock.unlink()
+        self.lock.mkdir(mode=0o700)
+
+        with mock.patch.object(
+            recovery, "_create_known_good_attestation"
+        ) as create_attestation, self.assertRaisesRegex(
+            backup.BackupError, "regular non-symlink"
+        ):
+            self._attest("backup-unsafe-lock", paths)
+
+        create_attestation.assert_not_called()
+        self.assertFalse((self.vault / "known-good" / "backup-unsafe-lock").exists())
+
+    def test_attestation_cli_has_no_capacity_or_lock_override(self) -> None:
+        required = [
+            "attest-known-good",
+            "--vault-root",
+            str(self.vault),
+            "--backup-id",
+            "backup-one",
+            "--vault-validation-summary",
+            "validation.json",
+            "--restore-summary",
+            "restore.json",
+            "--business-summary",
+            "business.json",
+        ]
+        for forbidden in ("--max-vault-bytes", "--minimum-free-bytes", "--lock-file"):
+            with self.subTest(forbidden=forbidden), self.assertRaises(SystemExit):
+                backup.build_parser().parse_args([*required, forbidden, "1"])
 
     def test_prune_counts_only_valid_attestations_and_preserves_them(self) -> None:
         self._create_backup("backup-old", "2026-07-26T00:00:00Z")

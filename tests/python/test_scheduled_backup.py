@@ -233,6 +233,129 @@ class ScheduledBackupTest(unittest.TestCase):
             self.assertIn(runtime_dependency, installer)
         self.assertIn("/usr/local/libexec/boost-gateway/backup/scripts/lib", installer)
 
+    def test_installer_atomically_governs_public_key_sidecar_before_timer(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        installer_path = root / "deploy/operations/install_backup_host_units.sh"
+        installer = installer_path.read_text(encoding="utf-8")
+
+        subprocess.run(["bash", "-n", str(installer_path)], check=True)
+        rejected = subprocess.run(
+            ["bash", str(installer_path), "--public-key-file", "/tmp/key.pub"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        self.assertNotEqual(0, rejected.returncode)
+        self.assertIn("unknown argument: --public-key-file", rejected.stderr)
+
+        self.assertIn("PUBLIC_KEY=${PRIVATE_KEY}.pub", installer)
+        self.assertIn(
+            "backup configuration directory must not be group/world writable",
+            installer,
+        )
+        self.assertIn("/usr/bin/ssh-keygen -y -P '' -f", installer)
+        self.assertIn("backup SSH private key must be valid and unencrypted", installer)
+        self.assertIn(
+            "backup SSH private key must have exactly one hard link", installer
+        )
+        self.assertIn(
+            "backup SSH public key sidecar must be a regular non-symlink file",
+            installer,
+        )
+        self.assertIn(
+            "backup SSH public key sidecar must have exactly one hard link", installer
+        )
+        self.assertIn(
+            "backup SSH public key sidecar must not be group/world writable",
+            installer,
+        )
+        self.assertIn(
+            'mktemp "${CONFIG_DIR}/.backup-vault-ed25519.pub.XXXXXX"',
+            installer,
+        )
+        self.assertIn('chown root:root "${PUBLIC_KEY_TEMP}"', installer)
+        self.assertIn('chmod 0644 "${PUBLIC_KEY_TEMP}"', installer)
+        self.assertIn('mv -fT -- "${PUBLIC_KEY_TEMP}" "${PUBLIC_KEY}"', installer)
+        self.assertIn("0:0:644:1", installer)
+        self.assertIn(
+            '[[ $(<"${PUBLIC_KEY}") == "${CANONICAL_PUBLIC_KEY}" ]]', installer
+        )
+        self.assertNotIn("set -x", installer)
+
+        derived = installer.index("/usr/bin/ssh-keygen -y -P '' -f")
+        installed = installer.index('mv -fT -- "${PUBLIC_KEY_TEMP}" "${PUBLIC_KEY}"')
+        verified = installer.index(
+            '[[ $(<"${PUBLIC_KEY}") == "${CANONICAL_PUBLIC_KEY}" ]]'
+        )
+        enabled = installer.index("systemctl enable --now boost-gateway-backup.timer")
+        self.assertLess(derived, installed)
+        self.assertLess(installed, verified)
+        self.assertLess(verified, enabled)
+
+    def test_installer_canonicalizes_real_commented_ed25519_key(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        installer = (root / "deploy/operations/install_backup_host_units.sh").read_text(
+            encoding="utf-8"
+        )
+        begin = "# BEGIN TESTABLE: canonicalize_ed25519_public_key"
+        end = "# END TESTABLE: canonicalize_ed25519_public_key"
+        function_source = installer[
+            installer.index(begin) : installer.index(end) + len(end)
+        ]
+        comment = "rotated backup key 2026"
+        private_key = self.root / "commented-ed25519"
+        subprocess.run(
+            [
+                "/usr/bin/ssh-keygen",
+                "-q",
+                "-t",
+                "ed25519",
+                "-N",
+                "",
+                "-C",
+                comment,
+                "-f",
+                str(private_key),
+            ],
+            check=True,
+        )
+        derived = subprocess.run(
+            [
+                "/usr/bin/ssh-keygen",
+                "-y",
+                "-P",
+                "",
+                "-f",
+                str(private_key),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        public_record = Path(f"{private_key}.pub").read_text(encoding="utf-8").strip()
+        self.assertEqual(comment, derived.split(maxsplit=2)[2])
+
+        canonicalizer = f'{function_source}\ncanonicalize_ed25519_public_key "$1"\n'
+
+        def canonicalize(record: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                ["bash", "-c", canonicalizer, "bash", record],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
+        expected = " ".join(public_record.split(maxsplit=2)[:2])
+        for record in (derived, public_record):
+            result = canonicalize(record)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(f"{expected}\n", result.stdout)
+            self.assertNotIn(comment, result.stdout)
+            self.assertEqual(2, len(result.stdout.split()))
+
+        rejected = canonicalize(f"{expected}\tunsafe-comment")
+        self.assertNotEqual(0, rejected.returncode)
+
 
 if __name__ == "__main__":
     unittest.main()

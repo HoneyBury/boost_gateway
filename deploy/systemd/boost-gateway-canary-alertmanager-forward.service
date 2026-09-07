@@ -1,0 +1,47 @@
+[Unit]
+Description=Forward the external BoostGateway canary to production Alertmanager
+Wants=network-online.target tailscaled.service
+After=network-online.target tailscaled.service
+Before=boost-gateway-external-canary.timer boost-gateway-external-canary-watchdog.timer
+StartLimitIntervalSec=5min
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User=boost-gateway-canary-forward
+Group=boost-gateway-canary-forward
+EnvironmentFile=/etc/boost-gateway-canary/alertmanager-forward.env
+LoadCredential=ssh_identity:/etc/boost-gateway-canary/alertmanager-forward-ed25519
+LoadCredential=ssh_known_hosts:/etc/boost-gateway-canary/alertmanager-forward-known-hosts
+ExecStart=/usr/bin/ssh -F /dev/null -NT -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=%d/ssh_known_hosts -o UpdateHostKeys=no -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ConnectTimeout=15 -o PasswordAuthentication=no -o KbdInteractiveAuthentication=no -o PreferredAuthentications=publickey -i %d/ssh_identity -L 127.0.0.1:19093:127.0.0.1:9093 ${BOOST_GATEWAY_CANARY_FORWARD_TARGET}
+Restart=on-failure
+RestartSec=5s
+TimeoutStartSec=30s
+TimeoutStopSec=15s
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+PrivateDevices=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ProtectProc=invisible
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+[Install]
+WantedBy=multi-user.target
