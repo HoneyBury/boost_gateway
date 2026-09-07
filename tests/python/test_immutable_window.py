@@ -21,7 +21,7 @@ def attestation():
             "create_only": True, "overall_pass": True, "provider": "healthchecks.io",
             "subject": {key: "a" * 64 for key in ("canary_host_id_sha256", "check_identity_sha256",
                 "reporter_sha256", "service_unit_sha256", "watchdog_dropin_sha256", "provider_contract_sha256",
-                "candidate_record_sha256")},
+                "candidate_record_sha256", "installation_sha256")},
             "drill": {"failure_mode": "missing-heartbeat", "armed_at": io.stamp(times[0]),
                       "heartbeat_stopped_at": io.stamp(times[1]), "provider_down_at": io.stamp(times[2]),
                       "rearmed_at": io.stamp(times[3]), "provider_up_at": io.stamp(times[4]),
@@ -39,7 +39,8 @@ def declared(**overrides):
                             "deployment_id": "v3.6.7-fb5f6bfb2626-fa8b69b36dec",
                             "runtime_asset_sha256": "e" * 64, "host": {"host_id_sha256": "f" * 64}},
                  "record_sha": "a" * 64, "host_id": "a" * 64, "endpoint": "tcp://100.65.71.117:9201",
-                 "admission_reports": {role: {} for role in window.ADMISSION_ROLES},
+                 "admission_reports": {role: ({"subject": attestation()["subject"]} if role == "deadman" else {})
+                                       for role in window.ADMISSION_ROLES},
                  "attestation": attestation(), "attestation_sha": "b" * 64, "sdk_version": "4.2.0"}
     return window.declare(**(arguments | overrides))
 
@@ -116,7 +117,10 @@ def test_admission_requires_actual_fresh_reports(tmp_path):
     paths = {}
     for role in window.ADMISSION_ROLES:
         paths[role] = tmp_path / (role + ".json")
-        io.create(paths[role], {"created_at": io.stamp(NOW), "overall_pass": True, "role": role})
+        value = {"created_at": io.stamp(NOW), "overall_pass": True, "role": role}
+        if role == "deadman":
+            value.update(active=True, subject=attestation()["subject"])
+        io.create(paths[role], value)
     assert set(window.admission(paths, now=NOW)) == window.ADMISSION_ROLES
     with pytest.raises(io.DeadmanError):
         window.admission(paths, now=NOW + timedelta(hours=1))
@@ -170,3 +174,10 @@ def test_superseded_window_cannot_be_loaded(tmp_path):
     io.create(tmp_path / "superseded.json", {"overall_pass": False})
     with pytest.raises(io.DeadmanError, match="superseded"):
         manager.load(tmp_path)
+
+
+def test_old_drill_cannot_admit_changed_installation():
+    reports = {role: {} for role in window.ADMISSION_ROLES}
+    reports["deadman"] = {"subject": attestation()["subject"] | {"installation_sha256": "0" * 64}}
+    with pytest.raises(io.DeadmanError, match="installation differs"):
+        declared(admission_reports=reports)

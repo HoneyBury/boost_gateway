@@ -45,6 +45,10 @@ def admission(paths: dict[str, Path], *, now: datetime, final: bool = False) -> 
         age = (now - io.instant(timestamp)).total_seconds()
         io.require(0 <= age <= 1800, "admission report is stale or future-dated")
         result[role] = {"sha256": io.digest(path), "basename": path.name, "observed_at": timestamp}
+        if role == "deadman":
+            io.require(report.get("active") is True and isinstance(report.get("subject"), dict),
+                       "deadman must pass active installation preflight")
+            result[role]["subject"] = report["subject"]
     io.require(len({item["sha256"] for item in result.values()}) == len(result),
                "the same report cannot satisfy multiple admission roles")
     return result
@@ -57,6 +61,8 @@ def declare(*, start: datetime, now: datetime, record: dict, record_sha: str,
     io.require(120 <= (start - now).total_seconds() <= 3600, "start must be 2-60 minutes in the future")
     io.validate_attestation(attestation, now=now)
     subject = attestation["subject"]
+    io.require(admission_reports.get("deadman", {}).get("subject") == subject,
+               "current deadman installation differs from the accepted drill")
     io.require(subject["canary_host_id_sha256"] == host_id
                and subject["candidate_record_sha256"] == record_sha, "deadman attestation subject mismatch")
     production_host = record.get("host", {}).get("host_id_sha256")
