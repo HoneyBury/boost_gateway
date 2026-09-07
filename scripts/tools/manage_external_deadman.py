@@ -10,6 +10,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from datetime import timedelta
 from pathlib import Path
 
@@ -175,7 +176,7 @@ def arm_drill(drill_id: str, snapshot_path: Path) -> None:
     evidence.create(directory / "before.json", snap)
     due = evidence.utcnow() + timedelta(minutes=8)
     unit = f"boost-gateway-deadman-rearm-{drill_id}"
-    command("systemd-run", f"--unit={unit}", f"--on-calendar={evidence.stamp(due)}",
+    command("systemd-run", f"--unit={unit}", f"--on-calendar={evidence.calendar_timestamp(due)}",
             "--timer-property=AccuracySec=1s", "--timer-property=Persistent=true",
             "--property=Type=oneshot", "--property=TimeoutStartSec=60",
             "/usr/bin/python3", str(LIBEXEC / "manage_external_deadman.py"), "rearm", "--drill-id", drill_id)
@@ -185,9 +186,21 @@ def arm_drill(drill_id: str, snapshot_path: Path) -> None:
     # The recovery timer exists and is active before heartbeat suppression.
     try:
         command("systemctl", "stop", TIMER)
-        # Wait for a running watchdog/reporter to finish before measuring missing heartbeats.
-        command("systemctl", "stop", "boost-gateway-external-canary@watchdog.service")
-        command("systemctl", "stop", "boost-gateway-external-deadman@success.service")
+        # Never terminate a running watchdog: that could dispatch an explicit /fail.
+        # Let the finite in-flight watchdog and its reporter drain before starting
+        # the missing-heartbeat clock. The independent rearm is already scheduled.
+        deadline = time.monotonic() + 75
+        units = ("boost-gateway-external-canary@watchdog.service",
+                 "boost-gateway-external-deadman@success.service",
+                 "boost-gateway-external-deadman@failure.service")
+        while True:
+            states = [command("systemctl", "show", unit, "--property=ActiveState", "--value") for unit in units]
+            if all(state in {"inactive", "failed"} for state in states):
+                break
+            evidence.require(time.monotonic() < deadline, "in-flight heartbeat did not drain")
+            time.sleep(1)
+        evidence.require(command("systemctl", "show", units[0], "--property=Result", "--value") == "success",
+                         "watchdog failed while arming the drill")
         evidence.create(directory / "stopped.json", {"created_at": evidence.stamp(), "overall_pass": True})
     except Exception:
         command("systemctl", "start", TIMER)
@@ -203,6 +216,8 @@ def rearm(drill_id: str) -> None:
     invocation = os.environ.get("INVOCATION_ID", "")
     evidence.require(bool(invocation) and invocation == command("systemctl", "show", unit,
                      "--property=InvocationID", "--value"), "rearm must execute in its scheduled systemd service")
+    triggered = command("systemctl", "show", armed["timer"], "--property=LastTriggerUSec", "--value")
+    evidence.require(triggered not in {"", "n/a", "0"}, "automatic recovery timer has not triggered")
     evidence.require(evidence.utcnow() >= evidence.instant(armed["rearm_at"]), "rearm cannot run early")
     command("systemctl", "start", TIMER)
     command("systemctl", "is-active", "--quiet", TIMER)
@@ -232,6 +247,13 @@ def attest(drill_id: str, down: Path, up: Path, success: Path, deliveries: Path)
                      and restored["arm_sha256"] == evidence.digest(paths["armed"]), "automatic rearm not proven")
     evidence.require(evidence.instant(restored["created_at"]) >= evidence.instant(items["armed"]["rearm_at"]),
                      "rearm executed before its scheduled time")
+    stopped_at = evidence.instant(items["stopped"]["created_at"])
+    rearmed_at = evidence.instant(restored["created_at"])
+    for path in (STATE / "events").glob("*.json"):
+        event = evidence.read_json(path)
+        event_at = evidence.instant(event["observed_at"])
+        evidence.require(not (stopped_at < event_at < rearmed_at and event.get("delivery_accepted") is True),
+                         "heartbeat was delivered during the missing-heartbeat drill")
     event = items["success"]
     evidence.require(event["signal_status"] == "success" and event["delivery_accepted"] is True
                      and event["overall_pass"] is True and event["provider_http_status"] == 200
