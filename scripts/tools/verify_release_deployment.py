@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
@@ -13,7 +12,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from collections.abc import Callable
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -28,30 +26,9 @@ from check_release_compose import (  # noqa: E402
 )
 
 from scripts.lib.release_deployment_verification import *  # noqa: E402,F401,F403
-
-def run(command: list[str], timeout: int = 120) -> subprocess.CompletedProcess[str]:
-    return subprocess.run(
-        command,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-        timeout=timeout,
-    )
-
-
-
-
-
-
-
-
-
-
-
-
+from scripts.lib.release_deployment_runtime import (  # noqa: E402
+    validate_legacy_production_network_bridge,
+)
 
 
 def wait_valid_json(
@@ -72,22 +49,6 @@ def wait_valid_json(
             last_error = str(exc)
         time.sleep(retry_seconds)
     return False, last_error
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 def validate_redis_aof_runtime(compose_command: list[str]) -> tuple[bool, str]:
@@ -214,8 +175,19 @@ def validate_legacy_redis_hardening_bridge(
 
 
 def verify(args: argparse.Namespace) -> dict[str, Any]:
+    network_bridge_requested = args.allow_legacy_production_network_bridge
+    if args.allow_legacy_redis_hardening_bridge and network_bridge_requested:
+        raise RuntimeError("legacy verification bridges are mutually exclusive")
     staging = args.staging_dir.resolve()
     compose = args.compose_file.resolve()
+    if network_bridge_requested:
+        if args.read_only:
+            raise RuntimeError("network bridge requires full current verification")
+        if args.image_env_path.resolve() != staging / "compose-images.env":
+            raise RuntimeError("network bridge image environment drift")
+        if (args.host, args.port) != ("127.0.0.1", 9201):
+            raise RuntimeError("network bridge SDK endpoint is not production-bound")
+        require_local_docker_environment()
     checks: list[dict[str, Any]] = []
     document = load_compose_document(compose)
     services = document.get("services") if isinstance(document, dict) else None
@@ -224,16 +196,22 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
     aof_expected = expected_redis_persistence == "aof_everysec_rdb"
     contract_failures = validate_compose_document(document)
     legacy_redis_hardening_bridge = False
+    legacy_production_network_bridge = False
+    legacy_production_network_evidence: dict[str, Any] | None = None
     if args.allow_legacy_redis_hardening_bridge:
         if not args.read_only:
-            raise RuntimeError(
-                "legacy Redis hardening bridge requires read-only verification"
-            )
+            raise RuntimeError("legacy Redis bridge requires read-only verification")
         legacy_redis_hardening_bridge = validate_legacy_redis_hardening_bridge(
             document, contract_failures
         )
         if legacy_redis_hardening_bridge:
             contract_failures = []
+    if network_bridge_requested:
+        legacy_production_network_evidence = validate_legacy_production_network_bridge(
+            staging, compose, document, contract_failures, run
+        )
+        legacy_production_network_bridge = True
+        contract_failures = []
     add_check(
         checks,
         "resolved-production-compose-contract",
@@ -249,6 +227,17 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
                 "validated one-time RDB-only reconciliation bridge"
                 if legacy_redis_hardening_bridge
                 else "legacy Redis contract differs from the governed bridge"
+            ),
+        )
+    if network_bridge_requested:
+        add_check(
+            checks,
+            "legacy-production-network-bridge",
+            legacy_production_network_bridge,
+            json.dumps(
+                legacy_production_network_evidence,
+                sort_keys=True,
+                separators=(",", ":"),
             ),
         )
     compose_command = ["docker", "compose", "-f", str(compose)]
@@ -439,6 +428,9 @@ def verify(args: argparse.Namespace) -> dict[str, Any]:
         "read_only_verification": args.read_only,
         "protected_state_mutated": False if args.read_only else True,
         "legacy_redis_hardening_bridge": legacy_redis_hardening_bridge,
+        "legacy_production_network_bridge_requested": network_bridge_requested,
+        "legacy_production_network_bridge": legacy_production_network_bridge,
+        "legacy_production_network_evidence": legacy_production_network_evidence,
         "staging_manifest": str(staging / "manifest.json"),
         "compose_file": str(compose),
         "expected_redis_persistence": expected_redis_persistence,
@@ -470,6 +462,11 @@ def main() -> int:
         action="store_true",
         help="accept only the exact pre-hardening RDB Redis contract during recovery reconciliation",
     )
+    parser.add_argument(
+        "--allow-legacy-production-network-bridge",
+        action="store_true",
+        help="accept only the allowlisted immutable v3.6.7 network during current verification",
+    )
     parser.add_argument("--summary-path", type=Path, required=True)
     args = parser.parse_args()
     try:
@@ -482,6 +479,11 @@ def main() -> int:
             "passed": False,
             "failed_step": "release-deployment-verification",
             "failure": str(exc),
+            "legacy_production_network_bridge_requested": bool(
+                args.allow_legacy_production_network_bridge
+            ),
+            "legacy_production_network_bridge": False,
+            "legacy_production_network_evidence": None,
             "source_build_performed": False,
             "public_conan_access_performed": False,
         }

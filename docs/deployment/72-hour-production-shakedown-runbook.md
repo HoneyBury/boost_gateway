@@ -1,6 +1,6 @@
 # 72 小时生产预演 Runbook
 
-更新时间：2026-09-06
+更新时间：2026-09-07
 
 本文档是 `TODO-0016` 在 Ubuntu 24.04 x64 单节点生产主机上的 maintained 执行入口。
 它不负责关闭 `TODO-0011` 或 `TODO-0013`，也不把诊断性 canary 时间自动升级为正式
@@ -74,8 +74,8 @@ SHA-256 为 `d62e368bd1457588e9dfb6c1248f0fecb7878916d49a02a5c04dabf5f0940bb0`�
    和最终配置下完整 W35 weekly report 均为 `coverage_complete=true`、`gap_count=0`。
 5. Alertmanager firing/resolved 回执在七天有效期内，Grafana 使用非默认生产凭据；最新
    evidence package 已在异机通过全部 `SHA256SUMS`。
-6. 外部 canary 固定结束聚合 PASS，Mac 与 production host 身份不同，run/watchdog 已连续
-   三个自然分钟 PASS。
+6. 外部 canary 固定结束聚合 PASS，external observer 与 production host 身份不同，run/watchdog
+   已连续三个自然分钟 PASS；已完成的 `TODO-0016` 使用 Mac，当前职责主机是 `aliyunserver`。
 7. 所有影响 Linux x64 候选的 P0 缺陷均已关闭或有 reviewed disposition；Issue #30 中没有
    未回答的 blocker。
 
@@ -96,6 +96,11 @@ sudo python3 /home/honeybury/boost-gateway-controller/scripts/manage_release_dep
 sudo systemctl list-timers --all 'boost-gateway-*'
 sudo python3 /home/honeybury/boost-gateway-controller/scripts/tools/check_observability_preflight.py
 ```
+
+当且仅当 current 仍是精确的不可变
+`v3.6.7-fb5f6bfb2626-fa8b69b36dec`，普通 verify 的唯一失败为缺少显式固定 IPAM 时，按
+[`release-lifecycle-runbook.md`](release-lifecycle-runbook.md) 改用受治理的
+`--allow-legacy-production-network-bridge`。该 flag 不是新 release 或其他 lifecycle 操作的默认参数。
 
 准入输出必须复制进 evidence ledger；终端显示 PASS 但没有不可变 summary 不算完成。
 
@@ -143,7 +148,7 @@ rollback 使用 [`release-lifecycle-runbook.md`](release-lifecycle-runbook.md)�
 
 - 精确 UTC 半开区间 `[start, end)`；
 - candidate tag/commit/runtime/config/deployment/host identity；
-- external endpoint、SDK 实际版本和 Mac host identity；
+- external endpoint、SDK 实际版本和 external observer host identity；
 - 已完成演练 record/summary digest；
 - maintenance plan（没有则明确为空）；
 - 当前 open P0 Issue 清单（必须为空）；
@@ -160,7 +165,7 @@ Issue comment 成功写入后才允许把第一个自然分钟称为 Day 0。run
 窗口内只允许只读观测和已经声明、不改变 runtime subject 的 evidence 操作：
 
 - 不升级、rollback、重启、重新创建 container 或修改 runtime/config/data schema；
-- 不盒盖或注销 Mac，不卸载 run/watchdog，不改变 endpoint/deployment record；
+- 不关闭或休眠承担职责的 external observer，不停止或卸载 run/watchdog，不改变 endpoint/deployment record；历史 Mac observer 仍承担职责时，其用户会话也不得注销；
 - 不在 `miniserver` 编译、测试、压测或运行 load generator；
 - 不删除、修复、重写或合并失败样本、incident、daily/weekly record；
 - 不事后添加 maintenance window；
@@ -171,7 +176,7 @@ Issue comment 成功写入后才允许把第一个自然分钟称为 Day 0。run
 以下任一条件使窗口失效并要求新的完整 72h：
 
 - candidate、endpoint、host 或关键配置改变；
-- run/watchdog 被卸载、Mac 系统睡眠或出现超过两分钟的非维护 gap；
+- run/watchdog 被卸载、external observer 休眠/断电或出现超过两分钟的非维护 gap；
 - invalid/duplicate sample；
 - 未知 restart、OOM、磁盘压力或无法解释的持续资源增长；
 - 为修复 runtime 缺陷部署新二进制或 image；
@@ -182,7 +187,8 @@ Issue comment 成功写入后才允许把第一个自然分钟称为 Day 0。run
 
 ## 固定结束与收口
 
-在 `end + 45s` 后生成 create-only 72h aggregate：
+在 `end + 45s` 后生成 create-only 72h aggregate。下列 `$HOME/.local` 命令仅记录已完成
+`TODO-0016` 的历史 Mac 布局：
 
 ```bash
 "$HOME/.local/share/boost-gateway-canary/venv/bin/python" \
@@ -190,6 +196,18 @@ Issue comment 成功写入后才允许把第一个自然分钟称为 Day 0。run
   --evidence-root "$HOME/.local/share/boost-gateway-canary/evidence" \
   --deployment-record "$HOME/.config/boost-gateway-canary/deployment-record.json" \
   --environment-file "$HOME/.config/boost-gateway-canary/environment" \
+  aggregate --window 72h --end <exact-window-end-Z>
+```
+
+当前 `aliyunserver` 职责布局必须改用受管 service 用户和已安装路径：
+
+```bash
+sudo -u boost-gateway-canary \
+  /opt/boost-gateway-canary/venv/bin/python \
+  /usr/local/libexec/boost-gateway-canary/external_business_canary.py \
+  --evidence-root /var/lib/boost-gateway-canary \
+  --deployment-record /etc/boost-gateway-canary/deployment-record.json \
+  --environment-file /etc/boost-gateway-canary/environment \
   aggregate --window 72h --end <exact-window-end-Z>
 ```
 

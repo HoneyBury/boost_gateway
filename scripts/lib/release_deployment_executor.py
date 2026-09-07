@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from scripts.lib.release_deployment_core import *  # noqa: F403
+from scripts.lib.release_deployment_runtime import (
+    legacy_production_network_evidence_is_complete,
+)
 from scripts.tools.check_release_compose import load_compose_document
 
 TOOLS_ROOT = Path(__file__).resolve().parents[1] / "tools"
+
 
 def lifecycle_tool(name: str) -> Path:
     """Resolve a lifecycle helper from scripts/tools after the module split."""
@@ -38,6 +42,10 @@ class LifecycleExecutor(Protocol):
         self, deployment_path: Path, summary_path: Path, timeout_seconds: float
     ) -> dict[str, Any]: ...
 
+    def verify_current_legacy_network_bridge(
+        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+    ) -> dict[str, Any]: ...
+
     def verify_read_only(
         self,
         deployment_path: Path,
@@ -52,7 +60,7 @@ class LifecycleExecutor(Protocol):
     def inactive_status(self) -> list[str]: ...
 
 
-class SystemLifecycleExecutor:
+class SystemLifecycleExecutor(RuntimeStatusMixin):
     def __init__(self, layout: Layout) -> None:
         self.layout = layout
 
@@ -83,6 +91,8 @@ class SystemLifecycleExecutor:
 
     def _environment(self, deployment_path: Path) -> dict[str, str]:
         environment = os.environ.copy()
+        if environment.get("DOCKER_HOST") or environment.get("DOCKER_CONTEXT"):
+            raise LifecycleError("remote Docker environment is forbidden")
         environment["PYTHONDONTWRITEBYTECODE"] = "1"
         images = parse_image_environment(deployment_path / "compose-images.env")
         secrets = parse_simple_environment(self.layout.secret_env)
@@ -356,6 +366,7 @@ class SystemLifecycleExecutor:
         *,
         read_only: bool,
         allow_legacy_redis_hardening_bridge: bool = False,
+        allow_legacy_production_network_bridge: bool = False,
     ) -> dict[str, Any]:
         verifier = lifecycle_tool("verify_release_deployment.py")
         compose = deployment_path / "deploy/operations/docker-compose.production.yml"
@@ -376,6 +387,22 @@ class SystemLifecycleExecutor:
             command.append("--read-only")
         if allow_legacy_redis_hardening_bridge:
             command.append("--allow-legacy-redis-hardening-bridge")
+        if allow_legacy_production_network_bridge:
+            if read_only:
+                raise LifecycleError(
+                    "legacy production network bridge requires full current verification"
+                )
+            try:
+                current = self.layout.current.resolve(strict=True)
+            except OSError as exc:
+                raise LifecycleError(
+                    f"cannot resolve current deployment for network bridge: {exc}"
+                ) from exc
+            if deployment_path.resolve() != current:
+                raise LifecycleError(
+                    "legacy production network bridge is restricted to current deployment"
+                )
+            command.append("--allow-legacy-production-network-bridge")
         self._run(
             command,
             timeout_seconds,
@@ -394,6 +421,30 @@ class SystemLifecycleExecutor:
             and summary.get("legacy_redis_hardening_bridge") is not True
         ):
             raise LifecycleError("legacy Redis hardening bridge was not validated")
+        if (
+            summary.get("legacy_production_network_bridge", False)
+            is not allow_legacy_production_network_bridge
+        ):
+            raise LifecycleError(
+                "legacy production network bridge result differs from request"
+            )
+        if (
+            summary.get("legacy_production_network_bridge_requested", False)
+            is not allow_legacy_production_network_bridge
+        ):
+            raise LifecycleError(
+                "legacy production network bridge request evidence differs"
+            )
+        bridge_evidence = summary.get("legacy_production_network_evidence")
+        if allow_legacy_production_network_bridge:
+            if not legacy_production_network_evidence_is_complete(bridge_evidence):
+                raise LifecycleError(
+                    "legacy production network bridge evidence is incomplete"
+                )
+        elif bridge_evidence is not None:
+            raise LifecycleError(
+                "legacy production network bridge evidence was not requested"
+            )
         return summary
 
     def verify(
@@ -401,6 +452,17 @@ class SystemLifecycleExecutor:
     ) -> dict[str, Any]:
         return self._verify(
             deployment_path, summary_path, timeout_seconds, read_only=False
+        )
+
+    def verify_current_legacy_network_bridge(
+        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+    ) -> dict[str, Any]:
+        return self._verify(
+            deployment_path,
+            summary_path,
+            timeout_seconds,
+            read_only=False,
+            allow_legacy_production_network_bridge=True,
         )
 
     def verify_read_only(
@@ -417,73 +479,6 @@ class SystemLifecycleExecutor:
             timeout_seconds,
             read_only=True,
             allow_legacy_redis_hardening_bridge=allow_legacy_redis_hardening_bridge,
-        )
-
-    def runtime_status(self, deployment_path: Path) -> list[str]:
-        failures: list[str] = []
-        for state in ("is-enabled", "is-active"):
-            completed = subprocess.run(
-                ["systemctl", state, "--quiet", "boost-gateway-compose.service"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=False,
-                timeout=10,
-            )
-            if completed.returncode:
-                failures.append(f"systemd service is not {state.removeprefix('is-')}")
-        compose = deployment_path / "deploy/operations/docker-compose.production.yml"
-        environment = self._environment(deployment_path)
-        expected = parse_image_environment(deployment_path / "compose-images.env")
-        service_by_variable = {
-            "GATEWAY_IMAGE_ID": "gateway",
-            "LOGIN_IMAGE_ID": "login-backend",
-            "ROOM_IMAGE_ID": "room-backend",
-            "BATTLE_IMAGE_ID": "battle-backend",
-            "MATCHMAKING_IMAGE_ID": "matchmaking-backend",
-            "LEADERBOARD_IMAGE_ID": "leaderboard-backend",
-        }
-        for variable, service in service_by_variable.items():
-            container = subprocess.run(
-                ["docker", "compose", "-f", str(compose), "ps", "-q", service],
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=30,
-                env=environment,
-            )
-            container_id = container.stdout.strip()
-            if container.returncode or not container_id:
-                failures.append(f"running container is missing: {service}")
-                continue
-            inspected = subprocess.run(
-                ["docker", "inspect", "--format", "{{.Image}}", container_id],
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-                timeout=30,
-            )
-            if inspected.returncode or inspected.stdout.strip() != expected[variable]:
-                failures.append(f"running image identity differs: {service}")
-        return failures
-
-    def inactive_status(self) -> list[str]:
-        enabled = subprocess.run(
-            ["systemctl", "is-enabled", "--quiet", "boost-gateway-compose.service"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-            timeout=10,
-        )
-        return (
-            ["systemd service is enabled without a current deployment"]
-            if not enabled.returncode
-            else []
         )
 
 

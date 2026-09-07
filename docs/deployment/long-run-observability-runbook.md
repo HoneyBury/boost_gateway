@@ -217,6 +217,13 @@ every governed container rather than accepting cAdvisor metric names alone.
 sudo python3 "$CONTROLLER/scripts/tools/manage_release_deployment.py" verify
 ```
 
+For the exact immutable current deployment
+`v3.6.7-fb5f6bfb2626-fa8b69b36dec` only, the lifecycle runbook documents an explicit
+`--allow-legacy-production-network-bridge` when the missing fixed-IPAM declaration is the sole
+strict contract failure and the live 13-container network matches the exact allowlisted runtime
+network contract and emits complete evidence. Never use that flag for a new release, install,
+deploy, upgrade, activation, rollback, or recovery.
+
 If thermal metrics are absent, do not weaken the verifier. Check `/sys/class/hwmon`,
 `/sys/class/thermal`, node-exporter logs, and the host admission thermal evidence.
 

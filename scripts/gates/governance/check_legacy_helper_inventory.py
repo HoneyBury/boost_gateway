@@ -30,6 +30,9 @@ REQUIRED_DOC_TOKENS = (
     "29 个业务 handler",
     "29 个 handler 已具备 `EnvelopeMessageKind` / schema-backed typed contract",
     "已进入 `EnvelopeMessageKind` / `proto/v3/login.proto`",
+    "--allow-legacy-production-network-bridge",
+    "v3.6.7-fb5f6bfb2626-fa8b69b36dec",
+    "current verify compatibility-only",
 )
 
 BUSINESS_SERVICE_SOURCES = (
@@ -53,6 +56,8 @@ REQUIRED_REFERENCES = (
     "src/v2/login/login_backend_service.cpp",
     "src/v2/room/room_backend_service.cpp",
     "src/v2/leaderboard/leaderboard_service.cpp",
+    "scripts/lib/release_deployment_runtime.py",
+    "docs/deployment/release-lifecycle-runbook.md",
 )
 
 SCHEMA_TYPED_HANDLERS = {

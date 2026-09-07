@@ -27,7 +27,7 @@ Day 0 尚未声明。
 | active vault 与 source cutover | 已验证 | 两份不同 restore/business/known-good 独立 PASS；修复后第三份 backup PASS；迁移后首个自然 scheduled backup `todo0012-scheduled-20260907T022120Z-e2fa52e1` 自动 upload/readback PASS，当前 4 backups / 2 known-good / incoming 0 / trash 0 / logical bytes `5,428,028,032` / free `27,361,124,352` | backup timer 下一次 `2026-09-08 10:21:07 CST`；持续检查 freshness |
 | Mac 历史冷档 | 已验证 | 阿里云冷档中的迁移 partial 为 `2,108,033,646` bytes、70 个文件，`SHA256SUMS` 全部通过；其中两份完整历史 backup 与 Mac checksum 相同，另有一份未完成传输且不具备恢复资格 | 保留为只读历史；不得加入 active retention 或宣称未完成传输有效 |
 | retention 调度 | 已验证并启用 | receiver/known-good/retention 共锁与容量修复已重部署；`prune-20260907T014058Z-c5dd7494` PASS；当时快照为 3 backup / 2 known-good、空删除集、logical bytes `4,063,038,013`、free `28,906,655,744` | retention timer enabled/active，下一次 `2026-09-07 12:04:53 CST`；不要与 backup timer 混淆 |
-| production 回归 | 已验证 | lifecycle `status`/`verify`、observability preflight、SMTP relay 和 13 个 governed production containers 均 PASS，生产卷 identity 未改变 | 最终收口时复验一次 |
+| production 回归 | 已验证 | 迁移签收时所用 controller 下的 lifecycle `status`/`verify`、observability preflight、SMTP relay 和 13 个 governed production containers 均 PASS，生产卷 identity 未改变 | controller 治理对齐属于迁移后的独立工作；不得把后续兼容验证结果追写成迁移时事实 |
 | evidence round trip | 已验证 | package `todo0017-aliyun-cutover-20260906T205500Z` 在阿里云校验 PASS，create-only receipt 已回传 `miniserver` 受保护 raw evidence | 保留 package/manifest/receipt digest，不改写原包 |
 | Mac 收口与 Day 0 | 迁移已签收；Day 0 待声明 | 四个迁移门禁全部 PASS；LaunchAgent disabled/unloaded、配置保留；最终 canary archive 40,594 files / 70,130,774 bytes，checksum/readback PASS；Mac runner、Docker/CWA 与原 vault 未触碰 | 选择尚未采样的未来自然 UTC 分钟声明 Day 0；不得追溯 |
 

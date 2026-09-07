@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from scripts.lib.release_deployment_core import *  # noqa: F403
 from scripts.lib.release_deployment_executor import lifecycle_lock
+from scripts.lib.release_deployment_runtime import (
+    legacy_production_network_evidence_is_complete,
+)
+
 
 class CommandsMixin:
     def deploy(self, deployment_id: str) -> dict[str, Any]:
@@ -321,16 +325,60 @@ class CommandsMixin:
         *,
         timeout_seconds: float = ROLLBACK_DEADLINE_SECONDS,
         already_locked: bool = False,
+        allow_legacy_production_network_bridge: bool = False,
     ) -> dict[str, Any]:
+        if allow_legacy_production_network_bridge and already_locked:
+            raise LifecycleError(
+                "legacy production network bridge requires its own lifecycle lock"
+            )
+
         def execute() -> dict[str, Any]:
             current = self._resolve_link(self.layout.current, required=True)
             assert current is not None
             transaction, record = self._transaction(
-                "verify", candidate=current, deadline_seconds=timeout_seconds
+                "verify",
+                candidate=current,
+                deadline_seconds=timeout_seconds,
+                legacy_production_network_bridge_requested=(
+                    allow_legacy_production_network_bridge
+                ),
             )
             started = self.monotonic()
             try:
-                summary = self._verify_target(current, transaction, timeout_seconds)
+                if allow_legacy_production_network_bridge:
+                    summary = self.executor.verify_current_legacy_network_bridge(
+                        self._deployment_dir(current),
+                        transaction / "deployment-verification-summary.json",
+                        timeout_seconds,
+                    )
+                else:
+                    summary = self._verify_target(current, transaction, timeout_seconds)
+                if (
+                    summary.get("legacy_production_network_bridge", False)
+                    is not allow_legacy_production_network_bridge
+                ):
+                    raise LifecycleError(
+                        "legacy production network bridge result differs from request"
+                    )
+                if (
+                    summary.get("legacy_production_network_bridge_requested", False)
+                    is not allow_legacy_production_network_bridge
+                ):
+                    raise LifecycleError(
+                        "legacy production network bridge request evidence differs"
+                    )
+                bridge_evidence = summary.get("legacy_production_network_evidence")
+                if allow_legacy_production_network_bridge:
+                    if not legacy_production_network_evidence_is_complete(
+                        bridge_evidence
+                    ):
+                        raise LifecycleError(
+                            "legacy production network bridge evidence is incomplete"
+                        )
+                elif bridge_evidence is not None:
+                    raise LifecycleError(
+                        "legacy production network bridge evidence was not requested"
+                    )
             except Exception as exc:
                 record.update(
                     {
@@ -347,6 +395,9 @@ class CommandsMixin:
                     "status": "passed",
                     "completed_at": now(),
                     "elapsed_seconds": round(self.monotonic() - started, 3),
+                    "legacy_production_network_bridge": summary.get(
+                        "legacy_production_network_bridge", False
+                    ),
                 }
             )
             self._write_transaction_record(transaction, record)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -12,6 +13,112 @@ from scripts.tools import verify_release_deployment as module
 
 
 class VerifyReleaseDeploymentTest(unittest.TestCase):
+    def test_legacy_verification_bridges_are_mutually_exclusive(self) -> None:
+        args = mock.Mock(
+            allow_legacy_redis_hardening_bridge=True,
+            allow_legacy_production_network_bridge=True,
+        )
+        with self.assertRaisesRegex(RuntimeError, "mutually exclusive"):
+            module.verify(args)
+
+    def test_network_bridge_requires_deployment_bound_inputs(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            staging = module.Path(temporary).resolve()
+            defaults = {
+                "allow_legacy_redis_hardening_bridge": False,
+                "allow_legacy_production_network_bridge": True,
+                "staging_dir": staging,
+                "compose_file": staging / "compose.yml",
+                "read_only": False,
+                "image_env_path": staging / "compose-images.env",
+                "host": "127.0.0.1",
+                "port": 9201,
+            }
+            cases = (
+                ({"read_only": True}, "full current verification"),
+                ({"image_env_path": staging / "other.env"}, "image environment"),
+                ({"host": "100.65.71.117"}, "SDK endpoint"),
+                ({"port": 19201}, "SDK endpoint"),
+            )
+            for drift, message in cases:
+                with self.subTest(drift=drift), self.assertRaisesRegex(
+                    RuntimeError, message
+                ):
+                    module.verify(mock.Mock(**{**defaults, **drift}))
+
+            with (
+                mock.patch.dict(
+                    verification_module.os.environ,
+                    {"DOCKER_CONTEXT": "remote-context"},
+                ),
+                self.assertRaisesRegex(RuntimeError, "remote Docker environment"),
+            ):
+                module.verify(mock.Mock(**defaults))
+
+            with (
+                mock.patch.dict(
+                    verification_module.os.environ,
+                    {"DOCKER_HOST": "", "DOCKER_CONTEXT": ""},
+                ),
+                mock.patch.object(
+                    verification_module,
+                    "run",
+                    return_value=mock.Mock(
+                        returncode=0, stdout="remote-context\n", stderr=""
+                    ),
+                ),
+                self.assertRaisesRegex(RuntimeError, "local default"),
+            ):
+                module.verify(mock.Mock(**defaults))
+
+    def test_local_docker_environment_requires_the_default_unix_socket(self) -> None:
+        completed = (
+            mock.Mock(returncode=0, stdout="default\n", stderr=""),
+            mock.Mock(returncode=0, stdout="unix:///var/run/docker.sock\n", stderr=""),
+        )
+        clean_environment = {"DOCKER_HOST": "", "DOCKER_CONTEXT": ""}
+        with (
+            mock.patch.dict(verification_module.os.environ, clean_environment),
+            mock.patch.object(verification_module, "run", side_effect=completed),
+        ):
+            verification_module.require_local_docker_environment()
+
+        wrong_endpoint = (
+            completed[0],
+            mock.Mock(returncode=0, stdout="ssh://remote\n", stderr=""),
+        )
+        with (
+            mock.patch.dict(verification_module.os.environ, clean_environment),
+            mock.patch.object(verification_module, "run", side_effect=wrong_endpoint),
+            self.assertRaisesRegex(RuntimeError, "local Unix socket"),
+        ):
+            verification_module.require_local_docker_environment()
+
+    def test_network_bridge_failure_summary_records_request_and_no_evidence(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            summary_path = module.Path(temporary) / "summary.json"
+            argv = [
+                "verify_release_deployment.py",
+                "--staging-dir",
+                temporary,
+                "--compose-file",
+                str(module.Path(temporary) / "compose.yml"),
+                "--allow-legacy-production-network-bridge",
+                "--summary-path",
+                str(summary_path),
+            ]
+            with (
+                mock.patch.object(sys, "argv", argv),
+                mock.patch.object(module, "verify", side_effect=RuntimeError("drift")),
+            ):
+                self.assertEqual(module.main(), 1)
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        self.assertTrue(summary["legacy_production_network_bridge_requested"])
+        self.assertFalse(summary["legacy_production_network_bridge"])
+        self.assertIsNone(summary["legacy_production_network_evidence"])
+
     def test_legacy_redis_bridge_accepts_only_exact_rdb_contract(self) -> None:
         document = {
             "services": {

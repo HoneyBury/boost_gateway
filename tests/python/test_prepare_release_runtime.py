@@ -181,6 +181,7 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                 "scripts/lib/evidence_provenance.py",
                 "scripts/lib/operations_host.py",
                 "scripts/lib/release_deployment_verification.py",
+                "scripts/lib/release_deployment_runtime.py",
             )
             for relative in required:
                 self.assertTrue((destination / relative).is_file(), relative)
