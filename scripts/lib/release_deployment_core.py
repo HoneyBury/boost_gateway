@@ -258,3 +258,76 @@ class Layout:
     @property
     def lock_path(self) -> Path:
         return self.transaction_root / ".lifecycle.lock"
+
+
+class RuntimeStatusMixin:
+    """Check the systemd unit and running image identities without mutation."""
+
+    def _environment(self, deployment_path: Path) -> dict[str, str]: ...
+
+    def runtime_status(self, deployment_path: Path) -> list[str]:
+        failures: list[str] = []
+        for state in ("is-enabled", "is-active"):
+            completed = subprocess.run(
+                ["systemctl", state, "--quiet", "boost-gateway-compose.service"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+                timeout=10,
+            )
+            if completed.returncode:
+                failures.append(f"systemd service is not {state.removeprefix('is-')}")
+        compose = deployment_path / "deploy/operations/docker-compose.production.yml"
+        environment = self._environment(deployment_path)
+        expected = parse_image_environment(deployment_path / "compose-images.env")
+        service_by_variable = {
+            "GATEWAY_IMAGE_ID": "gateway",
+            "LOGIN_IMAGE_ID": "login-backend",
+            "ROOM_IMAGE_ID": "room-backend",
+            "BATTLE_IMAGE_ID": "battle-backend",
+            "MATCHMAKING_IMAGE_ID": "matchmaking-backend",
+            "LEADERBOARD_IMAGE_ID": "leaderboard-backend",
+        }
+        for variable, service in service_by_variable.items():
+            container = subprocess.run(
+                ["docker", "compose", "-f", str(compose), "ps", "-q", service],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+                env=environment,
+            )
+            container_id = container.stdout.strip()
+            if container.returncode or not container_id:
+                failures.append(f"running container is missing: {service}")
+                continue
+            inspected = subprocess.run(
+                ["docker", "inspect", "--format", "{{.Image}}", container_id],
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+                timeout=30,
+            )
+            if inspected.returncode or inspected.stdout.strip() != expected[variable]:
+                failures.append(f"running image identity differs: {service}")
+        return failures
+
+    def inactive_status(self) -> list[str]:
+        enabled = subprocess.run(
+            ["systemctl", "is-enabled", "--quiet", "boost-gateway-compose.service"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+            timeout=10,
+        )
+        return (
+            ["systemd service is enabled without a current deployment"]
+            if not enabled.returncode
+            else []
+        )

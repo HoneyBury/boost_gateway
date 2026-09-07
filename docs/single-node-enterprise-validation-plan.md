@@ -1,6 +1,6 @@
 # Enterprise Single-Node Operations And 30-Day Validation Plan
 
-更新时间：2026-09-06
+更新时间：2026-09-07
 
 ## 目标
 
@@ -72,8 +72,9 @@
 `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede：SMTP relay 自
 `2026-08-31T19:30:25Z` 的主机重启起因 bridge 地址尚未恢复而启动失败，原窗口不满足
 Alertmanager 自然运行的硬准入。修复事件记录为
-`smtp-multi-client-recovery-20260905T215241Z`；在受治理修复、外部 Mac 交流供电和连续自然
-分钟样本全部复验后，重新声明新的 43,200 分钟半开窗口，不累计旧窗口时间。
+`smtp-multi-client-recovery-20260905T215241Z`；受治理修复及 Mac→`aliyunserver` 外部运营职责
+迁移已签收，Mac 已退出日常通电职责。完成 controller 对齐、独立 dead-man 与治理化 fixed-end
+finalizer 后，重新声明新的 43,200 分钟半开窗口，不累计旧窗口或迁移预检时间。
 
 `TODO-0016` 的 maintained 执行入口是
 [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)。计划内 gateway、

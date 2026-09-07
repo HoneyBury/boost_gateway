@@ -1,6 +1,6 @@
 # Legacy / Helper Inventory
 
-更新时间：2026-07-09
+更新时间：2026-09-07
 
 本文档记录当前仓库仍保留的 legacy 兼容面、helper 迁移层和默认主线之外的过渡入口。它不是未来规划文档，而是当前事实清单；未来规划仍以 `docs/project-blueprint.md` 为准。
 
@@ -77,6 +77,16 @@
 | ~~`examples/*_demo` / `echo_server` / `admin_demo`~~ | ~~showcase 入口~~ | ~~已移除~~ | ✅ 已完成退场 |
 | `demo/games/tank_battle/` | 业务 demo | `BOOST_BUILD_TANK_DEMO=OFF` | 不属于默认生产主线 |
 | `examples/realtime_echo_plugin` | demo/plugin 样例 | `BOOST_BUILD_ECHO_PLUGIN_DEMO=OFF` | 不属于默认生产主线 |
+
+## 运营兼容层
+
+| 入口/模块 | 当前状态 | 默认主线角色 | 退役条件 |
+| --- | --- | --- | --- |
+| `scripts/lib/release_deployment_runtime.py` / `--allow-legacy-production-network-bridge` | 仅允许精确 current `v3.6.7-fb5f6bfb2626-fa8b69b36dec`，并绑定唯一旧 Compose failure、13 个 container ID 与实际固定 IPAM | 非默认、显式 current verify compatibility-only；不得用于 install/deploy/upgrade/rollback/recovery | 显式固定 IPAM 的新 release 成为 production current 后删除；growth exception 于 `2026-11-15` 到期复审，不是 runtime 自动失效日期 |
+
+完整边界与命令以
+[`docs/deployment/release-lifecycle-runbook.md`](../deployment/release-lifecycle-runbook.md)
+为准。普通 release 仍必须通过严格网络契约，不能借此兼容层接纳新漂移。
 
 ## 禁止新增的行为
 

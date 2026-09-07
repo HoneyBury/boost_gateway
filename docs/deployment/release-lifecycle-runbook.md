@@ -1,6 +1,6 @@
 # Immutable Release Lifecycle
 
-更新时间：2026-07-25
+更新时间：2026-09-07
 
 本文档对应 `TODO-0010` 的仓库入口。目标是已经完成 `TODO-0008` 主机准入、并由
 `TODO-0009` 部署了首个不可变 release 的 Ubuntu 24.04 x64 单节点 Docker Compose
@@ -33,6 +33,38 @@ summary、配置 digest 漂移和逃逸 deployments 根目录的指针。
 因此 systemd 重启只能消费最后一个 verified deployment。每个关键 record、目录和 symlink rename
 都会同步父目录。若进程或主机在 transaction 中断，下一条受控命令会先对账：已提交且 verified
 的 current 会完成提交，未提交候选会恢复原 verified current，不能跳过失败 transaction 继续升级。
+
+## v3.6.7 现网网络兼容复验
+
+不可变现网 deployment `v3.6.7-fb5f6bfb2626-fa8b69b36dec` 发布时的 Compose 没有显式
+声明 `boost-net` IPAM；Docker 已为它稳定分配 `172.18.0.0/16`、gateway `172.18.0.1`。
+新版 controller 的普通严格 verifier 正确报告唯一差异
+`boost-net: exactly one fixed IPAM config is required`。不得修改该 release tree 或把这一例外
+推广到新候选。仅当它仍是 `/opt/boost-gateway/current` 时，使用一次显式兼容复验：
+
+```bash
+sudo python3 scripts/manage_release_deployment.py verify \
+  --allow-legacy-production-network-bridge
+```
+
+兼容入口同时固定 production current、
+`/opt/boost-gateway/deployments/v3.6.7-fb5f6bfb2626-fa8b69b36dec`、对应 release 路径、tag、commit、
+runtime/config/image-env/manifest/Compose SHA-256，以及 resolved network 的唯一上述失败。它还从
+`docker compose ps -q` 取得恰好 13 个完整 container ID，逐容器核对 project/service/version label、
+唯一 NetworkID 和 IPv4，再按该 NetworkID 核对 bridge 名称、IPAM、Compose labels 与完整附件集合。
+底层 verifier 同时要求 image env 精确为该 current deployment 的 `compose-images.env`，SDK full-flow
+目标精确为 `127.0.0.1:9201`，且 Docker 必须没有远端环境覆盖、当前 context 为 `default`、endpoint
+为 `unix:///var/run/docker.sock`；通过直接调用底层 CLI 改写上述任一受限输入都会在读取 Compose 前失败。
+成功 summary 必须写入 `legacy_production_network_bridge=true` 和完整
+`legacy_production_network_evidence`；普通 verify 必须保持该值为 false 且 evidence 为 null。
+
+该 flag 只属于完整、非 read-only 的 current `verify`，会照常执行 SDK full-flow；它不能用于
+install、deploy、upgrade、rollback 或 recovery，也不能与 Redis recovery bridge 组合。若 verify
+进程中断，下一条 lifecycle 命令只把事务标记为 `interrupted_verification_failed` 并保留当前部署
+拓扑，不得进入 activation/rollback reconcile；操作员须显式重跑。任何额外 contract、路径、摘要、
+容器或网络漂移都必须失败。首个显式固定 IPAM 的 release 成为 current 后，删除此临时 bridge、
+flag、测试和文档，不允许延续为通用兼容模式。对应 script growth exception 的治理复审截止日为
+`2026-11-15`；这不是运行时自动失效日期，也不得被静默延期。
 
 ## 接管 TODO-0009 首次部署
 

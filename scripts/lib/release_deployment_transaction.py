@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from scripts.lib.release_deployment_core import *  # noqa: F403
 
+
 class TransactionMixin:
     def _reconcile_pending(self) -> None:
         pending: tuple[Path, dict[str, Any]] | None = None
@@ -25,6 +26,24 @@ class TransactionMixin:
         candidate = str(record.get("candidate", ""))
         if DEPLOYMENT_ID_RE.fullmatch(candidate) is None:
             raise LifecycleError("pending transaction has an invalid candidate")
+        if record.get("operation") == "verify":
+            current = self._resolve_link(self.layout.current, required=False)
+            record.update(
+                {
+                    "status": "interrupted_verification_failed",
+                    "completed_at": now(),
+                    "reconciled": True,
+                    "failure": (
+                        "verification was interrupted; reconciliation preserved the "
+                        "deployment topology, while the verification may have partially run"
+                    ),
+                    "preserved_current": current,
+                }
+            )
+            self._write_transaction_record(transaction, record)
+            raise LifecycleError(
+                "interrupted verification was recorded; rerun the lifecycle command"
+            )
         started = self.monotonic()
         if record.get("legacy_adoption") is True and self._legacy_current_matches(
             candidate

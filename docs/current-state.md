@@ -124,9 +124,10 @@ availability、零 gap/invalid/duplicate/restart/OOM 通过；final package SHA-
 91/91 文件通过，`TODO-0016` 已完成。最初声明的独立 30 天窗口
 `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede，因为 SMTP relay 自窗口
 开始前的主机重启起一直启动失败，Alertmanager 准入不成立。事件
-`smtp-multi-client-recovery-20260905T215241Z` 已记录恢复结果；新的 30 天窗口等待受治理修复、
-外部运营职责迁移和自然分钟样本复验后重新声明。截至 2026-09-07，新的 `TODO-0017` Day 0
-尚未开始；阿里云 preflight 与 Mac 历史分钟都不能追溯计入。任何 runtime、关键配置、
+`smtp-multi-client-recovery-20260905T215241Z` 已记录恢复结果；SMTP 受治理修复、外部运营职责
+迁移和自然分钟样本复验均已完成。新的 30 天窗口仍须等待 controller 对齐、独立 dead-man
+正式处置与演练、治理化 fixed-end finalizer 全部通过后重新声明。截至 2026-09-07，新的
+`TODO-0017` Day 0 尚未开始；阿里云 preflight 与 Mac 历史分钟都不能追溯计入。任何 runtime、关键配置、
 deployment、endpoint 或 host identity 变化仍会重置 Day 0，旧窗口时间不会累计。
 
 ## 阿里云异机迁移状态
@@ -199,9 +200,14 @@ backup vault 与异机 evidence archive；完整边界和切换步骤见
   scheduler 停止后，阿里云又连续至少 11 个纯云自然分钟 PASS 且没有 incident。`2026-09-07
   09:27 CST` 前的失败来自 Mac 与阿里云使用相同 synthetic identity 的并发竞态，不是生产
   runtime、endpoint 或业务异常。这些结果仍属于 migration preflight，不是正式 30 天窗口。
-- `miniserver` 的 lifecycle `status`/`verify`、observability preflight、SMTP relay 和 13 个
-  governed production containers 均 PASS；production deployment、Redis volume identity 和
-  服务边界未因迁移改变。
+- 阿里云迁移验收时，`miniserver` 的 lifecycle `status`/`verify`、observability preflight、
+  SMTP relay 和 13 个 governed production containers 均 PASS；这是当时 controller 下的历史
+  事实。合并后的 controller `40a1ef147ff19707821b0825e17895a1baeb2938` 首次对齐时，严格
+  verifier 发现不可变 v3.6.7 Compose 只缺显式 `boost-net` IPAM，而实际 Docker network 仍精确为
+  `172.18.0.0/16` / `172.18.0.1`，其余验证全部 PASS。切换已按 fail-closed 条件原子回滚，当前
+  canonical controller 仍是 clean `feaccee244ad67b529820e1d606701b6ce7cdc1a`；production
+  current/previous、Redis volume identity 和服务均未改变。新的 current-only 精确兼容 verifier
+  必须经独立 PR 审批、CI、合并及实机 PASS 后才能完成 controller 对齐。
 - 最终 firing/resolved drill `todo0017-aliyun-final-20260907T014854Z` 分别于
   `2026-09-07T01:48:54Z` 和 `2026-09-07T01:49:06Z` 提交，Alertmanager email notification
   计数从 23 增至 25，failed 计数保持 3。用户于 `2026-09-07T02:14:12Z` 确认目标端
@@ -339,8 +345,9 @@ Docker 或 CWA 书库容器迁到 x86-64 云主机。历史 macOS 发布证据�
    evidence sync 和邮件目标端 `Message-Id` create-only attestation 均已通过，日常职责迁移已
    正式签收。
 4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
-5. 已关闭 `TODO-0011`/`TODO-0013` 并完成独立 72 小时上线预演；完成阿里云异机迁移验收
-   后，以单一 tag/SHA/digest 和新的 external host identity 从新 Day 0 连续运行至少 30 天。
+5. 已关闭 `TODO-0011`/`TODO-0013` 并完成独立 72 小时上线预演与阿里云异机迁移验收；完成
+   controller 对齐、独立 dead-man 正式处置与演练、治理化 fixed-end finalizer 后，以单一
+   tag/SHA/digest 和新的 external host identity 从新 Day 0 连续运行至少 30 天。
 
 30 天验证要求连续时长不少于 `2,592,000s`，availability/canary success 与证据覆盖率
 均不低于 99.9%；runtime 变化会重置 Day 0。完整口径见

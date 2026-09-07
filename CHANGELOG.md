@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Operations
+
+- Add an explicit, current-only verifier bridge for the immutable v3.6.7 Compose network. It
+  accepts only the one historical missing-IPAM contract while binding the exact deployment,
+  release digests, 13 container identities, and live Docker network; all lifecycle activation,
+  upgrade, rollback, and recovery paths remain strict.
+
 ## v3.6.7 - Runtime concurrency and operations hardening (2026-08-12)
 
 ### Runtime correctness

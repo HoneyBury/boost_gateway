@@ -381,6 +381,11 @@ def main() -> int:
                 "/etc/boost-gateway/compose-images.env",
                 "TODO-0010",
                 "600",
+                "--allow-legacy-production-network-bridge",
+                "v3.6.7-fb5f6bfb2626-fa8b69b36dec",
+                "boost-net: exactly one fixed IPAM config is required",
+                "legacy_production_network_evidence",
+                "interrupted_verification_failed",
             )
         )
         and "release-lifecycle-runbook.md" in docs_index,

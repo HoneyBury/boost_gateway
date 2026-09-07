@@ -32,6 +32,7 @@ class ReleaseDeploymentManager(
 ):
     """Coordinate governed install, activation, recovery, and status operations."""
 
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -57,7 +58,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("rollback")
     subparsers.add_parser("status")
-    subparsers.add_parser("verify")
+    verify = subparsers.add_parser("verify")
+    verify.add_argument(
+        "--allow-legacy-production-network-bridge",
+        action="store_true",
+        help="accept only the allowlisted immutable v3.6.7 network contract",
+    )
     return parser
 
 
@@ -90,7 +96,11 @@ def main() -> int:
                 ),
             )
         elif args.command == "verify":
-            result = manager.verify_current()
+            result = manager.verify_current(
+                allow_legacy_production_network_bridge=(
+                    args.allow_legacy_production_network_bridge
+                )
+            )
         else:
             result = manager.status()
     except (OSError, LifecycleError, subprocess.SubprocessError) as exc:

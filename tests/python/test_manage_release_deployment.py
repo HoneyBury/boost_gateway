@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import importlib
 import tempfile
@@ -11,7 +13,33 @@ from typing import Any
 from unittest import mock
 
 from scripts.lib import release_deployment_executor as executor_module
+from scripts.lib import release_deployment_runtime as runtime_module
 from scripts.tools import manage_release_deployment as module
+
+
+def complete_network_bridge_evidence() -> dict[str, Any]:
+    return {
+        "accepted_contract_failures": [runtime_module.NETWORK_CONTRACT_FAILURE],
+        "identity": {
+            **runtime_module.LEGACY_RECORD_IDENTITY,
+            "compose_sha256": runtime_module.LEGACY_COMPOSE_SHA256,
+        },
+        "resolved_network": runtime_module.LEGACY_RESOLVED_NETWORK,
+        "runtime_network": {
+            **runtime_module.LEGACY_RUNTIME_NETWORK_IDENTITY,
+            "network_id": "f" * 64,
+            "containers": [
+                {
+                    "container_id": f"{index:064x}",
+                    "name": name,
+                    "ipv4_address": f"172.18.0.{index + 1}/16",
+                }
+                for index, name in enumerate(
+                    sorted(runtime_module.REQUIRED_CONTAINER_NAMES), start=1
+                )
+            ],
+        },
+    }
 
 
 class FakeExecutor:
@@ -74,6 +102,21 @@ class FakeExecutor:
         summary_path.write_text('{"overall_pass": true}\n', encoding="utf-8")
         return {"overall_pass": True}
 
+    def verify_current_legacy_network_bridge(
+        self, deployment_path: Path, summary_path: Path, timeout_seconds: float
+    ) -> dict[str, Any]:
+        self.calls.append(
+            (f"verify-network-bridge:{summary_path.name}", deployment_path.name)
+        )
+        result = {
+            "overall_pass": True,
+            "legacy_production_network_bridge_requested": True,
+            "legacy_production_network_bridge": True,
+            "legacy_production_network_evidence": complete_network_bridge_evidence(),
+        }
+        summary_path.write_text(json.dumps(result) + "\n", encoding="utf-8")
+        return result
+
     def verify_read_only(
         self,
         deployment_path: Path,
@@ -123,6 +166,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         modules = {
             "scripts.lib.release_deployment_core": "scripts/lib/release_deployment_core.py",
             "scripts.lib.release_deployment_executor": "scripts/lib/release_deployment_executor.py",
+            "scripts.lib.release_deployment_runtime": "scripts/lib/release_deployment_runtime.py",
             "scripts.lib.release_deployment_recovery": "scripts/lib/release_deployment_recovery.py",
             "scripts.lib.release_deployment_install": "scripts/lib/release_deployment_install.py",
             "scripts.lib.release_deployment_transaction": "scripts/lib/release_deployment_transaction.py",
@@ -198,9 +242,7 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         (source / "scripts/tools/check_release_compose.py").write_text(
             "pass\n", encoding="utf-8"
         )
-        (source / "scripts/lib/operations_host.py").write_text(
-            marker, encoding="utf-8"
-        )
+        (source / "scripts/lib/operations_host.py").write_text(marker, encoding="utf-8")
         (source / "bin/sdk_full_flow_client").write_text(marker, encoding="utf-8")
         config_digest = module.sha256_tree(source / "config")
         manifest = {
@@ -961,6 +1003,173 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertFalse(result["protected_state_mutated"])
         self.assertTrue(result["legacy_redis_hardening_bridge"])
 
+    def test_system_executor_network_bridge_is_restricted_to_current(self) -> None:
+        deployment = Path(self.temporary.name) / "current-deployment"
+        deployment.mkdir()
+        self.layout.root.mkdir(parents=True)
+        self.layout.current.symlink_to(deployment)
+        summary = Path(self.temporary.name) / "network-bridge.json"
+        executor = module.SystemLifecycleExecutor(self.layout)
+
+        def run_verifier(
+            command: list[str],
+            timeout_seconds: float,
+            *,
+            environment: dict[str, str] | None = None,
+        ) -> mock.Mock:
+            self.assertIn("--allow-legacy-production-network-bridge", command)
+            summary.write_text(
+                json.dumps(
+                    {
+                        "overall_pass": True,
+                        "legacy_production_network_bridge_requested": True,
+                        "legacy_production_network_bridge": True,
+                        "legacy_production_network_evidence": (
+                            complete_network_bridge_evidence()
+                        ),
+                    }
+                ),
+                encoding="utf-8",
+            )
+            return mock.Mock(returncode=0, stdout="", stderr="")
+
+        with (
+            mock.patch.object(executor, "_environment", return_value={}),
+            mock.patch.object(executor, "_run", side_effect=run_verifier),
+        ):
+            result = executor.verify_current_legacy_network_bridge(
+                deployment, summary, 60.0
+            )
+        self.assertTrue(result["legacy_production_network_bridge"])
+
+        other = Path(self.temporary.name) / "other-deployment"
+        other.mkdir()
+        with self.assertRaisesRegex(module.LifecycleError, "restricted to current"):
+            executor.verify_current_legacy_network_bridge(other, summary, 60.0)
+
+    def test_system_executor_rejects_remote_docker_environment(self) -> None:
+        deployment = Path(self.temporary.name) / "deployment"
+        deployment.mkdir()
+        executor = module.SystemLifecycleExecutor(self.layout)
+
+        with (
+            mock.patch.dict(executor_module.os.environ, {"DOCKER_HOST": "ssh://other"}),
+            self.assertRaisesRegex(module.LifecycleError, "remote Docker environment"),
+        ):
+            executor._environment(deployment)
+
+    def test_verify_current_records_explicit_network_bridge(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        self.executor.calls.clear()
+
+        result = self.manager.verify_current(
+            allow_legacy_production_network_bridge=True
+        )
+
+        self.assertTrue(result["legacy_production_network_bridge"])
+        self.assertEqual(
+            self.executor.calls,
+            [("verify-network-bridge:deployment-verification-summary.json", current)],
+        )
+        record_path = sorted(self.layout.transaction_root.glob("*/record.json"))[-1]
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        self.assertTrue(record["legacy_production_network_bridge_requested"])
+        self.assertTrue(record["legacy_production_network_bridge"])
+
+    def test_verify_current_network_bridge_rejects_already_locked(self) -> None:
+        with self.assertRaisesRegex(module.LifecycleError, "own lifecycle lock"):
+            self.manager.verify_current(
+                already_locked=True,
+                allow_legacy_production_network_bridge=True,
+            )
+
+    def test_verify_current_network_bridge_rejects_missing_evidence(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        with (
+            mock.patch.object(
+                self.executor,
+                "verify_current_legacy_network_bridge",
+                return_value={
+                    "overall_pass": True,
+                    "legacy_production_network_bridge_requested": True,
+                    "legacy_production_network_bridge": True,
+                },
+            ),
+            self.assertRaisesRegex(module.LifecycleError, "evidence is incomplete"),
+        ):
+            self.manager.verify_current(allow_legacy_production_network_bridge=True)
+
+    def test_verify_current_rejects_unrequested_network_bridge_result(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+
+        def unexpected_bridge(
+            deployment_path: Path,
+            summary_path: Path,
+            timeout_seconds: float,
+        ) -> dict[str, Any]:
+            return {
+                "overall_pass": True,
+                "legacy_production_network_bridge": True,
+            }
+
+        with (
+            mock.patch.object(self.executor, "verify", side_effect=unexpected_bridge),
+            self.assertRaisesRegex(module.LifecycleError, "differs from request"),
+        ):
+            self.manager.verify_current()
+
+    def test_verify_cli_network_bridge_is_explicit(self) -> None:
+        plain = module.build_parser().parse_args(["verify"])
+        bridged = module.build_parser().parse_args(
+            ["verify", "--allow-legacy-production-network-bridge"]
+        )
+
+        self.assertFalse(plain.allow_legacy_production_network_bridge)
+        self.assertTrue(bridged.allow_legacy_production_network_bridge)
+        for command in (
+            "install",
+            "deploy",
+            "upgrade",
+            "reconcile-recovery",
+            "rollback",
+            "status",
+        ):
+            with (
+                self.subTest(command=command),
+                contextlib.redirect_stderr(io.StringIO()),
+                self.assertRaises(SystemExit),
+            ):
+                argv = [command]
+                if command == "install":
+                    argv.extend(
+                        [
+                            "--release-dir",
+                            "/tmp/release",
+                            "--image-env",
+                            "/tmp/images",
+                            "--release-summary",
+                            "/tmp/release-summary",
+                            "--image-summary",
+                            "/tmp/image-summary",
+                        ]
+                    )
+                elif command in {"deploy", "upgrade"}:
+                    argv.extend(["--deployment-id", "candidate"])
+                elif command == "reconcile-recovery":
+                    argv.extend(
+                        [
+                            "--transaction-id",
+                            "transaction",
+                            "--resolution-summary",
+                            "/tmp/resolution",
+                        ]
+                    )
+                argv.append("--allow-legacy-production-network-bridge")
+                module.build_parser().parse_args(argv)
+
     def test_upgrade_rejects_release_that_changes_host_unit(self) -> None:
         first = self.install("v1.0.0", "a")
         source, image_env, release_summary, image_summary = self.make_release(
@@ -1075,6 +1284,35 @@ class ReleaseDeploymentManagerTest(unittest.TestCase):
         self.assertEqual(reconciled["operator"], self.identity["operator"])
         self.assertEqual(reconciled["result"]["status"], "interrupted_rolled_back")
         self.assertEqual(self.layout.current.resolve().name, first)
+
+    def test_interrupted_verify_never_changes_the_runtime(self) -> None:
+        current = self.install("v1.0.0", "a")
+        self.manager.deploy(current)
+        transaction, record = self.manager._transaction(
+            "verify",
+            candidate=current,
+            legacy_production_network_bridge_requested=True,
+        )
+        self.executor.calls.clear()
+
+        with self.assertRaisesRegex(
+            module.LifecycleError, "interrupted verification was recorded"
+        ):
+            self.manager.rollback()
+
+        reconciled = json.loads(
+            (transaction / "record.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual("interrupted_verification_failed", reconciled["status"])
+        self.assertTrue(reconciled["reconciled"])
+        self.assertEqual(current, reconciled["preserved_current"])
+        self.assertEqual(self.layout.current.resolve().name, current)
+        self.assertFalse(self.layout.previous.exists())
+        self.assertEqual([], self.executor.calls)
+
+        status = self.manager.status()
+        self.assertTrue(status["overall_pass"])
+        self.assertEqual([("status", current)], self.executor.calls)
 
     def test_reconcile_failure_on_committed_candidate_restores_previous(self) -> None:
         first = self.install("v1.0.0", "a")

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -184,8 +185,30 @@ def run(command: list[str], timeout: int = 120) -> subprocess.CompletedProcess[s
     )
 
 
+def require_local_docker_environment() -> None:
+    if os.environ.get("DOCKER_HOST") or os.environ.get("DOCKER_CONTEXT"):
+        raise RuntimeError("remote Docker environment is forbidden")
+    context = run(["docker", "context", "show"], timeout=10)
+    if context.returncode or context.stdout.strip() != "default":
+        raise RuntimeError("Docker context is not the local default")
+    endpoint = run(
+        [
+            "docker",
+            "context",
+            "inspect",
+            "--format",
+            "{{.Endpoints.docker.Host}}",
+            "default",
+        ],
+        timeout=10,
+    )
+    if endpoint.returncode or endpoint.stdout.strip() != "unix:///var/run/docker.sock":
+        raise RuntimeError("Docker endpoint is not the local Unix socket")
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+
 
 def parse_compose_ps(output: str) -> list[dict[str, Any]]:
     try:
@@ -211,6 +234,7 @@ def parse_compose_ps(output: str) -> list[dict[str, Any]]:
         items.append(item)
     return items
 
+
 def verify_service_state(items: list[dict[str, Any]]) -> list[str]:
     failures: list[str] = []
     inventory: dict[str, dict[str, Any]] = {}
@@ -233,6 +257,7 @@ def verify_service_state(items: list[dict[str, Any]]) -> list[str]:
             failures.append(f"{service} is not healthy: {health or 'unknown'}")
     return failures
 
+
 def load_expected_images(path: Path) -> dict[str, str]:
     values: dict[str, str] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
@@ -254,6 +279,7 @@ def load_expected_images(path: Path) -> dict[str, str]:
             f"image environment lacks immutable IDs for: {sorted(invalid)}"
         )
     return expected
+
 
 def verify_container_images(
     items: list[dict[str, Any]], expected: dict[str, str]
@@ -278,6 +304,7 @@ def verify_container_images(
             )
     return failures
 
+
 def wait_http(url: str, timeout_seconds: float) -> tuple[bool, str]:
     deadline = time.monotonic() + timeout_seconds
     last_error = ""
@@ -293,12 +320,14 @@ def wait_http(url: str, timeout_seconds: float) -> tuple[bool, str]:
         time.sleep(1)
     return False, last_error
 
+
 def load_http_json(url: str) -> dict[str, Any]:
     with urllib.request.urlopen(url, timeout=3) as response:
         document = json.loads(response.read().decode("utf-8"))
     if not isinstance(document, dict):
         raise RuntimeError(f"JSON endpoint did not return an object: {url}")
     return document
+
 
 def validate_gateway_ready(document: object) -> list[str]:
     if not isinstance(document, dict):
@@ -314,6 +343,7 @@ def validate_gateway_ready(document: object) -> list[str]:
     ):
         failures.append("gateway readiness contains a failed check")
     return failures
+
 
 def validate_prometheus_targets(document: object) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
@@ -339,6 +369,7 @@ def validate_prometheus_targets(document: object) -> list[str]:
         failures.append(f"Prometheus is missing required jobs: {sorted(missing)}")
     return failures
 
+
 def validate_prometheus_metric_inventory(
     document: object, required_metrics: set[str] | None = None
 ) -> list[str]:
@@ -360,6 +391,7 @@ def validate_prometheus_metric_inventory(
         if not any(pattern.fullmatch(metric) for metric in metrics):
             failures.append(f"Prometheus has no samples for metric group: {label}")
     return failures
+
 
 def validate_prometheus_rules(
     document: object, required_rules: set[str] | None = None
@@ -396,6 +428,7 @@ def validate_prometheus_rules(
         )
     return failures
 
+
 def validate_governed_container_query(document: object) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus governed-container query is not successful"]
@@ -422,6 +455,7 @@ def validate_governed_container_query(document: object) -> list[str]:
         )
     return failures
 
+
 def validate_prometheus_flags(document: object) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus flags response is not successful"]
@@ -435,6 +469,7 @@ def validate_prometheus_flags(document: object) -> list[str]:
         [] if days >= 45 else [f"Prometheus retention is shorter than 45 days: {value}"]
     )
 
+
 def validate_prometheus_nonempty_query(document: object) -> list[str]:
     if not isinstance(document, dict) or document.get("status") != "success":
         return ["Prometheus query response is not successful"]
@@ -445,6 +480,7 @@ def validate_prometheus_nonempty_query(document: object) -> list[str]:
         if isinstance(result, list) and result
         else ["Prometheus query returned no samples"]
     )
+
 
 def parse_redis_config_get(content: str) -> dict[str, str]:
     lines = content.splitlines()

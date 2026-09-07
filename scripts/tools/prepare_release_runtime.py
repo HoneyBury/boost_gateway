@@ -517,6 +517,7 @@ def stage_runtime(
             "scripts/lib/evidence_provenance.py",
             "scripts/lib/operations_host.py",
             "scripts/lib/release_deployment_verification.py",
+            "scripts/lib/release_deployment_runtime.py",
             "scripts/tools/__init__.py",
         ):
             source = ROOT / relative
