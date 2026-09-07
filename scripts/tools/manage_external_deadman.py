@@ -56,6 +56,7 @@ def subject(snapshot: dict) -> dict:
             "service_unit_sha256": evidence.digest(SYSTEMD / UNIT),
             "watchdog_dropin_sha256": evidence.digest(DROPIN),
             "provider_contract_sha256": hashlib.sha256(json.dumps(evidence.POLICY, sort_keys=True).encode()).hexdigest(),
+            "installation_sha256": evidence.digest(CONFIG / "installation.json"),
             "candidate_record_sha256": evidence.digest(CANDIDATE)}
 
 
@@ -79,6 +80,8 @@ def preflight(snapshot_path: Path, *, active: bool) -> dict:
         command("systemctl", "is-active", "--quiet", timer)
         command("systemctl", "is-enabled", "--quiet", timer)
     if active:
+        installed_canary = Path("/usr/local/libexec/boost-gateway-canary/external_business_canary.py")
+        evidence.require(evidence.digest(installed_canary) == manifest["canary_sha256"], "installed canary drift")
         evidence.require(evidence.digest(DROPIN) == manifest["dropin_sha256"], "watchdog binding drift")
         properties = command("systemctl", "show", "boost-gateway-external-canary@watchdog.service",
                              "--property=OnSuccess,OnFailure,ExecStart")
@@ -98,7 +101,8 @@ def preflight(snapshot_path: Path, *, active: bool) -> dict:
         evidence.require(0 <= age <= 90, "last heartbeat receipt is stale or future-dated")
     return {"schema_version": 1, "overall_pass": True, "created_at": evidence.stamp(),
             "active": active, "check_identity_sha256": identity,
-            "host_id_sha256": host_digest(), "secret_material_recorded": False}
+            "host_id_sha256": host_digest(), "subject": subject(snap) if active else None,
+            "secret_material_recorded": False}
 
 
 def install(checkout: Path) -> None:

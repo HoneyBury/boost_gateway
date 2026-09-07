@@ -170,7 +170,8 @@ def test_complete_attestation_binds_rearm_and_rejects_heartbeat_during_gap(tmp_p
     (state / "events").mkdir()
     (state / "attestations").mkdir()
     subject = {key: "a" * 64 for key in ("canary_host_id_sha256", "check_identity_sha256", "reporter_sha256",
-               "service_unit_sha256", "watchdog_dropin_sha256", "provider_contract_sha256", "candidate_record_sha256")}
+               "service_unit_sha256", "watchdog_dropin_sha256", "provider_contract_sha256", "candidate_record_sha256",
+               "installation_sha256")}
     subject["check_identity_sha256"] = provider_snapshot()["check_identity_sha256"]
     for role, status, minutes in (("before", "up", 10), ("down", "down", 6), ("up", "up", 1)):
         evidence.create(directory / (role + ".json"), provider_snapshot(status, NOW - timedelta(minutes=minutes)))
