@@ -125,8 +125,8 @@ availability、零 gap/invalid/duplicate/restart/OOM 通过；final package SHA-
 `[2026-09-05T10:30:00Z, 2026-10-05T10:30:00Z)` 已 supersede，因为 SMTP relay 自窗口
 开始前的主机重启起一直启动失败，Alertmanager 准入不成立。事件
 `smtp-multi-client-recovery-20260905T215241Z` 已记录恢复结果；SMTP 受治理修复、外部运营职责
-迁移和自然分钟样本复验均已完成。新的 30 天窗口仍须等待 controller 对齐、独立 dead-man
-正式处置与演练、治理化 fixed-end finalizer 全部通过后重新声明。截至 2026-09-07，新的
+迁移、自然分钟样本复验和 controller 对齐均已完成。新的 30 天窗口仍须等待独立 dead-man
+正式部署与演练、治理化 fixed-end finalizer 全部通过后重新声明。截至 2026-09-07，新的
 `TODO-0017` Day 0 尚未开始；阿里云 preflight 与 Mac 历史分钟都不能追溯计入。任何 runtime、关键配置、
 deployment、endpoint 或 host identity 变化仍会重置 Day 0，旧窗口时间不会累计。
 
@@ -204,10 +204,17 @@ backup vault 与异机 evidence archive；完整边界和切换步骤见
   SMTP relay 和 13 个 governed production containers 均 PASS；这是当时 controller 下的历史
   事实。合并后的 controller `40a1ef147ff19707821b0825e17895a1baeb2938` 首次对齐时，严格
   verifier 发现不可变 v3.6.7 Compose 只缺显式 `boost-net` IPAM，而实际 Docker network 仍精确为
-  `172.18.0.0/16` / `172.18.0.1`，其余验证全部 PASS。切换已按 fail-closed 条件原子回滚，当前
-  canonical controller 仍是 clean `feaccee244ad67b529820e1d606701b6ce7cdc1a`；production
-  current/previous、Redis volume identity 和服务均未改变。新的 current-only 精确兼容 verifier
-  必须经独立 PR 审批、CI、合并及实机 PASS 后才能完成 controller 对齐。
+  `172.18.0.0/16` / `172.18.0.1`，其余验证全部 PASS；该次切换按 fail-closed 条件原子回滚且没有
+  改变 production。随后 current-only 精确兼容 verifier 经 PR #107 独立审批、required CI 和合并，
+  `/home/honeybury/boost-gateway-controller` 已原子对齐到 clean
+  `801fb5f37927c0622c038185493d8cff3dc31163`。真实 bridge verify transaction
+  `20260907T132949-verify-9218fb5a10e6` PASS，summary SHA-256 为
+  `99d02227449ad208a47a51a03eb2d15d789b67b8323a0eb649d17b3576438bab`；阿里云异机归档
+  `/srv/boost-gateway-archive/production-evidence/controller-cutover-801fb5f37927-20260907T132502Z`
+  的 result receipt SHA-256 为
+  `1fd504724c5de6a274e8dae35baf2c23980e70f338586e0f1e236b2798f6e804`。production
+  current/previous、Redis volume identity 和服务仍未改变，临时 sudo 授权已撤销。兼容旗标仍只
+  允许验证这一精确 current v3.6.7 deployment，不能进入 install/deploy/upgrade/rollback/recovery。
 - 最终 firing/resolved drill `todo0017-aliyun-final-20260907T014854Z` 分别于
   `2026-09-07T01:48:54Z` 和 `2026-09-07T01:49:06Z` 提交，Alertmanager email notification
   计数从 23 增至 25，failed 计数保持 3。用户于 `2026-09-07T02:14:12Z` 确认目标端
@@ -256,8 +263,13 @@ canonical 在先把旧 SHA-256 前缀 `545635…` 快照 create-only 归档到 r
 不得追溯使用迁移或 preflight 分钟。
 
 另有一项明确保留的监控残余：当前同机 watchdog 能记录 tunnel failure，但无法自报整台
-阿里云/Tailscale 消失。在第三方 heartbeat 或独立 poller 演练前不能宣称零监控盲区；该项
-必须保持 pending，或在验收记录中写明风险接受、owner 和截止时间，不能用 Mac 持续通电掩盖。
+阿里云/Tailscale 消失。处置方案已经固定为 Healthchecks.io 独立 dead-man：自然分钟
+watchdog 成功或失败分别触发 provider success/failure，整机、timer 或出网消失则由缺失
+heartbeat 触发外部通知；provider email 不经过 `aliyunserver`、Tailscale、生产
+Alertmanager/SMTP relay 或 Mac。截至本快照，该 provider check、主机激活和真实
+missing-heartbeat `Down`→`Up` 演练均**尚未完成**，两条目标端 `Message-ID` 和 create-only
+attestation 也不存在，因此该项保持 pending，不能宣称零监控盲区或准入 Day 0，更不能用 Mac
+持续通电替代。
 
 ## 默认生产链路
 
@@ -345,8 +357,8 @@ Docker 或 CWA 书库容器迁到 x86-64 云主机。历史 macOS 发布证据�
    evidence sync 和邮件目标端 `Message-Id` create-only attestation 均已通过，日常职责迁移已
    正式签收。
 4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
-5. 已关闭 `TODO-0011`/`TODO-0013` 并完成独立 72 小时上线预演与阿里云异机迁移验收；完成
-   controller 对齐、独立 dead-man 正式处置与演练、治理化 fixed-end finalizer 后，以单一
+5. 已关闭 `TODO-0011`/`TODO-0013`，完成独立 72 小时上线预演、阿里云异机迁移验收及
+   controller 对齐；独立 dead-man 正式部署与演练、治理化 fixed-end finalizer 完成后，以单一
    tag/SHA/digest 和新的 external host identity 从新 Day 0 连续运行至少 30 天。
 
 30 天验证要求连续时长不少于 `2,592,000s`，availability/canary success 与证据覆盖率

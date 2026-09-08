@@ -60,7 +60,13 @@
 3. 不存在影响目标平台的未处置 P0 缺陷；所有已知失败都有 Issue、RCA 和明确 disposition。
 4. daily/weekly、Alertmanager、异机备份和 canary scheduler 在 Day 0 前自然运行通过，且
    不需要在窗口中途更换凭据、候选或调度方式。
-5. 在 Issue 中记录精确 UTC 半开区间、主机身份、候选和维护计划。预演所需故障演练必须
+5. 独立第三方 dead-man 已启用，并且 success heartbeat 只能由一次成功的自然分钟 canary
+   watchdog 触发；provider 采用 UTC `*-*-* *:*:45` OnCalendar schedule、90 秒 grace、
+   POST-only 和独立 email integration。必须通过停止 heartbeat 形成真实 missing-heartbeat
+   `Down`、恢复后形成 `Up`，
+   再把两封目标端邮件的 `Message-ID` 与 provider 状态翻转写入 create-only attestation。
+   ping URL、check UUID、API key、channel ID 和收件地址原文均不得进入仓库、命令行或证据。
+6. 在 Issue 中记录精确 UTC 半开区间、主机身份、候选和维护计划。预演所需故障演练必须
    预先安排并形成 incident/drill 记录，不能事后把缺口标记为维护。
 
 `TODO-0016` 通过后再次审核 tag/SHA/digest 和所有缺陷 disposition，再声明
@@ -73,8 +79,10 @@
 `2026-08-31T19:30:25Z` 的主机重启起因 bridge 地址尚未恢复而启动失败，原窗口不满足
 Alertmanager 自然运行的硬准入。修复事件记录为
 `smtp-multi-client-recovery-20260905T215241Z`；受治理修复及 Mac→`aliyunserver` 外部运营职责
-迁移已签收，Mac 已退出日常通电职责。完成 controller 对齐、独立 dead-man 与治理化 fixed-end
-finalizer 后，重新声明新的 43,200 分钟半开窗口，不累计旧窗口或迁移预检时间。
+迁移已签收，Mac 已退出日常通电职责，controller 也已对齐到 clean
+`801fb5f37927c0622c038185493d8cff3dc31163` 并通过精确 v3.6.7 bridge verify。独立 dead-man
+真实 missing-heartbeat 演练与治理化 fixed-end finalizer 完成后，才可重新声明新的 43,200 分钟
+半开窗口；旧窗口、迁移预检和 dead-man 演练时间均不得累计。
 
 `TODO-0016` 的 maintained 执行入口是
 [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)。计划内 gateway、
@@ -123,6 +131,7 @@ availability 始终保留其失败影响。
 | CPU/温度 | host/container CPU、thermal throttle | 无持续 throttle；稳态有余量，压力流量不与服务同机运行 |
 | 磁盘 | filesystem usage | 长期低于 75%，预测 30 天内达到 85% 时提前告警 |
 | 观测 | Prometheus/canary/evidence coverage | 覆盖率 `>= 99.9%`；非维护最大采样空洞 `<= 2min` |
+| 监控独立性 | external dead-man | 第三方 provider 不经过阿里云、Tailscale、生产 Alertmanager/SMTP 或 Mac 发出 Down/Up；Day 0 前真实 missing-heartbeat 恢复演练与两条目标端 `Message-ID` attestation 必须 PASS |
 | 追溯 | deployment/incident/drill records | 100% 记录 tag、SHA、digest、config、host、时间、操作者和结果 |
 
 Prometheus 本地 retention 至少设为 45 天，并每日生成可异机保留的 evidence/export。

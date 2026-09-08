@@ -641,6 +641,31 @@ class ExternalBusinessCanaryTest(unittest.TestCase):
         self.assertTrue(result["alertmanager_delivery"]["delivered"])
         self.assertEqual(["GET", "POST"], [request.get_method() for request in calls])
 
+    def test_strict_watchdog_rejects_failed_current_minute_even_when_alert_delivered(self) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, 45, tzinfo=UTC)
+        self.write_sample(observed - timedelta(seconds=40), False)
+        result = canary.watchdog(self.config, self.deployment, self.evidence,
+                                observed_at=observed, require_successful_sample=True,
+                                alert_opener=lambda *_args, **_kwargs: FakeResponse())
+        self.assertFalse(result["overall_pass"])
+        self.assertEqual("natural_minute_sample_not_successful", result["failure_type"])
+
+    def test_strict_watchdog_rejects_success_from_previous_minute(self) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, 45, tzinfo=UTC)
+        self.write_sample(observed - timedelta(seconds=70), True)
+        result = canary.watchdog(self.config, self.deployment, self.evidence,
+                                observed_at=observed, require_successful_sample=True,
+                                alert_opener=lambda *_args, **_kwargs: FakeResponse())
+        self.assertFalse(result["overall_pass"])
+
+    def test_strict_watchdog_accepts_successful_current_minute(self) -> None:
+        observed = datetime(2026, 8, 1, 0, 5, 45, tzinfo=UTC)
+        self.write_sample(observed - timedelta(seconds=40), True)
+        result = canary.watchdog(self.config, self.deployment, self.evidence,
+                                observed_at=observed, require_successful_sample=True,
+                                alert_opener=lambda *_args, **_kwargs: FakeResponse())
+        self.assertTrue(result["overall_pass"])
+
     def test_watchdog_retries_alert_delivery_for_latest_failed_sample(self) -> None:
         observed = datetime(2026, 8, 1, 0, 5, tzinfo=UTC)
         self.write_sample(observed - timedelta(seconds=30), False)

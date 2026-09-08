@@ -7,12 +7,16 @@ notification receipts, scheduled records, and a copy verified on another host.
 
 ## Boundaries
 
+
 - This task observes the current Redis RDB state. It does not change persistence,
   encryption, backup, restore, RPO, or RTO policy; those belong to `TODO-0012`.
 - The local release SDK full-flow remains a deployment check. A once-per-minute external
   canary belongs to `TODO-0013`.
 - Daily and weekly records created here are operational evidence. They do not start or
   prove the 72-hour or formal 30-day windows in `TODO-0016` and `TODO-0017`.
+- The Healthchecks.io external dead-man is a separate `TODO-0017` Day 0 admission
+  control. It does not close `TODO-0011`, and the existing Alertmanager delivery
+  attestation cannot substitute for its real missing-heartbeat Down/Up drill.
 - The topology is single-node evidence and is not an HA or capacity claim.
 
 ## Production topology
@@ -204,6 +208,27 @@ If an operator removes and recreates one of the Docker networks, its Linux bridg
 may change even though the fixed subnet and gateway remain the same. Re-run the installer
 after that operation so it discovers the replacement bridge and reconciles the scoped
 UFW rule before relying on application delivery.
+
+### Independent external dead-man boundary
+
+The off-host canary watchdog on `aliyunserver` is coupled to a hosted Healthchecks.io
+check for `TODO-0017`. Watchdog success/failure may emit only the provider success/failure
+POST through the governed oneshot; absence of the host, watchdog timer or all outbound
+networking must result in no heartbeat. The provider's email integration sends Down/Up
+without using this production Alertmanager, its Gmail SMTP relay, the Tailscale tunnel,
+`miniserver`, or the Mac.
+
+The provider schedule is UTC `*-*-* *:*:45` with 90 seconds grace and POST-only requests.
+The raw ping UUID is a root-only systemd credential on the external host; provider API
+keys are not installed there. Event receipts and the final create-only drill attestation
+contain only digests, times, state transitions and destination `Message-ID` values—never
+the UUID, ping URL, API key, integration ID, recipient or authorization material. The
+full activation and true missing-heartbeat procedure belongs to the
+[external canary runbook](external-business-canary-runbook.md).
+
+As of 2026-09-07 this external provider path and its Down→Up acceptance attestation are
+not deployed. Keep the Day 0 gate pending; do not reinterpret the existing production
+firing/resolved delivery attestation as dead-man evidence.
 
 ## Runtime verification
 

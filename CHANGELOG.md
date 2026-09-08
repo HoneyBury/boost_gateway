@@ -8,6 +8,11 @@
   accepts only the one historical missing-IPAM contract while binding the exact deployment,
   release digests, 13 container identities, and live Docker network; all lifecycle activation,
   upgrade, rollback, and recovery paths remain strict.
+- Add a governed Healthchecks.io dead-man boundary for the external canary watchdog. Provider
+  configuration is checked from a sanitized read-only snapshot, the ping UUID is loaded only as
+  a systemd credential, watchdog success/failure drives bounded POST signals, and a true
+  missing-heartbeat Down/Up drill with create-only, secret-free evidence is required before the
+  next 30-day Day 0. Repository support does not claim that the provider or drill is already live.
 
 ## v3.6.7 - Runtime concurrency and operations hardening (2026-08-12)
 
