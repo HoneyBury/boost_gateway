@@ -7,6 +7,71 @@ notification receipts, scheduled records, and a copy verified on another host.
 
 ## Boundaries
 
+### TODO-0017 immutable window controller
+
+`scripts/tools/manage_immutable_window.py` provides the governed `install`, `declare`,
+`bind`, `startup-audit`, `aggregate`, `supersede` and `finalize` operations. It does not
+close an Issue or send a message. Install a clean reviewed main revision on the observer
+with `install --checkout /absolute/reviewed/checkout`, then use the installed manager at
+`/usr/local/libexec/boost-gateway-window/manage_immutable_window.py`. All state mutations
+require Linux root and share a nonblocking lock under
+`/var/lib/boost-gateway-immutable-windows`. Per-window records are create-only.
+
+Before declaration, prepare a JSON map of absolute local evidence paths with exactly
+`lifecycle`, `observability`, `backup`, `retention`, `governance` and `deadman` roles.
+Each referenced report must be a real passing checkpoint, with a `created_at`,
+`generated_at` or `checked_at` UTC timestamp no older than 30 minutes. Retain the
+underlying raw checks and review their candidate/host bindings; merely copying a PASS
+boolean into a new JSON object is not an admissible report. The separate dead-man
+attestation must bind the installed observer and current deployment record.
+
+```bash
+python3 /usr/local/libexec/boost-gateway-window/manage_immutable_window.py declare \
+  --start <future-whole-UTC-minute> --reports /absolute/evidence/admission-map.json \
+  --attestation /absolute/evidence/deadman-attestation.json
+```
+
+The start must be 2–60 minutes in the future. The declaration freezes exactly 2,592,000
+seconds / 43,200 samples, the production candidate, observer identity, endpoint, actual
+SDK 4.2.0 and empty maintenance plan. It cannot replace an unfinished declaration or
+reuse the superseded September 5 interval. Publish its exact start/end, deployment ID
+and declaration SHA-256 to Issue #31, then run `bind --directory <window-directory>
+--issue-comment-id <numeric-id>` before the start. Binding reads the comment back via
+`gh api`, verifies the exact declaration and installs a persistent fixed-end timer.
+The operator must provide the usual authenticated read-only GitHub access for this
+verification; no token belongs in the declaration or unit.
+
+The timer runs at the declared end plus one minute. Run `startup-audit --directory
+<window-directory>` within the first two minutes, after the first sample completes.
+It requires exactly one successful first-minute sample from the declared host/candidate
+and an active finalizer. A missed startup audit cannot be backdated: supersede the
+declaration with an incident digest and choose a new future minute.
+
+At the fixed end, `aggregate` rejects early execution, declaration/tool/unit drift,
+superseded state, changed input inventory, mixed host/candidate/SDK samples and any
+failed SLO. It passes the exact declared `--end` to the existing canary aggregate.
+Retries reuse the immutable aggregate only with identical inputs; failures remain on
+disk. The ordered sample inventory is hashed using bounded individual reads. Existing
+Mac or preflight samples cannot satisfy the new host and interval bindings.
+
+After aggregate PASS, protected final review supplies the six admission roles plus
+`host_window`, `ledger` and `offhost`. The host-window report binds `start`, `end` and
+`candidate_record_sha256` and includes `unknown_restarts`, `oom_events`,
+`sustained_thermal_throttles`, `unexplained_growth` (all zero), `host_memory_max_ratio`
+(below 0.8), `filesystem_max_used_ratio` (below 0.75), `coverage_rate` (at least 0.999)
+and `max_gap_seconds` (at most 120). These are derived from full-interval raw metrics,
+not just the final instantaneous host status. The off-host receipt binds
+`aggregate_sha256`, `declaration_sha256`, distinct source/destination host digests and
+`readback_verified=true`. `finalize --directory <window-directory> --reports
+<final-report-map>` creates the final record only after those checks pass. Preserve
+and verify the final record/package off-host before closing TODO-0017 and Issue #31.
+
+Rollback before Day 0 uses preserved observer/controller assets and keeps all evidence.
+After Day 0, a disqualifying change first creates `superseded.json` using
+`supersede --directory <window-directory> --incident-sha256 <digest>`. That old interval
+can never be finalized, even if its timer subsequently fires. No completed recovery
+drill is repeated merely to install this controller.
+
 
 - This task observes the current Redis RDB state. It does not change persistence,
   encryption, backup, restore, RPO, or RTO policy; those belong to `TODO-0012`.

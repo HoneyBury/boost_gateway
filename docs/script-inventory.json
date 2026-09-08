@@ -9,6 +9,33 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/lib/immutable_window.py": {
+      "kind": "library-module",
+      "domain": "production",
+      "consumers": [
+        "scripts/tools/manage_immutable_window.py"
+      ],
+      "test": "tests/python/test_immutable_window.py",
+      "why_new_script": "Formal interval admission and fixed-end closure require a separate create-only control boundary from diagnostic aggregation.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/tools/manage_immutable_window.py": {
+      "kind": "cli",
+      "domain": "production",
+      "consumers": [
+        "operator",
+        "TODO-0017 fixed-end finalizer"
+      ],
+      "test": "tests/python/test_immutable_window.py",
+      "why_new_script": "Formal interval admission and fixed-end closure require a separate create-only control boundary from diagnostic aggregation.",
+      "replaces": "",
+      "retirement_condition": "Retire when the independent observer is replaced by a governed service with equivalent admission and evidence contracts.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/external_deadman.py": {
       "kind": "library-module",
       "domain": "production",
@@ -380,6 +407,7 @@
     "archive_rule": "Retired executable code is removed and remains available through Git history; it is not copied into an executable scripts/archive tree."
   },
   "internal_scripts": {
+    "scripts/lib/immutable_window.py": {"category": "tool"},
     "scripts/lib/external_deadman.py": {"category": "tool"},
     "scripts/lib/deadman_evidence.py": {"category": "tool"},
     "scripts/gates/__init__.py": {
@@ -606,6 +634,7 @@
     }
   },
   "scripts": {
+    "scripts/tools/manage_immutable_window.py": {"category": "tool"},
     "scripts/tools/external_deadman_reporter.py": {"category": "tool"},
     "scripts/tools/manage_external_deadman.py": {"category": "tool"},
     "scripts/README.md": {

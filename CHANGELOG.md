@@ -4,6 +4,11 @@
 
 ### Operations
 
+- Add a governed TODO-0017 window controller for future-minute declaration, public declaration
+  binding, startup audit, persistent fixed-end aggregation and protected final review. It
+  rejects superseded windows, identity drift, changed input manifests and incomplete evidence;
+  implementation alone does not start or complete the 30-day interval.
+
 - Add an explicit, current-only verifier bridge for the immutable v3.6.7 Compose network. It
   accepts only the one historical missing-IPAM contract while binding the exact deployment,
   release digests, 13 container identities, and live Docker network; all lifecycle activation,
