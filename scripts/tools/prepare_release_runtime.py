@@ -516,6 +516,7 @@ def stage_runtime(
             "scripts/lib/observability_preflight.py",
             "scripts/lib/evidence_provenance.py",
             "scripts/lib/operations_host.py",
+            "scripts/lib/operations_host_hardware.py",
             "scripts/lib/release_deployment_verification.py",
             "scripts/lib/release_deployment_runtime.py",
             "scripts/tools/__init__.py",

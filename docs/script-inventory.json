@@ -9,6 +9,33 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/gates/infrastructure/check_cloud_target_contract.py": {
+      "kind": "cli",
+      "domain": "infrastructure",
+      "consumers": [
+        "scripts/producers/run_cloud_production_closure.py",
+        "TODO-0020 cloud host admission"
+      ],
+      "test": "tests/python/test_cloud_target_contract.py",
+      "why_new_script": "Cloud provisioning needs a fail-closed offline contract gate before provider credentials or paid resources are used, which cannot be inferred from live host admission alone.",
+      "replaces": "",
+      "retirement_condition": "Retire when an equivalent maintained provisioning controller validates the versioned cloud target before every plan and deployment.",
+      "temporary": false,
+      "expires_on": ""
+    },
+    "scripts/lib/operations_host_hardware.py": {
+      "kind": "library-module",
+      "domain": "infrastructure",
+      "consumers": [
+        "scripts/gates/infrastructure/check_operations_host.py"
+      ],
+      "test": "tests/python/test_operations_host.py",
+      "why_new_script": "Cloud admission adds digest-bound provider hardware substitutes while retaining physical SMART and thermal checks, and the existing host CLI must remain within the governed size ceiling.",
+      "replaces": "",
+      "retirement_condition": "Retire when operations host hardware admission moves to a maintained replacement with equivalent physical and cloud evidence verification.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/tools/render_enterprise_operations_readiness.py": {
       "kind": "cli",
       "domain": "production",
@@ -513,6 +540,9 @@
     "scripts/lib/operations_host.py": {
       "category": "tool"
     },
+    "scripts/lib/operations_host_hardware.py": {
+      "category": "tool"
+    },
     "scripts/lib/perf_bench_runtime.py": {
       "category": "tool"
     },
@@ -744,6 +774,9 @@
       "category": "aggregate_gate"
     },
     "scripts/gates/infrastructure/check_fixed_runner_evidence_plan.py": {
+      "category": "aggregate_gate"
+    },
+    "scripts/gates/infrastructure/check_cloud_target_contract.py": {
       "category": "aggregate_gate"
     },
     "scripts/gates/infrastructure/apply_operations_host_baseline.py": {

@@ -214,6 +214,15 @@
       "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
       "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
     },
+    "docs/deployment/cloud-target-admission-runbook.md": {
+      "type": "runbook",
+      "purpose": "Alibaba Cloud single-node target selection, Terraform provisioning, and fail-closed host admission.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update when the cloud provider, target contract, IaC, admission substitutions, or provisioning procedure changes.",
+      "archive_condition": "Archive when cloud target admission is replaced by a maintained deployment platform with equivalent controls."
+    },
     "docs/deployment/production-configuration-runbook.md": {
       "type": "runbook",
       "purpose": "Supported production configuration, secrets, Redis, and drift-control procedure.",

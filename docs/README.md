@@ -17,6 +17,7 @@
 | 查看当前执行优先级 | [主线执行计划](mainline-execution-plan.md) |
 | 部署和运维 | [部署文档](deployment/README.md) |
 | Ubuntu 运营主机准入 | [运营主机准入手册](deployment/operations-host-admission-runbook.md) |
+| 阿里云单节点目标与 IaC | [云单节点目标准入手册](deployment/cloud-target-admission-runbook.md) |
 | 不可变 Release 单节点部署 | [不可变 Release 部署手册](deployment/immutable-release-deployment-runbook.md) |
 | 长期观测与证据 ledger | [长期观测与证据手册](deployment/long-run-observability-runbook.md) |
 | Mac 外部运营职责迁移到阿里云 | [阿里云异机迁移手册](deployment/aliyun-offhost-migration-runbook.md) |

@@ -24,6 +24,12 @@ TODO-0018 已完成，独立复算报告见
 容量。家庭网络排除规则只适用于上述已结束窗口，云主机、云磁盘和云网络故障必须按目标
 生产环境 incident 与 SLO 处理。
 
+`TODO-0020` 已进入实现：阿里云单节点 Terraform、无凭据 cloud-init、版本化云目标合同和
+fail-closed 合同门禁已经落地。合同当前保持 `draft`，region、zone、ECS SKU、immutable image、
+月成本、私网 DNS、secret/state backend、backup failure domain 和三项云硬件替代证据尚未
+冻结，因此 `provisioning_ready=false`，尚未创建付费资源，也未形成云主机准入结论。执行入口
+见 [云单节点目标准入手册](deployment/cloud-target-admission-runbook.md)。
+
 更新时间：2026-10-08
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录

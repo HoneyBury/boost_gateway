@@ -1,0 +1,64 @@
+#cloud-config
+package_update: true
+package_upgrade: true
+packages:
+  - ca-certificates
+  - chrony
+  - curl
+  - docker.io
+  - docker-compose-v2
+  - jq
+  - python3
+  - smartmontools
+  - ufw
+
+users:
+  - default
+  - name: boost-gateway
+    system: true
+    shell: /usr/sbin/nologin
+    lock_passwd: true
+
+write_files:
+  - path: /etc/docker/daemon.json
+    owner: root:root
+    permissions: '0644'
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-file": "5",
+          "max-size": "10m"
+        }
+      }
+  - path: /etc/systemd/journald.conf.d/boost-gateway.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Journal]
+      Storage=persistent
+      SystemMaxUse=4G
+      SystemKeepFree=8G
+      MaxRetentionSec=45day
+
+runcmd:
+  - [install, -d, -o, boost-gateway, -g, boost-gateway, -m, '0750', /var/lib/boost-gateway]
+  - [install, -d, -o, boost-gateway, -g, boost-gateway, -m, '0750', /var/lib/boost-gateway-evidence]
+  - [install, -d, -o, boost-gateway, -g, boost-gateway, -m, '0750', /var/log/boost-gateway]
+  - [install, -d, -o, root, -g, boost-gateway, -m, '0750', /etc/boost-gateway]
+  - [install, -d, -o, root, -g, root, -m, '0700', /etc/boost-gateway/secrets]
+  - [systemctl, enable, --now, chrony.service]
+  - [systemctl, enable, --now, docker.service]
+  - [systemctl, restart, systemd-journald.service]
+  - [ufw, default, deny, incoming]
+  - [ufw, default, allow, outgoing]
+%{ for cidr in management_cidrs ~}
+  - [ufw, allow, from, '${cidr}', to, any, port, '22', proto, tcp]
+%{ endfor ~}
+%{ for cidr in application_cidrs ~}
+  - [ufw, allow, from, '${cidr}', to, any, port, '9201', proto, tcp]
+%{ endfor ~}
+  - [ufw, --force, enable]
+  - [systemctl, mask, sleep.target, suspend.target, hibernate.target, hybrid-sleep.target]
+
+final_message: "Boost Gateway cloud host bootstrap complete; application deployment remains blocked on admission."

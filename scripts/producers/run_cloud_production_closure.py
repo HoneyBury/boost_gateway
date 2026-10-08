@@ -75,6 +75,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-compose", action="store_true")
     parser.add_argument("--include-kind", action="store_true")
     parser.add_argument("--include-production-evidence", action="store_true")
+    parser.add_argument(
+        "--cloud-contract",
+        type=Path,
+        default=Path("deploy/cloud/cloud-target-contract.json"),
+    )
     parser.add_argument("--summary-path", type=Path, default=Path("runtime/validation/cloud-production-closure-summary.json"))
     return parser.parse_args()
 
@@ -96,6 +101,21 @@ def main() -> int:
     summary_path = args.summary_path if args.summary_path.is_absolute() else ROOT / args.summary_path
 
     steps: list[dict[str, object]] = []
+
+    steps.append(run_step(
+        "cloud target contract",
+        "cloud_target_contract",
+        [
+            sys.executable,
+            str(ROOT / "scripts/gates/infrastructure/check_cloud_target_contract.py"),
+            "--contract",
+            str(args.cloud_contract),
+            "--require-admission-evidence",
+            "--summary-path",
+            str(ROOT / "runtime/validation/cloud-target-contract-summary.json"),
+        ],
+        30,
+    ))
 
     steps.append(run_step(
         "cloud production preflight",
@@ -191,6 +211,7 @@ def main() -> int:
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z"),
         "build_dir": str(args.build_dir.resolve()),
         "configuration": args.configuration,
+        "cloud_contract": str(args.cloud_contract),
         "include_compose": args.include_compose,
         "include_kind": args.include_kind,
         "include_production_evidence": args.include_production_evidence,
@@ -201,6 +222,7 @@ def main() -> int:
         "failed_step": "" if failed is None else str(failed.get("name")),
         "artifacts": {
             "summary_path": str(summary_path),
+            "cloud_target_contract_summary_path": str(ROOT / "runtime/validation/cloud-target-contract-summary.json"),
             "preflight_summary_path": str(ROOT / "runtime/validation/cloud-production-preflight-summary.json"),
             "deploy_operability_summary_path": str(ROOT / "runtime/validation/cloud-deploy-operability-summary.json"),
             "docker_snapshot_summary_path": str(ROOT / "runtime/perf/docker-production-snapshot/summary.json") if args.include_compose else "",
@@ -217,4 +239,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Fail-closed admission and reboot verification for the Ubuntu operations host."""
 
+# ruff: noqa: F405 - the operations-host library intentionally exports the gate API.
+
 from __future__ import annotations
 
 if __package__ in {None, ""}:
@@ -26,6 +28,10 @@ from pathlib import Path
 from typing import Any, Sequence
 
 from scripts.lib.operations_host import *  # noqa: E402,F401,F403
+from scripts.lib.operations_host_hardware import (  # noqa: E402
+    check_storage_and_temperature,
+    verify_cloud_deviation_evidence,
+)
 from scripts.lib.release_lifecycle_io import atomic_write_json  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -291,100 +297,6 @@ def check_clock_and_network(
     )
 
 
-def check_storage_and_temperature(report: Report, policy: dict[str, Any]) -> None:
-    block_devices = check_command(
-        report,
-        "storage:block-devices",
-        ["lsblk", "-J", "-b", "-d", "-o", "PATH,TYPE,SIZE,MODEL"],
-    )
-    if block_devices.returncode == 0:
-        try:
-            parsed_devices = json.loads(block_devices.stdout).get("blockdevices", [])
-            physical_disks = [
-                device
-                for device in parsed_devices
-                if isinstance(device, dict) and device.get("type") == "disk"
-            ]
-            required_size = int(policy["target"]["min_physical_disk_bytes"])
-            report.add(
-                "storage:physical-capacity",
-                bool(physical_disks)
-                and max(int(device.get("size", 0)) for device in physical_disks)
-                >= required_size,
-                "at least one physical disk meets the nominal capacity policy",
-                required_bytes=required_size,
-                devices=physical_disks,
-            )
-        except (TypeError, ValueError, json.JSONDecodeError) as exc:
-            report.add(
-                "storage:physical-capacity",
-                False,
-                f"cannot parse physical block-device facts: {exc}",
-            )
-
-    scan = check_command(report, "storage:smart-scan", ["smartctl", "--scan-open"])
-    devices: list[list[str]] = []
-    for line in scan.stdout.splitlines():
-        command_text = line.split("#", 1)[0].strip()
-        if command_text:
-            devices.append(command_text.split())
-    if scan.returncode != 0 or not devices:
-        report.add(
-            "storage:smart-health",
-            False,
-            "no SMART-capable storage device could be inspected",
-            devices=devices,
-        )
-    else:
-        health: list[dict[str, Any]] = []
-        healthy = True
-        for device_args in devices:
-            result = run(smartctl_health_command(device_args))
-            try:
-                facts = json.loads(result.stdout) if result.stdout else {}
-            except json.JSONDecodeError:
-                facts = {}
-            passed = (
-                result.returncode == 0
-                and facts.get("smart_status", {}).get("passed") is True
-            )
-            healthy = healthy and passed
-            health.append(
-                {
-                    "device": " ".join(device_args),
-                    "passed": passed,
-                    "returncode": result.returncode,
-                }
-            )
-        report.add(
-            "storage:smart-health",
-            healthy,
-            "all discovered storage devices report passing SMART health",
-            devices=health,
-        )
-
-    readings: list[dict[str, Any]] = []
-    sensor_paths = list(Path("/sys/class/thermal").glob("thermal_zone*/temp"))
-    sensor_paths.extend(Path("/sys/class/hwmon").glob("hwmon*/temp*_input"))
-    for input_path in sorted(sensor_paths):
-        try:
-            millidegrees = int(input_path.read_text(encoding="utf-8").strip())
-            readings.append({"path": str(input_path), "celsius": millidegrees / 1000.0})
-        except (OSError, ValueError):
-            continue
-    maximum = float(policy["power"]["max_temperature_celsius"])
-    temperature_pass = bool(readings) and all(
-        0.0 <= value["celsius"] < maximum for value in readings
-    )
-    report.add(
-        "thermal:temperature",
-        temperature_pass,
-        "thermal sensors are readable and below the admission limit",
-        limit_celsius=maximum,
-        readings=readings,
-    )
-
-
 def check_identity_and_directories(report: Report, policy: dict[str, Any]) -> None:
     identity = policy["identity"]
     try:
@@ -504,7 +416,12 @@ def check_log_policy(report: Report, policy: dict[str, Any]) -> None:
         )
 
 
-def check_power_and_unit(report: Report, policy: dict[str, Any], host_id: str) -> None:
+def check_power_and_unit(
+    report: Report,
+    policy: dict[str, Any],
+    host_id: str,
+    cloud_contract: dict[str, Any] | None = None,
+) -> None:
     for target in policy["power"]["masked_targets"]:
         result = run(["systemctl", "is-enabled", target])
         masked = result.stdout.strip() == "masked"
@@ -515,39 +432,50 @@ def check_power_and_unit(report: Report, policy: dict[str, Any], host_id: str) -
             value=result.stdout.strip(),
         )
 
-    attestation_path = Path(policy["power"]["restart_attestation"])
-    try:
-        status = attestation_path.stat()
-        attestation = load_json(attestation_path)
-        secure_mode = status.st_uid == 0 and stat.S_IMODE(status.st_mode) & 0o022 == 0
-        required_fields = all(
-            bool(attestation.get(key)) for key in ["verified_at", "method", "operator"]
-        )
-        passed = (
-            secure_mode
-            and attestation.get("host_id_sha256") == host_id
-            and attestation.get("restart_on_power_loss") is True
-            and required_fields
+    if cloud_contract is not None:
+        passed, facts = verify_cloud_deviation_evidence(
+            cloud_contract, "power:restart-on-power-loss"
         )
         report.add(
             "power:restart-on-power-loss",
             passed,
-            "root-owned firmware or out-of-band power recovery attestation matches this host",
-            attestation={
-                "host_id_sha256": attestation.get("host_id_sha256"),
-                "restart_on_power_loss": attestation.get("restart_on_power_loss"),
-                "verified_at": attestation.get("verified_at"),
-                "method": attestation.get("method"),
-                "operator": attestation.get("operator"),
-            },
-            mode=f"{stat.S_IMODE(status.st_mode):04o}",
+            "ECS recovery and reboot evidence substitutes for firmware power restoration",
+            cloud_evidence=facts,
         )
-    except (OSError, ValueError, json.JSONDecodeError) as exc:
-        report.add(
-            "power:restart-on-power-loss",
-            False,
-            f"cannot verify power recovery attestation: {exc}",
-        )
+    else:
+        attestation_path = Path(policy["power"]["restart_attestation"])
+        try:
+            status = attestation_path.stat()
+            attestation = load_json(attestation_path)
+            secure_mode = status.st_uid == 0 and stat.S_IMODE(status.st_mode) & 0o022 == 0
+            required_fields = all(
+                bool(attestation.get(key)) for key in ["verified_at", "method", "operator"]
+            )
+            passed = (
+                secure_mode
+                and attestation.get("host_id_sha256") == host_id
+                and attestation.get("restart_on_power_loss") is True
+                and required_fields
+            )
+            report.add(
+                "power:restart-on-power-loss",
+                passed,
+                "root-owned firmware or out-of-band power recovery attestation matches this host",
+                attestation={
+                    "host_id_sha256": attestation.get("host_id_sha256"),
+                    "restart_on_power_loss": attestation.get("restart_on_power_loss"),
+                    "verified_at": attestation.get("verified_at"),
+                    "method": attestation.get("method"),
+                    "operator": attestation.get("operator"),
+                },
+                mode=f"{stat.S_IMODE(status.st_mode):04o}",
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            report.add(
+                "power:restart-on-power-loss",
+                False,
+                f"cannot verify power recovery attestation: {exc}",
+            )
 
     unit_path = Path(policy["systemd"]["unit_path"])
     try:
@@ -666,6 +594,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--policy", type=Path, default=DEFAULT_POLICY)
     parser.add_argument("--summary-path", type=Path, default=DEFAULT_SUMMARY)
     parser.add_argument("--reboot-marker", type=Path, default=DEFAULT_REBOOT_MARKER)
+    parser.add_argument("--cloud-contract", type=Path)
     return parser.parse_args(argv)
 
 
@@ -682,6 +611,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.reboot_marker.is_absolute()
         else ROOT / args.reboot_marker
     )
+    cloud_contract_path = (
+        args.cloud_contract
+        if args.cloud_contract is None or args.cloud_contract.is_absolute()
+        else ROOT / args.cloud_contract
+    )
     report = Report()
     try:
         policy = load_json(policy_path)
@@ -689,6 +623,18 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError("operations host policy schema_version must be 1")
         current_host_id = machine_id_sha256()
         current_boot_id = boot_id()
+        cloud_contract = (
+            load_json(cloud_contract_path)
+            if cloud_contract_path is not None
+            else None
+        )
+        if cloud_contract is not None and cloud_contract.get("status") != "selected":
+            raise ValueError("cloud target contract status must be selected")
+        if cloud_contract is not None and (
+            cloud_contract.get("provider", {}).get("name") != "alicloud"
+            or not cloud_contract.get("target_id")
+        ):
+            raise ValueError("cloud target contract provider and target_id are invalid")
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         report.add(
             "admission:initialization", False, f"cannot initialize admission: {exc}"
@@ -696,6 +642,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         current_host_id = ""
         current_boot_id = ""
         policy = {}
+        cloud_contract = None
         summary = write_summary(
             summary_path,
             args.phase,
@@ -723,10 +670,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         check_clock_and_network(
             report, policy, require_public_listener=args.phase != "admit"
         )
-        check_storage_and_temperature(report, policy)
+        check_storage_and_temperature(report, policy, cloud_contract)
         check_identity_and_directories(report, policy)
         check_log_policy(report, policy)
-        check_power_and_unit(report, policy, current_host_id)
+        check_power_and_unit(report, policy, current_host_id, cloud_contract)
     except (KeyError, TypeError, ValueError) as exc:
         report.add(
             "admission:policy-execution",
@@ -735,6 +682,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     artifacts: dict[str, Any] = {}
+    if cloud_contract_path is not None:
+        artifacts["cloud_contract"] = str(cloud_contract_path)
     if args.phase in {"prepare-reboot", "verify-reboot"}:
         try:
             check_runtime(report, policy)

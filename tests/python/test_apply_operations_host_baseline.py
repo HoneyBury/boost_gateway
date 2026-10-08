@@ -5,6 +5,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 SCRIPT = (
     Path(__file__).resolve().parents[2]
@@ -23,6 +24,11 @@ class OperationsHostBaselineTests(unittest.TestCase):
         cls.root = Path(__file__).resolve().parents[2]
         cls.policy = json.loads(
             (cls.root / "deploy/operations/operations-host-policy.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        cls.cloud_policy = json.loads(
+            (cls.root / "deploy/cloud/cloud-operations-host-policy.json").read_text(
                 encoding="utf-8"
             )
         )
@@ -62,6 +68,34 @@ class OperationsHostBaselineTests(unittest.TestCase):
         self.assertNotIn("docker compose up", serialized)
         self.assertNotIn("conan", serialized.lower())
         self.assertNotIn("cmake", serialized.lower())
+
+    def test_cloud_plan_never_opens_gateway_to_everywhere(self) -> None:
+        rendered = [" ".join(command) for command in MODULE.ufw_commands(self.cloud_policy)]
+
+        self.assertNotIn("ufw allow 9201/tcp", rendered)
+        self.assertNotIn("ufw allow 22/tcp", rendered)
+
+    def test_apply_installs_the_selected_policy(self) -> None:
+        selected = self.root / "deploy/cloud/cloud-operations-host-policy.json"
+        actions: list[dict[str, object]] = []
+        with (
+            mock.patch.object(MODULE.sys, "platform", "linux"),
+            mock.patch.object(MODULE.os, "geteuid", return_value=0),
+            mock.patch.object(MODULE.shutil, "which", return_value="/usr/bin/tool"),
+            mock.patch.object(MODULE, "ensure_service_identity"),
+            mock.patch.object(MODULE, "ensure_directories"),
+            mock.patch.object(MODULE, "install_governed_file") as install_file,
+            mock.patch.object(MODULE, "atomic_write"),
+            mock.patch.object(MODULE, "run"),
+            mock.patch.object(MODULE, "configure_docker_logging", return_value=False),
+        ):
+            MODULE.apply(self.policy, selected, False, actions)
+
+        self.assertEqual(selected, install_file.call_args_list[0].args[0])
+        self.assertEqual(
+            Path("/etc/boost-gateway/operations-host-policy.json"),
+            install_file.call_args_list[0].args[1],
+        )
 
 
 if __name__ == "__main__":

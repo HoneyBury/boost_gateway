@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import json
 import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
+
+from scripts.lib import operations_host_hardware
 
 SCRIPT = (
     Path(__file__).resolve().parents[2]
@@ -33,6 +38,15 @@ NETWORK_POLICY = {
     "required_public_listener": 9201,
 }
 
+CLOUD_NETWORK_POLICY = {
+    "public_tcp_ports": [],
+    "restricted_tcp_ports": NETWORK_POLICY["restricted_tcp_ports"],
+    "trusted_cidrs": NETWORK_POLICY["trusted_cidrs"],
+    "firewall_protected_tcp_ports": [22, 9201],
+    "required_trusted_tcp_ports": [22, 9201],
+    "required_public_listener": 9201,
+}
+
 
 class OperationsHostParserTests(unittest.TestCase):
     def test_parses_host_facts(self) -> None:
@@ -57,6 +71,17 @@ class OperationsHostParserTests(unittest.TestCase):
 
 
 class OperationsHostNetworkPolicyTests(unittest.TestCase):
+    def test_accepts_private_gateway_and_management_firewall_rules(self) -> None:
+        passed, errors = MODULE.evaluate_ufw_policy(
+            "Status: active\nDefault: deny (incoming), allow (outgoing)\n"
+            "22/tcp ALLOW IN 10.42.0.0/16\n"
+            "9201/tcp ALLOW IN 10.42.0.0/16\n",
+            CLOUD_NETWORK_POLICY,
+        )
+
+        self.assertTrue(passed)
+        self.assertEqual([], errors)
+
     def test_accepts_only_gateway_public_and_management_trusted(self) -> None:
         passed, evaluated, errors = MODULE.evaluate_listener_boundary(
             [
@@ -179,6 +204,54 @@ class OperationsHostRebootEvidenceTests(unittest.TestCase):
                 hashlib.sha256(path.read_bytes()).hexdigest(),
                 MODULE.machine_id_sha256(path),
             )
+
+    def test_cloud_deviation_evidence_is_digest_and_target_bound(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "evidence.json"
+            evidence = {
+                "schema_version": 1,
+                "passed": True,
+                "host_check": "storage:smart-health",
+                "target_id": "cloud-01",
+                "provider": "alicloud",
+                "region_id": "cn-example",
+                "zone_id": "cn-example-a",
+                "instance_id": "i-example",
+                "observed_at": "2026-10-08T00:00:00Z",
+                "source": "cloudmonitor-volume-health",
+            }
+            content = (json.dumps(evidence, sort_keys=True) + "\n").encode()
+            path.write_bytes(content)
+            contract = {
+                "target_id": "cloud-01",
+                "provider": {
+                    "name": "alicloud",
+                    "region_id": "cn-example",
+                    "zone_id": "cn-example-a",
+                },
+                "cloud_deviations": [
+                    {
+                        "host_check": "storage:smart-health",
+                        "evidence_status": "accepted",
+                        "evidence_reference": str(path),
+                        "evidence_sha256": hashlib.sha256(content).hexdigest(),
+                    }
+                ],
+            }
+            actual = path.stat()
+            root_owned = SimpleNamespace(st_uid=0, st_mode=actual.st_mode)
+            with mock.patch.object(MODULE.Path, "stat", return_value=root_owned):
+                passed, facts = operations_host_hardware.verify_cloud_deviation_evidence(
+                    contract, "storage:smart-health"
+                )
+            self.assertTrue(passed, facts)
+
+            path.write_text("{}\n", encoding="utf-8")
+            with mock.patch.object(MODULE.Path, "stat", return_value=root_owned):
+                passed, _ = operations_host_hardware.verify_cloud_deviation_evidence(
+                    contract, "storage:smart-health"
+                )
+            self.assertFalse(passed)
 
     def test_requires_same_host_and_changed_boot_id(self) -> None:
         marker = {

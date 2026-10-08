@@ -236,7 +236,10 @@ def configure_docker_logging(actions: list[dict[str, Any]]) -> bool:
 
 
 def apply(
-    policy: dict[str, Any], restart_docker: bool, actions: list[dict[str, Any]]
+    policy: dict[str, Any],
+    policy_path: Path,
+    restart_docker: bool,
+    actions: list[dict[str, Any]],
 ) -> None:
     if not sys.platform.startswith("linux") or os.geteuid() != 0:
         raise RuntimeError("apply requires root on Linux")
@@ -244,7 +247,7 @@ def apply(
         if shutil.which(command) is None:
             raise RuntimeError(f"required command is unavailable: {command}")
     for source in (
-        ROOT / "deploy/operations/operations-host-policy.json",
+        policy_path,
         ROOT / "deploy/operations/boost-gateway-journald.conf",
         ROOT / "deploy/systemd/boost-gateway-compose.service",
     ):
@@ -254,7 +257,7 @@ def apply(
     ensure_directories(policy, actions)
 
     install_governed_file(
-        ROOT / "deploy/operations/operations-host-policy.json",
+        policy_path,
         Path("/etc/boost-gateway/operations-host-policy.json"),
         0o644,
         actions,
@@ -350,7 +353,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         if policy.get("schema_version") != 1:
             raise ValueError("operations host policy schema_version must be 1")
         if args.mode == "apply":
-            apply(policy, args.restart_docker, actions)
+            apply(policy, policy_path, args.restart_docker, actions)
         else:
             actions = plan(policy, args.restart_docker)
     except (OSError, ValueError, RuntimeError, json.JSONDecodeError) as exc:
