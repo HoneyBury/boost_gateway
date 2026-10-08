@@ -9,6 +9,19 @@
     "legacy": "Historical compatibility script; avoid new references."
   },
   "script_growth_exceptions": {
+    "scripts/tools/render_enterprise_operations_readiness.py": {
+      "kind": "cli",
+      "domain": "production",
+      "consumers": [
+        "TODO-0018 final operations review"
+      ],
+      "test": "tests/python/test_enterprise_operations_readiness.py",
+      "why_new_script": "The final two-month review must independently recompute the immutable aggregate, approved scope, host thresholds, recovery evidence and off-host digest bindings instead of trusting narrative completion fields.",
+      "replaces": "",
+      "retirement_condition": "Retain with the final report until a maintained evidence service can reproduce the same historical decision and digest bindings.",
+      "temporary": false,
+      "expires_on": ""
+    },
     "scripts/lib/immutable_window.py": {
       "kind": "library-module",
       "domain": "production",
@@ -944,6 +957,9 @@
       "category": "tool"
     },
     "scripts/tools/manage_todos.py": {
+      "category": "tool"
+    },
+    "scripts/tools/render_enterprise_operations_readiness.py": {
       "category": "tool"
     },
     "scripts/tools/operator_kind_smoke.py": {

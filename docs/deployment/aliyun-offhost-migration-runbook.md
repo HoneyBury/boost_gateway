@@ -1,6 +1,12 @@
 # Mac 外部运营职责迁移到阿里云 Runbook
 
-更新时间：2026-09-07
+更新时间：2026-10-08
+
+> 2026-10-08 收口说明：本 runbook 的 Mac 到阿里云外部职责迁移已经完成，独立 dead-man、
+> 替代 Day 0、fixed-end finalizer 和最终异机 evidence package 均已执行。替代窗口的原始
+> 聚合 FAIL 与用户批准范围下 43,154/43,154 PASS 同时保留。下文 2026-09-07 快照中的
+> “Day 0 待声明”和“dead-man 未部署”是当时状态，不再表示当前阻断。`aliyunserver` 仍只是
+> off-host 节点，不因本次收口自动成为生产服务主机。
 
 本文档定义把 Mac 承担的外部业务 canary、Alertmanager SSH tunnel、异机备份 vault 和
 异机 evidence verification 迁移到 Tailscale 节点 `aliyunserver` 的受控步骤。迁移后

@@ -169,6 +169,15 @@
       "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
       "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
     },
+    "docs/deployment/home-network-test-boundary-20260922.md": {
+      "type": "decision",
+      "purpose": "User-approved attribution boundary for home-router interruptions in the completed TODO-0017 software-stability window.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/deployment/README.md",
+      "update_trigger": "Update only when correcting the recorded user decision, affected minutes, or immutable evidence references.",
+      "archive_condition": "Archive with the completed home validation after a superseding cloud readiness decision no longer needs this attribution record."
+    },
     "docs/deployment/identity-key-rotation-runbook.md": {
       "type": "runbook",
       "purpose": "External identity key rotation, stale grace, outage, and rollback procedure.",
@@ -258,6 +267,15 @@
       "entrypoint": "docs/README.md",
       "update_trigger": "Update when the documented behavior, boundary, workflow, or operating procedure changes.",
       "archive_condition": "Archive when superseded, completed, or no longer part of the supported project surface."
+    },
+    "docs/enterprise-operations-readiness-20261008.md": {
+      "type": "decision",
+      "purpose": "Final independently recomputed two-month operations decision, proven capability boundary, and controlled cloud single-node pilot entry criteria.",
+      "owner": "@HoneyBury",
+      "status": "maintained",
+      "entrypoint": "docs/README.md",
+      "update_trigger": "Update only when correcting a verified evidence digest, audit calculation, capability boundary, or linked next-stage task.",
+      "archive_condition": "Archive after a superseding cloud production readiness decision is approved and linked from the current-state fact source."
     },
     "docs/legacy/legacy-helper-inventory.md": {
       "type": "legacy",

@@ -1,0 +1,143 @@
+{
+  "audit_pass": true,
+  "checks": [
+    {
+      "detail": "expected=43200, recorded=43156, successful=43154, failed=2, missing=44",
+      "name": "raw-count-balance",
+      "passed": true
+    },
+    {
+      "detail": "duration_seconds=2592000",
+      "name": "raw-duration",
+      "passed": true
+    },
+    {
+      "detail": "coverage=0.998981481481, availability=0.998935185185, recorded_success=0.999953656502",
+      "name": "raw-recomputed-rates",
+      "passed": true
+    },
+    {
+      "detail": "original finalizer FAIL and absent controller final.json remain explicit",
+      "name": "raw-result-preserved",
+      "passed": true
+    },
+    {
+      "detail": "candidate={'commit': 'db0f905d0421b2052b9de7f49d9bf71787915e23', 'deployment_id': 'v3.6.7-fb5f6bfb2626-fa8b69b36dec', 'runtime_digest': 'sha256:2f2c2b7408ffde856815309b4dd7b29446558b0415a0971c32c333140b5a8aff', 'tag': 'v3.6.7'}",
+      "name": "candidate-consistent",
+      "passed": true
+    },
+    {
+      "detail": "scope assessment repeats the immutable aggregate without rewriting it",
+      "name": "scope-raw-matches",
+      "passed": true
+    },
+    {
+      "detail": "evaluated=43154, successful=43154, excluded_missing=44, excluded_failed=2",
+      "name": "scope-adjusted-recomputed",
+      "passed": true
+    },
+    {
+      "detail": "coverage, gap, memory, disk, restart, OOM, thermal, growth and storage thresholds pass",
+      "name": "host-window-hard-gates",
+      "passed": true
+    },
+    {
+      "detail": "passed=22/22",
+      "name": "lifecycle-verification",
+      "passed": true
+    },
+    {
+      "detail": "email_total=37->39, failures=3->3",
+      "name": "alert-delivery",
+      "passed": true
+    },
+    {
+      "detail": "preflight passes and binds the final alert delivery attestation",
+      "name": "observability-preflight",
+      "passed": true
+    },
+    {
+      "detail": "backup_id=todo0012-scheduled-20261008T022120Z-743a7dc7",
+      "name": "backup-vault-copy",
+      "passed": true
+    },
+    {
+      "detail": "retained=12, deleted=1",
+      "name": "backup-retention",
+      "passed": true
+    },
+    {
+      "detail": "manifest_entries=289, verified_checksums=290",
+      "name": "offhost-final-package",
+      "passed": true
+    },
+    {
+      "detail": "daily=76, weekly=14, incident=4",
+      "name": "ledger-coverage",
+      "passed": true
+    },
+    {
+      "detail": "completion marker binds all independently loaded closure inputs",
+      "name": "evidence-hash-bindings",
+      "passed": true
+    },
+    {
+      "detail": "scope-adjusted completion is explicit; formal_30_day_claim remains false",
+      "name": "completion-boundary",
+      "passed": true
+    }
+  ],
+  "decision": "READY_FOR_CLOUD_SINGLE_NODE_PILOT",
+  "evidence_directory": "runtime/validation/todo0017-20260908T0309Z-fixed-end",
+  "formal_30_day_claim": false,
+  "formal_30_day_gate": "FAIL_PRESERVED",
+  "generated_at": "2026-10-08T12:30:00Z",
+  "host_recomputed": {
+    "container_count": 13,
+    "coverage_rate": 1.0,
+    "filesystem_max_used_ratio": 0.30165829843243774,
+    "max_container_restarts": 0,
+    "max_gap_seconds": 15,
+    "memory_max_ratio": 0.12936254728509922,
+    "prometheus_samples": 172800
+  },
+  "ledger_recomputed": {
+    "daily_records": 76,
+    "incident_records": 4,
+    "verified_checksums": 290,
+    "weekly_records": 14
+  },
+  "raw_recomputed": {
+    "availability": 0.9989351851851852,
+    "coverage_rate": 0.9989814814814815,
+    "expected_samples": 43200,
+    "failed_samples": 2,
+    "missing_samples": 44,
+    "recorded_samples": 43156,
+    "recorded_success_rate": 0.9999536565019927,
+    "successful_samples": 43154
+  },
+  "report_path": "docs/enterprise-operations-readiness-20261008.md",
+  "schema_version": 1,
+  "scope_adjusted_recomputed": {
+    "availability": 1.0,
+    "evaluated_minutes": 43154,
+    "excluded_failed_minutes": 2,
+    "excluded_missing_minutes": 44,
+    "successful_minutes": 43154
+  },
+  "source_sha256": {
+    "aggregate": "a92c8ca13937fa7819a49eb0fc0bae6a219391d7d6c4cd727d8ac53d49f2a48d",
+    "alert": "d31b1039baaedb3a53fa569ed5e0a787630c2761ea72cce4f88b8f7ec3548748",
+    "backup_receipt": "394368aed6c88638e27f4f3d3c7ce5ce281d80f958206918e63cc933fdd5f865",
+    "completion": "d217dcf3114f9d4a8099c0c75de46a77c79c8d2af57cc133ae13fc8f765032c7",
+    "host": "bf181b412968ec233cc140d54e7fb919a5c17fea476ca8acaab17eb91f8e1b72",
+    "lifecycle": "c02c218b6130d9d1106dbf651a0cae5d5e29677f525a1821f0563412bdf9e253",
+    "offhost": "fda292f91fab5c64fa70e2530525cd3f938188923a658758bc441b5e85cad7f3",
+    "preflight": "cb273edf29de0a56690207f05fb4bce512c062ab10f8c39c6d3efbc81c8ed9eb",
+    "retention": "29cb2adfe22d3a0ac1690b88a35f58d40143d30c40b6c350d193cdd9faeca3c3",
+    "scope": "8332bd56c2d157baea3dc9be002a4f678107bb3d7bbf89df1eefa5e827740cf1"
+  },
+  "task": "TODO-0018",
+  "unrestricted_production_ready": false
+}

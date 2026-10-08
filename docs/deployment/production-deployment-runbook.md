@@ -1,8 +1,9 @@
 # 生产部署运行手册
 
-更新时间：2026-07-24
+更新时间：2026-10-08
 
-本文档是 v3.6.2 当前生产部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证。当前目标是稳定现有 gateway + 5 backend 拓扑，不扩展新的业务模块。
+本文档是 v3.6.7 Linux x64 当前生产部署事实源，覆盖云服务器、Docker Compose、systemd、Kubernetes、监控、备份、回滚和发布后验证。当前目标是稳定现有 gateway + 5 backend 拓扑，不扩展新的业务模块。云服务器正式暴露前还必须满足
+[企业运营就绪结论](../enterprise-operations-readiness-20261008.md)中的单节点试运行边界。
 
 ## 生产拓扑
 
@@ -28,7 +29,8 @@ grafana:3000 -> dashboard backed by Prometheus
 
 生产暴露边界：
 
-- 对公网只开放 gateway TCP `9201`。
+- gateway TCP `9201` 只有在 TLS/mTLS 入口已验证时才可向公网开放；plain TCP 必须限制在
+  VPC、Tailscale 或其他受控私网内。
 - gateway HTTP management `9080`、Prometheus `9090`、Grafana `3000` 只允许内网、堡垒机或 VPN 访问。
 - Alertmanager `9093`、Redis host publish `6380`、Redis exporter `9121` 和开发 profile 的可选 cAdvisor `8081` 也只允许内网、堡垒机或 VPN 访问；生产 cAdvisor 不发布 host port。
 - 后端服务是自定义 TCP 协议，不暴露 HTTP `/health` 或 `/metrics`。
