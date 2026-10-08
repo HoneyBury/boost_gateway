@@ -1,6 +1,30 @@
 # 当前项目事实源
 
-更新时间：2026-09-07
+## 2026-09-22 用户修订：家庭网络测试边界
+
+窗口 `todo0017-20260908T0309Z` 已按原定区间于 2026-10-08T03:09:00Z 结束。
+用户批准的家庭网络边界最终覆盖 44 个缺失分钟和 2 个已记录失败分钟；排除这些明确归因
+于家庭网络的分钟后，软件范围观察为 43,154/43,154 成功。原始自动聚合仍原样保留为
+FAIL，范围修订结论单独报告，不补样本，不将未知故障自动豁免。
+详见 [用户批准的范围修订](deployment/home-network-test-boundary-20260922.md)。
+本节优先于本文中针对该窗口的旧缺口失败结论及尚未启动的历史描述。
+
+主机全窗口审计和最终 lifecycle verify 均为 PASS。2026-10-08 的真实 Alertmanager
+firing/resolved 演练、收件端 `Message-ID` 证明和 observability preflight 均 PASS。两阶段
+证据包已在阿里云逐项读回：候选包校验 287 项，最终包校验 290 项；最终 package SHA-256
+为 `7417c9bbfca6c3739fe4731cd9317978535db8b5f85ddeae6c39870b4074837f`，异机 receipt
+SHA-256 为 `fda292f91fab5c64fa70e2530525cd3f938188923a658758bc441b5e85cad7f3`。
+TODO-0017 按用户批准的软件稳定性范围完成。原始 finalizer FAIL、未生成原 controller
+`final.json` 以及 supplemental final record 的 `formal_30_day_claim=false` 均保留，不表述为
+原自动门禁 PASS。
+
+TODO-0018 已完成，独立复算报告见
+[企业运营就绪结论](enterprise-operations-readiness-20261008.md)。当前决策是允许进入受控的
+云服务器 Linux x64 单节点试运行；不声明无限制公网生产、多节点 HA、跨可用区灾备或任意
+容量。家庭网络排除规则只适用于上述已结束窗口，云主机、云磁盘和云网络故障必须按目标
+生产环境 incident 与 SLO 处理。
+
+更新时间：2026-10-08
 
 本文档只记录当前仍成立的实现、发布和规划事实。历史候选、已关闭清单和逐 run 交付记录
 位于 [`docs/archive/`](archive/README.md)，不再混入当前执行优先级。
@@ -345,25 +369,19 @@ Docker 或 CWA 书库容器迁到 x86-64 云主机。历史 macOS 发布证据�
 
 ## 当前主任务
 
-当前两个月工作由 `TODO-0007` 至 `TODO-0018` 管理，目标是：
+两个月单节点运营计划的建设、72 小时预演、30 天窗口和最终运营评审已经结束。当前执行
+主线是 `TODO-0020` 至 `TODO-0023` 管理的受控云服务器单节点试运行：
 
-1. 已在服务器不编译源码的前提下，以不可变 release asset 完成幂等安装、升级和回滚。
-2. 已完成最终 SMTP relay 配置下的 W35 自然 metrics/ledger 周期、`TODO-0011` 收口和
-   v3.6.7 独立 72 小时预演；此前声明的正式 30 天窗口已 supersede，新 Day 0 尚未开始。
-3. 历史异机备份、Redis/host/runtime 恢复演练已满足 5/10 分钟 RTO 边界；阿里云新
-   vault identity 的 source cutover、两份 upload/readback 和两次独立 restore/business/
-   known-good 及 evidence round trip 均已通过；attestation lock/容量修复已重部署，第三份
-   backup、policy-bound retention、迁移后首个自然 scheduled backup、Mac scheduler stop、最终
-   evidence sync 和邮件目标端 `Message-Id` create-only attestation 均已通过，日常职责迁移已
-   正式签收。
-4. 收口 required checks、review、CODEOWNERS、SECURITY 和 Action SHA pinning。
-5. 已关闭 `TODO-0011`/`TODO-0013`，完成独立 72 小时上线预演、阿里云异机迁移验收及
-   controller 对齐；独立 dead-man 正式部署与演练、治理化 fixed-end finalizer 完成后，以单一
-   tag/SHA/digest 和新的 external host identity 从新 Day 0 连续运行至少 30 天。
+1. 以可复现 IaC/host policy 准入 Ubuntu 24.04 x64 云目标，不在目标机编译源码。
+2. 使用受治理 lifecycle 部署不可变 release；公网业务入口必须使用 TLS/mTLS，或保持在
+   VPC/Tailscale 私网内，plain TCP 不直接暴露公网。
+3. 把 backup/evidence 副本放入不同故障域，执行真实 restore、host replacement 和 rollback。
+4. 在选定云实例上形成容量边界并运行 7 天低流量试运行；云端网络、磁盘和实例故障均纳入
+   incident/SLO，不沿用家庭路由器排除规则。
 
-30 天验证要求连续时长不少于 `2,592,000s`，availability/canary success 与证据覆盖率
-均不低于 99.9%；runtime 变化会重置 Day 0。完整口径见
-[single-node-enterprise-validation-plan.md](single-node-enterprise-validation-plan.md)。
+完整结论和未证明边界见
+[企业运营就绪结论](enterprise-operations-readiness-20261008.md)，后续工作由 TODO-0020 起的
+云上线任务管理。
 
 ## 当前阻断和非目标
 
@@ -389,6 +407,8 @@ python3.12 scripts/check_mainline_readiness.py
 python3.12 scripts/gates/governance/check_config_source_layout.py
 python3.12 scripts/gates/transport/check_transport_config_governance.py
 python3.12 scripts/gates/governance/check_next_minor_decisions.py
+python3.12 scripts/tools/render_enterprise_operations_readiness.py \
+  --generated-at 2026-10-08T12:30:00Z
 python3.12 scripts/verify_release_candidate.py \
   --skip-release-baseline --soak-profile smoke
 ```

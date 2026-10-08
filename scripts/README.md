@@ -96,6 +96,7 @@ Use these stable public entrypoints first:
 - `verify_preprod_recovery_drill.py` and `verify_tls_preprod_multi_run.py` for R5/R6 pre-production evidence.
 - `verify_jwks_rotation.py` for the real HTTPS multi-`kid` rotation, stale-grace, outage, and rollback drill.
 - `manage_todos.py` for the versioned project TODO board and explicit GitHub Issue synchronization.
+- `tools/render_enterprise_operations_readiness.py` for the final TODO-0018 evidence recomputation and cloud-pilot decision report.
 - `manage_release_deployment.py` for immutable release install, deploy, upgrade, rollback, status, verification
   transactions, and fail-closed Redis persistence-mode transitions.
 - `check_operations_host.py` for fail-closed Ubuntu operations-host admission and real reboot verification.

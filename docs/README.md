@@ -32,6 +32,7 @@
 | [项目蓝图](project-blueprint.md) | 六个月以上的方向、取舍原则和长期门禁 |
 | [主线执行计划](mainline-execution-plan.md) | v3.6.7 Linux x64 生产验证的具体执行顺序 |
 | [单节点运营与 30 天验证](single-node-enterprise-validation-plan.md) | 自动部署、SLI/SLO、备份恢复、72 小时预演和 30 天运行契约 |
+| [企业运营就绪结论](enterprise-operations-readiness-20261008.md) | 两个月计划的独立复算、能力边界和云单节点试运行决策 |
 | [平台生产边界](platform-production-boundaries.md) | Linux x64、Linux ARM64、macOS ARM64 的不可互换证据边界 |
 | [平台边界清单](platform-production-boundaries.json) | 平台契约的机器可读事实源 |
 | [TODO 管理](todos/README.md) | 任务数据所有权、生命周期、渲染和 GitHub 同步方式 |

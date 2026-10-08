@@ -1,6 +1,6 @@
 # Production Platform Boundaries
 
-更新时间：2026-08-13
+更新时间：2026-10-08
 
 BoostGateway 维护三个彼此独立的原生生产平台。机器可读事实源是
 [`platform-production-boundaries.json`](platform-production-boundaries.json)；本文档解释
@@ -79,6 +79,10 @@ directory、Docker target 和 artifact suffix。跨 workflow 聚合前还必须�
 - Windows 和 macOS x64 不在当前维护平台中；恢复支持需要新的 ADR、工具链和原生证据。
 - 新平台只有在 profile/lockfile、runtime、SDK、符号、R5、性能和发布后消费全部闭环后，
   才能加入 `production_platforms`。
+- 2026-10-08 运营评审只批准 Linux x64 云服务器单节点试运行。目标云实例仍需重新完成 host
+  admission、容量、TLS/私网入口、恢复和灰度证据；家庭环境的网络排除不适用于云生产故障。
+- 当前证据不支持多节点 HA、跨可用区连续性或区域灾难恢复。Linux ARM64 SDK Issue #63
+  保持开放，不影响 Linux x64 试运行，但阻止恢复 ARM64 当前发布支持声明。
 
 runner 的当前身份和在线状态见 [runner-inventory.md](runner-inventory.md)，准入规则见
 [runner-gate-standard.md](runner-gate-standard.md)。

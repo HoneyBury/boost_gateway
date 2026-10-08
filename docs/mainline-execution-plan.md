@@ -1,12 +1,20 @@
-# v3.6.7 Linux x64 企业运营主线
+# v3.6.7 Linux x64 企业运营收口与云试运行主线
 
-更新时间：2026-09-07
+更新时间：2026-10-08
+
+## 阶段状态
+
+`TODO-0007` 至 `TODO-0019` 已结束。最终窗口的原始自动聚合保持 FAIL，用户批准的家庭
+网络边界下软件结果为 43,154/43,154 PASS；完整差异和证据哈希见
+[企业运营就绪结论](enterprise-operations-readiness-20261008.md)。`TODO-0018` 最终审计已完成，
+当前由 `TODO-0020` 至 `TODO-0023` 推进云服务器 Linux x64 单节点试运行，不把本轮结论扩大为
+HA、跨区 DR 或任意容量声明。
 
 ## 目标
 
-当前两个月不扩大业务或默认协议面，而是把 v3.6.7 Linux x64 不可变资产交付为可重复运营的
-Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢复、回滚和仓库强制
-治理完成后，执行 72 小时预演，并让同一 tag/SHA/runtime digest 连续运行至少 30 天。
+保持 v3.6.7 Linux x64 不可变资产与已经证明的单节点运营能力，先完成两个月计划的最终
+审计，再把同一治理模型迁移到 Ubuntu 24.04 x64 云目标。云阶段必须重新准入主机、网络、
+容量、恢复和安全边界；家庭环境结果只作为软件与运营能力输入。
 
 完整 SLI/SLO、RTO/RPO 和 Day 0 规则见
 [单节点运营计划](single-node-enterprise-validation-plan.md)。版本化执行状态由
@@ -16,36 +24,22 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 | 优先级 | 工作项 | 完成标准 |
 |---|---|---|
-| P0 | release-driven 部署与 host admission | 全新主机不编译源码，一条治理入口安装并通过 full-flow；失败可在 10 分钟内回滚 |
-| P0 | 观测、canary 和证据 ledger | 45 天 metrics、外部 SDK canary、部署/变更/告警可追溯 |
-| P0 | 备份和恢复 | gateway/backend 5 分钟，Redis/host/rollback 10 分钟 RTO 演练通过 |
-| P0/P1 | 仓库强制治理 | required checks/review、CODEOWNERS、SECURITY、Action SHA pinning 不可绕过 |
-| P1 | 72 小时上线预演 | 无未知 restart/OOM/无界增长；网络、Redis、备份、恢复和回滚证据完整 |
-| P1 | 30 天不可变验证 | 连续 `>=2,592,000s`，availability/canary/coverage 均 `>=99.9%` |
-| P2 | 运营评审与优化 | readiness report 区分已证明单节点能力与未证明容量/HA；优化有 RCA 和前后基线 |
+| P0 | 云目标准入 | IaC、Ubuntu x64、持久盘、时钟、防火墙、私网管理和 secret 边界通过 |
+| P0 | 安全部署与切流 | 不在服务器编译；TLS/mTLS 或私网入口；full-flow、告警、回滚通过 |
+| P0 | 云备份和恢复 | 不同故障域副本、真实 restore、host replacement 与 rollback 达到 RTO/RPO |
+| P1 | 云端容量与试运行 | 选定实例形成容量边界，连续 7 天低流量试运行并记录全部云端 incident |
+| P2 | HA/DR 架构决策 | 单独评审多节点、跨可用区和区域灾备，不由单节点证据推导 |
 
 ## 执行顺序
 
-1. **冻结部署输入**：只接受 v3.6.7 Linux x64 release archive、checksum、SBOM、provenance 和明确
-   的配置版本，不在服务器上构建源码。
-2. **实现 host preflight**：校验 OS、磁盘、端口、Docker/Compose、时钟、ulimit、目录
-   权限、secret/config 和备份目标。
-3. **完成幂等生命周期**：install、upgrade、rollback 重复执行结果一致，失败不会留下
-   半配置状态。
-4. **建立外部观测**：每分钟 SDK canary、metrics retention、告警通知和 deployment/
-   evidence ledger 同时上线。
-5. **完成恢复演练**：覆盖单进程、gateway、backend、Redis、host replacement、备份损坏
-   和 rollback，记录 RTO/RPO。
-6. **收紧仓库治理**：PR、review、required checks、安全披露和第三方 Action pinning 全部
-   进入可验证门禁。
-7. **执行 72 小时预演**：按
-   [72 小时生产预演手册](deployment/72-hour-production-shakedown-runbook.md)先在同一
-   candidate/config 上完成计划内重启、网络、Redis、恢复和回滚演练，恢复验证通过后再声明
-   稳定 72 小时半开窗口；所有缺陷必须有 Issue/RCA。
-8. **冻结 Day 0**：确认唯一 tag/SHA/digest/config，开始 30 天连续验证。runtime 或关键
-   配置变化必须重新开始 Day 0。
-9. **形成运营结论**：输出 readiness report、未证明边界和下一版本计划，不以降低门槛
-   换取通过。
+1. **冻结云目标合同**：确定区域、实例、磁盘、网络、DNS/TLS、secret、RTO/RPO 和回退条件。
+2. **准入云主机**：通过 IaC 与 host policy 建立 Ubuntu 24.04 x64 环境，禁止目标机源码构建。
+3. **部署并验证**：使用 immutable release 和治理 lifecycle，完成 SDK full-flow、metrics、
+   Alertmanager、external canary、backup 和 evidence round trip。
+4. **演练恢复**：执行容器、Redis、主机替换、备份恢复和 release rollback，保留当前
+   `miniserver` 作为切流前回退环境。
+5. **容量与灰度**：在选定 SKU 上测量容量边界，执行 7 天低流量试运行后再作正式切流决策。
+6. **评审 HA/DR**：依据业务 SLO 决定是否进入多节点或跨区设计，不把它混入单节点试运行。
 
 ## 已完成基线
 
@@ -103,9 +97,11 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
   external canary、告警转发、异机备份及 evidence 职责迁移已于 `2026-09-07` 完成，Mac 不再需要
   为日常监控保持通电。controller 已对齐到 clean
   `801fb5f37927c0622c038185493d8cff3dc31163` 并通过精确 v3.6.7 bridge verify；Healthchecks.io
-  独立 dead-man 尚未部署，其真实 missing-heartbeat Down→Up、两条目标端 `Message-ID` 和
-  create-only attestation 仍是 Day 0 阻断。新的完整 30 天窗口只能在该门禁及 fixed-end
-  finalizer 完成后，从尚未采样的未来自然 UTC 分钟明确声明，迁移和预检分钟不得追溯累计。
+  独立 dead-man 随后完成正式部署、missing-heartbeat Down→Up 演练和 create-only
+  attestation。替代窗口 `[2026-09-08T03:09:00Z, 2026-10-08T03:09:00Z)` 已结束：原始聚合
+  因 44 个缺失分钟和 2 个失败分钟保持 FAIL；用户批准的家庭网络边界下软件结果为
+  43,154/43,154 PASS。主机、lifecycle、告警、备份、retention 和阿里云异机包验证均 PASS，
+  supplemental final record 保持 `formal_30_day_claim=false`。
 - v3.6.2 三平台 Release/R0、原生基线、容量/R4 和 2h 能力证据仍按其历史候选 SHA 和
   runner 边界使用，不能替代 v3.6.7 Linux x64 生产证据。
 - Conan 2.8.1、平台 profile/lockfile、SBOM semantic gate、debug-symbol/dSYM verifier、
@@ -139,6 +135,5 @@ Ubuntu 24.04 x64 单节点系统：自动部署、观测、追溯、备份、恢
 
 ## 阶段退出
 
-只有当 72 小时预演和 30 天不可变验证的全部门槛通过、恢复记录可复算、证据 provenance
-完整且所有严重缺陷关闭时，本阶段才结束。最终报告必须同时列出已证明能力、未证明
-边界、遗留风险和下一版本入口。
+本阶段以 TODO-0018 最终报告、事实源一致、遗留风险和下一阶段任务全部可复核为退出条件。
+原始 30 天门禁结果不会因阶段退出而改写；云阶段只按受控单节点试运行准入。

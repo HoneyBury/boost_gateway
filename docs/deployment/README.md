@@ -17,6 +17,7 @@
 | 长期观测 | [长期观测与证据](long-run-observability-runbook.md) |
 | 72 小时预演 | [72 小时生产预演](72-hour-production-shakedown-runbook.md) |
 | 外部业务探针 | [外部业务 Canary](external-business-canary-runbook.md) |
+| 家庭网络测试边界 | [TODO-0017 家庭网络归因决定](home-network-test-boundary-20260922.md) |
 | TLS 与身份轮换 | [身份密钥轮换](identity-key-rotation-runbook.md) |
 | Raft schema 迁移 | [Raft 迁移](raft-schema-migration-runbook.md) |
 | 调试符号 | [调试符号](debug-symbols-runbook.md) |

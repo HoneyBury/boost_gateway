@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "repository": "HoneyBury/boost_gateway",
-  "next_id": 19,
+  "next_id": 24,
   "tasks": [
     {
       "id": "TODO-0001",
@@ -322,7 +322,7 @@
     {
       "id": "TODO-0017",
       "title": "Complete the immutable 30-day operations validation",
-      "status": "open",
+      "status": "completed",
       "priority": "P1",
       "category": "long-run-validation",
       "description": "Run one immutable runtime release on the admitted Ubuntu host for at least 30 continuous days and produce a fail-closed evidence set for availability, business behavior, resources, recovery and operator actions.",
@@ -333,7 +333,7 @@
         "All maintenance, faults, alerts, deployments, backups and recoveries are traceable, and any runtime hotfix resets the formal clock to Day 0."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-10-08T12:12:53Z",
       "github": {
         "issue_number": 31,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/31"
@@ -342,7 +342,7 @@
     {
       "id": "TODO-0018",
       "title": "Issue the enterprise operations readiness decision",
-      "status": "open",
+      "status": "completed",
       "priority": "P2",
       "category": "enterprise-readiness",
       "description": "Audit the full two-month program and decide which single-node operations capabilities are proven, which remain unsupported, and which evidence-driven code or platform work enters the next release.",
@@ -353,10 +353,109 @@
         "The TODO board, GitHub Issues, current-state, platform boundaries and next release plan are reconciled before the program is marked complete."
       ],
       "created_at": "2026-07-24T07:00:30Z",
-      "completed_at": null,
+      "completed_at": "2026-10-08T12:36:39Z",
       "github": {
         "issue_number": 32,
         "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/32"
+      }
+    },
+    {
+      "id": "TODO-0019",
+      "title": "Record the withdrawn AOI external-canary migration proposal",
+      "status": "completed",
+      "priority": "P0",
+      "category": "external-canary-host-migration",
+      "description": "Preserve the cancelled AOI canary migration proposal as a versioned governance record. The operator cancelled it before implementation, the Mac remained authoritative at that time, and the later Mac-to-Aliyun migration used a separately governed plan and evidence set.",
+      "acceptance_criteria": [
+        "The operator cancellation and absence of an AOI production change are retained instead of representing the proposal as delivered capability.",
+        "GitHub Issue #68 remains linked to the reserved TODO-0019 identifier so later cloud work cannot reuse the historical number.",
+        "The later Aliyun off-host migration is documented independently and does not inherit unexecuted AOI acceptance claims."
+      ],
+      "created_at": "2026-07-29T08:40:03Z",
+      "completed_at": "2026-07-29T08:42:32Z",
+      "github": {
+        "issue_number": 68,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/68"
+      }
+    },
+    {
+      "id": "TODO-0020",
+      "title": "Freeze the Linux x64 cloud target contract and IaC",
+      "status": "open",
+      "priority": "P0",
+      "category": "cloud-host-admission",
+      "description": "Select the first cloud region and instance class, define the network and storage topology, and provision a reproducible Ubuntu 24.04 x64 single-node target without weakening the existing operations-host contract.",
+      "acceptance_criteria": [
+        "Versioned IaC or an equivalent reproducible provisioning entry creates the instance, persistent storage, private management path, firewall or security-group policy, time synchronization, service identity and secret locations.",
+        "The selected region, instance SKU, CPU and memory, disk performance and capacity, expected monthly cost, DNS boundary and rollback ownership are recorded before deployment.",
+        "The existing host-admission checks pass on the cloud target, and every intentional deviation from the miniserver policy has an explicit cloud-specific rationale and blocking test.",
+        "No source compilation, public Docker API, public Redis, public monitoring port or repository-stored secret is introduced on the cloud target."
+      ],
+      "created_at": "2026-10-08T12:32:32Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 110,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/110"
+      }
+    },
+    {
+      "id": "TODO-0021",
+      "title": "Deploy and cut over the secured cloud single-node candidate",
+      "status": "open",
+      "priority": "P0",
+      "category": "cloud-production-cutover",
+      "description": "Install the governed immutable Linux x64 release on the admitted cloud host, validate the complete service and observability topology, and perform a reversible low-risk traffic cutover.",
+      "acceptance_criteria": [
+        "Install, deploy, verify and rollback use the governed lifecycle and bind the release tag, commit, runtime digest, image identities, configuration digest and cloud host identity.",
+        "The business endpoint uses validated TLS or mTLS before public exposure, or remains reachable only through a documented VPC or Tailscale private boundary; plain TCP is never directly public.",
+        "SDK full-flow, Prometheus targets, Alertmanager firing and resolved delivery, external canary, Grafana access control and evidence round trip pass from hosts outside the cloud service node.",
+        "Cutover has explicit entry, abort and rollback conditions, keeps miniserver available as rollback until acceptance, and records DNS or routing transitions without sample splicing."
+      ],
+      "created_at": "2026-10-08T12:32:32Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 111,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/111"
+      }
+    },
+    {
+      "id": "TODO-0022",
+      "title": "Prove cloud backup restore and host-replacement recovery",
+      "status": "open",
+      "priority": "P0",
+      "category": "cloud-recovery",
+      "description": "Move cloud production backups and evidence to a separate failure domain and prove that data and service can be restored without relying on the active cloud host.",
+      "acceptance_criteria": [
+        "Encrypted backup and evidence copies are stored under a separate account, region or provider failure boundary with create-only receipts, checksum readback, retention and capacity enforcement.",
+        "Two independent restores recreate Redis leaderboard state in isolated volumes and pass submit, top, rank and SDK full-flow checks.",
+        "Gateway and backend recovery meet the 5-minute target, while Redis restore, host replacement and release rollback meet the 10-minute target or produce an explicit revised business decision.",
+        "A failed, missing or corrupt backup is rejected fail closed, and the current production volume and known-good backup remain unchanged throughout each drill."
+      ],
+      "created_at": "2026-10-08T12:32:32Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 112,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/112"
+      }
+    },
+    {
+      "id": "TODO-0023",
+      "title": "Establish the cloud capacity envelope and pass a seven-day pilot",
+      "status": "open",
+      "priority": "P1",
+      "category": "cloud-production-pilot",
+      "description": "Measure the supported workload on the selected cloud SKU and run a seven-day low-traffic production pilot using cloud-specific availability, resource and incident evidence.",
+      "acceptance_criteria": [
+        "Baseline, capacity and business-capacity runs bind the cloud SKU, candidate revision, CPU allocation, load-generator isolation and unchanged latency or error thresholds.",
+        "The seven-day pilot records complete canary and Prometheus coverage, resource trends, restart, OOM, disk and network incidents, alert delivery, backup and restore freshness.",
+        "Home-network exclusions are not applied to cloud failures; provider network, disk and instance interruptions are classified against the cloud SLO and incident policy.",
+        "The final cutover decision states the supported capacity envelope and keeps multi-node HA, cross-zone continuity and regional disaster recovery explicitly unsupported unless separate evidence exists."
+      ],
+      "created_at": "2026-10-08T12:32:32Z",
+      "completed_at": null,
+      "github": {
+        "issue_number": 113,
+        "issue_url": "https://github.com/HoneyBury/boost_gateway/issues/113"
       }
     }
   ]

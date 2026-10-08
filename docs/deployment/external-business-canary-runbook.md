@@ -1,5 +1,19 @@
 # External business canary runbook
 
+## 2026-09-22 用户修订：家庭网络测试边界
+
+窗口 `todo0017-20260908T0309Z` 已按原定区间于 2026-10-08T03:09:00Z 结束。
+用户批准的家庭网络边界最终覆盖 44 个缺失分钟和 2 个已记录失败分钟；排除这些明确归因
+于家庭网络的分钟后，软件范围观察为 43,154/43,154 成功。原始自动聚合仍原样保留为
+FAIL，范围修订结论单独报告，不补样本，不将未知故障自动豁免。
+详见 [用户批准的范围修订](home-network-test-boundary-20260922.md)。
+本节优先于本文中针对该窗口的旧缺口失败结论及尚未启动的历史描述。
+
+2026-10-08 最终复核已完成。主机审计、lifecycle、真实 firing/resolved 投递、observability
+preflight 和当天 backup/retention 均通过；两阶段 evidence package 已在阿里云完成异机
+读回。TODO-0017 因此按本修订范围完成，原自动聚合 FAIL 和
+`formal_30_day_claim=false` 继续作为边界证据保留。
+
 This runbook owns the repository side of `TODO-0013`. The runner must be a
 host outside the production service host so the sample includes the real
 client network path and does not contaminate production CPU or memory
