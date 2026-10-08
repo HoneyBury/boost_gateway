@@ -1,0 +1,115 @@
+{
+  "schema_version": 1,
+  "status": "draft",
+  "target_id": "boost-gateway-alicloud-single-node-01",
+  "provider": {
+    "name": "alicloud",
+    "region_id": "PENDING",
+    "zone_id": "PENDING",
+    "account_boundary": "production"
+  },
+  "compute": {
+    "instance_type": "PENDING",
+    "image_id": "PENDING",
+    "os_id": "ubuntu",
+    "os_version": "24.04",
+    "architecture": "x86_64",
+    "vcpu_count": 12,
+    "memory_bytes": 16000000000,
+    "charge_type": "PostPaid",
+    "deletion_protection": true
+  },
+  "storage": {
+    "system_disk": {
+      "category": "cloud_essd",
+      "performance_level": "PL1",
+      "size_bytes": 512000000000,
+      "encrypted": true
+    },
+    "data_disk": {
+      "category": "cloud_essd",
+      "performance_level": "PL1",
+      "size_bytes": 512000000000,
+      "encrypted": true,
+      "delete_with_instance": false,
+      "snapshot_retention_days": 30
+    }
+  },
+  "network": {
+    "vpc_cidr": "10.42.0.0/16",
+    "subnet_cidr": "10.42.1.0/24",
+    "management_cidrs": [
+      "10.42.0.0/16"
+    ],
+    "application_cidrs": [
+      "10.42.0.0/16"
+    ],
+    "management_path": "private-vpc",
+    "service_ingress_mode": "private",
+    "public_ingress_ports": [],
+    "public_docker_api": false,
+    "public_redis": false,
+    "public_monitoring": false,
+    "outbound_public_ipv4": true
+  },
+  "dns": {
+    "mode": "private",
+    "hostname": "PENDING",
+    "tls_termination": "none-private-only"
+  },
+  "secrets": {
+    "repository_stored": false,
+    "source": "PENDING",
+    "root_directory": "/etc/boost-gateway/secrets",
+    "terraform_state_contains_secret_values": false
+  },
+  "deployment": {
+    "source_compilation_on_target": false,
+    "artifact_mode": "verified-immutable-release",
+    "service_user": "boost-gateway",
+    "time_synchronization": "chrony",
+    "iac_path": "deploy/cloud/alicloud-single-node",
+    "host_policy_path": "deploy/cloud/cloud-operations-host-policy.json"
+  },
+  "terraform_state": {
+    "backend": "PENDING",
+    "encrypted": true,
+    "locking": true,
+    "owner": "@HoneyBury"
+  },
+  "cost": {
+    "currency": "CNY",
+    "expected_monthly_amount": null,
+    "quote_reference": "PENDING",
+    "quoted_at": "PENDING"
+  },
+  "recovery": {
+    "rollback_owner": "@HoneyBury",
+    "rollback_target": "miniserver",
+    "rollback_retention_hours": 168,
+    "gateway_rto_seconds": 300,
+    "redis_restore_rto_seconds": 600,
+    "redis_rpo_seconds": 60,
+    "backup_failure_domain": "PENDING"
+  },
+  "cloud_deviations": [
+    {
+      "host_check": "storage:smart-health",
+      "rationale": "ECS virtual block devices do not expose trustworthy guest SMART data.",
+      "blocking_substitute": "provider-volume-health-and-cloudmonitor-alarm-evidence",
+      "evidence_status": "pending"
+    },
+    {
+      "host_check": "thermal:temperature",
+      "rationale": "ECS does not expose physical host thermal sensors to the guest.",
+      "blocking_substitute": "provider-instance-health-and-cloudmonitor-alarm-evidence",
+      "evidence_status": "pending"
+    },
+    {
+      "host_check": "power:restart-on-power-loss",
+      "rationale": "Firmware power restoration is outside the ECS guest boundary.",
+      "blocking_substitute": "ecs-auto-recovery-and-reboot-verification-evidence",
+      "evidence_status": "pending"
+    }
+  ]
+}

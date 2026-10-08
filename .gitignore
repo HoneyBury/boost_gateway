@@ -40,3 +40,13 @@ include_override/
 /.venv/
 /sdk/csharp/bin/
 /sdk/csharp/obj/
+
+# Terraform/OpenTofu local state and credentials
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log

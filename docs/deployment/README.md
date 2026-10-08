@@ -10,6 +10,7 @@
 | 部署候选 | [生产部署](production-deployment-runbook.md) |
 | 日常运营 | [生产运维](production-operations-runbook.md) |
 | 主机准入 | [运营主机准入](operations-host-admission-runbook.md) |
+| 云目标准入与 IaC | [云单节点目标准入](cloud-target-admission-runbook.md) |
 | 不可变 Release | [不可变部署](immutable-release-deployment-runbook.md) |
 | 安装、升级、回滚 | [Release 生命周期](release-lifecycle-runbook.md) |
 | 备份与恢复 | [备份恢复策略](backup-recovery-policy-runbook.md) |

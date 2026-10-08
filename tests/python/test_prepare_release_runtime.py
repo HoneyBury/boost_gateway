@@ -180,6 +180,7 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                 "scripts/lib/observability_preflight.py",
                 "scripts/lib/evidence_provenance.py",
                 "scripts/lib/operations_host.py",
+                "scripts/lib/operations_host_hardware.py",
                 "scripts/lib/release_deployment_verification.py",
                 "scripts/lib/release_deployment_runtime.py",
             )
@@ -199,6 +200,8 @@ class PrepareReleaseRuntimeTest(unittest.TestCase):
                         "import validate_preflight; "
                         "from scripts.lib.operations_host "
                         "import collect_operations_identity; "
+                        "from scripts.lib.operations_host_hardware "
+                        "import verify_cloud_deviation_evidence; "
                         "from scripts.tools.verify_release_deployment "
                         "import validate_gateway_ready"
                     ),
